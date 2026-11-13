@@ -335,6 +335,110 @@ export interface GroupFields {
   parent: string | null;
   members: string[];
 }
+
+// ---- Erasure (Q7 of the 2026-11-12 users review, D117): what an operator's erasure of a deactivated person clears.
+
+/**
+ * What an erased identifier reads as in an audit row that keeps its event: one marker everywhere, so that whoever reads
+ * the trail sees that a value was there and was erased. A field that held nothing (null, an empty string) keeps it, so
+ * a rebind from no binding, or a release to none, still says so.
+ */
+export const ERASED = '[erased]';
+/**
+ * Where the audit trail holds a person's identifiers in the rows about them (`subject` is `person:<id>`), by action:
+ * the keys of `details` that hold a user name, a source key, a claim's value or a sign-in subject. `scimUsecases` writes
+ * the SCIM rows, and `@clew/db/auth` the identity rows, for the sign-in and for `scripts/identity-rebind.ts`. Every other
+ * key of these rows, and every other row about the person, says who did what and when and names the person by their id
+ * only, which stays: `changed` names attributes, not their values, and `identity.bound` the issuer and the claim's name.
+ */
+export const IDENTIFIERS_ABOUT: Readonly<Record<string, readonly string[]>> = {
+  'scim.user.created': ['userName', 'externalId'],
+  'scim.user.replaced': ['userName', 'externalId'],
+  'scim.user.patched': ['userName', 'externalId'],
+  'scim.user.deactivated': ['userName', 'externalId'],
+  'scim.user.reactivated': ['userName', 'externalId'],
+  'identity.conflict': ['value', 'subject'],
+  'identity.rebound': ['oldSubject', 'newSubject'],
+};
+/**
+ * The rows about someone else that name the person as the holder (`details.holder` is `person:<id>`): a sign-in
+ * refused because the subject it came with was bound to the person, so that subject is the person's account. The
+ * claim's value there is the claimed person's name and stays.
+ */
+export const IDENTIFIERS_AS_HOLDER: Readonly<Record<string, readonly string[]>> = {
+  'identity.conflict': ['subject'],
+};
+/** The details with each of `keys` that holds a value replaced by the marker; undefined when none of them holds one. */
+export function erasedDetails(
+  details: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): Record<string, unknown> | undefined {
+  const held = keys.filter(key => {
+    const value = details[key];
+    return value !== undefined && value !== null && value !== '' && value !== ERASED;
+  });
+  return held.length ? { ...details, ...Object.fromEntries(held.map(key => [key, ERASED])) } : undefined;
+}
+/**
+ * The values a sign-in may have claimed for the person, which the authentication log keeps as `claim:<value>` when it
+ * bound nobody: every user name they held, from their row, from the SCIM rows about them (a rename writes the new name)
+ * and from the refused sign-ins that claimed them, and their e-mail address, which a claim holds when the identity
+ * provider is set to send it. The log is matched without regard to case, as user names are; the marker and an empty
+ * value are no name.
+ */
+export function namesHeld(
+  person: Pick<UserRecord, 'userName' | 'email'>,
+  audited: ReadonlyArray<{ action: string; details: Readonly<Record<string, unknown>> }>,
+): string[] {
+  const names = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === 'string' && value && value !== ERASED) names.add(value);
+  };
+  add(person.userName);
+  add(person.email);
+  for (const row of audited)
+    add(
+      row.action.startsWith('scim.user.')
+        ? row.details.userName
+        : row.action === 'identity.conflict'
+          ? row.details.value
+          : undefined,
+    );
+  return [...names];
+}
+/**
+ * A person's record as an erasure leaves it: no name, e-mail address, phone numbers, employments or title (the fields
+ * D110 and D114 added among them), no user name and no source key, so that the name and the key are free for someone
+ * else while the row, its id and every reference to it stay. The name column holds text, so an erased name is the empty
+ * one. A record without a user name reads as its id wherever a user name is shown or written back (the SCIM resource,
+ * `fieldsOf`, Administration › Användare): that is how the erasure replaces the user name with the id (D117). Stored as
+ * none, it is no key: neither the id nor a name the person held resolves to them (`UserReads.userName` and `holders`),
+ * so a started action about them is refused (D116), and it cannot collide with a name someone else holds. Storing the
+ * id instead made the id resolve as their user name, and kept the name of a person whose id is their user name.
+ */
+export const erasedProfile = () => ({
+  name: '',
+  email: null,
+  phoneNumbers: [] as DirectoryPhone[],
+  employments: [] as Employment[],
+  title: null,
+  userName: null,
+  externalId: null,
+});
+/** How many of the person's fields hold something their erasure clears: none once they have been erased. */
+export function heldFields(person: UserRecord): number {
+  const held = (value: unknown) => (Array.isArray(value) ? value.length > 0 : value !== null && value !== '');
+  return [
+    person.name,
+    person.email,
+    person.phoneNumbers,
+    person.employments,
+    person.title,
+    person.userName,
+    person.externalId,
+  ].filter(held).length;
+}
+
 const need = (attribute: string): never => {
   throw new ScimError(400, `Attribute '${attribute}' is required.`, 'invalidValue');
 };

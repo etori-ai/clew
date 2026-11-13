@@ -9,7 +9,9 @@ import { provisioningContract, type ProvisioningHarness } from '../provisioning-
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
 const prefixes: string[] = [],
-  createdGroups: string[] = [];
+  createdGroups: string[] = [],
+  /** Rows of the authentication log the SCIM harness wrote on the suite's database; they name no person to find them by. */
+  signInRows: number[] = [];
 afterAll(async () => {
   const db = database();
   for (const p of prefixes) {
@@ -22,6 +24,7 @@ afterAll(async () => {
     await db.delete(schema.groupCapabilities).where(like(schema.groupCapabilities.groupExternalId, '%' + p + '%'));
     if (people.length) {
       await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, people));
+      await db.delete(schema.sessions).where(inArray(schema.sessions.personId, people));
       await db.delete(schema.audit).where(
         inArray(
           schema.audit.subject,
@@ -37,6 +40,8 @@ afterAll(async () => {
     await db.delete(schema.units).where(like(schema.units.id, p + '%'));
     if (people.length) await db.delete(schema.people).where(inArray(schema.people.id, people));
   }
+  if (signInRows.length)
+    await db.delete(schema.authenticationAudit).where(inArray(schema.authenticationAudit.id, signInRows));
   // Capability groups the harness created because the development stack had not; one that existed is left as found.
   if (createdGroups.length) {
     await db.delete(schema.groupMembers).where(inArray(schema.groupMembers.groupId, createdGroups));
@@ -155,10 +160,48 @@ const scimHarness = (prefix: string, db: () => Database = database): ScimStoreHa
         previousValidUntil: previous ? new Date(previous.until) : null,
       });
   },
-  async bind(personId) {
+  async bind(personId, issuer = 'https://idp.test/' + prefix, subject = personId) {
+    await db().insert(schema.identityBindings).values({ issuer, subject, personId });
+  },
+  async openSession(personId, digest) {
+    const until = new Date(Date.now() + 60 * 60_000);
     await db()
-      .insert(schema.identityBindings)
-      .values({ issuer: 'https://idp.test/' + prefix, subject: personId, personId });
+      .insert(schema.sessions)
+      .values({
+        digest,
+        personId,
+        issuer: 'https://idp.test/' + prefix,
+        subject: personId,
+        clientId: 'clew',
+        csrf: 'csrf',
+        tokens: 'sealed',
+        tokenExpiresAt: until,
+        idleExpiresAt: until,
+        expiresAt: until,
+      });
+  },
+  async sessions(personId) {
+    const rows = await db()
+      .select({ digest: schema.sessions.digest })
+      .from(schema.sessions)
+      .where(eq(schema.sessions.personId, personId));
+    return rows.length;
+  },
+  async logSignIn(actor, action) {
+    const [row] = await db()
+      .insert(schema.authenticationAudit)
+      .values({ actor, action })
+      .returning({ id: schema.authenticationAudit.id });
+    // The database created with the locale C is dropped whole.
+    if (db === database) signInRows.push(row!.id);
+    return row!.id;
+  },
+  async signInActor(id) {
+    const [row] = await db()
+      .select({ actor: schema.authenticationAudit.actor })
+      .from(schema.authenticationAudit)
+      .where(eq(schema.authenticationAudit.id, id));
+    return row?.actor;
   },
 });
 scimStoreContract('postgres', async () => {

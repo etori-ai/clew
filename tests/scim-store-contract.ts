@@ -18,8 +18,19 @@ export interface ScimStoreHarness {
     revoked?: boolean,
     previous?: { digest: string; until: string },
   ): Promise<void>;
-  /** An identity binding for the person, as a first login would write it. */
-  bind(personId: string): Promise<void>;
+  /**
+   * An identity binding for the person, as a first login would write it: under the harness's own issuer with the
+   * person's id as the subject, unless they are named.
+   */
+  bind(personId: string, issuer?: string, subject?: string): Promise<void>;
+  /** A session of the person's, as a sign-in opens one. */
+  openSession(personId: string, digest: string): Promise<void>;
+  /** How many sessions the person has. */
+  sessions(personId: string): Promise<number>;
+  /** A row of the authentication log, as a sign-in writes one; its id. */
+  logSignIn(actor: string | null, action: string): Promise<number>;
+  /** The actor of a row of the authentication log, by its id. */
+  signInActor(id: number): Promise<string | null | undefined>;
 }
 const T = '2026-11-09T06:00:00.000Z';
 export const userRow = (id: string, organisationId: string, extra: Partial<UserRecord> = {}): UserRecord => ({
@@ -919,6 +930,154 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         }),
       ).rejects.toThrow('rolled back');
       expect(await store.transaction(tx => tx.readUser(p + '-org', b))).toEqual(row(b));
+    });
+    test('an erasure takes the person out of their groups, ends their bindings and sessions, and rewrites the audit rows and the claims it is given, in the transaction (D117)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        org = p + '-org',
+        [a, b] = [p + '-a', p + '-b'],
+        [g1, g2, g3] = [p + '-g1', p + '-g2', p + '-g3'],
+        [issuerA, issuerB] = ['https://idp-a.test/' + p, 'https://idp-b.test/' + p],
+        later = '2026-11-09T07:00:00.000Z',
+        // Held with å and claimed with Å: ICU folds the one to the other, the locale C does not (L13).
+        name = 'åsa.' + p,
+        created = (id: string, userName: string) => ({
+          actor: 'provisioner:' + p,
+          action: 'scim.user.created',
+          subject: 'person:' + id,
+          details: { userName, externalId: 'ext:' + id },
+        }),
+        refused = {
+          actor: 'person:' + b,
+          action: 'identity.conflict',
+          subject: 'person:' + b,
+          details: {
+            issuer: issuerA,
+            claim: 'preferred_username',
+            value: 'u:' + b,
+            subject: 'sub-' + a,
+            holder: 'person:' + a,
+          },
+        };
+      await h.store.transaction(async tx => {
+        await tx.insertUser(userRow(a, org, { userName: name }));
+        await tx.insertUser(userRow(b, org));
+        for (const g of [g1, g2, g3]) await tx.insertGroup(groupRow(g, org));
+        await tx.setGroupMembers(g1, [a, b]);
+        await tx.setGroupMembers(g2, [a]);
+        await tx.setGroupMembers(g3, [b]);
+        for (const row of [created(a, name), created(b, 'u:' + b), refused]) await tx.audit(row);
+      });
+      await h.bind(a, issuerA, 'sub-' + a);
+      await h.bind(a, issuerB, 'sub-' + a);
+      await h.bind(b, issuerA, 'sub-' + b);
+      for (const [person, digest] of [
+        [a, p + '-s1'],
+        [a, p + '-s2'],
+        [b, p + '-s3'],
+      ] as const)
+        await h.openSession(person, digest);
+      // A claim is kept as the sign-in got it: in any case, and composed or not.
+      const log = [
+        await h.logSignIn('claim:' + name.toUpperCase(), 'identity-unmatched'),
+        await h.logSignIn('claim:' + name.normalize('NFD'), 'identity-unmatched'),
+        await h.logSignIn('claim:' + a + '@example.test', 'identity-unmatched'),
+        await h.logSignIn('claim:u:' + b, 'identity-unmatched'),
+        await h.logSignIn('person:' + a, 'login-denied'),
+        await h.logSignIn(null, 'login-denied'),
+      ];
+      const done = await h.store.transaction(async tx => {
+        await tx.lockGroupsOf(a);
+        const about = await tx.auditRows(['scim.user.created', 'identity.conflict'], { subject: 'person:' + a }),
+          asHolder = await tx.auditRows(['identity.conflict', 'identity.rebound'], {
+            key: 'holder',
+            value: 'person:' + a,
+          });
+        expect(about).toEqual([
+          {
+            id: expect.any(Number),
+            action: 'scim.user.created',
+            subject: 'person:' + a,
+            details: created(a, name).details,
+          },
+        ]);
+        expect(asHolder).toEqual([
+          { id: expect.any(Number), action: 'identity.conflict', subject: 'person:' + b, details: refused.details },
+        ]);
+        // An action not asked for is not read, and no action is no row.
+        expect(await tx.auditRows(['identity.rebound'], { subject: 'person:' + a })).toEqual([]);
+        expect(await tx.auditRows([], { subject: 'person:' + a })).toEqual([]);
+        await tx.rewriteAudit([
+          { id: about[0]!.id, details: { userName: '[erased]', externalId: '[erased]' } },
+          { id: asHolder[0]!.id, details: { ...refused.details, subject: '[erased]' } },
+        ]);
+        return {
+          memberships: await tx.removeMemberships(a, later),
+          bindings: await tx.removeBindings(a),
+          sessions: await tx.removeSessions(a),
+          // What names nobody, and what no claim can be, changes nothing.
+          claims: await tx.eraseClaims([name, a + '@example.test', 'nobody-' + p, 'with\u0000nul', ''], '[erased]'),
+        };
+      });
+      expect(done).toEqual({ memberships: 2, bindings: 2, sessions: 2, claims: 3 });
+      const asErased = async () => {
+        await h.store.transaction(async tx => {
+          expect(await tx.userGroups(a)).toEqual([]);
+          expect((await tx.userGroups(b)).map(g => g.id)).toEqual([g1, g3]);
+          expect(await tx.groupMembers(g1)).toEqual([{ id: b, name: 'Name ' + b }]);
+          // The groups the person left changed (S13), and the other did not.
+          expect((await tx.readGroup(org, g1))?.updatedAt).toBe(later);
+          expect((await tx.readGroup(org, g2))?.updatedAt).toBe(later);
+          expect((await tx.readGroup(org, g3))?.updatedAt).toBe(T);
+          expect([await tx.bound(a), await tx.bound(b)]).toEqual([false, true]);
+          // The person's own row is the use case's to clear, not these ports'.
+          expect(await tx.readUser(org, a)).toEqual(userRow(a, org, { userName: name }));
+          expect((await tx.auditRows(['scim.user.created'], { subject: 'person:' + a }))[0]?.details).toEqual({
+            userName: '[erased]',
+            externalId: '[erased]',
+          });
+          expect((await tx.auditRows(['scim.user.created'], { subject: 'person:' + b }))[0]?.details).toEqual(
+            created(b, 'u:' + b).details,
+          );
+          expect((await tx.auditRows(['identity.conflict'], { subject: 'person:' + b }))[0]?.details).toEqual({
+            ...refused.details,
+            subject: '[erased]',
+          });
+        });
+        expect([await h.sessions(a), await h.sessions(b)]).toEqual([0, 1]);
+        expect(await Promise.all(log.map(id => h.signInActor(id)))).toEqual([
+          'claim:[erased]',
+          'claim:[erased]',
+          'claim:[erased]',
+          'claim:u:' + b,
+          'person:' + a,
+          null,
+        ]);
+      };
+      await asErased();
+      // Once more, nothing is left, and a claim already erased is not counted again.
+      expect(
+        await h.store.transaction(async tx => [
+          await tx.removeMemberships(a, later),
+          await tx.removeBindings(a),
+          await tx.removeSessions(a),
+          await tx.eraseClaims([name, '[erased]'], '[erased]'),
+        ]),
+      ).toEqual([0, 0, 0, 0]);
+      // Gone with the transaction that made it.
+      await expect(
+        h.store.transaction(async tx => {
+          await tx.lockGroupsOf(b);
+          expect(await tx.removeMemberships(b, '2026-11-09T08:00:00.000Z')).toBe(2);
+          expect(await tx.removeBindings(b)).toBe(1);
+          expect(await tx.removeSessions(b)).toBe(1);
+          expect(await tx.eraseClaims(['U:' + b], '[erased]')).toBe(1);
+          const [row] = await tx.auditRows(['scim.user.created'], { subject: 'person:' + b });
+          await tx.rewriteAudit([{ id: row!.id, details: {} }]);
+          throw new Error('rolled back');
+        }),
+      ).rejects.toThrow('rolled back');
+      await asErased();
     });
   });
 }

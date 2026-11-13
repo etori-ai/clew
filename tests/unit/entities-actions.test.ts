@@ -9,12 +9,13 @@ import {
   type Connector,
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
-import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
+import { personErasureUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import { entityActionUsecases } from '../../apps/server/src/modules/entities/actions';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { startedCards } from '../../apps/server/src/threads/usecases/started';
 import { cardDecisions } from '../../apps/server/src/threads/usecases/decisions';
+import { subjectErasure } from '../../apps/server/src/threads/usecases/subjects';
 import { threadAccess } from '../../apps/server/src/threads/access';
 import { entityRoutes, type EntityRouteDeps } from '../../apps/server/src/routes/entities';
 import { InputError } from '../../apps/server/src/context';
@@ -82,7 +83,7 @@ function directory(userNames: Record<string, string> = {}) {
       authorize: async () => ({ version }),
     };
   };
-  return { staff: staffUsecases({ store }), persona, state: s };
+  return { staff: staffUsecases({ store }), persona, state: s, store };
 }
 
 const personInput = (extra: Record<string, unknown> = {}) =>
@@ -442,6 +443,33 @@ describe('an action about a person, started from the menu', () => {
       'Personen finns inte längre i katalogen. Inget har skickats.',
     );
     expect(w.approvals).toEqual([]);
+    expect(w.asked.flag).toEqual([]);
+  });
+
+  test('an execute about someone an operator has since erased cannot be decided, and nothing is approved (D116, D117)', async () => {
+    const w = world();
+    const hillevi = w.people.persona('hillevi');
+    const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
+    // The source deactivates Anna; the runbook erases her from every card first and her record last. The card's rows
+    // and subjects no longer name her, but its action keeps her id, so the card itself can still be decided.
+    w.people.state.users.get('anna')!.enabled = false;
+    const clock = () => new Date(T),
+      operator = 'operator:cli';
+    const cards = subjectErasure({ store: w.store, clock, people: memoryPersonKeys(w.people.state) });
+    expect(await cards.eraseSubject(operator, { entity: 'person', key: 'anna' })).toMatchObject({ cards: 1, rows: 1 });
+    const record = personErasureUsecases({ store: w.people.store, clock });
+    expect(await record.erasePerson(operator, 'anna')).toMatchObject({ erased: { fields: 3 } });
+    // Her record holds no user name: neither her id nor the name she had resolves to anyone, so no name can be sent.
+    const keys = memoryPersonKeys(w.people.state);
+    expect(await keys.userName('anna')).toBeNull();
+    expect(await keys.holders('hillevi', ['anna', 'anna.l'])).toEqual(new Map());
+    const audited = structuredClone(w.store.audit),
+      gone = 'Personen finns inte längre i katalogen. Inget har skickats.';
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(gone);
+    await expect(w.decisions.effect(hillevi, threadId, 'decide')).rejects.toThrow(gone);
+    // Nothing reached the ledger, so there is no execution and no approval row, and the source was asked nothing.
+    expect(w.approvals).toEqual([]);
+    expect(w.store.audit).toEqual(audited);
     expect(w.asked.flag).toEqual([]);
   });
 

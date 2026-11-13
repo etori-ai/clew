@@ -29,9 +29,14 @@ export interface MemoryProvisionState {
     string,
     Provisioner & { revoked?: boolean; lastSeenAt?: string | null; previous?: { digest: string; until: string } }
   >;
-  /** Person ids with an identity binding. */
-  bindings: Set<string>;
+  /** `auth_identity_binding`: a sign-in subject under its issuer, bound to a person. */
+  bindings: Array<{ issuer: string; subject: string; personId: string }>;
+  /** `auth_session`, as far as an erasure reads it: whose session it is. */
+  sessions: Array<{ digest: string; personId: string }>;
+  /** A row's id is its place in the list. */
   audit: Array<{ actor: string; action: string; subject: string; details: Record<string, unknown> }>;
+  /** `auth_audit`, the authentication log. */
+  authenticationAudit: Array<{ actor: string | null; action: string }>;
 }
 export const memberKey = (groupId: string, personId: string) => groupId + '\u0000' + personId;
 const splitKey = (key: string) => key.split('\u0000') as [string, string];
@@ -45,8 +50,10 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     assignments: new Map(),
     grants: new Map(),
     provisioners: new Map(),
-    bindings: new Set(),
+    bindings: [],
+    sessions: [],
     audit: [],
+    authenticationAudit: [],
   };
   const snapshot = () => structuredClone(state),
     restore = (s: MemoryProvisionState) => Object.assign(state, s);
@@ -304,7 +311,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
         .filter(u => {
           if (u.organisationId !== organisationId) return false;
           const granted = state.grants.has(u.id),
-            bound = state.bindings.has(u.id),
+            bound = state.bindings.some(b => b.personId === u.id),
             status = !u.enabled ? 'disabled' : !granted ? 'no-access' : bound ? 'signed-in' : 'not-signed-in';
           return (
             (search.words ?? []).every(word =>
@@ -369,7 +376,54 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
         });
     },
     async bound(personId) {
-      return state.bindings.has(personId);
+      return state.bindings.some(b => b.personId === personId);
+    },
+    async lockGroupsOf() {},
+    async removeMemberships(personId, at) {
+      const gone = [...state.members].filter(key => splitKey(key)[1] === personId);
+      for (const key of gone) {
+        state.members.delete(key);
+        const group = state.groups.get(splitKey(key)[0]);
+        if (group) state.groups.set(group.id, { ...group, updatedAt: at });
+      }
+      return gone.length;
+    },
+    async removeBindings(personId) {
+      const before = state.bindings.length;
+      state.bindings = state.bindings.filter(b => b.personId !== personId);
+      return before - state.bindings.length;
+    },
+    async removeSessions(personId) {
+      const before = state.sessions.length;
+      state.sessions = state.sessions.filter(s => s.personId !== personId);
+      return before - state.sessions.length;
+    },
+    async auditRows(actions, where) {
+      return state.audit.flatMap((row, id) =>
+        actions.includes(row.action) &&
+        ('subject' in where ? row.subject === where.subject : row.details[where.key] === where.value)
+          ? [{ id, action: row.action, subject: row.subject, details: structuredClone(row.details) }]
+          : [],
+      );
+    },
+    async rewriteAudit(rows) {
+      for (const { id, details } of rows) {
+        const row = state.audit[id];
+        if (row) state.audit[id] = { ...row, details: structuredClone(details) };
+      }
+    },
+    async eraseClaims(names, marker) {
+      // Unicode's own lower case of the composed form, as PostgreSQL folds both sides under ICU's root locale.
+      const fold = (value: string) => value.normalize('NFC').toLowerCase(),
+        held = new Set(names.filter(name => name).map(fold)),
+        erased = 'claim:' + marker;
+      let changed = 0;
+      for (const row of state.authenticationAudit)
+        if (row.actor?.startsWith('claim:') && row.actor !== erased && held.has(fold(row.actor.slice(6)))) {
+          row.actor = erased;
+          changed++;
+        }
+      return changed;
     },
     async setGroupCapability(organisationId, groupExternalId, capability, present) {
       const index = state.groupCapabilities.findIndex(
