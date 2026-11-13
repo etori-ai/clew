@@ -527,11 +527,6 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           {error}
         </Text>
       )}
-      {!data && !query.isError && (
-        <Text type="supporting" role="status">
-          Läser användarna …
-        </Text>
-      )}
       {query.data && (
         <Card padding={0}>
           <Toolbar
