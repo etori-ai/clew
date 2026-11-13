@@ -22,11 +22,11 @@ The web half: one action dialog (`apps/web/src/components/action-dialog.tsx`, As
 
 ## Remote connectors
 
-**Works in this checkout.** Manifest, capability calls, optional scan/figure and database registration. Governance refreshes reuse unchanged descriptors; manifest, address or secret changes rebuild them. Overlapping fresh reads coalesce without reusing a snapshot taken before a final access check.
+**Works in this checkout.** Manifest, capability calls, optional scan/figure and database registration. Governance refreshes reuse unchanged descriptors; manifest, address or secret changes rebuild them. Overlapping fresh reads coalesce without reusing a snapshot taken before a final access check. Every body Clew posts to a remote connector (a capability call, a document read, a figure, a scan) carries as its actor the published actor (`actorOf`: id, name, unit, unit label, role and user name) and none of the person's groups or session fields, as the protocol's request schemas require; inside the process the registry is handed the actor with the person's provisioned groups (`audiencedActorOf`), which an audience's `groups` match and a nested `clew.call` keeps. The conformance check ("Testa anslutning" and `connector-check`) hands the registry people shaped as in production, groups and session fields included, so a connector that validates its requests against the published schema is checked as production calls it.
 
 **Limits and pending work.** No published production distribution or standalone checker image is established by these docs. "Hämta manifest igen" (`refreshManifest`) compares the stored and the fetched manifest as JSON text, and PostgreSQL's `jsonb` reorders an object's keys, so against the database every capability is listed as changed and the two are never "the same", even right after the new manifest was applied (seen on the development stack on 2026-11-11); the added and removed capabilities are right.
 
-**Evidence.** [Transport](../../../packages/connectors/src/remote.ts), [admin use cases](../../../apps/server/src/connectors/usecases/admin.ts)
+**Evidence.** [Transport](../../../packages/connectors/src/remote.ts), [the actor](../../../packages/connectors/src/index.ts), [conformance check](../../../packages/connectors/src/check.ts), [admin use cases](../../../apps/server/src/connectors/usecases/admin.ts), [bodies against the published schemas](../../../tests/unit/group-audiences.test.ts)
 
 ## Served protocol
 

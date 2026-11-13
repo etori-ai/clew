@@ -1,6 +1,31 @@
 # D24 · Model providers and models are administered in the product, and the chat can choose between them
 
-**Status:** accepted, built 2026-11-05 · **Date:** 2026-11-04 · **Area:** product
+**Status:** accepted, built 2026-11-05; the check script of As built amended 2026-11-12 in the fixes of the review of users and the organisation (R4): `models-check` is for the development stack, switches its model on for its own unit only and deletes only its own audit rows · **Date:** 2026-11-04 · **Area:** product
+
+**Amended 2026-11-12.** R4 of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md)
+found that a run of `bun scripts/models-check.ts` deleted the audit history administrators had written about an
+earlier, removed model of the same name, and put its model in every person's menu while it ran. The script, named in
+the last item of As built, now works this way:
+
+- It is for the development stack. Unless `CLEW_POC=true`, or `--confirm` is given, it exits with code 2 before it
+  opens the database: "models-check is for the development stack (CLEW_POC=true): it adds a provider, a model and a
+  person to this installation and removes them afterwards. Run again with --confirm to run it here."
+- Each run uses throwaway ids: the provider `check-<run>`, the person `check-<run>-person` in the organisation `check`,
+  and the unit `check-<run>-unit`.
+- It switches the model on for that unit only, in the same call that enables it, so the model is never in anybody
+  else's menu.
+- Its clean-up deletes the model, the provider, the person and only the audit rows whose actor is
+  `person:check-<run>-person`, so what administrators wrote about an earlier model with the same id stays.
+- A run killed before its clean-up leaves the model, the provider, their audit rows and the person behind.
+- Without `--url`, the stand-in endpoint answers streamed and whole requests, as a turn asks.
+
+Why, since the choices were taken in the work: a refusal outside the development stack, with `--confirm` to run it
+anyway, was chosen over a script that runs anywhere, because it adds a person and a model to the installation it runs
+in; and over removing the script, because it is the one live check of the model adapters against a real endpoint and
+an operator may need it in a test installation. Deleting only the run's own audit rows keeps an organisation's audit
+trail whole, which a public body must be able to show, and a unit of its own keeps a check from changing what
+thousands of people are offered while it runs.
 
 **Decision.** The inference endpoint behind the composer is no longer one set of environment variables
 (`AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`). An administrator adds **providers** (an OpenAI-compatible base

@@ -7,7 +7,7 @@ This page is the orientation before the field-level rules in [Authorize every co
 | Who tells the connector which person is acting? | Clew, with a short-lived RS256 assertion it signs |
 | How does the connector reach the source? | A policy the connector chooses: service credential, bound account or a delegated IdP token |
 | Where is a write approved? | The human decision endpoint, written to the execution ledger before dispatch |
-| Status (see the [support matrix](../reference/status.md)) | Built: assertions, transport key, callbacks, token exchange, ledger |
+| Status (see the [support matrix](../reference/status.md)) | Built: sign-in that follows the provider's session, back- and front-channel logout, the operator's rebind script, assertions, transport key, callbacks, token exchange, ledger |
 
 A case system is a native connector ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): one container per system, registered by an administrator, with reads as `read` capabilities and a note or a status change as an `execute` capability. It is not an MCP tool. The rest of this page follows a note written to a case through a connector.
 
@@ -15,16 +15,22 @@ A case system is a native connector ([D35](../decisions/D35-errands-are-a-connec
 
 People log in through OIDC with Authorization Code and PKCE against the municipality's identity provider, Keycloak in development ([D5](../decisions/D05-oidc-and-oauth-only-identification-path.md)). The browser holds an opaque session cookie. No access token, refresh token or connector secret reaches the browser bundle; the server resolves the person, unit and role for every request.
 
+A sign-in follows the identity provider's own session ([D115](../decisions/D115-a-sign-in-follows-the-identity-providers-session.md)). Clew sends no `prompt` and no `max_age` and does not require `auth_time`, so a person already signed in at the provider is not asked again. An organisation that needs a fresh prompt, on shared computers for example, sets it in the provider: Entra ID's Conditional Access sign-in frequency "every time", or Keycloak's flow and session settings.
+
+The first sign-in binds the provider's subject to the one active person whose user name the configured claim names. Every later sign-in, not every request, compares that claim with the bound person. When it names another person, deactivated people included, the sign-in is refused ("Kontot saknar behörighet till Startsidan.") and nothing is rebound; the audit row `identity.conflict` names the person the claim named, the claim's value, the subject and the person who holds the subject. A claim that names nobody, or no claim, does not refuse: the subject is the identity. Only an operator moves a binding, never Clew by itself and never a page: `bun scripts/identity-rebind.ts --person <person id> (--subject <new subject> | --release) --operator "<your name>"` writes `identity.rebound` with the old and the new subject and the operator, and the sessions of the old account are refused from their next request. The [operations guide](provisioning-for-operations.md) says when a rebind is needed.
+
+"Logga ut" ends Clew's session and sends the browser to the provider's end-session page with `client_id`, the way back to `/login` and `ui_locales`, never with a token in the address. The provider's own session ends only when the person confirms there. A sign-out at the provider ends Clew's sessions of that provider session: by back-channel logout (`POST /api/auth/backchannel-logout`, which Keycloak uses) or by front-channel logout (`GET /api/auth/frontchannel-logout`, for Microsoft Entra ID, whose ID token must then carry the `sid` claim).
+
 ## 2. Clew identifies itself and the person to the connector
 
 Every call from Clew to a connector carries two credentials, and the connector must check both ([Protocol 2](authorization.md#inbound-requests), [D44](../decisions/D44-authorized-reads-and-clew-signed-connector-authority.md)):
 
 - **The transport key.** `X-Clew-Connector-Key` holds the shared secret from the connector's registration. It proves the request came from this Clew installation's transport. It cannot name a person.
-- **The signed assertion.** `Authorization: Bearer` holds an RS256 JWT signed by Clew's installation key, with the connector id as `aud`, the person as `sub` and `actor` (id, name, unit, role), and a lifetime of at most two minutes. The connector verifies it against the public keys at `CLEW_URL/api/connectors/jwks`, pinned in its deployment configuration. [hello's verifier](../../connectors/hello/verification.mjs) is a complete reference.
+- **The signed assertion.** `Authorization: Bearer` holds an RS256 JWT signed by Clew's installation key, with the connector id as `aud`, the person as `sub` and `actor` (id, name, unit, role and, when the person has one, user name; nothing else), and a lifetime of at most two minutes. The connector verifies it against the public keys at `CLEW_URL/api/connectors/jwks`, pinned in its deployment configuration. [hello's verifier](../../connectors/hello/verification.mjs) is a complete reference.
 
 The verified actor is the only identity the connector may use. A person named in the request body is ignored. The connector still enforces the source's own rules: unit boundaries, protected records and whether this role may see this case. Clew's role filter in the manifest is coarse.
 
-Clew rotates the installation key with audit ([connector-key-rotate.ts](../../scripts/connector-key-rotate.ts)); old public keys overlap for three minutes. Clew also rechecks the connector's current registration, audience and the person's current grants on every invocation, so a connector removed from a person's audience disappears for them at once.
+Clew rotates the installation key with audit ([connector-key-rotate.ts](../../scripts/connector-key-rotate.ts)); old public keys overlap for three minutes. Clew also rechecks the connector's current registration, audience and the person's current grants on every invocation, so a connector removed from a person's audience disappears for them at once. An audience may name provisioned groups; Clew matches them against the groups the person is in at that moment and never sends them to the connector.
 
 ## 3. The connector authenticates to the case system
 
