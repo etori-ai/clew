@@ -49,9 +49,10 @@ const staff: Staff = async persona => {
 /**
  * Whether the owner of a manager's action point still manages the employee (Q12), as the talks module counts the people
  * a manager has: from the owner's own assignments now, read through a context built from their current grant. Someone
- * without an active grant, deactivated or erased, manages nobody.
+ * without an active grant, deactivated or erased, manages nobody, and nobody manages themselves or a deactivated
+ * person. Exported for the Postgres test that runs it over real assignments and grants.
  */
-const manages: Manages = async (managerId, employeeId) => {
+export const talkManages: Manages = async (managerId, employeeId) => {
   if (managerId === employeeId) return false;
   const persona = await systemContext(managerId, 'system:talks');
   if (!persona) return false;
@@ -61,7 +62,7 @@ const manages: Manages = async (managerId, employeeId) => {
 export const talks = talkUsecases({
   store: talkStore,
   staff,
-  manages,
+  manages: talkManages,
   bookings: (persona, round) => calendar.samtalBookings(persona, round),
   clock,
   ids,

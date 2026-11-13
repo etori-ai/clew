@@ -260,7 +260,7 @@ export const threads = (): Thread[] => [
     ],
     items: [
       {
-        ref: 'unplaced:sara@clew.test',
+        ref: 'unplaced:sara',
         label: 'Sara Holm',
         detail: 'upptagen hela veckan',
         selectable: false,

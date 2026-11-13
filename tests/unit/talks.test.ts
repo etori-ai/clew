@@ -628,12 +628,18 @@ describe('action points', () => {
       at: at(),
       details: { roundId: expect.any(String), ownerRole: 'manager', by: 'manager' },
     });
-    // An employee's own point stays theirs even so: it is never a manager's to tick off.
+    // An employee's own point stays theirs even so: her manager is refused it and nothing is written.
     const annas = await talks.addCommitment(boss, 'anna', {
       owner: 'employee',
       text: 'Läsa boken',
       dueOn: '2026-12-01',
     });
+    const audited = store.audit().length;
+    await expect(talks.completeCommitment(boss, annas)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(talks.reopenCommitment(boss, annas)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(store.state.commitments.get(annas)).toMatchObject({ doneAt: null, doneBy: null });
+    expect(store.audit()).toHaveLength(audited);
+    // Erasing the employee removes her own points with her: there is nobody's point left to take over.
     await talks.erasePerson('operator:cli', 'anna');
     expect(store.state.commitments.get(annas)).toBeUndefined();
   });
