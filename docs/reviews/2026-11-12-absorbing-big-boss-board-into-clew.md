@@ -27,6 +27,10 @@ Oliver Borgström, later on 2026-11-12, after reading the first version:
 - **The data is to come through an API, not the file feed.** Which API is being looked into in parallel.
 - Until then, **build on the Qlik connector with made-up data**, to lay down the look and the data flows through Clew.
 
+On 2026-11-13 [D116](../decisions/D116-start-and-the-row-under-it-are-clews.md) made Start and the row under it
+Clew's and put Dialogstöd there for a manager, leading to their own unit's page with its key figures until the
+dialogue itself exists.
+
 So the file feed is no longer the first source, and the key-figures connector of phase 1 is, for now, the Qlik
 connector on its fixture. What was built is in phase 1 below. Decision B's vendor-neutral profile still holds for when
 the real source is known; a profile keeps the pages unchanged when the source changes.
