@@ -195,6 +195,15 @@ export function postgresProvisionStore(): ProvisionStore {
         .from(schema.groupCapabilities)
         .where(eq(schema.groupCapabilities.organisationId, organisationId));
     },
+    async groupRelations(organisationId) {
+      return tx
+        .select({
+          groupExternalId: schema.groupRelations.groupExternalId,
+          relation: schema.groupRelations.relation,
+        })
+        .from(schema.groupRelations)
+        .where(eq(schema.groupRelations.organisationId, organisationId));
+    },
     async unitLabels(ids, organisationId) {
       if (!ids.length) return {};
       const rows = await tx
@@ -225,10 +234,14 @@ export function postgresProvisionStore(): ProvisionStore {
           unitLabel: schema.accessGrants.unitLabel,
           role: schema.accessGrants.role,
           capabilities: schema.accessGrants.capabilities,
+          relations: schema.accessGrants.relations,
         })
         .from(schema.accessGrants)
         .where(eq(schema.accessGrants.personId, personId));
-      return row;
+      if (!row) return undefined;
+      // As the memory store holds it: `relations` only when the person holds one (D121).
+      const { relations, ...rest } = row;
+      return relations.length ? { ...rest, relations } : rest;
     },
     async writeGrant(personId, grant) {
       if (!grant) {
@@ -240,6 +253,7 @@ export function postgresProvisionStore(): ProvisionStore {
         unitLabel: grant.unitLabel,
         role: grant.role,
         capabilities: [...grant.capabilities],
+        relations: [...(grant.relations ?? [])],
       };
       await tx
         .insert(schema.accessGrants)
@@ -684,6 +698,27 @@ export function postgresProvisionStore(): ProvisionStore {
           ),
         )
         .returning({ capability: schema.groupCapabilities.capability });
+      return removed.length > 0;
+    },
+    async setGroupRelation(organisationId, groupExternalId, relation, present) {
+      if (present) {
+        const inserted = await tx
+          .insert(schema.groupRelations)
+          .values({ organisationId, groupExternalId, relation })
+          .onConflictDoNothing()
+          .returning({ relation: schema.groupRelations.relation });
+        return inserted.length > 0;
+      }
+      const removed = await tx
+        .delete(schema.groupRelations)
+        .where(
+          and(
+            eq(schema.groupRelations.organisationId, organisationId),
+            eq(schema.groupRelations.groupExternalId, groupExternalId),
+            eq(schema.groupRelations.relation, relation),
+          ),
+        )
+        .returning({ relation: schema.groupRelations.relation });
       return removed.length > 0;
     },
   });

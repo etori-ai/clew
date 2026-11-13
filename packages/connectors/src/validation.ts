@@ -119,6 +119,10 @@ function accessProblem(c: Descriptor['capabilities'][number], connector: Descrip
     return `Capability ${c.name}: person is about people; a capability about a unit declares who it may be asked about in unit (D117).`;
   if (person.ids && connector.kind !== 'core')
     return `Capability ${c.name}: only Clew's own connectors take a person by Clew's id (D117).`;
+  // A manifest cannot name it (the protocol's relations leave it out); an in-process connector of another kind may not
+  // either, so the grant opens Clew's own competence reads and nothing else (D121 item 3).
+  if (person.admits?.includes('registrar') && connector.kind !== 'core')
+    return `Capability ${c.name}: only Clew's own connectors admit registrar (D121).`;
   if (c.about?.entity === 'person') {
     if (person.param !== undefined)
       return `Capability ${c.name}: a capability about a person takes its key in keys or about.param and declares no person.param (D117).`;

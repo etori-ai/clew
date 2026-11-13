@@ -1,6 +1,6 @@
 import type { Actor, Related } from '@clew/connectors';
 import type { EntityKind, Relation } from '@clew/contracts';
-import { foldKey, isKey, personKey, personRelation, reportById, reportOf, unitRelation } from './domain';
+import { foldKey, isKey, personKey, personRelation, registrarFor, reportById, reportOf, unitRelation } from './domain';
 import type { DirectoryPerson, RelationDeps } from './model';
 
 /**
@@ -15,9 +15,12 @@ export function relationUsecases(deps: RelationDeps) {
    * How the actor stands to each of these keys, for the relations in `admits` only; a key of nobody, of a deactivated
    * person, of a person without a user name, outside the actor's organisation or outside `admits` is absent. Every
    * spelling asked is answered on its own, with the directory's spelling in `key`. A colleague is looked up in the
-   * directory only when `admits` lets one through, so a strict read costs one read of where the actor stands. With
-   * `ids` (a core capability of Clew's own domains), a person without a user name may also be named by Clew's id, as
-   * themself or as a report; never as a colleague, and never someone who has a user name.
+   * directory only when `admits` lets one through, so a strict read costs one read of where the actor stands. A reader
+   * who holds the grant `registrar` (D121, from their current access record) stands so to such a person instead, but
+   * only for a read that admits it: to any other read they are the colleague they are, so the grant reaches nothing
+   * else and no source is told it unasked. With `ids` (a core capability of Clew's own domains), a person without a
+   * user name may also be named by Clew's id, as themself or as a report; never as a colleague or a registrar's, and
+   * never someone who has a user name.
    */
   async function relate(
     actor: Actor,
@@ -36,6 +39,8 @@ export function relationUsecases(deps: RelationDeps) {
         return relation && admits.includes(relation) ? [{ asked, key: asked, relation }] : [];
       });
     const colleagues = new Map<string, DirectoryPerson | undefined>();
+    // D121: a registrar stands so to everyone else of their organisation, for a read that admits it alone.
+    const registrar = registrarFor(reader, admits);
     const out: Related[] = [];
     for (const asked of keys) {
       if (!isKey(asked)) continue;
@@ -44,13 +49,13 @@ export function relationUsecases(deps: RelationDeps) {
         reader.userName && foldKey('person', reader.userName) === folded
           ? { id: reader.id, name: reader.name, userName: reader.userName, enabled: true }
           : reportOf(reach, asked)?.person;
-      if (!person && admits.includes('colleague')) {
+      if (!person && (admits.includes('colleague') || registrar)) {
         if (!colleagues.has(folded)) colleagues.set(folded, await deps.directory.person(reader, asked, false));
         person = colleagues.get(folded);
       }
       const key = person && personKey(person);
       if (person && key) {
-        const relation = personRelation(reader, reach, { id: person.id, userName: key });
+        const relation = personRelation(reader, reach, { id: person.id, userName: key }, registrar);
         if (relation && admits.includes(relation)) out.push({ asked, key, relation });
         continue;
       }

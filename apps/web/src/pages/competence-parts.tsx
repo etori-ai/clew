@@ -14,7 +14,7 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { api } from '../api';
-import { COMPETENCE_PATH, MATRIX_PATH } from '../competence-address';
+import { COMPETENCE_PATH, MATRIX_PATH, SEARCH_PATH } from '../competence-address';
 import { useAdminAction } from '../mutations';
 import { keys } from '../query-keys';
 import { DialogFrame } from '../components/dialog-frame';
@@ -28,33 +28,37 @@ import { mobileQuery } from '../components/shell';
  */
 
 /** Which page of the place is shown. */
-export type CompetencePageId = 'own' | 'matrix';
+export type CompetencePageId = 'own' | 'matrix' | 'search';
 /**
- * The page's header (D74): its title and its own actions on the first line; under it, where the reader has the matrix
- * too (`hasTabs`: the server answered its read, so someone reports to them), the place's pages as Astryx's navigation
- * tabs, each a link with its own address (D116), the current one marked. Someone with nobody reporting to them has one
- * page, so no tabs.
+ * The page's header (D74): its title and its own actions on the first line; under it, where the reader has another page
+ * of the place, the place's pages as Astryx's navigation tabs, each a link with its own address (D116), the current one
+ * marked: the matrix where the reader has it (`hasTabs`: the server answered its read, so someone reports to them), and
+ * Kompetenssökning where they hold the relation `registrar` (`hasSearch`, D121). Someone with neither has one page, so
+ * no tabs.
  */
 export function CompetenceHeader({
   title,
   titleId,
   page,
   hasTabs,
+  hasSearch = false,
   end,
 }: {
   title: string;
   titleId: string;
   page: CompetencePageId;
   hasTabs: boolean;
+  hasSearch?: boolean;
   end?: ReactNode;
 }) {
   return (
     <VStack gap={4}>
       <PageHeader title={title} titleId={titleId} {...(end ? { end } : {})} />
-      {hasTabs && (
+      {(hasTabs || hasSearch) && (
         <TabList hasDivider value={page} onChange={() => {}} aria-label="Kompetens">
           <Tab value="own" label="Mina kompetenser" href={COMPETENCE_PATH} />
-          <Tab value="matrix" label="Medarbetare" href={MATRIX_PATH} />
+          {hasTabs && <Tab value="matrix" label="Medarbetare" href={MATRIX_PATH} />}
+          {hasSearch && <Tab value="search" label="Kompetenssökning" href={SEARCH_PATH} />}
         </TabList>
       )}
     </VStack>

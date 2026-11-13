@@ -42,10 +42,19 @@ closed on the day it was accepted. Counts that name nobody: turned down; it remo
 `admin.competence` reach holdings: D118 item 3 says it does not. Granting the relation per unit branch rather than
 per organisation: more exact, and nobody has asked for it; the list is closed so a narrower grant can be added.
 
+**As built (2026-11-13).** Only a core read can admit `registrar` (item 3): the published connector protocol keeps
+its three relations (`PROTOCOL_PERSON_RELATIONS`), a remote manifest that admits `registrar` is refused, and no
+connector is ever sent the word. Opening it to connectors is a protocol change with a decision of its own. The one
+read that admits it is `competence.holdings`; to every other read a registrar is a colleague. The log (item 5)
+covers a registrar's searches, exports and opened people and every read of one person's holdings as `self` or
+`managed`; summary reads (the matrix, coverage, attention) are not logged, so D108 item 15's row per unit for
+coverage is not built. Erasure of a person leaves the log's rows, which name nobody. The log is read with
+`scripts/competence-read-log.ts`; no page shows it.
+
 **Open.** Whether a person can see who has read their holdings. Whether a registrar should be limited to a branch of
 the organisation tree. How long the read log is kept.
 
-**Not established.** Nothing is built or measured. The cost of resolving a fourth relation on every call (D117 has
+**Not established.** Nothing is measured. The cost of resolving a fourth relation on every call (D117 has
 not measured the three). Whether "registrar" is the word HR would use; in the product the grant is shown as
 "Kompetenssökning".
 

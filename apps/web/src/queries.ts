@@ -2,6 +2,7 @@ import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import type {
   AskValues,
   CompetenceMatrixInput,
+  CompetenceSearchBody,
   Role,
   DocumentRequest,
   EntityKind,
@@ -244,6 +245,30 @@ export const competenceMatrixQuery = (input: CompetenceMatrixInput) =>
     queryKey: keys.competenceMatrix(input.by ?? null, input.part ?? null),
     queryFn: () => api.competence.matrix(input),
     retry: false,
+    placeholderData: keepPreviousData,
+  });
+/**
+ * Kompetenssökning (D121): what the page narrows by. Refused to anyone without the relation and while the module is off,
+ * which is the page's own state, so not retried.
+ */
+export const competenceSearchOptionsQuery = queryOptions({
+  queryKey: keys.competenceSearchOptions,
+  queryFn: () => api.competence.searchOptions(),
+  retry: false,
+});
+/**
+ * One page of a search (D121 item 4). Every read of it writes a row of the read log on the server, so it is read only
+ * when the reader asks: never again on its own when the tab is shown, the network returns or something else changes.
+ * The page on screen stays while the next is read.
+ */
+export const competenceSearchQuery = (body: CompetenceSearchBody) =>
+  queryOptions({
+    queryKey: keys.competenceSearch(body),
+    queryFn: () => api.competence.search(body),
+    retry: false,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     placeholderData: keepPreviousData,
   });
 /**

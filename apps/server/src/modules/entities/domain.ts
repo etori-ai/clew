@@ -12,6 +12,7 @@ import {
   type EntityRef,
   type EntitySource,
   type PersonRelation,
+  type ProtocolPersonRelation,
   type UnitRelation,
   type View,
 } from '@clew/contracts';
@@ -138,18 +139,40 @@ export function unitRelation(reach: Reach, key: string): UnitRelation | undefine
  * act with (`self`); a direct report on D99's line (`managed`, `reportsTo`); anyone else (`colleague`), a co-manager of
  * the reader's unit and their own manager included. Undefined for the reader's own record under another user name, who
  * is nobody to ask about. The one rule: the opened entity and the registry's check of every call both ask it.
+ *
+ * `registrar` (D121 item 1) stands in for `colleague`, and only where the caller says so: the reader holds the grant and
+ * the read asked about admits it (`registrarFor`). `self` and `managed` come first, so a manager who is a registrar too
+ * is never demoted, and a read that does not admit it sees a registrar as the colleague they are, nothing more.
  */
 export function personRelation(
   reader: { id: string; userName?: string },
   reach: Reach,
   person: { id: string; userName: string },
+): ProtocolPersonRelation | undefined;
+export function personRelation(
+  reader: { id: string; userName?: string },
+  reach: Reach,
+  person: { id: string; userName: string },
+  registrar: boolean,
+): PersonRelation | undefined;
+export function personRelation(
+  reader: { id: string; userName?: string },
+  reach: Reach,
+  person: { id: string; userName: string },
+  registrar = false,
 ): PersonRelation | undefined {
   if (person.id === reader.id)
     return reader.userName && foldKey('person', reader.userName) === foldKey('person', person.userName)
       ? 'self'
       : undefined;
-  return reportOf(reach, person.userName) ? 'managed' : 'colleague';
+  return reportOf(reach, person.userName) ? 'managed' : registrar ? 'registrar' : 'colleague';
 }
+/**
+ * Whether a reader stands as `registrar` (D121) to the people a read asks about: they hold the grant, from their current
+ * access record, and the read admits the relation. Anything else stands as it did before the relation existed.
+ */
+export const registrarFor = (reader: { relationGrants?: readonly string[] }, admits: readonly string[]) =>
+  !!reader.relationGrants?.includes('registrar') && admits.includes('registrar');
 
 /** Keys in calls of at most `size` (never more than `ENTITY_KEYS_MAX`), in order. */
 export function chunk(keys: string[], size: number): string[][] {

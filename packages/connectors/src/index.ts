@@ -17,6 +17,7 @@ import type {
   MenuHint,
   MenuIcon,
   PersonAccess,
+  PersonRelation,
   Receipt,
   Relation,
   UnitAccess,
@@ -242,9 +243,11 @@ export interface Capability<I = unknown, O = unknown> {
    * Who may be asked about through it (D117): the relations a caller may have to a person its input names, and on a
    * capability not about a person the input property that takes the key. The registry enforces it on every path. Only
    * Clew's own connectors may add `ids`: a person without a user name may then be named by Clew's own id, as the talks
-   * domain names them; a manifest cannot carry it, since Clew's id is never sent to a connector.
+   * domain names them; a manifest cannot carry it, since Clew's id is never sent to a connector. Only they may admit
+   * `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a manifest cannot carry it either,
+   * and a connector is never told it.
    */
-  person?: PersonAccess & { ids?: true };
+  person?: Omit<PersonAccess, 'admits'> & { admits?: PersonRelation[]; ids?: true };
   /** On a capability about a unit (D117): the relations a caller may have to the unit, `manages` when absent. */
   unit?: UnitAccess;
   /** On a propose or execute (D112): what the person fills in before it runs, each naming one input property. */

@@ -6,6 +6,7 @@ import type {
   TalkHeldBody,
   TalksResult,
   GroupCapabilityInputType,
+  GroupRelationInputType,
   ProvisionerIssueInputType,
   ProvisionerKeyIssued,
   ProvisionerRotateInputType,
@@ -91,6 +92,12 @@ import type {
   CompetenceMatrixOutput,
   CompetenceRequirementBody,
   CompetenceRequirementsOutput,
+  CompetenceSearchBody,
+  CompetenceSearchFileBody,
+  CompetenceSearchOptions,
+  CompetenceSearchPage,
+  CompetenceTypeSearchBody,
+  CompetenceTypeSearchOutput,
   CompetenceShareTargetBody,
   CompetenceShareTargetsOutput,
   CompetenceSourcesOutput,
@@ -199,6 +206,28 @@ async function converseStream(
   throw new ApiError(502, 'Svaret bröts innan det var klart. Försök igen.');
 }
 const post = <T>(path: string, body?: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
+/**
+ * A file the server makes from what a body asks (a search's result, D121): its bytes and the name the server gave it.
+ * Errors carry the server's Swedish message, as `call`'s do.
+ */
+async function file(path: string, body: unknown): Promise<{ blob: Blob; filename: string }> {
+  const response = await sessionFetch(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!response.ok) {
+    let message = 'Något gick fel.';
+    try {
+      message = ((await response.json()) as { error?: string }).error ?? message;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(response.status, message);
+  }
+  const named = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1];
+  return { blob: await response.blob(), filename: named ?? 'fil.csv' };
+}
 const patch = <T>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const put = <T>(path: string, body: unknown) => call<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 const del = <T>(path: string) => call<T>(path, { method: 'DELETE' });
@@ -329,6 +358,16 @@ export const api = {
     /** The manager's matrix (D108 item 11): their reports against what is required of them, the set of columns `by`. */
     matrix: (input: CompetenceMatrixInput) =>
       call<CompetenceMatrixOutput>(`/api/competence/matrix${matrixQuery(input)}`),
+    /**
+     * Kompetenssökning (D121): what the page narrows by, refused to anyone without the relation; the types whose name or
+     * area holds the words typed; one page of the people who hold a type; and the whole result as a file. What is
+     * searched for travels in the body, never in an address, and every read is logged on the server.
+     */
+    searchOptions: () => call<CompetenceSearchOptions>('/api/competence/search'),
+    findTypes: (body: CompetenceTypeSearchBody) =>
+      post<CompetenceTypeSearchOutput>('/api/competence/search/types', body),
+    search: (body: CompetenceSearchBody) => post<CompetenceSearchPage>('/api/competence/search', body),
+    searchFile: (body: CompetenceSearchFileBody) => file('/api/competence/search.csv', body),
     /** The systems whose holdings are copied in (D108 item 9): each one's last read and its types with their mappings. */
     sources: () => call<CompetenceSourcesOutput>('/api/competence/sources'),
     /** Maps a type of a source to a catalogue type, or removes the mapping with `typeId: null`. */
@@ -468,6 +507,11 @@ export const api = {
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
+    // D121: a group gives a relation to people by grant, mapped beside the capabilities.
+    addGroupRelation: (input: GroupRelationInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/group-relations', input),
+    removeGroupRelation: (input: GroupRelationInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/group-relations/remove', input),
     // The catalogues' keys (D107). The answer to issuing or rotating one carries the key, once.
     issueProvisioner: (input: ProvisionerIssueInputType) =>
       post<ProvisionerKeyIssued>('/api/admin/users/provisioners', input),

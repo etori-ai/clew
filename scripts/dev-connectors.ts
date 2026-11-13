@@ -197,7 +197,7 @@ try {
   // itself stays off until an administrator switches it on (item 13).
   const seeded = await seedCompetence(DEVELOPMENT_ROUND.organisationId);
   console.log(
-    `competence     seeded ${seeded.types} new types, ${seeded.holdings} holdings for ${seeded.people} people, ${seeded.requirements} requirements and ${seeded.targets} share targets of organisation "${DEVELOPMENT_ROUND.organisationId}"`,
+    `competence     seeded ${seeded.types} new types, ${seeded.holdings} holdings for ${seeded.people} people, ${seeded.requirements} requirements and ${seeded.targets} share targets of organisation "${DEVELOPMENT_ROUND.organisationId}"${seeded.registrar ? ', registrar group mapped' : ''}`,
   );
   await chooseForPersonal();
 } finally {

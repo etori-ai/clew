@@ -28,6 +28,7 @@ import { keys } from '../query-keys';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { useRail } from '../components/nav';
+import { useHeldRelations } from '../capabilities';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { usePagePanel } from '../components/page-panel';
@@ -217,6 +218,8 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   const short = useMediaQuery(shortQuery);
   const nav = useRail({ current: { surface: 'competence' }, admin, manager: user.role === 'manager' });
   const panel = usePagePanel({ overlayOnly: short });
+  // D121: Kompetenssökning is a page of the place for someone who holds the relation; the server checks every read.
+  const searcher = useHeldRelations().includes('registrar');
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const read = useQuery({ ...viewQuery(HOLDINGS, null), retry: false });
@@ -358,6 +361,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
                   titleId={TITLE_ID}
                   page="own"
                   hasTabs={manages && !off}
+                  hasSearch={searcher && !off}
                   {...(actions ? { end: actions } : {})}
                 />
                 {(withdraw.error ?? remove.error ?? refusal) && (

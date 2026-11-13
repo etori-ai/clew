@@ -20,6 +20,7 @@ afterAll(async () => {
         .where(like(schema.people.id, p + '%'))
     ).map(r => r.id);
     await db.delete(schema.groupCapabilities).where(like(schema.groupCapabilities.groupExternalId, '%' + p + '%'));
+    await db.delete(schema.groupRelations).where(like(schema.groupRelations.groupExternalId, '%' + p + '%'));
     if (people.length) {
       await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, people));
       await db.delete(schema.audit).where(
@@ -105,6 +106,20 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
         if (rows.length)
           await tx.insert(schema.groupCapabilities).values(rows.map(row => ({ organisationId: 'org', ...row })));
       });
+    },
+    async setGroupRelations(rows) {
+      await db.transaction(async tx => {
+        await tx.delete(schema.groupRelations).where(like(schema.groupRelations.groupExternalId, '%' + prefix + '%'));
+        if (rows.length)
+          await tx.insert(schema.groupRelations).values(rows.map(row => ({ organisationId: 'org', ...row })));
+      });
+    },
+    async relations(id) {
+      const [row] = await db
+        .select({ relations: schema.accessGrants.relations })
+        .from(schema.accessGrants)
+        .where(eq(schema.accessGrants.personId, id));
+      return row?.relations ?? [];
     },
     async legacyGrant(id, grant) {
       await db.insert(schema.accessGrants).values({ personId: id, ...grant });

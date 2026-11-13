@@ -8,12 +8,15 @@ import {
   CompetenceMappingBodySchema,
   CompetenceMergeBodySchema,
   CompetenceRequirementBodySchema,
+  CompetenceSearchBodySchema,
+  CompetenceSearchFileBodySchema,
   CompetenceShareTargetBodySchema,
   CompetenceSkillBodySchema,
   CompetenceSkillChangeBodySchema,
   CompetenceSkillRatingBodySchema,
   CompetenceTypeBodySchema,
   CompetenceTypePatchSchema,
+  CompetenceTypeSearchBodySchema,
   CompetenceValidationBodySchema,
   type AuthenticatedContext,
   type CompetenceDecisionBody,
@@ -23,12 +26,15 @@ import {
   type CompetenceMergeBody,
   type CompetenceMatrixInput,
   type CompetenceRequirementBody,
+  type CompetenceSearchBody,
+  type CompetenceSearchFileBody,
   type CompetenceShareTargetBody,
   type CompetenceSkillBody,
   type CompetenceSkillChangeBody,
   type CompetenceSkillRatingBody,
   type CompetenceTypeBody,
   type CompetenceTypePatch,
+  type CompetenceTypeSearchBody,
   type CompetenceValidationBody,
 } from '@clew/contracts';
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
@@ -40,8 +46,9 @@ import type { CompetenceUsecases } from '../modules/competence/usecases';
  * copied in and their mappings to the catalogue (item 9), the requirements and share targets (item 6), a manager's
  * registration of a certificate, the manager's matrix and its file (item 11), which is no declared view because its
  * columns are chosen and a cell writes, a person's own registration with the decision of the manager they report to
- * (item 7), and skills (D120): a person's own rating, its removal, and the manager's registration and confirmation of
- * a level. A person's holdings, what needs attention and a unit's coverage have no route here:
+ * (item 7), skills (D120): a person's own rating, its removal, and the manager's registration and confirmation of
+ * a level, and Kompetenssökning (D121): who in the organisation holds a type, for a reader who holds the relation
+ * `registrar`, with its file. A person's holdings, what needs attention and a unit's coverage have no route here:
  * Clew reads `competence.holdings`, `competence.attention` and `competence.coverage` through the capability route. Each
  * route parses, validates, calls one use case and maps its errors; the use cases own who may do what. Every route first
  * refuses unless the built-in module is switched on and visible to the person, so nothing of the domain is read or
@@ -85,6 +92,10 @@ export interface CompetenceRouteDeps {
     | 'registerSkill'
     | 'skillValidation'
     | 'validateSkill'
+    | 'searchOptions'
+    | 'findTypes'
+    | 'search'
+    | 'exportSearch'
   >;
   /** Whether the built-in module is on for this person now (composition: `competenceWritable`). */
   writable: (persona: AuthenticatedContext) => Promise<boolean>;
@@ -107,6 +118,9 @@ const validators = {
   validation: ajv.compile<CompetenceValidationBody>(CompetenceValidationBodySchema),
   import: ajv.compile<CompetenceImportBody>(CompetenceImportBodySchema),
   merge: ajv.compile<CompetenceMergeBody>(CompetenceMergeBodySchema),
+  search: ajv.compile<CompetenceSearchBody>(CompetenceSearchBodySchema),
+  searchFile: ajv.compile<CompetenceSearchFileBody>(CompetenceSearchFileBodySchema),
+  typeSearch: ajv.compile<CompetenceTypeSearchBody>(CompetenceTypeSearchBodySchema),
 };
 /**
  * The longest import request (D120 item 7): `COMPETENCE_IMPORT_REQUEST_MAX` rows of at most 240 + 160 + 300 characters
@@ -329,6 +343,34 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
       c.get('session').context,
       matrixInput(c.req.query('by'), c.req.query('part')),
     );
+    return c.body(file.text, 200, {
+      ...privateHeaders,
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${file.filename}"`,
+    });
+  });
+  // Kompetenssökning (D121): who in the organisation holds a type, only for a reader who holds the relation `registrar`.
+  // What is searched for is asked in a body (D100), never in an address, and every read is logged by the use case. The
+  // type field asks the catalogue in a body too.
+  routes.get('/search', async c =>
+    c.json(await competence.searchOptions(c.get('session').context), 200, privateHeaders),
+  );
+  routes.post('/search', async c =>
+    c.json(
+      await competence.search(c.get('session').context, await body(c.req.raw, validators.search)),
+      200,
+      privateHeaders,
+    ),
+  );
+  routes.post('/search/types', async c =>
+    c.json(
+      await competence.findTypes(c.get('session').context, await body(c.req.raw, validators.typeSearch)),
+      200,
+      privateHeaders,
+    ),
+  );
+  routes.post('/search.csv', async c => {
+    const file = await competence.exportSearch(c.get('session').context, await body(c.req.raw, validators.searchFile));
     return c.body(file.text, 200, {
       ...privateHeaders,
       'Content-Type': 'text/csv; charset=utf-8',

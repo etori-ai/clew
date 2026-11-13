@@ -72,7 +72,7 @@ function directory() {
     id: string,
     userName: string | null,
     placements: Placement[],
-    options: { enabled?: boolean; organisationId?: string } = {},
+    options: { enabled?: boolean; organisationId?: string; relations?: string[] } = {},
   ) => {
     s.users.set(id, {
       id,
@@ -95,6 +95,7 @@ function directory() {
       unitLabel: s.units.get(first.unitId)!.label,
       role: first.role,
       capabilities: [],
+      ...(options.relations ? { relations: options.relations } : {}),
     });
   };
   const m = (unitId: string): Placement => ({ unitId, role: 'manager' });
@@ -120,6 +121,8 @@ function directory() {
   person('karin', 'karin', [e('unit-ekonomi')]);
   person('hassan', 'hassan', [e('unit-omsorg')]);
   person('stranger', 'stranger', [e('unit-annan')], { organisationId: 'other' });
+  // D121: Regina works in Ekonomi and holds Kompetenssökning by grant; she manages nobody.
+  person('regina', 'regina', [e('unit-ekonomi')], { relations: ['registrar'] });
   const persona = (id: string): AuthenticatedContext => {
     const user = s.users.get(id)!,
       grant = s.grants.get(id)!;
@@ -133,6 +136,7 @@ function directory() {
       organisationId: user.organisationId,
       principal: { id: 'person:' + id, kind: 'person' },
       capabilities: [],
+      ...(grant.relations?.length ? { relationGrants: grant.relations as Array<'registrar'> } : {}),
       authorizationVersion: 'v1',
       sessionBinding: 'test',
       expiresAt: '2099-01-01T00:00:00.000Z',
@@ -292,6 +296,8 @@ function sources(seen: Seen[]) {
         run: (_actor, input, clew) => clew.call('src.notes', { person: (input as { who: string }).who }),
       },
       personRead('core.points', { param: 'person', admits: ['managed'], ids: true }),
+      // D121: Clew's own read of holdings admits the relation registrar beside the person and their manager.
+      personRead('core.holdings', { param: 'person', admits: ['self', 'managed', 'registrar'], ids: true }),
       {
         name: 'core.file',
         kind: 'read',
@@ -502,6 +508,7 @@ describe('the rule, resolved from the directory', () => {
     });
     expect(named(core!)).toEqual({
       'core.points': ['person', false, ['person'], ['managed'], true],
+      'core.holdings': ['person', false, ['person'], ['self', 'managed', 'registrar'], true],
       'core.file': ['person', false, ['person'], ['managed'], false],
     });
   });
@@ -761,6 +768,158 @@ describe('/api/cap: a read asked with keys the browser chose', () => {
     await expect(down.run(anna, 'src.person', { keys: ['anna'] })).rejects.toThrow(RelationsUnavailableError);
     await expect(down.run(anna, 'src.notes', { person: 'anna' })).rejects.toThrow('Katalogen svarar inte just nu.');
     expect(seen).toEqual([]);
+  });
+});
+
+describe('the relation registrar (D121): competence across the organisation, and nothing more anywhere else', () => {
+  const everyone = ['regina', 'anna', 'karin', 'sven', 'hassan', 'hillevi', 'petra', 'bo', 'stranger', 'nameless'];
+  test('a holder of the grant stands as registrar to every active person of the organisation, for a read that admits it alone', async () => {
+    const { people } = world();
+    const regina = actorOf(people.persona('regina'));
+    const told = async (admits: Array<'self' | 'managed' | 'colleague' | 'registrar'>) =>
+      Object.fromEntries(
+        (await people.relations.relate(regina, 'person', everyone, admits)).map(r => [r.key, r.relation]),
+      );
+    // Deactivated (bo), of another organisation (stranger) and without a user name (nameless): nobody, as before.
+    expect(await told(['self', 'managed', 'registrar'])).toEqual({
+      regina: 'self',
+      anna: 'registrar',
+      karin: 'registrar',
+      sven: 'registrar',
+      hassan: 'registrar',
+      hillevi: 'registrar',
+      petra: 'registrar',
+    });
+    // A read that does not admit it sees a registrar as the colleague she is, nothing more.
+    expect(await told(['self', 'managed', 'colleague'])).toEqual({
+      regina: 'self',
+      anna: 'colleague',
+      karin: 'colleague',
+      sven: 'colleague',
+      hassan: 'colleague',
+      hillevi: 'colleague',
+      petra: 'colleague',
+    });
+    expect(await told(['self', 'managed'])).toEqual({ regina: 'self' });
+    expect(await told(['managed'])).toEqual({});
+    // By Clew's id nobody is a registrar's: only the reader herself or a report is named so (D117).
+    expect(await people.relations.relate(regina, 'person', ['nameless'], ['registrar'], { ids: true })).toEqual([]);
+  });
+  test('without the grant the relation is nobody’s, and self and managed come before it for a manager who holds it', async () => {
+    const w = world();
+    const hassan = actorOf(w.people.persona('hassan'));
+    expect(
+      await w.people.relations.relate(hassan, 'person', ['anna', 'karin'], ['self', 'managed', 'registrar']),
+    ).toEqual([]);
+    // Hillevi is given the grant: her reports stay managed, she stays herself, everyone else becomes registrar.
+    w.people.state.grants.get('hillevi')!.relations = ['registrar'];
+    const hillevi = actorOf(w.people.persona('hillevi'));
+    expect(
+      (
+        await w.people.relations.relate(
+          hillevi,
+          'person',
+          ['hillevi', 'anna', 'olle', 'sven', 'karin'],
+          ['self', 'managed', 'registrar'],
+        )
+      ).map(r => [r.key, r.relation]),
+    ).toEqual([
+      ['hillevi', 'self'],
+      ['anna', 'managed'],
+      ['olle', 'managed'],
+      ['sven', 'registrar'],
+      ['karin', 'registrar'],
+    ]);
+  });
+  test('/api/cap: a registrar is told registrar only by the read that admits it; every other read hears what a colleague’s would', async () => {
+    const w = world();
+    // Clew's own read of holdings admits her, and is told so.
+    expect(await w.cap('regina', 'core.holdings', { person: 'ANNA' })).toEqual({ person: 'anna' });
+    expect(w.asked('core.holdings')).toEqual([
+      {
+        name: 'core.holdings',
+        input: { person: 'anna' },
+        about: { entity: 'person', relations: { anna: 'registrar' } },
+      },
+    ]);
+    // A strict read refuses her as it refuses a colleague; a report-only read answers nothing; a colleague's read is
+    // told colleague, never registrar.
+    await expect(w.cap('regina', 'src.notes', { person: 'anna' })).rejects.toThrow('Okänd förmåga.');
+    await expect(w.cap('regina', 'src.detail', { person: 'anna' })).rejects.toThrow('Okänd förmåga.');
+    expect(await w.cap('regina', 'src.team', { keys: ['anna', 'karin'] })).toEqual({ rows: [] });
+    expect(await w.cap('regina', 'src.person', { keys: ['anna', 'karin'] })).toEqual({ rows: [] });
+    expect(await w.cap('regina', 'src.directory', { keys: ['anna', 'karin'] })).toEqual({
+      rows: ['anna', 'karin'].map(key => ({ key, state: 'Bokat' })),
+    });
+    expect(w.asked('src.directory')[0]!.about).toEqual({
+      entity: 'person',
+      relations: { anna: 'colleague', karin: 'colleague' },
+    });
+    // No source but the one that admits it was ever told the word.
+    expect(
+      w.seen.filter(s => s.name !== 'core.holdings').some(s => JSON.stringify(s.about).includes('registrar')),
+    ).toBe(false);
+    // Without the grant the same read refuses the same key.
+    await expect(w.cap('hassan', 'core.holdings', { person: 'anna' })).rejects.toThrow('Okänd förmåga.');
+  });
+  test('clew.call and a connector’s callback: a registrar reaches nothing through another read than she does directly', async () => {
+    const w = world();
+    await expect(w.cap('regina', 'core.ask', { who: 'anna' })).rejects.toThrow('Okänd förmåga.');
+    const callback = (name: string, input: unknown) =>
+      w.registry.clewFor(w.people.persona('regina'), { chain: ['src.person'] }, 'src').call(name, input);
+    await expect(callback('src.notes', { person: 'anna' })).rejects.toThrow('Okänd förmåga.');
+    expect(callbackRefusal(await callback('src.notes', { person: 'anna' }).catch(e => e))).toEqual({
+      code: 'not-found',
+      message: 'Okänd förmåga.',
+      status: 404,
+    });
+    expect(w.asked('src.notes')).toEqual([]);
+  });
+  test('an opened person is a colleague’s page to a registrar: no section or action more than a colleague gets', async () => {
+    const w = world();
+    const entities = entityUsecases({
+      directory: w.people.staff,
+      sources: {
+        reads: async (actor, kind) => w.registry.aboutReads(actor, kind),
+        actions: async (actor, kind) => w.registry.aboutActions(actor, kind),
+      },
+      read: (persona, capability, input, signal) =>
+        w.registry.clewFor(actorOf(persona), { signal }).call(capability, input),
+      cards: async () => [],
+    });
+    const regina = w.people.persona('regina'),
+      hassan = w.people.persona('hassan');
+    const page = async (who: AuthenticatedContext) => {
+      const d = await entities.detail(who, 'person', 'anna');
+      const sections = [];
+      for (const s of d?.sections ?? []) sections.push(await entities.section(who, 'person', 'anna', s.capability));
+      return { relation: d?.relation, actions: d?.actions.map(a => a.capability), sections };
+    };
+    expect(await page(regina)).toEqual(await page(hassan));
+    expect((await page(regina)).relation).toBe('colleague');
+  });
+  test('only a core connector admits it: a manifest cannot name it, and neither can an in-process connector of another kind', () => {
+    const notes = {
+      name: 'src.notes',
+      kind: 'read',
+      title: 'n',
+      description: 'x',
+      model: false,
+      scope: {},
+      input: personInput(),
+      output: anything,
+      person: { param: 'person', admits: ['self', 'registrar'] },
+    };
+    const manifest = { protocol: 3, id: 'src', kind: 'passthrough', source: 'Källan', areas: [], scan: false };
+    expect(manifestProblems({ ...manifest, capabilities: [notes] }, 'src').join()).toContain(
+      '/capabilities/0/person/admits/1',
+    );
+    const inProcess = { id: 'src', kind: 'passthrough', source: 'Källan', areas: [], capabilities: [notes] };
+    expect(connectorProblems(inProcess as never)).toEqual([
+      "Capability src.notes: only Clew's own connectors admit registrar (D121).",
+    ]);
+    expect(() => new Registry().register(inProcess as never)).toThrow('only Clew');
+    expect(connectorProblems({ ...inProcess, kind: 'core' } as never)).toEqual([]);
   });
 });
 

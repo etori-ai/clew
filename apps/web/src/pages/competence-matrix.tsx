@@ -72,6 +72,7 @@ import { keys } from '../query-keys';
 import { errorMessage, refused } from '../query-policy';
 import { registerHref } from '../register-address';
 import { useRail } from '../components/nav';
+import { useHeldRelations } from '../capabilities';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { usePagePanel } from '../components/page-panel';
@@ -651,6 +652,8 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const client = useQueryClient();
+  // D121: Kompetenssökning is a page of the place for someone who holds the relation.
+  const searcher = useHeldRelations().includes('registrar');
   const input = matrixInputOf(search);
   const matrixQ = useQuery(competenceMatrixQuery(input));
   const typesQ = useQuery(competenceTypesQuery);
@@ -872,6 +875,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                   titleId={TITLE_ID}
                   page="matrix"
                   hasTabs={!off && !matrixQ.isPending}
+                  hasSearch={searcher}
                   end={actions}
                 />
                 {change.error && (

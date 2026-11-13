@@ -57,6 +57,11 @@ export interface AuthenticatedContext extends SessionUser {
    * (D44, D97). Absent for a person provisioned without one. Never in `SessionUser`.
    */
   userName?: string;
+  /**
+   * The relations to people the person holds by grant (D121, `RELATION_GRANTS`), from their current access record.
+   * Absent means none. Never a capability: no route consults it to decide what administration a person may do (D118).
+   */
+  relationGrants?: RelationGrant[];
   authorizationVersion: string;
   sessionBinding: string;
   expiresAt: string;
@@ -1215,11 +1220,32 @@ export type About = Static<typeof AboutSchema>;
 /**
  * How a caller stands to a person they ask a source about (D97 item 8, D117), from Clew's own directory (D99): the person
  * themself (`self`), one of their direct reports (`managed`) or another active person of the organisation
- * (`colleague`). A closed list, as `ENTITY_KINDS` is: a new relation is a contract change that comes with the rule that
- * resolves it.
+ * (`colleague`); and, for a reader who holds the grant of that name (D121), `registrar` to every active person of their
+ * organisation whom `self` or `managed` does not already name. A closed list, as `ENTITY_KINDS` is: a new relation is a
+ * contract change that comes with the rule that resolves it.
  */
-export const PERSON_RELATIONS = ['self', 'managed', 'colleague'] as const;
+export const PERSON_RELATIONS = ['self', 'managed', 'colleague', 'registrar'] as const;
 export type PersonRelation = (typeof PERSON_RELATIONS)[number];
+/**
+ * The person relations of the connector protocol (D117), the ones a manifest may admit and a connector may be told.
+ * `registrar` (D121) is not among them: only a capability of Clew's own core connectors may admit it, so it never leaves
+ * the installation, and the published protocol is the one D117 set. Opening it to a connector is a protocol change.
+ */
+export const PROTOCOL_PERSON_RELATIONS = ['self', 'managed', 'colleague'] as const satisfies readonly PersonRelation[];
+export type ProtocolPersonRelation = (typeof PROTOCOL_PERSON_RELATIONS)[number];
+/**
+ * The relations to a person that are granted on their own rather than resolved from the organisation tree (D121): a
+ * closed list, mapped from a provisioned group by an administrator with `admin.users` (as a capability is, D85) and
+ * derived into the person's access. Never a name in `CAPABILITIES`: a capability is no relation to a person (D118).
+ */
+export const RELATION_GRANTS = ['registrar'] as const satisfies readonly PersonRelation[];
+export type RelationGrant = (typeof RELATION_GRANTS)[number];
+export const RelationGrantSchema = literals(RELATION_GRANTS);
+export const isRelationGrant = (value: string): value is RelationGrant =>
+  (RELATION_GRANTS as readonly string[]).includes(value);
+/** The relations of the closed list among stored values, in the list's order; anything else is dropped. */
+export const relationGrantsOf = (values: readonly string[] | undefined | null): RelationGrant[] =>
+  RELATION_GRANTS.filter(r => values?.includes(r));
 /** How a caller stands to a unit (D117): they manage it (`manages`), or are placed on it without managing it (`member`). */
 export const UNIT_RELATIONS = ['manages', 'member'] as const;
 export type UnitRelation = (typeof UNIT_RELATIONS)[number];
@@ -1229,7 +1255,7 @@ export const RELATIONS: readonly Relation[] = [...PERSON_RELATIONS, ...UNIT_RELA
 export const STRICT_RELATIONS: readonly PersonRelation[] = ['self', 'managed'];
 /** What a capability about a unit admits when it does not say (D117): a unit the caller manages. */
 export const STRICT_UNIT_RELATIONS: readonly UnitRelation[] = ['manages'];
-export const PersonRelationSchema = literals(PERSON_RELATIONS, {
+export const PersonRelationSchema = literals(PROTOCOL_PERSON_RELATIONS, {
   description:
     "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation.",
 });
@@ -2288,6 +2314,89 @@ export interface CompetenceMatrixInput {
   by?: string;
   part?: number;
 }
+/**
+ * Kompetenssökning (D121 item 4): who in the reader's organisation holds a type, read only through the relation
+ * `registrar`. Asked for in a request body, so the type searched for is never part of an address or an access log line,
+ * as Administration › Användare asks for a name (D100). A page at a time, by name in Swedish order.
+ */
+export const COMPETENCE_SEARCH_PAGE_SIZES = [25, 50, 100] as const;
+/** The highest page a search may ask for: past the end the last page is answered. */
+export const COMPETENCE_SEARCH_PAGE_MAX = 100_000;
+const searchUnit = Type.String({
+  minLength: 1,
+  maxLength: 512,
+  description: "A unit of the organisation's tree; the people placed on it or on any unit below it.",
+});
+export const CompetenceSearchFileBodySchema = object({
+  typeId: id,
+  minLevel: Type.Optional({
+    ...CompetenceLevelSchema,
+    description: 'On a skill: the least level held, confirmed or the person\'s own rating ("Egen bedömning").',
+  }),
+  unitId: Type.Optional(searchUnit),
+});
+export type CompetenceSearchFileBody = Static<typeof CompetenceSearchFileBodySchema>;
+export const CompetenceSearchBodySchema = object({
+  typeId: id,
+  minLevel: Type.Optional(CompetenceLevelSchema),
+  unitId: Type.Optional(searchUnit),
+  page: Type.Optional(Type.Integer({ minimum: 1, maximum: COMPETENCE_SEARCH_PAGE_MAX })),
+  pageSize: Type.Optional(literals(COMPETENCE_SEARCH_PAGE_SIZES)),
+});
+export type CompetenceSearchBody = Static<typeof CompetenceSearchBodySchema>;
+/** One person who holds the type searched for, by the holding that decides (D108 item 9). */
+export interface CompetenceSearchRow {
+  personId: string;
+  /** The user name the person's page is opened by; null for a person provisioned without one, who has no page. */
+  key: string | null;
+  name: string;
+  /** The units the person is placed on, by name in Swedish order; empty when none. */
+  units: string[];
+  /** Where the holding stands today; a skill never ends, so it is `valid`. */
+  status: Exclude<CompetenceStatus, 'missing'>;
+  /** The last day it is valid; absent when it does not end. */
+  expiresOn?: string;
+  /** On a skill (D120): the level held, and whether a manager has confirmed it (false: "Egen bedömning"). */
+  level?: CompetenceLevel;
+  validated?: boolean;
+}
+export interface CompetenceSearchPage {
+  type: { id: string; name: string; area: string; kind: CompetenceKind };
+  rows: CompetenceSearchRow[];
+  /** How many people hold it, as narrowed, across every page. */
+  total: number;
+  /** The page read, 1-based: the one asked for, or the last one when there are fewer. */
+  page: number;
+  pageSize: number;
+}
+/**
+ * What the search page narrows by, and whether the reader may search at all: the organisation's units (D99), by name in
+ * Swedish order, `parentLabel` telling two of one name apart. Refused to anyone without the relation.
+ */
+export interface CompetenceSearchOptions {
+  units: Array<{ id: string; label: string; parentLabel: string | null }>;
+}
+/** The most types the type field is offered at a time (D121 item 4): a catalogue may hold thousands. */
+export const COMPETENCE_TYPE_SEARCH_MAX = 20;
+/** The words the type field asks the catalogue with, in a body, matched against a type's name and area. */
+export const CompetenceTypeSearchBodySchema = object({ text: Type.String({ maxLength: 120 }) });
+export type CompetenceTypeSearchBody = Static<typeof CompetenceTypeSearchBodySchema>;
+export interface CompetenceTypeSearchOutput {
+  /** The types that are not archived whose name or area hold every word, by name in Swedish order. */
+  rows: CompetenceType[];
+  /** More types match than are listed: the field asks for more words. */
+  more: boolean;
+}
+/**
+ * One read of competence about other people (D108 item 15, D121 item 5): a search across the organisation, one person's
+ * holdings opened, or an export of a search. The read log holds who read, as which relation, which type or whom, when
+ * and how many rows; never a name and never content.
+ */
+export const COMPETENCE_READ_KINDS = ['search', 'person', 'export'] as const;
+export type CompetenceReadKind = (typeof COMPETENCE_READ_KINDS)[number];
+/** The relations a read of competence is logged under: the person's own, a manager's report, or `registrar` (D121). */
+export const COMPETENCE_READ_RELATIONS = ['self', 'managed', 'registrar'] as const satisfies readonly PersonRelation[];
+export type CompetenceReadRelation = (typeof COMPETENCE_READ_RELATIONS)[number];
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),
@@ -2932,6 +3041,8 @@ export interface UserAdminRow {
   /** The assignment the person acts as, from the grant projection; null when the person has no unit. */
   active: { unitId: string; unitLabel: string; role: Role } | null;
   capabilities: string[];
+  /** D121: the relations to people the person holds by grant, from the grant projection; empty when none. */
+  relationGrants: RelationGrant[];
 }
 /** Personal (D94): a person on a unit the signed-in manager manages, as the page lists them. No token, no subject. */
 export interface StaffPerson {
@@ -3010,11 +3121,24 @@ export interface GroupCapability {
   groupLabel: string | null;
   capability: Capability;
 }
+/**
+ * D121: one group gives its members one relation to people by grant (`RELATION_GRANTS`), as a group gives a capability
+ * (D85) and kept apart from it (D118). `groupLabel` as in `GroupCapability`.
+ */
+export interface GroupRelation {
+  groupExternalId: string;
+  groupLabel: string | null;
+  relation: RelationGrant;
+}
 export interface UsersAdminOverview {
   groupCapabilities: GroupCapability[];
+  /** D121: the groups that give a relation to people by grant, `registrar` ("Kompetenssökning"). */
+  groupRelations: GroupRelation[];
   /** The provisioned groups with an external id, as the editor offers them. */
   groups: Array<{ id: string; label: string }>;
   capabilities: Capability[];
+  /** D121: the relations a group may give, as the editor offers them beside the capabilities. */
+  relationGrants: RelationGrant[];
   /**
    * The organisation's units as the people list offers them to narrow by (D100): the nodes of the tree (D99), by label
    * in Swedish order. `parentLabel` tells two units with one name apart; null on a root.
@@ -3116,6 +3240,12 @@ export const GroupCapabilityInput = Type.Object(
   { additionalProperties: false },
 );
 export type GroupCapabilityInputType = Static<typeof GroupCapabilityInput>;
+/** D121: a group gives, or stops giving, a relation to people by grant. */
+export const GroupRelationInput = Type.Object(
+  { groupExternalId: Type.String({ minLength: 1, maxLength: 512 }), relation: RelationGrantSchema },
+  { additionalProperties: false },
+);
+export type GroupRelationInputType = Static<typeof GroupRelationInput>;
 export const ConnectorAudienceSchema = Type.Union([
   object({ mode: Type.Literal('all') }),
   object({

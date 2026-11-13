@@ -82,6 +82,12 @@ export const accessGrants = pgTable(
     role: text('role').$type<'manager' | 'employee'>().notNull(),
     capabilities: jsonb('capabilities').$type<string[]>().notNull(),
     version: integer('version').notNull().default(1),
+    // D121: the relations to people the person's memberships give by grant (`RELATION_GRANTS`), apart from the
+    // capabilities (D118); derived with them.
+    relations: jsonb('relations')
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
   },
   t => [check('auth_grant_role', sql`${t.role} IN ('manager', 'employee')`)],
 );
@@ -210,6 +216,22 @@ export const groupCapabilities = pgTable(
     capability: text('capability').notNull(),
   },
   t => [primaryKey({ columns: [t.organisationId, t.groupExternalId, t.capability] })],
+);
+/**
+ * D121: a group gives its members a relation to people by grant (`RELATION_GRANTS` in `@clew/contracts`, today only
+ * `registrar`), as a group gives a capability above and kept apart from it, since a capability is no relation to a
+ * person (D118). The same rules as `auth_group_capability`: keyed on the group's external id without a foreign key, the
+ * relation checked where the row is written, the row its organisation's alone.
+ */
+export const groupRelations = pgTable(
+  'auth_group_relation',
+  {
+    organisationId: text('organisation_id').notNull(),
+    groupExternalId: text('group_external_id').notNull(),
+    relation: text('relation').notNull(),
+  },
+  // Named: the name Postgres would make is longer than its 63 characters and would be cut.
+  t => [primaryKey({ name: 'auth_group_relation_pk', columns: [t.organisationId, t.groupExternalId, t.relation] })],
 );
 export const loginTransactions = pgTable('auth_login_transaction', {
   digest: text('digest').primaryKey(),
@@ -1214,5 +1236,44 @@ export const competenceShareTargets = pgTable(
     uniqueIndex('competence_share_target_organisation')
       .on(t.organisationId, t.typeId, t.positionCode)
       .where(sql`${t.unitId} IS NULL`),
+  ],
+);
+/**
+ * The read log of the competence domain (D108 item 15, D121 item 5): one row per read of competence about people, kept
+ * apart from the audit table since a read changes nothing. A search across the organisation and its export (`type_id`,
+ * with the least level and the unit narrowed to), or one person's holdings opened (`person_id`); who read, as which
+ * relation, when and how many rows the read returned. Ids and counts only: never a name and never content. Written in
+ * the transaction that reads what it records, so a read whose row cannot be written answers nothing. No foreign keys:
+ * a row stays what it was when the type or the person it names changes, and erasure leaves it (D108 item 14 erases a
+ * person's holdings; who read them is not theirs to erase, and how long a row is kept is open, D121).
+ */
+export const competenceReadLog = pgTable(
+  'competence_read_log',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    readerId: text('reader_id').notNull(),
+    relation: text('relation').$type<'self' | 'managed' | 'registrar'>().notNull(),
+    kind: text('kind').$type<'search' | 'person' | 'export'>().notNull(),
+    typeId: text('type_id'),
+    minLevel: integer('min_level'),
+    unitId: text('unit_id'),
+    personId: text('person_id'),
+    rows: integer('rows').notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull(),
+  },
+  t => [
+    check('competence_read_log_relation', sql`${t.relation} IN ('self', 'managed', 'registrar')`),
+    check('competence_read_log_kind', sql`${t.kind} IN ('search', 'person', 'export')`),
+    // A person opened names whom and no type; a search and an export name the type and nobody, and are a registrar's.
+    check(
+      'competence_read_log_subject',
+      sql`CASE WHEN ${t.kind} = 'person' THEN ${t.personId} IS NOT NULL AND ${t.typeId} IS NULL AND ${t.minLevel} IS NULL AND ${t.unitId} IS NULL ELSE ${t.typeId} IS NOT NULL AND ${t.personId} IS NULL AND ${t.relation} = 'registrar' END`,
+    ),
+    check('competence_read_log_level', sql`${t.minLevel} IS NULL OR ${t.minLevel} BETWEEN 1 AND 3`),
+    check('competence_read_log_rows', sql`${t.rows} >= 0`),
+    index('competence_read_log_organisation').on(t.organisationId, t.readAt),
+    index('competence_read_log_person').on(t.personId),
+    index('competence_read_log_reader').on(t.readerId),
   ],
 );

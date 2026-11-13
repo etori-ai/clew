@@ -1,4 +1,5 @@
-import type { CompetenceMatrixInput } from '@clew/contracts';
+import { COMPETENCE_SEARCH_PAGE_MAX, COMPETENCE_SEARCH_PAGE_SIZES, type CompetenceMatrixInput } from '@clew/contracts';
+import { viewPageHref } from './view-address';
 
 /**
  * The place Kompetens in the rail (D120 item 8) and its pages, each an address of its own (D116): the reader's own
@@ -151,3 +152,58 @@ export function withoutSkill(search: URLSearchParams | string): string {
   q.delete(SKILL_PARAM);
   return address(COMPETENCE_PATH, q);
 }
+
+/**
+ * Kompetenssökning (D121 item 4) at `/competence/search`: who in the organisation holds a type. What is searched for (the
+ * type, a least level, a unit) is never in the address, as Användare keeps a searched name out of it (D100 item 5): the
+ * type would tell a log line what the reader looked for. The page and its size are (`page`, `size`), so Back undoes a
+ * step through the result; the search itself is kept in memory for the session (`competence-search-session.ts`).
+ */
+export const SEARCH_PATH = '/competence/search';
+const PAGE = 'page',
+  SIZE = 'size';
+/** The page of the result and its size the address names: a page from 1, a size of 25, 50 or 100; anything else is the first. */
+export function searchPageOf(search: URLSearchParams | string): {
+  page: number;
+  pageSize: (typeof COMPETENCE_SEARCH_PAGE_SIZES)[number];
+} {
+  const q = new URLSearchParams(search);
+  const page = Number(q.get(PAGE)),
+    size = Number(q.get(SIZE));
+  return {
+    page: Number.isInteger(page) && page > 1 && page <= COMPETENCE_SEARCH_PAGE_MAX ? page : 1,
+    pageSize: COMPETENCE_SEARCH_PAGE_SIZES.find(n => n === size) ?? COMPETENCE_SEARCH_PAGE_SIZES[0],
+  };
+}
+/**
+ * The search page at another page or size, everything else in the address kept: the first page and the first size are
+ * left out, and a new size starts again from the first page.
+ */
+export function searchHref(change: { page?: number; size?: number }, search: URLSearchParams | string = ''): string {
+  const q = new URLSearchParams(search);
+  if (change.size !== undefined) {
+    q.delete(PAGE);
+    if (change.size === COMPETENCE_SEARCH_PAGE_SIZES[0]) q.delete(SIZE);
+    else q.set(SIZE, String(change.size));
+  }
+  if (change.page !== undefined) {
+    if (change.page > 1) q.set(PAGE, String(change.page));
+    else q.delete(PAGE);
+  }
+  return address(SEARCH_PATH, q);
+}
+/** The search page from its first page, its size kept: a new search starts there. */
+export function firstSearchPage(search: URLSearchParams | string = ''): string {
+  const q = new URLSearchParams(search);
+  q.delete(PAGE);
+  return address(SEARCH_PATH, q);
+}
+/**
+ * One person's holdings opened from a hit (D121 item 4): the page of the read `competence.holdings` (D116) for that
+ * person, by user name, named for them, with the search as the way back. The read admits the relation `registrar`.
+ */
+export const holdingsPageHref = (person: { key: string; name: string }, from: string) =>
+  viewPageHref(
+    { capability: 'competence.holdings', input: { person: person.key }, title: `Kompetenser för ${person.name}` },
+    from,
+  );

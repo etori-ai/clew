@@ -16,6 +16,7 @@ const prefixes: string[] = [];
 afterAll(async () => {
   const db = database();
   for (const p of prefixes) {
+    await db.delete(schema.competenceReadLog).where(like(schema.competenceReadLog.id, p + '%'));
     await db.delete(schema.competenceRequirements).where(like(schema.competenceRequirements.id, p + '%'));
     await db.delete(schema.competenceShareTargets).where(like(schema.competenceShareTargets.id, p + '%'));
     await db.delete(schema.competenceHoldings).where(like(schema.competenceHoldings.id, p + '%'));

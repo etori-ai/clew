@@ -8,6 +8,12 @@ import type { CompetenceTypeBody } from '@clew/contracts';
  */
 export const DEVELOPMENT_ORGANISATION = 'poc';
 /**
+ * The directory group whose members hold Kompetenssökning, the relation `registrar` (D121): pushed by the synthetic
+ * provisioner (`scripts/provisioner/directory.ts`, Hillevi alone) and mapped to the relation by the seed, as an
+ * administrator maps a group on Administration › Användare.
+ */
+export const DEVELOPMENT_REGISTRAR_GROUP = 'ad:kompetenssamordnare';
+/**
  * The development catalogue. The last three have no seeded holdings: they are what the development learning platform's
  * courses and badge can be mapped to once it is read (D108 item 9), beside HLR, Brandskydd and Delegering läkemedel.
  */

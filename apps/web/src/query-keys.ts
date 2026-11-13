@@ -70,6 +70,14 @@ export const keys = {
   competenceApproval: (holdingId: string) => ['competence', 'approval', holdingId] as const,
   /** A report's skill as the manager confirms its level (D120). */
   competenceSkill: (holdingId: string) => ['competence', 'skill', holdingId] as const,
+  /**
+   * Kompetenssökning (D121): what the page narrows by (the relation's probe), and one page of a search. The search is
+   * outside `competenceAll`, so a change elsewhere in the module never reads it again on its own: every read of it is
+   * logged, and one is made only when the reader asks.
+   */
+  competenceSearchOptions: ['competence', 'search-options'] as const,
+  competenceSearch: (body: { typeId: string; minLevel?: number; unitId?: string; page?: number; pageSize?: number }) =>
+    ['competence-search', body] as const,
   competenceAll: ['competence'] as const,
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {

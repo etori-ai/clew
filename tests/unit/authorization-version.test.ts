@@ -56,6 +56,15 @@ describe('authorizationVersion', () => {
     for (const v of versions) expect(v).not.toBe(before);
     expect(new Set(versions).size).toBe(versions.length);
   });
+  test('a relation to people by grant is authority: granted or taken back it changes the value; none leaves it as it was (D121)', () => {
+    const before = version();
+    expect(authorizationVersion({ ...access, grant: { ...access.grant, relations: [] } })).toBe(before);
+    const granted = authorizationVersion({ ...access, grant: { ...access.grant, relations: ['registrar'] } });
+    expect(granted).not.toBe(before);
+    expect(authorityOf({ ...access, grant: { ...access.grant, relations: ['registrar', 'registrar'] } })).toMatchObject(
+      { relations: ['registrar'] },
+    );
+  });
   test('projects exactly the authority fields', () => {
     expect(authorityOf(access)).toEqual({
       enabled: true,

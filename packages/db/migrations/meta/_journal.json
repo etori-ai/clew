@@ -435,6 +435,13 @@
       "when": 1794550365567,
       "tag": "0061_competence_catalogue_import",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794552952148,
+      "tag": "0062_registrar_and_read_log",
+      "breakpoints": true
     }
   ]
 }

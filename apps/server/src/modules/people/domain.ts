@@ -8,15 +8,20 @@
  * flag below is false in any installation provisioned since; `position:<code>` gives the person that position, named
  * with the group's `displayName` (D108 item 5), which says what the person is and by itself decides no access; like
  * any provisioned group it can be mapped to a capability (D85). Any other group gives nothing here; a rules row (group
- * to capability) may give a capability. A person with no unit membership has no
+ * to capability) may give a capability, and a row of the other table (group to relation, D121) a relation to people by
+ * grant, which no group key gives and which is never a capability (D118). A person with no unit membership has no
  * active grant, so a mapping mistake fails closed.
  */
 import {
   CAPABILITIES,
   EmploymentSchema,
+  RELATION_GRANTS,
   checkContract,
   isCapability,
+  isRelationGrant,
+  relationGrantsOf,
   type Capability,
+  type RelationGrant,
   type DirectoryPhone,
   type Employment,
   type OrganisationOverview,
@@ -77,6 +82,11 @@ export interface GroupCapabilityRule {
   groupExternalId: string;
   capability: string;
 }
+/** One row of D121's table: a group gives its members a relation to people by grant, one of `RELATION_GRANTS`. */
+export interface GroupRelationRule {
+  groupExternalId: string;
+  relation: string;
+}
 export interface Assignment {
   unitId: string;
   role: Role;
@@ -90,12 +100,16 @@ export interface DerivedUnit {
   id: string;
   label: string;
 }
-/** The grant projection: the one active assignment with its label, and the capabilities (`auth_access_grant`). */
+/**
+ * The grant projection: the one active assignment with its label, the capabilities, and the relations to people by
+ * grant (`auth_access_grant`). `relations` is present only when the person holds one (D121), sorted.
+ */
 export interface Grant {
   unitId: string;
   unitLabel: string;
   role: Role;
   capabilities: Capability[];
+  relations?: RelationGrant[];
 }
 export interface Derived {
   /** Every unit the person is assigned to, sorted by unit id. */
@@ -105,6 +119,8 @@ export interface Derived {
   /** The assignment the person acts as until switching exists: manager before employee, then the lowest unit id. */
   active: Assignment | undefined;
   capabilities: Capability[];
+  /** D121: the relations the person's groups give by grant, sorted; empty for nearly everyone. */
+  relations: RelationGrant[];
   protected: boolean;
   grant: Grant | undefined;
   /** D108 item 5: what the person is, by code. Never part of the grant: a position gives no access. */
@@ -128,6 +144,7 @@ export function deriveAuthority(
   memberships: readonly Membership[],
   rules: readonly GroupCapabilityRule[],
   knownLabels: Readonly<Record<string, string>> = {},
+  relationRules: readonly GroupRelationRule[] = [],
 ): Derived {
   const roles = new Map<string, Role>(),
     labels = new Map<string, string>(),
@@ -150,36 +167,50 @@ export function deriveAuthority(
   }
   for (const row of rules)
     if (held.has(row.groupExternalId) && isCapability(row.capability)) capabilities.add(row.capability);
+  // D121: only a row of the relation table gives a relation; no group key does, and a capability never is one.
+  const related = new Set<RelationGrant>();
+  for (const row of relationRules)
+    if (held.has(row.groupExternalId) && isRelationGrant(row.relation)) related.add(row.relation);
   const assignments = [...roles.entries()]
     .map(([unitId, role]) => ({ unitId, role }))
     .sort((a, b) => byUnitId(a.unitId, b.unitId));
   const active = activeOf(assignments),
     sorted = [...capabilities].sort(),
+    relations = RELATION_GRANTS.filter(r => related.has(r)),
     labelOf = (unitId: string) => labels.get(unitId) ?? knownLabels[unitId] ?? unitId;
   return {
     units: assignments.map(a => ({ id: a.unitId, label: labelOf(a.unitId) })),
     assignments,
     active,
     capabilities: sorted,
+    relations,
     protected: isProtected,
     grant: active && {
       unitId: active.unitId,
       unitLabel: labelOf(active.unitId),
       role: active.role,
       capabilities: sorted,
+      ...(relations.length ? { relations } : {}),
     },
     positions: derivePositions(memberships),
   };
 }
+/** The relations a stored grant carries (D121), only those of the closed list, in its order. */
+export const grantRelations = (grant: { relations?: readonly string[] } | undefined): RelationGrant[] =>
+  relationGrantsOf(grant?.relations);
 /** Whether two grant projections carry the same authority and label, so an unchanged derivation writes no audit row. */
 export function sameGrant(a: Grant | undefined, b: Grant | undefined) {
   if (!a || !b) return a === b;
+  const ra = grantRelations(a),
+    rb = grantRelations(b);
   return (
     a.unitId === b.unitId &&
     a.unitLabel === b.unitLabel &&
     a.role === b.role &&
     a.capabilities.length === b.capabilities.length &&
-    a.capabilities.every((c, i) => c === b.capabilities[i])
+    a.capabilities.every((c, i) => c === b.capabilities[i]) &&
+    ra.length === rb.length &&
+    ra.every((r, i) => r === rb[i])
   );
 }
 

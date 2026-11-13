@@ -2,6 +2,8 @@ import type {
   AuthenticatedContext,
   CompetenceEvidence,
   CompetenceKind,
+  CompetenceReadKind,
+  CompetenceReadRelation,
   CompetenceReadCounts,
   CompetenceReadOutcome,
   Holding,
@@ -250,6 +252,38 @@ export interface PersonRef {
   /** Null for a person provisioned without one. */
   userName: string | null;
 }
+/**
+ * One row of the read log (D108 item 15, D121 item 5): who read competence about people, as which relation, what and
+ * when. A search and its export name the type (with the least level and the unit narrowed to, where given) and are a
+ * registrar's; one person's holdings opened names whom. `rows` is how many rows the read returned. Ids, a level and a
+ * count: never a name and never content. Written in the transaction that reads what it records.
+ */
+export interface ReadLogEntry {
+  id: string;
+  organisationId: string;
+  /** The person who read, by Clew's id. */
+  readerId: string;
+  relation: CompetenceReadRelation;
+  kind: CompetenceReadKind;
+  typeId: string | null;
+  minLevel: number | null;
+  unitId: string | null;
+  personId: string | null;
+  rows: number;
+  readAt: string;
+}
+/** What the read log is read by, for an operator (`scripts/competence-read-log.ts`): every filter narrows further. */
+export interface ReadLogQuery {
+  organisationId?: string;
+  /** The reads of this person's competence. */
+  personId?: string;
+  /** The reads this person made. */
+  readerId?: string;
+  /** From this instant on. */
+  since?: string;
+  /** At most this many rows, the newest first. */
+  limit: number;
+}
 /** One audit row, written in the same transaction as the change. Metadata only: ids, dates, counts and kinds. */
 export interface CompetenceAudit {
   actor: string;
@@ -417,6 +451,12 @@ export interface CompetenceTx {
    * type of the organisation keeps, whatever its state, refused with `TypeUriTaken`. All or none.
    */
   insertTypes(types: readonly TypeRecord[]): Promise<void>;
+  /**
+   * The organisation's types that are not archived whose name or area holds each of these words, without regard to case
+   * (D121 item 4: the type field of the search, over a catalogue of thousands), by name in Swedish order and then id, at
+   * most `limit`. No words: the first `limit` by name.
+   */
+  findTypes(organisationId: string, words: readonly string[], limit: number): Promise<TypeRecord[]>;
   // Holdings.
   /** Every holding of these people, oldest first, whatever its state. */
   holdingsOf(personIds: readonly string[]): Promise<HoldingRecord[]>;
@@ -558,6 +598,11 @@ export interface CompetenceTx {
    */
   exportOrganisation(organisationId: string): Promise<CompetenceExport>;
   audit(entry: CompetenceAudit): Promise<void>;
+  // The read log (D108 item 15, D121 item 5).
+  /** Write one row of the read log. A row the store cannot write throws, and the read it records fails with it. */
+  logRead(entry: ReadLogEntry): Promise<void>;
+  /** The read log as an operator reads it, the newest first, then by id. */
+  readLog(query: ReadLogQuery): Promise<ReadLogEntry[]>;
   /** The approvals' cards in the managers' streams (D108 item 7), on the same transaction. */
   workItems: ApprovalWorkItemTx;
 }

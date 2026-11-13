@@ -5,6 +5,8 @@ import type {
   HoldingRecord,
   PersonRef,
   PositionRecord,
+  ReadLogEntry,
+  ReadLogQuery,
   RequirementRecord,
   ShareTargetRecord,
   SourceRecord,
@@ -1334,6 +1336,122 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           { ...onPosition, createdBy: null },
         ]);
         expect(await w.store.transaction(tx => tx.shareTarget(target.id))).toEqual({ ...target, createdBy: null });
+      });
+    });
+
+    describe('Kompetenssökning and the read log (D121, D108 item 15)', () => {
+      test('the type field finds the types that are not archived by every word in name or area, in Swedish order, at most the limit', async () => {
+        const w = await world();
+        await w.store.transaction(async tx => {
+          await tx.insertType(typeRow(w.p + '-a', w.org, { name: 'Heta arbeten', area: 'Säkerhet' }));
+          await tx.insertType(typeRow(w.p + '-b', w.org, { name: 'Arbete på väg', area: 'Säkerhet' }));
+          await tx.insertType(typeRow(w.p + '-c', w.org, { name: 'Ögonskydd', area: 'Säkerhet' }));
+          await tx.insertType(typeRow(w.p + '-d', w.org, { name: 'HLR', area: 'Akut omhändertagande' }));
+          await tx.insertType(typeRow(w.p + '-e', w.org, { name: 'Äldre skydd', area: 'Säkerhet', archivedAt: T2 }));
+          await tx.insertType(typeRow(w.p + '-f', w.p + '-org2', { name: 'Heta arbeten', area: 'Säkerhet' }));
+          await tx.insertType(typeRow(w.p + '-g', w.org, { name: '100% närvaro', area: 'Övrigt' }));
+        });
+        const found = async (words: string[], limit = 10) =>
+          (await w.store.transaction(tx => tx.findTypes(w.org, words, limit))).map(t => t.name);
+        expect(await found([])).toEqual(['100% närvaro', 'Arbete på väg', 'Heta arbeten', 'HLR', 'Ögonskydd']);
+        // The area counts as the name does; every word must be in one of them.
+        expect(await found(['säkerhet'])).toEqual(['Arbete på väg', 'Heta arbeten', 'Ögonskydd']);
+        expect(await found(['ARB', 'säk'])).toEqual(['Arbete på väg', 'Heta arbeten']);
+        expect(await found(['akut', 'hlr'])).toEqual(['HLR']);
+        // Å, ä and ö fold as other letters do, and a pattern's own characters are only characters.
+        expect(await found(['ögon'])).toEqual(['Ögonskydd']);
+        expect(await found(['%'])).toEqual(['100% närvaro']);
+        expect(await found(['_'])).toEqual([]);
+        expect(await found(['skydd'])).toEqual(['Ögonskydd']);
+        expect(await found([], 2)).toEqual(['100% närvaro', 'Arbete på väg']);
+        // A whole row, as the catalogue holds it.
+        expect(await w.store.transaction(tx => tx.findTypes(w.org, ['hlr'], 5))).toEqual([
+          typeRow(w.p + '-d', w.org, { name: 'HLR', area: 'Akut omhändertagande' }),
+        ]);
+      });
+
+      test('the read log keeps a read as it is given and is read the newest first, narrowed by organisation, person, reader and time', async () => {
+        const w = await world();
+        const entry = (id: string, extra: Partial<ReadLogEntry> = {}): ReadLogEntry => ({
+          id: w.p + '-' + id,
+          organisationId: w.org,
+          readerId: w.boss,
+          relation: 'registrar',
+          kind: 'search',
+          typeId: w.p + '-t1',
+          minLevel: null,
+          unitId: null,
+          personId: null,
+          rows: 3,
+          readAt: T,
+          ...extra,
+        });
+        const search = entry('l1', { minLevel: 2, unitId: 'unit-a' }),
+          opened = entry('l2', { kind: 'person', typeId: null, personId: w.anna, rows: 4, readAt: T2 }),
+          own = entry('l3', {
+            kind: 'person',
+            relation: 'self',
+            readerId: w.anna,
+            typeId: null,
+            personId: w.anna,
+            readAt: T2,
+          }),
+          file = entry('l4', { kind: 'export', rows: 120, readAt: '2026-11-10T07:00:00.000Z' }),
+          elsewhere = entry('l5', { organisationId: w.p + '-org2' });
+        await w.store.transaction(async tx => {
+          for (const e of [search, opened, own, file, elsewhere]) await tx.logRead(e);
+        });
+        const read = (query: Partial<ReadLogQuery> = {}) =>
+          w.store.transaction(tx => tx.readLog({ organisationId: w.org, limit: 10, ...query }));
+        // The newest first, then by id; another organisation's row is not this one's.
+        expect(await read()).toEqual([opened, own, search, file]);
+        expect(await read({ personId: w.anna })).toEqual([opened, own]);
+        expect(await read({ readerId: w.anna })).toEqual([own]);
+        expect(await read({ since: T })).toEqual([opened, own, search]);
+        expect(await read({ limit: 1 })).toEqual([opened]);
+        // Erasure of a person (D108 item 14) leaves the reads of them and by them: who read is no holding of theirs.
+        await w.store.transaction(tx => tx.erasePerson(w.anna));
+        expect(await read({ personId: w.anna })).toEqual([opened, own]);
+      });
+
+      test('the read log refuses a row its checks do not hold, and the read it records with it', async () => {
+        const w = await world();
+        const base: ReadLogEntry = {
+          id: w.p + '-bad',
+          organisationId: w.org,
+          readerId: w.boss,
+          relation: 'registrar',
+          kind: 'search',
+          typeId: w.p + '-t1',
+          minLevel: null,
+          unitId: null,
+          personId: null,
+          rows: 1,
+          readAt: T,
+        };
+        for (const wrong of [
+          // A person opened names whom and nothing of a search.
+          { ...base, kind: 'person' as const },
+          { ...base, kind: 'person' as const, personId: w.anna },
+          // A search or a file names the type and nobody, and is a registrar's.
+          { ...base, typeId: null },
+          { ...base, personId: w.anna },
+          { ...base, relation: 'managed' as const },
+          { ...base, kind: 'export' as const, relation: 'self' as const },
+          { ...base, minLevel: 4 },
+          { ...base, rows: -1 },
+        ])
+          expect(
+            await refused(() =>
+              w.store.transaction(async tx => {
+                await tx.insertType(typeRow(w.p + '-t1', w.org));
+                await tx.logRead(wrong);
+              }),
+            ),
+          ).toBeDefined();
+        // Each refusal took the transaction with it: nothing it wrote is there.
+        expect(await w.store.transaction(tx => tx.type(w.p + '-t1'))).toBeUndefined();
+        expect(await w.store.transaction(tx => tx.readLog({ organisationId: w.org, limit: 10 }))).toEqual([]);
       });
     });
   });

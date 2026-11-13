@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, like, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, ne, or, sql, type SQL } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
@@ -29,6 +29,7 @@ const {
   competenceSources: sources,
   competenceRequirements: requirements,
   competenceShareTargets: targets,
+  competenceReadLog: reads,
   positions,
   personPositions,
   groups,
@@ -225,6 +226,27 @@ export function competenceTx(
             .insert(types)
             .values(slice.map(t => ({ ...t, createdAt: new Date(t.createdAt), archivedAt: date(t.archivedAt) }))),
         );
+    },
+    async findTypes(organisationId, words, limit) {
+      // Matched and ordered under the ICU collation the people list uses (D100), so å, ä and ö fold and sort the same
+      // in a database created with the locale C as in the memory store's `Intl`.
+      const folded = (column: SQL, pattern: string) => sql`${column} collate "sv-x-icu" ilike ${pattern}`;
+      const rows = await tx
+        .select()
+        .from(types)
+        .where(
+          and(
+            eq(types.organisationId, organisationId),
+            isNull(types.archivedAt),
+            ...words.map(word => {
+              const pattern = '%' + word.replace(/[\\%_]/g, '\\$&') + '%';
+              return or(folded(sql`${types.name}`, pattern), folded(sql`${types.area}`, pattern));
+            }),
+          ),
+        )
+        .orderBy(sql`${types.name} collate "sv-x-icu"`, asc(types.id))
+        .limit(limit);
+      return rows.map(typeOf);
     },
     async holdingsOf(personIds) {
       if (!personIds.length) return [];
@@ -744,6 +766,25 @@ export function competenceTx(
         createdAt: new Date(e.at),
         details: e.details ?? {},
       });
+    },
+    async logRead(e) {
+      await tx.insert(reads).values({ ...e, readAt: new Date(e.readAt) });
+    },
+    async readLog(q) {
+      const rows = await tx
+        .select()
+        .from(reads)
+        .where(
+          and(
+            q.organisationId === undefined ? undefined : eq(reads.organisationId, q.organisationId),
+            q.personId === undefined ? undefined : eq(reads.personId, q.personId),
+            q.readerId === undefined ? undefined : eq(reads.readerId, q.readerId),
+            q.since === undefined ? undefined : gte(reads.readAt, new Date(q.since)),
+          ),
+        )
+        .orderBy(desc(reads.readAt), asc(reads.id))
+        .limit(q.limit);
+      return rows.map(r => ({ ...r, readAt: r.readAt.toISOString() }));
     },
     workItems,
   };

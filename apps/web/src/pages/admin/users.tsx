@@ -6,8 +6,10 @@ import {
   USERS_QUERY_LIMITS,
   USER_STATUSES,
   isCapability,
+  isRelationGrant,
   type Capability,
   type GroupCapability,
+  type GroupRelation,
   type Role,
   type SessionUser,
   type UserAdminRow,
@@ -43,7 +45,7 @@ import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
-import { capabilityLabel, instantText, roleOfOne } from './labels';
+import { capabilityLabel, instantText, relationDescription, relationLabel, roleOfOne } from './labels';
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
 import {
@@ -55,7 +57,9 @@ import {
 
 /**
  * "Användare" (D62, D68, D85): the people the provisioner pushed, read only, and the one thing an administrator decides
- * here: which provisioned group gives which capability. Identity, units and roles are the source's; this page shows
+ * here: which provisioned group gives which capability, or the relation to people "Kompetenssökning" (D121), which is
+ * chosen under its own heading and mapped by its own call since a capability is no relation to a person (D118).
+ * Identity, units and roles are the source's; this page shows
  * them and never edits them. A Table on a desktop, List rows on a phone, as the other administration pages (D23, D24).
  * Above the people, the catalogue's own state: each provisioner with when it last called, and a warning when it has
  * been silent for two days, because access a person has lost in the catalogue ends in Clew only when the push arrives.
@@ -75,11 +79,39 @@ interface Row extends Record<string, unknown> {
   id: string;
   u: UserAdminRow;
 }
+/**
+ * One row of what groups give: a capability (D85) or a relation to people by grant (D121), listed together because an
+ * administrator maps both from the same groups, and kept apart in what they are and in the call that changes them.
+ */
+type Mapping = { kind: 'capability'; m: GroupCapability } | { kind: 'relation'; m: GroupRelation };
 interface MapRow extends Record<string, unknown> {
   id: string;
-  m: GroupCapability;
+  row: Mapping;
 }
-const EMPTY: UsersAdminOverview = { groupCapabilities: [], groups: [], capabilities: [], units: [], provisioners: [] };
+const EMPTY: UsersAdminOverview = {
+  groupCapabilities: [],
+  groupRelations: [],
+  groups: [],
+  capabilities: [],
+  relationGrants: [],
+  units: [],
+  provisioners: [],
+};
+/** What a mapping gives, in the administrator's words. */
+const givesLabel = (row: Mapping) =>
+  row.kind === 'capability' ? capabilityLabel[row.m.capability] : relationLabel[row.m.relation];
+const mappingKey = (row: Mapping) =>
+  row.m.groupExternalId + ':' + (row.kind === 'capability' ? row.m.capability : row.m.relation);
+/** The remove button's name: which group stops giving what. */
+const removeLabel = (row: Mapping) =>
+  `Ta bort: ${row.m.groupLabel ?? row.m.groupExternalId} ger ${
+    row.kind === 'capability' ? givesLabel(row).toLowerCase() : givesLabel(row)
+  }`;
+/** A person's capabilities and relations by grant, in the administrator's words. */
+const heldLabels = (u: UserAdminRow) => [
+  ...u.capabilities.map(c => capabilityLabel[c as Capability] ?? c),
+  ...u.relationGrants.map(r => relationLabel[r]),
+];
 type ProvisionerRow = UsersAdminOverview['provisioners'][number];
 /** When the catalogue last called (D68): the one sign on this page that people and groups are still being pushed in. */
 const lastSeen = (p: ProvisionerRow) =>
@@ -241,12 +273,15 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     if (!group || !capability) return;
     setBusy(true);
     try {
-      const next = await api.admin.addGroupCapability({ groupExternalId: group, capability: capability as Capability });
+      // A relation to people (D121) is mapped by its own call, a capability (D85) by its: never one for the other.
+      const next = isRelationGrant(capability)
+        ? await api.admin.addGroupRelation({ groupExternalId: group, relation: capability })
+        : await api.admin.addGroupCapability({ groupExternalId: group, capability: capability as Capability });
       client.setQueryData(keys.admin.users, next);
-      say(
-        `Sparat: ${groupLabel(group)} ger ${capabilityLabel[capability as Capability].toLowerCase()}.`,
-        'map:' + group,
-      );
+      const gives = isRelationGrant(capability)
+        ? relationLabel[capability]
+        : capabilityLabel[capability as Capability].toLowerCase();
+      say(`Sparat: ${groupLabel(group)} ger ${gives}.`, 'map:' + group);
       setGroup(undefined);
       setCapability(undefined);
     } catch (e) {
@@ -256,17 +291,16 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       await client.invalidateQueries({ queryKey: keys.admin.users });
     }
   };
-  const unmapIt = async (m: GroupCapability) => {
+  const unmapIt = async (row: Mapping) => {
+    const m = row.m;
     try {
-      const next = await api.admin.removeGroupCapability({
-        groupExternalId: m.groupExternalId,
-        capability: m.capability,
-      });
+      const next =
+        row.kind === 'relation'
+          ? await api.admin.removeGroupRelation({ groupExternalId: m.groupExternalId, relation: row.m.relation })
+          : await api.admin.removeGroupCapability({ groupExternalId: m.groupExternalId, capability: row.m.capability });
       client.setQueryData(keys.admin.users, next);
-      say(
-        `Borttaget: ${m.groupLabel ?? m.groupExternalId} ger inte längre ${capabilityLabel[m.capability].toLowerCase()}.`,
-        'map:' + m.groupExternalId,
-      );
+      const gives = row.kind === 'relation' ? givesLabel(row) : givesLabel(row).toLowerCase();
+      say(`Borttaget: ${m.groupLabel ?? m.groupExternalId} ger inte längre ${gives}.`, 'map:' + m.groupExternalId);
     } catch (e) {
       toast({ body: errorMessage(e, 'Något gick fel.'), isAutoHide: false, uniqueID: 'map:' + m.groupExternalId });
     } finally {
@@ -320,10 +354,10 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       header: 'Behörigheter',
       width: proportional(2, { minWidth: 160 }),
       renderCell: (r: Row) =>
-        r.u.capabilities.length ? (
+        heldLabels(r.u).length ? (
           <HStack gap={1} wrap="wrap">
-            {r.u.capabilities.map(c => (
-              <Badge key={c} variant="neutral" label={capabilityLabel[c as Capability] ?? c} />
+            {heldLabels(r.u).map(label => (
+              <Badge key={label} variant="neutral" label={label} />
             ))}
           </HStack>
         ) : (
@@ -339,9 +373,9 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       width: proportional(2, { minWidth: 200 }),
       renderCell: (r: MapRow) => (
         <VStack gap={0} hAlign="start">
-          <Text weight="semibold">{r.m.groupLabel ?? 'Grupp som inte längre provisioneras'}</Text>
+          <Text weight="semibold">{r.row.m.groupLabel ?? 'Grupp som inte längre provisioneras'}</Text>
           <Text type="code" color="secondary">
-            {r.m.groupExternalId}
+            {r.row.m.groupExternalId}
           </Text>
         </VStack>
       ),
@@ -350,7 +384,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       key: 'gives',
       header: 'Ger',
       width: proportional(2, { minWidth: 180 }),
-      renderCell: (r: MapRow) => <Text>{capabilityLabel[r.m.capability]}</Text>,
+      renderCell: (r: MapRow) => <Text>{givesLabel(r.row)}</Text>,
     },
     {
       key: 'remove',
@@ -361,8 +395,8 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           size="sm"
           variant="secondary"
           label="Ta bort"
-          aria-label={`Ta bort: ${r.m.groupLabel ?? r.m.groupExternalId} ger ${capabilityLabel[r.m.capability].toLowerCase()}`}
-          onClick={() => unmapIt(r.m)}
+          aria-label={removeLabel(r.row)}
+          onClick={() => unmapIt(r.row)}
         />
       ),
     },
@@ -371,7 +405,15 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
   const users = page?.rows ?? [];
   const listError =
     !error && listed.isError && page === undefined ? errorMessage(listed.error, 'Listan kunde inte läsas.') : null;
-  const groupCapabilities = data?.groupCapabilities ?? [];
+  // What every group gives, capabilities and relations together, by the group's name as the server ordered each list.
+  const mappings: Mapping[] = [
+    ...(data?.groupCapabilities ?? []).map(m => ({ kind: 'capability' as const, m })),
+    ...(data?.groupRelations ?? []).map(m => ({ kind: 'relation' as const, m })),
+  ].sort(
+    (a, b) =>
+      (a.m.groupLabel ?? a.m.groupExternalId).localeCompare(b.m.groupLabel ?? b.m.groupExternalId, 'sv') ||
+      mappingKey(a).localeCompare(mappingKey(b)),
+  );
   const groups = data?.groups ?? [];
   const provisioners = data?.provisioners ?? [];
   return (
@@ -603,11 +645,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                       ) : (
                         <Text type="supporting">Ingen enhet</Text>
                       )}
-                      {u.capabilities.length > 0 && (
-                        <Text type="supporting">
-                          {u.capabilities.map(c => capabilityLabel[c as Capability] ?? c).join(', ')}
-                        </Text>
-                      )}
+                      {heldLabels(u).length > 0 && <Text type="supporting">{heldLabels(u).join(', ')}</Text>}
                     </VStack>
                   }
                   endContent={status(u)}
@@ -658,7 +696,8 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
               <VStack gap={0}>
                 <Text weight="semibold">Behörigheter från grupper</Text>
                 <Text type="supporting">
-                  En grupp från katalogen ger sina medlemmar en behörighet i Clew. Ändringen gäller vid nästa anrop.
+                  En grupp från katalogen ger sina medlemmar en behörighet i Clew, eller kompetenssökning i hela
+                  organisationen. Ändringen gäller vid nästa anrop.
                 </Text>
               </VStack>
             }
@@ -687,7 +726,27 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 <Selector
                   label="Ger behörigheten"
                   placeholder="Välj behörighet"
-                  options={(data.capabilities ?? []).map(c => ({ value: c, label: capabilityLabel[c] }))}
+                  // Administering Clew and reading about people are told apart where they are chosen (D118, D121).
+                  options={[
+                    {
+                      type: 'section' as const,
+                      title: 'Administrera',
+                      options: (data.capabilities ?? []).map(c => ({ value: c, label: capabilityLabel[c] })),
+                    },
+                    ...((data.relationGrants ?? []).length
+                      ? [
+                          {
+                            type: 'section' as const,
+                            title: 'Läsa om personer',
+                            options: data.relationGrants.map(r => ({
+                              value: r,
+                              label: relationLabel[r],
+                              description: relationDescription[r],
+                            })),
+                          },
+                        ]
+                      : []),
+                  ]}
                   value={capability}
                   onChange={setCapability}
                 />
@@ -695,7 +754,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
               </HStack>
             </VStack>
           </Section>
-          {groupCapabilities.length === 0 ? (
+          {mappings.length === 0 ? (
             <Section variant="transparent" padding={4}>
               <Text type="supporting">
                 Ingen grupp ger någon behörighet ännu. Behörigheter kan också följa med katalogen som grupper med
@@ -704,18 +763,18 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
             </Section>
           ) : mobile ? (
             <List aria-label="Behörigheter från grupper" hasDividers>
-              {groupCapabilities.map(m => (
+              {mappings.map(row => (
                 <ListItem
-                  key={m.groupExternalId + ':' + m.capability}
-                  label={<Text weight="semibold">{m.groupLabel ?? m.groupExternalId}</Text>}
-                  description={<Text type="supporting">{capabilityLabel[m.capability]}</Text>}
+                  key={mappingKey(row)}
+                  label={<Text weight="semibold">{row.m.groupLabel ?? row.m.groupExternalId}</Text>}
+                  description={<Text type="supporting">{givesLabel(row)}</Text>}
                   endContent={
                     <Button
                       size="sm"
                       variant="secondary"
                       label="Ta bort"
-                      aria-label={`Ta bort: ${m.groupLabel ?? m.groupExternalId} ger ${capabilityLabel[m.capability].toLowerCase()}`}
-                      onClick={() => unmapIt(m)}
+                      aria-label={removeLabel(row)}
+                      onClick={() => unmapIt(row)}
                     />
                   }
                 />
@@ -723,7 +782,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
             </List>
           ) : (
             <Table<MapRow>
-              data={groupCapabilities.map(m => ({ id: m.groupExternalId + ':' + m.capability, m }))}
+              data={mappings.map(row => ({ id: mappingKey(row), row }))}
               idKey="id"
               columns={mapColumns}
               density="balanced"

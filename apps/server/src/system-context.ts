@@ -1,4 +1,4 @@
-import type { AuthenticatedContext } from '@clew/contracts';
+import { relationGrantsOf, type AuthenticatedContext } from '@clew/contracts';
 import { readAccess, readGroups } from '@clew/db/auth';
 import { authorizationVersion } from './auth-crypto';
 
@@ -23,6 +23,9 @@ export async function systemContext(
     organisationId: access.person.organisationId,
     principal: { id: 'person:' + personId, kind: 'person' },
     capabilities: access.grant.capabilities,
+    ...(relationGrantsOf(access.grant.relations).length
+      ? { relationGrants: relationGrantsOf(access.grant.relations) }
+      : {}),
     groups: await readGroups(personId),
     authorizationVersion: version,
     sessionBinding: binding,

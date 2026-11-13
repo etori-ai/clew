@@ -116,6 +116,8 @@ describe('the synthetic provisioner', () => {
       'ad:forvaltning-stadsbyggnad': 34,
       'ad:forvaltning-utbildning': 87,
       'ad:intranat-redaktorer': 13,
+      // D121: the development stack's registrar group, Hillevi alone; the seed maps it to Kompetenssökning.
+      'ad:kompetenssamordnare': 1,
       'ad:krisledning': 5,
       'ad:nattpersonal': 12,
       'ad:projekt-e-arkiv': 0,
@@ -258,7 +260,7 @@ describe('the synthetic provisioner', () => {
       created: 250,
       replaced: 0,
       deactivated: 0,
-      groupsCreated: 122,
+      groupsCreated: 123,
       groupsReplaced: 0,
       groupsRemoved: 0,
       refused: [],
@@ -315,7 +317,7 @@ describe('the synthetic provisioner', () => {
       replaced: 250,
       deactivated: 0,
       groupsCreated: 0,
-      groupsReplaced: 122,
+      groupsReplaced: 123,
       groupsRemoved: 0,
       refused: [],
     });
@@ -388,7 +390,7 @@ describe('the synthetic provisioner', () => {
     expect(remaining).not.toContain('unit-manager:unit-skola');
     expect(remaining).not.toContain('capability:admin.users');
     expect(remaining).toContain('unit:unit-omsorg');
-    expect(remaining).toHaveLength(118);
+    expect(remaining).toHaveLength(119);
   });
   test('a unit that moves in the directory moves in Clew, and units that leave it are removed from the leaves up (D99)', async () => {
     const { store, client } = stack();

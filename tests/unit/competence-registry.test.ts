@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, StaffOverview, StaffPerson } from '../../packages/contracts/src/index';
-import { COMPETENCE_CONNECTOR, Registry, actorOf } from '../../packages/connectors/src/index';
+import { COMPETENCE_CONNECTOR, Registry, actorOf, openGovernance } from '../../packages/connectors/src/index';
 import { memoryConnectorStore } from '../../apps/server/src/connectors/adapters/memory';
 import { connectorUsecases, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
 import { applyAllRows, syncBundledRows, type ReconcileDeps } from '../../apps/server/src/connectors/reconcile';
@@ -38,6 +38,8 @@ const persona = (
 const hillevi = persona('hillevi', 'Hillevi Berg', 'manager');
 const anna = persona('p-anna', 'Anna Lindqvist', 'employee');
 const mikael = persona('mikael', 'Mikael Lund', 'employee', ['admin.connectors', 'admin.competence']);
+/** D121: HR's registrar, who holds Kompetenssökning by grant and manages nobody. */
+const hr: AuthenticatedContext = { ...persona('hr', 'Hanna Registrator', 'employee'), relationGrants: ['registrar'] };
 /** Acting head: her grant says employee, and Anna reports to her (D99), as the matrix counts it. */
 const acting = persona('acting', 'Agneta Tf', 'employee');
 const staffAnna: StaffPerson = {
@@ -52,7 +54,7 @@ const overviews = new Map<string, StaffOverview>([
   ['hillevi', { units: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', people: [staffAnna] }] }],
   ['acting', { units: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', people: [staffAnna] }] }],
 ]);
-const personas = new Map([hillevi, anna, mikael, acting].map(p => [p.id, p]));
+const personas = new Map([hillevi, anna, mikael, acting, hr].map(p => [p.id, p]));
 
 function world() {
   let now = Date.parse(T0);
@@ -574,6 +576,125 @@ describe('the competence wiring (D108 item 13)', () => {
     expect((await w.call(anna, 'GET', '/matrix.csv')).status).toBe(403);
     expect((await w.call(hillevi, 'GET', '/matrix.csv?part=0')).status).toBe(400);
     expect(w.store.audit().length).toBe(before + 1);
+  });
+
+  test('Kompetenssökning (D121): the registrar alone searches, in a body, gets the file, and every read is logged', async () => {
+    const w = world();
+    // Off, the search is refused as every route is.
+    await syncBundledRows(w.reconcile);
+    expect(await (await w.call(hr, 'GET', '/search')).json()).toEqual({ error: NOT_ENABLED, code: 'denied' });
+    await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
+    const added = await w.call(mikael, 'POST', '/types', { name: 'HLR', area: 'Akut', kind: 'course' });
+    const { id: typeId } = (await added.json()) as { id: string };
+    expect(
+      (
+        await w.call(hillevi, 'POST', '/people/p-anna/holdings', {
+          typeId,
+          issuedOn: '2026-01-10',
+          expiresOn: '2028-01-09',
+        })
+      ).status,
+    ).toBe(201);
+    // Anyone without the relation is refused in Swedish: a manager, and an administrator of the catalogue too (D118).
+    for (const who of [hillevi, mikael, anna]) {
+      const refused = await w.call(who, 'GET', '/search');
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toEqual({
+        error: 'Kompetenssökning är inte tilldelad dig. En administratör ger den genom en grupp.',
+        code: 'denied',
+      });
+      expect((await w.call(who, 'POST', '/search', { typeId })).status).toBe(403);
+      expect((await w.call(who, 'POST', '/search.csv', { typeId })).status).toBe(403);
+    }
+    expect(w.store.readLog()).toEqual([]);
+    const options = await w.call(hr, 'GET', '/search');
+    expect(options.status).toBe(200);
+    expect(options.headers.get('cache-control')).toContain('no-store');
+    // The type field is the catalogue, in a body.
+    const found = await w.call(anna, 'POST', '/search/types', { text: 'hl' });
+    expect(((await found.json()) as { rows: Array<{ name: string }> }).rows.map(t => t.name)).toEqual(['HLR']);
+    expect((await w.call(anna, 'POST', '/search/types', { text: 'x'.repeat(121) })).status).toBe(400);
+    // What is searched for is a body; anything outside the contract is a 400 and is not read.
+    const page = await w.call(hr, 'POST', '/search', { typeId, pageSize: 50 });
+    expect(page.status).toBe(200);
+    expect(page.headers.get('cache-control')).toContain('no-store');
+    expect(await page.json()).toEqual({
+      type: { id: typeId, name: 'HLR', area: 'Akut', kind: 'course' },
+      rows: [
+        {
+          personId: 'p-anna',
+          key: 'anna.lindqvist',
+          name: 'Anna Lindqvist',
+          units: [],
+          status: 'valid',
+          expiresOn: '2028-01-09',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 50,
+    });
+    for (const wrong of [
+      {},
+      { typeId, page: 0 },
+      { typeId, pageSize: 30 },
+      { typeId, minLevel: 4 },
+      { typeId, name: 'x' },
+    ])
+      expect((await w.call(hr, 'POST', '/search', wrong)).status).toBe(400);
+    const file = await w.call(hr, 'POST', '/search.csv', { typeId });
+    expect(file.status).toBe(200);
+    expect(file.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+    expect(file.headers.get('content-disposition')).toBe('attachment; filename="kompetenssokning-2026-11-10.csv"');
+    expect(new TextDecoder('utf-8', { ignoreBOM: true }).decode(await file.arrayBuffer())).toBe(
+      '\ufeffNamn;Användarnamn;Enhet;Status;Giltigt till\r\nAnna Lindqvist;anna.lindqvist;;Giltigt;2028-01-09\r\n',
+    );
+    expect(w.store.readLog().map(r => [r.readerId, r.relation, r.kind, r.typeId, r.rows])).toEqual([
+      ['hr', 'registrar', 'search', typeId, 1],
+      ['hr', 'registrar', 'export', typeId, 1],
+    ]);
+    expect(w.store.audit().at(-1)).toMatchObject({
+      actor: 'person:hr',
+      action: 'competence.search_exported',
+      details: { typeId, people: 1 },
+    });
+  });
+
+  test('a person opened from a hit (D121 item 3): competence.holdings admits registrar through the registry, competence.person does not', async () => {
+    const w = world();
+    await syncBundledRows(w.reconcile);
+    await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
+    // The core rule as composition binds it, for the one reader who holds the grant: registrar where a read admits it.
+    const registry = new Registry({
+      relations: async (actor, _entity, keys, admits) =>
+        keys.flatMap(asked => {
+          const key = asked.toLowerCase();
+          if (!['anna.lindqvist', 'hillevi.berg'].includes(key)) return [];
+          const relation =
+            actor.id === 'hr' && admits.includes('registrar')
+              ? ('registrar' as const)
+              : admits.includes('colleague')
+                ? ('colleague' as const)
+                : undefined;
+          return relation ? [{ asked, key, relation }] : [];
+        }),
+    });
+    registry
+      .register({ ...competenceConnector(w.competence, async a => personas.get(a.id)!), uses: ['*'] })
+      .govern(COMPETENCE_CONNECTOR, openGovernance());
+    expect(await registry.run(actorOf(hr), 'competence.holdings', { person: 'Anna.Lindqvist' })).toEqual({ rows: [] });
+    expect(w.store.readLog().map(r => [r.readerId, r.relation, r.kind, r.personId])).toEqual([
+      ['hr', 'registrar', 'person', 'p-anna'],
+    ]);
+    // The read about a person is a manager's, of their reports alone: it is not opened to a registrar.
+    await expect(registry.run(actorOf(hr), 'competence.person', { keys: ['anna.lindqvist'] })).rejects.toThrow(
+      'Du saknar behörighet för åtgärden.',
+    );
+    // Nor is anyone else who does not hold the grant.
+    await expect(registry.run(actorOf(anna), 'competence.holdings', { person: 'hillevi.berg' })).rejects.toThrow(
+      'Okänd förmåga.',
+    );
+    expect(w.store.readLog()).toHaveLength(1);
   });
 
   test('the routes carry the catalogue at scale (D120 item 7, D108 item 2): an import, a merge with its preview, a restore', async () => {

@@ -4,6 +4,7 @@ import type {
   CompetenceMatrixOutput,
   CompetenceOwnSkill,
   CompetenceRequirementsOutput,
+  CompetenceSearchRow,
   CompetenceShareTarget,
   CompetenceSkillValidation,
   CompetenceSource,
@@ -435,3 +436,73 @@ export const annaJournal = (): CompetenceSkillValidation => ({
   validated: false,
   interest: true,
 });
+/**
+ * Kompetenssökning (D121): who in the organisation holds each type, as the server finds them, by name. HLR is held by
+ * three people across two units, one run out and one about to, one without a user name and so without a page; Engelska
+ * (a skill) by two, one confirmed and one the person's own rating; Heta arbeten by nobody. `many` gives HLR sixty more
+ * holders, for three pages.
+ */
+export function searchHolders(many = false): Record<string, CompetenceSearchRow[]> {
+  const extra = many
+    ? Array.from({ length: 60 }, (_, i) => {
+        const n = String(i + 1).padStart(2, '0');
+        return {
+          personId: 'p' + n,
+          key: 'person' + n,
+          name: 'Person ' + n,
+          units: ['Hemtjänst Centrum'],
+          status: 'valid' as const,
+          expiresOn: '2027-06-01',
+        };
+      })
+    : [];
+  return {
+    't-hlr': [
+      {
+        personId: 'p-anna',
+        key: 'anna.lindqvist',
+        name: 'Anna Lindqvist',
+        units: ['Bergsåkers skola'],
+        status: 'expiring',
+        expiresOn: '2027-01-10',
+      },
+      {
+        personId: 'p-bo',
+        key: null,
+        name: 'Bo Ek',
+        units: ['Hemtjänst Centrum'],
+        status: 'expired',
+        expiresOn: '2026-01-10',
+      },
+      {
+        personId: 'p-hassan',
+        key: 'hassan',
+        name: 'Hassan Ali',
+        units: ['Hemtjänst Centrum', 'Bergsåkers skola'],
+        status: 'valid',
+        expiresOn: '2027-11-01',
+      },
+      ...extra,
+    ],
+    't-eng': [
+      {
+        personId: 'p-anna',
+        key: 'anna.lindqvist',
+        name: 'Anna Lindqvist',
+        units: ['Bergsåkers skola'],
+        status: 'valid',
+        level: 3,
+        validated: true,
+      },
+      {
+        personId: 'p-hassan',
+        key: 'hassan',
+        name: 'Hassan Ali',
+        units: ['Hemtjänst Centrum'],
+        status: 'valid',
+        level: 2,
+        validated: false,
+      },
+    ],
+  };
+}

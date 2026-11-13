@@ -6,8 +6,8 @@ import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
 import { changeNotices } from './thread-cache';
 import { Center, LinkProvider, Providers, SessionBoundary, Spinner, type BrowserSession } from '@clew/ui';
-import type { Capability, SessionUser } from '@clew/contracts';
-import { HeldCapabilities, capabilitiesOf } from './capabilities';
+import type { Capability, RelationGrant, SessionUser } from '@clew/contracts';
+import { HeldCapabilities, HeldRelations, capabilitiesOf, relationsOf } from './capabilities';
 import { StartPage } from './pages/start';
 import { TodoPage } from './pages/todo';
 import { ItemPage } from './pages/item';
@@ -17,6 +17,7 @@ import { PanelClaims } from './components/page-panel';
 import { ReviewPage } from './pages/review';
 import { legacyReview, reviewPageFrom } from './review-address';
 import { clearDrafts } from './review-session';
+import { clearSearch } from './competence-search-session';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { NewsPage } from './pages/news';
@@ -32,6 +33,7 @@ import { AdminOrganisationUnitPage } from './pages/admin/organisation-unit';
 import { StaffPage } from './pages/staff';
 import { CompetencePage } from './pages/competence';
 import { ApprovalPage, CompetenceMatrixPage } from './pages/competence-matrix';
+import { CompetenceSearchPage } from './pages/competence-search';
 import { PersonPage } from './pages/person';
 import { UnitPage } from './pages/unit';
 import { AdminModelPage } from './pages/admin/model';
@@ -44,7 +46,14 @@ import { AdminCompetenceRequirementsPage } from './pages/admin/competence-requir
 import { AdminCompetenceImportPage } from './pages/admin/competence-import';
 import { loadBranding, useBranding } from './branding';
 
-type Shell = { session: BrowserSession; user: SessionUser; admin: boolean; capabilities: Capability[] };
+type Shell = {
+  session: BrowserSession;
+  user: SessionUser;
+  admin: boolean;
+  capabilities: Capability[];
+  /** D121: the relations to people held by grant: whether Kompetens offers its search. Never an admin flag. */
+  relations: RelationGrant[];
+};
 /** The cache inspector, development only: the production bundle, the a11y suite and a deployment never carry it. */
 const Devtools = import.meta.env.DEV
   ? lazy(() => import('@tanstack/react-query-devtools').then(m => ({ default: m.ReactQueryDevtools })))
@@ -73,6 +82,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
           user: data.user,
           admin: data.admin === true,
           capabilities: capabilitiesOf(data.capabilities),
+          relations: relationsOf(data.relations),
         });
       })
       .catch(() => {
@@ -127,6 +137,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
                 user: data.user,
                 admin: data.admin === true,
                 capabilities: capabilitiesOf(data.capabilities),
+                relations: relationsOf(data.relations),
               });
             })
             .catch(() => setShell('anonymous'));
@@ -146,7 +157,10 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   }, [client, shell]);
   // Nobody is signed in: no review's draft from a session before stays in this tab (`review-session.ts`).
   useEffect(() => {
-    if (shell === 'anonymous') clearDrafts();
+    if (shell === 'anonymous') {
+      clearDrafts();
+      clearSearch();
+    }
   }, [shell]);
   if (shell === 'loading')
     return (
@@ -164,6 +178,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       onEnded={() => {
         client.clear();
         clearDrafts();
+        clearSearch();
       }}
     >
       <QueryClientProvider client={client}>
@@ -171,7 +186,9 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
         <ConversationProvider>
           <ThingConversationProvider>
             <HeldCapabilities.Provider value={shell.capabilities}>
-              <PanelClaims>{children(shell)}</PanelClaims>
+              <HeldRelations.Provider value={shell.relations}>
+                <PanelClaims>{children(shell)}</PanelClaims>
+              </HeldRelations.Provider>
             </HeldCapabilities.Provider>
           </ThingConversationProvider>
         </ConversationProvider>
@@ -249,6 +266,11 @@ function App() {
       <Route
         path="/competence/matrix"
         element={<Protected>{shell => <CompetenceMatrixPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* Kompetenssökning (D121 item 4): who in the organisation holds a type, for the holder of the relation `registrar`. */}
+      <Route
+        path="/competence/search"
+        element={<Protected>{shell => <CompetenceSearchPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       {/* A person as a page (D97 item 5, D111 rule 3): a name on Personal or on any row that names them; `section` is the chosen source. */}
       <Route

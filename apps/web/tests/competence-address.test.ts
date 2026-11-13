@@ -2,16 +2,21 @@ import { describe, expect, test } from 'bun:test';
 import {
   COMPETENCE_PATH,
   MATRIX_PATH,
+  SEARCH_PATH,
   addHref,
   adding,
   approvalPageHref,
   approveHref,
   approveOf,
+  firstSearchPage,
+  holdingsPageHref,
   matrixFileHref,
   matrixHref,
   matrixInputOf,
   matrixQuery,
   requirementHref,
+  searchHref,
+  searchPageOf,
   skillHref,
   skillOf,
   validateHref,
@@ -103,5 +108,29 @@ describe('a skill is changed and confirmed over its page, named in the address (
     expect(skillOf('?skill=h-2')).toBe('h-2');
     expect(skillOf('?skill=')).toBeNull();
     expect(withoutSkill('?skill=h-2&card=x')).toBe(`${COMPETENCE_PATH}?card=x`);
+  });
+});
+
+describe('Kompetenssökning keeps the page in the address and what is searched for out of it (D121, D100 item 5)', () => {
+  test('the page and its size are read from the address; anything else is the first page of 25', () => {
+    expect(searchPageOf('?page=3&size=50')).toEqual({ page: 3, pageSize: 50 });
+    expect(searchPageOf('')).toEqual({ page: 1, pageSize: 25 });
+    for (const odd of ['?page=0', '?page=-2', '?page=x', '?page=1.5', '?page=100001', '?size=30'])
+      expect(searchPageOf(odd)).toEqual({ page: 1, pageSize: 25 });
+  });
+  test('a step keeps the rest of the address, a new size starts from the first page, and the first of each is left out', () => {
+    expect(searchHref({ page: 2 })).toBe(`${SEARCH_PATH}?page=2`);
+    expect(searchHref({ page: 1 }, '?page=4&card=x')).toBe(`${SEARCH_PATH}?card=x`);
+    expect(searchHref({ size: 100 }, '?page=4')).toBe(`${SEARCH_PATH}?size=100`);
+    expect(searchHref({ size: 25 }, '?page=4&size=50')).toBe(SEARCH_PATH);
+    expect(firstSearchPage('?page=3&size=50')).toBe(`${SEARCH_PATH}?size=50`);
+  });
+  test('a hit opens the person’s holdings on the read’s page, named for them, the search as the way back', () => {
+    const href = holdingsPageHref({ key: 'anna.lindqvist', name: 'Anna Lindqvist' }, `${SEARCH_PATH}?page=2`);
+    const url = new URL(href, 'https://clew.test');
+    expect(url.pathname).toBe('/tools/competence.holdings');
+    expect(JSON.parse(url.searchParams.get('input')!)).toEqual({ person: 'anna.lindqvist' });
+    expect(url.searchParams.get('title')).toBe('Kompetenser för Anna Lindqvist');
+    expect(url.searchParams.get('from')).toBe(`${SEARCH_PATH}?page=2`);
   });
 });

@@ -390,14 +390,17 @@ export function competenceConnector(
     kind: 'read',
     title: 'Mina kompetenser',
     model: false,
-    description: 'Registrerade intyg, kompetenser och färdigheter: dina egna, eller en persons du är chef för.',
+    description:
+      'Registrerade intyg, kompetenser och färdigheter: dina egna, en persons du är chef för, eller med kompetenssökning en persons i organisationen.',
     input: CompetenceHoldingsInputSchema,
     output: CompetenceHoldingsOutputSchema,
     view: holdingsView,
     scope: () => true,
-    // `person` is the reader or one of their reports (D117); without it the reader reads their own. Someone without a
-    // user name is named by Clew's id, as the competence domain names them.
-    person: { param: 'person', admits: ['self', 'managed'], ids: true },
+    // `person` is the reader or one of their reports (D117), or, for a reader who holds the relation `registrar` by
+    // grant, anyone active of their organisation (D121 item 3: the one read in the repository that admits it, and the
+    // registry tells no connector of it); without it the reader reads their own. Someone without a user name is named
+    // by Clew's id, as the competence domain names them, as themself or a report only. Every read is logged (D121 item 5).
+    person: { param: 'person', admits: ['self', 'managed', 'registrar'], ids: true },
     run: async (actor, input) => competence.holdings(await persona(actor), input),
   };
   const aboutPerson: Capability<Keys> = {

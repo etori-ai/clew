@@ -1,7 +1,16 @@
 import {
   COMPETENCE_CATALOGUE_MAX,
+  COMPETENCE_SEARCH_PAGE_SIZES,
   COMPETENCE_STATUSES,
+  COMPETENCE_TYPE_SEARCH_MAX,
   ENTITY_KEY_MAX,
+  type CompetenceReadRelation,
+  type CompetenceSearchBody,
+  type CompetenceSearchFileBody,
+  type CompetenceSearchOptions,
+  type CompetenceSearchPage,
+  type CompetenceTypeSearchBody,
+  type CompetenceTypeSearchOutput,
   competenceImportRowProblem,
   importText,
   isCompetenceLevel,
@@ -77,6 +86,10 @@ import {
   orderTypes,
   ownCard,
   ownRow,
+  pageOfRows,
+  searchCsv,
+  searchRows,
+  typeSearchWords,
   COPY_HOLDINGS_MAX,
   PAGES_MAX,
   personKey,
@@ -117,6 +130,8 @@ import {
   type HoldingRecord,
   type HoldingsSourceRef,
   type PersonRef,
+  type ReadLogEntry,
+  type ReadLogQuery,
   type RequirementRecord,
   type ShareTargetRecord,
   type SourceHoldingsPage,
@@ -224,6 +239,8 @@ const CATALOGUE_FULL = `Katalogen får ha högst ${COMPETENCE_CATALOGUE_MAX} kom
 const IMPORT_RACED =
   'Katalogen ändrades medan filen lästes in, och ingenting sparades. Försök igen: det som redan finns hoppas över.';
 const ESCO_ROW = 'En rad ur ESCO är en färdighet med en adress.';
+const NOT_A_REGISTRAR = 'Kompetenssökning är inte tilldelad dig. En administratör ger den genom en grupp.';
+const LEVEL_ON_SKILL_SEARCH = 'Bara en färdighet söks på en viss nivå.';
 /** A merge refused while people wait for a decision on both types (D108 items 2 and 7). */
 const waitingBoth = (people: number) =>
   `${people === 1 ? 'En person har' : `${people} personer har`} en egen registrering av båda kompetenserna som väntar på godkännande. Slå ihop dem när registreringarna är granskade.`;
@@ -292,7 +309,10 @@ export interface CopyResult {
 /**
  * The competence module's use cases (D108): the catalogue, a manager's registration of a certificate, the copy of what
  * sources hold and the mapping of their types (item 9), requirements and share targets (item 6), and the reads that work
- * out where every holding stands today, what a person lacks and how a unit's branch is covered.
+ * out where every holding stands today, what a person lacks and how a unit's branch is covered; and Kompetenssökning
+ * (D121), who of the organisation holds a type, read only through the relation `registrar` by grant. A read of one
+ * person's holdings, a search and its file each write a row of the read log (D108 item 15) in the transaction that
+ * reads what it records.
  * A manager's reach is their reports, computed when asked (`deps.staff`, D99 item 4) and never stored, so a former
  * manager reads and writes nothing the day the line changes. Every change is one `deps.store` transaction with its
  * audit row. Audit rows carry ids, dates, counts and kinds: never a person's name, a type's name, a source's key or
@@ -315,6 +335,70 @@ export function competenceUsecases(deps: CompetenceDeps) {
       for (const p of unit.people)
         if (p.id !== persona.id && p.enabled !== false && !people.has(p.id)) people.set(p.id, p);
     return { manages: staff.units.length > 0, people, units: staff.units };
+  }
+  /**
+   * Whether the reader holds the relation `registrar` by grant (D121 item 2), from their current access record. It is
+   * no capability (D118): it lets the reader read competence across their organisation and decides nothing else.
+   */
+  const registrar = (persona: AuthenticatedContext) => !!persona.relationGrants?.includes('registrar');
+  const requireRegistrar = (persona: AuthenticatedContext) => {
+    if (!registrar(persona)) throw new ForbiddenError(NOT_A_REGISTRAR);
+  };
+  /** A row of the read log (D108 item 15, D121 item 5) for a read made now: ids, a level and a count, never a name. */
+  const readOf = (
+    persona: AuthenticatedContext,
+    at: Date,
+    relation: CompetenceReadRelation,
+    read: Pick<ReadLogEntry, 'kind' | 'rows'> &
+      Partial<Pick<ReadLogEntry, 'typeId' | 'minLevel' | 'unitId' | 'personId'>>,
+  ): ReadLogEntry => ({
+    id: deps.ids(),
+    organisationId: persona.organisationId,
+    readerId: persona.id,
+    relation,
+    kind: read.kind,
+    typeId: read.typeId ?? null,
+    minLevel: read.minLevel ?? null,
+    unitId: read.unitId ?? null,
+    personId: read.personId ?? null,
+    rows: read.rows,
+    readAt: at.toISOString(),
+  });
+  /** What a search asked for, as its read-log row and its audit row carry it: ids and a level. */
+  const searched = (body: CompetenceSearchFileBody) => ({
+    typeId: body.typeId,
+    ...(body.minLevel !== undefined ? { minLevel: body.minLevel } : {}),
+    ...(body.unitId !== undefined ? { unitId: body.unitId } : {}),
+  });
+  /**
+   * Every person of the organisation who holds the type (D121 item 4), as narrowed, read in the transaction it is given.
+   * A type of another organisation is no type; a least level is for a skill alone.
+   */
+  async function searchIn(tx: CompetenceTx, organisationId: string, body: CompetenceSearchFileBody, today: string) {
+    const [type] = await tx.typesById([body.typeId]);
+    if (!type || type.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
+    if (body.minLevel !== undefined && !isSkill(type)) throw new CompetenceError(LEVEL_ON_SKILL_SEARCH);
+    const holdings = await tx.holdingsOfType(type.id);
+    const ids = [...new Set(holdings.map(h => h.personId))];
+    const [persons, active, places, units] = [
+      await tx.persons(ids),
+      await tx.activeIds(ids),
+      await tx.placesOf(organisationId, ids),
+      await tx.units(organisationId),
+    ];
+    const rows = searchRows({
+      type,
+      holdings,
+      persons: new Map(persons.map(p => [p.id, p])),
+      active,
+      organisationId,
+      places: new Map(places.map(p => [p.personId, p])),
+      units,
+      today,
+      ...(body.unitId !== undefined ? { unitId: body.unitId } : {}),
+      ...(body.minLevel !== undefined ? { minLevel: body.minLevel } : {}),
+    });
+    return { type, rows };
   }
   async function reportOf(persona: AuthenticatedContext, personId: string, notAManager = NOT_A_MANAGER) {
     const { manages, people } = await reports(persona);
@@ -2070,7 +2154,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * `competence.holdings`. With `person` (a user name, or the id of a person provisioned without one): what that
-     * report holds, for the manager they report to. Without: the reader's own. For each type the holding that decides,
+     * report holds, for the manager they report to; or, for a reader who holds the relation `registrar` (D121), what any
+     * active person of the reader's organisation holds, by user name. Without: the reader's own. Every read writes its
+     * row of the read log with the relation it was made under (D121 item 5). For each type the holding that decides,
      * a copied one with its source and when it was read; a type required of the person that they hold nothing of as a
      * `missing` row (D108 item 6); the person's own registrations that wait for a decision (`awaiting-approval`) and,
      * to the person alone, those that were rejected (item 7); after them the copied rows whose type is not mapped, under
@@ -2080,17 +2166,27 @@ export function competenceUsecases(deps: CompetenceDeps) {
       persona: AuthenticatedContext,
       input: CompetenceHoldingsInput = {},
     ): Promise<CompetenceHoldingsOutput> {
-      let personId = persona.id;
+      let personId = persona.id,
+        relation: CompetenceReadRelation = 'self';
       const self = await deps.store.transaction(tx => tx.persons([persona.id]));
       // The reader's own key is the reader: a row about them opens their own list.
       if (input.person !== undefined && !(self[0] && personKey(self[0]) === input.person)) {
         const { manages, people } = await reports(persona);
-        if (!manages) throw new ForbiddenError(NOT_A_MANAGER);
         const found = [...people.values()].find(p => personKey(p) === input.person);
-        if (!found) throw new ForbiddenError(NOT_YOURS);
-        personId = found.id;
+        if (found) {
+          personId = found.id;
+          relation = 'managed';
+        } else if (registrar(persona)) {
+          // D121 items 1 and 4: anyone active of the reader's own organisation, by user name, for a registrar. The
+          // registry let the call through only as `registrar` (this read admits it); the grant is checked here again.
+          const [other] = await deps.store.transaction(tx => tx.activeByUserName([input.person!]));
+          if (!other || other.organisationId !== persona.organisationId) throw new ForbiddenError(NOT_YOURS);
+          personId = other.id;
+          relation = 'registrar';
+        } else throw new ForbiddenError(manages ? NOT_YOURS : NOT_A_MANAGER);
       }
-      const today = swedishDay(now());
+      const at = now(),
+        today = swedishDay(at);
       return deps.store.transaction(async tx => {
         const [person] = await tx.persons([personId]);
         if (!person) return { rows: [] };
@@ -2107,15 +2203,109 @@ export function competenceUsecases(deps: CompetenceDeps) {
           const type = h.typeId ? types.get(h.typeId) : undefined;
           return type && (h.state === 'pending' || mine) ? [ownRow(h, type, person)] : [];
         });
+        const rows = orderHoldingRows([
+          ...held.map(s => holdingRow(s, person, names)),
+          ...registered,
+          ...waiting.map(h => uncountedRow(h, person, names)),
+        ]).slice(0, 500);
+        // D108 item 15, D121 item 5: one person's competence opened, whoever reads it and as which relation, in the
+        // transaction that read it, so the answer is not given unless the row is written.
+        await tx.logRead(readOf(persona, at, relation, { kind: 'person', personId, rows: rows.length }));
+        return { rows };
+      });
+    },
+
+    /**
+     * What Kompetenssökning narrows by (D121 item 4): the organisation's units, by name in Swedish order. Asked first by
+     * the page, so it is also how the page learns whether the reader holds the relation: anyone else is refused.
+     */
+    async searchOptions(persona: AuthenticatedContext): Promise<CompetenceSearchOptions> {
+      requireRegistrar(persona);
+      const tree = await deps.store.transaction(tx => tx.units(persona.organisationId));
+      const labelOf = new Map(tree.map(u => [u.id, u.label]));
+      return {
+        units: tree
+          .map(u => ({ id: u.id, label: u.label, parentLabel: (u.parentId && labelOf.get(u.parentId)) || null }))
+          .sort((a, b) => a.label.localeCompare(b.label, 'sv') || a.id.localeCompare(b.id)),
+      };
+    },
+
+    /**
+     * The type field of the search (D121 item 4): the types of the reader's organisation that are not archived whose name
+     * or area holds every word typed, at most `COMPETENCE_TYPE_SEARCH_MAX`, by name. Asked in a body, so the words are
+     * in no address. The catalogue names nobody, so anyone the module is on for may ask it, as `ownTypes` is.
+     */
+    async findTypes(
+      persona: AuthenticatedContext,
+      body: CompetenceTypeSearchBody,
+    ): Promise<CompetenceTypeSearchOutput> {
+      const words = typeSearchWords(body.text);
+      const rows = await deps.store.transaction(tx =>
+        tx.findTypes(persona.organisationId, words, COMPETENCE_TYPE_SEARCH_MAX + 1),
+      );
+      return {
+        rows: rows.slice(0, COMPETENCE_TYPE_SEARCH_MAX).map(typeRow),
+        more: rows.length > COMPETENCE_TYPE_SEARCH_MAX,
+      };
+    },
+
+    /**
+     * Kompetenssökning (D121 item 4): one page of the people of the reader's organisation who hold a type, through the
+     * relation `registrar` alone, by name in Swedish order (`searchRows`). A page past the end answers with the last.
+     * Read in one transaction with its row of the read log (D121 item 5): the type, the least level and the unit asked
+     * for, and how many people the page named; a read whose row cannot be written answers nothing.
+     */
+    async search(persona: AuthenticatedContext, body: CompetenceSearchBody): Promise<CompetenceSearchPage> {
+      requireRegistrar(persona);
+      const pageSize = body.pageSize ?? COMPETENCE_SEARCH_PAGE_SIZES[0];
+      const at = now();
+      return deps.store.transaction(async tx => {
+        const { type, rows } = await searchIn(tx, persona.organisationId, body, swedishDay(at));
+        const page = pageOfRows(rows, body.page ?? 1, pageSize);
+        await tx.logRead(
+          readOf(persona, at, 'registrar', { kind: 'search', ...searched(body), rows: page.rows.length }),
+        );
         return {
-          rows: orderHoldingRows([
-            ...held.map(s => holdingRow(s, person, names)),
-            ...registered,
-            ...waiting.map(h => uncountedRow(h, person, names)),
-          ]).slice(0, 500),
+          type: { id: type.id, name: type.name, area: type.area, kind: type.kind },
+          rows: page.rows,
+          total: rows.length,
+          page: page.page,
+          pageSize,
         };
       });
     },
+
+    /**
+     * The whole result of a search as a file (D121 item 4), with the matrix's writer (`csvFile`, which keeps a value a
+     * spreadsheet would read as a formula as text). Audited as an export (`competence.search_exported`, ids and counts)
+     * and written to the read log, both in the transaction that reads it.
+     */
+    async exportSearch(
+      persona: AuthenticatedContext,
+      body: CompetenceSearchFileBody,
+    ): Promise<{ filename: string; text: string }> {
+      requireRegistrar(persona);
+      const at = now(),
+        today = swedishDay(at);
+      return deps.store.transaction(async tx => {
+        const { type, rows } = await searchIn(tx, persona.organisationId, body, today);
+        await tx.logRead(readOf(persona, at, 'registrar', { kind: 'export', ...searched(body), rows: rows.length }));
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'competence.search_exported',
+          subject: 'organisation:' + persona.organisationId,
+          at: at.toISOString(),
+          details: { ...searched(body), people: rows.length },
+        });
+        return { filename: `kompetenssokning-${today}.csv`, text: searchCsv(type, rows) };
+      });
+    },
+
+    /**
+     * The read log as an operator reads it (`scripts/competence-read-log.ts`), the newest first. Writes nothing: reading
+     * the log is an operator's matter, outside the product (D121 asks for no page).
+     */
+    readLog: (query: ReadLogQuery) => deps.store.transaction(tx => tx.readLog(query)),
 
     /**
      * What `competence.person` answers (D97): for each asked person who reports to the reader, by their user name

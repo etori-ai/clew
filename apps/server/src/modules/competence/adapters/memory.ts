@@ -10,6 +10,7 @@ import type {
   HoldingRecord,
   PersonRef,
   PositionRecord,
+  ReadLogEntry,
   RequirementRecord,
   ShareTargetRecord,
   SourceMapping,
@@ -78,6 +79,21 @@ export interface MemoryCompetenceState {
   /** The approvals' cards by card id, and every call to them in order (D108 item 7). */
   cards: Map<string, MemoryApprovalCard>;
   calls: ApprovalWorkItemCall[];
+  /** The read log (D108 item 15, D121 item 5), in the order written. */
+  readLog: ReadLogEntry[];
+}
+/**
+ * The checks of `competence_read_log`: a person opened names whom and nothing of a search; a search and an export name
+ * the type and nobody, and are a registrar's.
+ */
+function assertReadLog(r: ReadLogEntry) {
+  const ok =
+    r.rows >= 0 &&
+    (r.minLevel === null || (r.minLevel >= 1 && r.minLevel <= 3)) &&
+    (r.kind === 'person'
+      ? r.personId !== null && r.typeId === null && r.minLevel === null && r.unitId === null
+      : r.typeId !== null && r.personId === null && r.relation === 'registrar');
+  if (!ok) throw new Error('competence_read_log check violated');
 }
 const byCreated = <T extends { createdAt: string; id: string }>(rows: T[]) =>
   rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
@@ -104,8 +120,10 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     enqueued: [],
     cards: new Map(),
     calls: [],
+    readLog: [],
   };
   const sink: MemoryApprovalSink = {};
+  const logSink = { fail: false };
   let tail = Promise.resolve();
   const serialized = async <T>(fn: () => Promise<T>): Promise<T> => {
     const previous = tail;
@@ -331,6 +349,19 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       // One after the other, so a name or an address twice in the batch is refused as the index refuses it; the
       // transaction's snapshot makes it all or none.
       for (const type of types) await tx.insertType(type);
+    },
+    async findTypes(organisationId, words, limit) {
+      const folded = (value: string) => value.toLocaleLowerCase('sv');
+      return [...state.types.values()]
+        .filter(
+          t =>
+            t.organisationId === organisationId &&
+            t.archivedAt === null &&
+            words.every(w => folded(t.name).includes(folded(w)) || folded(t.area).includes(folded(w))),
+        )
+        .sort((a, b) => sv(a.name, b.name) || a.id.localeCompare(b.id))
+        .slice(0, limit)
+        .map(t => ({ ...t }));
     },
     async holdingsOf(personIds) {
       return byCreated([...state.holdings.values()].filter(h => personIds.includes(h.personId))).map(h =>
@@ -731,6 +762,25 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async audit(entry) {
       state.audit.push(structuredClone(entry));
     },
+    async logRead(entry) {
+      if (logSink.fail) throw new Error('the read log cannot be written');
+      if (state.readLog.some(r => r.id === entry.id)) throw new Error('duplicate read log id');
+      assertReadLog(entry);
+      state.readLog.push(structuredClone(entry));
+    },
+    async readLog(query) {
+      return state.readLog
+        .filter(
+          r =>
+            (query.organisationId === undefined || r.organisationId === query.organisationId) &&
+            (query.personId === undefined || r.personId === query.personId) &&
+            (query.readerId === undefined || r.readerId === query.readerId) &&
+            (query.since === undefined || r.readAt >= query.since),
+        )
+        .sort((a, b) => b.readAt.localeCompare(a.readAt) || a.id.localeCompare(b.id))
+        .slice(0, query.limit)
+        .map(r => structuredClone(r));
+    },
     workItems,
   };
   const transaction: CompetenceStore['transaction'] = fn =>
@@ -746,6 +796,10 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
   return {
     transaction,
     sink,
+    /** Set `fail` and the read log refuses every row, as a database that cannot write it would (D121 item 5). */
+    readLogSink: logSink,
+    /** The read log as written, oldest first. */
+    readLog: () => structuredClone(state.readLog),
     /** The calls to the approvals' cards, in order. */
     calls: () => structuredClone(state.calls),
     /** The current state; replaced (not mutated) when a transaction rolls back, so read it after the call. */

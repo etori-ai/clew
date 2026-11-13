@@ -5,6 +5,7 @@ import type {
   ModelSummary,
   ProviderHealth,
   ProviderSummary,
+  RelationGrant,
   Role,
   StaffPerson,
 } from '@clew/contracts';
@@ -40,6 +41,18 @@ export const capabilityLabel: Record<Capability, string> = {
   'admin.users': 'Administrera användare',
   'admin.appearance': 'Administrera utseende',
   'admin.competence': 'Administrera kompetenskatalogen',
+};
+/**
+ * The relations to people a group may give by grant (D121), in the administrator's words: what the grant lets a person
+ * do, never named as a role. Kept apart from the capabilities, since a capability is no relation to a person (D118).
+ */
+export const relationLabel: Record<RelationGrant, string> = {
+  registrar: 'Kompetenssökning',
+};
+/** What each relation lets the people of the group do, as the editor says it beside the choice. */
+export const relationDescription: Record<RelationGrant, string> = {
+  registrar:
+    'Söka vem i hela organisationen som har en kompetens, och läsa en persons kompetenser. Varje läsning loggas.',
 };
 export const kindLabel = {
   core: 'Startsidans egen',

@@ -79,6 +79,9 @@ import type {
   CompetenceMatrixOutput,
   CompetenceRequirementBody,
   CompetenceRequirementsOutput,
+  CompetenceSearchBody,
+  CompetenceSearchFileBody,
+  CompetenceSearchRow,
   CompetenceShareTarget,
   CompetenceShareTargetBody,
   CompetenceSource,
@@ -97,6 +100,7 @@ import type {
   ProviderSummary,
   TalkHeldBody,
   TalkRound,
+  RelationGrant,
   UsersAdminQueryType,
 } from '@clew/contracts';
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
@@ -207,6 +211,16 @@ export class MockApi {
    * draws under Administration. Every one by default; a test narrows it.
    */
   capabilities: Capability[] = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'];
+  /** D121: the relations to people the session says the person holds by grant: `registrar` opens Kompetenssökning. */
+  relations: RelationGrant[] = [];
+  /**
+   * Kompetenssökning (D121): the people who hold each type, by type id, as the server would find them; every body the
+   * page asked a search with, every file asked for, and whether the search fails (a 503).
+   */
+  competenceSearch: Record<string, CompetenceSearchRow[]> = {};
+  searchBodies: CompetenceSearchBody[] = [];
+  searchFiles: CompetenceSearchFileBody[] = [];
+  searchFails = false;
   /**
    * The person's calendar (D116, amended 2026-11-12): `ok` answers; `silent` does not (the calendar's own 400, as when its
    * server fails); `unbound` is an account with no calendar bound to it; `hidden` is a calendar the registry does not
@@ -504,6 +518,8 @@ export class MockApi {
             ...(this.employee ? { user: { ...user, role: 'employee' } } : {}),
             admin: this.admin && this.capabilities.length > 0,
             capabilities: this.admin ? this.capabilities : [],
+            // D121: a relation to people by grant is never an admin flag; it only draws Kompetenssökning.
+            relations: this.relations,
           })
         : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
     }
@@ -696,6 +712,24 @@ export class MockApi {
             groupLabel: this.users.groups.find(g => g.id === input.groupExternalId)?.label ?? null,
             capability: input.capability,
           });
+        return json(this.users);
+      }
+      // D121: a group gives Kompetenssökning, mapped beside the capabilities by calls of its own.
+      if (path === '/admin/users/group-relations' && method === 'POST') {
+        const input = request.postDataJSON() as { groupExternalId: string; relation: RelationGrant };
+        if (!this.users.groupRelations.some(m => m.groupExternalId === input.groupExternalId))
+          this.users.groupRelations.push({
+            groupExternalId: input.groupExternalId,
+            groupLabel: this.users.groups.find(g => g.id === input.groupExternalId)?.label ?? null,
+            relation: input.relation,
+          });
+        return json(this.users);
+      }
+      if (path === '/admin/users/group-relations/remove' && method === 'POST') {
+        const input = request.postDataJSON() as { groupExternalId: string; relation: string };
+        this.users.groupRelations = this.users.groupRelations.filter(
+          m => !(m.groupExternalId === input.groupExternalId && m.relation === input.relation),
+        );
         return json(this.users);
       }
       if (path === '/admin/users/group-capabilities/remove' && method === 'POST') {
@@ -1056,6 +1090,70 @@ export class MockApi {
         this.sourceWrites.push({ method, path, body });
         return json({ holdings: type?.holdings ?? 0 });
       }
+    }
+    // Kompetenssökning (D121): refused to anyone without the relation, as the server refuses; the type field asks the
+    // catalogue; a search and its file are asked in a body, a page at a time, by name.
+    if (path === '/competence/search/types' && route.request().method() === 'POST') {
+      const words = ((route.request().postDataJSON() as { text: string }).text ?? '')
+        .toLocaleLowerCase('sv')
+        .split(/\s+/)
+        .filter(Boolean);
+      const found = (this.competenceTypes ?? []).filter(
+        t => !t.archived && words.every(w => (t.name + ' ' + t.area).toLocaleLowerCase('sv').includes(w)),
+      );
+      return json({ rows: found.slice(0, 20), more: found.length > 20 });
+    }
+    if (path === '/competence/search' || path === '/competence/search.csv') {
+      if (!this.relations.includes('registrar'))
+        return route.fulfill({
+          status: 403,
+          json: {
+            error: 'Kompetenssökning är inte tilldelad dig. En administratör ger den genom en grupp.',
+            code: 'denied',
+          },
+        });
+      if (route.request().method() === 'GET')
+        return json({
+          units: [
+            { id: 'unit-skola', label: 'Bergsåkers skola', parentLabel: 'Grundskola' },
+            { id: 'unit-omsorg', label: 'Hemtjänst Centrum', parentLabel: null },
+          ],
+        });
+      if (this.searchFails) return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
+      const body = route.request().postDataJSON() as CompetenceSearchBody;
+      const type = this.competenceTypes?.find(t => t.id === body.typeId);
+      const held = (this.competenceSearch[body.typeId] ?? []).filter(
+        r =>
+          (!body.unitId || r.units.includes(body.unitId === 'unit-skola' ? 'Bergsåkers skola' : 'Hemtjänst Centrum')) &&
+          (!body.minLevel || (r.level ?? 0) >= body.minLevel),
+      );
+      if (path === '/competence/search.csv') {
+        this.searchFiles.push(body);
+        return route.fulfill({
+          status: 200,
+          headers: {
+            'content-type': 'text/csv; charset=utf-8',
+            'content-disposition': 'attachment; filename="kompetenssokning-2026-11-04.csv"',
+          },
+          body: '\ufeffNamn;Användarnamn;Enhet;Status;Giltigt till\r\n',
+        });
+      }
+      this.searchBodies.push(body);
+      const pageSize = body.pageSize ?? 25,
+        last = Math.max(1, Math.ceil(held.length / pageSize)),
+        at = Math.min(body.page ?? 1, last);
+      return json({
+        type: {
+          id: body.typeId,
+          name: type?.name ?? body.typeId,
+          area: type?.area ?? '',
+          kind: type?.kind ?? 'course',
+        },
+        rows: held.slice((at - 1) * pageSize, at * pageSize),
+        total: held.length,
+        page: at,
+        pageSize,
+      });
     }
     // Kompetens › Medarbetare (D108 item 11): the manager's matrix, its file, and a holding revoked from a cell. Someone
     // who manages nobody is refused as the server refuses them.

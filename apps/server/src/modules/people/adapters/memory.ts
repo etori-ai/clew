@@ -5,6 +5,7 @@ import {
   type Assignment,
   type Grant,
   type GroupCapabilityRule,
+  type GroupRelationRule,
   type GroupRecord,
   type Placement,
   type UserRecord,
@@ -22,9 +23,12 @@ export interface MemoryProvisionState {
   /** `memberKey(groupId, personId)`. */
   members: Set<string>;
   groupCapabilities: Array<GroupCapabilityRule & { organisationId: string }>;
+  /** D121: a group gives its members a relation to people by grant. */
+  groupRelations: Array<GroupRelationRule & { organisationId: string }>;
   units: Map<string, { organisationId: string; label: string }>;
   assignments: Map<string, Assignment[]>;
-  grants: Map<string, Omit<Grant, 'capabilities'> & { capabilities: string[] }>;
+  /** `relations` (D121) only when the person holds one, as the projection stores it. */
+  grants: Map<string, Omit<Grant, 'capabilities' | 'relations'> & { capabilities: string[]; relations?: string[] }>;
   /** D108 item 5: the organisations' positions, by the store's id; a code is unique within its organisation. */
   positions: Map<string, { organisationId: string; code: string; label: string }>;
   /** The ids of the positions each person holds, by person id. */
@@ -46,6 +50,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     groups: new Map(),
     members: new Set(),
     groupCapabilities: [],
+    groupRelations: [],
     units: new Map(),
     assignments: new Map(),
     grants: new Map(),
@@ -117,6 +122,11 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
         .filter(m => m.organisationId === organisationId)
         .map(m => ({ groupExternalId: m.groupExternalId, capability: m.capability }));
     },
+    async groupRelations(organisationId) {
+      return state.groupRelations
+        .filter(m => m.organisationId === organisationId)
+        .map(m => ({ groupExternalId: m.groupExternalId, relation: m.relation }));
+    },
     async unitLabels(ids, organisationId) {
       return Object.fromEntries(
         ids.flatMap(id => {
@@ -139,8 +149,16 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       return g && structuredClone(g);
     },
     async writeGrant(personId, grant) {
-      if (grant) state.grants.set(personId, { ...grant, capabilities: [...grant.capabilities] });
-      else state.grants.delete(personId);
+      if (!grant) {
+        state.grants.delete(personId);
+        return;
+      }
+      const { relations, ...rest } = grant;
+      state.grants.set(personId, {
+        ...rest,
+        capabilities: [...grant.capabilities],
+        ...(relations?.length ? { relations: [...relations] } : {}),
+      });
     },
     async positionsOf(personId) {
       return (state.personPositions.get(personId) ?? [])
@@ -401,6 +419,21 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       }
       if (!present && index !== -1) {
         state.groupCapabilities.splice(index, 1);
+        return true;
+      }
+      return false;
+    },
+    async setGroupRelation(organisationId, groupExternalId, relation, present) {
+      const rows = state.groupRelations;
+      const index = rows.findIndex(
+        m => m.organisationId === organisationId && m.groupExternalId === groupExternalId && m.relation === relation,
+      );
+      if (present && index === -1) {
+        rows.push({ organisationId, groupExternalId, relation });
+        return true;
+      }
+      if (!present && index !== -1) {
+        rows.splice(index, 1);
         return true;
       }
       return false;

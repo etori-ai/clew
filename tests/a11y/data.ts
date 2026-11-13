@@ -1429,6 +1429,7 @@ export const usersPeople = (): UserAdminRow[] => [
     assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
     active: { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' },
     capabilities: [],
+    relationGrants: [],
   },
   {
     id: 'hillevi',
@@ -1443,6 +1444,7 @@ export const usersPeople = (): UserAdminRow[] => [
     assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
     active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
     capabilities: [],
+    relationGrants: [],
   },
   {
     id: 'mikael',
@@ -1457,6 +1459,7 @@ export const usersPeople = (): UserAdminRow[] => [
     assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
     active: { unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' },
     capabilities: ['admin.connectors', 'admin.users'],
+    relationGrants: [],
   },
   {
     id: 'omar',
@@ -1471,6 +1474,7 @@ export const usersPeople = (): UserAdminRow[] => [
     assignments: [],
     active: null,
     capabilities: [],
+    relationGrants: [],
   },
 ];
 /**
@@ -1494,12 +1498,14 @@ export const manyPeople = (): UserAdminRow[] =>
       assignments: [placed],
       active: placed,
       capabilities: [],
+      relationGrants: [],
     };
   });
 export const usersOverview = (): UsersAdminOverview => ({
   groupCapabilities: [
     { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', capability: 'admin.connectors' },
   ],
+  groupRelations: [],
   units: [
     { id: 'unit-skola', label: 'Bergsåkers skola', parentLabel: 'Grundskola' },
     { id: 'unit-omsorg', label: 'Hemtjänst Centrum', parentLabel: null },
@@ -1511,6 +1517,7 @@ export const usersOverview = (): UsersAdminOverview => ({
     { id: 'S-1-5-21-rektorer', label: 'Rektorer' },
   ],
   capabilities: ['admin.connectors', 'admin.users'],
+  relationGrants: ['registrar'],
   provisioners: [
     { id: 'hr', label: 'HR-systemet', lastSeenAt: '2026-11-06T05:00:00.000Z', silent: true, previousValidUntil: null },
     {

@@ -5,7 +5,8 @@
  * in the list of people by id, so two runs on the same directory give the same result. It also sets a handful of
  * requirements on the directory's positions and one share target (item 6), so that some people lack something and a
  * unit's coverage has something to count. Some people have skills (D120): rated by themselves alone, or confirmed, at
- * a level, a few marked as ones they want to develop; one position requires a skill at a least level. Runs inside the
+ * a level, a few marked as ones they want to develop; one position requires a skill at a least level. And it maps the
+ * directory's registrar group to Kompetenssökning (D121), as an administrator would on Användare. Runs inside the
  * app container with the server's local settings (DATABASE_URL); the development seed (`dev-connectors.ts`) calls it. It
  * adds the types the organisation lacks, holdings for the people who have none, skills for the people who have no
  * skill, and the requirements and targets that are not there yet (a position the provisioner has not pushed is
@@ -22,10 +23,12 @@ import { closeDatabase, database, schema } from '@clew/db';
 import {
   DEVELOPMENT_CATALOGUE,
   DEVELOPMENT_ORGANISATION,
+  DEVELOPMENT_REGISTRAR_GROUP,
   DEVELOPMENT_REQUIREMENTS,
   DEVELOPMENT_SHARE_TARGETS,
 } from './competence-development';
 import { competence, competenceStore } from '../apps/server/src/composition/competence';
+import { usersAdmin } from '../apps/server/src/composition/people';
 
 export const OPERATOR = 'operator:cli';
 /** The organisation the development directory provisions into (`scripts/auth-setup.ts`). */
@@ -104,7 +107,26 @@ export async function seedCompetence(organisationId: string, today = new Date())
     else if (n % 5 === 3) await skill(person.id, 'Teckenspråk', 1, false, n % 2 === 1);
     else await skill(person.id, 'Digitala möten', 2, true, n % 3 === 0);
   }
-  return { types, people: seeded, holdings, skills, ...(await seedRequirements(organisationId, ids)) };
+  return {
+    types,
+    people: seeded,
+    holdings,
+    skills,
+    ...(await seedRequirements(organisationId, ids)),
+    registrar: await seedRegistrar(organisationId),
+  };
+}
+
+/**
+ * Kompetenssökning for the development stack (D121): the directory's registrar group is mapped to the relation
+ * `registrar`, as an administrator maps a group on Administration › Användare, with the same audit row and derivation.
+ * True when the mapping was made now; false when it was there already or the provisioner has not pushed the group.
+ */
+async function seedRegistrar(organisationId: string) {
+  return usersAdmin.seedGroupRelation(OPERATOR, organisationId, {
+    groupExternalId: DEVELOPMENT_REGISTRAR_GROUP,
+    relation: 'registrar',
+  });
 }
 
 /**
@@ -164,7 +186,7 @@ if (import.meta.main) {
   try {
     const seeded = await seedCompetence(organisationId);
     console.log(
-      `Seeded competence for organisation "${organisationId}": ${seeded.types} new types, ${seeded.holdings} holdings for ${seeded.people} people who had none, ${seeded.skills} skills, ${seeded.requirements} requirements and ${seeded.targets} share targets.`,
+      `Seeded competence for organisation "${organisationId}": ${seeded.types} new types, ${seeded.holdings} holdings for ${seeded.people} people who had none, ${seeded.skills} skills, ${seeded.requirements} requirements and ${seeded.targets} share targets${seeded.registrar ? ', and mapped the registrar group' : ''}.`,
     );
   } catch (error) {
     console.error(`Could not seed: ${(error as Error).message}`);

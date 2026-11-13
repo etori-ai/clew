@@ -19,6 +19,7 @@ import {
   type CompetenceMatrixOutput,
   type CompetenceMatrixReason,
   type CompetenceMatrixStatus,
+  type CompetenceSearchRow,
   type CompetenceStatus,
   type CompetenceType,
 } from '@clew/contracts';
@@ -1181,7 +1182,90 @@ export function matrixCsv(matrix: Pick<CompetenceMatrixOutput, 'columns' | 'rows
     ['Namn', 'Användarnamn', ...matrix.columns.map(c => c.name)],
     ...matrix.rows.map(r => [r.name, r.key, ...r.cells.map(matrixCellText)]),
   ];
+  return csvFile(lines);
+}
+/**
+ * Lines as a file a spreadsheet set up for Swedish opens as columns: separated by semicolons, with a byte order mark and
+ * CRLF line ends, every field through `csvField`, so nothing in it is read as a formula.
+ */
+export function csvFile(lines: readonly (readonly string[])[]): string {
   return '\ufeff' + lines.map(line => line.map(csvField).join(';')).join('\r\n') + '\r\n';
+}
+
+// The registrar's search (D121 item 4).
+
+/** The words the type field asks the catalogue with: lower-cased in Swedish, split on white space, at most eight. */
+export const typeSearchWords = (text: string): string[] =>
+  text.toLocaleLowerCase('sv').split(/\s+/).filter(Boolean).slice(0, 8);
+/**
+ * Who of the organisation holds a type today (D121 item 4), as the registrar's search lists them: for each person the
+ * holding that decides (`deciding`: valid, about to run out or run out, never one that waits, was rejected or was
+ * revoked), only for a person who is active and of the organisation; on a skill (D120) at `minLevel` or above, confirmed
+ * or the person's own rating alike, which the row says; with `unitId`, only someone placed on the unit or below it
+ * (`branchOf`). By name in Swedish order, then id, so the order is the same on every page. A row carries the units the
+ * person is placed on by name, a unit the tree does not name by its id.
+ */
+export function searchRows(input: {
+  type: TypeRecord;
+  holdings: readonly HoldingRecord[];
+  persons: ReadonlyMap<string, PersonRef>;
+  active: ReadonlySet<string>;
+  organisationId: string;
+  places: ReadonlyMap<string, Pick<Placed, 'unitIds'>>;
+  units: readonly UnitRecord[];
+  unitId?: string;
+  minLevel?: number;
+  today: string;
+}): CompetenceSearchRow[] {
+  const { type } = input;
+  const branch = input.unitId === undefined ? undefined : new Set(branchOf(input.units, input.unitId));
+  const labelOf = new Map(input.units.map(u => [u.id, u.label]));
+  const rows: CompetenceSearchRow[] = [];
+  for (const s of deciding(input.holdings, new Map([[type.id, type]]), input.today)) {
+    if (s.holding === null) continue;
+    const person = input.persons.get(s.personId);
+    if (!person || person.organisationId !== input.organisationId || !input.active.has(person.id)) continue;
+    const level = isSkill(type) ? levelOf(s.holding) : undefined;
+    if (input.minLevel !== undefined && (level ?? 0) < input.minLevel) continue;
+    const placed = input.places.get(person.id)?.unitIds ?? [];
+    if (branch && !placed.some(u => branch.has(u))) continue;
+    rows.push({
+      personId: person.id,
+      key: person.userName,
+      name: person.name,
+      units: placed.map(u => labelOf.get(u) ?? u).sort((a, b) => a.localeCompare(b, 'sv')),
+      status: s.status,
+      ...(s.end ? { expiresOn: s.end } : {}),
+      ...(level !== undefined ? { level, validated: confirmed(s.holding) } : {}),
+    });
+  }
+  return rows.sort((a, b) => a.name.localeCompare(b.name, 'sv') || a.personId.localeCompare(b.personId));
+}
+/** One page of rows, 1-based: a page past the end, which an old address or a list that became shorter leaves, is the last. */
+export function pageOfRows<T>(rows: readonly T[], page: number, pageSize: number): { rows: T[]; page: number } {
+  const last = Math.max(1, Math.ceil(rows.length / pageSize));
+  const at = Math.min(Math.max(1, page), last);
+  return { rows: rows.slice((at - 1) * pageSize, at * pageSize), page: at };
+}
+/**
+ * The search as a file (D121 item 4): a heading row, then one row per person who holds the type, with their name, their
+ * user name (Clew's id for someone provisioned without one, so two people who share a name are told apart), their
+ * units, where it stands and the day it ends; on a skill its level and "Egen bed\u00f6mning" where no manager has confirmed
+ * it, "Bekr\u00e4ftad" where one has. The matrix's file's format (`csvFile`).
+ */
+export function searchCsv(type: Pick<TypeRecord, 'kind'>, rows: readonly CompetenceSearchRow[]): string {
+  const skill = isSkill(type);
+  return csvFile([
+    ['Namn', 'Anv\u00e4ndarnamn', 'Enhet', 'Status', ...(skill ? ['Niv\u00e5', 'Bed\u00f6mning'] : []), 'Giltigt till'],
+    ...rows.map(r => [
+      r.name,
+      r.key ?? r.personId,
+      r.units.join(', '),
+      CSV_WORDS[r.status],
+      ...(skill ? [r.level ? levelWord(r.level) : '', r.validated === false ? SELF_RATED_WORD : 'Bekr\u00e4ftad'] : []),
+      r.expiresOn ?? '',
+    ]),
+  ]);
 }
 
 // The copy of what sources hold (D108 item 9).

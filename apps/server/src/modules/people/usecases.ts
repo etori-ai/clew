@@ -1,12 +1,17 @@
 import { isDeepStrictEqual } from 'node:util';
 import {
   CAPABILITIES,
+  RELATION_GRANTS,
   contractProblems,
   isCapability,
+  isRelationGrant,
   type AuthenticatedContext,
   type Capability,
   type GroupCapabilityInputType,
   type GroupCapability,
+  type GroupRelation,
+  type GroupRelationInputType,
+  type RelationGrant,
   type OrganisationOverview,
   type OrganisationUnitPeople,
   type ProvisionerIssueInputType,
@@ -35,6 +40,7 @@ import {
   bySwedish,
   closesCycle,
   deriveAuthority,
+  grantRelations,
   groupFields,
   patchOperations,
   groupResource,
@@ -58,6 +64,7 @@ import {
   type GroupFields,
   type GroupRecord,
   type GroupCapabilityRule,
+  type GroupRelationRule,
   type Projection,
   type TreeUnit,
   type UserFields,
@@ -81,7 +88,8 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     const person = await tx.lockPerson(personId);
     if (!person) return undefined;
     const memberships = await tx.memberships(personId),
-      rules = await tx.groupCapabilities(person.organisationId);
+      rules = await tx.groupCapabilities(person.organisationId),
+      relationRules = await tx.groupRelations(person.organisationId);
     // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
     // and the comparison that lets an unchanged derivation write nothing (a reconciliation replays every person).
     const named = [...new Set(memberships.flatMap(m => unitOfKey(m.externalId) ?? []))];
@@ -95,7 +103,7 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
       const node = placedOn.has(id) ? undefined : await tx.findGroup('externalId', UNIT_KEY + id);
       if (node) pushedLabels[id] = node.label;
     }
-    const derived = deriveAuthority(memberships, rules, { ...knownLabels, ...pushedLabels });
+    const derived = deriveAuthority(memberships, rules, { ...knownLabels, ...pushedLabels }, relationRules);
     const movedUnits = derived.units.filter(u => knownLabels[u.id] !== u.label);
     if (movedUnits.length) await tx.writeUnits(person.organisationId, movedUnits);
     // Compared as a set: the store and the derivation need not order unit ids alike, and an order alone is no change.
@@ -106,7 +114,14 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     if (!sameAssignments) await tx.replaceAssignments(personId, derived.assignments);
     // Compared as stored, so a projection that still carries a name outside the closed list is rewritten.
     const before = await tx.grant(personId),
-      previous = before && { ...before, capabilities: [...before.capabilities].sort() as Capability[] };
+      heldRelations = grantRelations(before),
+      previous = before && {
+        unitId: before.unitId,
+        unitLabel: before.unitLabel,
+        role: before.role,
+        capabilities: [...before.capabilities].sort() as Capability[],
+        ...(heldRelations.length ? { relations: heldRelations } : {}),
+      };
     const regranted = !sameGrant(previous, derived.grant);
     // D99: the history of who was assigned where is the audit rows. A second unit, or a manager's role on one, changes
     // what a person sees without changing the unit they act as, so it is said by itself when the grant does not say it.
@@ -129,6 +144,8 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
               role: derived.grant.role,
               capabilities: derived.grant.capabilities,
               assignments: derived.assignments.length,
+              // D121: said whenever the person held one before or holds one now, so its loss is on the row too.
+              ...(derived.relations.length || heldRelations.length ? { relations: derived.relations } : {}),
             }
           : { removed: true },
       });
@@ -732,9 +749,11 @@ export type ScimUsecases = ReturnType<typeof scimUsecases>;
 
 /**
  * Administration › Användare (D62, D68, D85): what an administrator with `admin.users` sees and may change. Identity,
- * units and roles are read only here; they come from the provisioner. The one thing written is D85's rows, a group gives
- * a capability: audited per row (`group-capability.added`, `group-capability.removed`), and every current member of the
- * group is re-derived in the same transaction, so a grant never lags the row that produced it.
+ * units and roles are read only here; they come from the provisioner. What is written is D85's rows, a group gives a
+ * capability, and D121's, a group gives a relation to people by grant (`registrar`), kept apart since a capability is no
+ * relation (D118): audited per row (`group-capability.added`, `group-capability.removed`, `group-relation.added`,
+ * `group-relation.removed`), and every current member of the group is re-derived in the same transaction, so a grant
+ * never lags the row that produced it.
  *
  * The people are read a page at a time (D100): the store narrows, orders and counts, and only the rows of the page are
  * filled in with unit, grant and binding, so a page costs the same in an organisation of two hundred and one of
@@ -774,6 +793,7 @@ export function usersAdminUsecases(deps: {
       assignments: await tx.assignmentsOf(u.id),
       active: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel, role: grant.role } : null,
       capabilities: grant ? sorted(grant.capabilities) : [],
+      relationGrants: grantRelations(grant),
     };
   }
   async function overviewWithin(tx: ProvisionTx, persona: AuthenticatedContext): Promise<UsersAdminOverview> {
@@ -802,6 +822,19 @@ export function usersAdminUsecases(deps: {
           (a.groupLabel ?? a.groupExternalId).localeCompare(b.groupLabel ?? b.groupExternalId, 'sv') ||
           a.capability.localeCompare(b.capability),
       );
+    // D121: the groups that give a relation to people, by the same rules and kept apart from the capabilities (D118).
+    const groupRelations: GroupRelation[] = (await tx.groupRelations(persona.organisationId))
+      .filter((m): m is GroupRelationRule & { relation: RelationGrant } => isRelationGrant(m.relation))
+      .map(m => ({
+        groupExternalId: m.groupExternalId,
+        groupLabel: names.get(m.groupExternalId) ?? null,
+        relation: m.relation,
+      }))
+      .sort(
+        (a, b) =>
+          (a.groupLabel ?? a.groupExternalId).localeCompare(b.groupLabel ?? b.groupExternalId, 'sv') ||
+          a.relation.localeCompare(b.relation),
+      );
     const at = deps.clock().toISOString(),
       provisioners = (await tx.provisioners(persona.organisationId)).map(p => ({
         id: p.id,
@@ -810,7 +843,42 @@ export function usersAdminUsecases(deps: {
         silent: p.lastSeenAt === null || since(at, p.lastSeenAt) > PROVISIONER_SILENT_MS,
         previousValidUntil: p.previousValidUntil !== null && p.previousValidUntil > at ? p.previousValidUntil : null,
       }));
-    return { groupCapabilities, groups, capabilities: [...CAPABILITIES], units, provisioners };
+    return {
+      groupCapabilities,
+      groupRelations,
+      groups,
+      capabilities: [...CAPABILITIES],
+      relationGrants: [...RELATION_GRANTS],
+      units,
+      provisioners,
+    };
+  }
+  /**
+   * D121: a group gives, or stops giving, a relation to people by grant: as `change` does for a capability, in one
+   * transaction with its audit row (`group-relation.added`, `group-relation.removed`) and every current member re-derived,
+   * so the relation is held exactly while the row and the membership are.
+   */
+  async function changeRelation(persona: AuthenticatedContext, input: GroupRelationInputType, present: boolean) {
+    require(persona);
+    await persona.authorize();
+    if (!isRelationGrant(input.relation)) throw new InputError('Okänd behörighet.');
+    return deps.store.transaction(async tx => {
+      const group = await tx.findGroup('externalId', input.groupExternalId);
+      if (group ? group.organisationId !== persona.organisationId : present)
+        throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
+      if (group) await tx.readGroup(persona.organisationId, group.id, true);
+      const changed = await tx.setGroupRelation(persona.organisationId, input.groupExternalId, input.relation, present);
+      if (changed) {
+        await tx.audit({
+          actor: 'person:' + persona.id,
+          action: present ? 'group-relation.added' : 'group-relation.removed',
+          subject: 'group:' + input.groupExternalId,
+          details: { relation: input.relation, groupLabel: group?.label ?? null },
+        });
+        await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId));
+      }
+      return overviewWithin(tx, persona);
+    });
   }
   async function change(persona: AuthenticatedContext, input: GroupCapabilityInputType, present: boolean) {
     require(persona);
@@ -975,6 +1043,31 @@ export function usersAdminUsecases(deps: {
       change(persona, input, true),
     removeGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>
       change(persona, input, false),
+    addGroupRelation: (persona: AuthenticatedContext, input: GroupRelationInputType) =>
+      changeRelation(persona, input, true),
+    removeGroupRelation: (persona: AuthenticatedContext, input: GroupRelationInputType) =>
+      changeRelation(persona, input, false),
+    /**
+     * D121, for the development seed: an operator maps a group of an organisation to a relation, as the page does, with
+     * the same audit row and derivation and the operator as the actor. The group must be provisioned in that organisation.
+     */
+    async seedGroupRelation(actor: string, organisationId: string, input: GroupRelationInputType): Promise<boolean> {
+      if (!isRelationGrant(input.relation)) throw new InputError('Okänd behörighet.');
+      return deps.store.transaction(async tx => {
+        const group = await tx.findGroup('externalId', input.groupExternalId);
+        if (!group || group.organisationId !== organisationId) return false;
+        await tx.readGroup(organisationId, group.id, true);
+        if (!(await tx.setGroupRelation(organisationId, input.groupExternalId, input.relation, true))) return false;
+        await tx.audit({
+          actor,
+          action: 'group-relation.added',
+          subject: 'group:' + input.groupExternalId,
+          details: { relation: input.relation, groupLabel: group.label },
+        });
+        await derivation.deriveAll(tx, actor, await tx.members(input.groupExternalId));
+        return true;
+      });
+    },
   };
 }
 export type UsersAdminUsecases = ReturnType<typeof usersAdminUsecases>;

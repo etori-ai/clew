@@ -4,6 +4,7 @@ import type {
   DerivedUnit,
   Grant,
   GroupCapabilityRule,
+  GroupRelationRule,
   GroupRecord,
   Membership,
   Placement,
@@ -72,12 +73,19 @@ export interface ProvisionTx {
   members(groupExternalId: string): Promise<string[]>;
   /** D85's rows of one organisation: a row applies to the groups of the organisation that wrote it, and to no other (D101). */
   groupCapabilities(organisationId: string): Promise<GroupCapabilityRule[]>;
+  /** D121's rows of one organisation, by the same rule: a group gives its members a relation to people by grant. */
+  groupRelations(organisationId: string): Promise<GroupRelationRule[]>;
   /** The labels of an organisation's own unit rows. A row another organisation left behind is not known here (D101). */
   unitLabels(ids: readonly string[], organisationId: string): Promise<Record<string, string>>;
   /** Upsert by id, one per assignment, before the assignments that reference them; the label is the derived one. */
   writeUnits(organisationId: string, units: readonly DerivedUnit[]): Promise<void>;
   replaceAssignments(personId: string, assignments: readonly Assignment[]): Promise<void>;
-  grant(personId: string): Promise<(Omit<Grant, 'capabilities'> & { capabilities: string[] }) | undefined>;
+  /** The projection as stored; `relations` (D121) present only when the person holds one. */
+  grant(
+    personId: string,
+  ): Promise<
+    (Omit<Grant, 'capabilities' | 'relations'> & { capabilities: string[]; relations?: string[] }) | undefined
+  >;
   /** Upsert the projection, or remove it when the person has no active assignment. */
   writeGrant(personId: string, grant: Grant | undefined): Promise<void>;
   // Positions (D108 item 5): what a `position:<code>` group says a person is. A code is the organisation's, as a unit
@@ -228,6 +236,13 @@ export interface ProvisionTx {
     organisationId: string,
     groupExternalId: string,
     capability: string,
+    present: boolean,
+  ): Promise<boolean>;
+  /** Add or remove one group-relation row of an organisation (D121); true when the row changed. */
+  setGroupRelation(
+    organisationId: string,
+    groupExternalId: string,
+    relation: string,
     present: boolean,
   ): Promise<boolean>;
 }

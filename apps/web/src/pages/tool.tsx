@@ -45,6 +45,7 @@ function placeOf(from: string | null): RailCurrent {
   const tool = toolOf(from);
   if (from?.startsWith('/staff')) return { surface: 'staff' };
   if (from?.startsWith('/calendar')) return { surface: 'calendar' };
+  if (from?.startsWith('/competence')) return { surface: 'competence' };
   if (tool) return { surface: 'verktyg', view: tool };
   if (from?.startsWith('/todo') || from?.startsWith('/items/')) return { surface: 'todo' };
   if (from === '/' || from?.startsWith('/?')) return { surface: 'start' };

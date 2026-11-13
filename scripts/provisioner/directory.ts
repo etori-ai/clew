@@ -223,6 +223,8 @@ const GROUPS: DirectoryGroup[] = [
   { id: 'ad:elevhalsa', label: 'Elevhälsoteamet' },
   { id: 'ad:nattpersonal', label: 'Nattpersonal' },
   { id: 'ad:systemforvaltare', label: 'Systemförvaltare' },
+  // D121: mapped to Kompetenssökning by the development seed (`DEVELOPMENT_REGISTRAR_GROUP` in competence-development.ts).
+  { id: 'ad:kompetenssamordnare', label: 'Kompetenssamordnare' },
   // A group the directory holds and nobody is in yet.
   { id: 'ad:projekt-e-arkiv', label: 'Projekt e-arkiv' },
   ...(Object.keys(AREAS) as Area[]).map(area => ({ id: areaGroup(area), label: AREAS[area] })),
@@ -387,7 +389,8 @@ const personas: DirectoryPerson[] = [
     employments: [{ unitId: 'unit-skola', title: 'Rektor' }],
     department: 'unit-skola',
     manager: true,
-    groups: ['ad:alla-chefer', 'ad:rektorer'],
+    // Also the development stack's registrar (D121): searches competence across the organisation.
+    groups: ['ad:alla-chefer', 'ad:rektorer', 'ad:kompetenssamordnare'],
     capabilities: [],
     login: true,
   },

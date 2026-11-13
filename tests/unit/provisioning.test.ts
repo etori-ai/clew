@@ -96,6 +96,35 @@ describe('deriveAuthority', () => {
     expect(sameGrant(g, { ...g, capabilities: [] })).toBe(false);
     expect(sameGrant(undefined, undefined)).toBe(true);
     expect(sameGrant(g, undefined)).toBe(false);
+    // D121: a relation to people is authority too; none and an empty list are the same.
+    expect(sameGrant(g, { ...g, relations: ['registrar'] })).toBe(false);
+    expect(sameGrant(g, { ...g, relations: [] })).toBe(true);
+  });
+  test('a relation to people comes from a row of its own table alone: no group key gives it, and it is never a capability (D121, D118)', () => {
+    const memberships = [
+      { externalId: 'unit:u1', label: 'Enhet 1' },
+      { externalId: 'g-hr', label: 'HR' },
+      // A key that names it is no capability and gives nothing; the SCIM boundary refuses it (D96).
+      { externalId: 'capability:registrar', label: 'Not a capability' },
+    ];
+    const relations = [
+      { groupExternalId: 'g-hr', relation: 'registrar' },
+      { groupExternalId: 'g-hr', relation: 'admin.users' },
+      { groupExternalId: 'g-other', relation: 'registrar' },
+    ];
+    const d = deriveAuthority(memberships, [{ groupExternalId: 'g-hr', capability: 'registrar' }], {}, relations);
+    expect(d.relations).toEqual(['registrar']);
+    expect(d.capabilities).toEqual([]);
+    expect(d.grant).toEqual({
+      unitId: 'u1',
+      unitLabel: 'Enhet 1',
+      role: 'employee',
+      capabilities: [],
+      relations: ['registrar'],
+    });
+    // Without the row, nothing; and without a unit there is no grant to carry it (fail closed).
+    expect(deriveAuthority(memberships, [], {}, []).relations).toEqual([]);
+    expect(deriveAuthority([{ externalId: 'g-hr', label: 'HR' }], [], {}, relations).grant).toBeUndefined();
   });
 });
 provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
@@ -141,6 +170,12 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
     },
     async setGroupCapabilities(rows) {
       s.groupCapabilities = rows.map(row => ({ organisationId: 'org', ...row }));
+    },
+    async setGroupRelations(rows) {
+      s.groupRelations = rows.map(row => ({ organisationId: 'org', ...row }));
+    },
+    async relations(id) {
+      return s.grants.get(id)?.relations ?? [];
     },
     async legacyGrant(id, grant) {
       s.grants.set(id, { ...grant });
