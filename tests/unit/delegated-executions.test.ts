@@ -43,10 +43,25 @@ function ledger(groupsOf?: (personId: string) => string[]) {
         needsSession: !!found.connector.delegation,
       };
     },
-    current: async personId => ({ ...fromGrant(personId), ...(groupsOf ? { groups: groupsOf(personId) } : {}) }),
+    current: async personId => {
+      const persona = fromGrant(personId);
+      if (!groupsOf) return persona;
+      const groups = groupsOf(personId);
+      return {
+        ...persona,
+        groups,
+        async authorize() {
+          const latest = groupsOf(personId);
+          if (latest.length !== groups.length || !groups.every(group => latest.includes(group)))
+            throw new Error('Group membership changed');
+          return { version: persona.authorizationVersion };
+        },
+      };
+    },
     execute: (persona, e) =>
       registry.run<ExecuteResult>(audiencedActorOf(persona), e.operation, e.payload, {
         operationId: e.id,
+        authorize: () => persona.authorize(),
         ...(persona.delegate ? { delegate: persona.delegate } : {}),
       }),
     lookup: async () => {
@@ -97,6 +112,28 @@ describe('an approval on a connector for one provisioned group (D68; review 2026
     expect(await w.uc.progress(approved.id)).toBe('done');
     expect(w.writes()).toEqual([]);
     expect(await w.store.read(approved.id)).toMatchObject({ state: 'pending', reason: 'authority-revoked' });
+  });
+
+  test('a withdrawal during session preflight stops the approved write at dispatch', async () => {
+    let groups = [APPROVERS];
+    const w = ledger(() => groups);
+    w.desk.signIn('session-1', 'hillevi');
+    const approved = await w.approve({ ...signedIn(w.desk, 'session-1'), groups });
+    const ready = w.sessions.ready;
+    w.sessions.ready = async (persona, e) => {
+      const available = await ready(persona, e);
+      groups = [];
+      return available;
+    };
+    expect(await w.uc.progress(approved.id)).toBe('reconcile');
+    expect(w.writes()).toEqual([]);
+    expect(w.store.audit().at(-1)).toMatchObject({
+      action: 'execution.unknown',
+      details: { reason: 'source-outcome-unknown' },
+    });
+    expect(await w.uc.progress(approved.id)).toBe('done');
+    expect(await w.store.read(approved.id)).toMatchObject({ state: 'unknown', reason: 'authority-revoked' });
+    expect(w.writes()).toEqual([]);
   });
 });
 

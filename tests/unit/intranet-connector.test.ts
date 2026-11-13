@@ -519,6 +519,50 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     source: { id: 'portal', label: 'portal' },
   };
 
+  test('withdrawal during a header read withholds the answer and lets a restored member read again immediately', async () => {
+    const { registry, state, headers, at } = portal();
+    registry.govern('portal', { ...openGovernance(), header: true, audience: { mode: 'selected', groups: [GROUP] } });
+    let member = true;
+    const withdrawal = new Error('Group membership changed');
+    const persona = {
+      ...signedIn([GROUP]),
+      async authorize() {
+        if (!member) throw withdrawal;
+        return { version: 'v1' };
+      },
+    };
+    state.whileAsked = () => {
+      member = false;
+    };
+    await expect(headers.read(persona)).rejects.toBe(withdrawal);
+    expect(headers.kept()).toBe(0);
+    member = true;
+    state.whileAsked = undefined;
+    expect(await headers.read(persona)).toEqual(VIEW);
+    expect(state.asked).toBe(2);
+
+    // The background refresh can also lose membership after the still-authorized cached read has returned.
+    at(HEADER_FRESH_MS);
+    state.held = [];
+    expect(await headers.read(persona)).toEqual(VIEW);
+    await settled();
+    member = false;
+    state.held[0]!(false);
+    await settled();
+    expect(headers.kept()).toBe(0);
+    member = true;
+    state.held = undefined;
+    expect(await headers.read(persona)).toEqual(VIEW);
+    expect(state.asked).toBe(4);
+
+    // A warm answer also waits for live membership after the registry reads the current holder.
+    registry.setRefresh(async () => {
+      member = false;
+    });
+    await expect(headers.read(persona)).rejects.toBe(withdrawal);
+    expect(state.asked).toBe(4);
+  });
+
   test("a holder that rejects Clew's key or assertion (its 401) has failed, not refused the person: the last good header stays", async () => {
     // The intranet cannot fetch Clew's public keys, or holds another transport key: it answers every request 401
     // `denied`, as the protocol has a connector answer credentials it cannot verify. That is about Clew, not the person.

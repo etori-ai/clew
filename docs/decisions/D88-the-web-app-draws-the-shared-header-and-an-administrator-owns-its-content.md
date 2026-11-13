@@ -48,6 +48,11 @@ refusal is never kept, so a person let in is asked at once. A kept header past t
 `forgetSiteHeaders`, which nothing called, is gone. The cache is in `apps/server/src/connectors/usecases/header.ts`
 and its tests in `tests/unit/intranet-connector.test.ts`. The rest of items 4 and 5 stands.
 
+The live authorization guard is also checked after the asynchronous holder lookup before a cached header is served,
+and before and after asking the holder. A membership withdrawn while either read waits cannot release the old
+person's menu. A refusal or failure of this local guard propagates to the caller; it is not a holder outage that
+permits a stale header.
+
 **Decision.** The product owner showed the header of the proof of concept at https://start.sundsvall.dev/portal/start
 on 2026-11-09 and asked for it in Clew. Asked where, the product owner chose the web app on 3020 ("that is where we
 should work"), the header above the existing rail (not in its place), and that `apps/portal` go: "from now on there is

@@ -69,7 +69,8 @@ const source: ExecutionSource = {
       return calendarSource.execute(persona, e);
     const result = await registry.run<ExecuteResult>(audiencedActorOf(persona), e.operation, e.payload, {
       operationId: e.id,
-      ...(persona.delegate ? { delegate: persona.delegate } : {}),
+      authorize: () => persona.authorize(),
+      delegate: persona.delegate,
     });
     if (!Value.Check(ExecuteResultSchema, result)) throw new Error('Invalid execution result');
     return result;
@@ -85,7 +86,7 @@ const source: ExecutionSource = {
       audiencedActorOf(persona),
       e.safety.lookup,
       { operationId: e.id },
-      persona.delegate ? { delegate: persona.delegate } : {},
+      { authorize: () => persona.authorize(), delegate: persona.delegate },
     );
     if (response.found === false) return undefined;
     if (response.found !== true || !Value.Check(ExecuteResultSchema, response.result))
@@ -112,7 +113,8 @@ const watch: WatchSource = {
     if (found.capability.kind !== 'read') throw new ExecutionError('En bevakning måste vara en läsning.');
     return { connector: found.connector.id };
   },
-  read: (persona, operation, input) => registry.run(audiencedActorOf(persona), operation, input),
+  read: (persona, operation, input) =>
+    registry.run(audiencedActorOf(persona), operation, input, { authorize: () => persona.authorize() }),
 };
 export const executions = executionUsecases({
   review: reviewDocuments.validate,

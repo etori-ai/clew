@@ -82,7 +82,8 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
   const ask = (persona: AuthenticatedContext) =>
     registry.header(audiencedActorOf(persona), {
       signal: AbortSignal.timeout(HEADER_TIMEOUT_MS),
-      ...(persona.delegate ? { delegate: persona.delegate } : {}),
+      authorize: () => persona.authorize(),
+      delegate: persona.delegate,
     });
   const keep = (key: string, view: SiteHeaderView, holder: string) => {
     const now = clock().getTime();
@@ -97,22 +98,17 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
    * drops the entry the call refreshed and keeps nothing. A failure takes nothing's place: the entry it refreshed stays,
    * asked again a minute later, and when nothing is kept at all the default is kept for the holder until then.
    */
-  function settle(
-    key: string,
-    role: AuthenticatedContext['role'],
-    answer: HeaderAnswer | undefined,
-    over?: Kept,
-  ): SiteHeaderView {
-    if (answer?.status === 'answered') return keep(key, viewOf(answer, role), answer.connector.id);
-    if (answer?.status === 'denied') return keep(key, DEFAULT_HEADER, answer.connector.id);
+  function settle(key: string, role: AuthenticatedContext['role'], answer: HeaderAnswer, over?: Kept): SiteHeaderView {
+    if (answer.status === 'answered') return keep(key, viewOf(answer, role), answer.connector.id);
+    if (answer.status === 'denied') return keep(key, DEFAULT_HEADER, answer.connector.id);
     const kept = cache.get(key);
     if (over && kept === over) {
-      if (answer?.status === 'refused') cache.delete(key);
+      if (answer.status === 'refused') cache.delete(key);
       else {
         over.asked = clock().getTime();
         over.refreshing = false;
       }
-    } else if (!kept && answer?.status === 'failed') keep(key, DEFAULT_HEADER, answer.connector.id);
+    } else if (!kept && answer.status === 'failed') keep(key, DEFAULT_HEADER, answer.connector.id);
     return DEFAULT_HEADER;
   }
   let swept = 0;
@@ -123,9 +119,9 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
     for (const [key, kept] of cache) if (now - kept.at >= HEADER_STALE_MS) cache.delete(key);
   }
   async function read(persona: AuthenticatedContext): Promise<SiteHeaderView> {
-    await persona.authorize();
     const key = headerScope(persona);
     const holder = await registry.headerHolder(audiencedActorOf(persona));
+    await persona.authorize();
     const now = clock().getTime();
     sweep(now);
     let kept = cache.get(key);
@@ -142,7 +138,9 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
         over.refreshing = true;
         void ask(persona).then(
           answer => settle(key, persona.role, answer, over),
-          () => settle(key, persona.role, undefined, over),
+          () => {
+            if (cache.get(key) === over) cache.delete(key);
+          },
         );
       }
       return kept.view;

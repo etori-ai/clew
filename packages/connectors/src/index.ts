@@ -1175,8 +1175,28 @@ export class Registry {
     if (!holder) return { status: 'refused' };
     let output: SiteHeaderOutput | undefined;
     let denied = false;
+    // A failed live authority check belongs to the caller. Only the holder's errors count as its answer.
+    let authorityFailed = false;
+    const authorize = context.authorize;
     try {
-      const answer = await this.run<unknown>(actor, holder.header!, {}, context);
+      const answer = await this.run<unknown>(
+        actor,
+        holder.header!,
+        {},
+        {
+          ...context,
+          authorize:
+            authorize &&
+            (async () => {
+              try {
+                return await authorize();
+              } catch (error) {
+                authorityFailed = true;
+                throw error;
+              }
+            }),
+        },
+      );
       if (Value.Check(SiteHeaderOutputSchema, answer)) output = answer;
       else {
         const problem = contractProblems(SiteHeaderOutputSchema, answer, 1)[0];
@@ -1187,6 +1207,7 @@ export class Registry {
         );
       }
     } catch (error) {
+      if (authorityFailed) throw error;
       denied = error instanceof CapabilityError && error.code === 'denied';
       if (!denied)
         this.options.onRefused?.(holder.id, 'header', error instanceof Error ? error.message : String(error));
