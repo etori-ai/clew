@@ -5,14 +5,17 @@ import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import { registerConnector } from '../../scripts/connector-registry';
 
 /**
- * `bun scripts/connector-check.ts --as` against a service of this test's own (review 2026-11-12, R2; Q13): it refuses a
- * connector this installation has not registered and a user name with no person, writing nothing, and otherwise writes
- * its one audit row before the first request it signs as the person. Run with `bun run test:db` inside the devcontainer.
+ * `bun scripts/connector-check.ts --as` against services of this test's own (review 2026-11-12, R2; Q13): it refuses a
+ * connector this installation has not registered, one of Clew's own, a registered id at another address and a user
+ * name with no person, writing nothing and signing nothing, and otherwise writes its one audit row before the first
+ * request it signs as the person. Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
 const tag = randomUUID().slice(0, 8),
   id = 'check-as-' + tag,
+  // A row as the boot writes one for a connector of Clew's own (`syncBundledRows`): no address and no secret.
+  ownId = 'check-as-own-' + tag,
   personId = 'check-as-person-' + tag,
   userName = 'Check.As.' + tag,
   secret = 'check-as-secret-' + tag;
@@ -23,18 +26,18 @@ const checkedAs = () =>
     .from(schema.audit)
     .where(and(eq(schema.audit.action, 'connector.checked_as'), eq(schema.audit.subject, 'person:' + personId)));
 
-/** A service that answers the check, and notes for every signed request whether the audit row was already there. */
-const seen: Array<{ path: string; actor: string; audited: boolean }> = [];
-const manifest = {
+/** The manifest a service answers under a connector id, with a read about a person and a callback it asks for. */
+const manifestFor = (connector: string) => ({
   protocol: 2,
-  id,
+  id: connector,
   kind: 'passthrough',
   source: 'Kontrolltjänsten',
   areas: [],
   scan: false,
+  uses: ['people.directory'],
   capabilities: [
     {
-      name: id + '.person',
+      name: connector + '.person',
       kind: 'read',
       title: 'Saker per person',
       description: 'Öppna saker per person.',
@@ -62,21 +65,27 @@ const manifest = {
       view: { kind: 'list', title: 'open', fields: [{ key: 'open', label: 'Öppna' }] },
     },
   ],
-};
-const service = Bun.serve({
-  port: 0,
-  hostname: '127.0.0.1',
-  async fetch(request) {
-    const url = new URL(request.url);
-    if (request.method === 'GET' && url.pathname === '/clew/manifest') return Response.json(manifest);
-    const body = (await request.json()) as { actor: { id: string } };
-    seen.push({ path: url.pathname, actor: body.actor.id, audited: (await checkedAs()).length === 1 });
-    return Response.json({ output: { rows: [] } });
-  },
 });
-const base = `http://127.0.0.1:${service.port}`;
-const check = async (...args: string[]) => {
-  const child = Bun.spawn(['bun', 'scripts/connector-check.ts', base, '--secret', secret, ...args], {
+/** A service that answers the check under an id, and notes for every signed request whether the audit row was there. */
+function serve(connector: string) {
+  const seen: Array<{ path: string; actor: string; audited: boolean }> = [];
+  const server = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (request.method === 'GET' && url.pathname === '/clew/manifest') return Response.json(manifestFor(connector));
+      const body = (await request.json()) as { actor: { id: string } };
+      seen.push({ path: url.pathname, actor: body.actor.id, audited: (await checkedAs()).length === 1 });
+      return Response.json({ output: { rows: [] } });
+    },
+  });
+  return { server, seen, base: `http://127.0.0.1:${server.port}` };
+}
+const service = serve(id);
+const { base, seen } = service;
+const check = async (url: string, ...args: string[]) => {
+  const child = Bun.spawn(['bun', 'scripts/connector-check.ts', url, '--secret', secret, ...args], {
     cwd: new URL('../..', import.meta.url).pathname,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -88,11 +97,12 @@ const check = async (...args: string[]) => {
   ]);
   return { exitCode, stdout, stderr };
 };
+const others: Array<ReturnType<typeof serve>> = [];
 
 afterAll(async () => {
-  service.stop(true);
+  for (const s of [service, ...others]) s.server.stop(true);
   await db.delete(schema.audit).where(inArray(schema.audit.subject, ['person:' + personId, 'connector:' + id]));
-  await db.delete(schema.connectors).where(eq(schema.connectors.id, id));
+  await db.delete(schema.connectors).where(inArray(schema.connectors.id, [id, ownId]));
   await db.delete(schema.accessGrants).where(eq(schema.accessGrants.personId, personId));
   await db.delete(schema.people).where(eq(schema.people.id, personId));
   await closeDatabase();
@@ -104,13 +114,13 @@ test('--as refuses an unregistered connector and an unknown person, then audits 
     .insert(schema.accessGrants)
     .values({ personId, unitId: 'unit-check-as', unitLabel: 'Kontrollenheten', role: 'manager', capabilities: [] });
 
-  const unregistered = await check('--id', id, '--keys', 'anna', '--as', userName.toLowerCase());
+  const unregistered = await check(base, '--id', id, '--keys', 'anna', '--as', userName.toLowerCase());
   expect(unregistered.exitCode).toBe(2);
   expect(unregistered.stderr).toContain(`--id ${id}: no connector with that id is registered in this installation`);
   expect(seen).toEqual([]);
 
   await registerConnector({ id, url: base, secret });
-  const unknown = await check('--id', id, '--keys', 'anna', '--as', 'nobody-' + tag);
+  const unknown = await check(base, '--id', id, '--keys', 'anna', '--as', 'nobody-' + tag);
   expect(unknown.exitCode).toBe(2);
   expect(unknown.stderr).toContain(
     `--as nobody-${tag}: no person with that user name and a grant in this installation.`,
@@ -119,7 +129,7 @@ test('--as refuses an unregistered connector and an unknown person, then audits 
   expect(await checkedAs()).toEqual([]);
 
   // The user name is matched without regard to case, as a sign-in matches it.
-  const ran = await check('--id', id, '--keys', 'anna', '--as', userName.toUpperCase());
+  const ran = await check(base, '--id', id, '--keys', 'anna', '--as', userName.toUpperCase());
   expect(ran.stderr).toBe('');
   expect(ran.stdout).toContain(`Connector "${id}"`);
   const rows = await checkedAs();
@@ -137,4 +147,44 @@ test('--as refuses an unregistered connector and an unknown person, then audits 
     `/clew/capabilities/${id}.person`,
     `/clew/capabilities/${id}.person`,
   ]);
+}, 60_000);
+
+test("--as refuses one of Clew's own connectors and a registered id at another address, signing nothing", async () => {
+  await db
+    .insert(schema.people)
+    .values({ id: personId, organisationId: 'test', name: 'Kontroll Person', userName })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.accessGrants)
+    .values({ personId, unitId: 'unit-check-as', unitLabel: 'Kontrollenheten', role: 'manager', capabilities: [] })
+    .onConflictDoNothing();
+  await registerConnector({ id, url: base, secret });
+  await db.insert(schema.connectors).values({
+    id: ownId,
+    bundled: true,
+    state: 'enabled',
+    createdBy: 'system:boot',
+    updatedBy: 'system:boot',
+  });
+  const before = (await checkedAs()).length;
+
+  // A service that calls itself by the id of one of Clew's own: a callback grant for it would reach every read the
+  // person may see, so nothing is signed for it.
+  const own = serve(ownId);
+  others.push(own);
+  const ownRun = await check(own.base, '--id', ownId, '--keys', 'anna', '--as', userName);
+  expect(ownRun.exitCode).toBe(2);
+  expect(ownRun.stderr.trim()).toBe(
+    `--id ${ownId} is one of Clew's own connectors, not a registered service; pass the id the service was registered under (bun scripts/connector-add.ts).`,
+  );
+  // A service that names the registered id at an address of its own is not the connector registered under it.
+  const twin = serve(id);
+  others.push(twin);
+  const twinRun = await check(twin.base, '--id', id, '--keys', 'anna', '--as', userName);
+  expect(twinRun.exitCode).toBe(2);
+  expect(twinRun.stderr.trim()).toBe(
+    `--id ${id} is registered at ${base}, not at ${twin.base}; --as checks a connector only at the address it is registered at.`,
+  );
+  expect([...own.seen, ...twin.seen]).toEqual([]);
+  expect(await checkedAs()).toHaveLength(before);
 }, 60_000);

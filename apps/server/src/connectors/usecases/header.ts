@@ -10,11 +10,12 @@ import { audiencedActorOf, type HeaderAnswer, type Registry } from '@clew/connec
  * answers; here the connector gets a short budget (`HEADER_TIMEOUT_MS`), and what it answered per person is kept and
  * served again, so a slow or down intranet costs one page load a moment, not every page load. A minute after the
  * connector was last asked (`HEADER_FRESH_MS`) the next read asks it again in the background and serves the kept answer
- * meanwhile. A connector that refuses the person (the protocol's `denied`) has answered that it lists nothing for them:
- * the default takes the place of what was kept and is kept like any answer, so a content system takes a person's places
- * away as fast as it narrows them. A connector that fails, does not answer in time or answers out of shape leaves the
- * last good answer in place for at most `HEADER_STALE_MS` after it was given, or the default when it has given none, and
- * is asked again at the next refresh, a minute later: a content system that is down is asked once a minute per person.
+ * meanwhile. A connector that refuses the person (the protocol's `denied`, with its 403) has answered that it lists
+ * nothing for them: the default takes the place of what was kept and is kept like any answer, so a content system takes
+ * a person's places away as fast as it narrows them. A connector that fails, its 401 for Clew's key or assertion
+ * included, does not answer in time or answers out of shape leaves the last good answer in place for at most
+ * `HEADER_STALE_MS` after it was given, or the default when it has given none, and is asked again at the next refresh,
+ * a minute later: a content system that is down is asked once a minute per person.
  * An answer is kept whatever was kept while it was asked, and a failure never takes anything's place, so of two reads at
  * once the one that failed cannot undo the one that was answered.
  *

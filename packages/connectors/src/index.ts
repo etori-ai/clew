@@ -414,8 +414,9 @@ export const UNKNOWN = 'Okänd förmåga.';
 const unknownCapability = () => new CapabilityError(UNKNOWN, 'not-found');
 /**
  * What `Registry.header` answers (D88): the holder's header; that the holder refused the person (the protocol's
- * `denied`: the content system lists nothing for them); that the holder the person may have did not give one (it threw
- * otherwise, did not answer in time or answered out of shape); or that no connector gives this person the header.
+ * `denied`, with its 403: the content system lists nothing for them); that the holder the person may have did not give
+ * one (it threw otherwise, a 401 for Clew's key or assertion included, did not answer in time or answered out of
+ * shape); or that no connector gives this person the header.
  */
 export type HeaderAnswer =
   | { status: 'answered'; connector: Connector; output: SiteHeaderOutput }
@@ -601,9 +602,11 @@ export class Registry {
     return [...this.capabilities.values()].filter(c => this.allowed(actor, c.capability.name));
   }
   /**
-   * The handle a connector gets to reach the rest of Clew as one actor: reads and proposals only, scope re-checked. An
-   * execute is refused as one only when it exists for the person (`findFor`); one they may not know of goes on to `run`,
-   * which answers it as a name nobody registered (D23).
+   * The handle a connector gets to reach the rest of Clew as one actor: reads and proposals only, scope re-checked. The
+   * call is run as a nested one, which refuses an execute on the capability it would run, looked up after its own read
+   * of the governance: one that exists for the person then is refused as an execute, and one they may not know of is
+   * answered as a name nobody registered (D23). So an execute switched on, let in or registered between the two reads
+   * is refused too, and nothing runs.
    */
   clewFor(actor: Actor, context: RunContext = {}, origin?: string): Clew {
     return {
@@ -617,13 +620,13 @@ export class Registry {
           throw unknownCapability();
         if ((context.chain?.length ?? 0) >= 8 || context.chain?.includes(name))
           throw new CapabilityError('Anropet innehåller en cirkulär förfrågan.', 'invalid');
-        if (this.findFor(actor, name)?.capability.kind === 'execute')
-          throw new CapabilityError('En anslutning kan inte utföra åtgärder i en annan anslutning.', 'denied');
-        return this.run<O>(actor, name, input, {
-          delegate: context.delegate,
-          chain: context.chain,
-          signal: context.signal,
-        });
+        return this.invoke<O>(
+          actor,
+          name,
+          input,
+          { delegate: context.delegate, chain: context.chain, signal: context.signal },
+          true,
+        );
       },
       ...(context.delegate ? { delegate: context.delegate } : {}),
     };
@@ -634,9 +637,26 @@ export class Registry {
    * The context (the session's delegate) travels into every nested call the capability makes.
    */
   async run<O = unknown>(actor: Actor, name: string, input: unknown, context: RunContext = {}): Promise<O> {
+    return this.invoke<O>(actor, name, input, context, false);
+  }
+  /**
+   * `run`, and with `nested` a connector's `clew.call`, which reaches another connector's reads and proposals only. Only
+   * `clewFor` passes `nested`, so the execution ledger, which runs an approved execute through `run`, never does.
+   */
+  private async invoke<O>(
+    actor: Actor,
+    name: string,
+    input: unknown,
+    context: RunContext,
+    nested: boolean,
+  ): Promise<O> {
     await this.refresh();
     const found = this.findFor(actor, name);
     if (!found) throw unknownCapability();
+    // On the capability this call would run, by the governance just read: an execute the person may not know of is
+    // unknown above, and one they can see is refused here, whenever it came into view.
+    if (nested && found.capability.kind === 'execute')
+      throw new CapabilityError('En anslutning kan inte utföra åtgärder i en annan anslutning.', 'denied');
     if (!inScope(found.capability.scope, actor))
       throw new CapabilityError('Du saknar behörighet för åtgärden.', 'denied');
     if (!this.validator(found.capability.input)(input))
@@ -1136,9 +1156,10 @@ export class Registry {
    * against the protocol's shape. Exclusive, never merged and never inferred. A refusal and a failure are told apart,
    * since a caller keeps a last good header through the one and never past the other: no holder for this person
    * (`headerHolder`), or a holder the person may no longer have once it was asked, is `refused`; the holder's own
-   * refusal of the person (the protocol's `denied`) is `denied`, its answer that it lists nothing for them; a holder
-   * that throws otherwise, does not answer in time or answers out of shape is `failed`, and is reported through
-   * `onRefused`. The call is a read as the person: the content system lists what they may see.
+   * refusal of the person (the protocol's `denied` with its 403, `remote.ts`) is `denied`, its answer that it lists
+   * nothing for them; a holder that throws otherwise, its rejection of Clew's key or assertion included, does not answer
+   * in time or answers out of shape is `failed`, and is reported through `onRefused`. The call is a read as the person:
+   * the content system lists what they may see.
    */
   async header(actor: AudiencedActor, context: RunContext = {}): Promise<HeaderAnswer> {
     const holder = this.holderFor(actor);

@@ -38,7 +38,7 @@ The web half: one action dialog (`apps/web/src/components/action-dialog.tsx`, As
 
 ## Cross-connector dependencies
 
-**Works in this checkout.** Exact string targets in `uses`, enforced calls and output validation. The callback answers in the published contract's codes, from the error's protocol code (`CapabilityError.code`): 404 `not-found` for a hidden or unknown target alike, 403 `denied`, 400 `invalid` and 503 `unavailable`.
+**Works in this checkout.** Exact string targets in `uses`, enforced calls and output validation. The callback answers in the published contract's codes, from the error's protocol code (`CapabilityError.code`): 404 `not-found` for a hidden or unknown target alike, 403 `denied`, 400 `invalid` and 503 `unavailable`; a target's 401 is `unavailable`, its `denied` a refusal only with its 403. An execute is refused on the lookup that would run it, so one switched on while a callback is under way runs nothing. A grant for one of Clew's own connectors is refused, and Clew failing to read its keys or the person is logged as its own failure and answered 503.
 
 **Limits and pending work.** No `deprecated` field, semantic compatibility classifier, dependent health UI or checker `--clew` option. The D37 dependency document is a proposal with a different example shape.
 

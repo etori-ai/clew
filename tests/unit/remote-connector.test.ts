@@ -1,7 +1,7 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
-import { type Actor } from '../../packages/connectors/src/index';
+import { type Actor, type CapabilityError } from '../../packages/connectors/src/index';
 import { protocolSchema } from '../../packages/connectors/src/protocol';
 import {
   ManifestError,
@@ -262,6 +262,30 @@ describe('a remote connector in the registry', () => {
       }),
     );
     await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow(/Ogiltigt behörighetsbevis/);
+  });
+  test("an error keeps the connector's code as far as its status bears it out: denied only with a 403, never with a 401", async () => {
+    // A 401 is the connector rejecting Clew's key or assertion, about Clew and not the person: a failure, `unavailable`.
+    const outcome = async (status: number, code: string) => {
+      const registry = new Registry().register(
+        remoteConnector(parseManifest(helloManifest), {
+          url: 'http://hello',
+          key: secret,
+          assert: assertionFor('hello', secret),
+          fetch: async () => Response.json({ error: { code, message: 'Nej.' } }, { status }),
+        }),
+      );
+      return registry.run(hassan, 'hello.greeting', {}).then(
+        () => undefined,
+        (error: CapabilityError) => [error.message, error.code],
+      );
+    };
+    expect(await outcome(403, 'denied')).toEqual(['Nej.', 'denied']);
+    expect(await outcome(401, 'denied')).toEqual(['Nej.', 'unavailable']);
+    expect(await outcome(401, 'invalid')).toEqual(['Nej.', 'unavailable']);
+    expect(await outcome(400, 'denied')).toEqual(['Nej.', 'unavailable']);
+    expect(await outcome(400, 'invalid')).toEqual(['Nej.', 'invalid']);
+    expect(await outcome(404, 'not-found')).toEqual(['Nej.', 'not-found']);
+    expect(await outcome(503, 'unavailable')).toEqual(['Hello svarar inte just nu.', 'unavailable']);
   });
   test('a connector that is down degrades to a Swedish unavailable error and a warning figure', async () => {
     const down: FetchLike = async () => {

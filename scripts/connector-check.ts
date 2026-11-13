@@ -6,7 +6,7 @@
  * "Testa anslutning" on the admin page (`packages/connectors/src/check.ts`).
  *
  *   bun scripts/connector-check.ts http://127.0.0.1:4010 --secret <shared secret> [--id hello] [--keys anna,erik,maria]
- *   bun scripts/connector-check.ts <url> --secret <shared secret> --id <registered connector> --keys <keys> --as <user name>
+ *   bun scripts/connector-check.ts <registered url> --secret <shared secret> --id <registered connector> --keys <keys> --as <user name>
  *
  * A read about an entity (D97) is asked with keys: `--keys` are the user names (or unit ids) to ask in one batch. Without
  * `--as` the batch is signed as the check's own manager on a unit no installation has, for whom every real key is out of
@@ -17,10 +17,11 @@
  * from their current grant), valid for two minutes, on every read about an entity the check makes, and, when the
  * manifest declares `uses`, a callback grant for the connector `--id` names. The service and the system behind it
  * cannot tell these reads from the person's own and record them as that person's, in whatever access log they keep. Use
- * a test installation or a test account, never a real colleague. `--as` requires `--id`, a connector registered in this
- * installation, so the service cannot choose the audience or the connector a callback is for, and before the first
- * signed request the script writes one audit row: `connector.checked_as`, actor `operator:cli`, about
- * `person:<their id>`, with the connector's id and counts only (`scripts/connector-check-as.ts`).
+ * a test installation or a test account, never a real colleague. `--as` requires `--id`, a remote connector registered in
+ * this installation at the address checked, never one of Clew's own, so the service cannot choose the audience or the
+ * connector a callback is for, and before the first signed request the script writes one audit row:
+ * `connector.checked_as`, actor `operator:cli`, about `person:<their id>`, with the connector's id and counts only
+ * (`scripts/connector-check-as.ts`).
  */
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -90,7 +91,10 @@ const signer = (key: string) => (actor: Actor) =>
     .sign(new TextEncoder().encode(key));
 /** This installation's side of `--as`: the registered connector, the person by user name, the audit row. */
 const liveCheckAs: CheckAsDeps = {
-  registered: async id => !!(await readConnector(id)),
+  async registration(id) {
+    const row = await readConnector(id);
+    return row && { bundled: row.bundled, url: row.url };
+  },
   async person(userName) {
     // Compared as a sign-in compares a user name: NFC-normalised, then lower-cased under the ICU root collation.
     const found = await database()
@@ -111,6 +115,7 @@ try {
     ? await checkAs(
         {
           id: audience,
+          url,
           userName: asUser,
           keys: keys.length,
           reads: manifest.capabilities.filter(c => c.kind === 'read' && c.about).length,

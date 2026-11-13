@@ -8,15 +8,16 @@ import {
   type Capability,
   type Connector,
 } from '../../packages/connectors/src/index';
-import { connectorCallback } from '../../apps/server/src/routes/connector-callback';
+import { connectorCallback, type ConnectorCallbackDeps } from '../../apps/server/src/routes/connector-callback';
 import { AssertionError, type CallbackGrant } from '../../apps/server/src/connectors/authority';
 
 /**
  * `POST /api/connectors/call`, a remote connector calling back into Clew as the person it serves (D21), answers in the
  * published contract (`/api/connectors/call` in the connector OpenAPI document): a capability the person may not know
  * of exactly as one nobody registered, 404 `not-found` (D23); the scope and an execute 403 `denied`; input 400
- * `invalid`; a target that is down 503 `unavailable`. Only what is nobody's to know is logged, and answered 503. Run
- * over a real registry; the grant and the person are the test's.
+ * `invalid`; a target that is down 503 `unavailable`. Only what is nobody's to know is logged, with the connector, and
+ * answered 503, Clew's own failure to read its key or the person included. Run over a real registry; the grant and the
+ * person are the test's.
  */
 const persona = {
   id: 'hassan',
@@ -65,7 +66,22 @@ const TARGETS = [
   'nobody.read',
   'nobody.close',
 ];
-function world() {
+/** Everything a connector could compare: the status, every header and the body as sent. */
+const post = async (
+  routes: ReturnType<typeof connectorCallback>,
+  name: string,
+  input: unknown = {},
+  token = 'grant',
+) => {
+  const response = await routes.request('http://clew.test/call', {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify({ name, input }),
+  });
+  return { status: response.status, headers: [...response.headers].sort(), body: await response.text() };
+};
+const knownPerson: ConnectorCallbackDeps['person'] = async id => (id === persona.id ? persona : undefined);
+function world(person = knownPerson) {
   const registry = new Registry();
   registry.register(connector('caller', [capability('caller.read', 'read', answers)], TARGETS));
   registry.register(
@@ -109,27 +125,26 @@ function world() {
     chain,
   });
   const failed: unknown[] = [];
+  /** The connector each logged failure was logged for, when the route knew it. */
+  const failedFor: Array<string | undefined> = [];
   const routes = connectorCallback({
     verify: async token => {
       if (token === 'grant') return grant();
       if (token === 'circle') return grant(['calendar.today']);
+      // Clew cannot read its own signing key: its failure, not the grant's.
+      if (token === 'outage') throw new Error('database unavailable');
       throw new AssertionError('Not a callback grant.');
     },
-    person: async id => (id === persona.id ? persona : undefined),
+    person,
     refresh: async () => {},
     registry,
-    failed: error => failed.push(error),
+    failed: (error, connectorId) => {
+      failed.push(error);
+      failedFor.push(connectorId);
+    },
   });
-  /** Everything a connector could compare: the status, every header and the body as sent. */
-  const call = async (name: string, input: unknown = {}, token = 'grant') => {
-    const response = await routes.request('http://clew.test/call', {
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
-      body: JSON.stringify({ name, input }),
-    });
-    return { status: response.status, headers: [...response.headers].sort(), body: await response.text() };
-  };
-  return { call, failed };
+  const call = (name: string, input: unknown = {}, token = 'grant') => post(routes, name, input, token);
+  return { call, failed, failedFor };
 }
 const answer = (status: number, code: string, message: string) => ({
   status,
@@ -183,5 +198,105 @@ describe('a connector calling back into Clew (POST /api/connectors/call)', () =>
     expect((await call('caller.read')).status).toBe(403);
     expect((await call('calendar.today', {}, 'forged')).status).toBe(401);
     expect(failed).toHaveLength(1);
+  });
+  test('Clew failing to read its key or the person is its own failure: logged, with the connector once known, and 503', async () => {
+    const outage = new Error('database unavailable');
+    const down = world(async () => {
+      throw outage;
+    });
+    expect(await down.call('calendar.today')).toEqual(answer(503, 'unavailable', 'Tjänsten går inte att nå just nu.'));
+    expect(down.failed).toEqual([outage]);
+    expect(down.failedFor).toEqual(['caller']);
+    // Before the grant is read nobody knows its connector, and the grant is not refused for Clew's failure.
+    const { call, failed, failedFor } = world();
+    expect(await call('calendar.today', {}, 'outage')).toEqual(
+      answer(503, 'unavailable', 'Tjänsten går inte att nå just nu.'),
+    );
+    expect(failed).toEqual([outage]);
+    expect(failedFor).toEqual([undefined]);
+  });
+  test("a grant for one of Clew's own connectors, whose reach has no bound, is refused before anything runs", async () => {
+    const read: string[] = [];
+    const registry = new Registry();
+    // As the live registry registers Clew's own connectors: `uses: ['*']`, which no manifest can carry.
+    registry.register(connector('calendar', [capability('calendar.today', 'read', answers)], ['*']));
+    registry.register(
+      connector('hr', [
+        capability('hr.salaries', 'read', async () => {
+          read.push('hr.salaries');
+          return { ok: true };
+        }),
+      ]),
+    );
+    for (const id of ['calendar', 'hr']) registry.govern(id, openGovernance());
+    const failed: unknown[] = [];
+    const routes = connectorCallback({
+      // What a grant signed for `calendar`, carrying the `uses` a service's manifest chose, would claim.
+      verify: async () => ({ connectorId: 'calendar', actor: actorOf(persona), uses: ['hr.salaries'], chain: [] }),
+      person: knownPerson,
+      refresh: async () => {},
+      registry,
+      failed: error => failed.push(error),
+    });
+    expect(await post(routes, 'hr.salaries')).toEqual(answer(403, 'denied', 'Ogiltigt behörighetsbevis.'));
+    expect(read).toEqual([]);
+    expect(failed).toEqual([]);
+  });
+  test("an execute that comes into view between the call's read of the governance and the run's is refused, and runs nothing", async () => {
+    const paid: string[] = [];
+    const finance = connector('finance', [
+      capability('finance.pay', 'execute', async () => {
+        paid.push('finance.pay');
+        return { headline: 'Betalt', rows: [] };
+      }),
+    ]);
+    // What stands at the nested call's own read of the governance, and what an administrator leaves from the next read
+    // on, the one before the call would run; the last is a draft being enabled, which no read before knew of.
+    const ways: Array<[how: string, before: (registry: Registry) => void, after: (registry: Registry) => void]> = [
+      [
+        'switched on',
+        r => r.register(finance).govern('finance', { ...openGovernance(), state: 'disabled' }),
+        r => r.govern('finance', openGovernance()),
+      ],
+      [
+        'its audience widened',
+        r =>
+          r
+            .register(finance)
+            .govern('finance', { ...openGovernance(), audience: { mode: 'selected', groups: ['S-1-5-21-ekonomi'] } }),
+        r => r.govern('finance', openGovernance()),
+      ],
+      [
+        'the capability switched on',
+        r =>
+          r
+            .register(finance)
+            .govern('finance', { ...openGovernance(), capabilities: { 'finance.pay': { enabled: false } } }),
+        r => r.govern('finance', openGovernance()),
+      ],
+      ['registered', () => {}, r => r.register(finance).govern('finance', openGovernance())],
+    ];
+    const refusal = answer(403, 'denied', 'En anslutning kan inte utföra åtgärder i en annan anslutning.');
+    for (const [how, before, after] of ways) {
+      const registry = new Registry();
+      registry.register(connector('caller', [capability('caller.read', 'read', answers)], ['finance.pay']));
+      registry.govern('caller', openGovernance());
+      before(registry);
+      let reads = 0;
+      registry.setRefresh(async () => {
+        if (++reads === 2) after(registry);
+      });
+      const failed: unknown[] = [];
+      const routes = connectorCallback({
+        verify: async () => ({ connectorId: 'caller', actor: actorOf(persona), uses: ['finance.pay'], chain: [] }),
+        person: knownPerson,
+        refresh: async () => {},
+        registry,
+        failed: error => failed.push(error),
+      });
+      expect([how, await post(routes, 'finance.pay')]).toEqual([how, refusal]);
+      expect(failed).toEqual([]);
+    }
+    expect(paid).toEqual([]);
   });
 });
