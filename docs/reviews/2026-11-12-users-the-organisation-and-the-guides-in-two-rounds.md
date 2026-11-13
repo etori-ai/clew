@@ -543,6 +543,12 @@ what they say.
   still holds; and a card is also the record of what the person holding it did. The documents now claim no more than
   the code does, and also describe the erasure as built: no user name stored, rather than the id.
 - Two accessibility tests raced the frame in which the page moves the focus. They now wait for it.
+- A Group resource lists each member's name as `display`, but a member's new name left the group's
+  `meta.lastModified` where it was: the mirror of S13, older than this work. The person's write now records when the
+  name changed (`auth_person.name_changed_at`, migration 0055), and a group's time of change is the later of its own
+  and that time among its current members, read with the group. The user write writes no group row: it would lock the
+  group after the person, against the order of a group write, and a test of renames and group writes run at once
+  deadlocks with that order and finishes with this one.
 
 **Left.**
 

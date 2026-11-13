@@ -296,6 +296,103 @@ test("a member's time of change moves in the store with the group write that lis
     expect([read.meta.lastModified > changed.meta.lastModified, read.groups]).toEqual([true, []]);
   }
 });
+test("a member's new name moves the time of change of the group that lists them, read with or without its members, and a new address does not (the mirror of S13)", async () => {
+  const { p, user, scim } = stack();
+  const [a, b] = [(await scim.createUser(p, user(1), BASE)).id, (await scim.createUser(p, user(2), BASE)).id];
+  const externalId = `${p.id}:plain`,
+    group = await scim.createGroup(
+      p,
+      { externalId, displayName: 'Plain', members: [{ value: a }, { value: b }] },
+      BASE,
+    );
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const renamed = await scim.patchUser(
+    p,
+    a,
+    { schemas: [PATCH], Operations: [{ op: 'replace', path: 'displayName', value: 'Anna Omdöpt' }] },
+    BASE,
+  );
+  const at = renamed.meta.lastModified;
+  expect(at > group.meta.lastModified).toBe(true);
+  const read = await scim.getGroup(p, group.id, BASE);
+  expect([read.meta.lastModified, read.members.map(m => m.display)]).toEqual([at, ['Anna Omdöpt', 'Person 2']]);
+  expect((await scim.getGroup(p, group.id, BASE, { excludedAttributes: 'members' })).meta.lastModified).toBe(at);
+  const listed = await scim.listGroups(
+    p,
+    { filter: `externalId eq "${externalId}"`, excludedAttributes: 'members' },
+    BASE,
+  );
+  expect(listed.Resources.map(g => g.meta.lastModified)).toEqual([at]);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  await scim.patchUser(
+    p,
+    b,
+    {
+      schemas: [PATCH],
+      Operations: [{ op: 'replace', path: 'emails[type eq "work"].value', value: `${p.id}.new@example.test` }],
+    },
+    BASE,
+  );
+  expect((await scim.getGroup(p, group.id, BASE)).meta.lastModified).toBe(at);
+});
+test("members renamed while the groups that list them are written, at once, all finish, and a group's time is never earlier than its members' last new name (the mirror of S13)", async () => {
+  const { prefix, p, user, scim } = stack();
+  const ids: string[] = [];
+  for (let n = 1; n <= 6; n++) ids.push((await scim.createUser(p, user(n), BASE)).id);
+  // A user write that took the groups after its person would wait on a group write that waits on the person: neither
+  // does, the name's time being read with the group.
+  const keys = [`${prefix}:first`, `${prefix}:second`],
+    groups: string[] = [];
+  for (const externalId of keys)
+    groups.push(
+      (await scim.createGroup(p, { externalId, displayName: externalId, members: ids.map(value => ({ value })) }, BASE))
+        .id,
+    );
+  const rename = (id: string, name: string) =>
+    scim.patchUser(
+      p,
+      id,
+      { schemas: [PATCH], Operations: [{ op: 'replace', path: 'displayName', value: name }] },
+      BASE,
+    );
+  const renamedAt = new Map<string, string>();
+  for (let round = 0; round < 4; round++) {
+    const [, renames] = await Promise.all([
+      Promise.all(
+        keys.map((externalId, k) =>
+          scim.replaceGroup(
+            p,
+            groups[k]!,
+            {
+              externalId,
+              displayName: `${externalId} ${round}`,
+              members: (k ? [...ids].reverse() : ids)
+                .filter(id => id !== ids[(round + k) % ids.length])
+                .map(value => ({ value })),
+            },
+            BASE,
+          ),
+        ),
+      ),
+      Promise.all(ids.map(id => rename(id, `Person ${id} ${round}`))),
+    ]);
+    renames.forEach((renamed, n) => renamedAt.set(ids[n]!, renamed.meta.lastModified));
+  }
+  for (const id of groups) {
+    const read = await scim.getGroup(p, id, BASE);
+    expect(read.members.length).toBe(ids.length - 1);
+    for (const member of read.members) {
+      expect(member.display).toBe(`Person ${member.value} 3`);
+      expect(read.meta.lastModified >= renamedAt.get(member.value)!).toBe(true);
+    }
+  }
+  // A name given after all of it is the time of both groups, which list the person.
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const last = await rename(ids[0]!, 'Last');
+  const times: string[] = [];
+  for (const id of groups) times.push((await scim.getGroup(p, id, BASE)).meta.lastModified);
+  expect(times).toEqual([last.meta.lastModified, last.meta.lastModified]);
+});
 test('groups that share their members, renamed while members come and go, written at once in different orders, all finish (S13)', async () => {
   const { prefix, p, user, grant, scim } = stack();
   const ids: string[] = [];

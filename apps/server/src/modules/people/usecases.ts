@@ -385,12 +385,39 @@ export function scimUsecases(deps: {
       userResource(record, leavesOut(projection, 'groups') ? [] : await tx.userGroups(record.id), base),
       projection,
     );
-  /** The members are not read when the client asked to have them left out (Entra does, for large groups). */
+  /**
+   * A Group resource lists each member's name, so a member's new name changes it as a write of the group does: its time
+   * of change is the later of the group's own and the last new name among its current members (RFC 7643 §3.1, the
+   * mirror of S13). A user write never writes the group for it, which would take the group after the person, against
+   * the order every group write takes them in. The time is read once for a page of groups and before their members, so
+   * an answer never carries a name newer than its time, and it is the same with the members left out. The members are
+   * not read when the client asked to have them left out (Entra does, for large groups), nor the time when it asked to
+   * have `meta` left out.
+   */
+  const groupViews = async (
+    tx: ProvisionTx,
+    records: readonly GroupRecord[],
+    base: string,
+    projection?: Projection,
+  ): Promise<ScimGroup[]> => {
+    const namesChanged = leavesOut(projection, 'meta')
+        ? new Map<string, string>()
+        : await tx.memberNamesChanged(records.map(record => record.id)),
+      views: ScimGroup[] = [];
+    for (const record of records) {
+      const at = namesChanged.get(record.id),
+        shown = at !== undefined && at > record.updatedAt ? { ...record, updatedAt: at } : record;
+      views.push(
+        project(
+          groupResource(shown, leavesOut(projection, 'members') ? [] : await tx.groupMembers(record.id), base),
+          projection,
+        ),
+      );
+    }
+    return views;
+  };
   const groupView = async (tx: ProvisionTx, record: GroupRecord, base: string, projection?: Projection) =>
-    project(
-      groupResource(record, leavesOut(projection, 'members') ? [] : await tx.groupMembers(record.id), base),
-      projection,
-    );
+    (await groupViews(tx, [record], base, projection))[0]!;
   const fieldsOf = (u: UserRecord): UserFields => ({
     externalId: u.externalId ?? '',
     userName: u.userName ?? u.id,
@@ -714,8 +741,7 @@ export function scimUsecases(deps: {
           },
           page = pageOf(query);
         const listed = await tx.listGroups(p.organisationId, page, filter);
-        const Resources: ScimGroup[] = [];
-        for (const row of listed.rows) Resources.push(await groupView(tx, row, base, query));
+        const Resources = await groupViews(tx, listed.rows, base, query);
         return {
           schemas: [SCIM.list],
           totalResults: listed.total,

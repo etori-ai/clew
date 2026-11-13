@@ -931,6 +931,61 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       ).rejects.toThrow('rolled back');
       expect(await store.transaction(tx => tx.readUser(p + '-org', b))).toEqual(row(b));
     });
+    test("a write that changes a person's name records when, and the last such change among each group's current members is read for many groups at once (the mirror of S13)", async () => {
+      const { store, prefix: p } = await make();
+      const org = p + '-org',
+        [a, b, c] = [p + '-a', p + '-b', p + '-c'],
+        [g1, g2, g3, empty] = [p + '-g1', p + '-g2', p + '-g3', p + '-g4'],
+        [t1, t2, t3] = ['2026-11-09T07:00:00.000Z', '2026-11-09T08:00:00.000Z', '2026-11-09T09:00:00.000Z'],
+        changed = (ids: readonly string[]) => store.transaction(tx => tx.memberNamesChanged(ids));
+      await store.transaction(async tx => {
+        for (const id of [a, b, c]) await tx.insertUser(userRow(id, org));
+        for (const g of [g1, g2, g3, empty]) await tx.insertGroup(groupRow(g, org));
+        await tx.setGroupMembers(g1, [a, b]);
+        await tx.setGroupMembers(g2, [b]);
+        await tx.setGroupMembers(g3, [c]);
+      });
+      // A name given when the person was created is no change: they were in no group then.
+      expect(await changed([g1, g2, g3, empty])).toEqual(new Map());
+      await store.transaction(async tx => {
+        await tx.updateUser(a, { name: 'Anna', updatedAt: t1 });
+        await tx.updateUser(b, { name: 'Bo', updatedAt: t2 });
+        // The same name again is no change, nor is another field or a moved time of change (S13).
+        await tx.updateUser(a, { name: 'Anna', email: 'anna@example.test', updatedAt: t3 });
+        await tx.updateUser(c, { title: 'Lärare', updatedAt: t3 });
+        await tx.touchUsers([a, b, c], t3);
+      });
+      // More ids than one statement takes, most of them no group's; a group nobody in it was renamed is absent.
+      const nothing = Array.from({ length: 1200 }, (_, i) => p + '-nothing-' + i);
+      expect(await changed([g1, ...nothing, g2, g3, empty])).toEqual(
+        new Map([
+          [g1, t2],
+          [g2, t2],
+        ]),
+      );
+      expect(await changed([])).toEqual(new Map());
+      // A member who has left counts no more.
+      await store.transaction(tx => tx.setGroupMembers(g1, [a]));
+      expect(await changed([g1, g2])).toEqual(
+        new Map([
+          [g1, t1],
+          [g2, t2],
+        ]),
+      );
+      // The time of a name is the store's own: the record reads as it did.
+      expect(await store.transaction(tx => tx.readUser(org, a))).toEqual(
+        userRow(a, org, { name: 'Anna', email: 'anna@example.test', updatedAt: t3 }),
+      );
+      // Gone with the transaction that made it.
+      await expect(
+        store.transaction(async tx => {
+          await tx.updateUser(c, { name: 'Cecilia', updatedAt: t3 });
+          expect(await tx.memberNamesChanged([g3])).toEqual(new Map([[g3, t3]]));
+          throw new Error('rolled back');
+        }),
+      ).rejects.toThrow('rolled back');
+      expect(await changed([g3])).toEqual(new Map());
+    });
     test('an erasure takes the person out of their groups, ends their bindings and sessions, and rewrites the audit rows and the claims it is given, in the transaction (D117)', async () => {
       const h = await make(),
         p = h.prefix,

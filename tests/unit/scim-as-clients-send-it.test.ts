@@ -1669,4 +1669,53 @@ describe('what the review of users, the organisation and the guides found (2026-
       'scim.group.patched',
     ]);
   });
+  test("a group's time of change moves when a member's name changes, which the group lists as the member's display, and with no other change of the member (the mirror of S13)", async () => {
+    const { json, patch, create, group, person, store } = app();
+    const [anna, bo] = [await create(1), await create(2)];
+    const gId = await group({ externalId: 'ad:g', displayName: 'G', members: [{ value: anna }, { value: bo }] }),
+      g = '/Groups/' + gId,
+      h = '/Groups/' + (await group({ externalId: 'ad:h', displayName: 'H', members: [{ value: anna }] }));
+    const modified = async (path: string) => (await json('GET', path)).body.meta.lastModified as string;
+    const [g0, h0] = [await modified(g), await modified(h)];
+    // A new name is the member's display on every group that lists them, so each of those groups changed as `GET`
+    // answers it. Its time once stayed where the group's own last write left it.
+    const t1 = (await patch('/Users/' + anna, { op: 'replace', path: 'displayName', value: 'Anna Omdöpt' })).body.meta
+      .lastModified as string;
+    expect(t1 > g0 && t1 > h0).toBe(true);
+    const read = (await json('GET', g)).body;
+    expect([read.meta.lastModified, read.members.map((m: { display: string }) => m.display)]).toEqual([
+      t1,
+      ['Anna Omdöpt', 'User 2'],
+    ]);
+    expect(await modified(h)).toBe(t1);
+    // The user write wrote no group: the time is read with the group, as a write of the group would take the group
+    // after the person, against the order every group write takes them in.
+    expect(store.state.groups.get(gId)?.updatedAt).toBe(g0);
+    // The same time without the members, in a list, filtered, and in the answer to a write that changes nothing.
+    expect(await modified(g + '?excludedAttributes=members')).toBe(t1);
+    const filter = encodeURIComponent('externalId eq "ad:g"');
+    expect(
+      (await json('GET', `/Groups?filter=${filter}&excludedAttributes=members`)).body.Resources[0].meta.lastModified,
+    ).toBe(t1);
+    expect(
+      (await json('GET', '/Groups')).body.Resources.map((r: { meta: { lastModified: string } }) => r.meta.lastModified),
+    ).toEqual([t1, t1]);
+    expect((await patch(g, { op: 'add', path: 'members', value: [{ value: anna }] })).body.meta.lastModified).toBe(t1);
+    // A PUT that renames moves it too, on the groups that list the person and no other.
+    const t2 = (await json('PUT', '/Users/' + bo, person(2, { displayName: 'Bo Omdöpt' }))).body.meta
+      .lastModified as string;
+    expect([await modified(g), await modified(h)]).toEqual([t2, t1]);
+    // A new address, the same name again, and a new name of another group the member is in, which moves the member's
+    // own time (S13), change no name a group lists.
+    await patch('/Users/' + anna, { op: 'replace', path: 'emails[type eq "work"].value', value: 'anna@ny.se' });
+    await patch('/Users/' + anna, { op: 'replace', path: 'displayName', value: 'Anna Omdöpt' });
+    const renamedH = (await patch(h, { op: 'replace', path: 'displayName', value: 'H2' })).body.meta.lastModified;
+    expect(await modified('/Users/' + anna)).toBe(renamedH);
+    expect(await modified(g)).toBe(t2);
+    // A member who has left is not listed, so their next name is no change of the group.
+    const t3 = (await patch(g, { op: 'remove', path: `members[value eq "${bo}"]` })).body.meta.lastModified as string;
+    expect(t3 > t2).toBe(true);
+    await patch('/Users/' + bo, { op: 'replace', path: 'displayName', value: 'Bo Igen' });
+    expect(await modified(g)).toBe(t3);
+  });
 });

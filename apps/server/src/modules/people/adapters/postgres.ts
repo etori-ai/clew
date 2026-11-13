@@ -464,7 +464,18 @@ export function postgresProvisionStore(db: () => Database = database): Provision
     async updateUser(id, { updatedAt, ...fields }) {
       await tx
         .update(schema.people)
-        .set({ ...fields, updatedAt: new Date(updatedAt) })
+        .set({
+          ...fields,
+          updatedAt: new Date(updatedAt),
+          // Compared with the name as it was (the columns on the right are the row before the write): only a new name
+          // is a change of the groups that list the person.
+          ...(fields.name === undefined
+            ? {}
+            : {
+                nameChangedAt: sql`case when ${schema.people.name} is distinct from ${fields.name}::text
+                  then ${updatedAt}::timestamptz else ${schema.people.nameChangedAt} end`,
+              }),
+        })
         .where(eq(schema.people.id, id));
     },
     async touchUsers(ids, updatedAt) {
@@ -553,6 +564,28 @@ export function postgresProvisionStore(db: () => Database = database): Provision
         .innerJoin(schema.people, eq(schema.people.id, schema.groupMembers.personId))
         .where(eq(schema.groupMembers.groupId, groupId))
         .orderBy(schema.people.id);
+    },
+    async memberNamesChanged(groupIds) {
+      const changed = new Map<string, string>();
+      // In pieces a statement takes, as `groupLabels` reads them; only the members whose name has changed are counted.
+      for (let at = 0; at < groupIds.length; at += 1000) {
+        const rows = await tx
+          .select({
+            groupId: schema.groupMembers.groupId,
+            at: sql`max(${schema.people.nameChangedAt})`.mapWith(schema.people.nameChangedAt),
+          })
+          .from(schema.groupMembers)
+          .innerJoin(schema.people, eq(schema.people.id, schema.groupMembers.personId))
+          .where(
+            and(
+              inArray(schema.groupMembers.groupId, groupIds.slice(at, at + 1000)),
+              isNotNull(schema.people.nameChangedAt),
+            ),
+          )
+          .groupBy(schema.groupMembers.groupId);
+        for (const row of rows) changed.set(row.groupId, row.at.toISOString());
+      }
+      return changed;
     },
     async setGroupMembers(groupId, personIds) {
       // Only who came and who went is written, a few thousand rows a statement: a group of ten thousand that gains one

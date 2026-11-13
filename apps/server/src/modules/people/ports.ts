@@ -169,6 +169,10 @@ export interface ProvisionTx {
     filter?: { attribute: 'userName' | 'externalId'; value: string },
   ): Promise<Listed<UserRecord>>;
   insertUser(record: UserRecord): Promise<void>;
+  /**
+   * Writes the fields named and the time of change. A name other than the one held is also recorded as changed at
+   * `updatedAt`, for the groups whose resource lists the person (`memberNamesChanged`); the record reads the same.
+   */
   updateUser(
     id: string,
     fields: Partial<Pick<UserRecord, keyof UserFields>> & {
@@ -201,6 +205,12 @@ export interface ProvisionTx {
   /** Removes the group and its memberships; its group-capability rows stay (D85). */
   deleteGroup(id: string): Promise<void>;
   groupMembers(groupId: string): Promise<Array<{ id: string; name: string }>>;
+  /**
+   * For each of these groups, when the name of one of its current members last changed (`updateUser`), by group id: a
+   * Group resource lists each member's name, so that is a change of the group (RFC 7643 §3.1). A group none of whose
+   * members has had a new name since they were written is absent. One read for a page of groups, whatever their size.
+   */
+  memberNamesChanged(groupIds: readonly string[]): Promise<Map<string, string>>;
   setGroupMembers(groupId: string, personIds: readonly string[]): Promise<void>;
   // Administration › Användare (D85, D100).
   /**

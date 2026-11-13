@@ -50,6 +50,10 @@ export const people = pgTable(
     title: text('title'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // When `name` last changed after the row was written, null if it never has. A SCIM Group resource shows each
+    // member's name, so its time of change is the later of its own and this time among its members (RFC 7643 §3.1;
+    // `memberNamesChanged` in the people store). The person's write sets it; a group row is never written for it.
+    nameChangedAt: timestamp('name_changed_at', { withTimezone: true }),
   },
   // Unique across the installation, because a login carries no organisation.
   t => [

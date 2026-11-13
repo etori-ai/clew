@@ -308,6 +308,8 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     userName: null,
     externalId: null,
     updatedAt: erasedAt,
+    // Her name was cleared, which is a new name: the time of the one she took before goes with it.
+    nameChangedAt: erasedAt,
   });
   // A provisioner reads her id where the user name was, as for any record without one.
   const resource = await scim.getUser(p, asa, BASE);
