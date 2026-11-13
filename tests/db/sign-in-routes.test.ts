@@ -260,7 +260,8 @@ describe('a sign-in Clew refuses sends the person back and writes login-denied, 
   /** An actor in the authentication log as the tests below write it: the short name of a person or of a claim. */
   const short = (actor: string) =>
     actor.replace('person:' + refused + '-', 'person:').replace('claim:' + refused + ':', 'claim:');
-  const denied = '/login?reason=denied';
+  /** The callback's answer to a sign-in it refuses: a 303 back to the sign-in page, which says `denied`. */
+  const denied = { status: 303, location: '/login?reason=denied' };
   /** The ids of the authentication log's rows the sign-ins below wrote. */
   const written: number[] = [];
   const log = schema.authenticationAudit;
@@ -305,9 +306,9 @@ describe('a sign-in Clew refuses sends the person back and writes login-denied, 
   });
   /**
    * A sign-in through the callback as the provider's account `subject`, whose ID token carries the user name `name`
-   * stands for in the binding claim, or no claim at all: where the person was sent, and the rows the sign-in wrote in
-   * the authentication log about these people, their claims or nobody, oldest first, each with its actor shortened. A
-   * row without an actor is its action alone.
+   * stands for in the binding claim, or no claim at all: the callback's status, where it sent the person, and the rows
+   * the sign-in wrote in the authentication log about these people, their claims or nobody, oldest first, each with its
+   * actor shortened. A row without an actor is its action alone.
    */
   async function signInAs(subject: string, name: string | undefined) {
     tokenAnswer = async () =>
@@ -349,31 +350,33 @@ describe('a sign-in Clew refuses sends the person back and writes login-denied, 
       .orderBy(log.id);
     written.push(...rows.map(row => row.id));
     return {
+      status: response.status,
       location: response.headers.get('location'),
       rows: rows.map(({ action, actor }) => (actor ? action + ' ' + short(actor) : action)),
     };
   }
   test('a bound person without a grant is refused at every sign-in, the first login-denied right after identity-bound', async () => {
     expect(await signInAs('sub-bo', 'bo')).toEqual({
-      location: denied,
+      ...denied,
       rows: ['identity-bound person:bo', 'login-denied person:bo'],
     });
-    expect(await signInAs('sub-bo', 'bo')).toEqual({ location: denied, rows: ['login-denied person:bo'] });
+    expect(await signInAs('sub-bo', 'bo')).toEqual({ ...denied, rows: ['login-denied person:bo'] });
   });
   test('a changed subject and a claim that names someone else are refused: identity-conflict, then login-denied naming the person', async () => {
     expect(await signInAs('sub-anna', 'anna')).toEqual({
+      status: 303,
       location: '/',
       rows: ['identity-bound person:anna', 'login person:anna'],
     });
     // Anna's account was made again at the provider: a new subject with her name, refused on her and naming her.
     expect(await signInAs('sub-anna-2', 'anna')).toEqual({
-      location: denied,
+      ...denied,
       rows: ['identity-conflict person:anna', 'login-denied person:anna'],
     });
     // The provider gave Anna's account the name Cecilia holds in Clew: the conflict is on Cecilia, whom the claim names,
     // and the refusal names Anna, who holds the subject.
     expect(await signInAs('sub-anna', 'cecilia')).toEqual({
-      location: denied,
+      ...denied,
       rows: ['identity-conflict person:cecilia', 'login-denied person:anna'],
     });
     // Only Anna's own sign-in opened a session.
@@ -385,14 +388,14 @@ describe('a sign-in Clew refuses sends the person back and writes login-denied, 
   });
   test('a first sign-in whose claim names nobody or a person who has left, or that carries no claim, is refused, and login-denied names the person who has left', async () => {
     expect(await signInAs('sub-x', 'nobody')).toEqual({
-      location: denied,
+      ...denied,
       rows: ['identity-unmatched claim:nobody', 'login-denied'],
     });
     expect(await signInAs('sub-x', 'olle')).toEqual({
-      location: denied,
+      ...denied,
       rows: ['identity-unmatched claim:olle', 'login-denied person:olle'],
     });
-    expect(await signInAs('sub-x', undefined)).toEqual({ location: denied, rows: ['login-denied'] });
+    expect(await signInAs('sub-x', undefined)).toEqual({ ...denied, rows: ['login-denied'] });
   });
 });
 
