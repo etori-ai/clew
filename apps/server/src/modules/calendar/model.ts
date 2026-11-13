@@ -143,7 +143,11 @@ export interface PlanningRound {
   dueOn: string;
   held: readonly string[];
 }
-/** The open round for this person's organisation, or null when none is open: then nothing is planned. */
+/**
+ * The open round for this person's organisation, or null when none is open or no system answers for them: then nothing
+ * is planned. Rejects when the round cannot be read now; the planner takes that as no round, while a confirmation and
+ * the dispatch of an invitation, which must tell whether the person already has a talk in it (M1), send nothing.
+ */
 export type RoundReader = (persona: AuthenticatedContext) => Promise<PlanningRound | null>;
 /** A card for someone else's stream (D30): the follow-up an invitee gets. The threads module pushes it; the calendar never imports it. */
 export interface NotifyDraft {

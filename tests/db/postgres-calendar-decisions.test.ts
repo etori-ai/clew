@@ -12,7 +12,7 @@ import {
   calendarExecutionSource,
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
-import { bookedInRound } from '../../apps/server/src/modules/calendar/usecases/booked';
+import { bookedInRound, teamsOf } from '../../apps/server/src/modules/calendar/usecases/booked';
 import type { PlanningRound, UnitMember } from '../../apps/server/src/modules/calendar/model';
 import { projectExecution } from '../../apps/server/src/composition/execution-projection';
 import { forgetTestWorkflows, testDurable } from './durable';
@@ -30,6 +30,8 @@ const canonical = (v: unknown): unknown =>
       : v;
 const people: string[] = [],
   at = '2098-11-05T09:00:00.000Z';
+/** The directory: whom each manager of this file has in their team now, by the manager's id. */
+const teams = new Map<string, UnitMember[]>();
 afterAll(async () => {
   if (people.length) {
     const executions = await database()
@@ -85,14 +87,22 @@ async function world() {
     email: `guest${n}@example.test`,
     name: 'Guest ' + n,
   }));
-  const team = async () => members;
-  // The open round and the other managers' identities, for a person with two managers (M1); none by default.
-  const setting = { round: null as PlanningRound | null, personas: new Map<string, AuthenticatedContext>() };
+  teams.set(id, members);
+  const team = async (p: AuthenticatedContext) => teams.get(p.id) ?? [];
+  // The open round, the other managers' identities for a person with two managers (M1), none by default; the time; and
+  // the identity the ledger finds for this manager when it sends.
+  const setting = {
+    round: null as PlanningRound | null,
+    personas: new Map<string, AuthenticatedContext>(),
+    now: at,
+    current: actor,
+  };
+  const clock = () => new Date(setting.now);
   const round = async () => setting.round;
   const owners = { personaFor: async (id: string) => setting.personas.get(id) };
   const proposals = postgresProposalStore(testDurable);
   let failCommit = false;
-  const project = projectExecution(testDurable);
+  const project = projectExecution(testDurable, teamsOf({ team, people: owners }));
   const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, testDurable, async (tx, e, stage) => {
     await project(tx, e, stage);
     if (failCommit && e.state === 'succeeded') {
@@ -104,9 +114,9 @@ async function world() {
     store,
     source: {
       ...calendarExecutionSource(bind, team, bookedInRound({ store: proposals, team, people: owners, round })),
-      current: async () => actor,
+      current: async () => setting.current,
     },
-    clock: () => new Date(at),
+    clock,
     ids: randomUUID,
     digest: x => JSON.stringify(canonical(x)),
   });
@@ -116,7 +126,7 @@ async function world() {
     team,
     round,
     people: owners,
-    clock: () => new Date(at),
+    clock,
     ids: randomUUID,
     approve: uc.approve,
     previous: async (p, id) => {
@@ -333,7 +343,11 @@ async function cardFor(w: Awaited<ReturnType<typeof world>>, member: UnitMember,
   });
   return threadId;
 }
-test('two managers of one person confirm at once: one invitation is approved and sent, the other refused by name with nothing written (M1, Q12)', async () => {
+/**
+ * Two managers, A and B, of one person in the open round, each with a card drawn before either booked: each holds a time
+ * for the shared person, A's on 11 November and B's on 12 November.
+ */
+async function sharedPair() {
   const a = await world(),
     b = await world();
   const key = 'shared-' + randomUUID();
@@ -344,11 +358,16 @@ test('two managers of one person confirm at once: one invitation is approved and
     w.setting.round = round;
     w.setting.personas.set(a.id, a.actor).set(b.id, b.actor);
   }
-  // Both cards were drawn before either manager booked: each holds a time for the shared person.
   const cards = await Promise.all([
     cardFor(a, shared, '2098-11-11T09:00:00.000Z'),
     cardFor(b, shared, '2098-11-12T09:00:00.000Z'),
   ]);
+  const confirm = (w: typeof a, card: string) => w.decisions.confirm(w.actor, card, [card + ':shared']);
+  return { a, b, shared, cards, confirmA: () => confirm(a, cards[0]), confirmB: () => confirm(b, cards[1]) };
+}
+const sentTo = (w: Awaited<ReturnType<typeof world>>) => w.provider.events.map(e => e.participants.map(p => p.email));
+test('two managers of one person confirm at once: one invitation is approved and sent, the other refused by name with nothing written (M1, Q12)', async () => {
+  const { a, b, shared, cards } = await sharedPair();
   const results = await Promise.allSettled([
     a.decisions.confirm(a.actor, cards[0], [cards[0] + ':shared']),
     b.decisions.confirm(b.actor, cards[1], [cards[1] + ':shared']),
@@ -393,4 +412,73 @@ test('two managers of one person confirm at once: one invitation is approved and
   );
   expect(await executionsOf(loser.id)).toEqual([]);
   expect(loser.provider.events).toEqual([]);
+});
+test('an invitation the dispatch refused because the time is no longer free was never sent: it holds nobody, the other manager sends one, and the first card can be decided again (M1)', async () => {
+  const pair = await sharedPair(),
+    { a, b, shared, cards } = pair;
+  // When A's approved invitation is about to be sent, the shared person is busy at A's time.
+  a.provider.options.busy[shared.ref] = [{ start: '2098-11-11T09:00:00.000Z', end: '2098-11-11T10:00:00.000Z' }];
+  const first = await pair.confirmA();
+  await a.uc.progress(first.execution!.id);
+  const refused = (await a.proposals.readThread(a.id, cards[0]))!;
+  expect(refused.thread).toMatchObject({
+    state: 'open',
+    execution: { state: 'failed', reason: null },
+    receipt: { rows: [{ outcome: 'skipped', detail: 'Inget skickades: tiden kunde inte bekräftas som ledig.' }] },
+  });
+  expect(refused.proposals.map(p => p.status)).toEqual(['proposed']);
+  expect(a.provider.events).toEqual([]);
+  // B confirms in the same round, and the invitation is sent.
+  const second = await pair.confirmB();
+  expect(second.execution?.state).toBe('pending');
+  await b.uc.progress(second.execution!.id);
+  expect(sentTo(b)).toEqual([[shared.email]]);
+  // A's card waits for no decision: A may decide again, and B's booking now refuses a second talk.
+  await expect(pair.confirmA()).rejects.toThrow(
+    'Delad Medarbetare har redan ett utvecklingssamtal bokat med en annan chef.',
+  );
+});
+test('an approval whose manager lost the authority to send it before it was sent holds nobody (M1)', async () => {
+  const pair = await sharedPair(),
+    { a, b, shared } = pair;
+  const first = await pair.confirmA();
+  // A's grants change before the invitation is sent: the ledger settles it unsent, and nothing will send it.
+  a.setting.current = { ...a.actor, authorizationVersion: 'v2' };
+  await a.uc.progress(first.execution!.id);
+  expect(await a.store.read(first.execution!.id)).toMatchObject({ state: 'pending', reason: 'authority-revoked' });
+  const second = await pair.confirmB();
+  await b.uc.progress(second.execution!.id);
+  expect(sentTo(a)).toEqual([]);
+  expect(sentTo(b)).toEqual([[shared.email]]);
+});
+test('an invitation whose result is unknown holds the person for its approval’s 24 hours, inside its round, and while its manager manages them (M1)', async () => {
+  /** A's invitation goes to the calendar, which loses the answer and has nothing to read back: it may have been sent. */
+  async function uncertain() {
+    const pair = await sharedPair();
+    pair.a.provider.create = async () => {
+      throw new Error('offline');
+    };
+    const first = await pair.confirmA();
+    await pair.a.uc.progress(first.execution!.id);
+    expect(await pair.a.store.read(first.execution!.id)).toMatchObject({ state: 'unknown', reason: null });
+    return pair;
+  }
+  const refusal = 'Delad Medarbetare bjuds redan in till ett utvecklingssamtal av en annan chef.';
+  // While it may have been sent, the other manager is refused, and after the approval's 24 hours is not.
+  const held = await uncertain();
+  await expect(held.confirmB()).rejects.toThrow(refusal);
+  held.b.setting.now = new Date(Date.parse(at) + 24 * 3_600_000 + 60_000).toISOString();
+  expect((await held.confirmB()).execution?.state).toBe('pending');
+  // A manager who no longer manages the person holds nothing for them.
+  const moved = await uncertain();
+  teams.set(
+    moved.a.id,
+    moved.a.members.filter(m => m.personId !== moved.shared.personId),
+  );
+  expect((await moved.confirmB()).execution?.state).toBe('pending');
+  // Nor does an invitation in another round than the one the confirmation is in.
+  const later = await uncertain();
+  later.b.setting.round = { label: 'Next round', opensOn: '2098-12-01', dueOn: '2098-12-31', held: [] };
+  const next = await cardFor(later.b, later.shared, '2098-12-10T09:00:00.000Z');
+  expect((await later.b.decisions.confirm(later.b.actor, next, [next + ':shared'])).execution?.state).toBe('pending');
 });

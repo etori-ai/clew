@@ -21,6 +21,7 @@ import { obligationStep, replySummary } from '../../packages/contracts/src/index
 import { calendarUsecases, TOPIC } from '../../apps/server/src/modules/calendar/usecases/samtal';
 import { calendarDecisions, type CalendarApproval } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import { chunks, dueLabel, teamFromStaff } from '../../apps/server/src/modules/calendar/domain';
+import { talksRound } from '../../apps/server/src/modules/calendar/adapters/talks-round';
 
 /**
  * The utvecklingssamtal path end to end without Nextcloud or Postgres (D25): the real planner over a calendar in
@@ -260,6 +261,16 @@ describe('another week', () => {
     await expect(w.replan(hillevi, t.id, '2026-10-26')).rejects.toThrow('Välj en kommande vecka.');
     await expect(w.replan(hillevi, t.id, '2026-11-17')).rejects.toThrow('Välj en kommande vecka.');
     await expect(w.replan(hassan, t.id, '2026-11-16')).rejects.toThrow('Ärendet är redan hanterat.');
+  });
+  test('counts again who lacks a time, as the redrawn card shows', async () => {
+    const w = world();
+    const t = (await w.ensureProposalThread(hillevi))!;
+    expect(t.trigger.reason).toBe('4 samtal saknar tid före 28 november');
+    await seedConfirmed(w, t.id, [t.proposals.find(p => p.participant.name === 'Anna Lindqvist')!.id]);
+    w.clock.advance(60 * MINUTE);
+    const re = await w.replan(hillevi, t.id, '2026-11-16');
+    expect(re.proposals.filter(p => p.status === 'proposed')).toHaveLength(3);
+    expect(re.trigger).toEqual({ ...t.trigger, reason: '3 samtal saknar tid före 28 november' });
   });
 });
 
@@ -701,6 +712,174 @@ describe('a person with two managers (M1, Q12)', () => {
     });
     expect(settled.proposals.map(p => p.participant.name)).toEqual(['Anna Lindqvist']);
     expect(settled.trigger.reason).toBe('1 samtal saknar tid före 28 november');
+  });
+  /** Busy every working hour of the drawn week, so that a planner cannot place the person. */
+  const allWeek = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'].map(day => ({
+    start: localInstant(`${day}T07:00`),
+    end: localInstant(`${day}T18:00`),
+  }));
+  const rowsOf = (t: { items: Array<{ ref: string; detail: string }> }) =>
+    t.items.filter(i => i.ref.startsWith('unplaced:')).map(i => [i.ref, i.detail]);
+  test('a person an open card could not place is relabelled when another manager books her, and the count with her; the next scan writes nothing', async () => {
+    const w = twoManagers();
+    w.setting.calendars.get('gunnar')!.options.busy[anna.ref] = allWeek;
+    const his = (await w.ensureProposalThread(gunnar))!;
+    expect(his.proposals.map(p => p.participant.name)).toEqual(['Sara Ek']);
+    expect(rowsOf(his)).toEqual([['unplaced:anna', 'upptagen hela veckan']]);
+    expect(his.trigger.reason).toBe('2 samtal saknar tid före 28 november');
+    const hers = (await w.ensureProposalThread(hillevi))!;
+    await seedConfirmed(w, hers.id, [hers.proposals.find(p => p.participant.name === anna.name)!.id]);
+    w.clock.advance(MINUTE);
+    const settled = (await w.ensureProposalThread(gunnar))!;
+    expect(rowsOf(settled)).toEqual([['unplaced:anna', 'bokad av en annan chef']]);
+    expect(settled.proposals.map(p => [p.participant.name, p.status])).toEqual([['Sara Ek', 'proposed']]);
+    // The card counts what the status counts.
+    expect(settled.trigger.reason).toBe('1 samtal saknar tid före 28 november');
+    expect(await w.samtalStatus(gunnar)).toEqual({ held: 0, booked: 1, members: 2, deadline: '28 november' });
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'assistant:scan',
+      action: 'proposals.settled_elsewhere',
+      subject: 'thread:' + his.id,
+      at: new Date(Date.parse(T0) + MINUTE).toISOString(),
+      details: { proposals: [], people: ['anna'], owner: 'gunnar' },
+    });
+    // Nothing has changed since: the next scan writes nothing.
+    const audited = w.store.audit.length;
+    w.clock.advance(MINUTE);
+    expect((await w.ensureProposalThread(gunnar))!.updatedAt).toBe(settled.updatedAt);
+    expect(w.store.audit).toHaveLength(audited);
+  });
+  test('a card that could place nobody is kept in step too', async () => {
+    const w = twoManagers();
+    const own = w.setting.calendars.get('gunnar')!;
+    own.options.busy[anna.ref] = allWeek;
+    own.options.busy[sara.ref] = allWeek;
+    const his = (await w.ensureProposalThread(gunnar))!;
+    expect(his.proposals).toEqual([]);
+    const hers = (await w.ensureProposalThread(hillevi))!;
+    await seedConfirmed(w, hers.id, [hers.proposals.find(p => p.participant.name === anna.name)!.id]);
+    const settled = (await w.ensureProposalThread(gunnar))!;
+    expect(rowsOf(settled)).toEqual([
+      ['unplaced:anna', 'bokad av en annan chef'],
+      ['unplaced:sara', 'upptagen hela veckan'],
+    ]);
+    expect(settled.trigger.reason).toBe('1 samtal saknar tid före 28 november');
+  });
+  test('a person whose booking with another manager is gone needs a time again, and one write keeps the rows and the count together', async () => {
+    const w = twoManagers();
+    const hers = (await w.ensureProposalThread(hillevi))!;
+    const his = (await w.ensureProposalThread(gunnar))!;
+    const herAnna = hers.proposals.find(p => p.participant.name === anna.name)!;
+    const hisSara = his.proposals.find(p => p.participant.name === sara.name)!;
+    await seedConfirmed(w, hers.id, [herAnna.id]);
+    w.clock.advance(MINUTE);
+    expect(rowsOf((await w.ensureProposalThread(gunnar))!)).toEqual([['unplaced:anna', 'bokad av en annan chef']]);
+    // Her invitation is undone: the card no longer says she is booked, and counts her again.
+    await w.store.transaction(tx => tx.updateProposals([herAnna.id], { status: 'undone' }));
+    w.clock.advance(MINUTE);
+    const again = (await w.ensureProposalThread(gunnar))!;
+    expect(rowsOf(again)).toEqual([['unplaced:anna', 'behöver en tid']]);
+    expect(again.trigger.reason).toBe('2 samtal saknar tid före 28 november');
+    expect(await w.samtalStatus(gunnar)).toEqual({ held: 0, booked: 0, members: 2, deadline: '28 november' });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'proposals.settled_elsewhere',
+      details: { proposals: [], people: ['anna'], owner: 'gunnar' },
+    });
+    // Booked again, then the manager who booked her stops managing her while the round records Sara's talk as held:
+    // one write takes Sara's time off, gives Anna back to plan, and counts Anna alone.
+    await w.store.transaction(tx => tx.updateProposals([herAnna.id], { status: 'confirmed' }));
+    w.clock.advance(MINUTE);
+    expect(rowsOf((await w.ensureProposalThread(gunnar))!)).toEqual([['unplaced:anna', 'bokad av en annan chef']]);
+    w.setting.team = members.filter(m => m.personId !== 'anna');
+    w.setting.round = { ...ROUND, held: ['sara'] };
+    w.clock.advance(MINUTE);
+    const both = (await w.ensureProposalThread(gunnar))!;
+    expect(both.proposals.filter(p => p.status === 'proposed')).toEqual([]);
+    expect(rowsOf(both)).toEqual([
+      ['unplaced:anna', 'behöver en tid'],
+      ['unplaced:sara', 'har redan haft sitt samtal'],
+    ]);
+    expect(both.trigger.reason).toBe('1 samtal saknar tid före 28 november');
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'proposals.settled_elsewhere',
+      details: { proposals: [hisSara.id], people: ['anna', 'sara'], owner: 'gunnar' },
+    });
+  });
+  test('a person left off a card because another manager had booked her is added to it when that booking is gone, and another week draws her', async () => {
+    const w = twoManagers();
+    const hers = (await w.ensureProposalThread(hillevi))!;
+    const herAnna = hers.proposals.find(p => p.participant.name === anna.name)!;
+    await seedConfirmed(w, hers.id, [herAnna.id]);
+    const his = (await w.ensureProposalThread(gunnar))!;
+    expect(his.proposals.map(p => p.participant.name)).toEqual(['Sara Ek']);
+    expect(rowsOf(his)).toEqual([]);
+    expect(his.trigger.reason).toBe('1 samtal saknar tid före 28 november');
+    await w.store.transaction(tx => tx.updateProposals([herAnna.id], { status: 'undone' }));
+    w.clock.advance(MINUTE);
+    const again = (await w.ensureProposalThread(gunnar))!;
+    expect(again.items.at(-1)).toEqual({
+      ref: 'unplaced:anna',
+      label: 'Anna Lindqvist',
+      detail: 'behöver en tid',
+      selectable: false,
+      selected: false,
+    });
+    expect(again.trigger.reason).toBe('2 samtal saknar tid före 28 november');
+    expect(w.store.audit.at(-1)).toMatchObject({ details: { proposals: [], people: ['anna'], owner: 'gunnar' } });
+    const redrawn = await w.replan(gunnar, his.id, '2026-11-16');
+    expect(
+      redrawn.proposals
+        .filter(p => p.status === 'proposed')
+        .map(p => p.participant.name)
+        .sort(),
+    ).toEqual(['Anna Lindqvist', 'Sara Ek']);
+    expect(rowsOf(redrawn)).toEqual([]);
+  });
+  /** The round as the server reads it (`composition/index.ts`), over a talks read that fails or times out. */
+  const unreadable = (logged: string[] = []) =>
+    talksRound({
+      answers: () => true,
+      read: async () => {
+        throw new Error('Källan svarade inte inom tiden.');
+      },
+      failed: message => logged.push(message),
+    });
+  test('a confirmation is refused when the round cannot be read, since it cannot be told who is booked, and nothing is approved', async () => {
+    const w = twoManagers();
+    const his = (await w.ensureProposalThread(gunnar))!;
+    const approved: CalendarApproval[] = [];
+    const logged: string[] = [];
+    const decisions = calendarDecisions({
+      ...w.deps,
+      round: unreadable(logged),
+      approve: async (_p, input) => {
+        approved.push(input);
+      },
+      previous: async () => undefined,
+    });
+    await expect(
+      decisions.confirm(
+        gunnar,
+        his.id,
+        his.proposals.map(p => p.id),
+      ),
+    ).rejects.toThrow(
+      'Det gick inte att se om Anna Lindqvist och Sara Ek redan har ett utvecklingssamtal bokat. Försök igen om en stund.',
+    );
+    expect(approved).toEqual([]);
+    expect(logged).toEqual(['talks: the planning round could not be read']);
+    expect((await w.store.readThread('gunnar', his.id))!.thread).toEqual(his);
+  });
+  test('the planner plans nothing when the round cannot be read, as without a round, and the stream does not fail on it', async () => {
+    const w = world();
+    const { ensureProposalThread, samtalStatus, replan } = calendarUsecases({ ...w.deps, round: unreadable() });
+    expect(await ensureProposalThread(hillevi)).toBeUndefined();
+    expect(w.store.audit).toEqual([]);
+    expect(await samtalStatus(hillevi)).toEqual({ held: 0, booked: 0, members: 0, deadline: '' });
+    const drawn = (await w.ensureProposalThread(hillevi))!;
+    await expect(replan(hillevi, drawn.id, '2026-11-16')).rejects.toThrow(
+      'Det finns ingen omgång av utvecklingssamtal att planera just nu.',
+    );
   });
   test('the reader’s own booking keeps its time when another manager booked the person too', async () => {
     const w = twoManagers();

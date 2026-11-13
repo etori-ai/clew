@@ -16,7 +16,7 @@ import {
   calendarExecutionSource,
   type CalendarDecisionDeps,
 } from '../modules/calendar/usecases/decisions';
-import { bookedInRound } from '../modules/calendar/usecases/booked';
+import { bookedInRound, teamsOf } from '../modules/calendar/usecases/booked';
 import { followupUsecases } from '../modules/calendar/usecases/followups';
 import { postgresFollowupStore } from './followup-store';
 import { ledger } from './durable';
@@ -52,7 +52,7 @@ const team: Team = async persona => {
 };
 /**
  * The open round, a slot like `notifier`: `index.ts` sets `planningRound.read` to read `clew.talks` through the registry
- * (D96 items 1-3). Until it does, there is no round, and the planner plans nothing.
+ * (D96 items 1-3), and a read that fails rejects. Until it does, there is no round, and the planner plans nothing.
  */
 export const planningRound: { read: RoundReader } = { read: async () => null };
 const round: RoundReader = persona => planningRound.read(persona);
@@ -83,6 +83,11 @@ const decisions = calendarDecisions({
  * managers booked after the confirmation was checked gets no second talk.
  */
 export const calendarSource = calendarExecutionSource(bind, team, bookedInRound({ store, team, people, round }));
+/**
+ * Whom another manager with an invitation on its way to a person manages now, for the approval's projection (M1): an
+ * invitation of a manager who has left the person holds nothing for them.
+ */
+export const invitationTeams = teamsOf({ team, people });
 const core = calendarUsecases({
   store,
   bind,

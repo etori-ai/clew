@@ -6,7 +6,9 @@ import {
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import type { UnitMember } from '../../apps/server/src/modules/calendar/model';
-import type { BookedInRound } from '../../apps/server/src/modules/calendar/usecases/booked';
+import { bookedInRound, type BookedInRound } from '../../apps/server/src/modules/calendar/usecases/booked';
+import { memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
+import { talksRound } from '../../apps/server/src/modules/calendar/adapters/talks-round';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { createHash } from 'node:crypto';
@@ -125,14 +127,77 @@ test('partial source failure retains each item and never marks an unknown invita
   await w.uc.progress(e.id);
   expect(w.provider.events).toHaveLength(1);
 });
-test('missing availability evidence does not authorize an invitation', async () => {
+test('missing availability evidence does not authorize an invitation, and nothing was sent', async () => {
   const w = world();
   w.provider.freeBusy = async () => [];
   const e = await w.approve();
   await w.uc.progress(e.id);
   expect(w.provider.events).toEqual([]);
-  expect(await w.uc.read(person, e.id)).toMatchObject({ state: 'unknown' });
+  expect(await w.uc.read(person, e.id)).toMatchObject({
+    state: 'failed',
+    result: { rows: [{ outcome: 'skipped', detail: 'Inget skickades: tiden kunde inte bekräftas som ledig.' }] },
+  });
   expect(w.store.audit().some(a => a.action === 'execution.approved')).toBe(true);
+});
+test('an invitation Clew’s own check refuses before sending was never sent: the row says why, it settles failed and stays so, and holds nobody (M1)', async () => {
+  const slot = { start: input.start, end: input.end };
+  const cases: Array<{ arrange: (w: ReturnType<typeof world>) => void; room?: string; detail: string }> = [
+    // The invitee is no longer free, or the manager has another meeting then.
+    {
+      arrange: w => {
+        w.provider.options.busy.guest = [slot];
+      },
+      detail: 'Inget skickades: tiden kunde inte bekräftas som ledig.',
+    },
+    {
+      arrange: w => {
+        w.provider.events.push(occurrence({ uid: 'other', title: 'Ledning', ...slot }, w.provider.account));
+      },
+      detail: 'Inget skickades: tiden kunde inte bekräftas som ledig.',
+    },
+    // The room is taken.
+    {
+      arrange: w => {
+        w.provider.rooms.push({ ref: 'eken', name: 'Eken', email: 'eken@clew.test', capacity: 8, equipment: [] });
+        w.provider.options.busy.eken = [slot];
+      },
+      room: 'eken',
+      detail: 'Inget skickades: rummet kunde inte bekräftas som ledigt.',
+    },
+    // The check itself cannot be made.
+    {
+      arrange: w => {
+        w.provider.freeBusy = async () => {
+          throw new Error('The calendar did not answer.');
+        };
+      },
+      detail: 'Inget skickades: det gick inte att kontrollera att tiden är ledig.',
+    },
+  ];
+  for (const { arrange, room, detail } of cases) {
+    const w = world();
+    arrange(w);
+    const item = command().items[0]!;
+    const e = await w.approve({
+      items: [
+        room
+          ? { ...item, action: 'create', input: { ...input, room } }
+          : { ...item, personId: 'guest', action: 'create', input },
+      ],
+    });
+    await w.uc.progress(e.id);
+    expect(w.provider.events.filter(x => x.uid.startsWith('clew-exec-'))).toEqual([]);
+    expect(await w.uc.read(person, e.id)).toMatchObject({
+      state: 'failed',
+      reason: null,
+      result: { rows: [{ ref: 'p1', outcome: 'skipped', detail }] },
+    });
+    // A check asked for afterwards keeps it: nothing to read back, and nothing is sent.
+    await w.uc.reconcile(person, e.id);
+    await w.uc.progress(e.id);
+    expect((await w.uc.read(person, e.id))?.state).toBe('failed');
+    expect(w.provider.events.filter(x => x.uid.startsWith('clew-exec-'))).toEqual([]);
+  }
 });
 test('a proposal whose invitee changed address since the draw is authorized and checked by id, and sent to the address it was drawn with (N3)', async () => {
   // The directory has Guest at a new address now; the approved command keeps the one the proposal was drawn with.
@@ -266,10 +331,23 @@ test('an invitation to a person another manager booked after the approval is not
   expect(asked).toHaveLength(1);
   expect(w.provider.events).toHaveLength(1);
 });
-test('an invitation is not sent when it cannot be told whether another manager booked the person (M1)', async () => {
-  const w = world([guest], async () => {
-    throw new Error('round unavailable');
+test('an invitation is not sent when the round cannot be read, so it cannot be told whether another manager booked the person (M1)', async () => {
+  const logged: string[] = [];
+  // The round as the server reads it (`composition/index.ts`), over a talks read that fails or times out.
+  const round = talksRound({
+    answers: () => true,
+    read: async () => {
+      throw new Error('Källan svarade inte som väntat.');
+    },
+    failed: message => logged.push(message),
   });
+  const booked = bookedInRound({
+    store: memoryProposalStore(),
+    team: async () => [guest],
+    people: { personaFor: async () => undefined },
+    round,
+  });
+  const w = world([guest], booked);
   const e = await w.approve({ items: [{ ...command().items[0]!, personId: 'guest' }] });
   await w.uc.progress(e.id);
   expect(w.provider.events).toEqual([]);
@@ -284,6 +362,14 @@ test('an invitation is not sent when it cannot be told whether another manager b
       ],
     },
   });
+  expect(logged).toEqual(['talks: the planning round could not be read']);
+  // No talks system for the person, or no open round, is no round: there is nobody booked in it to ask about.
+  const closed = { round: null, rows: [], writable: true, source: 'Utvecklingssamtal' };
+  for (const none of [
+    talksRound({ answers: () => false, read: async () => closed, failed: () => {} }),
+    talksRound({ answers: () => true, read: async () => closed, failed: () => {} }),
+  ])
+    expect(await none(person)).toBeNull();
 });
 test('a process crash after sending is recovered with reads only, even if some approved items never reached the source', async () => {
   const w = world(),

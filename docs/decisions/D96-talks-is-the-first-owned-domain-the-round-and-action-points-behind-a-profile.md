@@ -20,14 +20,24 @@ this paragraph, this paragraph holds.
   `apps/server/src/modules/calendar/usecases/booked.ts`. The round's rows, the planner, the nightly count, the open
   card, the confirmation and the dispatch all ask it. Confirming a proposal is refused, after the person's name, with
   "har redan ett utvecklingssamtal bokat med en annan chef.", or with "har redan haft sitt utvecklingssamtal i den här
-  omgången." when the round records the talk as held. Dispatch skips the invitation and leaves the card open, also
-  when it cannot tell whether the person is booked. The nightly scan takes such people off an open card as unplaced
-  rows, "bokad av en annan chef" or "har redan haft sitt samtal", with the audit row `proposals.settled_elsewhere`.
+  omgången." when the round records the talk as held. While the round cannot be read, confirming is refused with "Det
+  gick inte att se om … redan har ett utvecklingssamtal bokat. Försök igen om en stund." and the planner plans
+  nothing. Dispatch skips the invitation and leaves the card open, also when it cannot tell whether the person is
+  booked. The nightly scan keeps an open card in step with the rule both ways, in one write with the audit row
+  `proposals.settled_elsewhere`: the drawn time of a person booked elsewhere, or whose talk is held, becomes an
+  unplaced row, "bokad av en annan chef" or "har redan haft sitt samtal"; such a row says "behöver en tid" once the
+  person lacks a time again, as does a new row for someone of the team the card leaves out; and the card's "N samtal
+  saknar tid" is counted again.
   On PostgreSQL the approval projection adds a check of its own, which does not ask the rule
   (`apps/server/src/composition/execution-projection.ts`). Under a lock per invitee, it refuses a confirmation while
-  another manager's approved invitation to the same person may be on its way: a proposal of that manager's that is
-  still `proposed`, with an execution that is pending, running or unknown. Its refusal, after the person's name, is
-  "bjuds redan in till ett utvecklingssamtal av en annan chef.".
+  another manager's approved invitation to the same person may still be sent: a proposal of that manager's that is
+  still `proposed`, with an execution that is running, pending without a reason or unknown, inside the approval's 24
+  hours ([D45](D45-approved-intent-precedes-source-dispatch.md)) and the period of this confirmation's round, whose
+  manager still has the person in their team. Its refusal, after the person's name, is "bjuds redan in till ett
+  utvecklingssamtal av en annan chef.". An invitation that Clew's own check refused right before sending, because the
+  time or the room was not free or could not be read, was never sent: its row begins "Inget skickades:", the
+  execution settles `failed` and it holds nobody, and neither does a pending execution settled with a reason, such as
+  `authority-revoked`.
 - **The held mark (item 2).** Any current manager of the person marks the talk held, moves its day or undoes it, as
   the code did before. The audit rows `talks.held` and `talks.held_undone` name who acted. This is how a co-manager
   corrects a wrong mark.
@@ -61,6 +71,10 @@ this paragraph, this paragraph holds.
   another model and would hold the same conversation twice with the same person.
 - *A booking counts without its time.* A manager may not read another manager's calendar. Counting the booking
   without its time keeps a second planner from proposing a second talk and shows nobody the other manager's day.
+- *An invitation on its way holds its person only while it may still be sent.* Otherwise one refused before it was
+  sent, or stopped for good, would keep every other manager of the person refused until someone reconciled it by hand,
+  also after a reorganisation had given the person a new manager. The approval's 24 hours bound it (D45); a talk an
+  unknown invitation did send counts as booked once a check reads it back, as every booking does.
 - *The held mark stays open to every current manager.* It is one fact about the person, and a co-manager must be
   able to correct a wrong mark. The audit row says who changed it.
 - *Ticking off narrowed to the owner, widened to a takeover.* Item 4 and the page say the owner ticks off their own;

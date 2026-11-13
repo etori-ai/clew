@@ -40,7 +40,7 @@ import type {
 } from '../model';
 import { chunks, dueLabel } from '../domain';
 import { heldAddresses, SAMTAL_TITLE, toEvent } from './reads';
-import { ALREADY_HELD, BOOKED, BOOKED_ELSEWHERE, bookedElsewhere, within } from './booked';
+import { ALREADY_HELD, BOOKED, BOOKED_ELSEWHERE, bookedElsewhere, NEEDS_TIME, within } from './booked';
 
 /**
  * The calendar's use cases (D20, D25): the person's day and week, and the utvecklingssamtal proposal thread from
@@ -186,19 +186,21 @@ export function calendarUsecases(deps: CalendarDeps) {
   /** Who among these people another of their current managers booked through Clew inside a period (M1, Q12). */
   const elsewhereOf = bookedElsewhere({ store, team, people });
   /**
+   * The open round, for planning: one that cannot be read now is no round, so the planner plans nothing rather than fail
+   * the stream (the reader logs the failure). A confirmation and a dispatch never take it so (M1).
+   */
+  const roundFor = (persona: AuthenticatedContext) => round(persona).catch(() => null);
+  /**
    * What the nightly scan knows: the team, who still lacks a samtal, and which proposals already exist. Held is the
    * round's record (person ids) or a samtal in the calendar, to the person's address now or to the address a confirmed
    * proposal invited them at. Booked is a confirmed proposal of the manager's, or one another of the person's current
    * managers made (M1); proposals are matched on the person's id, never on an address that may have changed (N3).
+   * Whom another manager booked is asked for the team and for `also`, people on a card who may have left it.
    */
-  async function remaining(persona: AuthenticatedContext, current: PlanningRound) {
+  async function remaining(persona: AuthenticatedContext, current: PlanningRound, also: readonly string[] = []) {
     const { binding, done } = await heldSamtal(persona, current);
     const [everyone, booked] = await Promise.all([team(persona), store.activeProposals(persona.id)]);
-    const elsewhere = await elsewhereOf(
-      persona.id,
-      everyone.map(m => m.personId),
-      current,
-    );
+    const elsewhere = await elsewhereOf(persona.id, [...new Set([...everyone.map(m => m.personId), ...also])], current);
     const recorded = new Set(current.held);
     const sent = new Set(
       booked
@@ -219,7 +221,7 @@ export function calendarUsecases(deps: CalendarDeps) {
    * without a round.
    */
   async function samtalStatus(persona: AuthenticatedContext) {
-    const current = await round(persona);
+    const current = await roundFor(persona);
     if (!current) return { held: 0, booked: 0, members: 0, deadline: '' };
     const { everyone, booked, isHeld, elsewhere } = await remaining(persona, current);
     const inTeam = new Set(everyone.map(m => m.personId));
@@ -362,27 +364,66 @@ export function calendarUsecases(deps: CalendarDeps) {
     return store.openThread(persona.id, TOPIC);
   }
   /**
-   * An open card drawn before someone's talk was settled elsewhere (M1, Q12): the drawn times of a person whose talk the
-   * round records as held, or whom another of their current managers has booked through Clew since, leave the card as
-   * rows with the reason (D30's judgement calls), and the trigger counts again who still lacks a time. So of two cards
-   * drawn for one person's two managers, the second never sends a second talk. A card with a decision on its way is left
-   * as it is, and a time already sent is never touched. Whether anything changed.
+   * An open card kept in step with the talks settled elsewhere (M1, Q12) and with who lacks a time, read once for the
+   * whole team. A drawn time of a person whose talk the round records as held, or whom another of their current managers
+   * has booked through Clew since, leaves the card as a row with that reason (D30's judgement calls), and a row of such a
+   * person gets the reason too. A row that says so of someone who lacks a time again (the booking was undone or declined,
+   * its manager left them, or the round no longer records the talk) says "behöver en tid", and so does a new row for
+   * someone of the team who lacks a time and is on the card in no other way (new to the team, or left off when it was
+   * drawn): another week draws them, the scan never does. Each such change counts again who lacks a time, from the same
+   * reading and in the same write, with its audit row; when no row and no drawn time changes, nothing is written. So of
+   * two cards drawn for one person's two managers the second never sends a second talk, and the card says what the
+   * status says. A card with a decision on its way is left as it is, a time already sent is never touched, and a reading
+   * that fails leaves the card to the next scan. Whether anything changed.
    */
   async function settleCard(persona: AuthenticatedContext, current: PlanningRound, card: ProposalThread) {
     if (card.thread.state !== 'open' || deciding(card.thread)) return false;
     const proposed = card.proposals.filter(p => p.status === 'proposed');
-    if (!proposed.length) return false;
-    const held = new Set(current.held);
-    const invitees = [...new Set(proposed.map(p => p.participant.personId))];
-    const elsewhere = await elsewhereOf(
-      persona.id,
-      invitees.filter(id => !held.has(id)),
-      current,
-    );
-    const reasonOf = (id: string) => (held.has(id) ? ALREADY_HELD : elsewhere.has(id) ? BOOKED_ELSEWHERE : undefined);
-    const gone = proposed.filter(p => reasonOf(p.participant.personId));
-    if (!gone.length) return false;
-    const { members } = await remaining(persona, current);
+    const rowOf = (i: ThreadItem) => (i.ref.startsWith('unplaced:') ? i.ref.slice('unplaced:'.length) : undefined);
+    const rowed = (items: readonly ThreadItem[]) => items.flatMap(i => rowOf(i) ?? []);
+    let facts: Awaited<ReturnType<typeof remaining>>;
+    try {
+      facts = await remaining(persona, current, [
+        ...proposed.map(p => p.participant.personId),
+        ...rowed(card.thread.items),
+      ]);
+    } catch {
+      return false;
+    }
+    const { members, elsewhere } = facts;
+    const held = new Set(current.held),
+      lacking = new Set(members.map(m => m.personId));
+    const settled = (id: string) => (held.has(id) ? ALREADY_HELD : elsewhere.has(id) ? BOOKED_ELSEWHERE : undefined);
+    const gone = proposed.filter(p => settled(p.participant.personId));
+    const left = new Set(gone.map(p => 'proposal:' + p.id));
+    const changed = new Set<string>();
+    // Every row says what holds for its person now; a reason the draw gave stands until a talk is settled elsewhere.
+    const items = card.thread.items
+      .filter(i => !left.has(i.ref))
+      .map(i => {
+        const id = rowOf(i);
+        if (id === undefined) return i;
+        const was = i.detail === ALREADY_HELD || i.detail === BOOKED_ELSEWHERE;
+        const reason = settled(id) ?? (was && lacking.has(id) ? NEEDS_TIME : i.detail);
+        if (reason === i.detail) return i;
+        changed.add(id);
+        return { ...i, detail: reason };
+      });
+    const rows = new Set(rowed(items)),
+      added: ThreadItem[] = [];
+    const add = (participant: ProposalParticipant, reason: string) => {
+      rows.add(participant.personId);
+      changed.add(participant.personId);
+      added.push(...unplacedItems([{ participant, reason }]));
+    };
+    for (const p of gone) if (!rows.has(p.participant.personId)) add(p.participant, settled(p.participant.personId)!);
+    // Someone the card deals with in no other way: no row, and no proposal of theirs but ones replaced since.
+    const dealt = new Set([
+      ...rows,
+      ...card.proposals.filter(p => p.status !== 'superseded' && !gone.includes(p)).map(p => p.participant.personId),
+    ]);
+    for (const m of members) if (!dealt.has(m.personId)) add(participantOf(m), NEEDS_TIME);
+    if (!gone.length && !changed.size) return false;
     const at = clock().toISOString();
     await persona.authorize();
     return store.transaction(async tx => {
@@ -394,19 +435,13 @@ export function calendarUsecases(deps: CalendarDeps) {
         deciding(locked.thread)
       )
         return false;
-      const left = new Set(gone.map(p => 'proposal:' + p.id));
-      const rows = unplacedItems(
-        [...new Map(gone.map(p => [p.participant.personId, p.participant])).values()].map(participant => ({
-          participant,
-          reason: reasonOf(participant.personId)!,
-        })),
-      );
-      await tx.updateProposals(
-        gone.map(p => p.id),
-        { status: 'superseded' },
-      );
+      if (gone.length)
+        await tx.updateProposals(
+          gone.map(p => p.id),
+          { status: 'superseded' },
+        );
       await tx.updateThread(card.thread.id, {
-        items: [...locked.thread.items.filter(i => !left.has(i.ref) && !rows.some(r => r.ref === i.ref)), ...rows],
+        items: [...items, ...added],
         trigger: {
           ...locked.thread.trigger,
           reason: `${members.length} samtal saknar tid före ${dueLabel(current.dueOn)}`,
@@ -418,15 +453,15 @@ export function calendarUsecases(deps: CalendarDeps) {
         action: 'proposals.settled_elsewhere',
         subject: 'thread:' + card.thread.id,
         at,
-        details: { proposals: gone.map(p => p.id), owner: persona.id },
+        details: { proposals: gone.map(p => p.id), people: [...changed].sort(), owner: persona.id },
       });
       return true;
     });
   }
   /**
-   * The nightly scan (and the first visit): one open thread per topic and round. Re-running takes the drawn times of
-   * people whose talk was settled elsewhere off an open thread (`settleCard`); it never silently changes confirmed ones.
-   * Without an open round nothing is planned.
+   * The nightly scan (and the first visit): one open thread per topic and round. Re-running keeps an open thread in step
+   * with the talks settled elsewhere and with who lacks a time (`settleCard`); it never silently changes confirmed ones.
+   * Without an open round, or while the round cannot be read, nothing is planned.
    */
   async function ensureProposalThread(
     persona: AuthenticatedContext,
@@ -434,7 +469,7 @@ export function calendarUsecases(deps: CalendarDeps) {
   ): Promise<Thread | undefined> {
     if (persona.role !== 'manager') return undefined;
     await persona.authorize();
-    const current = await round(persona);
+    const current = await roundFor(persona);
     if (!current) return undefined;
     const existing = await roundThread(persona, current);
     if (existing) {
@@ -495,13 +530,16 @@ export function calendarUsecases(deps: CalendarDeps) {
     });
     return inserted ? thread(persona, id) : (await store.latestThread(persona.id, TOPIC))?.thread;
   }
-  /** "Vecka 47 i stället": redraw every unconfirmed proposal of the thread in another week. */
+  /**
+   * "Vecka 47 i stället": redraw every unconfirmed proposal of the thread in another week, and count again who lacks a
+   * time, as the redrawn card shows.
+   */
   async function replan(persona: AuthenticatedContext, threadId: string, week: string) {
     const current = await store.readThread(persona.id, threadId);
     if (!current || current.thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
     if (Date.parse(dayStart(week)) < Date.parse(dayStart(todayDate())) || weekStartMismatch(week))
       throw new InputError('Välj en kommande vecka.');
-    const open = await round(persona);
+    const open = await roundFor(persona);
     if (!open) throw new InputError('Det finns ingen omgång av utvecklingssamtal att planera just nu.');
     const { members, planned, unplaced } = await draw(persona, open, week, threadId);
     const at = clock().toISOString();
@@ -520,6 +558,10 @@ export function calendarUsecases(deps: CalendarDeps) {
         week,
         title: `Planera utvecklingssamtal vecka ${weekNumber(week)}`,
         items: [...proposalItems(rows), ...unplacedItems(unplaced)],
+        trigger: {
+          ...locked.thread.trigger,
+          reason: `${members.length} samtal saknar tid före ${dueLabel(open.dueOn)}`,
+        },
         updatedAt: at,
       });
       await tx.addMessage(threadId, { role: 'user', body: `Vecka ${weekNumber(week)} i stället`, at });
