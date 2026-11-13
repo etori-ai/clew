@@ -357,6 +357,7 @@ function Controls({
   };
   const asked = askedIn(input);
   const [typed, setTyped] = useState(asked);
+  const pendingSearch = useRef<number | undefined>(undefined);
   // What the address says wins when it changes under the field (back, a link, an answer's view); what is being typed is not overwritten by its own echo.
   const echoed = useRef(asked);
   useEffect(() => {
@@ -366,17 +367,20 @@ function Controls({
     }
   }, [asked]);
   const ask = (value: string) => {
+    window.clearTimeout(pendingSearch.current);
     if (!query || value.trim() === askedIn(latest.current)) return;
     echoed.current = value.trim();
     onInput(withQuestion(latest.current, value));
   };
   // Only what is typed restarts the pause; `ask` reads the input as it is when the pause ends.
   useEffect(() => {
-    const timer = setTimeout(() => ask(typed), 350);
-    return () => clearTimeout(timer);
+    pendingSearch.current = window.setTimeout(() => ask(typed), 350);
+    return () => window.clearTimeout(pendingSearch.current);
   }, [typed]);
   const choose = (value: string) => {
     if (!filter) return;
+    // The choice submits the text too. A pending search must not replace it before the new input is drawn.
+    window.clearTimeout(pendingSearch.current);
     echoed.current = typed.trim();
     onInput(withQuestion({ ...latest.current, [filter.key]: value }, query ? typed : ''));
   };
