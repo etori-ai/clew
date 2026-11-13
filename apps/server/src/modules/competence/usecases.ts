@@ -70,6 +70,7 @@ import {
   holdingRow,
   importPlan,
   isCalendarDay,
+  mergeFigures,
   mergePlan,
   leaseUntil,
   matrixCsv,
@@ -123,7 +124,6 @@ import {
   ShareTargetTaken,
   SkillTaken,
   TypeNameTaken,
-  TypeUriTaken,
   type CompetenceDeps,
   type CompetenceExport,
   type CompetenceTx,
@@ -236,14 +236,15 @@ const MERGED_FOR_GOOD =
 const MERGED_LOCKED = 'Kompetensen är sammanslagen med en annan och kan inte ändras.';
 const RESTORE_NAME_TAKEN = 'Det finns redan en kompetens med det namnet. Byt namn på den ena först.';
 const CATALOGUE_FULL = `Katalogen får ha högst ${COMPETENCE_CATALOGUE_MAX} kompetenser, arkiverade medräknade.`;
-const IMPORT_RACED =
-  'Katalogen ändrades medan filen lästes in, och ingenting sparades. Försök igen: det som redan finns hoppas över.';
 const ESCO_ROW = 'En rad ur ESCO är en färdighet med en adress.';
 const NOT_A_REGISTRAR = 'Kompetenssökning är inte tilldelad dig. En administratör ger den genom en grupp.';
 const LEVEL_ON_SKILL_SEARCH = 'Bara en färdighet söks på en viss nivå.';
-/** A merge refused while people wait for a decision on both types (D108 items 2 and 7). */
-const waitingBoth = (people: number) =>
-  `${people === 1 ? 'En person har' : `${people} personer har`} en egen registrering av båda kompetenserna som väntar på godkännande. Slå ihop dem när registreringarna är granskade.`;
+/**
+ * A merge refused while registrations of people's own wait for both types (D108 items 2 and 7). It says neither who nor
+ * how many: an administrator has no relation to the people (D118).
+ */
+const WAITING_BOTH =
+  'Det finns egna registreringar av båda kompetenserna som väntar på godkännande. Slå ihop dem när registreringarna är granskade.';
 /**
  * A unit's coverage (D108 items 6 and 8) as the read about a unit and its table answer it: counts only, each share
  * target set on the unit with its position's label.
@@ -783,6 +784,10 @@ export function competenceUsecases(deps: CompetenceDeps) {
       id = deps.ids();
     try {
       return await deps.store.transaction(async tx => {
+        // The catalogue first (the lock order): the count checked is the count written to, as an import's is.
+        await tx.lockCatalogue(organisationId);
+        if ((await tx.countTypes(organisationId)) >= COMPETENCE_CATALOGUE_MAX)
+          throw new CompetenceError(CATALOGUE_FULL);
         await tx.insertType({
           id,
           organisationId,
@@ -1296,48 +1301,67 @@ export function competenceUsecases(deps: CompetenceDeps) {
     }
   }
 
-  /**
-   * Two types of the organisation that one may be merged into the other (D108 item 2), locked, with the merge's plan.
-   * The rows a merge re-points include those a source's copy writes, under its source's row lock, and a mapping takes
-   * that lock before the type's: so the sources whose types are mapped to `fromId` are locked first, in one order, and
-   * then the two types, in one order, so two merges or a merge and a mapping wait for each other and never deadlock.
-   */
-  async function mergeable(tx: CompetenceTx, organisationId: string, fromId: string, intoId: string) {
-    if (fromId === intoId) throw new CompetenceError(MERGE_SELF);
-    const mapped = (await tx.mappings(organisationId)).filter(m => m.typeId === fromId);
-    for (const connectorId of [...new Set(mapped.map(m => m.connectorId))].sort()) await tx.source(connectorId);
-    const locked = new Map<string, TypeRecord | undefined>();
-    for (const id of [fromId, intoId].sort()) locked.set(id, await tx.type(id));
-    const from = locked.get(fromId),
-      into = locked.get(intoId);
+  /** The refusals of a merge of `from` into `into` (D108 item 2), the preview's and the merge's alike. */
+  function mergeRefusal(
+    organisationId: string,
+    fromId: string,
+    from: TypeRecord | undefined,
+    into: TypeRecord | undefined,
+  ): asserts from is TypeRecord {
+    if (into?.id === fromId) throw new CompetenceError(MERGE_SELF);
     if (!from || from.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
     if (from.mergedInto !== null) throw new CompetenceError(MERGED_ALREADY);
     if (!into || into.organisationId !== organisationId) throw new CompetenceError(MERGE_NO_TARGET);
     if (into.mergedInto !== null) throw new CompetenceError(MERGE_INTO_MERGED);
     if (into.archivedAt !== null) throw new CompetenceError(MERGE_INTO_ARCHIVED);
     if (isSkill(from) !== isSkill(into)) throw new CompetenceError(MERGE_KINDS);
+  }
+  /**
+   * What a merge of `fromId` into `intoId` reads, as its plan (`mergePlan`) and the figures an administrator may be shown
+   * of it (`mergeFigures`). With `lock`, in the lock order of `CompetenceTx`: every source's row (a copy writes copied
+   * rows, and a mapping maps, under its source's lock), then the two types in the order of their ids, then every holding
+   * of both in the order of theirs; the mappings are read once, under those locks, so every mapping the merge moves has
+   * its source locked. Without `lock` (the preview, a GET) nothing is locked and the same is read as it stands.
+   */
+  async function mergeRead(tx: CompetenceTx, organisationId: string, fromId: string, intoId: string, lock: boolean) {
+    if (fromId === intoId) throw new CompetenceError(MERGE_SELF);
+    let from: TypeRecord | undefined, into: TypeRecord | undefined;
+    if (lock) {
+      await tx.lockSources();
+      const locked = new Map<string, TypeRecord | undefined>();
+      for (const id of [fromId, intoId].sort()) locked.set(id, await tx.type(id));
+      [from, into] = [locked.get(fromId), locked.get(intoId)];
+    } else {
+      const found = new Map((await tx.typesById([fromId, intoId])).map(t => [t.id, t]));
+      [from, into] = [found.get(fromId), found.get(intoId)];
+    }
+    mergeRefusal(organisationId, fromId, from, into);
+    const target = into!;
+    const held = lock
+      ? await tx.lockHoldingsOfTypes([from.id, target.id])
+      : [...(await tx.holdingsOfType(from.id)), ...(await tx.holdingsOfType(target.id))];
+    const fromHoldings = held.filter(h => h.typeId === from.id),
+      intoHoldings = held.filter(h => h.typeId === target.id);
+    const requirements = await tx.requirements(organisationId);
     const plan = mergePlan({
       from,
-      into,
-      fromHoldings: await tx.holdingsOfType(from.id),
-      intoHoldings: await tx.holdingsOfType(into.id),
-      requirements: await tx.requirements(organisationId),
+      into: target,
+      fromHoldings,
+      intoHoldings,
+      requirements,
       shareTargets: await tx.shareTargets(organisationId),
       mappings: await tx.mappings(organisationId),
     });
-    const preview: CompetenceMergePreview = {
-      holdings: plan.retype.length,
-      people: plan.people,
-      requirements: plan.requirements.retype.length + plan.requirements.fold.length,
-      requirementsFolded: plan.requirements.fold.length,
-      shareTargets: plan.shareTargets.retype.length + plan.shareTargets.fold.length,
-      shareTargetsFolded: plan.shareTargets.fold.length,
-      mappings: plan.mappings.length,
-      skillsSetAside: plan.revoke.length,
-      ruled: plan.ruled,
-      waiting: plan.waiting.length,
-    };
-    return { from, into, plan, preview };
+    const active = await tx.activeIds([...new Set(held.map(h => h.personId))]);
+    const figures = mergeFigures({
+      plan,
+      fromHoldings,
+      intoHoldings,
+      requirements,
+      active,
+      sameRule: (from.validityMonths ?? null) === (target.validityMonths ?? null),
+    });
+    return { from, into: target, plan, figures };
   }
 
   /**
@@ -1434,7 +1458,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
       await admin(persona);
       const today = swedishDay(now());
       return deps.store.transaction(async tx => {
-        const type = await tx.type(typeId);
+        // A read: nothing is locked.
+        const [type] = await tx.typesById([typeId]);
         if (!type || type.organisationId !== persona.organisationId) throw new CompetenceError(NO_TYPE);
         const ruled = (await tx.holdingsOfType(typeId)).filter(h => counts(h) && h.expiresOn === null);
         const expired = (months: number | null) =>
@@ -1544,12 +1569,17 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * What merging one type into another would move (D108 item 2), in counts, for the administrator to confirm; nothing
-     * is written. Refused as the merge itself would be, except for registrations waiting for both, which it counts.
+     * What merging one type into another would move (D108 item 2), in counts, for the administrator to confirm, as an
+     * administrator may be shown them (`mergeFigures`: nothing of a person's own registration, of a requirement on one
+     * person or of a deactivated person, and a count of people or holdings below five said as fewer). Nothing is written
+     * and nothing locked: it is a GET. Refused as the merge itself would be, except for registrations waiting for both,
+     * which it says are there.
      */
     async mergePreview(persona: AuthenticatedContext, fromId: string, intoId: string): Promise<CompetenceMergePreview> {
       await admin(persona);
-      return deps.store.transaction(async tx => (await mergeable(tx, persona.organisationId, fromId, intoId)).preview);
+      return deps.store.transaction(
+        async tx => (await mergeRead(tx, persona.organisationId, fromId, intoId, false)).figures,
+      );
     },
 
     /**
@@ -1562,7 +1592,10 @@ export function competenceUsecases(deps: CompetenceDeps) {
      * or a merged type, between a skill and any other kind, from a type already merged, and while a person has a
      * registration of their own waiting for both (one waits per person and type). The cards of the type merged away
      * (`competence:due:<type>`, `competence:missing:<type>`) are not touched here: the next scan no longer observes them
-     * and resolves them, and observes the other type's in their place (D47). Returns what moved.
+     * and resolves them, and observes the other type's in their place (D47). Everything is read under the locks of
+     * `mergeRead`, so a confirmation or a change of a skill that commits first is what the merge decides from, and one
+     * that comes after waits for it. The audit row counts what the writes did, exactly; what is answered is what moved as
+     * the preview counts it for an administrator (`mergeFigures`).
      */
     async mergeTypes(
       persona: AuthenticatedContext,
@@ -1572,33 +1605,54 @@ export function competenceUsecases(deps: CompetenceDeps) {
       await admin(persona);
       const at = now().toISOString();
       return deps.store.transaction(async tx => {
-        const { from, into, plan, preview } = await mergeable(tx, persona.organisationId, fromId, body.into);
-        if (plan.waiting.length) throw new CompetenceError(waitingBoth(plan.waiting.length));
+        const { from, into, plan, figures } = await mergeRead(tx, persona.organisationId, fromId, body.into, true);
+        if (plan.waiting.length) throw new CompetenceError(WAITING_BOTH);
+        const done = {
+          holdings: 0,
+          skillsSetAside: 0,
+          requirements: 0,
+          requirementsFolded: 0,
+          shareTargets: 0,
+          shareTargetsFolded: 0,
+          mappings: 0,
+        };
         // A skill set aside first: one skill of a type counts per person, and the kept one may be the one re-pointed.
-        for (const id of plan.revoke) await tx.updateHolding(id, { state: 'revoked', revokedAt: at, revokedBy: null });
+        for (const id of plan.revoke)
+          if (await tx.updateHolding(id, { state: 'revoked', revokedAt: at, revokedBy: null })) done.skillsSetAside++;
         for (const id of plan.interest) await tx.updateHolding(id, { interest: true });
-        await tx.retypeHoldings(plan.retype, into.id);
-        for (const f of plan.requirements.fold) {
-          await tx.removeRequirement(f.remove);
-          await tx.updateRequirement(f.keep, { minLevel: f.minLevel });
-        }
-        for (const id of plan.requirements.retype) await tx.updateRequirement(id, { typeId: into.id });
-        for (const f of plan.shareTargets.fold) {
-          await tx.removeShareTarget(f.remove);
-          await tx.updateShareTarget(f.keep, { minShare: f.minShare });
-        }
-        for (const id of plan.shareTargets.retype) await tx.updateShareTarget(id, { typeId: into.id });
-        for (const m of plan.mappings) await tx.putMapping({ ...m, typeId: into.id });
+        done.holdings = await tx.retypeHoldings(plan.retype, into.id);
+        for (const f of plan.requirements.fold)
+          if (await tx.removeRequirement(f.remove)) {
+            await tx.updateRequirement(f.keep, { minLevel: f.minLevel });
+            done.requirementsFolded++;
+          }
+        for (const id of plan.requirements.retype)
+          if (await tx.updateRequirement(id, { typeId: into.id })) done.requirements++;
+        done.requirements += done.requirementsFolded;
+        for (const f of plan.shareTargets.fold)
+          if (await tx.removeShareTarget(f.remove)) {
+            await tx.updateShareTarget(f.keep, { minShare: f.minShare });
+            done.shareTargetsFolded++;
+          }
+        for (const id of plan.shareTargets.retype)
+          if (await tx.updateShareTarget(id, { typeId: into.id })) done.shareTargets++;
+        done.shareTargets += done.shareTargetsFolded;
+        done.mappings = await tx.retypeMappings(persona.organisationId, from.id, into.id);
         await tx.updateType(from.id, { archivedAt: from.archivedAt ?? at, mergedInto: into.id });
-        const { waiting: _none, ...moved } = preview;
         await tx.audit({
           actor: persona.principal.id,
           action: 'competence.type_merged',
           subject: 'competence-type:' + from.id,
           at,
-          details: { organisationId: persona.organisationId, into: into.id, ...moved },
+          details: {
+            organisationId: persona.organisationId,
+            into: into.id,
+            ...done,
+            people: plan.people,
+            ruled: plan.ruled,
+          },
         });
-        return preview;
+        return figures;
       });
     },
 
@@ -1629,39 +1683,40 @@ export function competenceUsecases(deps: CompetenceDeps) {
       const at = now().toISOString(),
         organisationId = persona.organisationId,
         actor = persona.principal.id;
-      try {
-        return await deps.store.transaction(async tx => {
-          const existing = await tx.types(organisationId, { archived: true });
-          const { add, skipped } = importPlan(existing, rows);
-          if (existing.length + add.length > COMPETENCE_CATALOGUE_MAX) throw new CompetenceError(CATALOGUE_FULL);
-          await tx.insertTypes(
-            add.map(r => ({
-              id: deps.ids(),
-              organisationId,
-              name: r.name,
-              area: r.area,
-              kind: r.kind,
-              validityMonths: r.validityMonths,
-              archivedAt: null,
-              createdBy: actor,
-              createdAt: at,
-              sourceUri: r.uri,
-              mergedInto: null,
-            })),
-          );
-          await tx.audit({
-            actor,
-            action: 'competence.types_imported',
-            subject: 'organisation:' + organisationId,
-            at,
-            details: { organisationId, format: body.format, rows: rows.length, added: add.length, skipped },
-          });
-          return { added: add.length, skipped };
+      return deps.store.transaction(async tx => {
+        // The catalogue first (the lock order): imports and adds of one organisation follow each other, so the count
+        // checked against the limit is the count written to.
+        await tx.lockCatalogue(organisationId);
+        const existing = await tx.types(organisationId, { archived: true });
+        const { add } = importPlan(existing, rows);
+        if (existing.length + add.length > COMPETENCE_CATALOGUE_MAX) throw new CompetenceError(CATALOGUE_FULL);
+        // The store has the last word on what is taken: a row its own comparison finds taken is left out, not refused.
+        const inserted = await tx.insertTypes(
+          add.map(r => ({
+            id: deps.ids(),
+            organisationId,
+            name: r.name,
+            area: r.area,
+            kind: r.kind,
+            validityMonths: r.validityMonths,
+            archivedAt: null,
+            createdBy: actor,
+            createdAt: at,
+            sourceUri: r.uri,
+            mergedInto: null,
+          })),
+        );
+        const added = inserted.length,
+          skipped = rows.length - added;
+        await tx.audit({
+          actor,
+          action: 'competence.types_imported',
+          subject: 'organisation:' + organisationId,
+          at,
+          details: { organisationId, format: body.format, rows: rows.length, added, skipped },
         });
-      } catch (error) {
-        if (error instanceof TypeNameTaken || error instanceof TypeUriTaken) throw new CompetenceError(IMPORT_RACED);
-        throw error;
-      }
+        return { added, skipped };
+      });
     },
 
     /**
@@ -1731,9 +1786,19 @@ export function competenceUsecases(deps: CompetenceDeps) {
       const at = now(),
         iso = at.toISOString();
       await deps.store.transaction(async tx => {
-        const held = await tx.holding(holdingId);
+        // The type before the holding (the lock order of `CompetenceTx`): its type is learnt unlocked, locked, and the
+        // holding then read locked; a merge that re-pointed it meanwhile is followed to the type it went into.
+        let held: HoldingRecord | undefined;
+        for (let tries = 0; tries < 3; tries++) {
+          const seen = (await tx.holdingsOf([persona.id])).find(h => h.id === holdingId);
+          if (!seen?.typeId) break;
+          await tx.type(seen.typeId);
+          held = await tx.holding(holdingId);
+          if (!held || held.typeId === seen.typeId) break;
+        }
         if (!held || held.personId !== persona.id || held.level === null || !counts(held) || held.typeId === null)
           throw new ForbiddenError(NOT_YOUR_SKILL);
+        // Locked already above; a type merged away is refused here as an archived one is.
         const type = await skillType(tx, persona.organisationId, held.typeId);
         const interest = body.interest === true;
         const relevelled = held.level !== body.level;

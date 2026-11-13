@@ -220,12 +220,30 @@ export function competenceTx(
       await named(() => tx.update(types).set(set).where(eq(types.id, id)));
     },
     async insertTypes(rows) {
+      // `ON CONFLICT DO NOTHING` without a target: a row the name index (its `lower()` under the database's collation)
+      // or the address index would refuse, an earlier row of the statement included, is left out, never an error.
+      const inserted: string[] = [];
       for (const slice of slices(rows))
-        await named(() =>
-          tx
-            .insert(types)
-            .values(slice.map(t => ({ ...t, createdAt: new Date(t.createdAt), archivedAt: date(t.archivedAt) }))),
-        );
+        for (const r of await tx
+          .insert(types)
+          .values(slice.map(t => ({ ...t, createdAt: new Date(t.createdAt), archivedAt: date(t.archivedAt) })))
+          .onConflictDoNothing()
+          .returning({ id: types.id }))
+          inserted.push(r.id);
+      return inserted;
+    },
+    async lockCatalogue(organisationId) {
+      // A lock of the transaction on the organisation's catalogue: there is no row of the organisation to lock.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${'competence-catalogue:' + organisationId}, 0))`,
+      );
+    },
+    async countTypes(organisationId) {
+      const [row] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(types)
+        .where(eq(types.organisationId, organisationId));
+      return Number(row?.n ?? 0);
     },
     async findTypes(organisationId, words, limit) {
       // Matched and ordered under the ICU collation the people list uses (D100), so å, ä and ö fold and sort the same
@@ -265,6 +283,16 @@ export function competenceTx(
         .orderBy(asc(holdings.createdAt), asc(holdings.id));
       return rows.map(holdingOf);
     },
+    async lockHoldingsOfTypes(typeIds) {
+      if (!typeIds.length) return [];
+      const rows = await tx
+        .select()
+        .from(holdings)
+        .where(inArray(holdings.typeId, [...new Set(typeIds)]))
+        .orderBy(asc(holdings.id))
+        .for('update');
+      return rows.map(holdingOf);
+    },
     async waitingRegistrations() {
       const rows = await tx
         .select()
@@ -295,8 +323,13 @@ export function competenceTx(
       if ('evidence' in patch && patch.evidence !== undefined) set.evidence = patch.evidence;
       if ('registeredBy' in patch) set.registeredBy = patch.registeredBy ?? null;
       if ('issuedOn' in patch && patch.issuedOn !== undefined) set.issuedOn = patch.issuedOn;
-      if (!Object.keys(set).length) return;
-      await taken(() => tx.update(holdings).set(set).where(eq(holdings.id, id)));
+      if (!Object.keys(set).length)
+        return (await tx.select({ id: holdings.id }).from(holdings).where(eq(holdings.id, id))).length > 0;
+      let changed = 0;
+      await taken(async () => {
+        changed = (await tx.update(holdings).set(set).where(eq(holdings.id, id)).returning({ id: holdings.id })).length;
+      });
+      return changed > 0;
     },
     async deleteHolding(id) {
       await tx.delete(holdings).where(and(eq(holdings.id, id), isNull(holdings.connectorId)));
@@ -451,6 +484,22 @@ export function competenceTx(
     },
     async sources() {
       return (await tx.select().from(sources).orderBy(asc(sources.connectorId))).map(sourceOf);
+    },
+    async lockSources() {
+      const rows = await tx
+        .select({ id: sources.connectorId })
+        .from(sources)
+        .orderBy(asc(sources.connectorId))
+        .for('update');
+      return rows.map(r => r.id);
+    },
+    async retypeMappings(organisationId, fromTypeId, intoTypeId) {
+      const rows = await tx
+        .update(mappings)
+        .set({ typeId: intoTypeId })
+        .where(and(eq(mappings.organisationId, organisationId), eq(mappings.typeId, fromTypeId)))
+        .returning({ id: mappings.sourceType });
+      return rows.length;
     },
     async source(connectorId) {
       const [r] = await tx.select().from(sources).where(eq(sources.connectorId, connectorId)).for('update');
@@ -627,12 +676,19 @@ export function competenceTx(
       const set: Partial<typeof requirements.$inferInsert> = {};
       if (patch.typeId !== undefined) set.typeId = patch.typeId;
       if ('minLevel' in patch) set.minLevel = patch.minLevel ?? null;
-      if (!Object.keys(set).length) return;
+      if (!Object.keys(set).length)
+        return (await tx.select({ id: requirements.id }).from(requirements).where(eq(requirements.id, id))).length > 0;
+      let changed = 0;
       await once(
-        () => tx.update(requirements).set(set).where(eq(requirements.id, id)),
+        async () => {
+          changed = (
+            await tx.update(requirements).set(set).where(eq(requirements.id, id)).returning({ id: requirements.id })
+          ).length;
+        },
         REQUIREMENT_INDEXES,
         () => new RequirementTaken(),
       );
+      return changed > 0;
     },
     async shareTargets(organisationId) {
       const rows = await tx
@@ -661,12 +717,17 @@ export function competenceTx(
       const set: Partial<typeof targets.$inferInsert> = {};
       if (patch.typeId !== undefined) set.typeId = patch.typeId;
       if (patch.minShare !== undefined) set.minShare = patch.minShare;
-      if (!Object.keys(set).length) return;
+      if (!Object.keys(set).length)
+        return (await tx.select({ id: targets.id }).from(targets).where(eq(targets.id, id))).length > 0;
+      let changed = 0;
       await once(
-        () => tx.update(targets).set(set).where(eq(targets.id, id)),
+        async () => {
+          changed = (await tx.update(targets).set(set).where(eq(targets.id, id)).returning({ id: targets.id })).length;
+        },
         TARGET_INDEXES,
         () => new ShareTargetTaken(),
       );
+      return changed > 0;
     },
     async erasePerson(personId) {
       // The row of every source the person has copied rows from, first and in one order, as the copy's write takes it:

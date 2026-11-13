@@ -113,18 +113,13 @@ describe('the catalogue at scale on Postgres (D120 item 7, D108 item 2)', () => 
     expect(await competence.importTypes(admin, { format: 'esco', rows })).toEqual({ added: 1000, skipped: 0 });
     expect(await competence.importTypes(admin, { format: 'esco', rows })).toEqual({ added: 0, skipped: 1000 });
     const more = Array.from({ length: 50 }, (_, i) => row(1000 + i));
-    const settled = await Promise.allSettled([
+    // Two at once follow each other under the catalogue's lock: one adds the rows, the other finds them there.
+    const both = await Promise.all([
       competence.importTypes(admin, { format: 'esco', rows: more }),
       competence.importTypes(admin, { format: 'esco', rows: more }),
     ]);
-    // One adds the rows; the other either finds them there or meets it halfway and is told to try again.
-    for (const s of settled)
-      if (s.status === 'rejected') {
-        expect(s.reason).toBeInstanceOf(CompetenceError);
-        expect((s.reason as Error).message).toStartWith('Katalogen ändrades medan filen lästes in');
-      }
-    const added = settled.flatMap(s => (s.status === 'fulfilled' ? [s.value.added] : []));
-    expect(added.reduce((a, b) => a + b, 0)).toBe(50);
+    expect(both.map(o => o.added).sort()).toEqual([0, 50]);
+    expect(both.map(o => o.skipped).sort()).toEqual([0, 50]);
     const stored = await database()
       .select({ uri: schema.competenceTypes.sourceUri })
       .from(schema.competenceTypes)
@@ -146,7 +141,16 @@ describe('the catalogue at scale on Postgres (D120 item 7, D108 item 2)', () => 
     await competence.seedRequirement('operator:test', ORG, { typeId: from, personId: anna, minLevel: 3 });
     await competence.seedRequirement('operator:test', ORG, { typeId: into, personId: anna, minLevel: 1 });
     const moved = await competence.mergeTypes(admin, from, { into });
-    expect(moved).toMatchObject({ holdings: 1, requirements: 1, requirementsFolded: 1, skillsSetAside: 1 });
+    // Answered as an administrator may see it: one person is fewer than five, and a requirement on one person is not
+    // theirs to count (D118). The audit row keeps what the writes did.
+    expect(moved).toMatchObject({ holdings: 'few', requirements: 0, requirementsFolded: 0, skillsSetAside: 'few' });
+    const [audited] = await database()
+      .select({ details: schema.audit.details })
+      .from(schema.audit)
+      .where(
+        and(eq(schema.audit.subject, 'competence-type:' + from), eq(schema.audit.action, 'competence.type_merged')),
+      );
+    expect(audited!.details).toMatchObject({ holdings: 1, requirements: 1, requirementsFolded: 1, skillsSetAside: 1 });
     const held = await database()
       .select()
       .from(schema.competenceHoldings)
@@ -194,4 +198,153 @@ describe('the catalogue at scale on Postgres (D120 item 7, D108 item 2)', () => 
       .where(inArray(schema.competenceTypes.id, [a, b]));
     expect(types.filter(t => t.mergedInto !== null)).toHaveLength(1);
   });
+
+  test('a name the database folds as one, where JavaScript does not, is skipped by an import and never refused', async () => {
+    // `lower()` of this database makes "İ" an "i"; JavaScript makes it "i" and a combining dot, another name.
+    await competence.seedType('operator:test', ORG, { name: `Istanbul ${tag}`, area: 'Resor', kind: 'course' });
+    const outcome = await competence.importTypes(admin, {
+      format: 'clew',
+      rows: [
+        { row: 2, name: `İSTANBUL ${tag}`, area: 'Resor', kind: 'course', validityMonths: null, uri: null },
+        { row: 3, name: `Ankara ${tag}`, area: 'Resor', kind: 'course', validityMonths: null, uri: null },
+        { row: 4, name: `ANKARA ${tag}`, area: 'Resor', kind: 'course', validityMonths: null, uri: null },
+      ],
+    });
+    expect(outcome).toEqual({ added: 1, skipped: 2 });
+  });
+
+  test('a merge decides from a confirmation that came first: it waits for the holding, and keeps the level just confirmed', async () => {
+    const { from, into } = await skillPair('Svenska');
+    // Anna rated herself Expert in the one; her manager confirmed Självständig in the other. Then the manager confirms
+    // her own rating, and the merge comes while that confirmation holds the row.
+    const own = await competence.rateOwnSkill(asAnna, { typeId: from, level: 3, interest: false });
+    const theirs = await competence.registerSkill(asBoss, anna, { typeId: into, level: 2 });
+    const first = paused('updateHolding');
+    const confirming = first.competence.validateSkill(asBoss, own, {});
+    await first.locked;
+    const merging = competence.mergeTypes(admin, from, { into });
+    expect(await stillWaiting(merging)).toBe(true);
+    first.go();
+    await confirming;
+    await merging;
+    const rows = new Map<string, unknown[]>(
+      (await skillsOf(anna, into)).map(h => [h.id, [h.level, h.state, h.validatedAt !== null]]),
+    );
+    expect(rows).toEqual(
+      new Map<string, unknown[]>([
+        [own, [3, 'valid', true]],
+        [theirs, [2, 'revoked', true]],
+      ]),
+    );
+  });
+
+  test('a merge and a person’s change of their skill take the type before the holding: one waits, neither deadlocks', async () => {
+    const { from, into } = await skillPair('Tyska');
+    const own = await competence.rateOwnSkill(asAnna, { typeId: from, level: 2, interest: false });
+    // The change first: it holds its first lock while the merge comes, which waits for it.
+    const first = paused();
+    const changing = first.competence.changeOwnSkill(asAnna, own, { level: 1, interest: true });
+    await first.locked;
+    const merging = competence.mergeTypes(admin, from, { into });
+    expect(await stillWaiting(merging)).toBe(true);
+    first.go();
+    await Promise.all([changing, merging]);
+    expect((await skillsOf(anna, into)).map(h => [h.id, h.level, h.interest])).toEqual([[own, 1, true]]);
+    // The merge first: the change waits for it, then follows the holding to the type it went into.
+    const other = await skillPair('Franska');
+    const mine = await competence.rateOwnSkill(asAnna, { typeId: other.from, level: 1, interest: false });
+    const merger = paused('retypeHoldings');
+    const merged = merger.competence.mergeTypes(admin, other.from, { into: other.into });
+    await merger.locked;
+    const changed = competence.changeOwnSkill(asAnna, mine, { level: 3, interest: false });
+    expect(await stillWaiting(changed)).toBe(true);
+    merger.go();
+    await Promise.all([merged, changed]);
+    expect((await skillsOf(anna, other.into)).map(h => [h.id, h.level])).toEqual([[mine, 3]]);
+  });
 });
+
+/** Two skill types of the organisation, the one to merge away and the one to merge into. */
+async function skillPair(name: string) {
+  return {
+    from: await competence.seedType('operator:test', ORG, { name: `${name} ${tag}`, area: 'Språk', kind: 'skill' }),
+    into: await competence.seedType('operator:test', ORG, {
+      name: `${name}, språket ${tag}`,
+      area: 'Språk',
+      kind: 'skill',
+    }),
+  };
+}
+const skillsOf = async (personId: string, typeId: string) =>
+  (
+    await database()
+      .select()
+      .from(schema.competenceHoldings)
+      .where(and(eq(schema.competenceHoldings.personId, personId), eq(schema.competenceHoldings.typeId, typeId)))
+  ).sort((a, b) => a.id.localeCompare(b.id));
+/** Whether a write is still waiting a moment after it began: it waits for a lock another transaction holds. */
+const stillWaiting = (write: Promise<unknown>) =>
+  Promise.race([
+    write.then(
+      () => false,
+      () => false,
+    ),
+    new Promise<boolean>(resolve => setTimeout(() => resolve(true), 300)),
+  ]);
+/**
+ * The use cases over a store that stops a transaction after the first lock it takes (a type or a holding), or before the
+ * write named by `at` (after the locks before it), until `go`: so a test holds that lock while another transaction comes.
+ */
+function paused(at?: 'retypeHoldings' | 'updateHolding') {
+  let reached!: () => void, release!: () => void;
+  const locked = new Promise<void>(resolve => (reached = resolve));
+  const released = new Promise<void>(resolve => (release = resolve));
+  let stopped = false;
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    reached();
+    await released;
+  };
+  const base = postgresCompetenceStore(testDurable);
+  const use = competenceUsecases({
+    store: {
+      transaction: fn =>
+        base.transaction(tx =>
+          fn({
+            ...tx,
+            ...(at === 'retypeHoldings'
+              ? {
+                  retypeHoldings: async (ids, typeId) => {
+                    await stop();
+                    return tx.retypeHoldings(ids, typeId);
+                  },
+                }
+              : at === 'updateHolding'
+                ? {
+                    updateHolding: async (id, patch) => {
+                      await stop();
+                      return tx.updateHolding(id, patch);
+                    },
+                  }
+                : {
+                    type: async id => {
+                      const found = await tx.type(id);
+                      await stop();
+                      return found;
+                    },
+                    holding: async id => {
+                      const found = await tx.holding(id);
+                      await stop();
+                      return found;
+                    },
+                  }),
+          }),
+        ),
+    },
+    staff: async p => (p.id === boss ? overview : { units: [] }),
+    clock: () => new Date('2026-03-02T09:00:00.000Z'),
+    ids,
+  });
+  return { competence: use, locked, go: release };
+}

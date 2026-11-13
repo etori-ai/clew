@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { competenceCatalogue } from './competence';
 import {
+  announcements,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -22,6 +23,27 @@ import {
  * and reflow, at desktop, phone and 320 px.
  */
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
+/**
+ * Whether the focused control is covered where it is drawn (2.4.11): what lies on top across its middle is not the
+ * control or inside it.
+ */
+const obscured = (page: Page) =>
+  page.evaluate(() => {
+    const focused = document.activeElement as HTMLElement | null;
+    if (!focused) return true;
+    const box = focused.getBoundingClientRect();
+    // Across its middle (a rounded corner is no part of it to a hit test).
+    const y = box.top + box.height / 2;
+    const points = [
+      [box.left + box.width / 2, y],
+      [box.left + box.width / 4, y],
+      [box.right - box.width / 4, y],
+    ] as const;
+    return points.some(([x, y]) => {
+      const top = document.elementFromPoint(x, y);
+      return !top || !(focused === top || focused.contains(top));
+    });
+  });
 const dialogOf = (page: Page, name: string) => page.getByRole('dialog', { name });
 /** The dialog fades in: contrast is measured once every finite animation has run, not in the instant it opens. */
 const settled = (page: Page) =>
@@ -373,8 +395,13 @@ test.describe('Administration › Kompetens', () => {
         'aria-disabled',
         'true',
       );
-      // By keyboard: the results under the field cover the footer while the field has the focus.
-      await merging.getByRole('button', { name: 'Avbryt' }).focus();
+      // By keyboard from the open results to the footer: Tab leaves the field, and the button it reaches is not covered
+      // by the results (2.4.11).
+      await expect(page.getByRole('listbox')).toBeVisible();
+      await page.keyboard.press('Tab');
+      const cancel = merging.getByRole('button', { name: 'Avbryt' });
+      await expect(cancel).toBeFocused();
+      expect(await obscured(page)).toBe(false);
       await page.keyboard.press('Enter');
       await expect(dialog.getByRole('textbox', { name: /Namn/ })).toHaveValue('Fallskydd');
       await expect(merge).toBeFocused();
@@ -388,10 +415,12 @@ test.describe('Administration › Kompetens', () => {
       await expect(page.getByRole('option', { name: /Heta arbeten/ })).toBeVisible();
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
+      const words =
+        'Till Heta arbeten flyttas 12 intyg hos 9 personer, 2 krav (1 slås ihop med krav som redan finns, det strängaste behålls) och 1 koppling till källor. Det går inte att ångra. Tryck Slå ihop för att genomföra det.';
       const said = merging.getByRole('status').filter({ hasText: 'Till Heta arbeten flyttas' });
-      await expect(said).toHaveText(
-        'Till Heta arbeten flyttas 12 intyg hos 9 personer, 2 krav (1 slås ihop med krav som redan finns, det strängaste behålls) och 1 koppling till källor. Det går inte att ångra. Tryck Slå ihop för att genomföra det.',
-      );
+      await expect(said).toHaveText(words);
+      // The region was there before the count came, so its words are spoken (4.1.3).
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining(words));
       expect(api.catalogueWrites).toEqual([]);
       await settled(page);
       await expectNoAxeViolations(page);
@@ -418,25 +447,23 @@ test.describe('Administration › Kompetens', () => {
       await settled(page);
       await expectNoAxeViolations(page);
     });
-    test('a merge waits while someone’s own registration of both waits: it is said, and Slå ihop stays disabled', async ({
+    test('a merge waits while own registrations of both wait: it is said without who or how many, and Slå ihop stays disabled', async ({
       page,
       api,
     }) => {
       api.admin = true;
       api.competenceTypes = competenceCatalogue();
-      api.mergePreview = { ...api.mergePreview, waiting: 1 };
+      // Fewer than five people: the count is said as fewer (D118), and who or how many wait is never said.
+      api.mergePreview = { ...api.mergePreview, holdings: 'few', people: 'few', waiting: true };
       await open(page, '/admin/competence?type=t-fall');
       await dialogOf(page, 'Ändra kompetens').getByRole('button', { name: 'Slå ihop med …' }).click();
       const merging = dialogOf(page, 'Slå ihop kompetens');
       await page.keyboard.type('Heta');
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
-      await expect(
-        merging.getByRole('status').filter({
-          hasText:
-            'En person har en egen registrering av båda som väntar på godkännande. Slå ihop dem när registreringarna är granskade.',
-        }),
-      ).toBeVisible();
+      await expect(merging.getByRole('status').filter({ hasText: 'Till Heta arbeten flyttas' })).toHaveText(
+        'Till Heta arbeten flyttas färre än 5 intyg hos färre än 5 personer, 2 krav (1 slås ihop med krav som redan finns, det strängaste behålls) och 1 koppling till källor. Det finns egna registreringar av båda som väntar på godkännande. Slå ihop dem när registreringarna är granskade.',
+      );
       const confirm = merging.getByRole('button', { name: 'Slå ihop', exact: true });
       await expect(confirm).toHaveAttribute('aria-disabled', 'true');
       await confirm.click({ force: true });
@@ -463,15 +490,48 @@ test.describe('Administration › Kompetens', () => {
       await pages.getByRole('button', { name: 'Gå till nästa sida' }).click();
       await expect(table.getByRole('row', { name: /Färdighet 051/ })).toBeVisible();
       await expect(table.getByRole('row', { name: /Färdighet 001/ })).toHaveCount(0);
+      await expect(page).toHaveURL('/admin/competence?page=2');
       const search = page.getByRole('searchbox', { name: 'Sök kompetens' });
       await search.focus();
       await page.keyboard.type('ledarskap');
       await expect(page.getByRole('status').filter({ hasText: 'matchar sökningen' })).toHaveText(
         '60 av 120 matchar sökningen',
       );
-      // A new search starts on its first page.
+      // A new search starts on its first page, and the words are the address's (as on Användare, D43).
+      await expect(page).toHaveURL('/admin/competence?text=ledarskap');
       await expect(table.getByRole('row', { name: /Färdighet 061/ })).toBeVisible();
       await expectNoAxeViolations(page);
+      // The page too: a reload keeps the search and the page.
+      await pages.getByRole('button', { name: 'Gå till nästa sida' }).click();
+      await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2');
+      await page.reload();
+      await expect(search).toHaveValue('ledarskap');
+      await expect(table.getByRole('row', { name: /Färdighet 111/ })).toBeVisible();
+      // A type's dialog keeps the list's place, its close goes back to it, and so does Back.
+      await page.getByRole('link', { name: 'Ändra Färdighet 111' }).click();
+      await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2&type=t-110');
+      // Escape once the dialog has the focus.
+      await expect(dialogOf(page, 'Ändra kompetens').getByRole('textbox', { name: /Namn/ })).toHaveValue(
+        'Färdighet 111',
+      );
+      await expect(dialogOf(page, 'Ändra kompetens')).toContainText('Färdighet 111');
+      await expect
+        .poll(() => page.evaluate(() => !!document.activeElement?.closest('dialog, [role="dialog"]')))
+        .toBe(true);
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2');
+      await expect(table.getByRole('row', { name: /Färdighet 111/ })).toBeVisible();
+      // Back steps through what was opened and the pages, each with the search; the words typed are no steps.
+      await page.goBack();
+      await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2&type=t-110');
+      await page.goBack();
+      await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2');
+      await expect(dialogOf(page, 'Ändra kompetens')).toBeHidden();
+      await expect(table.getByRole('row', { name: /Färdighet 111/ })).toBeVisible();
+      await page.goBack();
+      await expect(page).toHaveURL('/admin/competence?text=ledarskap');
+      await expect(search).toHaveValue('ledarskap');
+      await expect(table.getByRole('row', { name: /Färdighet 061/ })).toBeVisible();
       await search.fill('inget sådant');
       await expect(page.getByRole('heading', { name: 'Ingen kompetens matchar' })).toBeVisible();
       await expect(pages).toHaveCount(0);

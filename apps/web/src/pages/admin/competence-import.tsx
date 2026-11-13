@@ -86,6 +86,26 @@ const outcomeText = ({ added, skipped }: CompetenceImportOutcome) =>
   `${thousands(added)} ${added === 1 ? 'kompetens lades' : 'kompetenser lades'} till i katalogen.${
     skipped ? ` ${thousands(skipped)} fanns redan.` : ''
   }`;
+/**
+ * What a refused part leaves, said under the server's refusal: which part and rows were not saved, and that the parts
+ * before them were. Sent again, what was saved is skipped.
+ */
+function failedText(
+  sending: { sent: number; of: number; failed?: { part: number; parts: number; first: number; last: number } } | null,
+) {
+  const failed = sending?.failed;
+  if (!sending || !failed) return 'Ingenting sparades. Försök igen.';
+  const which =
+    failed.parts > 1
+      ? `Del ${failed.part} av ${failed.parts}, rad ${failed.first}–${failed.last} i filen, sparades inte.`
+      : 'Ingenting sparades.';
+  const before = sending.sent
+    ? ` De ${thousands(sending.sent)} valda raderna i delarna före den är sparade.`
+    : failed.parts > 1
+      ? ' Ingenting sparades.'
+      : '';
+  return `${which}${before} Försök igen: det som redan finns hoppas över.`;
+}
 const validityText = (months: number | null, kind: CompetenceImportRow['kind']) =>
   kind === 'skill' ? 'Går inte ut' : months ? `${months} månader` : 'Ingen regel';
 interface Row extends Record<string, unknown> {
@@ -182,8 +202,15 @@ function RowsCard({
     toastId: 'competence:import',
     fallback: 'Importen kunde inte sparas.',
   });
-  /** How far a run of parts came; `failed` once a part was refused, so the page says how many were saved. */
-  const [sending, setSending] = useState<{ sent: number; of: number; failed?: boolean } | null>(null);
+  /**
+   * How far a run of parts came, and the part the server refused (its number, how many parts, its first and last row),
+   * so the page says which rows were not saved and that the parts before them were.
+   */
+  const [sending, setSending] = useState<{
+    sent: number;
+    of: number;
+    failed?: { part: number; parts: number; first: number; last: number };
+  } | null>(null);
   const [outcome, setOutcome] = useState<CompetenceImportOutcome | null>(null);
   const run = () => {
     if (action.busy || !chosen.length) return;
@@ -204,22 +231,27 @@ function RowsCard({
     void action.run(async () => {
       const total = { added: 0, skipped: 0 };
       setSending({ sent: 0, of: body.length });
-      try {
-        // In parts: a part the server has saved stays saved, and sent again it is skipped.
-        for (let i = 0; i < body.length; i += COMPETENCE_IMPORT_REQUEST_MAX) {
-          const part = await api.competence.importTypes({
-            format,
-            rows: body.slice(i, i + COMPETENCE_IMPORT_REQUEST_MAX),
-          });
+      const parts = Math.ceil(body.length / COMPETENCE_IMPORT_REQUEST_MAX);
+      // In parts: a part the server has saved stays saved, and sent again it is skipped.
+      for (let i = 0; i < body.length; i += COMPETENCE_IMPORT_REQUEST_MAX) {
+        const rows = body.slice(i, i + COMPETENCE_IMPORT_REQUEST_MAX);
+        try {
+          const part = await api.competence.importTypes({ format, rows });
           total.added += part.added;
           total.skipped += part.skipped;
-          setSending({ sent: Math.min(body.length, i + COMPETENCE_IMPORT_REQUEST_MAX), of: body.length });
+        } catch (error) {
+          // What was saved before the failure is in the catalogue: read it again, so those rows are marked.
+          const failed = {
+            part: i / COMPETENCE_IMPORT_REQUEST_MAX + 1,
+            parts,
+            first: rows[0]!.row,
+            last: rows.at(-1)!.row,
+          };
+          setSending({ sent: i, of: body.length, failed });
+          void client.invalidateQueries({ queryKey: keys.competenceAll });
+          throw error;
         }
-      } catch (error) {
-        // What was saved before the failure is in the catalogue: read it again, so those rows are marked.
-        setSending(prev => prev && { ...prev, failed: true });
-        void client.invalidateQueries({ queryKey: keys.competenceAll });
-        throw error;
+        setSending({ sent: Math.min(body.length, i + COMPETENCE_IMPORT_REQUEST_MAX), of: body.length });
       }
       setSending(null);
       setPicked(new Set());
@@ -463,11 +495,7 @@ function RowsCard({
               container="card"
               collapsible={false}
               title={action.error}
-              description={
-                sending && sending.sent > 0
-                  ? `${rowsText(sending.sent)} av ${thousands(sending.of)} hann sparas. Försök igen: det som redan finns hoppas över.`
-                  : 'Ingenting sparades. Försök igen.'
-              }
+              description={failedText(sending)}
             />
           )}
           {outcome && !action.error && (

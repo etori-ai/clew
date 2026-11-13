@@ -12,7 +12,7 @@ import {
   memoryCompetenceStore,
   type MemoryCompetenceStore,
 } from '../../apps/server/src/modules/competence/adapters/memory';
-import { TypeUriTaken, type CompetenceStore, type HoldingRecord } from '../../apps/server/src/modules/competence/model';
+import type { CompetenceStore, HoldingRecord } from '../../apps/server/src/modules/competence/model';
 import {
   CompetenceError,
   COMPETENCE_EXPORT_FORMAT,
@@ -74,12 +74,12 @@ let now: Date;
 let n: number;
 let store: MemoryCompetenceStore;
 let competence: CompetenceUsecases;
-/** Turns the store's next import into one that meets another administrator's import halfway. */
-let raceOnInsert = false;
+/** The store finds every row of an import taken by its own comparison, as Postgres's `lower()` may where JS does not. */
+let storeSkips = false;
 beforeEach(() => {
   now = new Date('2026-11-10T09:00:00.000Z');
   n = 0;
-  raceOnInsert = false;
+  storeSkips = false;
   admin.authorized = 0;
   const staff = new Map<string, StaffOverview>([
     ['boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo] }] }],
@@ -95,19 +95,7 @@ beforeEach(() => {
   store.addPosition({ id: 'pos-usk', organisationId: ORG, code: 'usk', label: 'Undersköterska' });
   store.addUnit({ id: 'u1', organisationId: ORG, label: 'Enhet 1' });
   const racing: CompetenceStore = {
-    transaction: fn =>
-      store.transaction(tx =>
-        fn(
-          raceOnInsert
-            ? {
-                ...tx,
-                insertTypes: async () => {
-                  throw new TypeUriTaken();
-                },
-              }
-            : tx,
-        ),
-      ),
+    transaction: fn => store.transaction(tx => fn(storeSkips ? { ...tx, insertTypes: async () => [] } : tx)),
   };
   competence = competenceUsecases({
     store: racing,
@@ -261,7 +249,7 @@ describe('an import adds the chosen rows of a file (D120 item 7)', () => {
     for (const [rows, message] of [
       [[clewRow(2, 'OK'), clewRow(3, ' ')], 'Rad 3: Namn saknas.'],
       [[clewRow(2, 'Engelska', { kind: 'skill', validityMonths: 12 })], 'Rad 2: En färdighet har ingen giltighetstid.'],
-      [[clewRow(2, 'Adress', { uri: 'inte en adress' })], 'Rad 2: Adressen ska vara en fullständig adress'],
+      [[clewRow(2, 'Adress', { uri: 'inte en adress' })], 'Rad 2: Adressen ska börja med http://, https:// eller urn:'],
     ] as const) {
       const refused = await competence.importTypes(admin, { format: 'clew', rows: [...rows] }).catch(e => e);
       expect(refused).toBeInstanceOf(CompetenceError);
@@ -305,12 +293,61 @@ describe('an import adds the chosen rows of a file (D120 item 7)', () => {
       skipped: 0,
     });
   });
-  test('an import that meets another halfway changes nothing and says to try again', async () => {
-    raceOnInsert = true;
-    const refused = await competence.importTypes(admin, { format: 'clew', rows: [clewRow(2, 'En')] }).catch(e => e);
-    expect(refused).toBeInstanceOf(CompetenceError);
-    expect((refused as Error).message).toStartWith('Katalogen ändrades medan filen lästes in');
-    expect(audits()).toEqual([]);
+  test('a row the store finds taken by its own comparison is skipped, never refused, and counted so', async () => {
+    storeSkips = true;
+    expect(
+      await competence.importTypes(admin, { format: 'clew', rows: [clewRow(2, 'En'), clewRow(3, 'Två')] }),
+    ).toEqual({ added: 0, skipped: 2 });
+    expect(lastAudit().details).toEqual({ organisationId: ORG, format: 'clew', rows: 2, added: 0, skipped: 2 });
+  });
+  test('a name is one name however it is written: composed or not, with an invisible character, by import or by hand', async () => {
+    const cafe = await competence.addType(admin, { name: 'Cafe\u0301kurs', area: 'Mat', kind: 'course' });
+    expect((await types()).find(t => t.id === cafe)!.name).toBe('Cafékurs');
+    await expect(
+      competence.addType(admin, { name: 'CAF\u00c9\u200bKURS', area: 'Mat', kind: 'course' }),
+    ).rejects.toThrow('Det finns redan en kompetens med det namnet.');
+    expect(
+      await competence.importTypes(admin, {
+        format: 'clew',
+        rows: [clewRow(2, 'caf\u00e9\u202ekurs', { kind: 'course' }), clewRow(3, '\u2066Heta\u2069 arbeten')],
+      }),
+    ).toEqual({ added: 1, skipped: 1 });
+    expect((await types()).map(t => t.name)).toContain('Heta arbeten');
+  });
+  test('an address is http, https or urn, nothing a browser would run', async () => {
+    for (const uri of ['javascript:alert(1)', 'data:text/html,x', 'ftp://example.org/x', 'mailto:a@b.se', 'http:x'])
+      await expect(competence.importTypes(admin, { format: 'clew', rows: [clewRow(2, 'X', { uri })] })).rejects.toThrow(
+        'Rad 2: Adressen ska börja med http://, https:// eller urn:',
+      );
+    expect(
+      await competence.importTypes(admin, {
+        format: 'clew',
+        rows: [
+          clewRow(2, 'A', { uri: 'https://example.org/a' }),
+          clewRow(3, 'B', { uri: 'urn:esco:skill:b' }),
+          clewRow(4, 'C', { uri: 'HTTP://example.org/c' }),
+        ],
+      }),
+    ).toEqual({ added: 3, skipped: 0 });
+  });
+  test('an add by hand counts against the catalogue’s limit too', async () => {
+    for (let i = 0; i < COMPETENCE_CATALOGUE_MAX; i++)
+      store.state.types.set('filler-' + i, {
+        id: 'filler-' + i,
+        organisationId: ORG,
+        name: 'Fyllnad ' + i,
+        area: 'A',
+        kind: 'course',
+        validityMonths: null,
+        archivedAt: now.toISOString(),
+        createdBy: 'operator:test',
+        createdAt: now.toISOString(),
+        sourceUri: null,
+        mergedInto: null,
+      });
+    await expect(competence.addType(admin, { name: 'En till', area: 'A', kind: 'course' })).rejects.toThrow(
+      'Katalogen får ha högst 20000 kompetenser, arkiverade medräknade.',
+    );
   });
 });
 
@@ -347,10 +384,11 @@ describe('two types are merged into one (D108 item 2)', () => {
       held('h4', 'anna', into, { issuedOn: '2026-01-01' }),
       held('h5', 'bo', from, { expiresOn: '2030-01-01' }),
     );
+    // As an administrator is shown it: Bo's registration that waits is not counted, and two people are fewer than five.
     const preview = await competence.mergePreview(admin, from, into);
     expect(preview).toEqual({
-      holdings: 4,
-      people: 2,
+      holdings: 'few',
+      people: 'few',
       requirements: 0,
       requirementsFolded: 0,
       shareTargets: 0,
@@ -358,10 +396,11 @@ describe('two types are merged into one (D108 item 2)', () => {
       mappings: 0,
       skillsSetAside: 0,
       // h1 is counted from the rule, which is now the other type's; h5 has the issuer's date, h3 waits.
-      ruled: 1,
-      waiting: 0,
+      ruled: 'few',
+      waiting: false,
     });
     const auditsBefore = audits().length;
+    // The merge answers what moved as the preview counts it; its audit row keeps the exact counts.
     expect(await competence.mergeTypes(admin, from, { into })).toEqual(preview);
     const rows = store.state.holdings;
     expect([...rows.values()].map(h => [h.id, h.typeId, h.state]).sort()).toEqual([
@@ -419,9 +458,16 @@ describe('two types are merged into one (D108 item 2)', () => {
     await competence.addShareTarget(admin, { typeId: from, positionCode: 'usk', minShare: 80 });
     await competence.addShareTarget(admin, { typeId: into, positionCode: 'usk', minShare: 60 });
     await competence.addShareTarget(admin, { typeId: from, positionCode: 'usk', unitId: 'u1', minShare: 50 });
+    // The requirements a manager set on Anna are not counted to an administrator (D118); they move all the same.
     const preview = await competence.mergePreview(admin, from, into);
-    expect(preview).toMatchObject({ requirements: 3, requirementsFolded: 2, shareTargets: 2, shareTargetsFolded: 1 });
+    expect(preview).toMatchObject({ requirements: 2, requirementsFolded: 1, shareTargets: 2, shareTargetsFolded: 1 });
     await competence.mergeTypes(admin, from, { into });
+    expect(lastAudit().details).toMatchObject({
+      requirements: 3,
+      requirementsFolded: 2,
+      shareTargets: 2,
+      shareTargetsFolded: 1,
+    });
     const requirements = [...store.state.requirements.values()]
       .map(r => [r.typeId, r.positionCode ?? r.unitId ?? r.personId, r.minLevel])
       .sort((a, b) => String(a[1]).localeCompare(String(b[1])));
@@ -443,8 +489,9 @@ describe('two types are merged into one (D108 item 2)', () => {
     const confirmed = await competence.registerSkill(boss, 'anna', { typeId: into, level: 2 });
     // Bo holds the one merged away alone: it simply moves.
     await competence.registerSkill(boss, 'bo', { typeId: from, level: 1 });
-    expect((await competence.mergePreview(admin, from, into)).skillsSetAside).toBe(1);
+    expect((await competence.mergePreview(admin, from, into)).skillsSetAside).toBe('few');
     await competence.mergeTypes(admin, from, { into });
+    expect(lastAudit().details).toMatchObject({ holdings: 2, skillsSetAside: 1 });
     const annas = [...store.state.holdings.values()].filter(h => h.personId === 'anna');
     expect(annas.map(h => [h.typeId, h.level, h.state, h.interest, h.validatedAt !== null]).sort()).toEqual([
       [into, 2, 'valid', true, true],
@@ -517,19 +564,90 @@ describe('two types are merged into one (D108 item 2)', () => {
     expect(await refusal(third, from)).toBe('Kompetensen att slå ihop med är redan sammanslagen med en annan.');
     await expect(competence.mergeTypes(boss, third, { into })).rejects.toBeInstanceOf(ForbiddenError);
   });
-  test('a person waiting for a decision on both is counted in the preview, and the merge is refused until it is decided', async () => {
+  test('a registration waiting for both is said to be there, never who or how many, and the merge waits for its decision', async () => {
     const { from, into } = await pair();
     await put(
       held('p1', 'anna', from, { evidence: 'self', state: 'pending', registeredBy: 'anna', threadId: 'a-1' }),
       held('p2', 'anna', into, { evidence: 'self', state: 'pending', registeredBy: 'anna', threadId: 'a-2' }),
     );
-    expect((await competence.mergePreview(admin, from, into)).waiting).toBe(1);
+    expect(await competence.mergePreview(admin, from, into)).toMatchObject({ waiting: true, holdings: 0, people: 0 });
     const before = audits().length;
     await expect(competence.mergeTypes(admin, from, { into })).rejects.toThrow(
-      'En person har en egen registrering av båda kompetenserna som väntar på godkännande. Slå ihop dem när registreringarna är granskade.',
+      'Det finns egna registreringar av båda kompetenserna som väntar på godkännande. Slå ihop dem när registreringarna är granskade.',
     );
     expect(audits()).toHaveLength(before);
     expect(store.state.holdings.get('p1')!.typeId).toBe(from);
+  });
+});
+
+describe('what a merge shows its administrator (D118)', () => {
+  test('from five active people the counts are numbers; a deactivated person, a rejected or waiting registration count for nothing', async () => {
+    const from = await competence.addType(admin, {
+      name: 'Truckkort',
+      area: 'A',
+      kind: 'certificate',
+      validityMonths: 12,
+    });
+    const into = await competence.addType(admin, { name: 'Truckförarbevis', area: 'A', kind: 'certificate' });
+    const ids = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+    for (const id of ids) store.addPerson({ id, organisationId: ORG, name: 'Person ' + id, userName: id });
+    await put(...ids.map(id => held('h-' + id, id, from)));
+    store.deactivate('p6');
+    await put(
+      held('w1', 'p1', from, { evidence: 'self', state: 'pending', registeredBy: 'p1', threadId: 't-w1' }),
+      held('r1', 'p2', from, {
+        evidence: 'self',
+        state: 'rejected',
+        registeredBy: 'p2',
+        decidedBy: 'boss',
+        decidedAt: '2026-02-01T00:00:00.000Z',
+      }),
+    );
+    expect(await competence.mergePreview(admin, from, into)).toMatchObject({
+      holdings: 5,
+      people: 5,
+      ruled: 5,
+      waiting: false,
+    });
+    // One person fewer and the counts are no numbers.
+    store.deactivate('p5');
+    expect(await competence.mergePreview(admin, from, into)).toMatchObject({
+      holdings: 'few',
+      people: 'few',
+      ruled: 'few',
+    });
+    const moved = await competence.mergeTypes(admin, from, { into });
+    expect(moved).toMatchObject({ holdings: 'few', people: 'few' });
+    // The audit row is the trail, not the page: every row that moved, exactly.
+    expect(lastAudit().details).toMatchObject({ holdings: 8, people: 6, ruled: 6 });
+  });
+  test('the preview locks nothing and writes nothing: it reads what stands', async () => {
+    const from = await competence.addType(admin, { name: 'A', area: 'X', kind: 'certificate' });
+    const into = await competence.addType(admin, { name: 'B', area: 'X', kind: 'certificate' });
+    const reads: string[] = [];
+    const watched = competenceUsecases({
+      store: {
+        transaction: fn =>
+          store.transaction(tx =>
+            fn({
+              ...tx,
+              type: async id => (reads.push('type'), tx.type(id)),
+              holding: async id => (reads.push('holding'), tx.holding(id)),
+              lockHoldingsOfTypes: async ids => (reads.push('holdings'), tx.lockHoldingsOfTypes(ids)),
+              lockSources: async () => (reads.push('sources'), tx.lockSources()),
+            }),
+          ),
+      },
+      staff: async () => ({ units: [] }),
+      clock: () => now,
+      ids: () => 'w-' + ++n,
+    });
+    const before = audits().length;
+    await watched.mergePreview(admin, from, into);
+    expect(reads).toEqual([]);
+    expect(audits()).toHaveLength(before);
+    await watched.mergeTypes(admin, from, { into });
+    expect(reads).toEqual(['sources', 'type', 'type', 'holdings']);
   });
 });
 

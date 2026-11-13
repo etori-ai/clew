@@ -1854,16 +1854,26 @@ export interface CompetenceImportOutcome {
 export const CompetenceMergeBodySchema = object({ into: id });
 export type CompetenceMergeBody = Static<typeof CompetenceMergeBodySchema>;
 /**
- * What merging one type into another would move (D108 item 2), counted before it is confirmed; nothing is written.
- * Every row of the type moves: its holdings, whatever their state, the requirements and share targets set on it, and
- * the sources' types mapped to it.
+ * The least number of people a count shown to an administrator may stand for (D118, D108 item 8): below it, and above
+ * none, a count of people or of what people hold is said only as fewer than this, never as the number.
+ */
+export const COMPETENCE_GROUP_MIN = 5;
+/** A count of people or of their holdings as an administrator is shown it: the number at 0 and from `COMPETENCE_GROUP_MIN`, else `few`. */
+export type CompetenceShownCount = number | 'few';
+/**
+ * What merging one type into another would move (D108 item 2), counted before it is confirmed, and what a merge answers
+ * once it is done; nothing is written by the preview, which locks nothing. Counted as an administrator may see it
+ * (D118): the holdings of active people that count or did (not a registration of a person's own that waits or was
+ * rejected), the requirements set on positions and units (one a manager set on one person moves too and is not
+ * counted), the share targets and the sources' mappings. A count of people or holdings below `COMPETENCE_GROUP_MIN` is
+ * `few`. The merge's audit row keeps the exact counts.
  */
 export interface CompetenceMergePreview {
-  /** Holdings of the type, every state, re-pointed to the other. */
-  holdings: number;
+  /** Holdings of active people that move to the other type. */
+  holdings: CompetenceShownCount;
   /** The people those holdings are of. */
-  people: number;
-  /** Requirements moved, and of them those whose target the other type already had: one is kept, the stricter. */
+  people: CompetenceShownCount;
+  /** Requirements on positions and units moved, and of them those whose target the other type already had: one is kept, the stricter. */
   requirements: number;
   requirementsFolded: number;
   /** Share targets moved, and of them those the other type already had for the position and unit: the higher kept. */
@@ -1871,12 +1881,12 @@ export interface CompetenceMergePreview {
   shareTargetsFolded: number;
   /** Sources' types mapped to the type, mapped to the other from now on. */
   mappings: number;
-  /** Skills of people who held both: the one that does not decide is set aside (revoked), with its history kept. */
-  skillsSetAside: number;
+  /** People who hold a skill of both: the one that does not decide is set aside (revoked), with its history kept. */
+  skillsSetAside: CompetenceShownCount;
   /** Holdings that end by the employer's rule and are counted from the other type's rule from now on. */
-  ruled: number;
-  /** People with a registration of their own waiting for both types: while there are any, the merge is refused. */
-  waiting: number;
+  ruled: CompetenceShownCount;
+  /** Whether registrations of people's own wait for both types: while any do, the merge is refused. Never how many. */
+  waiting: boolean;
 }
 /** What a change of a type's validity would do to the holdings counted from it (D108 item 3), before it is confirmed. */
 export interface CompetenceValidityImpact {
@@ -3971,6 +3981,7 @@ export {
   competenceImportRowProblem,
   importKind,
   importText,
+  nameKey,
   parseCompetenceImport,
   type CompetenceImportCandidate,
   type CompetenceImportFormat,

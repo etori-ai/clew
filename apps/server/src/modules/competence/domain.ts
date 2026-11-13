@@ -1,6 +1,7 @@
 import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import {
   catalogueMatcher,
+  COMPETENCE_GROUP_MIN,
   COMPETENCE_LEVEL_LABELS,
   COMPETENCE_MATRIX_COLUMNS,
   COMPETENCE_ROW_STATUSES,
@@ -8,7 +9,9 @@ import {
   SELF_RATED_WORD,
   SKILL_KIND,
   daysUntil,
+  importText,
   isCompetenceLevel,
+  nameKey,
   stockholmDate,
   stockholmInstant,
   type CompetenceHoldingRow,
@@ -19,7 +22,9 @@ import {
   type CompetenceMatrixOutput,
   type CompetenceMatrixReason,
   type CompetenceMatrixStatus,
+  type CompetenceMergePreview,
   type CompetenceSearchRow,
+  type CompetenceShownCount,
   type CompetenceStatus,
   type CompetenceType,
 } from '@clew/contracts';
@@ -77,9 +82,13 @@ const dayAndMonth = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'l
 /** A calendar day as a person reads it in a sentence: `2026-11-28` is "28 november". */
 export const swedishDayAndMonth = (day: string) => dayAndMonth.format(new Date(day + 'T12:00:00Z'));
 
-/** One line of text, trimmed, every run of white space one space; undefined when blank or longer than `max` characters. */
+/**
+ * One line of text as the catalogue keeps it (`importText`: composed form, no invisible characters, every run of white
+ * space one space, trimmed); undefined when blank or longer than `max` characters. An import and the type dialog keep
+ * a name the same way, so a look-alike is one name.
+ */
 function line(text: string, max: number): string | undefined {
-  const value = text.replace(/\s+/g, ' ').trim();
+  const value = importText(text);
   return value.length >= 1 && [...value].length <= max ? value : undefined;
 }
 export const normaliseName = (name: string) => line(name, TYPE_NAME_MAX);
@@ -415,7 +424,7 @@ export function branchOf(tree: readonly Pick<UnitRecord, 'id' | 'parentId'>[], u
  * rest of a branch enters only a share target, and only when it holds at least this many people. The same bound keeps
  * an organisation's share target from being shown over fewer.
  */
-export const COVERAGE_MIN_GROUP = 5;
+export const COVERAGE_MIN_GROUP = COMPETENCE_GROUP_MIN;
 /**
  * Whether a figure over `people` may be shown to a reader who knows `known` of them (D108 item 8): yes when the rest are
  * none (the figure says nothing the reader does not know) or at least `COVERAGE_MIN_GROUP`.
@@ -782,7 +791,7 @@ export function importPlan(
     names = new Set<string>();
   let skipped = 0;
   for (const row of rows) {
-    const name = row.name.toLowerCase();
+    const name = nameKey(row.name);
     if (held(row) || (row.uri !== null && uris.has(row.uri)) || names.has(name)) {
       skipped++;
       continue;
@@ -894,6 +903,45 @@ export function mergePlan(input: {
       (from.validityMonths ?? null) === (into.validityMonths ?? null)
         ? 0
         : fromHoldings.filter(h => counts(h) && h.level === null && h.expiresOn === null).length,
+  };
+}
+/** A count of people or of what they hold as an administrator is shown it (D118): exact at 0 and from the least group. */
+export const shownCount = (n: number): CompetenceShownCount => (n === 0 || n >= COVERAGE_MIN_GROUP ? n : 'few');
+/**
+ * What a merge moves as its administrator may be shown it (D108 item 2, D118, as the Krav page and the figures keep
+ * from them what is about one person): the holdings of active people that count or did, never a registration of a
+ * person's own that waits or was rejected; the requirements on positions and units, never one a manager set on one
+ * person (which moves all the same); the share targets and mappings; and, for each count of people or holdings, the
+ * number only at 0 or from `COVERAGE_MIN_GROUP`. Whether a registration waits for both is a yes or a no.
+ */
+export function mergeFigures(input: {
+  plan: MergePlan;
+  fromHoldings: readonly HoldingRecord[];
+  intoHoldings: readonly HoldingRecord[];
+  requirements: readonly RequirementRecord[];
+  active: ReadonlySet<string>;
+  sameRule: boolean;
+}): CompetenceMergePreview {
+  const { plan, active } = input;
+  const own = (h: HoldingRecord) => h.evidence === 'self' && (h.state === 'pending' || h.state === 'rejected');
+  const seen = input.fromHoldings.filter(h => active.has(h.personId) && !own(h));
+  const onPerson = new Set(input.requirements.filter(r => r.personId !== null).map(r => r.id));
+  const holders = new Map([...input.fromHoldings, ...input.intoHoldings].map(h => [h.id, h.personId]));
+  const aside = new Set(plan.revoke.flatMap(id => holders.get(id) ?? []).filter(p => active.has(p)));
+  const folded = plan.requirements.fold.filter(f => !onPerson.has(f.remove)).length;
+  return {
+    holdings: shownCount(seen.length),
+    people: shownCount(new Set(seen.map(h => h.personId)).size),
+    requirements: plan.requirements.retype.filter(id => !onPerson.has(id)).length + folded,
+    requirementsFolded: folded,
+    shareTargets: plan.shareTargets.retype.length + plan.shareTargets.fold.length,
+    shareTargetsFolded: plan.shareTargets.fold.length,
+    mappings: plan.mappings.length,
+    skillsSetAside: shownCount(aside.size),
+    ruled: shownCount(
+      input.sameRule ? 0 : seen.filter(h => counts(h) && h.level === null && h.expiresOn === null).length,
+    ),
+    waiting: plan.waiting.length > 0,
   };
 }
 

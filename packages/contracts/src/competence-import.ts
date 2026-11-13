@@ -15,7 +15,9 @@
  * what a file holds; what is wrong is a problem with its row, in the words the page shows. The CSV is RFC 4180: a field
  * in double quotes may hold the delimiter, a line break and `""` for a quote; a byte order mark is skipped; a row ends
  * with CRLF, LF or CR. A file written by a spreadsheet in Swedish separates with `;`, which is recognised from the
- * first row.
+ * first row. Rows are numbered by record, an empty line given no number, on the page and in what the server is sent.
+ * A name and an area are kept in Unicode's composed form without invisible characters (`importText`), as the type
+ * dialog keeps them, and compared without regard to case (`nameKey`).
  */
 
 /** The longest file read, in characters: ESCO's skills file in one language is well under it. */
@@ -74,7 +76,7 @@ export const ESCO_RELEASED = 'released';
 
 /** One type a file offers, as read and checked. `area` is null on an ESCO row: the administrator chooses it. */
 export interface CompetenceImportRow {
-  /** The row's number in the file as a spreadsheet counts it: the first row is 1, the first type 2. */
+  /** The row's number in the file, by record: the first row is 1, the first type 2; an empty line has no number. */
   row: number;
   name: string;
   area: string | null;
@@ -110,11 +112,30 @@ export interface CompetenceImportCandidate {
 
 /** A control character or half a surrogate pair: a database column cannot hold one reliably, and no name needs one. */
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
-/** A name, an area: one line, trimmed, every run of white space one space. */
-export const importText = (value: string) => value.replace(/\s+/g, ' ').trim();
+/**
+ * What no name shows and no name needs: zero-width characters (the zero-width space, joiners, the word joiner, the byte
+ * order mark), the soft hyphen, and the controls of the direction of text. Left in, two names that look alike would be
+ * two types.
+ */
+const INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff]/g;
+/**
+ * A name, an area, as the catalogue keeps it wherever it comes from (a file, the type dialog): in Unicode's composed
+ * form (NFC), without invisible characters, one line, trimmed, every run of white space one space. So "é" typed and "é"
+ * pasted, or a name with a zero-width space in it, are one name.
+ */
+export const importText = (value: string) => value.normalize('NFC').replace(INVISIBLE, '').replace(/\s+/g, ' ').trim();
+/**
+ * A name as it is compared, without regard to case (`importText`, then lower case): the page and the server compare with
+ * this. The database's own index decides in the end (`lower()` under its collation), and a row it holds for a name in
+ * use is skipped as one this finds is, never refused.
+ */
+export const nameKey = (value: string) => importText(value).toLowerCase();
 const length = (value: string) => [...value].length;
-/** An absolute address: a scheme, a colon, and no white space or control character after it. */
-const URI = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s\u0000-\u001f\u007f]+$/;
+/**
+ * An address a type may keep: `http://` or `https://` with a host, or a `urn:`, in printable ASCII with no white space.
+ * Nothing that a browser would run or open in another way (`javascript:`, `data:`) is kept.
+ */
+const URI = /^(?:https?:\/\/[\x21-\x7e]+|urn:[A-Za-z0-9][\x21-\x7e]+)$/i;
 /** The kind a file names, by Clew's id or by the page's word, without regard to case. */
 export function importKind(value: string): CompetenceImportKind | undefined {
   const wanted = value.trim().toLowerCase();
@@ -136,8 +157,8 @@ function areaProblem(area: string): string | null {
 }
 function uriProblem(uri: string): string | null {
   if (uri.length > COMPETENCE_URI_MAX) return `Adressen är längre än ${COMPETENCE_URI_MAX} tecken.`;
-  if (!URI.test(uri) || UNSAFE.test(uri))
-    return 'Adressen ska vara en fullständig adress, till exempel http://data.europa.eu/esco/skill/….';
+  if (!URI.test(uri))
+    return 'Adressen ska börja med http://, https:// eller urn:, till exempel http://data.europa.eu/esco/skill/….';
   return null;
 }
 const validityProblem = `Giltighetstiden ska vara ett heltal från 1 till ${COMPETENCE_IMPORT_VALIDITY_MAX} månader.`;
@@ -172,8 +193,10 @@ interface CsvRecord {
   malformed: boolean;
 }
 /**
- * The rows of a CSV text (RFC 4180), each with its number as a spreadsheet shows it: an empty line is no row but is
- * counted. Stops at `max` rows, and at a quoted field that never ends, which it reports.
+ * The rows of a CSV text (RFC 4180), numbered by record: the first row is 1 and each row with anything on it the next,
+ * so an empty line, or the empty line between the CR and the CR LF a converted file ends its lines with, is no row and
+ * no number. The limit counts the same rows, so no number the page sends can be above what the server takes. Stops past
+ * `max` rows, and at a quoted field that never ends, which it reports with the number of the row it began.
  */
 function readCsv(
   text: string,
@@ -183,20 +206,19 @@ function readCsv(
   const records: CsvRecord[] = [];
   let fields: string[] = [];
   let field = '';
-  let row = 1;
   let quoted = false;
   let malformed = false;
   let started = false;
   let quotedAt = 0;
-  const end = (atEnd: boolean) => {
+  const end = () => {
     fields.push(field);
     // A line with nothing on it is no row.
-    if (!(fields.length === 1 && fields[0] === '' && !started)) records.push({ row, fields, malformed });
+    if (!(fields.length === 1 && fields[0] === '' && !started))
+      records.push({ row: records.length + 1, fields, malformed });
     fields = [];
     field = '';
     malformed = false;
     started = false;
-    if (!atEnd) row++;
   };
   let i = 0;
   const n = text.length;
@@ -218,7 +240,7 @@ function readCsv(
         continue;
       }
       if (c === '\n' || c === '\r') {
-        // A line break inside a quoted field belongs to the field, and the row keeps its number, as a spreadsheet shows it.
+        // A line break inside a quoted field belongs to the field: it is one row, as a spreadsheet shows it.
         field += c === '\r' && text[i + 1] === '\n' ? '\r\n' : c;
         i += c === '\r' && text[i + 1] === '\n' ? 2 : 1;
         continue;
@@ -230,7 +252,7 @@ function readCsv(
     if (c === '"' && field === '') {
       quoted = true;
       started = true;
-      quotedAt = row;
+      quotedAt = records.length + 1;
       i++;
       continue;
     }
@@ -242,7 +264,7 @@ function readCsv(
       continue;
     }
     if (c === '\r' || c === '\n') {
-      end(false);
+      end();
       i += c === '\r' && text[i + 1] === '\n' ? 2 : 1;
       continue;
     }
@@ -252,7 +274,7 @@ function readCsv(
     i++;
   }
   if (quoted) return { records, unterminated: quotedAt, tooMany: false };
-  if (field !== '' || fields.length > 0 || started) end(true);
+  if (field !== '' || fields.length > 0 || started) end();
   if (records.length > max) return { records: [], unterminated: null, tooMany: true };
   return { records, unterminated: null, tooMany: false };
 }
@@ -390,14 +412,14 @@ export function parseCompetenceImport(input: string): CompetenceImportResult {
       problem(row, `Samma adress som rad ${sameUri}.`);
       continue;
     }
-    const nameKey = candidate.name.toLowerCase();
-    const sameName = byName.get(nameKey);
+    const key = nameKey(candidate.name);
+    const sameName = byName.get(key);
     if (sameName !== undefined) {
       problem(row, `Samma namn som rad ${sameName}.`);
       continue;
     }
     if (candidate.uri !== null) byUri.set(candidate.uri, row);
-    byName.set(nameKey, row);
+    byName.set(key, row);
     rows.push({ row, ...candidate });
   }
   if (unterminated !== null) problem(unterminated, 'Ett citattecken avslutas aldrig. Resten av filen kan inte läsas.');
@@ -418,7 +440,7 @@ export function catalogueMatcher(
     names = new Set<string>();
   for (const t of types) {
     if (t.uri) uris.add(t.uri);
-    if (!t.archived || t.merged) names.add(importText(t.name).toLowerCase());
+    if (!t.archived || t.merged) names.add(nameKey(t.name));
   }
-  return row => (row.uri !== null && uris.has(row.uri)) || names.has(importText(row.name).toLowerCase());
+  return row => (row.uri !== null && uris.has(row.uri)) || names.has(nameKey(row.name));
 }

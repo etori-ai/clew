@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
   COMPETENCE_IMPORT_MAX_CHARS,
+  COMPETENCE_IMPORT_REQUEST_MAX,
+  CompetenceImportBodySchema,
+  contractProblems,
+  importText,
+  nameKey,
   COMPETENCE_IMPORT_PROBLEMS_MAX,
   COMPETENCE_IMPORT_ROWS_MAX,
   ESCO_SKILL_COLUMNS,
@@ -146,7 +151,8 @@ describe('what is wrong is a problem with its row, and the rest is read (D120 it
       { row: 8, message: 'En färdighet har ingen giltighetstid.' },
       {
         row: 9,
-        message: 'Adressen ska vara en fullständig adress, till exempel http://data.europa.eu/esco/skill/….',
+        message:
+          'Adressen ska börja med http://, https:// eller urn:, till exempel http://data.europa.eu/esco/skill/….',
       },
       { row: 10, message: 'Namnet är längre än 120 tecken.' },
       { row: 11, message: 'Raden har 6 fält, men den första raden har 5.' },
@@ -206,6 +212,46 @@ describe('what is wrong is a problem with its row, and the rest is read (D120 it
     expect(read.problemCount).toBe(0);
     expect(read.rows.at(-1)).toMatchObject({ row: 14_001, name: 'färdighet 13999' });
   });
+  test('rows are numbered by record: an empty line and the CR of CR CR LF are no row, so a page and the server agree', () => {
+    const read = parseCompetenceImport('name,area,kind\r\r\nA,X,course\r\r\n\r\n\nB,X,course\r\r\n,X,course\r\r\n');
+    expect(read.rows.map(r => [r.row, r.name])).toEqual([
+      [2, 'A'],
+      [3, 'B'],
+    ]);
+    expect(read.problems).toEqual([{ row: 4, message: 'Namn saknas.' }]);
+  });
+  test('a file of 16 000 types with CR CR LF line ends is read whole, and every part of it is one the server takes', () => {
+    const rows = Array.from({ length: 16_000 }, (_, i) => esco(uri(i), `färdighet ${i}`));
+    const read = parseCompetenceImport([ESCO_HEADER, ...rows].join('\r\r\n'));
+    expect(read.problemCount).toBe(0);
+    expect(read.rows).toHaveLength(16_000);
+    expect(read.rows.at(-1)!.row).toBe(16_001);
+    for (let i = 0; i < read.rows.length; i += COMPETENCE_IMPORT_REQUEST_MAX) {
+      const part = {
+        format: 'esco',
+        rows: read.rows
+          .slice(i, i + COMPETENCE_IMPORT_REQUEST_MAX)
+          .map(r => ({ row: r.row, name: r.name, area: 'Digitalt', kind: r.kind, validityMonths: null, uri: r.uri })),
+      };
+      expect(contractProblems(CompetenceImportBodySchema, part, 1)).toEqual([]);
+    }
+  });
+  test('the most rows a file may have are counted as records, empty lines between them left out', () => {
+    const lines = ['name,area,kind', ...Array.from({ length: COMPETENCE_IMPORT_ROWS_MAX }, (_, i) => `T${i},X,course`)];
+    const read = parseCompetenceImport(lines.join('\n\n'));
+    expect(read.rows).toHaveLength(COMPETENCE_IMPORT_ROWS_MAX);
+    expect(read.rows.at(-1)!.row).toBe(COMPETENCE_IMPORT_ROWS_MAX + 1);
+  });
+  test('a name is kept composed and without invisible characters, and look-alikes are one name', () => {
+    expect(importText('  Cafe\u0301\u200b  kurs\u00ad ')).toBe('Café kurs');
+    expect(importText('\u202eHeta\u202c arbeten\u2066\u2069')).toBe('Heta arbeten');
+    expect(nameKey('CAFÉ KURS')).toBe(nameKey('cafe\u0301 kurs'));
+    const read = parseCompetenceImport('name,area,kind\nCafe\u0301kurs,Mat,course\ncaf\u00e9\ufeffkurs,Mat,course');
+    expect(read.rows.map(r => r.name)).toEqual(['Cafékurs']);
+    expect(read.problems).toEqual([{ row: 3, message: 'Samma namn som rad 2.' }]);
+    const held = catalogueMatcher([{ name: 'Café\u200dkurs', uri: null, archived: false, merged: false }]);
+    expect(held({ name: 'CAFE\u0301KURS', uri: null })).toBe(true);
+  });
   test('whatever the text, it answers and never throws', () => {
     for (const text of [
       '"',
@@ -230,7 +276,17 @@ describe('the server checks a row with the same rules (D120 item 7)', () => {
     expect(competenceImportRowProblem({ ...row, validityMonths: 2.5 })).toBe(
       'Giltighetstiden ska vara ett heltal från 1 till 600 månader.',
     );
-    expect(competenceImportRowProblem({ ...row, uri: 'javascript alert' })).toStartWith('Adressen ska vara');
+    expect(competenceImportRowProblem({ ...row, uri: 'javascript alert' })).toStartWith('Adressen ska börja med');
+    for (const uri of [
+      'javascript:alert(1)',
+      'data:text/html,x',
+      'file:///etc/passwd',
+      'http://exa mple.org',
+      'https://ex.org/å',
+    ])
+      expect(competenceImportRowProblem({ ...row, uri })).toStartWith('Adressen ska börja med');
+    for (const uri of ['http://data.europa.eu/esco/skill/1', 'HTTPS://example.org/a?b=c', 'urn:isbn:0451450523'])
+      expect(competenceImportRowProblem({ ...row, uri })).toBeNull();
     expect(competenceImportRowProblem({ ...row, area: 'A'.repeat(81) })).toBe('Området är längre än 80 tecken.');
   });
   test('the catalogue holds a row by its address whatever the type, or by a name in use or merged', () => {

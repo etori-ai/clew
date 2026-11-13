@@ -430,9 +430,34 @@ export class ShareTargetTaken extends Error {
   }
 }
 
-/** Everything a competence use case reads and writes in one transaction. Reads that a write follows take a row lock. */
+/**
+ * Everything a competence use case reads and writes in one transaction. Reads that a write follows take a row lock.
+ *
+ * **The lock order.** A transaction that takes more than one kind of lock takes them in this order, and several of one
+ * kind in the order of their ids, so two transactions wait for each other and never deadlock:
+ *
+ * 1. the organisation's catalogue (`lockCatalogue`), taken by what adds types (an add, an import);
+ * 2. the rows of the sources (`source`, `lockSources`), taken by a source's copy and its write, a mapping, forgetting a
+ *    source, erasure and a merge;
+ * 3. the rows of types (`type`), taken by what registers, rates, maps, requires, changes, archives, restores and merges;
+ * 4. the rows of holdings (`holding`, `lockHoldingsOfTypes`), taken by what changes, decides, confirms, revokes or
+ *    removes one, and by a merge;
+ * 5. the rows of requirements and share targets (`requirement`, `shareTarget`).
+ *
+ * A use case that knows only a holding and needs its type as well (a person's change of their own skill) reads the
+ * holding without a lock to learn the type, locks the type, then locks the holding and reads it again. A write takes
+ * its own locks too: inserting a holding, a requirement or a mapping waits on a type a merge has locked, which is the
+ * order above. Reads that write nothing (the lists, the search, a merge's preview) take no lock.
+ */
 export interface CompetenceTx {
   // The catalogue.
+  /**
+   * Hold the organisation's catalogue for this transaction (the first lock of the order): an add and an import of types
+   * take it, so the count they check against `COMPETENCE_CATALOGUE_MAX` is the count they write to.
+   */
+  lockCatalogue(organisationId: string): Promise<void>;
+  /** How many types the organisation has, archived and merged ones included. */
+  countTypes(organisationId: string): Promise<number>;
   /** The organisation's types by area and name in Swedish order; archived ones only when asked for. */
   types(organisationId: string, options?: { archived?: boolean }): Promise<TypeRecord[]>;
   /** One type, locked. */
@@ -447,10 +472,12 @@ export interface CompetenceTx {
   /** Change a type; the same name rule as `insertType`. An unknown id changes nothing. */
   updateType(id: string, patch: TypePatch): Promise<void>;
   /**
-   * Insert these types at once, as an import does (D120 item 7): the name rule of `insertType`, and an address another
-   * type of the organisation keeps, whatever its state, refused with `TypeUriTaken`. All or none.
+   * Insert these types at once, as an import does (D120 item 7), each that may be: one whose name another type of the
+   * organisation in use has (by the store's own comparison without regard to case, which in Postgres is the name index's
+   * `lower()`), or whose address another type keeps whatever its state, or that an earlier one of the batch took, is
+   * left out without an error. Returns the ids inserted.
    */
-  insertTypes(types: readonly TypeRecord[]): Promise<void>;
+  insertTypes(types: readonly TypeRecord[]): Promise<string[]>;
   /**
    * The organisation's types that are not archived whose name or area holds each of these words, without regard to case
    * (D121 item 4: the type field of the search, over a catalogue of thousands), by name in Swedish order and then id, at
@@ -462,6 +489,8 @@ export interface CompetenceTx {
   holdingsOf(personIds: readonly string[]): Promise<HoldingRecord[]>;
   /** Every holding of this type, oldest first, whatever its state. */
   holdingsOfType(typeId: string): Promise<HoldingRecord[]>;
+  /** Every holding of these types, whatever its state, locked in the order of their ids (a merge, D108 item 2). */
+  lockHoldingsOfTypes(typeIds: readonly string[]): Promise<HoldingRecord[]>;
   /** Every person's own registration that waits for a decision (D108 item 7), of every organisation, oldest first. */
   waitingRegistrations(): Promise<HoldingRecord[]>;
   /** One holding, locked. */
@@ -473,8 +502,8 @@ export interface CompetenceTx {
    * no end date, no source and no approval, and only a skill is confirmed or has an interest mark.
    */
   insertHolding(holding: HoldingRecord): Promise<void>;
-  /** Change a holding; the same rules as `insertHolding`. An unknown id changes nothing. */
-  updateHolding(id: string, patch: HoldingPatch): Promise<void>;
+  /** Change a holding; the same rules as `insertHolding`. An unknown id changes nothing; returns whether there was one. */
+  updateHolding(id: string, patch: HoldingPatch): Promise<boolean>;
   /**
    * Remove one holding registered in Clew, as a person's own registration taken back is (D108 item 7). A copied row is
    * left alone: it goes only with its source or its person.
@@ -518,10 +547,17 @@ export interface CompetenceTx {
   putMapping(mapping: SourceMapping): Promise<void>;
   /** Remove a mapping; false when there was none. */
   removeMapping(connectorId: string, organisationId: string, sourceType: string): Promise<boolean>;
+  /**
+   * Map to `intoTypeId` every source type of the organisation mapped to `fromTypeId`, keeping who mapped it and when, as
+   * a merge does (D108 item 2). Returns how many mappings there were.
+   */
+  retypeMappings(organisationId: string, fromTypeId: string, intoTypeId: string): Promise<number>;
   /** Every source the copy has claimed or read. */
   sources(): Promise<SourceRecord[]>;
   /** One source, locked. */
   source(connectorId: string): Promise<SourceRecord | undefined>;
+  /** Every source's row, locked in the order of their ids; returns their ids (a merge, D108 item 2). */
+  lockSources(): Promise<string[]>;
   /** Write a source's record, replacing the one there. */
   putSource(record: SourceRecord): Promise<void>;
   /**
@@ -567,9 +603,10 @@ export interface CompetenceTx {
   removeRequirement(id: string): Promise<boolean>;
   /**
    * Re-point a requirement to another type, or change its least level, as a merge does (D108 item 2). One the type and
-   * its target already have is refused with `RequirementTaken`. An unknown id changes nothing.
+   * its target already have is refused with `RequirementTaken`. An unknown id changes nothing; returns whether there was
+   * one.
    */
-  updateRequirement(id: string, patch: Partial<Pick<RequirementRecord, 'typeId' | 'minLevel'>>): Promise<void>;
+  updateRequirement(id: string, patch: Partial<Pick<RequirementRecord, 'typeId' | 'minLevel'>>): Promise<boolean>;
   /** Every share target of the organisation, oldest first. */
   shareTargets(organisationId: string): Promise<ShareTargetRecord[]>;
   /** One share target, locked. */
@@ -580,9 +617,10 @@ export interface CompetenceTx {
   removeShareTarget(id: string): Promise<boolean>;
   /**
    * Re-point a share target to another type, or change its least share, as a merge does (D108 item 2). One the type,
-   * position and unit already have is refused with `ShareTargetTaken`. An unknown id changes nothing.
+   * position and unit already have is refused with `ShareTargetTaken`. An unknown id changes nothing; returns whether
+   * there was one.
    */
-  updateShareTarget(id: string, patch: Partial<Pick<ShareTargetRecord, 'typeId' | 'minShare'>>): Promise<void>;
+  updateShareTarget(id: string, patch: Partial<Pick<ShareTargetRecord, 'typeId' | 'minShare'>>): Promise<boolean>;
   // Erasure and export (D108 item 14).
   /**
    * Remove the person's holdings, copied ones included, and the requirements set on them alone, and remove them from

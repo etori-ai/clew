@@ -302,10 +302,11 @@ export class MockApi {
   /**
    * The catalogue at scale (D120 item 7, D108 item 2): every part of an import as it was sent, and what a merge would
    * move as the server counts it. An import adds the rows the catalogue does not hold, by address or name, as the server
-   * does; the next part answers 400 with `importFail`, which resets itself after that one.
+   * does; a part answers 400 with `importFail` once `importFailAfter` parts were saved, and it resets itself after that.
    */
   importWrites: CompetenceImportBody[] = [];
   importFail: string | null = null;
+  importFailAfter = 0;
   mergePreview: CompetenceMergePreview = {
     holdings: 12,
     people: 9,
@@ -316,7 +317,7 @@ export class MockApi {
     mappings: 1,
     skillsSetAside: 0,
     ruled: 0,
-    waiting: 0,
+    waiting: false,
   };
   /** What the registrations sent, in order. */
   registered: Array<{ personId: string; body: CompetenceHoldingBody }> = [];
@@ -972,7 +973,7 @@ export class MockApi {
     // An import's part (D120 item 7): what the catalogue holds already, by address or name, is skipped.
     if (path === '/competence/types/import' && this.competenceTypes && route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as CompetenceImportBody;
-      if (this.importFail) {
+      if (this.importFail && this.importWrites.length >= this.importFailAfter) {
         const error = this.importFail;
         this.importFail = null;
         return route.fulfill({ status: 400, json: { error } });

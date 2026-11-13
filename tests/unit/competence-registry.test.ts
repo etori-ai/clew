@@ -134,10 +134,18 @@ function world() {
       headers: { 'x-test-person': who.id, 'content-type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  /** A request as it comes off the wire: its own headers, and a body that may be sent in pieces. */
+  const raw = (who: AuthenticatedContext, method: string, path: string, init: RequestInit) =>
+    app.request('http://clew.local' + path, {
+      method,
+      ...init,
+      headers: { 'x-test-person': who.id, 'content-type': 'application/json', ...(init.headers ?? {}) },
+    });
   return {
     registry,
     competence,
     store,
+    raw,
     connectors,
     admin: connectorUsecases(deps),
     reconcile,
@@ -746,7 +754,8 @@ describe('the competence wiring (D108 item 13)', () => {
     await w.call(hillevi, 'POST', '/people/p-anna/holdings', { typeId: from, issuedOn: '2025-05-10' });
     const preview = await w.call(mikael, 'GET', `/types/${from}/merge?into=${into}`);
     expect(preview.headers.get('cache-control')).toContain('no-store');
-    expect(await preview.json()).toMatchObject({ holdings: 1, people: 1, waiting: 0 });
+    // One holding of one person: fewer than five, as an administrator is shown it (D118).
+    expect(await preview.json()).toMatchObject({ holdings: 'few', people: 'few', waiting: false });
     expect((await w.call(mikael, 'GET', `/types/${from}/merge`)).status).toBe(400);
     expect((await w.call(mikael, 'POST', `/types/${from}/merge`, { into: 7 })).status).toBe(400);
     expect((await w.call(hillevi, 'POST', `/types/${from}/merge`, { into })).status).toBe(403);
@@ -754,7 +763,7 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(await self.json()).toMatchObject({ error: 'En kompetens kan inte slås ihop med sig själv.' });
     const merged = await w.call(mikael, 'POST', `/types/${from}/merge`, { into });
     expect(merged.status).toBe(200);
-    expect(await merged.json()).toMatchObject({ holdings: 1 });
+    expect(await merged.json()).toMatchObject({ holdings: 'few' });
     const listed = (await (await w.call(mikael, 'GET', '/types')).json()) as { rows: Array<Record<string, unknown>> };
     expect(listed.rows.find(t => t.id === from)).toMatchObject({ archived: true, mergedInto: into });
     expect(listed.rows.find(t => t.name === 'leda ett team')).toMatchObject({ uri });
@@ -766,6 +775,62 @@ describe('the competence wiring (D108 item 13)', () => {
     expect((await w.call(hillevi, 'POST', `/types/${into}/restore`)).status).toBe(403);
     expect((await w.call(mikael, 'POST', `/types/${into}/restore`)).status).toBe(204);
     expect(w.store.state.types.get(into)?.archivedAt).toBeNull();
+  });
+
+  test('a body is read no further than its bound, and an administrator’s route refuses anyone else before reading it', async () => {
+    const w = world();
+    await syncBundledRows(w.reconcile);
+    await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
+    // A declared length above the bound is refused unread; so is a body sent in pieces once it passes the bound.
+    const declared = await w.raw(mikael, 'POST', '/types', {
+      headers: { 'content-length': String(10_000_000) },
+      body: '{}',
+    });
+    expect(declared.status).toBe(400);
+    expect(await declared.json()).toMatchObject({ error: 'För stor förfrågan.' });
+    let sent = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent++;
+        controller.enqueue(new TextEncoder().encode('x'.repeat(64 * 1024)));
+        if (sent > 1000) controller.close();
+      },
+    });
+    const streamed = await w.raw(mikael, 'POST', '/types/import', {
+      body: endless,
+      duplex: 'half',
+    } as RequestInit);
+    expect(streamed.status).toBe(400);
+    expect(await streamed.json()).toMatchObject({ error: 'För stor förfrågan.' });
+    // Three megabytes at most for an import: the stream was let go long before its end.
+    expect(sent).toBeLessThan(60);
+    // A manager without the capability is refused before the import's body is read, as the use case would refuse them.
+    let read = 0;
+    // Pulled only when read (no queue filled ahead).
+    const watched = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          read++;
+          controller.enqueue(new TextEncoder().encode('{}'));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const refused = await w.raw(hillevi, 'POST', '/types/import', { body: watched, duplex: 'half' } as RequestInit);
+    expect(refused.status).toBe(403);
+    expect(read).toBe(0);
+    for (const [method, path] of [
+      ['POST', '/types'],
+      ['PATCH', '/types/t1'],
+      ['POST', '/types/t1/merge'],
+      ['GET', '/types/t1/merge?into=t2'],
+      ['POST', '/types/t1/restore'],
+      ['GET', '/sources'],
+      ['GET', '/requirements'],
+      ['POST', '/share-targets'],
+    ] as const)
+      expect((await w.call(hillevi, method, path, method === 'GET' ? undefined : {})).status).toBe(403);
   });
 
   test('switched off, the requirements and share targets are refused like every other route', async () => {

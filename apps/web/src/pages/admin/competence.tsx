@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
+  COMPETENCE_GROUP_MIN,
   COMPETENCE_KINDS,
   type CompetenceKind,
   type CompetenceMergePreview,
+  type CompetenceShownCount,
   type CompetenceType,
   type CompetenceValidityImpact,
   type SessionUser,
@@ -78,6 +80,29 @@ import { IMPORT_PATH } from './competence-import';
  */
 const TYPE_PARAM = 'type';
 const NEW = 'new';
+/** The list's own place in the address (D43, as on Användare): the words searched for and the page. */
+const TEXT_PARAM = 'text';
+const PAGE_PARAM = 'page';
+const TEXT_MAX = 120;
+const TYPING_PAUSE_MS = 250;
+const PATH = '/admin/competence';
+/** One line of the search box as it is kept in the address: the words, one space between them. */
+const wordsOf = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, TEXT_MAX);
+/** The list's address without a dialog: the search and the page, which a dialog keeps and its close goes back to. */
+const listOf = (params: URLSearchParams) => {
+  const list = new URLSearchParams();
+  for (const name of [TEXT_PARAM, PAGE_PARAM]) {
+    const value = params.get(name);
+    if (value) list.set(name, value);
+  }
+  return list;
+};
+const hrefWith = (list: URLSearchParams, extra?: Record<string, string>) => {
+  const next = new URLSearchParams(list);
+  for (const [name, value] of Object.entries(extra ?? {})) next.set(name, value);
+  const query = next.toString();
+  return query ? `${PATH}?${query}` : PATH;
+};
 const NAME_MAX = 120;
 const AREA_MAX = 80;
 const MONTHS_MAX = 600;
@@ -98,18 +123,22 @@ const validityText = (months: number | undefined, kind?: CompetenceKind) =>
         : `${months} månader`
       : 'Ingen regel';
 const holdingsText = (n: number) => `${n} intyg`;
-const peopleText = (n: number) => `${n} ${n === 1 ? 'person' : 'personer'}`;
+/** A count of people or holdings as the server shows it to an administrator: the number, or fewer than five (D118). */
+const countText = (n: CompetenceShownCount, one: string, many: string) =>
+  n === 'few' ? `färre än ${COMPETENCE_GROUP_MIN} ${many}` : `${n} ${n === 1 ? one : many}`;
+const some = (n: CompetenceShownCount) => n === 'few' || n > 0;
 /** The catalogue's page: a full ESCO import is some 14 000 types, never all drawn. */
 const PAGE = 50;
 interface Row extends Record<string, unknown> {
   id: string;
   t: CompetenceType;
 }
-const editHref = (id: string) => `/admin/competence?${TYPE_PARAM}=${encodeURIComponent(id)}`;
 /** What a merge would move, in the sentence the dialog says before the second press (D108 item 2). */
 function mergeText(p: CompetenceMergePreview, into: string): string {
   const moves = [
-    p.holdings ? `${holdingsText(p.holdings)} hos ${peopleText(p.people)}` : null,
+    some(p.holdings)
+      ? `${countText(p.holdings, 'intyg', 'intyg')} hos ${countText(p.people, 'person', 'personer')}`
+      : null,
     p.requirements
       ? `${p.requirements} krav${
           p.requirementsFolded
@@ -130,12 +159,14 @@ function mergeText(p: CompetenceMergePreview, into: string): string {
       : `Till ${into} flyttas ${moves.length === 1 ? moves[0] : `${moves.slice(0, -1).join(', ')} och ${moves.at(-1)}`}.`;
   return [
     listed,
-    p.skillsSetAside
-      ? `${peopleText(p.skillsSetAside)} har båda färdigheterna: den som väger tyngst behålls och den andra läggs undan.`
+    some(p.skillsSetAside)
+      ? `${countText(p.skillsSetAside, 'person', 'personer')} har båda färdigheterna: den som väger tyngst behålls och den andra läggs undan.`
       : null,
-    p.ruled ? `${holdingsText(p.ruled)} räknas efter giltighetstiden för ${into} i stället.` : null,
+    some(p.ruled)
+      ? `${countText(p.ruled, 'intyg', 'intyg')} räknas efter giltighetstiden för ${into} i stället.`
+      : null,
     p.waiting
-      ? `${p.waiting === 1 ? 'En person har' : `${p.waiting} personer har`} en egen registrering av båda som väntar på godkännande. Slå ihop dem när registreringarna är granskade.`
+      ? 'Det finns egna registreringar av båda som väntar på godkännande. Slå ihop dem när registreringarna är granskade.'
       : 'Det går inte att ångra. Tryck Slå ihop för att genomföra det.',
   ]
     .filter(Boolean)
@@ -155,11 +186,14 @@ function TypeDialog({
   type,
   isNew,
   catalogue,
+  hrefOf,
   onClose,
 }: {
   type: CompetenceType | undefined;
   isNew: boolean;
   catalogue: readonly CompetenceType[];
+  /** Another type's dialog, at the list's own place. */
+  hrefOf: (id: string) => string;
   onClose: () => void;
 }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -326,7 +360,7 @@ function TypeDialog({
                 variant="primary"
                 label="Slå ihop"
                 isLoading={save.busy}
-                isDisabled={!preview.data || preview.data.waiting > 0}
+                isDisabled={!preview.data || preview.data.waiting}
                 tooltip={
                   !target
                     ? 'Välj först vilken kompetens den ska slås ihop med.'
@@ -415,7 +449,7 @@ function TypeDialog({
             </Text>
             {merged && (
               <HStack>
-                <Button size="sm" variant="secondary" label={`Öppna ${merged.name}`} href={editHref(merged.id)} />
+                <Button size="sm" variant="secondary" label={`Öppna ${merged.name}`} href={hrefOf(merged.id)} />
               </HStack>
             )}
           </VStack>
@@ -441,12 +475,16 @@ function TypeDialog({
               emptySearchText="Ingen kompetens som används heter så"
               renderItem={item => <TypeaheadItem item={item} description={item.auxiliaryData?.area} />}
             />
-            {target && preview.isPending && <Text type="supporting">Räknar vad som flyttas …</Text>}
-            {target && preview.data && (
-              <Text as="p" role="status">
-                {mergeText(preview.data, target.label)}
-              </Text>
-            )}
+            {/* One region, there from the start and filled when the count is read, so its words are spoken (4.1.3). */}
+            <Text as="p" role="status">
+              {!target
+                ? ''
+                : preview.data
+                  ? mergeText(preview.data, target.label)
+                  : preview.isPending
+                    ? 'Räknar vad som flyttas …'
+                    : ''}
+            </Text>
           </VStack>
         ) : (
           <VStack gap={3}>
@@ -549,26 +587,63 @@ function TypeDialog({
 export function AdminCompetencePage({ user }: { user: SessionUser }) {
   usePageTitle('Kompetens');
   const mobile = useMediaQuery(mobileQuery);
-  const [search] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const query = useQuery(competenceCatalogueQuery);
   const types = query.data?.rows ?? [];
-  const opened = search.get(TYPE_PARAM);
+  const opened = params.get(TYPE_PARAM);
   const editing = opened && opened !== NEW ? types.find(t => t.id === opened) : undefined;
   const refused = query.error instanceof ApiError && query.error.status === 403;
   const error = query.isError && !refused ? errorMessage(query.error, 'Katalogen kunde inte läsas.') : null;
-  const close = () => navigate('/admin/competence');
+  // The search and the page are the address's (D43, as on Användare), so a reload, Back and a dialog's close keep them.
+  // The address as the last change left it: two changes in one event build on each other.
+  const address = useRef(params);
+  address.current = params;
+  const list = listOf(params);
+  const editHref = (id: string) => hrefWith(list, { [TYPE_PARAM]: id });
+  const close = () => navigate(hrefWith(list));
   const active = types.filter(t => !t.archived).length;
   const byId = useMemo(() => new Map(types.map(t => [t.id, t])), [types]);
-  // Searched and paged in the browser: an imported classification is thousands of types (D120 item 7).
-  const [typed, setTyped] = useState('');
-  const words = typed.replace(/\s+/g, ' ').trim().toLowerCase();
+  // Searched and paged in the browser: an imported classification is thousands of types (D120 item 7). The words go
+  // into the address once typing pauses, in place of the address before (the search is no step to go Back to); a step
+  // to another page is one.
+  const text = wordsOf(params.get(TEXT_PARAM) ?? '');
+  const [typed, setTyped] = useState(text);
+  const typing = useRef(typed);
+  typing.current = typed;
+  useEffect(() => {
+    // The address changed under the box (Back, a link): the box follows it, and what is being typed stays.
+    if (wordsOf(typing.current) !== text) setTyped(text);
+  }, [text]);
+  useEffect(() => {
+    const words = wordsOf(typed);
+    if (words === text) return;
+    const timer = setTimeout(() => {
+      const next = new URLSearchParams(address.current);
+      if (words) next.set(TEXT_PARAM, words);
+      else next.delete(TEXT_PARAM);
+      next.delete(PAGE_PARAM);
+      address.current = next;
+      setParams(next, { replace: true });
+    }, TYPING_PAUSE_MS);
+    return () => clearTimeout(timer);
+  }, [typed, text]);
+  const words = text.toLowerCase();
   const matching = useMemo(
     () =>
       words ? types.filter(t => t.name.toLowerCase().includes(words) || t.area.toLowerCase().includes(words)) : types,
     [types, words],
   );
-  const [page, setPage] = useState(1);
+  const asked = Number(params.get(PAGE_PARAM));
+  const page = Number.isInteger(asked) && asked > 1 ? asked : 1;
+  const setPage = (next: number) => {
+    const changed = new URLSearchParams(address.current);
+    if (next > 1) changed.set(PAGE_PARAM, String(next));
+    else changed.delete(PAGE_PARAM);
+    if (changed.toString() === address.current.toString()) return;
+    address.current = changed;
+    setParams(changed);
+  };
   const pages = Math.max(1, Math.ceil(matching.length / PAGE));
   const current = Math.min(page, pages);
   const shown = matching.slice((current - 1) * PAGE, current * PAGE);
@@ -685,10 +760,7 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
                     startIcon="search"
                     hasClear
                     value={typed}
-                    onChange={value => {
-                      setTyped(value);
-                      setPage(1);
-                    }}
+                    onChange={value => setTyped(value.slice(0, TEXT_MAX))}
                   />
                 </HStack>
                 {/* What the search found, read out when it changes (4.1.3); nothing while nothing is searched for. */}
@@ -767,7 +839,13 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
           )}
         </Card>
       )}
-      <TypeDialog type={editing} isNew={!!query.data && opened === NEW} catalogue={types} onClose={close} />
+      <TypeDialog
+        type={editing}
+        isNew={!!query.data && opened === NEW}
+        catalogue={types}
+        hrefOf={editHref}
+        onClose={close}
+      />
     </AdminShell>
   );
 }

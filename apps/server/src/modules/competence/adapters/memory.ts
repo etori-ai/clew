@@ -318,6 +318,11 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       })
       .sort();
   const tx: CompetenceTx = {
+    // Transactions run one at a time here, so every lock of the order is already held.
+    async lockCatalogue() {},
+    async countTypes(organisationId) {
+      return [...state.types.values()].filter(t => t.organisationId === organisationId).length;
+    },
     async types(organisationId, options = {}) {
       return [...state.types.values()]
         .filter(t => t.organisationId === organisationId && (options.archived || t.archivedAt === null))
@@ -346,9 +351,18 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       state.types.set(id, next);
     },
     async insertTypes(types) {
-      // One after the other, so a name or an address twice in the batch is refused as the index refuses it; the
-      // transaction's snapshot makes it all or none.
-      for (const type of types) await tx.insertType(type);
+      // One after the other, as the database inserts them: one whose name or address is taken, also by an earlier one of
+      // the batch, is left out, as `ON CONFLICT DO NOTHING` leaves it.
+      const inserted: string[] = [];
+      for (const type of types) {
+        try {
+          await tx.insertType(type);
+          inserted.push(type.id);
+        } catch (error) {
+          if (!(error instanceof TypeNameTaken) && !(error instanceof TypeUriTaken)) throw error;
+        }
+      }
+      return inserted;
     },
     async findTypes(organisationId, words, limit) {
       const folded = (value: string) => value.toLocaleLowerCase('sv');
@@ -376,6 +390,13 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async holdingsOfType(typeId) {
       return byCreated([...state.holdings.values()].filter(h => h.typeId === typeId)).map(h => structuredClone(h));
     },
+    async lockHoldingsOfTypes(typeIds) {
+      const wanted = new Set(typeIds);
+      return [...state.holdings.values()]
+        .filter(h => h.typeId !== null && wanted.has(h.typeId))
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map(h => structuredClone(h));
+    },
     async holding(id) {
       const h = state.holdings.get(id);
       return h && structuredClone(h);
@@ -389,7 +410,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async updateHolding(id, patch) {
       const h = state.holdings.get(id);
-      if (!h) return;
+      if (!h) return false;
       const next = { ...h, ...patch };
       if (next.decidedBy !== null && !state.persons.has(next.decidedBy))
         throw new Error('holding references an unknown decider');
@@ -399,6 +420,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       assertOnePending(next);
       assertOneSkill(next);
       state.holdings.set(id, next);
+      return true;
     },
     async deleteHolding(id) {
       // A copied row goes only with its source or its person.
@@ -519,6 +541,19 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async removeMapping(connectorId, organisationId, sourceType) {
       return state.mappings.delete(mappingKey(connectorId, organisationId, sourceType));
     },
+    async retypeMappings(organisationId, fromTypeId, intoTypeId) {
+      if (!state.types.has(intoTypeId)) throw new Error('mapping references an unknown type');
+      let n = 0;
+      for (const [key, m] of state.mappings)
+        if (m.organisationId === organisationId && m.typeId === fromTypeId) {
+          state.mappings.set(key, { ...m, typeId: intoTypeId });
+          n++;
+        }
+      return n;
+    },
+    async lockSources() {
+      return [...state.sources.keys()].sort();
+    },
     async sources() {
       return [...state.sources.values()]
         .sort((a, b) => a.connectorId.localeCompare(b.connectorId))
@@ -636,7 +671,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async updateRequirement(id, patch) {
       const r = state.requirements.get(id);
-      if (!r) return;
+      if (!r) return false;
       const next = { ...r, ...patch };
       if (!state.types.has(next.typeId)) throw new Error('requirement references an unknown type');
       if (next.minLevel !== null && (next.minLevel < 1 || next.minLevel > 3))
@@ -651,6 +686,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       );
       if (taken) throw new RequirementTaken();
       state.requirements.set(id, next);
+      return true;
     },
     async shareTargets(organisationId) {
       return byCreated([...state.shareTargets.values()].filter(t => t.organisationId === organisationId)).map(t => ({
@@ -681,7 +717,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async updateShareTarget(id, patch) {
       const t = state.shareTargets.get(id);
-      if (!t) return;
+      if (!t) return false;
       const next = { ...t, ...patch };
       if (!state.types.has(next.typeId)) throw new Error('share target references an unknown type');
       if (!Number.isInteger(next.minShare) || next.minShare < 1 || next.minShare > 100)
@@ -696,6 +732,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       );
       if (taken) throw new ShareTargetTaken();
       state.shareTargets.set(id, next);
+      return true;
     },
     async erasePerson(personId) {
       let holdings = 0,

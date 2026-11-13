@@ -271,8 +271,42 @@ test.describe('Administration › Kompetens › Importera', () => {
       await page.getByRole('button', { name: 'Välj alla 2' }).click();
       await page.getByRole('button', { name: 'Importera 2' }).click();
       await expect(page.getByText('Rad 2: Namn saknas.')).toBeVisible();
-      await expect(page.getByText('Ingenting sparades. Försök igen.')).toBeVisible();
+      await expect(
+        page.getByText('Ingenting sparades. Försök igen: det som redan finns hoppas över.', { exact: true }),
+      ).toBeVisible();
       expect(api.importWrites).toEqual([]);
+    });
+    test('a choice larger than a part goes in parts, and a part refused says which rows, and that the parts before are saved', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.competenceTypes = competenceCatalogue();
+      await open(page, IMPORT);
+      // CR CR LF line ends, as a converted file has them: the rows are numbered by record all the same.
+      await upload(page, escoFile(2500).replace(/\r\n/g, '\r\r\n'));
+      await expect(
+        page.getByText('ESCO:s färdigheter: 2 501 rader att välja bland.', { exact: true }).first(),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Välj alla 2 500' }).click();
+      await page.getByRole('combobox', { name: /Område/ }).click();
+      await page.getByRole('option', { name: 'Säkerhet' }).click();
+      api.importFail = 'Rad 1002: Namn saknas.';
+      api.importFailAfter = 1;
+      await page.getByRole('button', { name: 'Importera 2 500' }).click();
+      const refusal = page.getByText('Rad 1002: Namn saknas.', { exact: true });
+      await expect(refusal).toBeVisible();
+      await expect(
+        page.getByText(
+          'Del 2 av 3, rad 1002–2001 i filen, sparades inte. De 1 000 valda raderna i delarna före den är sparade. Försök igen: det som redan finns hoppas över.',
+          { exact: true },
+        ),
+      ).toBeVisible();
+      // The first part is saved and its rows are marked; sent again, it is skipped.
+      expect(api.importWrites).toHaveLength(1);
+      expect(api.importWrites[0]!.rows.at(-1)!.row).toBe(1001);
+      await expect(page.getByText('2 501 rader att välja bland, varav 1 001 redan finns i katalogen.')).toBeVisible();
+      await expectNoAxeViolations(page);
     });
   });
 
