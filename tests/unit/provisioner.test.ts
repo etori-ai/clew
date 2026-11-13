@@ -1618,6 +1618,89 @@ describe('the synthetic provisioner', () => {
         '6 groups: 2 unit, 1 unit-manager, 1 capability, 1 plain (0 without an externalId) and 1 with a capability the check does not know.',
       );
     });
+    test('a unit key with space after the prefix or at the end, stored before D96, places and leads nobody, and the check says what Clew does with it (D96)', async () => {
+      const { store, client, app, grantOf } = stack();
+      const person = async (userName: string) =>
+        (
+          await client.request('POST', '/Users', {
+            externalId: 'e-' + userName,
+            userName,
+            displayName: userName,
+            emails: [{ value: userName + '@clew.test', type: 'work' }],
+          })
+        ).body.id as string;
+      const chef = await person('chef'),
+        anna = await person('anna');
+      await client.request('POST', '/Groups', {
+        externalId: 'unit:skola',
+        displayName: 'Skolan',
+        members: [{ value: chef }],
+      });
+      // Stored before the server began refusing them (D96), each with a member: the managers' group of the same unit
+      // with a space after the prefix, and a unit group with a space at the end that Anna is in and nothing else.
+      for (const [id, externalId, member] of [
+        ['spaced', 'unit-manager: skola', chef],
+        ['trailing', 'unit:skola ', anna],
+      ] as const) {
+        store.state.groups.set(id, {
+          id,
+          organisationId: 'poc',
+          parentUnitId: null,
+          externalId,
+          label: 'Stored before D96',
+          createdAt: '2026-11-09T06:00:00.000Z',
+          updatedAt: '2026-11-09T06:00:00.000Z',
+        });
+        store.state.members.add(memberKey(id, member));
+      }
+      // A write of each person derives them: Chef is an employee of the unit the key written right names, and leads
+      // nothing, and Anna is on no unit, so she can do nothing.
+      const titled = (id: string) =>
+        client.request('PATCH', '/Users/' + id, {
+          schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+          Operations: [{ op: 'replace', path: 'title', value: 'Lärare' }],
+        });
+      for (const id of [chef, anna]) await titled(id);
+      const employee = { unitId: 'skola', unitLabel: 'Skolan', role: 'employee' as const, capabilities: [] };
+      expect([grantOf('chef'), store.state.assignments.get(chef)]).toEqual([
+        employee,
+        [{ unitId: 'skola', role: 'employee' }],
+      ]);
+      expect([grantOf('anna'), store.state.assignments.get(anna) ?? []]).toEqual([undefined, []]);
+      const check = async () =>
+        (await checkProvisioning('http://clew.local', client, (input, init) => app.request(input, init))).filter(
+          f => f.level !== 'ok' || f.text.includes('groups:'),
+        );
+      const counted =
+          '3 groups: 1 unit, 0 unit-manager, 0 capability, 0 plain (0 without an externalId) and 2 with a key written wrong.',
+        unplaced = '1 active user has no unit: or unit-manager: group and can do nothing in Clew: anna.',
+        harmless =
+          "2 groups carry a key that is written wrong and gives nobody anything: 'unit-manager: skola', 'unit:skola '.";
+      // Nobody leads the unit either, so the people on it report to nobody.
+      expect((await check()).map(f => f.text)).toEqual([
+        counted,
+        unplaced,
+        '1 unit has people and no manager, on the unit or on any unit above it, so its people report to nobody: unit:skola.',
+        harmless,
+      ]);
+      // Chef leaves and returns: what the key written wrong never gave is no duty a leaver holds, and the return gives
+      // back the unit and nothing more.
+      await client.request('DELETE', '/Users/' + chef);
+      expect((await check()).map(f => f.text)).toEqual([
+        counted,
+        unplaced,
+        '1 unit or unit-manager group has no active members: unit:skola.',
+        harmless,
+      ]);
+      await client.request('PATCH', '/Users/' + chef, {
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations: [{ op: 'replace', path: 'active', value: true }],
+      });
+      expect([grantOf('chef'), store.state.assignments.get(chef)]).toEqual([
+        employee,
+        [{ unitId: 'skola', role: 'employee' }],
+      ]);
+    });
     test("the example declares the shapes Clew reads, and takes nothing of Clew's but the group keys and the capability names", () => {
       // Held by the type checker: a shape that parts from Clew's contracts fails `bun run typecheck`.
       type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;

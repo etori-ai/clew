@@ -2,9 +2,10 @@
  * What an installation holds after a push, read through SCIM alone (D68): the check a team writing a provisioner
  * points at Clew to see whether its mapping did what it meant. It only reads. A finding is `ok`, a `warn` (the push
  * was accepted and somebody will not get what the source intended) or a `fail` (the endpoint or the token is wrong).
- * It needs nothing of Clew's but the group keys and capability names in `packages/contracts/src/scim-group-key.ts`,
- * which a copy of this folder carries along. Take that file from the installation's own release, and again on every
- * upgrade: a capability the installation has and the copy does not is reported as one the check does not know.
+ * It needs nothing of Clew's but the group keys, the one way Clew reads them, and the capability names in
+ * `packages/contracts/src/scim-group-key.ts`, which a copy of this folder carries along. Take that file from the
+ * installation's own release, and again on every upgrade: a capability the installation has and the copy does not is
+ * reported as one the check does not know.
  */
 import {
   UNIT_KEY,
@@ -12,6 +13,7 @@ import {
   CAPABILITY_KEY,
   PROTECTED_KEY,
   isCapability,
+  readScimGroupKey,
   reservedScimGroupKey,
 } from '../../packages/contracts/src/scim-group-key';
 import { ScimClientError, type Fetch, type ScimClient } from './client';
@@ -101,31 +103,26 @@ export async function checkProvisioning(
     ),
     groups = await all<GroupRow>(client, '/Groups', 'excludedAttributes=members');
   // A key written wrong, stored before the server began refusing it (D96): a reserved word in another case or with
-  // space in it, a unit key without a unit id, or `protected`. It means nothing, the next write of it is refused, and it
+  // space in or before it, a unit key without a unit id or with space around it, or `protected`. Clew reads a key as the
+  // server accepts it (`readScimGroupKey`), so such a key gives nobody anything; the next write of it is refused, and it
   // is counted as none of the kinds below.
   const miswritten = groups.filter(g => {
-    const key = g.externalId ?? '',
-      prefix = reservedScimGroupKey(key);
-    if (!prefix) return false;
-    if (prefix === PROTECTED_KEY) return true;
-    const rest = key.slice(prefix.length);
-    return !key.startsWith(prefix) || !rest || rest !== rest.trim();
+    const prefix = reservedScimGroupKey(g.externalId ?? '');
+    return prefix !== undefined && (prefix === PROTECTED_KEY || !readScimGroupKey(g.externalId));
   });
   // A `capability:` key whose name is not in the closed list (D85) is written wrong as well, unless the installation is
   // newer than the check's copy of the list and knows the name, so it is named apart. It is counted as none of the
   // kinds below either.
-  const unknown = groups.filter(
-    g =>
-      !miswritten.includes(g) &&
-      g.externalId?.startsWith(CAPABILITY_KEY) &&
-      !isCapability(g.externalId.slice(CAPABILITY_KEY.length)),
-  );
+  const unknown = groups.filter(g => {
+    const key = readScimGroupKey(g.externalId);
+    return key?.prefix === CAPABILITY_KEY && !isCapability(key.value);
+  });
   const flagged = new Set([...miswritten, ...unknown]),
     sound = groups.filter(g => !flagged.has(g));
   const active = users.filter(u => u.active),
     deactivated = users.filter(u => !u.active),
     keyOf = new Map(groups.map(g => [g.id, g.externalId ?? ''])),
-    keyed = (prefix: string) => sound.filter(g => g.externalId?.startsWith(prefix)),
+    keyed = (prefix: string) => sound.filter(g => readScimGroupKey(g.externalId)?.prefix === prefix),
     units = keyed(UNIT_KEY),
     managers = keyed(MANAGER_KEY),
     capabilities = keyed(CAPABILITY_KEY),
@@ -144,13 +141,10 @@ export async function checkProvisioning(
   // as Administration › Organisation reads the same tree.
   const activeIn = new Map<string, number>();
   for (const u of active) for (const g of u.groups ?? []) activeIn.set(g.value, (activeIn.get(g.value) ?? 0) + 1);
-  const unassigned = active.filter(
-    u =>
-      !(u.groups ?? []).some(g => {
-        const key = keyOf.get(g.value) ?? '';
-        return key.startsWith(UNIT_KEY) || key.startsWith(MANAGER_KEY);
-      }),
-  );
+  // A person is on a unit by a `unit:` or `unit-manager:` group whose key is written right; one written wrong places
+  // nobody, so a person whose only unit key is written wrong is named here too.
+  const places = new Set([...units, ...managers].map(g => g.id)),
+    unassigned = active.filter(u => !(u.groups ?? []).some(g => places.has(g.value)));
   if (unassigned.length)
     say(
       'warn',

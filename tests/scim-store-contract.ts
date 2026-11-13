@@ -590,6 +590,14 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.insertGroup(
           groupRow(p + '-g-x', p + '-elsewhere', { externalId: 'unit:' + p + '-x', label: 'Elsewhere' }),
         );
+        // Nor is a unit key written wrong, stored before the SCIM boundary refused it (D96): with a space after the
+        // prefix, or at the end. It names no unit, below the root or anywhere.
+        await tx.insertGroup(
+          groupRow(p + '-g-spaced', org, { externalId: 'unit: ' + lone, label: 'Written wrong', parentUnitId: root }),
+        );
+        await tx.insertGroup(
+          groupRow(p + '-g-trailing', org, { externalId: 'unit:' + p + '-t ', label: 'Written wrong' }),
+        );
         await tx.insertUser(userRow(a, org));
         await tx.insertUser(userRow(b, org, { enabled: false }));
         await tx.insertUser(userRow(c, org));
@@ -618,6 +626,7 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           { id: lone, label: 'Unit ' + lone, parentId: null },
         ]);
         expect(await tx.unitTree(org, [p + '-nowhere'])).toEqual([]);
+        expect(await tx.unitTree(org, [' ' + lone, p + '-t ', p + '-t'])).toEqual([]);
         expect(await tx.unitTree(p + '-elsewhere', [p + '-x', leaf])).toEqual([
           { id: p + '-x', label: 'Elsewhere', parentId: null },
         ]);

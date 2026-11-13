@@ -287,8 +287,10 @@ export function scimUsecases(deps: {
    * The managers of the unit a `unit:` group names. Their grant carries the unit's label without their being members of
    * that group, so a new or renamed unit group re-derives them too; any other group names nobody beyond its members.
    */
-  const managersOfUnit = (tx: ProvisionTx, externalId: string | null): Promise<string[]> =>
-    externalId?.startsWith(UNIT_KEY) ? tx.members(MANAGER_KEY + unitOfKey(externalId)) : Promise.resolve([]);
+  const managersOfUnit = (tx: ProvisionTx, externalId: string | null): Promise<string[]> => {
+    const unit = unitGroupOf(externalId);
+    return unit === undefined ? Promise.resolve([]) : tx.members(MANAGER_KEY + unit);
+  };
   /**
    * A write of a `unit:` or `unit-manager:` group holds its unit first, under the key it had and the key it gets: the
    * two groups of one unit are written one after the other, so each reads the other's members and name as committed.

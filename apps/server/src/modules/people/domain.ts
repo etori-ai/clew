@@ -3,11 +3,13 @@
  *
  * A group's meaning is a key in its `externalId`, and three keys carry one: `unit:<unitId>` makes the member an
  * employee of that unit and names it with the group's `displayName`; `unit-manager:<unitId>` makes the member its
- * manager, which wins over `unit:` for the same unit; `capability:<name>` gives a capability of the closed list. The
- * key `protected` is refused at the SCIM boundary (D93), and so is a key written wrong, such as a reserved word in
- * another case or a capability outside the list (D96): neither is stored, so neither reaches this derivation, and the
- * `protected` flag below stays false. Any other group gives nothing here; a rules row (group to capability) may give a
- * capability. A person with no unit membership has no active grant, so a mapping mistake fails closed.
+ * manager, which wins over `unit:` for the same unit; `capability:<name>` gives a capability of the closed list. A key
+ * is read as the SCIM boundary accepts it (`readScimGroupKey`). The boundary refuses the key `protected` (D93) and a
+ * key written wrong, such as a reserved word in another case, a unit id with space around it or a capability outside
+ * the list (D96), but a group stored before either decision keeps its row: a key written wrong gives nobody anything
+ * here, and only a `protected` row stored before D93 sets the `protected` flag below, which D93 keeps and nothing
+ * reads. Any other group gives nothing here; a rules row (group to capability) may give a capability. A person with no
+ * unit membership has no active grant, so a mapping mistake fails closed.
  */
 import {
   CAPABILITIES,
@@ -28,16 +30,18 @@ import {
   MANAGER_KEY,
   CAPABILITY_KEY,
   PROTECTED_KEY,
+  readScimGroupKey,
   reservedScimGroupKey,
 } from '@clew/contracts/scim-group-key';
 
-/** The unit a group's key names, whichever of the unit's two groups it is; undefined for any other key. */
-export const unitOfKey = (externalId: string | null | undefined): string | undefined =>
-  externalId?.startsWith(MANAGER_KEY)
-    ? externalId.slice(MANAGER_KEY.length)
-    : externalId?.startsWith(UNIT_KEY)
-      ? externalId.slice(UNIT_KEY.length)
-      : undefined;
+/**
+ * The unit a group's key names, whichever of the unit's two groups it is; undefined for any other key, one written
+ * wrong among them (`readScimGroupKey`).
+ */
+export const unitOfKey = (externalId: string | null | undefined): string | undefined => {
+  const key = readScimGroupKey(externalId);
+  return key && key.prefix !== CAPABILITY_KEY ? key.value : undefined;
+};
 export interface Membership {
   externalId: string;
   label: string;
@@ -105,17 +109,13 @@ export function deriveAuthority(
     held = new Set(memberships.map(m => m.externalId));
   let isProtected = false;
   for (const m of memberships) {
-    if (m.externalId.startsWith(MANAGER_KEY)) {
-      const unitId = m.externalId.slice(MANAGER_KEY.length);
-      if (unitId) roles.set(unitId, 'manager');
-    } else if (m.externalId.startsWith(UNIT_KEY)) {
-      const unitId = m.externalId.slice(UNIT_KEY.length);
-      if (!unitId) continue;
-      if (roles.get(unitId) !== 'manager') roles.set(unitId, 'employee');
-      labels.set(unitId, m.label);
-    } else if (m.externalId.startsWith(CAPABILITY_KEY)) {
-      const name = m.externalId.slice(CAPABILITY_KEY.length);
-      if (isCapability(name)) capabilities.add(name);
+    const key = readScimGroupKey(m.externalId);
+    if (key?.prefix === MANAGER_KEY) roles.set(key.value, 'manager');
+    else if (key?.prefix === UNIT_KEY) {
+      if (roles.get(key.value) !== 'manager') roles.set(key.value, 'employee');
+      labels.set(key.value, m.label);
+    } else if (key?.prefix === CAPABILITY_KEY) {
+      if (isCapability(key.value)) capabilities.add(key.value);
     } else if (m.externalId === PROTECTED_KEY) isProtected = true;
   }
   for (const row of rules)
@@ -142,18 +142,15 @@ export function deriveAuthority(
 }
 /**
  * Whether a group with this key can give its members anything: a key with meaning (`unit:`, `unit-manager:`,
- * `capability:`), or one a D85 row of the organisation names. A write of any other group moves nobody's grant, whatever
- * it does to the group, so nobody is derived for it. `protected` is matched only because `deriveAuthority` reads it: the
- * SCIM boundary refuses that key (D93), and a key written wrong (D96), so no stored group carries either.
+ * `capability:`, read as `deriveAuthority` reads it), or one a D85 row of the organisation names. A write of any other
+ * group moves nobody's grant, whatever it does to the group, so nobody is derived for it: a key written wrong is one,
+ * which the SCIM boundary refuses (D96) and a group stored before then may still carry. `protected` is matched only
+ * because `deriveAuthority` reads it, on a row stored before D93.
  */
 export function givesAuthority(key: string | null, rules: readonly GroupCapabilityRule[]): boolean {
   return (
     key !== null &&
-    (key.startsWith(UNIT_KEY) ||
-      key.startsWith(MANAGER_KEY) ||
-      key.startsWith(CAPABILITY_KEY) ||
-      key === PROTECTED_KEY ||
-      rules.some(row => row.groupExternalId === key))
+    (readScimGroupKey(key) !== undefined || key === PROTECTED_KEY || rules.some(row => row.groupExternalId === key))
   );
 }
 /** Whether two grant projections carry the same authority and label, so an unchanged derivation writes no audit row. */
@@ -821,9 +818,14 @@ export function userFields(body: unknown, current?: UserFields): UserFields {
   if (!enabled) deactivating.add(fields);
   return fields;
 }
-/** The unit id a `unit:` group's key names; undefined for `unit-manager:` and every other key. */
-export const unitGroupOf = (externalId: string | null | undefined): string | undefined =>
-  externalId?.startsWith(UNIT_KEY) ? externalId.slice(UNIT_KEY.length) : undefined;
+/**
+ * The unit id a `unit:` group's key names; undefined for `unit-manager:` and every other key, one written wrong among
+ * them (`readScimGroupKey`), so a group stored with one before D96 is no node of the tree.
+ */
+export const unitGroupOf = (externalId: string | null | undefined): string | undefined => {
+  const key = readScimGroupKey(externalId);
+  return key?.prefix === UNIT_KEY ? key.value : undefined;
+};
 const UNIT_EXTENSION = SCIM.unit.toLowerCase();
 /**
  * What a name aims at in the unit extension (D99), without regard to case as a schema URN is: the extension as a
@@ -850,7 +852,7 @@ export function parentUnitOf(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   const sent = asString(value, PARENT),
     id = unitGroupOf(sent);
-  if (!id || id !== id.trim())
+  if (id === undefined)
     throw new ScimError(
       400,
       `The parent '${sent}' must be the externalId of the unit group above, '${UNIT_KEY}<unitId>' (D99). The group was not stored.`,
@@ -923,12 +925,13 @@ export function assertAcceptedKey(fields: GroupFields): void {
     );
   if (!prefix) return;
   if (!key.startsWith(prefix)) throw refusedKey(`The key '${key}' must begin with '${prefix}' in lower case (D96).`);
-  const rest = key.slice(prefix.length);
-  if (!rest || rest !== rest.trim())
+  // Read as everything else in Clew reads a key, so a key accepted here is one that gives what it says.
+  const read = readScimGroupKey(key);
+  if (!read)
     throw refusedKey(
       `The key '${key}' needs ${prefix === CAPABILITY_KEY ? 'a capability name' : 'a unit id'} directly after '${prefix}' (D96).`,
     );
-  if (prefix === CAPABILITY_KEY && !isCapability(rest))
+  if (read.prefix === CAPABILITY_KEY && !isCapability(read.value))
     throw refusedKey(
       `The key '${key}' names no capability of this installation; the capabilities are ${CAPABILITIES.join(', ')} (D96).`,
     );

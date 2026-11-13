@@ -79,8 +79,16 @@ const groupColumns = {
   createdAt: schema.groups.createdAt,
   updatedAt: schema.groups.updatedAt,
 };
-/** D99: a node of the tree is a `unit:` group; the unit id is what follows the key (`unitGroupOf`). */
+/**
+ * D99: a node of the tree is a `unit:` group; the unit id is what follows the key (`unitGroupOf`). The rows this
+ * selects are read with `nodesOf`: a unit key written wrong, which a group stored before D96 may carry, names no unit.
+ */
 const isUnitGroup = like(schema.groups.externalId, UNIT_KEY + '%');
+const nodesOf = <R extends { externalId: string | null }>(rows: readonly R[]) =>
+  rows.flatMap(row => {
+    const id = unitGroupOf(row.externalId);
+    return id === undefined ? [] : [{ ...row, id }];
+  });
 type UserRow = Omit<UserRecord, 'createdAt' | 'updatedAt'> & { createdAt: Date; updatedAt: Date };
 type GroupRow = Omit<GroupRecord, 'createdAt' | 'updatedAt'> & { createdAt: Date; updatedAt: Date };
 const userRecord = (r: UserRow): UserRecord => ({
@@ -639,7 +647,7 @@ export function postgresProvisionStore(db: () => Database = database): Provision
         .from(schema.groups)
         .where(and(eq(schema.groups.parentUnitId, unitId), isUnitGroup))
         .orderBy(schema.groups.externalId);
-      return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label }));
+      return nodesOf(rows).map(r => ({ id: r.id, label: r.label }));
     },
     async unitTree(organisationId, ids) {
       const rows = await tx
@@ -661,7 +669,7 @@ export function postgresProvisionStore(db: () => Database = database): Provision
           ),
         )
         .orderBy(schema.groups.externalId);
-      return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label, parentId: r.parentUnitId }));
+      return nodesOf(rows).map(r => ({ id: r.id, label: r.label, parentId: r.parentUnitId }));
     },
     async placements(organisationId) {
       return tx

@@ -542,6 +542,13 @@ what they say.
   next scan draws again; a started `propose` holds the source's own action under the source's own key, which the source
   still holds; and a card is also the record of what the person holding it did. The documents now claim no more than
   the code does, and also describe the erasure as built: no user name stored, rather than the id.
+- The check said that a group whose key is written wrong gives nobody anything, and
+  [D96](../decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) said so of every such row stored
+  before it. A `unit:` or `unit-manager:` key with space after the prefix or at the end still placed its members on, or
+  made them managers of, a unit whose id kept the space; the role came back when a leaver returned, and the check left
+  that leaver out of its warning about duties. Clew now reads a key one way, as the SCIM boundary accepts it
+  (`readScimGroupKey`), in the derivation, the tree and the check, and the check names a person whose only unit key is
+  written wrong among those without a unit. D96 is amended to say so.
 - Two accessibility tests raced the frame in which the page moves the focus. They now wait for it.
 
 **Left.**
