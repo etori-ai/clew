@@ -88,4 +88,8 @@ page). The calendar's time grid is not a WAI-ARIA grid; the list in the panel an
 Att göra's reading pane opens past the item's title on a wide screen: the pane is Astryx's `ChatLayout`, which scrolls
 to its latest message and has no setting to open at the top, so the title and "Jag har läst" sit above the fold until
 the person scrolls up (app critique, 2026-11-13). Whether Astryx gains such a setting, or the pane stops being a
-`ChatLayout`, is undecided; nothing custom is built against it.
+`ChatLayout`, is undecided; nothing custom is built against it. The same follow moves an older answer's card in a
+conversation (2026-11-13): unfolded while the person is at the foot of the conversation, the card grows and ChatLayout
+springs to the newest message, so its toggle slides up under the person's pointer; with the person scrolled up to it,
+the browser's anchoring keeps it still. `useChatLayoutContext` gives the scroll container but not the follow's
+`unlock`, so pausing it would mean scrolling the container by hand; nothing custom is built against it either.

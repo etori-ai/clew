@@ -1,4 +1,4 @@
-import type { ViewNoun } from '@clew/contracts';
+import { valueWord, type ViewNoun } from '@clew/contracts';
 /** Swedish names for what read capabilities return. `tests/unit/panel-labels.test.ts` holds every connector output to this list. */
 export const fieldLabels: Record<string, string> = {
   document: 'Underlag',
@@ -155,31 +155,6 @@ export function staleLabel(stale: boolean | null | undefined, iso: string | unde
   if (months >= 24) return `${Math.floor(months / 12)} år sedan`;
   return months >= 1 ? `${months} ${months === 1 ? 'månad' : 'månader'} sedan` : 'Kan vara inaktuell';
 }
-const values: Record<string, string> = {
-  // A person in the round of development talks (D96 item 2).
-  booked: 'bokat',
-  held: 'hållet',
-  missing: 'saknas',
-  closed: 'stängd',
-  // Where a holding stands today (D108 item 4).
-  expired: 'utgånget',
-  expiring: 'går ut snart',
-  valid: 'giltigt',
-  // A copied holding whose source type is not mapped to the catalogue (D108 item 9).
-  uncounted: 'räknas inte',
-  // A person's own registration that waits for their manager, or that the manager rejected (D108 item 7).
-  'awaiting-approval': 'väntar på godkännande',
-  rejected: 'avvisat',
-  done: 'klart',
-  failed: 'misslyckades',
-  long: 'sjukskriven',
-  open: 'öppen',
-  short: 'sjuk',
-  skipped: 'inte skickad',
-  unknown: 'okänt',
-  vab: 'vab',
-  'waiting-safety-rep': 'väntar på skyddsombud',
-};
 const instant = /^\d{4}-\d{2}-\d{2}T/;
 const day = /^\d{4}-\d{2}-\d{2}$/;
 const time = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
@@ -195,7 +170,7 @@ export function fieldValue(value: unknown): string {
       ? time.format(new Date(value))
       : day.test(value)
         ? dateOnly.format(new Date(`${value}T12:00:00`))
-        : (values[value] ?? value);
+        : valueWord(value);
   if (Array.isArray(value)) return value.map(fieldValue).join(', ');
   return Object.entries(value)
     .filter(([key]) => !hiddenFields.has(key))

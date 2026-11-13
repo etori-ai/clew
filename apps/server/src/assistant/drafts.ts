@@ -1,5 +1,6 @@
 import type { Ask, AskValues, AuthenticatedContext, Thread } from '@clew/contracts';
 import { actorOf, answersOf, asksFor, givenBy } from '@clew/connectors';
+import { localInstant } from '@clew/calendar/dates';
 import type { AssistantDeps } from './ports';
 import type { ClewTool } from './model';
 
@@ -30,6 +31,20 @@ export interface ActionDraft {
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const VALUE_MAX = 4000;
+const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}$/;
+/**
+ * A meeting's start as the model writes it: a time in Swedish time without an offset, as the times it reads are given
+ * in words (D122), becomes the instant the ask takes; a time that does not exist in Stockholm, or is ambiguous, stays
+ * as written and is refused by the ask's own check. Anything else is left as it is.
+ */
+function meetingTime(value: string): string {
+  if (!LOCAL_TIME.test(value)) return value;
+  try {
+    return localInstant(value.replace(' ', 'T'));
+  } catch {
+    return value;
+  }
+}
 
 /**
  * The item's actions the person may take and that ask for something: a propose or an execute of the item's own
@@ -61,7 +76,7 @@ function hint(ask: Ask): string {
   const required = ask.required ? ' Krävs.' : '';
   switch (ask.kind) {
     case 'meeting':
-      return `${ask.label}: starttiden som ISO 8601 med tidszon, ett möte på ${ask.durationMinutes} minuter.${required}`;
+      return `${ask.label}: starttiden i svensk tid som ÅÅÅÅ-MM-DDTHH:MM, till exempel 2026-11-16T09:00, ett möte på ${ask.durationMinutes} minuter.${required}`;
     case 'date':
       return `${ask.label}: ett datum, ÅÅÅÅ-MM-DD.${required}`;
     case 'choice':
@@ -111,7 +126,7 @@ export function draftTool(actions: DraftableAction[], now: string, drafted: (dra
       for (const [key, value] of Object.entries(given)) {
         if (typeof value !== 'string') return { error: 'Varje värde ska vara text.' };
         if (value.length > VALUE_MAX) return { error: 'Ett värde är för långt.' };
-        values[key] = value;
+        values[key] = action.asks.some(a => a.property === key && a.kind === 'meeting') ? meetingTime(value) : value;
       }
       const answered = answersOf(action.asks, values, now, action.input);
       if ('problem' in answered) return { error: answered.problem };

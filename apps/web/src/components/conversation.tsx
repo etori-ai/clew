@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type {
   CalendarEvent,
@@ -15,6 +15,7 @@ import {
   Badge,
   Button,
   Card,
+  Collapsible,
   ChatMessage,
   ChatMessageBubble,
   ChatMessageList,
@@ -38,7 +39,9 @@ import {
   VisuallyHidden,
   VStack,
   agendaItems,
+  useAnimatedLayout,
   useStreamingText,
+  type AnimatedLayout,
   type ChatToolCallItem,
   useMediaQuery,
 } from '@clew/ui';
@@ -53,6 +56,7 @@ import { FigureLines } from './figure-line';
 import { requestAction } from '../action-requests';
 import { valueText, type ActionStep } from '../action-path';
 import { executionStatus } from '../execution-status';
+import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../answer-card';
 
 /** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
 export type ActionDraftRef = Draft & { kind: 'action'; actionId: string };
@@ -240,18 +244,29 @@ function TurnCard({ id, render }: { id: string; render: (thread: Thread) => Reac
  */
 /**
  * A declared view under the answer it belongs to (D38): the capability is read again as the person and drawn by the one
- * view renderer, a few rows of it, without its controls, in a card whose header is the view's own (artboard 4: chip,
- * source, count, "Visa allt" at its end). The rows come from the source in the order it gives them, which is the order
- * the answer's sentence implies; the web never sorts them again. They never come from the model's text or the stored
- * conversation. A read that fails leaves the button alone, so the whole view can still be opened.
+ * view renderer, without its controls, in a card whose header is the view's own (artboard 4: chip, source, count, "Visa
+ * allt" at its end). Of its rows the card draws what the turn recorded (`MessageMeta.viewRows`): the rows the answer
+ * names, every one of them; or, where the answer is about the read as a whole, its first few. The rows come from the
+ * source in the order it gives them, which is the order the answer's sentence implies; the web never sorts them again.
+ * They never come from the model's text or the stored conversation. A read that fails leaves the button alone, so the
+ * whole view can still be opened. A figure is drawn above it only where the figure belongs to this read (`opens`) and
+ * the card is the read as a whole (D54).
  */
 const EMBED_ROWS = 3;
 function ViewEmbed({
   view,
+  rows,
+  at,
+  framed = true,
   hrefFor,
   onShowAll,
 }: {
   view: ViewRef;
+  rows?: ViewRows | undefined;
+  /** When the answer was written, which a figure line is said against. */
+  at: string;
+  /** In a card of its own; a folded card is the card itself. */
+  framed?: boolean;
   /** Where the view and its rows lead (D116): a list to its own page, one thing beside the page. */
   hrefFor?: ((view: ViewRef) => string) | undefined;
   onShowAll: () => void;
@@ -260,6 +275,7 @@ function ViewEmbed({
     ...viewQuery(view.capability, Object.keys(view.input).length ? JSON.stringify(view.input) : null),
     retry: false,
   });
+  const figure = figureBelongs(view, rows);
   if (read.isPending) return null;
   if (!read.data?.view)
     return (
@@ -271,18 +287,90 @@ function ViewEmbed({
         )}
       </HStack>
     );
+  const marks = rows?.show === 'named' ? rows.marks : undefined;
+  const drawn = (
+    <DeclaredView
+      view={read.data.view}
+      output={read.data.output}
+      {...(marks ? { only: marks } : { limit: EMBED_ROWS })}
+      onShowAll={onShowAll}
+      showAllHref={hrefFor?.(view)}
+      {...(hrefFor ? { hrefFor } : {})}
+    />
+  );
   return (
-    <Card>
-      <DeclaredView
-        view={read.data.view}
-        output={read.data.output}
-        limit={EMBED_ROWS}
-        onShowAll={onShowAll}
-        showAllHref={hrefFor?.(view)}
-        {...(hrefFor ? { hrefFor } : {})}
-      />
+    <VStack gap={3}>
+      {/* The figure that belongs to this read is said as a line above it (D54, artboard 3), as the tile on Hem says it. */}
+      {figure && <FigureLines select={figure} now={at} />}
+      {framed ? <Card>{drawn}</Card> : drawn}
+    </VStack>
+  );
+}
+/**
+ * An older answer's card (D38): kept in its place in the history, folded, saying the view's title, its system and its
+ * count as the turn recorded them, so nothing is read to draw it. Unfolding it reads the view as the person, once: the
+ * read stays while the conversation is open, so folding and unfolding again reads nothing more. A read that is logged
+ * when it is made (`logged-reads.ts`, one person's holdings) is made here only because the person unfolded it. Astryx's
+ * Collapsible, the composition of "Varför nu?" and a card's read, gliding what comes after it (`useAnimatedLayout`).
+ */
+function FoldedCard({
+  card,
+  at,
+  animatedLayout,
+  hrefFor,
+  onShowAll,
+}: {
+  card: Extract<AnswerCard, { kind: 'folded' }>;
+  at: string;
+  animatedLayout: AnimatedLayout;
+  hrefFor?: ((view: ViewRef) => string) | undefined;
+  onShowAll: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [asked, setAsked] = useState(false);
+  return (
+    <Card padding={3}>
+      <Collapsible
+        isOpen={open}
+        onOpenChange={next => {
+          setOpen(next);
+          if (next) setAsked(true);
+        }}
+        chevronPosition="start"
+        animatedLayout={animatedLayout}
+        trigger={
+          <>
+            <Text weight="semibold">{card.view.title}</Text>
+            <Text type="supporting">{` · ${card.summary}`}</Text>
+          </>
+        }
+      >
+        {asked && (
+          <ViewEmbed view={card.view} rows={card.rows} at={at} framed={false} hrefFor={hrefFor} onShowAll={onShowAll} />
+        )}
+      </Collapsible>
     </Card>
   );
+}
+/** An answer's card where it is drawn in the message (`answerCard`): open and read, or folded; a button is drawn with the answer's other buttons. */
+function AnswerView({
+  card,
+  at,
+  animatedLayout,
+  hrefFor,
+  onShowAll,
+}: {
+  card: AnswerCard | undefined;
+  at: string;
+  animatedLayout: AnimatedLayout;
+  hrefFor?: ((view: ViewRef) => string) | undefined;
+  onShowAll: () => void;
+}) {
+  if (card?.kind === 'open')
+    return <ViewEmbed view={card.view} rows={card.rows} at={at} hrefFor={hrefFor} onShowAll={onShowAll} />;
+  if (card?.kind === 'folded')
+    return <FoldedCard card={card} at={at} animatedLayout={animatedLayout} hrefFor={hrefFor} onShowAll={onShowAll} />;
+  return null;
 }
 export function Transcript({
   onOpenView,
@@ -318,13 +406,17 @@ export function Transcript({
   const forslagId = latest?.forslag?.threadId ?? null;
   const forslag = useQuery({ ...threadQuery(forslagId ?? ''), enabled: !!forslagId });
   const weekThread = latest?.draft?.thread ?? (forslagId ? (forslag.data ?? null) : null);
+  const transcriptArea = useRef<HTMLDivElement>(null);
+  const animatedLayout = useAnimatedLayout({ containerRef: transcriptArea });
   if (!conversation && !pending) return null;
   const messages = conversation?.messages ?? [];
   // Rows are keyed by position, so the pending question and answer become the written ones in place: the log (aria-busy
   // while the answer is written) speaks the answer once, and never the question twice (D36, 4.1.3).
   const n = messages.length;
-  // The latest answer's declared view is drawn under it, with "Visa allt" in its header; an older answer keeps the button.
-  const embedded = (i: number, m: ThreadMessage) => i === n - 1 && !pending && !!m.meta?.view?.declared;
+  // Each answer's card (`answerCard`): the latest answer's open and read, an older one's folded in its place, read when
+  // the person unfolds it, so a long conversation opened again reads one view.
+  const cardOf = (i: number, m: ThreadMessage) =>
+    m.role === 'assistant' ? answerCard(m.meta, i === n - 1 && !pending) : undefined;
   const panel = place === 'panel';
   // The thing the panel is about is named in its header: its chip is not repeated above every question.
   const tokens = (chips: { ref: string; label: string }[] | undefined) =>
@@ -340,7 +432,7 @@ export function Transcript({
           m.meta!.draft!.actionId === draft.actionId,
       );
   return (
-    <VStack gap={3}>
+    <VStack gap={3} ref={transcriptArea}>
       <ChatMessageList density={panel ? 'compact' : 'balanced'} align={panel ? 'top' : 'bottom'} isStreaming={busy}>
         {[
           ...messages.map((m, i) => (
@@ -398,25 +490,21 @@ export function Transcript({
                     {m.meta?.cards?.map(id => (
                       <TurnCard key={id} id={id} render={renderCard} />
                     ))}
-                    {/* The latest answer's view, read again; an older answer keeps its button, so opening a long conversation reads one view, not all of them. */}
-                    {/* An answer that read an area with a figure says the figure as a line (D54, artboard 3), as the tile on Hem says it. */}
-                    {embedded(i, m) && (
-                      <FigureLines
-                        select={a => a.standing.some(s => s.capability === m.meta!.view!.capability)}
-                        now={m.createdAt}
-                      />
-                    )}
-                    {embedded(i, m) && (
-                      <ViewEmbed view={m.meta!.view!} hrefFor={viewHref} onShowAll={() => onOpenView(m.meta!.view!)} />
-                    )}
-                    {((m.meta?.view && !embedded(i, m)) || m.meta?.sources?.length) && (
+                    <AnswerView
+                      card={cardOf(i, m)}
+                      at={m.createdAt}
+                      animatedLayout={animatedLayout}
+                      hrefFor={viewHref}
+                      onShowAll={() => onOpenView(m.meta!.view!)}
+                    />
+                    {(cardOf(i, m)?.kind === 'button' || m.meta?.sources?.length) && (
                       <HStack gap={2} wrap="wrap">
-                        {m.meta?.view && !embedded(i, m) && (
+                        {cardOf(i, m)?.kind === 'button' && (
                           <Button
                             size="sm"
-                            label={m.meta.view.declared ? 'Visa allt' : `Visa ${m.meta.view.title.toLowerCase()}`}
+                            label={m.meta!.view!.declared ? 'Visa allt' : `Visa ${m.meta!.view!.title.toLowerCase()}`}
                             {...(viewHref
-                              ? { href: viewHref(m.meta.view) }
+                              ? { href: viewHref(m.meta!.view!) }
                               : { onClick: () => onOpenView(m.meta!.view!) })}
                           />
                         )}

@@ -1,5 +1,18 @@
-import type { Locator } from '@playwright/test';
-import { announcements, composer, desktop, expect, expectNoAxeViolations, heading, open, test } from './support';
+import type { Locator, Page } from '@playwright/test';
+import {
+  announcements,
+  composer,
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  heading,
+  narrow,
+  open,
+  reflowProblems,
+  test,
+} from './support';
+import { competenceConversation } from './data';
+import { competenceTypes } from './competence';
 
 test.use({ viewport: desktop });
 
@@ -128,7 +141,9 @@ test.describe('the answer on its way', () => {
     ).toBeVisible();
     await expect(page.getByRole('region', { name: 'I dag' })).toBeVisible();
     await expect(
-      page.getByRole('region', { name: 'Sedan i går' }).getByText('Inget är klart och inget väntar på andra.'),
+      page
+        .getByRole('region', { name: 'Sedan i går' })
+        .getByText('Inget har blivit klart sedan i går, och inget väntar på andra.'),
     ).toBeVisible();
     await input.fill('attestera');
     await expect(page.getByRole('list', { name: 'Menar du' })).toBeVisible();
@@ -146,5 +161,88 @@ test.describe('the answer on its way', () => {
     await expect(page.getByText(/Lugnt läge|Inget brådskar/)).toHaveCount(0);
     await expect(page.locator('#work-fakturor')).toBeVisible();
     await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
+  });
+});
+
+/**
+ * Every answer keeps its card (D38): the latest answer's is open and draws the rows the answer names, every one, their
+ * names leading to the person; an older answer's stays folded in its place, saying what the turn recorded, and is read
+ * only when the person unfolds it, once. Where the answer came from is the turn's line, never the answer's text.
+ */
+test.describe('the cards in a conversation', () => {
+  /** The capabilities the page reads, in the order it reads them. */
+  const readsOf = (page: Page) => {
+    const reads: string[] = [];
+    page.on('request', request => {
+      const read = /\/api\/cap\/(competence\.[a-z]+)/.exec(request.url());
+      if (read) reads.push(read[1]!);
+    });
+    return reads;
+  };
+
+  test('the latest card draws the row the answer names and the name leads to the person; an older card is folded, says its count and is read once, when unfolded', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(desktop);
+    api.competenceTypes = competenceTypes();
+    api.threads = [...api.threads, competenceConversation];
+    const reads = readsOf(page);
+    await open(page, '/conversations/kompetens');
+    const log = page.getByRole('log');
+    // The latest card: Maria's row alone, though it is the fourth of the read, and her name is the way to her page.
+    const maria = log.getByRole('link', { name: 'Maria Källström', exact: true });
+    await expect(maria).toHaveAttribute('href', /^\/people\/maria\.kallstrom\?from=%2Fconversations%2Fkompetens/);
+    await expect(log.getByText('Anna Lindqvist')).toHaveCount(0);
+    await expect(log.getByText(/^1 av 4 rader\./)).toBeVisible();
+    // Where the answer came from is the turn's line; the answer's text carries no system and no time.
+    await expect(log.getByText('Assistenten · läste Kompetenser att åtgärda', { exact: true })).toBeVisible();
+    await expect(log.getByText('Maria Källströms brandskydd går ut 20 januari 2027.', { exact: true })).toBeVisible();
+    await expect(log.getByText(/Kompetens \d\d:\d\d/)).toHaveCount(0);
+    // The older answer's card, folded in its place: its title, its system and its count as the turn recorded them.
+    const folded = log.getByRole('button', { name: 'Mina kompetenser · Kompetens · 1 av 6 rader', exact: true });
+    await expect(folded).toHaveAttribute('aria-expanded', 'false');
+    // Opening the conversation read the latest card's view alone.
+    await expect.poll(() => reads).toEqual(['competence.attention']);
+    await expectNoAxeViolations(page);
+    // The person goes back up the history to the older answer. (At the foot of the conversation ChatLayout follows the
+    // newest message and scrolls to it as the card grows: the Astryx gap in docs/maintainers/open-questions.md.)
+    const box = (await log.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -2000);
+    await expect(folded).toBeInViewport();
+    // Unfolded from the keyboard: the focus stays, the state is said, and the read is made then, once.
+    await folded.focus();
+    const before = (await folded.boundingBox())!.y;
+    await page.keyboard.press('Enter');
+    await expect(folded).toHaveAttribute('aria-expanded', 'true');
+    await expect(folded).toBeFocused();
+    await expect(log.getByText('Brandskydd', { exact: true })).toBeVisible();
+    await expect(log.getByText(/^1 av 6 rader\./)).toBeVisible();
+    await expect(log.getByText('Heta arbeten', { exact: true })).toHaveCount(0);
+    // What unfolds opens under the toggle; the toggle itself stays where the person pressed it.
+    await expect(folded).toBeInViewport();
+    expect((await folded.boundingBox())!.y).toBe(before);
+    await page.keyboard.press('Enter');
+    await expect(folded).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.press('Enter');
+    await expect(folded).toHaveAttribute('aria-expanded', 'true');
+    await expect(log.getByText('Brandskydd', { exact: true })).toBeVisible();
+    expect(reads).toEqual(['competence.attention', 'competence.holdings']);
+    await expectNoAxeViolations(page);
+  });
+
+  test('the cards reflow at 320 px, folded and unfolded', async ({ page, api }) => {
+    await page.setViewportSize(narrow);
+    api.competenceTypes = competenceTypes();
+    api.threads = [...api.threads, competenceConversation];
+    await open(page, '/conversations/kompetens');
+    const log = page.getByRole('log');
+    await expect(log.getByRole('link', { name: 'Maria Källström', exact: true })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    const folded = log.getByRole('button', { name: /^Mina kompetenser · Kompetens/ });
+    await folded.click();
+    await expect(log.getByText('Brandskydd', { exact: true })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
   });
 });

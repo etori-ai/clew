@@ -1694,6 +1694,9 @@
         "What the registry does",
         "Models and declared views",
         "Clew's own reads and the model",
+        "What the model reads of a read",
+        "The card under an answer",
+        "Where an answer comes from, and what the model keeps between turns",
         "MCP is a separate design",
         "Trace the behavior"
       ]
@@ -2819,7 +2822,8 @@
         "6. Test and register your connector",
         "7. Add optional features deliberately",
         "8. Say what your rows are about",
-        "9. Ask the person, and say what a write will do"
+        "9. Ask the person, and say what a write will do",
+        "10. Make your reads work in the chat"
       ]
     },
     {

@@ -19,8 +19,9 @@ import type {
 import { viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import { actorOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
-import { displayDate, weekNumber } from '@clew/calendar/dates';
+import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
+import { cardRows, type CardRows } from './card';
 import { resolveChips, type ResolvedChips } from './chips';
 import { completionsFor } from './completions';
 import { serialiseContext } from './context';
@@ -35,7 +36,7 @@ import {
   viewAnswer,
   viewInput,
 } from './router';
-import { modelAnswer, systemPrompt, type ToolCallRecord } from './model';
+import { modelAnswer, systemPrompt, type ReadRecord, type ToolCallRecord } from './model';
 import { DRAFT_TOOL, draftableActions, draftTool, type ActionDraft } from './drafts';
 import { listObjects } from './objects';
 import {
@@ -62,6 +63,8 @@ type Produced = {
   shape: ConversationResponse['shape'];
   assistant: ConversationResponse['assistant'];
   view?: ViewRef;
+  /** Which rows of the view the card draws (`cardRows`). */
+  viewRows?: CardRows;
   draft?: NonNullable<ConversationResponse['draft']>;
   forslag?: { threadId: string };
   clewActions: ClewAction[];
@@ -113,6 +116,9 @@ const rowCount = (view: View | undefined, output: unknown): number | undefined =
 };
 const isSearchResult = (v: unknown): v is SearchResult =>
   !!v && typeof v === 'object' && Array.isArray((v as SearchResult).rows) && Array.isArray((v as SearchResult).sources);
+/** The most lines about earlier reads the prompt carries. */
+const EARLIER_MAX = 10;
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const whyLine = (t: Thread) =>
   `Varför nu? ${t.trigger.reason.replace(/\.$/, '')}. Källa: ${t.trigger.source}, ${new Date(t.trigger.at).toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })}.`;
 
@@ -126,6 +132,33 @@ export function assistantUsecases(deps: AssistantDeps) {
   const access = threadAccess(store, registry);
   const todayDate = () => displayDate(clock().toISOString());
   const thread = async (persona: AuthenticatedContext, id: string) => (await access.read(persona, id))!;
+  /**
+   * The prompt's lines about what earlier answers read (D122): when, which reads by title and how many rows each
+   * answered, or that it failed. What a read held is never carried into a later turn, so a question about facts reads
+   * again; an answer written before turns kept their reads names its reads without counts.
+   */
+  function earlierReads(messages: Thread['messages'], now: string): string[] {
+    const when = (at: string) =>
+      `${displayDate(at) === displayDate(now) ? '' : dayLabel(displayDate(at)) + ' '}kl. ${timeLabel(at)}`;
+    return messages
+      .filter(m => m.role === 'assistant')
+      .flatMap(m => {
+        const reads: TurnRead[] = m.meta?.reads ?? m.meta?.toolCalls?.map(c => ({ capability: c.capability })) ?? [];
+        const said = reads
+          .filter(r => r.capability !== PERSON_TOOL && r.capability !== DRAFT_TOOL)
+          .map(
+            r =>
+              (registry.find(r.capability)?.capability.title ?? r.capability) +
+              (r.failed
+                ? ' (svarade inte)'
+                : r.rows !== undefined
+                  ? ` (${r.rows} ${r.rows === 1 ? 'rad' : 'rader'})`
+                  : ''),
+          );
+        return said.length ? [`Svaret ${when(m.createdAt)}: ${said.join(', ')}.`] : [];
+      })
+      .slice(-EARLIER_MAX);
+  }
   /** The turn's runner (D36): every capability it reads is a step, running and then complete with its time, named by the registry's title and source. */
   function turnFor(persona: AuthenticatedContext, observer: TurnObserver): Turn {
     const emit = (event: TurnEvent) => {
@@ -280,7 +313,9 @@ export function assistantUsecases(deps: AssistantDeps) {
       const answer =
         match.view && readsSummary(match.view)
           ? viewAnswer({ ...match, view: match.view }, input, output)
-          : templatedAnswer(match, input, output, clock().toISOString());
+          : templatedAnswer(match, input, output);
+      // Without a model the sentence counts the read and names none of it: the card is the read as it is.
+      const rows = match.view ? viewRows(match.view, output) : undefined;
       return {
         body: answer.body,
         source: match.source,
@@ -293,6 +328,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         ).map(t => t.title),
         toolCalls: [{ capability: match.name, input, output }],
         ...(answer.view ? { view: answer.view } : {}),
+        ...(answer.view && rows ? { viewRows: { count: rows.length, show: 'all' as const } } : {}),
       };
     }
     // The catch-all (D26): a question no capability answers goes to the composite search as typed, and the hits become a view the person reads.
@@ -300,7 +336,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (searchTool) {
       const input = { query: text };
       const output = await turn.run<SearchResult>(SEARCH_TOOL, input);
-      const answer = searchAnswer(output, clock().toISOString());
+      const answer = searchAnswer(output);
       return {
         body: answer.body,
         source: searchTool.source,
@@ -382,6 +418,10 @@ export function assistantUsecases(deps: AssistantDeps) {
         : []),
       ...(lookup ? [personTool(people, now.toISOString(), p => lookedUp.set(p.key, p))] : []),
     ];
+    // What the model is given of the conversation so far: the last twenty messages' text, and which reads each earlier
+    // answer made, when and how many rows each answered. Never what a read held: a question about facts reads again.
+    const recent = history.slice(-20);
+    const earlier = earlierReads(recent, now.toISOString());
     const system = systemPrompt({
       name: persona.name,
       role: persona.role,
@@ -391,6 +431,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       objects: serialiseContext(chips.objects, now.toISOString(), people.guards),
       drafts: draftable.length > 0,
       ...(people.people.length ? { people: { lines: peopleLines(people, now.toISOString()), lookup } } : {}),
+      ...(earlier.length ? { earlier } : {}),
     });
     let sent = '';
     const onText = (step: string) => {
@@ -406,7 +447,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       const started = clock().getTime();
       const answer = await modelAnswer({
         system,
-        history: history.slice(-20).map(m => ({ role: m.role, body: m.body })),
+        history: recent.map(m => ({ role: m.role, body: m.body })),
         text,
         tools,
         run: (name, input) => turn.run(name, input),
@@ -431,17 +472,27 @@ export function assistantUsecases(deps: AssistantDeps) {
         ...(answer.usage?.finishReason ? { finishReason: answer.usage.finishReason.slice(0, 40) } : {}),
         ...(traceId ? { traceId } : {}),
       };
-      // A lookup of a person is Clew's own (D115) and names no source; the sources are the systems that were read.
-      const sourced = reads.filter(c => c.capability !== PERSON_TOOL);
+      // The sources are the systems the turn read and that answered, by the registry's names for them; a lookup of a
+      // person is Clew's own (D115) and names none. A turn that read nothing names none: the answer is the assistant's.
+      const answered: ReadRecord[] = answer.reads.length
+        ? answer.reads.filter(r => !r.failed)
+        : reads.filter(c => !(isRecord(c.output) && 'error' in c.output));
+      const sourced = answered.filter(c => c.capability !== PERSON_TOOL);
       const source = sourced.length
         ? [...new Set(sourced.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'))].join(', ')
         : 'Assistenten';
-      const searched = reads.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
-      const parsed = parseAnswer(answer.body);
+      const searched = answered.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
+      // A source and a time the model wrote at the end anyway are cut: they stand under the answer, from the turn.
+      const parsed = parseAnswer(answer.body, [...registry.list().map(c => c.source), 'Startsidan', 'Assistenten']);
       const sources = searched ? citationsOf(searched.output as SearchResult) : undefined;
       // A document answer's view is its sources, named so; follow-ups come from the model's trailer, else the document's headings, else the nearest capabilities.
       const view =
         answer.view && answer.view.capability === SEARCH_TOOL ? { ...answer.view, title: 'Källor' } : answer.view;
+      // The card draws the rows of its read that the answer is about (`cardRows`), worked out from the output as the
+      // registry answered it and the answer as the person reads it.
+      const declaredView = view?.declared ? tools.find(t => t.name === view.capability)?.view : undefined;
+      const shownRows =
+        view && declaredView ? cardRows(declaredView, view.input, answer.viewOutput, parsed.body) : undefined;
       const followUps = parsed.followUps.length
         ? parsed.followUps
         : searched
@@ -459,6 +510,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         toolCalls: reads,
         followUps,
         ...(view ? { view } : {}),
+        ...(shownRows ? { viewRows: shownRows } : {}),
         ...(sources?.length ? { sources } : {}),
         ...(draft && subject
           ? {
@@ -566,6 +618,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         authorizationVersion: persona.authorizationVersion,
       },
       ...(produced.view ? { view: produced.view } : {}),
+      ...(produced.viewRows ? { viewRows: produced.viewRows } : {}),
       ...(produced.draft
         ? {
             draft: {
@@ -581,6 +634,8 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(produced.toolCalls?.length
         ? { toolCalls: produced.toolCalls.map(c => ({ capability: c.capability, input: c.input })) }
         : {}),
+      // What the turn read and how much, for the next turn's prompt; never a row (D122 item 8).
+      ...(turn.reads.length ? { reads: turn.reads.slice(0, 20) } : {}),
       ...(produced.sources?.length ? { sources: produced.sources } : {}),
       ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}),
       ...(cards.length ? { cards } : {}),

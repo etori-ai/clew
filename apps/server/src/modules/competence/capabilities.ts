@@ -1,7 +1,6 @@
 import { Type, type Static } from 'typebox';
 import { COMPETENCE_CONNECTOR, type Actor, type Capability, type Connector, type ThreadDraft } from '@clew/connectors';
 import {
-  COMPETENCE_IMPORT_KIND_WORDS,
   CompetenceAttentionInputSchema,
   CompetenceAttentionOutputSchema,
   CompetenceHoldingsInputSchema,
@@ -12,10 +11,8 @@ import {
   type AuthenticatedContext,
   type CompetenceAttentionInput,
   type CompetenceAttentionOutput,
-  type CompetenceHoldingRow,
   type CompetenceHoldingsInput,
   type CompetenceHoldingsOutput,
-  type CompetenceRowStatus,
   type View,
   type ViewField,
   literals,
@@ -37,8 +34,8 @@ import type { CompetenceUsecases, UnitCoverageResult } from './usecases';
  * run out or is missing among a manager's reports, and the scan that turns what needs a person into a card; and the read
  * an approval's card opens, a person's own registration that waits for the reader (item 7). Three reads are offered to the
  * model (D122 item 3), each read as the person who asks and nobody more: the reader's own holdings or a report's, what
- * needs doing among the reader's reports, and a unit's coverage in counts. What the model reads of them is words a person
- * reads, without internal ids, at most `MODEL_ROWS` rows (`forModel`). The two reads about an entity stay closed, as the
+ * needs doing among the reader's reports, and a unit's coverage in counts. What the model reads of them is derived from
+ * their views as for every connector's read (`modelReading`): the views' labels, words and dates, no refs. The two reads about an entity stay closed, as the
  * loader holds every such read (D97 item 7), and so does the read behind an approval's card, which exists for that card
  * alone. No view declares a `ref`, so no row can be added to a conversation as a chip. Writes are use cases behind
  * Clew's own routes, never capabilities. The use cases come built from composition (D25).
@@ -64,6 +61,9 @@ const copiedFields: ViewField[] = [
 export const attentionView: View = {
   kind: 'table',
   title: 'name',
+  // The person a row names (D97 item 6): the name is the way to their page, and the user name is the key
+  // `competence.holdings` takes as `person`, which is what the model reads beside the name.
+  subject: { entity: 'person', key: 'userName' },
   noun: { one: 'kompetens', other: 'kompetenser' },
   empty: 'Inget saknas, inget har gått ut och inget går ut inom 90 dagar.',
   fields: [
@@ -270,51 +270,6 @@ export const coverageView: View = {
     },
   ],
 };
-/** At most this many rows of one read reach the model; how many more there are is said (D122: bounded). */
-export const MODEL_ROWS = 100;
-/** Where a row stands, in the words the person's pages use: the model reads words, never codes (D122). */
-export const ROW_WORDS: Record<CompetenceRowStatus, string> = {
-  expired: 'Utgånget',
-  missing: 'Saknas',
-  expiring: 'Går ut snart',
-  valid: 'Giltigt',
-  'awaiting-approval': 'Väntar på godkännande',
-  rejected: 'Avvisat',
-  uncounted: 'Räknas inte',
-};
-/**
- * One holding as the model reads it: what it is, of which kind, where it stands, the level of a skill and until when.
- * No ref, no key and no name: the read that lists several people names each once (`attentionForModel`).
- */
-const modelHolding = (r: CompetenceHoldingRow) => ({
-  competence: r.competence,
-  ...(r.kind ? { kind: COMPETENCE_IMPORT_KIND_WORDS[r.kind] } : {}),
-  ...(r.area ? { area: r.area } : {}),
-  status: ROW_WORDS[r.status],
-  ...(r.level ? { level: r.level } : {}),
-  ...(r.assessment ? { assessment: r.assessment } : {}),
-  ...(r.interest ? { interest: r.interest } : {}),
-  ...(r.required ? { required: r.required } : {}),
-  ...(r.issuedOn ? { issuedOn: r.issuedOn } : {}),
-  ...(r.expiresOn ? { expiresOn: r.expiresOn } : {}),
-  ...(r.source ? { source: r.source } : {}),
-});
-/** The first `MODEL_ROWS` rows, and how many more there are. */
-const bounded = <T>(rows: readonly T[]) => ({
-  rows: rows.slice(0, MODEL_ROWS),
-  ...(rows.length > MODEL_ROWS ? { more: rows.length - MODEL_ROWS } : {}),
-});
-/** One person's holdings as the model reads them: whose, once, and each holding in words. */
-export const holdingsForModel = (o: CompetenceHoldingsOutput) => ({
-  ...(o.rows[0] ? { person: o.rows[0].name } : {}),
-  ...bounded(o.rows.map(modelHolding)),
-});
-/**
- * What needs doing among the reader's reports as the model reads it: each row names the person and gives the key
- * `competence.holdings` takes as `person`, so the model can read everything one of them holds.
- */
-export const attentionForModel = (o: CompetenceAttentionOutput) =>
-  bounded(o.rows.map(r => ({ name: r.name, person: r.userName, ...modelHolding(r) })));
 const reportsWords = (n: number) => `${n} medarbetare`;
 const cut = (text: string, max: number) => ([...text].length > max ? [...text].slice(0, max - 1).join('') + '…' : text);
 /** The table's rows: the required types first, in the catalogue's order, then the share targets set on the unit. */
@@ -434,12 +389,11 @@ export function competenceConnector(
     title: 'Kompetenser att åtgärda',
     model: true,
     description:
-      'Det som har gått ut, saknas eller går ut inom 90 dagar bland medarbetarna du är chef för, det som har gått ut först: medarbetarens namn, kompetensen, läget i ord och sista giltiga dag; för en färdighet nivån och den nivå som krävs. Tar ingen indata. Varje rad har medarbetarens användarnamn som person, som Mina kompetenser tar för att läsa allt medarbetaren har.',
+      'Det som har gått ut, saknas eller går ut inom 90 dagar bland medarbetarna du är chef för, det som har gått ut först: medarbetarens namn, kompetensen, läget i ord och sista giltiga dag; för en färdighet nivån och den nivå som krävs. Tar ingen indata. Varje rad har medarbetarens användarnamn, som Mina kompetenser tar som person för att läsa allt medarbetaren har.',
     input: CompetenceAttentionInputSchema,
     output: CompetenceAttentionOutputSchema,
     view: attentionView,
     scope: { roles: ['manager'] },
-    forModel: attentionForModel,
     run: async actor => competence.attention(await persona(actor)),
   };
   // Offered to the model (D122 item 3): the reader's own holdings, or a report's. A call the assistant makes is never the
@@ -451,12 +405,11 @@ export function competenceConnector(
     title: 'Mina kompetenser',
     model: true,
     description:
-      'Registrerade intyg, kompetenser och färdigheter med läget i dag (giltigt, går ut snart, utgånget, saknas) och vad som krävs: dina egna utan indata, eller en medarbetares du är chef för med medarbetarens användarnamn som person. Användarnamnet står vid en medarbetare du har nämnt och på varje rad i Kompetenser att åtgärda. Om någon annan svarar den inte.',
+      'Registrerade intyg, kompetenser och färdigheter med läget i dag (giltigt, går ut snart, utgånget, saknas) och vad som krävs: dina egna utan indata, eller en medarbetares du är chef för med medarbetarens användarnamn som person. Användarnamnet står vid en medarbetare du har nämnt och på varje rad i Kompetenser att åtgärda. Om någon annan svarar den inte. Varje kompetens har en rad som avgör läget: den med status giltigt, går ut snart, utgånget eller saknas, och dess Giltigt till är det som gäller. En rad som väntar på godkännande, är avvisad eller räknas inte avgör ingenting, även om den har samma namn.',
     input: CompetenceHoldingsInputSchema,
     output: CompetenceHoldingsOutputSchema,
     view: holdingsView,
     scope: () => true,
-    forModel: holdingsForModel,
     // `person` is the reader or one of their reports (D117), or, for a reader who holds the relation `registrar` by
     // grant, anyone active of their organisation (D121 item 3: the one read in the repository that admits it, and the
     // registry tells no connector of it); without it the reader reads their own. Someone without a user name is named
@@ -516,8 +469,6 @@ export function competenceConnector(
     output: CoverageOutputSchema,
     view: coverageView,
     scope: { roles: ['manager'] },
-    // The table's row ids are the page's; the model reads what is required, of whom, and how it stands.
-    forModel: o => bounded(o.rows.map(({ id: _id, ...row }) => row)),
     // Only a unit the reader manages, counted over its branch (D99 item 5); the use case checks it, as Clew's own
     // domains do (D117), since a unit named in a plain input is not resolved by the registry.
     run: async (actor, input) => ({ rows: coverageRows(await competence.coverage(await persona(actor), input.unit)) }),

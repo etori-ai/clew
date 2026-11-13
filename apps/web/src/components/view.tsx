@@ -5,6 +5,7 @@ import {
   checkContract,
   fieldTone,
   openRef,
+  rowMark,
   viewRows,
   type Activity,
   type Metric,
@@ -78,6 +79,11 @@ export interface DeclaredViewProps {
   isLoading?: boolean;
   /** Draw at most this many rows and say how many there are (the embed under an answer). */
   limit?: number;
+  /**
+   * Under an answer about some of a read's rows: only the rows with these marks (`rowMark`), every one of them, with the
+   * count of the whole read beside them. A row that has changed since the answer was written is not one of them.
+   */
+  only?: readonly string[] | undefined;
   /** The outline level of a heading inside the view: 3 in the panel and under an answer, 2 on a tool's page, under its h1. */
   headingLevel?: 2 | 3;
   /** From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. */
@@ -661,6 +667,7 @@ export function DeclaredView({
   hrefFor,
   isLoading = false,
   limit,
+  only,
   headingLevel = 3,
   tableQuery = '(min-width: 1010px)',
   title,
@@ -839,7 +846,9 @@ export function DeclaredView({
       </VStack>
     );
   }
-  const rows = limit ? all!.slice(0, limit) : all!;
+  // The rows an answer named (`only`), every one, in the order the source gives them; else the rows, cut at `limit`.
+  const picked = only ? all!.filter(row => only.includes(rowMark(view, row))) : all!;
+  const rows = limit && !only ? picked.slice(0, limit) : picked;
   // A combined list names the systems that did not answer, so an empty or short list is never read as the whole truth.
   const missed = view.rowViews ? unansweredIn(output) : [];
   return (
@@ -848,10 +857,19 @@ export function DeclaredView({
       {rows.length === 0 ? (
         // A sentence, not a heading: an empty list says so in the outline's flow (app critique, 2026-11-13).
         <Text as="p" type="supporting">
-          {missed.length > 0 ? 'Inget att visa från de system som svarade' : (view.empty ?? 'Inget att visa')}
+          {only
+            ? 'Det svaret byggde på ser inte likadant ut längre.'
+            : missed.length > 0
+              ? 'Inget att visa från de system som svarade'
+              : (view.empty ?? 'Inget att visa')}
         </Text>
       ) : (
-        <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit} isOpen={isOpen} />
+        <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit && !only} isOpen={isOpen} />
+      )}
+      {only && rows.length > 0 && rows.length < new Set(only).size && (
+        <Text as="p" type="supporting">
+          Något av det svaret byggde på ser inte likadant ut längre.
+        </Text>
       )}
       {/* Under an answer a cut list says how much is left out (artboard 4); the rows keep the order the source gave, which is the answer's. */}
       {rows.length > 0 && (

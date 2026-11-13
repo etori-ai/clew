@@ -12,6 +12,7 @@ import type {
   CompetenceType,
   PanelViewSpec,
 } from '@clew/contracts';
+import { rowMark } from '@clew/contracts';
 
 /**
  * Kompetens (D108) as the browser specs meet it: one person's holdings as the declared view, the catalogue, its sources,
@@ -95,6 +96,64 @@ export const holdingsOutput = {
     },
   ],
 };
+/**
+ * What needs doing among a manager's reports (`competence.attention`), as the module declares it: a row names the
+ * person it is about (`subject`), so the name leads to their page, in a card under an answer too.
+ */
+export const attentionSpec: PanelViewSpec = {
+  kind: 'table',
+  title: 'name',
+  subject: { entity: 'person', key: 'userName' },
+  noun: { one: 'kompetens', other: 'kompetenser' },
+  empty: 'Inget saknas, inget har gått ut och inget går ut inom 90 dagar.',
+  fields: [
+    { key: 'name', label: 'Namn' },
+    { key: 'competence', label: 'Kompetens' },
+    {
+      key: 'status',
+      label: 'Status',
+      format: 'status',
+      tones: { expired: 'alert', missing: 'alert', expiring: 'warn' },
+    },
+    { key: 'level', label: 'Nivå' },
+    { key: 'assessment', label: 'Bedömning', format: 'status', tones: { 'Egen bedömning': 'none' }, beside: true },
+    { key: 'required', label: 'Krävd nivå' },
+    { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
+    { key: 'source', label: 'Källa' },
+    { key: 'readAt', label: 'Inläst', format: 'instant', beside: true },
+  ],
+  capability: 'competence.attention',
+  connector: 'competence',
+  source: 'Kompetens',
+  chip: false,
+};
+const due = (userName: string, name: string, competence: string, status: string, expiresOn: string) => ({
+  ref: `holding:competence:${userName}-${competence.toLowerCase()}`,
+  userName,
+  name,
+  competence,
+  area: 'Säkerhet',
+  kind: 'course',
+  issuedOn: '2023-05-02',
+  expiresOn,
+  status,
+  evidence: 'manager',
+});
+/** Four rows, Maria's last: the three first, a whole read's excerpt, would leave her out. */
+export const attentionOutput = {
+  rows: [
+    due('anna.lindqvist', 'Anna Lindqvist', 'Brandskydd', 'expired', '2025-05-02'),
+    due('anna.lindqvist', 'Anna Lindqvist', 'HLR', 'expired', '2026-01-10'),
+    due('erik.sandstrom', 'Erik Sandström', 'HLR', 'expiring', '2026-12-20'),
+    due('maria.kallstrom', 'Maria Källström', 'Brandskydd', 'expiring', '2027-01-20'),
+  ],
+};
+/** The marks the server keeps of the rows an answer names (`rowMark`): Maria's row, and Anna's Brandskydd in her holdings. */
+export const mariaMark = rowMark(attentionSpec, attentionOutput.rows[3]!);
+export const brandskyddMark = rowMark(
+  holdingsSpec,
+  holdingsOutput.rows.find(r => r.competence === 'Brandskydd')!,
+);
 /** The catalogue as the manager's registration form lists it: two areas, one type with the employer's rule. */
 export const competenceTypes = (): CompetenceType[] => [
   { id: 't-hlr', name: 'HLR', area: 'Akut omhändertagande', kind: 'course', validityMonths: 24, archived: false },

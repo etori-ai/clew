@@ -107,7 +107,14 @@ import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/c
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
 import { fixtureViews } from './view-catalogue';
-import { competenceMatrix, holdingsOutput, holdingsSpec, matrixAnswer } from './competence';
+import {
+  attentionOutput,
+  attentionSpec,
+  competenceMatrix,
+  holdingsOutput,
+  holdingsSpec,
+  matrixAnswer,
+} from './competence';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { previewManifest } from '../../packages/connectors/src/preview';
@@ -1435,6 +1442,11 @@ export class MockApi {
     }
     // Kompetens (D108): one person's holdings, the view the person's section opens; refused while the module is off, as
     // the registry refuses a read of a connector that is switched off.
+    // What needs doing among a manager's reports, as the card under an answer reads it again.
+    if (path === '/cap/competence.attention')
+      return this.competenceTypes
+        ? json({ output: attentionOutput, source: 'Kompetens', view: attentionSpec })
+        : route.fulfill({ status: 400, json: { error: 'Okänd förmåga.' } });
     if (path === '/cap/competence.holdings')
       return this.competenceTypes
         ? json({ output: this.competenceHoldings, source: 'Kompetens', view: holdingsSpec })

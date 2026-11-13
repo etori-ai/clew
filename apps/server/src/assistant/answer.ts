@@ -13,7 +13,25 @@ export interface ParsedAnswer {
   followUps: string[];
   shape?: Extract<AnswerShape, 'steg'>;
 }
-export function parseAnswer(text: string): ParsedAnswer {
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * A system's name and a time the model wrote as the last sentence ("Personalsystemet 13:59."): where the answer came
+ * from and when are the turn's own facts, drawn under the answer from what the turn read, so the prose never carries
+ * them. Only one of the names given (the registry's systems) followed by a time and nothing else is cut.
+ */
+function withoutSourceLine(body: string, sources: readonly string[]): string {
+  const names = [...new Set(sources.map(s => s.trim()).filter(Boolean))]
+    .sort((a, b) => b.length - a.length)
+    .map(escape);
+  if (!names.length) return body;
+  const line = new RegExp(
+    `(^|[.!?)\\]]\\s+|\\n\\s*)(?:Källa:\\s*)?(?:${names.join('|')})(?:,\\s*|\\s+)(?:kl\\.?\\s*)?\\d{1,2}[:.]\\d{2}\\.?\\s*$`,
+    'iu',
+  );
+  const cut = body.replace(line, '$1').trimEnd();
+  return cut || body;
+}
+export function parseAnswer(text: string, sources: readonly string[] = []): ParsedAnswer {
   const lines = text.trim().split('\n');
   let followUps: string[] = [];
   for (let i = lines.length - 1; i >= 0 && i >= lines.length - 2; i--) {
@@ -28,7 +46,7 @@ export function parseAnswer(text: string): ParsedAnswer {
       break;
     }
   }
-  const body = lines.join('\n').trim();
+  const body = withoutSourceLine(lines.join('\n').trim(), sources);
   const steps = body
     .split('\n')
     .map(l => l.trim())

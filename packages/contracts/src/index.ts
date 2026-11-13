@@ -726,6 +726,65 @@ export function viewRows(view: View, output: unknown): Record<string, unknown>[]
   if (!key || !isViewRecord(output) || !Array.isArray(output[key])) return undefined;
   return (output[key] as unknown[]).filter(isViewRecord);
 }
+/** Two 32-bit FNV-1a passes with different offsets, as 16 hex digits: tells rows of one read apart, says nothing of them. */
+const digest = (text: string) => {
+  const pass = (seed: number) => {
+    let h = seed >>> 0;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, '0');
+  };
+  return pass(0x811c9dc5) + pass(0x050c5d1f);
+};
+/** The shape of a row's mark: what a conversation's message may keep of a row (`MessageMeta.viewRows`). */
+export const ROW_MARK = '^[0-9a-f]{16}$';
+/**
+ * A row's mark: what tells one row of a declared table or list from the others when the read is made again, without
+ * saying what the row holds. The connector's ref for the row when the view declares one (stable while the row changes),
+ * else a digest of what the view draws of it (a row whose drawn values changed is another row). The server marks the
+ * rows an answer names; the browser finds them again in the read it makes as the person. A digest, never a value.
+ */
+export function rowMark(view: View, row: Record<string, unknown>): string {
+  if (view.kind !== 'table' && view.kind !== 'list') return digest(JSON.stringify(row));
+  const ref = view.ref ? row[view.ref] : undefined;
+  if (typeof ref === 'string' && ref) return digest('ref\u0000' + ref);
+  const keys = [...view.fields.map(f => f.key), ...(view.subject ? [view.subject.key] : [])];
+  return digest(JSON.stringify(keys.map(k => row[k] ?? null)));
+}
+/**
+ * The Swedish word for a code a source answers with, as a person reads it wherever Clew draws a value: in a view, in the
+ * generic panel and in what the model reads of a read. A value with no word here is drawn as the source gave it.
+ */
+export const VALUE_WORDS: Readonly<Record<string, string>> = {
+  // A person in the round of development talks (D96 item 2).
+  booked: 'bokat',
+  held: 'hållet',
+  missing: 'saknas',
+  closed: 'stängd',
+  // Where a holding stands today (D108 item 4).
+  expired: 'utgånget',
+  expiring: 'går ut snart',
+  valid: 'giltigt',
+  // A copied holding whose source type is not mapped to the catalogue (D108 item 9).
+  uncounted: 'räknas inte',
+  // A person's own registration that waits for their manager, or that the manager rejected (D108 item 7).
+  'awaiting-approval': 'väntar på godkännande',
+  rejected: 'avvisat',
+  done: 'klart',
+  failed: 'misslyckades',
+  long: 'sjukskriven',
+  open: 'öppen',
+  short: 'sjuk',
+  skipped: 'inte skickad',
+  unknown: 'okänt',
+  vab: 'vab',
+  'waiting-safety-rep': 'väntar på skyddsombud',
+};
+/** A value's word (`VALUE_WORDS`), or the value as given. */
+export const valueWord = (value: string): string =>
+  Object.prototype.hasOwnProperty.call(VALUE_WORDS, value) ? VALUE_WORDS[value]! : value;
 /**
  * The fields of a table or list that can mark a row (D97 item 2): those giving some value a `warn` or `alert` tone. A
  * read about an entity with one of them can mark the entity's row where an administrator chose the source.
@@ -2652,8 +2711,36 @@ export const MessageMetaSchema = object({
   refs: Type.Optional(Type.Array(Type.String())),
   shape: Type.Optional(AnswerShape),
   view: Type.Optional(ViewRefSchema),
+  /**
+   * What the answer's card draws of its view's rows, decided when the answer was written and kept so the card is the
+   * same whenever it is read again: `all` the read as the input asked it, `named` only the rows the answer names (their
+   * marks, `rowMark`), `none` no rows, since the answer is about rows it does not name and an unrelated card is worse
+   * than none. `count` is how many rows the read answered then, which a folded card says without reading. Marks, never
+   * rows. Absent on a view that is not a table or a list: its card is the read as it is.
+   */
+  viewRows: Type.Optional(
+    object({
+      count: Type.Integer({ minimum: 0 }),
+      show: Type.Union([Type.Literal('all'), Type.Literal('named'), Type.Literal('none')]),
+      marks: Type.Optional(Type.Array(Type.String({ pattern: ROW_MARK }), { maxItems: 50 })),
+    }),
+  ),
   draft: Type.Optional(DraftSchema),
   toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
+  /**
+   * Every read the turn made through the registry (D122 item 8): which capability, how many rows it answered, or that
+   * it failed; never what it answered. The next turn's model is told what was read and when, not what it held.
+   */
+  reads: Type.Optional(
+    Type.Array(
+      object({
+        capability: Type.String({ maxLength: 120 }),
+        rows: Type.Optional(Type.Integer({ minimum: 0 })),
+        failed: Type.Optional(Type.Literal(true)),
+      }),
+      { maxItems: 20 },
+    ),
+  ),
   assistant: Type.Optional(AssistantMode),
   source: Type.Optional(Type.String()),
   /** The sources a document answer cites (D26), numbered as `[n]` in the body; refs only. */

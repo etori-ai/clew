@@ -179,7 +179,7 @@ The [testing and deployment guide](testing-and-deployment.md) covers this from a
 |---|---|---|
 | Search | Records should join Clew's composite search | [Search and views](example-custom-directory.md) |
 | Documents and semantic views | Records need original PDF/DOCX/XLSX/images, composed facts, measurements, charts or history | [Document and semantic views](document-and-semantic-views.md) |
-| Model tools | The read/proposal is suitable for model use under the person's access | [Capability surfaces](../architecture/capability-surfaces.md) |
+| Model tools | The read/proposal is suitable for model use under the person's access | [Make your reads work in the chat](#10-make-your-reads-work-in-the-chat), [capability surfaces](../architecture/capability-surfaces.md) |
 | Scans and figures | The source can report outstanding occurrences or a meaningful area figure | [Actions](actions-and-receipts.md), [protocol](../reference/connector-protocol.md) |
 | Writes and undo | Source permissions, preconditions, evidence and recovery are established | [Actions and receipts](actions-and-receipts.md) |
 | Callbacks and jobs | A read needs another source, or one task needs changes/follow-up in several systems | [Working across connectors](../architecture/working-across-connectors.md) |
@@ -360,3 +360,20 @@ What the person sees ([where things open](where-things-open.md#asks-and-effect) 
 
 The loader refuses an ask on a read or a follower, an ask that names no property of the input or the entity's key, a kind that does not fit its property, an optional ask for a property the input requires, and an `effect` that is not such a read. An action about a person may now require more than the key, as long as it asks for it. The [manifest preview](../reference/connector-protocol.md#served-by-the-instance) shows, for every propose and execute, where a person can start it, which steps of the path it draws and who fills each property of its input; the [field reference](../generated/manifest-reference.md) has every rule.
 
+## 10. Make your reads work in the chat
+
+A read with `model: true` is a tool the assistant may call for the person who asks. You write no model code: Clew derives what the model reads, the card under its answer and the source line from what the read already declares, the same way for every connector ([capability surfaces](../architecture/capability-surfaces.md#what-the-model-reads-of-a-read)). What to declare so it works well, using fields that exist:
+
+| Declare | What it buys in the chat |
+|---|---|
+| A `view` | The model reads each row as the person would: your fields' Swedish `label`s as keys, statuses as words, numbers with their `unit`, dates written out ("27 november 2027", "måndag 16 november 2026 kl. 09:00"). Without one the model reads your output's own keys, less refs, ids and links. A `table` or `list` is also the card drawn under the answer |
+| `format` on every date, moment, number and status field | A `date` or `instant` reaches the model in Swedish words and unambiguous, never as `2027-11-27` or a UTC instant; a `status` value reaches it as the word the page shows |
+| `title` and plain text fields that name the row | The card shows the rows the answer is about: a row is matched when the answer writes the values your view draws as text (its title first), so name rows the way a person would write them. A number, a date or a status never ties a row to an answer |
+| `ref` on a `table` or `list` | The card finds the rows the answer named again when it is read later, even when their values changed. Without it a row is recognised by what the view draws of it |
+| `subject` on rows that name a person or a unit | The name in the row leads to the person's or unit's page, in the card under an answer too, and the model reads the key ("Användarnamn", "Enhetens id") that a read about one of them takes |
+| `open` on rows that have a read of their own | The name in the row opens that read; a row that also names a person keeps the person as a link of its own |
+| Input properties that narrow the read (a person, a query) | The model can set them from the question; the card is drawn with the same input |
+| `modelReads: "summary"` | The model gets only how many rows are shown, never their content; the card is always the whole view. Use it for rows about people's health or anything else the model should not read |
+| `opens` on an area's figure | The figure is drawn as a line above a card of the read it opens, and only that read's, when the card is the read as a whole |
+
+Do not ask the model for a source or a time in your descriptions: the transcript names the systems the turn read, by your manifest's `source`, and when. Write the `description` for the model in Swedish, saying what the read answers and what its input takes; Clew adds "Källa: <your source>." to it.

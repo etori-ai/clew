@@ -46,6 +46,7 @@ import type {
 } from '@clew/contracts';
 import type { MenuEntry, NewsResult, PanelViewSpec } from '@clew/contracts';
 import { newsCapabilities } from '../../apps/server/src/modules/news/capabilities';
+import { brandskyddMark, mariaMark } from './competence';
 import { manifest as communicationNewsManifest } from '../../connectors/communication/connector.mjs';
 
 /** Synthetic data, typed against the contracts so the suite follows the API. The clock is frozen to this Wednesday. */
@@ -405,6 +406,63 @@ export const threads = (): Thread[] => [
     ],
   }),
 ];
+
+/**
+ * A conversation about competence with two answers, each with its card as the turn recorded it (D38): the older about
+ * Anna's holdings (one person's, a read that is logged when it is made), the latest about what needs doing, naming Maria,
+ * whose row is the fourth. Opening it reads the latest card's view alone.
+ */
+export const competenceConversation = thread({
+  id: 'kompetens',
+  title: 'När går Annas brandskydd ut?',
+  kind: 'question',
+  connector: 'clew',
+  area: 'fragor',
+  messages: [
+    { id: 'k1', role: 'user', body: 'När går Annas brandskydd ut?', createdAt: NOW },
+    {
+      id: 'k2',
+      role: 'assistant',
+      body: 'Annas brandskydd gäller till 1 november 2028.',
+      createdAt: NOW,
+      meta: {
+        source: 'Kompetens',
+        assistant: 'model',
+        shape: 'svar',
+        view: {
+          capability: 'competence.holdings',
+          input: { person: 'anna.lindqvist' },
+          title: 'Mina kompetenser',
+          source: 'Kompetens',
+          declared: true,
+        },
+        viewRows: { count: 6, show: 'named', marks: [brandskyddMark] },
+        reads: [{ capability: 'competence.holdings', rows: 6 }],
+      },
+    },
+    { id: 'k3', role: 'user', body: 'Vems brandskydd går ut snart?', createdAt: NOW },
+    {
+      id: 'k4',
+      role: 'assistant',
+      body: 'Maria Källströms brandskydd går ut 20 januari 2027.',
+      createdAt: NOW,
+      meta: {
+        source: 'Kompetens',
+        assistant: 'model',
+        shape: 'svar',
+        view: {
+          capability: 'competence.attention',
+          input: {},
+          title: 'Kompetenser att åtgärda',
+          source: 'Kompetens',
+          declared: true,
+        },
+        viewRows: { count: 4, show: 'named', marks: [mariaMark] },
+        reads: [{ capability: 'competence.attention', rows: 4 }],
+      },
+    },
+  ],
+});
 
 const area = (id: string, title: string, values: Partial<Area> = {}): Area => ({
   id,

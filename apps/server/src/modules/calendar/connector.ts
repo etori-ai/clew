@@ -1,6 +1,5 @@
-import { Type, type Static } from 'typebox';
+import { Type } from 'typebox';
 import type { Connector } from '@clew/connectors';
-import { dayLabel, displayDate, stockholmTimestamp, timeRange } from '@clew/calendar/dates';
 import {
   CalendarRoomSchema,
   DayViewSchema,
@@ -42,17 +41,6 @@ export const FreeTimesOutput = Type.Object(
   },
   { additionalProperties: false },
 );
-/**
- * The free times as the model reads them (D122): each in Stockholm's time with its offset, which a draft's meeting
- * answer takes as it is (D112 item 8), and in words ("måndag 16 november 09:00–09:30"), so no instant is read in UTC.
- */
-export const freeTimesForModel = (output: unknown) => ({
-  times: (output as Static<typeof FreeTimesOutput>).gaps.map(g => ({
-    start: stockholmTimestamp(g.start),
-    end: stockholmTimestamp(g.end),
-    text: `${dayLabel(displayDate(g.start))} ${timeRange(g.start, g.end)}`,
-  })),
-});
 /** `persona` turns the registry's actor into a use-case persona; the unit tests hand in their own. */
 export function calendarConnector(
   calendar: Pick<CalendarUsecases, 'readToday' | 'weekView'>,
@@ -130,7 +118,7 @@ export function calendarConnector(
         title: 'Lediga tider',
         model: true,
         description:
-          'Tre lediga tider av en given längd i din egen kalender, den tidigaste först: från en timme fram och två veckor framåt, eller fram till och med dagen before. Ange längden i minuter som durationMinutes och vid behov sista dagen som before (ÅÅÅÅ-MM-DD). Varje tid har start och slut med tidszon och samma tid i ord. Läser bara din egen kalender och bokar ingenting.',
+          'Tre lediga tider av en given längd i din egen kalender, den tidigaste först: från en timme fram och två veckor framåt, eller fram till och med dagen before. Ange längden i minuter som durationMinutes och vid behov sista dagen som before (ÅÅÅÅ-MM-DD). Varje tid har start och slut i svensk tid, i ord. Läser bara din egen kalender och bokar ingenting.',
         input: Type.Object(
           {
             durationMinutes: Type.Integer({ minimum: 5, maximum: 480 }),
@@ -140,7 +128,6 @@ export function calendarConnector(
         ),
         output: FreeTimesOutput,
         scope: () => true,
-        forModel: freeTimesForModel,
         run: async (actor, input: { durationMinutes: number; before?: string }) => ({
           gaps: (await events.freeTimes(await persona(actor.id), input)).slots,
         }),

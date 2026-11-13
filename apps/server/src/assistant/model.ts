@@ -1,6 +1,6 @@
 import { jsonSchema, stepCountIs, streamText, tool, type JSONSchema7, type ModelMessage, type ToolSet } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { readsSummary, viewSummary } from '@clew/connectors';
+import { modelReading } from '@clew/connectors';
 import type { ModelReasoning, ViewRef } from '@clew/contracts';
 import type { ToolInfo } from './router';
 
@@ -15,12 +15,6 @@ export class ModelUnavailable extends Error {
 /** Capability names carry one dot (`hr.whoIsOn`); OpenAI-style function names do not allow it. */
 export const toToolName = (name: string) => name.replace('.', '__');
 export const fromToolName = (name: string) => name.replace('__', '.');
-/** Ten search hits with 600-character snippets and their fields fit under this; a longer result is cut, not failed. */
-const RESULT_LIMIT = 12_000;
-const clip = (value: unknown) => {
-  const text = JSON.stringify(value);
-  return text.length > RESULT_LIMIT ? { truncated: true, text: text.slice(0, RESULT_LIMIT) } : value;
-};
 
 export type ToolSchemaInfo = ToolInfo & { input: unknown };
 export type ToolCallRecord = { capability: string; input: Record<string, unknown>; output: unknown };
@@ -37,10 +31,11 @@ export interface ClewTool {
 /** What the wire reports about one turn (D91): tokens, steps and how the model stopped. Never content. */
 export type ModelUsage = { inputTokens?: number; outputTokens?: number; finishReason?: string; steps?: number };
 /**
- * The model's tool set: every in-scope read capability, run through the same validated path as REST and cards. A tool whose
- * view says the model reads a summary (D38) is still run, so the person's view has its rows, but the model is handed only
- * that the result is shown and how much of it there is. A read of Clew's own that says what the model reads of it
- * (`forModel`, D122) is handed that: words instead of codes, no internal ids, a bounded number of rows.
+ * The model's tool set: every in-scope read capability, run through the same validated path as REST and cards. What the
+ * model is handed of an output is `modelReading` of the read's view (D122), the same for Clew's own reads and a remote
+ * connector's: a summary where the view says so (D38), else the rows and facts as the view draws them, in words, without
+ * refs or ids, bounded. The description names the system the read comes from, by the registry's name for it, so an
+ * answer that names a system names the right one.
  */
 export function buildTools(
   tools: ToolSchemaInfo[],
@@ -51,18 +46,11 @@ export function buildTools(
     ...tools.map(t => [
       toToolName(t.name),
       tool({
-        description: `${t.title}. ${t.description}`,
+        description: `${t.title}. ${t.description} Källa: ${t.source}.`,
         inputSchema: jsonSchema<Record<string, unknown>>(t.input as JSONSchema7),
         execute: async input => {
           try {
-            const output = await run(t.name, input);
-            return clip(
-              t.view && readsSummary(t.view)
-                ? viewSummary(t.view, t.title, output)
-                : t.forModel
-                  ? t.forModel(output)
-                  : output,
-            );
+            return modelReading(t.view, t.title, await run(t.name, input));
           } catch (e) {
             return { error: e instanceof Error ? e.message : 'fel' };
           }
@@ -99,6 +87,11 @@ export interface PromptContext {
    * name up itself. Absent for someone who manages nobody.
    */
   people?: { lines: string[]; lookup: boolean };
+  /**
+   * What earlier answers in the conversation read, one line per answer: when, which reads and how many rows each
+   * answered. Never what they held: the model reads again for a question about facts.
+   */
+  earlier?: string[];
 }
 /** The Swedish system prompt: who is asking, what day it is, the rules, and the chipped objects as "Du tittar på". */
 export function systemPrompt(ctx: PromptContext): string {
@@ -114,8 +107,12 @@ export function systemPrompt(ctx: PromptContext): string {
     `Du är assistenten på Startsidan, Sundsvalls kommuns startsida för medarbetare. Du hjälper ${ctx.name}, ${ctx.role === 'manager' ? 'chef' : 'medarbetare'} på ${ctx.unitLabel}.`,
     `I dag är det ${date}, klockan ${time}, vecka ${ctx.week}.`,
     'Regler:',
-    '- Svara på svenska med en eller två meningar. Nämn källan och tidpunkten, till exempel "Personalsystemet 14:52".',
+    '- Svara på svenska med en eller två meningar.',
     '- Du kan bara läsa. Använd verktygen för att hämta aktuella uppgifter innan du svarar; gissa aldrig siffror.',
+    '- Uppgifter ur ett system läser du med verktygen i den här frågan, också när samma sak besvarades tidigare i samtalet: det som lästes då finns inte kvar hos dig och kan ha ändrats. Svara aldrig med uppgifter ur ett tidigare svar.',
+    '- Gäller frågan inte uppgifter, till exempel att förklara ett tidigare svar enklare, svarar du utan verktyg.',
+    '- Skriv datum och tider så som verktygen ger dem, till exempel "27 november 2027" eller "måndag 16 november 2026 kl. 09:00", aldrig som 2027-11-27.',
+    '- Skriv inte källan eller klockslaget i svaret: de visas under svaret. Nämner du ett system, använd namnet som står som källa vid verktyget.',
     '- Du utför aldrig något och påstår aldrig att något är gjort, utöver det ett ärendes kvitto visar. När personen vill göra något: säg vilken knapp i ärendet som gör det, eller att det inte går här.',
     '- Nämn bara knappar som står under "Knappar i ärendet nu". Är ärendet redan hanterat, säg det först och vad som går nu, till exempel att Ångra måste tryckas innan ärendets egna knappar kommer tillbaka.',
     '- Nämn inte enskilda medarbetares namn om personen inte själv använde dem.',
@@ -123,7 +120,7 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Svara i ren text utan rubriker, listor eller markdown.',
     'När svaret bygger på sökverktyget (rutiner och dokument):',
     '- Svara bara utifrån de avsnitt som kom tillbaka och hitta aldrig på mer. Om avsnitten inte räcker, säg det.',
-    '- Markera varje påstående med avsnittets nummer i hakparentes, till exempel [1]. Nämn dokumentets namn, vem som äger det och när det senast granskades, i stället för klockslag.',
+    '- Markera varje påstående med avsnittets nummer i hakparentes, till exempel [1]. Nämn dokumentets namn, vem som äger det och när det senast granskades.',
     '- Är avsnittet en rutin med steg: svara som numrerade steg, ett per rad, "1. …". Annars en eller två meningar som vanligt.',
     '- Nämn källor som inte svarade, om sökverktyget rapporterar några.',
     '- Avsluta med en sista rad "Följdfrågor: fråga ett | fråga två | fråga tre": högst tre korta frågor personen kan ställa härnäst. Bara när sökverktyget användes.',
@@ -145,6 +142,12 @@ export function systemPrompt(ctx: PromptContext): string {
       'När personen vill att en av ärendets åtgärder görs:',
       '- Fyll i den med verktyget clew__draftAction, efter att ha läst det du behöver (till exempel lediga tider i kalendern).',
       '- Säg sedan i en mening vad du fyllt i och att inget är skickat: personen granskar utkastet och skickar själv.',
+    );
+  if (ctx.earlier?.length)
+    lines.push(
+      '',
+      'Lästes för tidigare svar i samtalet (det som lästes lämnas inte till dig igen):',
+      ...ctx.earlier.map(o => `- ${o}`),
     );
   if (ctx.objects.length)
     lines.push('', 'Du tittar på (det personen lagt till i samtalet):', ...ctx.objects.map(o => `- ${o}`));
@@ -238,7 +241,17 @@ export function createGenerator(
   };
 }
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-/** Ask the model. The answer is its text; the last tool call with a declared view (D38), else the first tool result with rows, is offered as a view. Any failure becomes ModelUnavailable. */
+/**
+ * One read a turn made, as the registry answered it: the output as it is, which the model never got (it got
+ * `modelReading` of it). Kept in memory for the turn alone: the card's rows and a document answer's citations are
+ * worked out from it, and nothing of it is stored.
+ */
+export type ReadRecord = { capability: string; input: Record<string, unknown>; output?: unknown; failed?: true };
+/**
+ * Ask the model. The answer is its text; the last read with a declared view (D38), else the first read whose output has
+ * rows, is offered as a view, with the input the model gave it and the output it answered (`viewOutput`, from which the
+ * caller works out which rows the card draws). Any failure becomes ModelUnavailable.
+ */
 export async function modelAnswer(args: {
   system: string;
   history: { role: 'user' | 'assistant'; body: string }[];
@@ -251,17 +264,37 @@ export async function modelAnswer(args: {
   signal?: AbortSignal;
   /** Clew's own tools for this turn (the draft of an action, D112 item 8); their calls are in `toolCalls` by name. */
   own?: ClewTool[];
-}): Promise<{ body: string; view?: ViewRef; toolCalls: ToolCallRecord[]; usage?: ModelUsage }> {
+}): Promise<{
+  body: string;
+  view?: ViewRef;
+  viewOutput?: unknown;
+  toolCalls: ToolCallRecord[];
+  reads: ReadRecord[];
+  usage?: ModelUsage;
+}> {
+  // Earlier turns are their text alone: no tool result of an earlier turn is ever in the model's context.
   const messages: ModelMessage[] = [
     ...args.history.map(m => ({ role: m.role, content: m.body }) as ModelMessage),
     { role: 'user', content: args.text },
   ];
+  const reads: ReadRecord[] = [];
+  const run = async (name: string, input: unknown) => {
+    const asked = isRecord(input) ? input : {};
+    try {
+      const output = await args.run(name, input);
+      reads.push({ capability: name, input: asked, output });
+      return output;
+    } catch (e) {
+      reads.push({ capability: name, input: asked, failed: true });
+      throw e;
+    }
+  };
   let result: { text: string; toolCalls: ToolCallRecord[]; usage?: ModelUsage };
   try {
     result = await args.generate({
       system: args.system,
       messages,
-      tools: buildTools(args.tools, args.run, args.own),
+      tools: buildTools(args.tools, run, args.own),
       timeoutMs: args.timeoutMs ?? 8_000,
       ...(args.onText ? { onText: args.onText } : {}),
       ...(args.signal ? { signal: args.signal } : {}),
@@ -271,14 +304,21 @@ export async function modelAnswer(args: {
   }
   const body = result.text.trim();
   if (!body) throw new ModelUnavailable('empty answer');
-  const declared = [...result.toolCalls]
-    .reverse()
-    .find(c => !(isRecord(c.output) && 'error' in c.output) && args.tools.find(t => t.name === c.capability)?.view);
-  const shown = declared ?? result.toolCalls.find(c => isRecord(c.output) && Array.isArray(c.output.rows));
-  const info = shown ? args.tools.find(t => t.name === shown.capability) : undefined;
+  // The reads as the registry answered them; a generator that reports calls it did not run through the tools (a test
+  // double) is taken at its word.
+  const answered: ReadRecord[] = reads.length
+    ? reads.filter(r => !r.failed)
+    : result.toolCalls
+        .filter(c => !(isRecord(c.output) && 'error' in c.output))
+        .map(c => ({ capability: c.capability, input: c.input, output: c.output }));
+  const toolOf = (r: ReadRecord) => args.tools.find(t => t.name === r.capability);
+  const declared = [...answered].reverse().find(r => toolOf(r)?.view);
+  const shown = declared ?? answered.find(r => isRecord(r.output) && Array.isArray(r.output.rows));
+  const info = shown ? toolOf(shown) : undefined;
   return {
     body,
     toolCalls: result.toolCalls,
+    reads,
     ...(result.usage ? { usage: result.usage } : {}),
     ...(shown && info
       ? {
@@ -289,6 +329,7 @@ export async function modelAnswer(args: {
             source: info.source,
             ...(info.view ? { declared: true } : {}),
           },
+          viewOutput: shown.output,
         }
       : {}),
   };

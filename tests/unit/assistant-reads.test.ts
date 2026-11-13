@@ -1,17 +1,32 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { Registry, actorOf, openGovernance, type Connector } from '../../packages/connectors/src/index';
+import { rowMark, type AuthenticatedContext, type View } from '../../packages/contracts/src/index';
+import {
+  READING_CHARS,
+  READING_ROWS,
+  Registry,
+  actorOf,
+  dateWords,
+  modelReading,
+  openGovernance,
+  type Connector,
+} from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
 import { personKey, reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { memoryCompetenceStore } from '../../apps/server/src/modules/competence/adapters/memory';
-import { competenceConnector, MODEL_ROWS } from '../../apps/server/src/modules/competence/capabilities';
+import {
+  attentionView,
+  competenceConnector,
+  holdingsView,
+} from '../../apps/server/src/modules/competence/capabilities';
 import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
 import { calendarConnector } from '../../apps/server/src/modules/calendar/connector';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { assistantUsecases, type AssistantDeps } from '../../apps/server/src/assistant';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
+import { CARD_MARKS_MAX, cardRows } from '../../apps/server/src/assistant/card';
+import { fixtureConnectors } from '../fixture-connectors';
 
 /**
  * The assistant reads Clew's own domains as the person who asks, never more (D122). Competence and the calendar are
@@ -109,26 +124,35 @@ function directory() {
   return { persona, staff, relations, state: s };
 }
 
-type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
-/** A tool-using model the test plays: it calls the tools named in `script` in order and keeps what it is offered and handed. */
-function scripted(script: Array<[tool: string, input: Record<string, unknown>]>) {
+type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown>; description?: string };
+type Script = Array<[tool: string, input: Record<string, unknown>]>;
+/**
+ * A tool-using model the test plays: each turn it calls the tools named in `turn.script` in order and answers
+ * `turn.text`, and it keeps what it is offered, told (the system prompt and the messages) and handed.
+ */
+function scripted(script: Script) {
+  const turn = { script, text: 'Svar.' };
   const offered: string[][] = [];
   const handed: unknown[] = [];
   const systems: string[] = [];
-  const generate: ModelGenerate = async ({ system, tools }) => {
+  const told: Array<Parameters<ModelGenerate>[0]['messages']> = [];
+  const described: Record<string, string> = {};
+  const generate: ModelGenerate = async ({ system, messages, tools }) => {
     systems.push(system);
+    told.push(messages);
     offered.push(Object.keys(tools));
+    for (const [name, tool] of Object.entries(tools)) described[name] = (tool as Callable).description ?? '';
     const toolCalls = [];
-    for (const [name, input] of script) {
+    for (const [name, input] of turn.script) {
       const tool = tools[name] as Callable | undefined;
       // The model is offered only what it may call; a tool it is not offered it cannot call at all.
       const output = tool ? await tool.execute(input, {}) : { notOffered: name };
       handed.push(output);
       toolCalls.push({ capability: name.replace('__', '.'), input, output });
     }
-    return { text: 'Svar.', toolCalls };
+    return { text: turn.text, toolCalls };
   };
-  return { generate, offered, handed, systems };
+  return { generate, offered, handed, systems, told, described, turn };
 }
 
 const never = () => Promise.reject(new Error('not called'));
@@ -138,7 +162,13 @@ const FREE = [
   { start: '2026-11-17T12:30:00.000Z', end: '2026-11-17T13:00:00.000Z' },
 ];
 
-async function world(script: Array<[tool: string, input: Record<string, unknown>]> = []) {
+/**
+ * The directory, competence and the calendar of Clew's own, and two fixture connectors of other kinds over the
+ * protocol (`tests/fixture-connectors.ts`): the HR system and the economy system, as a remote connector reaches Clew.
+ * With `brandskydd`, Anna's Brandskydd has run out too, Erik's is valid and Maria's runs out in January, so what needs
+ * doing has four rows, Anna twice and Maria last.
+ */
+async function world(script: Script = [], options: { brandskydd?: boolean } = {}) {
   const d = directory();
   const registry = new Registry({ relations: d.relations.relate });
   const store = memoryCompetenceStore({
@@ -163,6 +193,28 @@ async function world(script: Array<[tool: string, input: Record<string, unknown>
   await held('erik', '2025-12-01', '2026-12-20'); // runs out within 90 days
   await held('maria', '2026-01-10', '2028-01-10'); // valid
   for (const other of ['cohead', 'sven', 'karin']) await held(other, '2024-01-10', '2026-01-10');
+  if (options.brandskydd) {
+    const fire = await competence.seedType('operator:test', ORG, {
+      name: 'Brandskydd',
+      area: 'Säkerhet',
+      kind: 'course',
+    });
+    await competence.seedHolding('operator:test', ORG, 'anna', {
+      typeId: fire,
+      issuedOn: '2023-05-02',
+      expiresOn: '2025-05-02',
+    });
+    await competence.seedHolding('operator:test', ORG, 'erik', {
+      typeId: fire,
+      issuedOn: '2026-02-01',
+      expiresOn: '2029-02-01',
+    });
+    await competence.seedHolding('operator:test', ORG, 'maria', {
+      typeId: fire,
+      issuedOn: '2024-01-20',
+      expiresOn: '2027-01-20',
+    });
+  }
   const freeAsked: unknown[] = [];
   const connectors: Connector[] = [
     competenceConnector(competence, async a => d.persona(a.id)),
@@ -179,7 +231,9 @@ async function world(script: Array<[tool: string, input: Record<string, unknown>
       async id => d.persona(id),
     ),
   ];
-  for (const c of connectors) registry.register({ ...c, uses: [] }).govern(c.id, openGovernance());
+  // The fixtures' records are seeded from the sources' clock: the invoices fall due from 13 November.
+  const fixtures = fixtureConnectors({ only: ['hr', 'finance'], clock: () => new Date(T) }).connectors;
+  for (const c of [...connectors, ...fixtures]) registry.register({ ...c, uses: [] }).govern(c.id, openGovernance());
   const model = scripted(script);
   const threads = memoryThreadStore();
   let ids = 0;
@@ -215,10 +269,17 @@ async function world(script: Array<[tool: string, input: Record<string, unknown>
       ),
   };
   const assistant = assistantUsecases(deps);
-  /** One question as this person; the turn's audit row and what the model was offered and handed. */
-  const ask = async (who: string, text: string) => {
-    const turn = await assistant.converse(d.persona(who), { text });
-    return { turn, audit: threads.audit.at(-1)!, offered: model.offered.at(-1)!, handed: model.handed };
+  /** One question as this person, in a conversation of its own or one going on; the turn, its audit row and its message. */
+  const ask = async (who: string, text: string, conversationId?: string) => {
+    const turn = await assistant.converse(d.persona(who), { text, ...(conversationId ? { conversationId } : {}) });
+    return {
+      turn,
+      audit: threads.audit.at(-1)!,
+      offered: model.offered.at(-1)!,
+      handed: model.handed,
+      meta: turn.thread.messages.at(-1)!.meta!,
+      body: turn.thread.messages.at(-1)!.body,
+    };
   };
   return { d, registry, competence, store, ask, model, logged, freeAsked };
 }
@@ -278,41 +339,36 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
       ['competence__holdings', { person: 'anna' }],
     ]);
     const { handed, audit, turn } = await w.ask('hillevi', 'Vilka av mina medarbetare saknar giltig HLR?');
-    // Her reports only (D99): not Sven (Olle's), Karin (another unit) or the co-head; each with the key holdings takes.
+    // Her reports only (D99): not Sven (Olle's), Karin (another unit) or the co-head; each row as the view draws it, in
+    // words, with the key holdings takes (the row's `subject`) and no ref (`modelReading`).
     expect(handed[0]).toEqual({
-      rows: [
+      antal: 2,
+      rader: [
         {
-          name: 'Anna Lindqvist',
-          person: 'anna',
-          competence: 'HLR',
-          kind: 'Kurs',
-          area: 'Akut',
-          status: 'Utgånget',
-          issuedOn: '2024-01-10',
-          expiresOn: '2026-01-10',
+          Namn: 'Anna Lindqvist',
+          Kompetens: 'HLR',
+          Status: 'utgånget',
+          'Giltigt till': '10 januari 2026',
+          Användarnamn: 'anna',
         },
         {
-          name: 'Erik Sandström',
-          person: 'Erik.S',
-          competence: 'HLR',
-          kind: 'Kurs',
-          area: 'Akut',
-          status: 'Går ut snart',
-          issuedOn: '2025-12-01',
-          expiresOn: '2026-12-20',
+          Namn: 'Erik Sandström',
+          Kompetens: 'HLR',
+          Status: 'går ut snart',
+          'Giltigt till': '20 december 2026',
+          Användarnamn: 'Erik.S',
         },
       ],
     });
     expect(handed[1]).toEqual({
-      person: 'Anna Lindqvist',
-      rows: [
+      antal: 1,
+      rader: [
         {
-          competence: 'HLR',
-          kind: 'Kurs',
-          area: 'Akut',
-          status: 'Utgånget',
-          issuedOn: '2024-01-10',
-          expiresOn: '2026-01-10',
+          Kompetens: 'HLR',
+          Status: 'utgånget',
+          'Giltigt till': '10 januari 2026',
+          Utfärdat: '10 januari 2024',
+          Område: 'Akut',
         },
       ],
     });
@@ -348,8 +404,8 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
     const { handed, audit } = await w.ask('anna', 'Vilka av mina medarbetare saknar HLR?');
     expect(handed[0]).toEqual({ notOffered: 'competence__attention' });
     expect(handed[1]).toEqual(UNKNOWN);
-    expect(handed[2]).toMatchObject({ person: 'Anna Lindqvist', rows: [{ competence: 'HLR', status: 'Utgånget' }] });
-    expect(handed[3]).toMatchObject({ person: 'Anna Lindqvist', rows: [{ competence: 'HLR' }] });
+    expect(handed[2]).toMatchObject({ antal: 1, rader: [{ Kompetens: 'HLR', Status: 'utgånget' }] });
+    expect(handed[3]).toMatchObject({ antal: 1, rader: [{ Kompetens: 'HLR' }] });
     expect(audit.details).toMatchObject({
       reads: [
         { capability: 'competence.holdings', failed: true },
@@ -374,7 +430,7 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
       expect(w.model.systems.at(-1)).not.toContain('användarnamn ' + other);
     expect(handed.slice(0, 3)).toEqual([UNKNOWN, UNKNOWN, UNKNOWN]);
     // Olle leads the unit below hers and reports to her (D99): his holdings, which are none.
-    expect(handed[3]).toEqual({ rows: [] });
+    expect(handed[3]).toEqual({ antal: 0, rader: [] });
     expect((audit.details as { reads: unknown[] }).reads).toEqual([
       { capability: 'competence.holdings', failed: true },
       { capability: 'competence.holdings', failed: true },
@@ -391,7 +447,7 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
     ]);
     const { handed } = await w.ask('regina', 'Vilken kompetens har Anna och Karin?');
     expect(handed.slice(0, 2)).toEqual([UNKNOWN, UNKNOWN]);
-    expect(handed[2]).toEqual({ rows: [] });
+    expect(handed[2]).toEqual({ antal: 0, rader: [] });
     expect(w.store.readLog()).toEqual([]);
     // Her own session's direct read on the search's page is a registrar's (D121), and logged as hers.
     const regina = actorOf(w.d.persona('regina'));
@@ -442,22 +498,15 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
 });
 
 describe('planning from the calendar (D122 item 3)', () => {
-  test('the person’s own free times, in Stockholm time with the offset a draft takes and in words; nothing booked', async () => {
+  test('the person’s own free times, in Swedish time and in words, never an instant in UTC; nothing booked', async () => {
     const w = await world([['calendar__freeTimes', { durationMinutes: 30, before: '2026-11-20' }]]);
     const { handed, audit } = await w.ask('hillevi', 'När kan jag ha ett möte på en halvtimme med Anna nästa vecka?');
     expect(w.freeAsked).toEqual([{ durationMinutes: 30, before: '2026-11-20' }]);
+    // A read without a view keeps its own keys; its moments are written out in Swedish time (`modelReading`).
     expect(handed[0]).toEqual({
-      times: [
-        {
-          start: '2026-11-16T09:00:00+01:00',
-          end: '2026-11-16T09:30:00+01:00',
-          text: 'måndag 16 november 09:00–09:30',
-        },
-        {
-          start: '2026-11-17T13:30:00+01:00',
-          end: '2026-11-17T14:00:00+01:00',
-          text: 'tisdag 17 november 13:30–14:00',
-        },
+      gaps: [
+        { start: 'måndag 16 november 2026 kl. 09:00', end: 'måndag 16 november 2026 kl. 09:30' },
+        { start: 'tisdag 17 november 2026 kl. 13:30', end: 'tisdag 17 november 2026 kl. 14:00' },
       ],
     });
     expect(audit.details).toMatchObject({
@@ -481,18 +530,334 @@ describe('what a turn leaves behind (D91, D122 item 8)', () => {
       expect(JSON.stringify(audit)).not.toContain(content);
     }
   });
-  test('more rows than the model takes are cut at the bound and counted', async () => {
-    const w = await world();
-    const holdings = w.registry.connector('competence')!.capabilities.find(c => c.name === 'competence.holdings')!;
-    const rows = Array.from({ length: MODEL_ROWS + 7 }, () => ({
+  test('more rows than the model takes are cut at the bound and counted', () => {
+    const rows = Array.from({ length: READING_ROWS + 7 }, () => ({
       ref: 'holding:competence:x',
       userName: 'anna',
       name: 'Anna Lindqvist',
       competence: 'HLR',
       status: 'valid',
     }));
-    const read = holdings.forModel!({ rows }) as { rows: unknown[]; more?: number };
-    expect(read.rows).toHaveLength(MODEL_ROWS);
-    expect(read.more).toBe(7);
+    const read = modelReading(holdingsView, 'Mina kompetenser', { rows }) as { rader: unknown[]; utelämnade?: number };
+    expect(read.rader).toHaveLength(READING_ROWS);
+    expect(read.utelämnade).toBe(7);
+  });
+});
+
+/** The read as the person makes it, outside the turn: what the card reads again, and the marks of the rows wanted. */
+async function readAs(w: Awaited<ReturnType<typeof world>>, who: string, name: string, input: unknown = {}) {
+  const output = (await w.registry.run(actorOf(w.d.persona(who)), name, input)) as { rows: Record<string, unknown>[] };
+  const view = w.registry.find(name)!.capability.view as View;
+  const marks = (pick: (row: Record<string, unknown>) => boolean) =>
+    output.rows.filter(pick).map(r => rowMark(view, r));
+  return { rows: output.rows, marks };
+}
+
+/**
+ * The card under an answer is the read the answer rests on, with the input the model gave it, and of its rows those the
+ * answer is about (`cardRows`): the same rule for Clew's own reads and a fixture connector's over the protocol.
+ */
+describe('the card under an answer is the read it rests on, and the rows it is about', () => {
+  test('competence: an answer about one report and one competence draws that row, not the other rows of what needs doing', async () => {
+    const w = await world([['competence__attention', {}]], { brandskydd: true });
+    w.model.turn.text = 'Anna Lindqvist saknar giltigt brandskydd: det gick ut 2 maj 2025.';
+    const { meta } = await w.ask('hillevi', 'Vilka av mina medarbetare saknar brandskydd?');
+    const read = await readAs(w, 'hillevi', 'competence.attention');
+    expect(read.rows.map(r => [r.name, r.competence])).toEqual([
+      ['Anna Lindqvist', 'Brandskydd'],
+      ['Anna Lindqvist', 'HLR'],
+      ['Erik Sandström', 'HLR'],
+      ['Maria Källström', 'Brandskydd'],
+    ]);
+    // The card is the read the model made, with the input it made it with.
+    expect(meta.view).toMatchObject({ capability: 'competence.attention', input: {}, declared: true });
+    expect(meta.viewRows).toEqual({
+      count: 4,
+      show: 'named',
+      marks: read.marks(r => r.name === 'Anna Lindqvist' && r.competence === 'Brandskydd'),
+    });
+  });
+  test('competence: a card never shows an excerpt that leaves out whom the sentence names', async () => {
+    const w = await world([['competence__attention', {}]], { brandskydd: true });
+    const read = await readAs(w, 'hillevi', 'competence.attention');
+    // Maria is the fourth row: the first three, the excerpt a whole read is drawn with, would leave her out.
+    w.model.turn.text = 'Maria Källströms brandskydd går ut 20 januari 2027.';
+    expect((await w.ask('hillevi', 'Vems brandskydd går ut snart?')).meta.viewRows).toEqual({
+      count: 4,
+      show: 'named',
+      marks: read.marks(r => r.name === 'Maria Källström'),
+    });
+    // Two people named for the same competence are both there, and nothing else of theirs.
+    w.model.turn.text = 'Anna Lindqvist och Erik Sandström saknar giltig HLR.';
+    expect((await w.ask('hillevi', 'Vem saknar HLR?')).meta.viewRows).toEqual({
+      count: 4,
+      show: 'named',
+      marks: read.marks(r => r.competence === 'HLR'),
+    });
+    // An answer that names more rows than a card keeps is its button alone, never a cut list of them.
+    const many = Array.from({ length: CARD_MARKS_MAX + 1 }, (_, i) => ({ name: `Person ${i}`, competence: 'HLR' }));
+    expect(cardRows(attentionView, {}, { rows: many }, 'Alla saknar HLR.')).toEqual({
+      count: CARD_MARKS_MAX + 1,
+      show: 'none',
+    });
+  });
+  test('competence: an answer that names none of the rows of a read it did not narrow draws no rows, only the way to the whole read', async () => {
+    const w = await world([['competence__attention', {}]], { brandskydd: true });
+    w.model.turn.text = 'Ingen av dina medarbetare saknar truckkort.';
+    const { meta } = await w.ask('hillevi', 'Vem saknar truckkort?');
+    expect(meta.view).toMatchObject({ capability: 'competence.attention', input: {} });
+    expect(meta.viewRows).toEqual({ count: 4, show: 'none' });
+    // A later turn that points at the view, as a model told a read is shown says, carries the whole read as its card.
+    w.model.turn.text = 'Uppgifterna finns i vyn.';
+    expect((await w.ask('hillevi', 'Och vad behöver göras?')).meta.viewRows).toEqual({ count: 4, show: 'all' });
+  });
+  test('competence: a read the model narrowed with its input is the card, with that input', async () => {
+    const w = await world([['competence__holdings', { person: 'anna' }]], { brandskydd: true });
+    w.model.turn.text = 'Två av hennes kompetenser har gått ut.';
+    const { meta } = await w.ask('hillevi', 'Hur ser Annas kompetenser ut?');
+    expect(meta.view).toMatchObject({ capability: 'competence.holdings', input: { person: 'anna' }, declared: true });
+    expect(meta.viewRows).toEqual({ count: 2, show: 'all' });
+  });
+  test('the economy system: an answer about one invoice draws that invoice, by the ref the view declares', async () => {
+    const w = await world([['finance__invoices', {}]]);
+    w.model.turn.text = 'Fakturan från Energibolaget på 18 650 kr har ingen beställning.';
+    const { meta } = await w.ask('hillevi', 'Vilken faktura saknar beställning?');
+    const read = await readAs(w, 'hillevi', 'finance.invoices');
+    const marks = read.marks(r => r.supplier === 'Energibolaget');
+    expect(marks).toHaveLength(1);
+    expect(meta.view).toMatchObject({ capability: 'finance.invoices', input: {}, source: 'Ekonomisystemet' });
+    expect(meta.viewRows).toEqual({ count: 3, show: 'named', marks });
+    // Two invoices of one supplier are both named by it.
+    w.model.turn.text = 'Skolgrossisten har två fakturor som förfaller i morgon.';
+    const again = await w.ask('hillevi', 'Vilka förfaller i morgon?');
+    expect(again.meta.viewRows).toMatchObject({
+      show: 'named',
+      marks: read.marks(r => r.supplier === 'Skolgrossisten'),
+    });
+    // A count of the whole read names no row but speaks of all of them: the card is the read.
+    w.model.turn.text = 'Tre fakturor väntar på din attest.';
+    expect((await w.ask('hillevi', 'Hur många fakturor?')).meta.viewRows).toEqual({ count: 3, show: 'all' });
+    // A sentence about none of them and not about the whole read: no rows, only the way to the read.
+    w.model.turn.text = 'Ingen faktura är från Städbolaget.';
+    expect((await w.ask('hillevi', 'Har Städbolaget skickat något?')).meta.viewRows).toEqual({
+      count: 3,
+      show: 'none',
+    });
+  });
+  test('the HR system: an answer about one step of the routine draws that step; a view the model reads only a summary of is the card as it is', async () => {
+    const w = await world([['hr__rehabRoutine', {}]]);
+    w.model.turn.text = 'Efter den tredje korta sjukfrånvaron: Boka ett omtankesamtal inom två veckor.';
+    const { meta } = await w.ask('hillevi', 'Vad gör jag vid upprepad korttidsfrånvaro?');
+    const read = await readAs(w, 'hillevi', 'hr.rehabRoutine');
+    expect(meta.view).toMatchObject({ capability: 'hr.rehabRoutine', source: 'Personalsystemet' });
+    expect(meta.viewRows).toEqual({
+      count: read.rows.length,
+      show: 'named',
+      marks: read.marks(r => r.title === 'Boka ett omtankesamtal'),
+    });
+    // Absence per person is read as a summary (D38): the model names nobody, and the card is the whole view.
+    w.model.turn.script = [['hr__absenceOverview', {}]];
+    w.model.turn.text = 'Uppgifterna finns i vyn.';
+    const summary = await w.ask('hillevi', 'Hur ser frånvaron ut per person?');
+    expect(summary.meta.view).toMatchObject({ capability: 'hr.absenceOverview' });
+    expect(summary.meta.viewRows).toMatchObject({ show: 'all' });
+  });
+});
+
+/**
+ * Where an answer comes from and when are facts the server knows: the turn's reads, by the registry's names for their
+ * systems, and the message's time. The model is not asked to write them, and what it writes of them anyway is cut.
+ */
+describe('the source of an answer is the turn’s, never the model’s prose', () => {
+  test('the prompt asks for no source or time, and each tool says its system by the registry’s name', async () => {
+    const w = await world([['competence__attention', {}]]);
+    await w.ask('hillevi', 'Vad behöver göras?');
+    const system = w.model.systems.at(-1)!;
+    expect(system).not.toContain('Nämn källan och tidpunkten');
+    expect(system).not.toMatch(/Personalsystemet \d\d:\d\d/);
+    expect(system).toContain('Skriv inte källan eller klockslaget i svaret');
+    expect(w.model.described['competence__attention']).toEndWith('Källa: Kompetens.');
+    expect(w.model.described['finance__invoices']).toEndWith('Källa: Ekonomisystemet.');
+    expect(w.model.described['hr__rehabRoutine']).toEndWith('Källa: Personalsystemet.');
+  });
+  test('the turn names the systems it read and that answered, and a suffix the model wrote anyway is cut', async () => {
+    const w = await world([
+      ['competence__attention', {}],
+      ['finance__invoices', {}],
+    ]);
+    w.model.turn.text = 'Anna Lindqvist saknar HLR och tre fakturor väntar. Personalsystemet 13:59.';
+    const { meta, body, audit } = await w.ask('hillevi', 'Vad behöver jag göra i dag?');
+    expect(body).toBe('Anna Lindqvist saknar HLR och tre fakturor väntar.');
+    expect(meta.source).toBe('Kompetens, Ekonomisystemet');
+    expect(meta.reads).toEqual([
+      { capability: 'competence.attention', rows: 2 },
+      { capability: 'finance.invoices', rows: 3 },
+    ]);
+    expect(audit.details).toMatchObject({ reads: meta.reads });
+  });
+  test('a turn that read nothing, or only what it was refused, names no system: the answer is the assistant’s', async () => {
+    const w = await world([['competence__holdings', { person: 'erik.s' }]]);
+    w.model.turn.text = 'Det kan jag inte se.';
+    const refused = await w.ask('anna', 'Vad har Erik för kompetenser?');
+    expect(refused.meta.source).toBe('Assistenten');
+    expect(refused.meta.view).toBeUndefined();
+    expect(refused.meta.reads).toEqual([{ capability: 'competence.holdings', failed: true }]);
+    w.model.turn.script = [];
+    w.model.turn.text = 'Hej! Vad kan jag hjälpa dig med?';
+    const none = await w.ask('anna', 'Hej');
+    expect(none.meta.source).toBe('Assistenten');
+    expect(none.meta.reads).toBeUndefined();
+  });
+});
+
+/**
+ * Between turns the model keeps the conversation's text and which reads were made, never what they answered: a question
+ * about facts reads again, and one that is not about facts is answered without a read.
+ */
+describe('what the model keeps between turns', () => {
+  test('the next turn is told what was read and when, not what it held, and is asked to read again', async () => {
+    const w = await world([['competence__holdings', {}]]);
+    const first = await w.ask('anna', 'Hur ser mina kompetenser ut?');
+    expect(w.model.handed[0]).toMatchObject({ rader: [{ Kompetens: 'HLR', 'Giltigt till': '10 januari 2026' }] });
+    w.model.turn.script = [['competence__holdings', {}]];
+    w.model.turn.text = 'Ditt HLR gick ut 10 januari 2026.';
+    const second = await w.ask('anna', 'När gick det ut?', first.turn.conversationId);
+    // The model is told the two questions and the first answer's text, nothing it read.
+    const told = w.model.told.at(-1)!;
+    expect(told).toEqual([
+      { role: 'user', content: 'Hur ser mina kompetenser ut?' },
+      { role: 'assistant', content: 'Svar.' },
+      { role: 'user', content: 'När gick det ut?' },
+    ]);
+    // The prompt says what the earlier answer read and that a question about facts is read again.
+    const system = w.model.systems.at(-1)!;
+    expect(system).toContain('Lästes för tidigare svar i samtalet');
+    expect(system).toContain('Svaret kl. 09:00: Mina kompetenser (1 rad).');
+    expect(system).toContain('läser du med verktygen i den här frågan');
+    for (const content of ['10 januari 2026', 'utgånget', 'Akut']) {
+      expect(system).not.toContain(content);
+      expect(JSON.stringify(told)).not.toContain(content);
+    }
+    // And this turn read again, so its card is today's read.
+    expect(second.meta.reads).toEqual([{ capability: 'competence.holdings', rows: 1 }]);
+    expect(second.meta.view).toMatchObject({ capability: 'competence.holdings' });
+  });
+  test('a follow-up that is not about facts is answered without a read', async () => {
+    const w = await world([['competence__holdings', {}]]);
+    const first = await w.ask('hillevi', 'Hur ser mina kompetenser ut?');
+    w.model.turn.script = [];
+    w.model.turn.text = 'Det betyder att ett av dina intyg snart behöver förnyas.';
+    const second = await w.ask('hillevi', 'Förklara det enklare', first.turn.conversationId);
+    expect(second.body).toBe('Det betyder att ett av dina intyg snart behöver förnyas.');
+    expect(second.meta).toMatchObject({ assistant: 'model', source: 'Assistenten' });
+    expect(second.meta.view).toBeUndefined();
+    expect(second.meta.reads).toBeUndefined();
+  });
+});
+
+/**
+ * One projection for every read (`modelReading`), derived from its declaration: labels as keys, words for statuses,
+ * dates written out, no refs, ids or links, bounded. A remote connector gets it by declaring a view.
+ */
+describe('what the model reads of a read, for every connector', () => {
+  test('a fixture’s table: the labels, the amounts with their unit, the dates in words, no ref', async () => {
+    const w = await world([['finance__invoices', {}]]);
+    await w.ask('hillevi', 'Vilka fakturor väntar?');
+    expect(w.model.handed[0]).toEqual({
+      antal: 3,
+      rader: [
+        {
+          Leverantör: 'Skolgrossisten',
+          Belopp: '11\u00a0200 kr',
+          Förfaller: '13 november 2026',
+          Beställning: '2026-0412',
+          Konto: 'Läromedel',
+        },
+        {
+          Leverantör: 'Skolgrossisten',
+          Belopp: '7\u00a0200 kr',
+          Förfaller: '13 november 2026',
+          Beställning: '2026-0412',
+          Konto: 'Läromedel',
+        },
+        { Leverantör: 'Energibolaget', Belopp: '18\u00a0650 kr', Förfaller: '20 november 2026', Konto: 'Lokaler' },
+      ],
+    });
+    expect(JSON.stringify(w.model.handed)).not.toContain('finance:inv');
+  });
+  test('a fixture’s list with facts about the list, and a detail: labels and words, and the list’s own facts', async () => {
+    const w = await world([
+      ['hr__rehabRoutine', {}],
+      ['finance__budget', {}],
+    ]);
+    await w.ask('hillevi', 'Vad säger rehabrutinen, och hur går budgeten?');
+    const [routine, budget] = w.model.handed as [Record<string, unknown>, Record<string, unknown>];
+    expect(routine).toMatchObject({
+      name: 'Rehabiliteringsrutinen',
+      owner: 'HR-avdelningen',
+      reviewedAt: '2 mars 2026',
+      antal: 7,
+    });
+    expect((routine.rader as Record<string, string>[])[0]).toEqual({
+      Steg: 'Kontakta medarbetaren',
+      När: 'Dag 1',
+      Del: 'Kort sjukfrånvaro',
+      'Vad du gör': expect.stringContaining('Fråga aldrig om diagnos.'),
+    });
+    expect(JSON.stringify(routine)).not.toContain('hr:rehab-step');
+    expect(Object.keys(budget)).toEqual(['Namn', 'Avvikelse i procent', 'Prognos', 'Budget', 'Orsak']);
+  });
+  test('dates are never ambiguous: a day with its year, a moment with its weekday and time in Swedish time', () => {
+    expect(dateWords('2027-11-27')).toBe('27 november 2027');
+    expect(dateWords('2026-11-16T08:00:00.000Z')).toBe('måndag 16 november 2026 kl. 09:00');
+    expect(dateWords('2026-07-01T08:00:00+02:00')).toBe('onsdag 1 juli 2026 kl. 08:00');
+    // A day sent as the midnight of UTC is the day.
+    expect(dateWords('2026-03-12T00:00:00Z')).toBe('12 mars 2026');
+    expect(dateWords('27 november')).toBeUndefined();
+  });
+  test('a holding that decides is told from one that does not by its status word, as the page shows it', () => {
+    const read = modelReading(holdingsView, 'Mina kompetenser', {
+      rows: [
+        {
+          ref: 'holding:competence:a',
+          userName: 'hillevi',
+          name: 'Hillevi Berg',
+          competence: 'HLR',
+          status: 'valid',
+          issuedOn: '2025-11-27',
+          expiresOn: '2027-11-27',
+        },
+        {
+          ref: 'holding:competence:b',
+          userName: 'hillevi',
+          name: 'Hillevi Berg',
+          competence: 'HLR',
+          status: 'awaiting-approval',
+          issuedOn: '2026-11-01',
+          expiresOn: '2028-11-01',
+        },
+      ],
+    }) as { rader: Record<string, string>[] };
+    expect(read.rader.map(r => [r.Kompetens, r.Status, r['Giltigt till']])).toEqual([
+      ['HLR', 'giltigt', '27 november 2027'],
+      ['HLR', 'väntar på godkännande', '1 november 2028'],
+    ]);
+  });
+  test('the reading is bounded in characters too, and says how many rows were left out', () => {
+    const rows = Array.from({ length: 80 }, (_, i) => ({
+      name: 'Anna Lindqvist',
+      userName: 'anna',
+      competence: `Kompetens ${i} ` + 'x'.repeat(300),
+      status: 'expired',
+    }));
+    const read = modelReading(attentionView, 'Kompetenser att åtgärda', { rows }) as {
+      antal: number;
+      rader: unknown[];
+      utelämnade: number;
+    };
+    expect(JSON.stringify(read).length).toBeLessThanOrEqual(READING_CHARS);
+    expect(read.antal).toBe(80);
+    expect(read.rader.length + read.utelämnade).toBe(80);
+    expect(read.utelämnade).toBeGreaterThan(0);
   });
 });

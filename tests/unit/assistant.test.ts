@@ -211,7 +211,7 @@ describe('the deterministic router matches capabilities by title and description
     expect(matchCapability('xyzzy plugh', r.tools(hillevi))).toBeUndefined();
     expect(nearest('fakturor och budget', r.tools(hillevi)).map(t => t.name)).toContain('finance.budget');
   });
-  test('templated answers name the source and offer a view for rows', () => {
+  test('templated answers offer a view for rows, and the source and time stand under the answer, never in it', () => {
     const tool = {
       name: 'finance.invoices',
       title: 'Fakturor att attestera',
@@ -219,19 +219,17 @@ describe('the deterministic router matches capabilities by title and description
       kind: 'read',
       source: 'Ekonomisystemet',
     };
-    const a = templatedAnswer(tool, {}, { rows: [{ supplier: 'Skolgrossisten' }, { supplier: 'Städbolaget' }] }, now);
-    expect(a.body).toMatch(
-      /2 poster under fakturor att attestera: Skolgrossisten, Städbolaget\. Ekonomisystemet \d\d:\d\d\./,
-    );
+    const a = templatedAnswer(tool, {}, { rows: [{ supplier: 'Skolgrossisten' }, { supplier: 'Städbolaget' }] });
+    expect(a.body).toBe('2 poster under fakturor att attestera: Skolgrossisten, Städbolaget.');
     expect(a.view?.capability).toBe('finance.invoices');
     const b = templatedAnswer(
       { ...tool, name: 'hr.whoIsOn', title: 'Vem är på plats i dag?', source: 'Personalsystemet' },
       {},
       { onDuty: ['Anna', 'Johan'], absent: 2 },
-      now,
     );
     expect(b.body).toContain('onDuty: Anna, Johan');
-    expect(b.body).toContain('Personalsystemet');
+    expect(b.body).not.toContain('Personalsystemet');
+    expect(b.body).not.toMatch(/\d\d:\d\d/);
   });
 });
 describe('a document answer is read in code (D26): the trailer, the steps, the citations', () => {

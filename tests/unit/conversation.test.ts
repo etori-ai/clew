@@ -484,9 +484,10 @@ describe('with a model', () => {
     };
     const w = world({ generate });
     const turn = await w.assistant.converse(hillevi, { text: 'vem är här?' });
+    // The source and the time are the turn's, drawn under the answer: what the model wrote of them anyway is cut.
     expect(turn).toMatchObject({
       assistant: 'model',
-      answer: { body: 'Tre på plats. Personalsystemet 08:00.', source: 'Personalsystemet' },
+      answer: { body: 'Tre på plats.', source: 'Personalsystemet' },
     });
     expect(generated[0]).toContain('onsdag 4 november 2026, klockan 08:00, vecka 45');
     expect(generated).toContain('hr__whoIsOn');
@@ -1023,6 +1024,12 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
       error: 'Varje värde ska vara text.',
     });
     expect(heard).toEqual([]);
+    // The model reads times in words in Swedish time (`modelReading`), so it may write one back without an offset: it is
+    // the Stockholm time it says, checked as any other.
+    expect(await tool.execute({ action: 'book', values: { when: '2026-11-16T09:00' } })).toMatchObject({
+      drafted: true,
+    });
+    expect(heard).toEqual([{ actionId: 'book', values: { when: '2026-11-16T08:00:00Z' } }]);
   });
 });
 

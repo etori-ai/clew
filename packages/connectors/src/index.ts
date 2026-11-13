@@ -81,6 +81,7 @@ export {
   viewRows,
   viewSummary,
 } from './views';
+export { READING_CHARS, READING_ROWS, dateWords, fieldWords, modelReading } from './reading';
 
 /**
  * The capability layer (D1, D3). A connector owns a Clew contract: capabilities with a kind, a scope and an
@@ -246,14 +247,12 @@ export interface Capability<I = unknown, O = unknown> {
   description: string;
   input: TSchema;
   output: TSchema;
-  /** Exposed as a tool to the model. `execute` defaults to false and should stay so (D8). */
-  model: boolean;
   /**
-   * What the model reads of the output in place of the output itself (D122): words a person reads instead of codes, no
-   * internal ids, a bounded number of rows with the count of the rest. Only Clew's own connectors can give one, since a
-   * manifest carries no code. The view, the routes and every other caller get the output as it is.
+   * Exposed as a tool to the model. `execute` defaults to false and should stay so (D8). What the model reads of the
+   * output is derived from the declared view by `modelReading`, the same for every connector: nothing a capability runs
+   * decides it.
    */
-  forModel?: (output: O) => unknown;
+  model: boolean;
   /** Who may call it. Evaluated on every call; never trusts the browser. */
   scope: Scope;
   /** For a `<id>.search` capability (D26): what it can find, so the composite search skips sources that cannot hold the answer. */
@@ -1545,7 +1544,7 @@ export class Registry implements HoldingsReader {
    * The talks profile and its composites are never tools, registered or not: no read of that domain reaches a model (D96 item 6).
    * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
    * whatever a registration says. Clew's own connectors are governed here as any other (D122 item 4): the connector's
-   * assistant switch and each read's. A tool carries `forModel` where its read says what the model reads of it.
+   * assistant switch and each read's. What the model reads of a tool's output is `modelReading` of its view.
    */
   tools(actor: Actor) {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
@@ -1575,7 +1574,6 @@ export class Registry implements HoldingsReader {
         kind: c.capability.kind,
         source: c.connector.source,
         ...(c.capability.view ? { view: c.capability.view } : {}),
-        ...(c.capability.forModel ? { forModel: c.capability.forModel as (output: unknown) => unknown } : {}),
       }));
   }
 }
