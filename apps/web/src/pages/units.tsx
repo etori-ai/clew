@@ -86,7 +86,7 @@ function SourceHeader({ source }: { source: EntitySource }) {
 export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
-  const nav = useRail({ current: { surface: 'verktyg', view: null }, admin, manager: user.role === 'manager' });
+  const nav = useRail({ current: { surface: 'units' }, admin, manager: user.role === 'manager' });
   usePageTitle('Dialogstöd');
   // The unit's name stays in view when a narrow window scrolls the figures sideways: a figure is never read without
   // knowing which unit it is (the responsive-table pattern; Astryx's own pinned column).

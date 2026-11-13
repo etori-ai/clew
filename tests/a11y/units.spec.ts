@@ -26,6 +26,11 @@ test.describe('Dialogstöd, the units side by side', () => {
     await units.route(page);
     await open(page, '/units');
     await expect(heading(page, 1, 'Dialogstöd')).toBeVisible();
+    // Dialogstöd is a manager's place in the rail, after Personal, marked here and on every unit's page.
+    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    const entry = rail.getByRole('link', { name: 'Dialogstöd', exact: true });
+    await expect(entry).toHaveAttribute('href', '/units');
+    await expect(entry).toHaveAttribute('aria-current', 'page');
     await expect(heading(page, 2, 'Mina enheter')).toBeVisible();
     await expect(heading(page, 2, 'Enheter under dig')).toBeVisible();
     // On top, per source and state, the units it holds, each a link: what needs action before what to watch.
@@ -62,6 +67,7 @@ test.describe('Dialogstöd, the units side by side', () => {
     await expect(heading(page, 1, ENTITY_UNIT.label)).toBeVisible();
     const trail = page.getByRole('navigation', { name: 'Enheter', exact: true });
     await expect(trail.getByRole('link', { name: 'Dialogstöd', exact: true })).toHaveAttribute('href', '/units');
+    await expect(entry).toHaveAttribute('aria-current', 'page');
   });
 
   test('a reader who follows up no unit is told so, not shown an empty table', async ({ page, api: _ }) => {
