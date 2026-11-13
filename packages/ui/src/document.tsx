@@ -12,6 +12,7 @@ import { ScrollableArea } from '@astryxdesign/core/ScrollableArea';
 import { checkOfficeContent, columnName } from './document-limits';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import './document.css';
+import { DOT } from './dot';
 
 export type DocumentPosition = { page?: number; zoom?: string; asText?: boolean; sheet?: string };
 type Props = {
@@ -363,7 +364,8 @@ function Workbook({ bytes, ready, failed, position, onPosition }: RendererProps)
       {sheet && (
         <>
           <Text role="status">
-            {sheet.rows.length} av {sheet.totalRows} rader · {sheet.columns} kolumner
+            {sheet.rows.length} av {sheet.totalRows} rader{DOT}
+            {sheet.columns} kolumner
             {sheet.truncated || truncated
               ? '. Förhandsvisningen är begränsad. Hämta originalet för hela arbetsboken.'
               : ''}

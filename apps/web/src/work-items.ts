@@ -10,6 +10,7 @@ import {
 } from '@clew/contracts';
 import { weekNumber } from '@clew/calendar/dates';
 import type { Groups } from './stream';
+import { DOT } from './dot';
 import { settlingUntil } from './mutations';
 import { wayBack } from './person-address';
 
@@ -171,7 +172,7 @@ export function whyOf(thread: Thread, now: string): string {
     !thread.timers?.some(t => t.state === 'blocked') &&
     !!thread.timers?.some(t => t.state === 'queued') &&
     settlingUntil(thread.id) <= Date.parse(now);
-  return [base, queued ? 'påminnelsen väntar på schemaläggning' : ''].filter(Boolean).join(' · ');
+  return [base, queued ? 'påminnelsen väntar på schemaläggning' : ''].filter(Boolean).join(DOT);
 }
 
 /**
@@ -192,7 +193,7 @@ export const rowFacts = (thread: Thread, now: string, today: string): RowFacts =
   return { state, due: due?.label === state.label ? null : due, why: whyOf(thread, now) };
 };
 /**
- * A row's supporting line: the state in words, then why the item is here ("Att göra i dag · Ansökan kom 10 november kl.
+ * A row's supporting line: the state in words, then why the item is here ("Ska göras i dag · Ansökan kom 10 november kl.
  * 16:40"), so two states never differ by the dot's colour alone (WCAG 1.4.1). The no-break space keeps the separator
  * with the state when the line wraps; without a reason the state stands alone. An item that waits, on someone or on
  * its source, already says its state in its reason, with what it waits on ("Väntar på skyddsombudet", "Väntar på
@@ -203,7 +204,7 @@ export const rowLine = (facts: RowFacts): string =>
     ? facts.state.label
     : facts.state.label.startsWith(WAITS_ON) && facts.why.startsWith(`${WAITS_ON} `)
       ? facts.why
-      : `${facts.state.label}\u00a0· ${facts.why}`;
+      : `${facts.state.label}${DOT}${facts.why}`;
 
 /**
  * What the rail's dot says about a conversation (D112 item 1), only where the data holds it: the answer being written

@@ -1829,10 +1829,21 @@ export const organisationPeople: Record<string, OrganisationUnitPeople['people']
       enabled: true,
     },
   ],
+  'unit-omsorg': [
+    {
+      id: 'amir',
+      name: 'Amir Sjöberg',
+      userName: 'amir.sjoberg',
+      email: 'amir.sjoberg@clew.test',
+      role: 'manager',
+      enabled: true,
+    },
+  ],
 };
 /**
  * Who reports to a unit's managers from the units below it (D99 item 4), for the units a test opens: under Grundskola
- * the two who lead Bergsåkers skola, and a person placed on Hagaskolan, which nobody leads.
+ * the two who lead Bergsåkers skola, and a person placed on Hagaskolan, which nobody leads; under Vård och omsorg the
+ * manager of Hemtjänst Centrum, two levels down, since Hemtjänst between them has no manager of its own.
  */
 export const organisationReports: Record<string, OrganisationUnitPeople['reports']> = {
   'unit-grundskola': [
@@ -1862,6 +1873,17 @@ export const organisationReports: Record<string, OrganisationUnitPeople['reports
       role: 'employee',
       enabled: true,
       below: [{ unitId: 'unit-hagaskolan', unitLabel: 'Hagaskolan', role: 'employee' }],
+    },
+  ],
+  'unit-omsorg': [
+    {
+      id: 'sara',
+      name: 'Sara Pettersson',
+      userName: 'sara.pettersson',
+      email: 'sara.pettersson@clew.test',
+      role: 'manager',
+      enabled: true,
+      below: [{ unitId: 'unit-omsorg-centrum', unitLabel: 'Hemtjänst Centrum', role: 'manager' }],
     },
   ],
 };

@@ -33,6 +33,7 @@ import { unitPageHref } from '../person-address';
 import { sourcePageHref } from '../talk-address';
 import { errorMessage } from '../query-policy';
 import { fieldText } from '../components/view';
+import { DOT } from '../dot';
 
 type Unit = EntityList['groups'][number]['entities'][number];
 type Answer = { data?: EntitySection; isPending: boolean; isError: boolean };
@@ -60,7 +61,7 @@ const cardLabel = (source: EntitySource) => {
   const measure = measureOf(source);
   return [source.title, measure === source.title ? null : measure, source.own ? 'Clew' : source.source]
     .filter(Boolean)
-    .join(' · ');
+    .join(DOT);
 };
 
 /** A column's heading: what the figure is ("Avvikelse mot budget") under the source's title, and where it comes from. */
@@ -70,7 +71,7 @@ function SourceHeader({ source }: { source: EntitySource }) {
     <VStack gap={0}>
       <Text weight="semibold">{source.title}</Text>
       <Text type="supporting" weight="normal">
-        {measure === source.title ? '' : `${measure} · `}
+        {measure === source.title ? '' : `${measure}${DOT}`}
         {source.own ? 'Clew' : source.source}
       </Text>
     </VStack>
@@ -179,7 +180,9 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
                 label={a.tone === 'alert' ? TONE_WORDS.alert.word : TONE_WORDS.warn.word}
               />
               <Text>
-                {a.source.title} · {a.word} –{' '}
+                {a.source.title}
+                {DOT}
+                {a.word} –{' '}
                 {a.units.map((u, i) => (
                   <Fragment key={u.key}>
                     {i > 0 && ', '}

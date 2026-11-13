@@ -94,7 +94,7 @@ for (const [layout, viewport] of [
       const open_ = dialog.getByRole('list', { name: 'Från det här samtalet' });
       await expect(open_.getByRole('listitem')).toHaveCount(2);
       await expect(open_.getByRole('button', { name: 'Klar: Boka in auskultation i årskurs 4' })).toBeVisible();
-      await expect(open_.getByText(/^Du · senast/)).toBeVisible();
+      await expect(open_.getByText(/^Du\s·\ssenast/)).toBeVisible();
       await expect(open_.getByText('Försenad', { exact: true })).toHaveCount(0);
       const done = dialog.getByRole('list', { name: 'Klara' });
       await expect(done).toContainText('Läsa in sig på den nya kursplanen');

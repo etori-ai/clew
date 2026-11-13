@@ -306,7 +306,7 @@ test.describe('D97 a hit about a person', () => {
       'href',
       'https://intra.example/rutin-samtal',
     );
-    await expect(document.getByText(/^Intranätet · HR-avdelningen/)).toBeVisible();
+    await expect(document.getByText(/^Intranätet\s·\sHR-avdelningen/)).toBeVisible();
     await expectNoAxeViolations(page);
     await name.focus();
     await page.keyboard.press('Enter');

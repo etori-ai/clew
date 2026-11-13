@@ -330,7 +330,7 @@ function PhoneRow({
               <Text type="supporting">
                 {[...words, ...links].map((part, i) => (
                   <Fragment key={i}>
-                    {i > 0 && ' · '}
+                    {i > 0 && '\u00a0· '}
                     {part}
                   </Fragment>
                 ))}

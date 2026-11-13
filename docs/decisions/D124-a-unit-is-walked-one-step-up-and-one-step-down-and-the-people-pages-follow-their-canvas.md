@@ -1,6 +1,6 @@
 # D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas
 
-**Status:** provisional (accepted when an administrator has found a unit's reporting line in the drawer of a directory with several hundred units, and the walk has passed a manual screen-reader pass); built: item 9, and of item 10 Personal's sizes and the hidden avatars in the unit drawer and on Personal, and of item 8 the work row and Användare's narrow list; nothing else is · **Date:** 2026-11-13 · **Area:** ui
+**Status:** provisional (accepted when an administrator has found a unit's reporting line in the drawer of a directory with several hundred units, and the walk has passed a manual screen-reader pass); built 2026-11-13, see "As built" · **Date:** 2026-11-13 · **Area:** ui
 
 **Context.** On 2026-11-12 the product owner asked for a more modern design of Administration › Organisation,
 Administration › Användare and the person card, drawn first in a canvas:
@@ -98,17 +98,61 @@ and 6) wait for D101. They are notes on the canvas, in this order of need:
   target sizes and forced colours, and reviewed by independent verifiers and an Impeccable finish review. The review
   records what was found, fixed and disputed. No screen reader has read it, which is why this record is provisional.
 
-**Not built.** The change that adds this record builds item 9, with the other fixes the review lists. Of item 10
-it builds Personal's sizes and the hidden avatars in the unit drawer and on Personal; the drawer's 36 and 48 and the
-person page's 72 come with items 2 and 6. Of item 8 it builds the work row and Användare's narrow list; the other
-separators in the web app still have a plain space. Items 1 to 7 are not built: the pages they change were being
-reworked by another review when this was decided, and the build follows when that has landed.
-When it is built, D99's item 6 and "As built", rule 7 of the interface-space rules, `tests/a11y/organisation.spec.ts`,
-`tests/a11y/users.spec.ts` and `tests/a11y/person.spec.ts` change with it.
+**As built.** The design review added the visible work state (item 9), the staff avatar sizes and decorative avatars
+(part of item 10), and kept the separator with the preceding word on the work row and narrow user list (part of item 8).
+The implementation completes items 1 to 8 and the remaining avatar sizes in item 10. Items 11 and 12 retain the
+neutral monogram and the shell layout. The canvas used D120 while it was drawn. This record is D124.
+
+- **Organisation** ([organisation.tsx](../../apps/web/src/pages/admin/organisation.tsx)). The overlay's content is
+  `UnitSheet`, drawn inside the Drawer or the BottomSheet so that `useAnnounce` speaks from inside the modal. A step
+  calls `navigate(…, { replace: true })`; the sheet focuses its heading and announces when its unit changes after a
+  step. "Enheter under" lists the units directly below that no reporting row names, since a unit named on a
+  reporting row is already the step down there. The tree's rows for the units above a shown unit are opened through
+  the tree's items. Astryx's `TreeList` keeps a branch the person folded by hand over what its items ask for, so when
+  the row to focus is not drawn the tree is given a new key and drawn again, open down to the row; what the person
+  had opened elsewhere in the tree is then folded to the roots and the path. The ledger's counts are inside the
+  row's label, in a column of 176 px, so they are in the row's name; a phone (below 768 px) keeps the sentence.
+- **Användare** ([users.tsx](../../apps/web/src/pages/admin/users.tsx)). The order is Personer, Behörigheter från
+  grupper, Inläsning från katalogen, each a region under its heading. A catalogue that does not read in is a banner
+  at the top with "Till katalogerna". The group picker stays the Typeahead that searches every group on the server
+  (D85), where the canvas drew a Selector; its error stands under it as its status. A mapping's capability is a
+  link that narrows the people to it.
+- **The person card** ([person.tsx](../../apps/web/src/pages/person.tsx),
+  [entity-page.tsx](../../apps/web/src/components/entity-page.tsx),
+  [view.tsx](../../apps/web/src/components/view.tsx)). `DeclaredView` takes `section`: under a section the mark row is
+  a small heading with the read's own title (level 3 in the outline), the rows are named by it, a list has no footer,
+  a state without a tone stands at the row's end in ordinary words, and a record does not repeat the name of the
+  person or unit the page is about. The unit page's short list has the same heading. An employment's share of full
+  time has Astryx's neutral `ProgressBar` under the words, hidden from assistive technology.
+- **The separator** ([dot.ts](../../packages/ui/src/dot.ts)). `DOT` is the one separator, and the lines the web app
+  and `@clew/ui` compose use it. Left with an ordinary space: the browser tab's title, tooltips and descriptions only
+  assistive technology reads, and lines a source or the server composed.
+
+Astryx, with no report sent (the product owner's standing decision):
+
+- `DrawerHeader` gives no ref to its heading and takes no `tabIndex`, and the heading is what takes the focus after a
+  step. The overlay's header is therefore composed of `LayoutHeader`, `Heading` and `IconButton` on the desktop too, as
+  the phone's sheet already was.
+- `TreeList` has no way to open a row from outside once the person has toggled it, hence the redraw above.
+- `Token` ends a label longer than its cell in an ellipsis and has no tooltip. In the people's table the two longest
+  capability names ("Administrera kompetenskatalogen", "Administrera anslutna system") are cut between 1267 and about
+  1310 px, as the canvas settled; the filter and the mappings table say the names whole.
+
+**Signed-in verification.** Two synthetic accounts signed in through an isolated Keycloak 26.2 realm after
+SCIM provisioned their people and groups on PostgreSQL 18.6. In Chromium the administrator walked the unit tree,
+returned focus to the expected row, checked the users table and list at 1280, 1267 and 1266 px, verified both empty
+mapping fields and their focus order, and opened the person card at 320 px. The manager saw their employee in
+Personal and the organisation administration endpoint returned 403 for that manager.
+
+**Pending verification.** A manual screen-reader pass on the walk, its announcement and the add form's errors,
+and finding a reporting line in a directory of several hundred units, remain the acceptance checks. The canvas's
+contact icons before "E-post" and each number, and the icon and chevron on "Tillhör", are not drawn. The values in
+`panel-labels.ts` are still lower case where the canvas gives a badge a capital ("giltigt" stays a word at the row's
+end; "Går ut snart" and "Utgånget" are the source's own values).
 
 **Replaces.** The order of the overlay in D99 item 6 (leaders, the others, the reporting line) and its "close back
 to the tree with the focus on the row", for the case where a step was taken. Rule 7 of the interface-space rules
 gets that one exception. The row of
 [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 3 gains the
 state's word (built). Item 6 redraws the person page of D112 item 5 and where D114 item 6 shows an employment's
-title (not built). Nothing is superseded.
+title. Nothing is superseded.

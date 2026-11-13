@@ -34,6 +34,7 @@ import { AddConnectorDialog } from './add';
 import { audienceLabel, kindLabel, statusOf } from './labels';
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
+import { DOT } from '../../dot';
 
 /**
  * "Anslutna system" (D23): every connector, bundled and remote, with its status, its audience and an on/off switch, in
@@ -56,7 +57,7 @@ const matches = (c: ConnectorSummary, f: Filter) =>
 /** How much a system can do, in words: what it can do at all on one line, what of that changes something or reaches the assistant on the other. */
 const functions = (c: ConnectorSummary) =>
   `${c.counts.capabilities} ${c.counts.capabilities === 1 ? 'funktion' : 'funktioner'}`;
-const reach = (c: ConnectorSummary) => `${c.counts.execute} utför · ${c.counts.tools} för assistenten`;
+const reach = (c: ConnectorSummary) => `${c.counts.execute} utför\u00a0· ${c.counts.tools} för assistenten`;
 interface Row extends Record<string, unknown> {
   id: string;
   c: ConnectorSummary;
@@ -65,7 +66,7 @@ interface Row extends Record<string, unknown> {
 const byOrdinal = (a: ConnectorSummary, b: ConnectorSummary) =>
   (a.ordinal ?? Infinity) - (b.ordinal ?? Infinity) || a.source.localeCompare(b.source, 'sv');
 /** The words under a system's name: its id, and "Clews egen" on the house's rows. */
-const idLine = (c: ConnectorSummary) => `${c.id}${c.ordinal === null ? ' · Clews egen' : ''}`;
+const idLine = (c: ConnectorSummary) => `${c.id}${c.ordinal === null ? '\u00a0· Clews egen' : ''}`;
 const EMPTY_CONNECTORS: ConnectorSummary[] = [];
 
 export function AdminConnectorsPage({ user }: { user: SessionUser }) {
@@ -126,7 +127,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
         <Text weight="semibold">{c.source}</Text>
         <Text type="supporting">
           {idLine(c)}
-          {c.kind ? ` · ${kindLabel[c.kind].toLowerCase()}` : ''}
+          {c.kind ? `\u00a0· ${kindLabel[c.kind].toLowerCase()}` : ''}
         </Text>
       </VStack>
     </HStack>
@@ -244,11 +245,15 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
                         <HStack gap={1} vAlign="center">
                           {status(c)}
                           <Text type="supporting">
-                            {statusOf(c).label} · {audienceLabel(c.audience)}
+                            {statusOf(c).label}
+                            {DOT}
+                            {audienceLabel(c.audience)}
                           </Text>
                         </HStack>
                         <Text type="supporting">
-                          {functions(c)} · {reach(c)}
+                          {functions(c)}
+                          {DOT}
+                          {reach(c)}
                         </Text>
                       </VStack>
                     }

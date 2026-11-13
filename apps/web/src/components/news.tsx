@@ -27,7 +27,7 @@ type NewsEntry = NewsResult['rows'][number];
  */
 function NewsRowItem({ row, hrefFor }: { row: NewsEntry; hrefFor: (view: ViewRef) => string }) {
   const key = row.connector + ':' + row.ref;
-  const line = [row.sender, publishedDay(row.publishedAt)].filter(Boolean).join(' · ');
+  const line = [row.sender, publishedDay(row.publishedAt)].filter(Boolean).join('\u00a0· ');
   const href = row.link ?? (row.view ? hrefFor(row.view) : undefined);
   if (!href)
     return (

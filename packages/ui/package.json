@@ -11,6 +11,7 @@
     "./branding": "./src/branding.ts",
     "./theme": "./src/theme.ts",
     "./locale": "./src/locale.ts",
+    "./dot": "./src/dot.ts",
     "./appearance-preference": "./src/appearance-preference.ts",
     "./styles.css": "./src/styles.css"
   },

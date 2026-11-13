@@ -87,7 +87,7 @@ export function Today({ view, threads = [], cardHref }: Props) {
                     {row.meta}
                     {talk && (
                       <>
-                        {' · '}
+                        {'\u00a0· '}
                         <Link href={`/conversations/${talk.id}`} color="secondary" hasUnderline>
                           underlaget ligger i samtalet
                         </Link>
@@ -95,7 +95,7 @@ export function Today({ view, threads = [], cardHref }: Props) {
                     )}
                     {card && cardHref && (
                       <>
-                        {' · '}
+                        {'\u00a0· '}
                         <Link href={cardHref(card.id)} color="secondary" hasUnderline>
                           från ärendet {card.title}
                         </Link>

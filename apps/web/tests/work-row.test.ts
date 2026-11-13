@@ -95,7 +95,7 @@ describe("a work item's row says its state in words (WCAG 1.4.1)", () => {
     expect(rowLine(rowFacts(none, NOW, TODAY))).toBe('Till kännedom\u00a0· påminnelsen väntar på schemaläggning');
     // With a reason the two are joined as before.
     expect(line({ timers: queued })).toBe(
-      'Till kännedom\u00a0· Ansökan kom 10 november kl. 16:40 · påminnelsen väntar på schemaläggning',
+      'Till kännedom\u00a0· Ansökan kom 10 november kl. 16:40\u00a0· påminnelsen väntar på schemaläggning',
     );
   });
 });
