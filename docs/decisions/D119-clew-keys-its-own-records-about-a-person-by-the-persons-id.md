@@ -164,7 +164,10 @@ looks each name up through it on its own, in a lateral subquery that stops at tw
 nobody: as one join of every name asked, a list of a few hundred names, as a manager's refresh or a declared view asks,
 was planned as a read of every person. A resolution therefore reads the holders of the names asked, however many;
 until 2026-11-13 every resolution read every person in the installation. `tests/db/user-reads.test.ts` checks the
-plans for a few names and for 300 on a database of a thousand people per organisation.
+plans for a few names and for 300 on a database of a thousand people per organisation. Migration 0058 brings older
+stored user names into the NFC form SCIM and sign-in compare. Each person keeps their id. Two people whose names
+would become equal need distinct names from the source owner before the upgrade can proceed
+([upgrade and recovery](../maintainers/reliability-operations.md#upgrading-scim-user-names)).
 Tests: `tests/unit/entities-cards.test.ts` (a renamed person keeps the cards that named them, a reused user name
 reaches only rows that arrive after, and a rename the source has not made rewrites a row and keeps a card's snooze),
 `tests/unit/entities-actions.test.ts` (an execute about a person erased since cannot be decided),

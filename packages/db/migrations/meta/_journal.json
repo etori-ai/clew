@@ -407,6 +407,13 @@
       "when": 1794570307823,
       "tag": "0057_session_refresh_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794572040000,
+      "tag": "0058_normalize_stored_user_names",
+      "breakpoints": true
     }
   ]
 }

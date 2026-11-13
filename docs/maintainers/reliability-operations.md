@@ -90,6 +90,28 @@ constraint is `INITIALLY DEFERRED`: `pg_constraint` lists exactly these 11 trigg
 including `dbos`. A migration that adds a `DEFERRABLE INITIALLY IMMEDIATE` constraint names the constraints it sets
 instead of using `ALL`.
 
+### Upgrading SCIM user names
+
+Migration 0058 composes existing `user_name` values into Unicode NFC. Each changed person keeps their Clew id,
+source id and sign-in binding, receives a new SCIM modification time and has one `person.user_name_normalized`
+audit row. The migration holds writes to `auth_person` while it checks names across the installation and updates them.
+
+Run this preflight before upgrading from a release that stored user names as sent. It also finds the case-only
+collisions that can stop the ICU unique index in migration 0054 on an older database created with locale C.
+
+```sql
+SELECT array_agg(id ORDER BY id) AS person_ids
+FROM auth_person
+WHERE user_name IS NOT NULL
+GROUP BY lower(normalize(user_name, NFC) COLLATE "und-x-icu")
+HAVING count(*) > 1;
+```
+
+For each result, ask the directory owner which distinct account name belongs to each person, including leavers.
+Correct the source and apply the approved name to the existing SCIM resource by its Clew id. Repeat the preflight,
+then run `bun run db:init`. Migration 0058 checks again under its lock. A collision raises SQLSTATE 23505 and rolls
+back the pending migrations. The same repair and retry apply after that refusal.
+
 ## The ledger queue
 
 Since D86 a workflow is started by the transaction that commits its intent: `select dbos.enqueue_workflow(...)` on the same connection, into the application's ledger queue (`clew.ledger` for the application the server launches as; queue names are unique across the applications sharing a system database, so a test engine has its own). There is no outbox to retry and no loop to restart. What to check instead:
