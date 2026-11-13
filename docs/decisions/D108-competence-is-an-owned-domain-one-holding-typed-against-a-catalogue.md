@@ -190,8 +190,12 @@ and a manager's attestation exists nowhere else.
   has not been read.
 - The key on the wire for item 10, `externalId` or `userName` (D97, open), and which way ID06 is read; its interface
   has not been read.
-- How a deactivation reaches an owned domain to start item 14's timer. Talks has the same need and is erased by an
+- Settled 2026-11-13 for competence: a deactivation reaches the domain through the people module's `leavers` port,
+  inside the provisioning transaction. Talks has the same need, does not use the port, and is erased by an
   operator's script today.
+- Whether erasure should also reach the audit rows. `competence.holding_registered`, `holding_submitted`,
+  `skill_rated` and `skill_validated` record the type, the dates and the level beside the person's id, the person
+  stays in the directory (D68), and so the audit log still tells what the erased register told.
 - Who approves a registration from a person who reports to nobody, and what a manager sees when a person moves to
   them: every holding, or those registered since.
 - Whether a position should follow a placement, for a person who is a machine operator on one unit and an
