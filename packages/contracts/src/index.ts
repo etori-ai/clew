@@ -49,6 +49,12 @@ export interface AuthenticatedContext extends SessionUser {
    * (D44, D97). Absent for a person provisioned without one. Never in `SessionUser`.
    */
   userName?: string;
+  /**
+   * The units the person follows up (D117): those they manage and those of the managers who report to them (D99's
+   * reporting line), set where a read needs them and signed into a connector's actor, so a source can answer for the
+   * units below the reader and refuse the rest. Absent where nobody set them; a connector then knows `unitId` alone.
+   */
+  units?: Array<{ unitId: string; unitLabel: string }>;
   authorizationVersion: string;
   sessionBinding: string;
   expiresAt: string;
@@ -1494,7 +1500,7 @@ export const EntityDetailSchema = object({
     /**
      * A person's unit: the reader's own for the reader, the unit the reader manages that the person is placed on, else
      * the person's own, also for someone who reports to the reader from below (D99). `opens` when the reader may open
-     * the unit's page (`/units/<id>`): a unit they manage or belong to.
+     * the unit's page (`/units/<id>`): a unit they manage or belong to, or one below whose manager reports to them (D117).
      */
     unit: Type.Optional(object({ id: Type.String(), label: Type.String(), opens: Type.Optional(Type.Literal(true)) })),
   }),
@@ -1503,7 +1509,13 @@ export const EntityDetailSchema = object({
     Type.Literal('self'),
     Type.Literal('colleague'),
     Type.Literal('member'),
+    // A unit whose manager reports to the reader (D99's reporting line, D117).
+    Type.Literal('below'),
   ]),
+  /** For a unit: the units under it whose managers report to the reader, each a page of its own (D117). */
+  below: Type.Optional(Type.Array(object({ key: Type.String(), name: Type.String() }), { maxItems: 200 })),
+  /** For a unit below the reader (`below`): the reader's own unit its manager reports to, the way up (D117). */
+  above: Type.Optional(object({ key: Type.String(), name: Type.String() })),
   actions: Type.Array(EntityActionSchema),
   sections: Type.Array(EntitySourceSchema),
   cards: Type.Array(EntityCardSchema),

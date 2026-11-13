@@ -24,6 +24,12 @@ export interface CapabilityRouteDeps {
   run(persona: AuthenticatedContext, name: string, input: unknown): Promise<unknown>;
   /** Whose a source's key is (D119): a record that names a person by user name links to them by id. Absent: nobody. */
   people?: Pick<PersonKeys, 'holders'>;
+  /**
+   * The person a read runs as: with the units they follow up below their own (`withFollowedUnits`, D117), so a view
+   * opened for such a unit can be answered. Whether they may know of the capability is still asked as the session's
+   * person. Absent: the session's person.
+   */
+  follow?(persona: AuthenticatedContext): Promise<AuthenticatedContext>;
   /** The session guard of a test; inside the API its own guard stands in front. */
   guard?: MiddlewareHandler<Env>;
 }
@@ -48,13 +54,15 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
       }
     }
     // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
-    const output = await run(persona, name, input);
-    const view = registry.viewFor(audiencedActorOf(persona), name);
+    // As the person with the units they follow up (D117), so a view opened for a unit below them can be answered.
+    const reader = deps.follow ? await deps.follow(persona) : persona;
+    const output = await run(reader, name, input);
+    const view = registry.viewFor(audiencedActorOf(reader), name);
     // A record that names a person links to them by id (D119).
     return c.json({
       output,
       source: found.connector.source,
-      ...(view ? { view: await viewWithPeople(people, persona, view, output) } : {}),
+      ...(view ? { view: await viewWithPeople(people, reader, view, output) } : {}),
     });
   });
   routes.post('/:name', async c => {

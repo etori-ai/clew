@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**112 in force**: 96 accepted and 16 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
+**114 in force**: 96 accepted and 18 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -26,6 +26,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) | 2026-11-10 | accepted | [D101](README.md) |
 | [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | 2026-11-10 | provisional |  |
 | [D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) | 2026-11-10 | provisional |  |
+| [D117 · A manager follows up the units of the managers who report to them, and a source is told those units](D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md) | 2026-11-13 | provisional |  |
 
 ## Integrations
 
@@ -137,13 +138,14 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D74 · One page header for every surface](D74-one-page-header-for-every-surface.md) | 2026-11-07 | accepted |  |
 | [D76 · Loading sections reserve their place and enter together](D76-loading-sections-reserve-their-place-and-enter-together.md) | 2026-11-07 | accepted |  |
 | [D83 · Interface spaces have stable navigation roles](D83-interface-spaces-have-stable-navigation-roles.md) | 2026-11-09 | accepted | [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) |
-| [D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) | 2026-11-09 | accepted |  |
+| [D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) | 2026-11-09 | accepted | [D116](D116-start-and-the-row-under-it-are-clews.md) |
 | [D90 · Mina ärenden is a section on Hem, after the day's work](D90-mina-arenden-is-a-section-on-hem.md) | 2026-11-09 | accepted |  |
 | [D92 · What goes into the box enters on Astryx's entry motion](D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md) | 2026-11-09 | accepted |  |
 | [D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) | 2026-11-10 | accepted |  |
 | [D100 · The people list is read a page at a time and narrowed on the server](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) | 2026-11-11 | provisional | [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) |
 | [D111 · Where something opens is decided by what it is, never by the page it was clicked on](D111-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional | [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) |
 | [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional |  |
+| [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
 
 ## Proposed, not decided
 

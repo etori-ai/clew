@@ -2,8 +2,8 @@ import { desktop, expect, expectNoAxeViolations, open, openNav, phone, reflowPro
 import type { SiteHeaderView } from '@clew/contracts';
 
 /**
- * The shared header on the web app (D88): the band with the installation's name, the places the person's header
- * connector lists and the current place's own pages under the band; the rail stays Clew's. Keyboard, structure, axe
+ * The shared header on the web app (D88): the band with the installation's name, Clew's Start with Clew's own pages
+ * under it (D116; the server puts it first) and the places the person's header connector lists; the rail stays Clew's. Keyboard, structure, axe
  * and reflow, at desktop, phone and 1024 px.
  */
 const fromConnector = (): SiteHeaderView => ({
@@ -15,9 +15,11 @@ const fromConnector = (): SiteHeaderView => ({
         id: 'start',
         label: 'Start',
         href: '/',
+        // As the server answers since D116: Clew's own pages under Start, whatever the connector listed there.
         children: [
+          { id: 'hem', label: 'Hem', href: '/' },
+          { id: 'att-gora', label: 'Att göra', href: '/todo' },
           { id: 'kalender', label: 'Kalender', href: '/calendar' },
-          { id: 'kort', label: 'Mina kort', href: '/?tab=waiting' },
         ],
       },
       { id: 'organisation', label: 'Organisation', href: 'https://intranat.example.se/organisation' },
@@ -58,10 +60,11 @@ test.describe('the shared header on every page', () => {
       'https://intranat.example.se/organisation',
     );
     await expect(places.getByRole('link', { name: 'Service, IT och lokaler' })).toBeVisible();
-    // The row under the band: Start's own pages, the page's own marked.
+    // The row under the band: Clew's pages under Start (D116), the page's own marked.
     const pages = banner.getByRole('navigation', { name: 'Start', exact: true });
     await expect(pages.getByRole('link', { name: 'Kalender' })).toHaveAttribute('aria-current', 'page');
-    await expect(pages.getByRole('link', { name: 'Mina kort' })).toHaveAttribute('href', '/?tab=waiting');
+    await expect(pages.getByRole('link', { name: 'Att göra' })).toHaveAttribute('href', '/todo');
+    await expect(pages.getByRole('link', { name: 'Hem' })).toHaveAttribute('href', '/');
     await expect(banner.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeVisible();
     await expect(banner.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true })).toBeVisible();
     // The rail stays the rail: Clew's own places, nothing of the header's, and no heading or person of its own, since

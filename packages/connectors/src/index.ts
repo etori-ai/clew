@@ -87,7 +87,11 @@ export type ConnectorKind = 'core' | 'passthrough' | 'derived';
  * The caller as capabilities see it: identity and scope, never tokens. `userName` is the person's provisioned directory
  * user name, signed into a connector's actor (D44) as the key other systems know them by (D97); absent without one.
  */
-export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'> & { userName?: string };
+export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'> & {
+  userName?: string;
+  /** The units the person follows up (D117), when the call has them. */
+  units?: Array<{ unitId: string; unitLabel: string }>;
+};
 /** An actor with the provisioned groups the authenticated context carries (D68); a bare actor has none. */
 export type AudiencedActor = Actor & { groups?: readonly string[] };
 /**
@@ -101,6 +105,7 @@ export const actorOf = (persona: Actor): Actor => ({
   unitLabel: persona.unitLabel,
   role: persona.role,
   ...(persona.userName ? { userName: persona.userName } : {}),
+  ...(persona.units?.length ? { units: persona.units.map(u => ({ unitId: u.unitId, unitLabel: u.unitLabel })) } : {}),
 });
 /**
  * The actor inside Clew's process: the published actor and the person's provisioned groups, which an audience's

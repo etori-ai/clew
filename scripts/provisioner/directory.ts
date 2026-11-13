@@ -6,7 +6,7 @@ import type { Capability } from '../../packages/contracts/src/scim-group-key';
  * `unit-manager:` groups; may work in or manage further units; may be in plain directory groups, which mean nothing in
  * Clew until an administrator maps one to a capability (D85) or names it in an audience (D23); and may hold Clew
  * capabilities that become `capability:` groups; and may have several current employments, each with its own unit and title (D114). Two hundred and fifty people in forty-eight
- * units: three personas with a Keycloak account (`login`), seven written by hand for the names a real directory
+ * units: four personas with a Keycloak account (`login`), seven written by hand for the names a real directory
  * holds, and the rest generated deterministically, so every manager has a team, the users page has something to page
  * and a group has anything from no members to eighty.
  *
@@ -184,6 +184,7 @@ const UNITS: UnitPlan[] = [
     size: area === 'utbildning' ? 2 : 1,
     parent: ROOT,
   })),
+  // Its one person is Ingrid, the persona who leads it (D117).
   { id: 'unit-grundskola', label: 'Grundskola', area: 'utbildning', size: 1, parent: areaUnit('utbildning') },
   { id: 'unit-hemtjanst', label: 'Hemtjänst', area: 'omsorg', size: 0, parent: areaUnit('omsorg') },
   { id: 'unit-skola-fritids', label: 'Bergsåkers fritidshem', area: 'utbildning', size: 2, parent: 'unit-skola' },
@@ -340,7 +341,9 @@ const MEMBERSHIPS: Array<[group: string, when: (seat: Seat) => boolean]> = [
   ['ad:systemforvaltare', s => !s.manager && (s.unit.id === 'unit-it' || (s.n === 1 && s.unit.area === 'ledning'))],
 ];
 // Hillevi is the manager persona (rektor); Hassan the employee persona (undersköterska, mobile); Mikael the
-// systemförvaltare persona: administration is a capability, not a work role (D23, D85).
+// systemförvaltare persona: administration is a capability, not a work role (D23, D85); Ingrid the manager one level
+// up, the verksamhetschef of Grundskola whom the rektorer report to, so the follow-up of the units below can be tried
+// (D117).
 const personas: DirectoryPerson[] = [
   {
     active: true,
@@ -406,6 +409,20 @@ const personas: DirectoryPerson[] = [
     manager: false,
     groups: ['ad:intranat-redaktorer'],
     capabilities: ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'],
+    login: true,
+  },
+  {
+    active: true,
+    externalId: 'dev:ingrid',
+    userName: 'ingrid',
+    givenName: 'Ingrid',
+    familyName: 'Holm',
+    email: 'ingrid@clew.test',
+    employments: [{ unitId: 'unit-grundskola', title: 'Verksamhetschef' }],
+    department: 'unit-grundskola',
+    manager: true,
+    groups: ['ad:alla-chefer'],
+    capabilities: [],
     login: true,
   },
 ];

@@ -9,6 +9,8 @@ import {
   staffUsecases,
   usersAdminUsecases,
 } from '../modules/people/usecases';
+import type { AuthenticatedContext } from '@clew/contracts';
+import { followedUnits } from '../modules/entities/domain';
 import { randomToken, tokenDigest } from '../auth-crypto';
 import { clock, ids } from './ambient';
 
@@ -49,3 +51,19 @@ export const personErasure = personErasureUsecases({ store: postgresProvisionSto
 export const organisation = organisationUsecases({ store: postgresProvisionStore() });
 /** Personal (D94, D99): the signed-in manager's reports, read only. */
 export const staff = staffUsecases({ store: postgresProvisionStore() });
+
+const followed = new WeakMap<AuthenticatedContext, Promise<AuthenticatedContext>>();
+/**
+ * The person with the units they follow up (D117), for a read a source may answer for those units: a manager's own and
+ * the units of the managers who report to them (D99), from the same reach as Personal and the unit's page. Read once per
+ * request (the context is the request's); an employee follows up nothing below and is passed on as they are.
+ */
+export function withFollowedUnits(persona: AuthenticatedContext): Promise<AuthenticatedContext> {
+  if (persona.role !== 'manager') return Promise.resolve(persona);
+  let found = followed.get(persona);
+  if (!found) {
+    found = staff.reach(persona).then(reach => ({ ...persona, units: followedUnits(reach) }));
+    followed.set(persona, found);
+  }
+  return found;
+}

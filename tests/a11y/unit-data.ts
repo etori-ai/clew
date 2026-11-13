@@ -22,6 +22,8 @@ export const TREND = 'qlik.sickLeaveTrend';
 export const TALK_UNITS = 'clew.talkUnits';
 /** A unit the reader belongs to and does not manage: no Personal, no "du är chef". */
 export const MEMBER_UNIT = { id: 'unit-ledning', label: 'Rektorernas ledningsgrupp' };
+/** A unit under the school whose manager reports to the reader (D117): its page says so, and the school lists it. */
+export const BELOW_UNIT = { id: 'unit-skola-fritids', label: 'Bergsåkers fritidshem' };
 
 /** The Qlik connector's read about a unit (`connectors/qlik/manifest.mjs`), under its own name. */
 export const sickSource: EntitySource = {
@@ -135,6 +137,8 @@ export class Units {
   /** The school's actions and the reader's cards about it; none unless a test gives them (`unitAction`, `unitCard`). */
   actions: EntityAction[] = [];
   cards: EntityCard[] = [];
+  /** Whether the school has the fritidshem under it in the reader's reporting line (D117); none unless a test says so. */
+  withBelow = false;
   detail(id: string): EntityDetail | undefined {
     if (id === ENTITY_UNIT.id)
       return {
@@ -146,9 +150,25 @@ export class Units {
           id: ENTITY_UNIT.id,
         },
         relation: 'member',
+        ...(this.withBelow ? { below: [{ key: BELOW_UNIT.id, name: BELOW_UNIT.label }] } : {}),
         actions: this.actions,
         sections: [sickSource, talkUnitSource],
         cards: this.cards,
+      };
+    if (this.withBelow && id === BELOW_UNIT.id)
+      return {
+        entity: {
+          kind: 'unit',
+          key: BELOW_UNIT.id,
+          sourceKey: BELOW_UNIT.id,
+          name: BELOW_UNIT.label,
+          id: BELOW_UNIT.id,
+        },
+        relation: 'below',
+        above: { key: ENTITY_UNIT.id, name: ENTITY_UNIT.label },
+        actions: [],
+        sections: [talkUnitSource],
+        cards: [],
       };
     if (id === MEMBER_UNIT.id)
       return {
@@ -178,6 +198,39 @@ export class Units {
     if (api) api.unitDetailOf = id => this.detail(id);
     const missing = (route: Route) =>
       route.fulfill({ status: 404, json: { error: 'Enheten finns inte.', code: 'not_found' } });
+    // The units the reader follows up (D117), for the trail's menu: the school, and with `withBelow` two units below it.
+    await page.route(
+      url => url.pathname === '/api/entities/unit',
+      route =>
+        route.fulfill({
+          json: {
+            kind: 'unit',
+            groups: [
+              {
+                id: 'units',
+                label: 'Mina enheter',
+                entities: [{ kind: 'unit', key: ENTITY_UNIT.id, name: ENTITY_UNIT.label }],
+              },
+              ...(this.withBelow
+                ? [
+                    {
+                      id: 'below',
+                      label: 'Enheter under dig',
+                      entities: [
+                        { kind: 'unit', key: BELOW_UNIT.id, name: BELOW_UNIT.label },
+                        { kind: 'unit', key: 'unit-skola-haga', name: 'Hagaskolan' },
+                      ],
+                    },
+                  ]
+                : []),
+            ],
+            lenses: [],
+            columns: [],
+            actions: [],
+            attention: [],
+          },
+        }),
+    );
     await page.route(
       url => /^\/api\/entities\/unit\/[^/]+(\/section)?$/.test(url.pathname),
       async route => {

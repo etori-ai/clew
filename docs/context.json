@@ -1033,7 +1033,7 @@
       "number": 88,
       "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
       "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
-      "status": "accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too; items 4 and 5 amended 2026-11-13 in the fixes of the gaps that review left: a holder that fails, a 401 for Clew's key or assertion included, leaves the last good header in place for up to an hour, a holder that refuses the person with a 403 takes their places away at that answer, which the conformance check takes as an answer, and who may have the header is decided at every read",
+      "status": "accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too; items 4 and 5 amended 2026-11-13 in the fixes of the gaps that review left: a holder that fails, a 401 for Clew's key or assertion included, leaves the last good header in place for up to an hour, a holder that refuses the person with a 403 takes their places away at that answer, which the conformance check takes as an answer, and who may have the header is decided at every read; Start and the row under it are Clew's since [D116](D116-start-and-the-row-under-it-are-clews.md) (provisional, 2026-11-13), the connector gives the other places",
       "date": "2026-11-09",
       "area": "ui, product, integrations"
     },
@@ -1306,6 +1306,24 @@
       "status": "provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet; item 3 amended 2026-11-12 in the fixes of the review of users and the organisation (S8, Q2): blank addresses are left out before one is chosen, and the primary work address is taken before the first; the section on work placements, first written the same day with [the note on municipal employment](../reviews/2026-11-12-municipal-employment-and-work-placements.md), which names nobody who chose it, was settled in the same fixes, whose open decisions the product owner asked the work to take (X4, X5): a work placement is not a placement in the sense of [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md), is not sent today and gives no access or reporting line, and a person who must act at another unit gets a `unit:` membership there",
       "date": "2026-11-12",
       "area": "identity, ui"
+    },
+    {
+      "key": "D116-start-and-the-row-under-it-are-clews",
+      "number": 116,
+      "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
+      "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository)",
+      "date": "2026-11-13",
+      "area": "ui, integrations"
+    },
+    {
+      "key": "D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them",
+      "number": 117,
+      "path": "docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md",
+      "title": "D117 · A manager follows up the units of the managers who report to them, and a source is told those units",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice)",
+      "date": "2026-11-13",
+      "area": "product, integrations"
     },
     {
       "key": "D118-a-sign-in-follows-the-identity-providers-session",
@@ -1911,6 +1929,18 @@
       "headings": [
         "Employment and work placement in a municipality"
       ]
+    },
+    {
+      "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
+      "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md",
+      "title": "D117 · A manager follows up the units of the managers who report to them, and a source is told those units",
+      "category": "decision-history",
+      "headings": []
     },
     {
       "path": "docs/decisions/D118-a-sign-in-follows-the-identity-providers-session.md",
@@ -3958,6 +3988,22 @@
         "Recommendation",
         "The choice, and its answer",
         "Validation"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-12-absorbing-big-boss-board-into-clew.md",
+      "title": "Plan: absorbing big-boss-board (Dialogstöd) into Clew · 2026-11-12",
+      "category": "review-history",
+      "headings": [
+        "What was asked",
+        "Changed the same day",
+        "Sources read",
+        "What bbb is",
+        "Where each part goes in Clew",
+        "Decisions this plan rests on",
+        "Phases",
+        "Behaviour that changes for bbb's users",
+        "Risks"
       ]
     },
     {

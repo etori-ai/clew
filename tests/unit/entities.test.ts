@@ -2,6 +2,7 @@ import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, EntityCard, Subject } from '../../packages/contracts/src/index';
 import {
+  actorOf,
   audiencedActorOf,
   openGovernance,
   type Actor,
@@ -12,7 +13,7 @@ import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapt
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { checkRows, chunk, isKey, listedKeys, managedPerson } from '../../apps/server/src/modules/entities/domain';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
-import type { EntityBudget, ManagedPerson } from '../../apps/server/src/modules/entities/model';
+import type { DirectoryPerson, EntityBudget } from '../../apps/server/src/modules/entities/model';
 
 /**
  * Entities (D97) as the person meets them: the real registry with small in-test sources that declare `about`, the
@@ -318,10 +319,10 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
   });
   test("a person on the reader's cards is found on the first card that places them, else on the first they report to from below (D99, W1)", () => {
     const sara = { id: 'sara', name: 'Sara Ek', userName: 'sara', enabled: true };
-    const fromBelow = { ...sara, below: [{ unitId: 'depa', unitLabel: 'Arkivdepån' }] };
-    const card = (unitId: string, unitLabel: string, people: ManagedPerson[]) => ({ unitId, unitLabel, people });
+    const fromBelow = { ...sara, below: [{ unitId: 'depa', unitLabel: 'Arkivdepån', role: 'employee' as const }] };
+    const card = (unitId: string, unitLabel: string, people: DirectoryPerson[]) => ({ unitId, unitLabel, people });
     const arkivet = card('arkiv', 'Arkivet', [fromBelow]);
-    // Placed on two cards and reporting from below on one before them: the first card that places her.
+    // Placed on two cards and reporting from below on one before them: the first card that places the person.
     expect(
       managedPerson(
         {
@@ -331,7 +332,7 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
         'sara',
       ),
     ).toEqual({ person: sara, unit: { unitId: 'skola', unitLabel: 'Bergsåkers skola' }, placed: true });
-    // Only from below: the first such card, which does not say where she works.
+    // Only from below: the first such card, which does not say where the person works.
     expect(
       managedPerson({ units: [], managed: [arkivet, card('bad', 'Badhuset', [{ ...fromBelow }])] }, 'sara'),
     ).toEqual({ person: fromBelow, unit: { unitId: 'arkiv', unitLabel: 'Arkivet' }, placed: false });
@@ -724,32 +725,42 @@ describe('the opened person or unit', () => {
       opens: true,
     });
   });
-  test('someone who reports to the reader from below is shown on their own unit, which opens only for a reader who manages or belongs to it (D99, W1)', async () => {
+  test('someone who reports to the reader from below is shown on their own unit, which opens as its page does: for a reader who manages, belongs to or follows it up (D99, D117, W1)', async () => {
     const people = directory();
-    // Fritidshemmet stands under the school and Lena leads it, so she reports to Hillevi from below.
+    // Fritidshemmet stands under the school and Lena leads it, so she reports to Hillevi from below and Hillevi follows
+    // the unit up (D117). Köket stands under the school too and nobody leads it, so Kim, placed there, reports to
+    // Hillevi from below, but Köket is not a unit Hillevi follows up.
     people.node('unit-skola', 'Bergsåkers skola', null);
     people.node('unit-fritids', 'Fritidshemmet', 'unit-skola');
+    people.node('unit-kok', 'Köket', 'unit-skola');
     people.place({ id: 'lena', name: 'Lena Berg', userName: 'lena' }, 'unit-fritids', 'manager');
+    people.place({ id: 'kim', name: 'Kim Ek', userName: 'kim' }, 'unit-kok', 'employee');
     const w = world([connector('hr', 'Personalsystemet', [aboutRead('hr.absence', 'Frånvaro')])], {
       directory: people,
     });
     const hillevi = people.persona('hillevi');
     const lena = await w.entities.detail(hillevi, 'person', 'lena');
     expect(lena).toMatchObject({ relation: 'managed', entity: { key: 'lena', detail: 'Fritidshemmet' } });
-    expect(lena?.entity.unit).toEqual({ id: 'unit-fritids', label: 'Fritidshemmet' });
-    // A colleague who opens her reads the same unit.
+    expect(lena?.entity.unit).toEqual({ id: 'unit-fritids', label: 'Fritidshemmet', opens: true });
+    expect((await w.entities.detail(hillevi, 'unit', 'unit-fritids'))?.relation).toBe('below');
+    // A colleague who opens Lena reads the same unit, which is not theirs to open.
     expect((await w.entities.detail(people.persona('hassan'), 'person', 'lena'))?.entity.unit).toEqual({
       id: 'unit-fritids',
       label: 'Fritidshemmet',
     });
-    // Placed on Fritidshemmet as well, Hillevi belongs to it, and its page opens for her.
+    // Kim's unit is not one Hillevi may open, and the link is not drawn.
+    const kim = await w.entities.detail(hillevi, 'person', 'kim');
+    expect(kim).toMatchObject({ relation: 'managed', entity: { key: 'kim', detail: 'Köket' } });
+    expect(kim?.entity.unit).toEqual({ id: 'unit-kok', label: 'Köket' });
+    expect(await w.entities.detail(hillevi, 'unit', 'unit-kok')).toBeUndefined();
+    // Placed on Köket as well, Hillevi belongs to it, and its page opens for her.
     people.state.assignments.set('hillevi', [
       ...people.state.assignments.get('hillevi')!,
-      { unitId: 'unit-fritids', role: 'employee' },
+      { unitId: 'unit-kok', role: 'employee' },
     ]);
-    expect((await w.entities.detail(hillevi, 'person', 'lena'))?.entity.unit).toEqual({
-      id: 'unit-fritids',
-      label: 'Fritidshemmet',
+    expect((await w.entities.detail(hillevi, 'person', 'kim'))?.entity.unit).toEqual({
+      id: 'unit-kok',
+      label: 'Köket',
       opens: true,
     });
   });
@@ -1050,4 +1061,113 @@ test('a source for one provisioned group only is asked for its members and is no
   expect(await w.entities.section(outsider, 'person', 'anna', 'hr.skills')).toBeUndefined();
   expect(await w.entities.detail(outsider, 'person', 'anna')).toMatchObject({ sections: [], actions: [] });
   expect(calls).toHaveLength(asked);
+});
+
+/**
+ * The units below the reader (D117): Ingrid leads Grundskola, the unit above the school Hillevi leads (D99's tree), so
+ * Hillevi reports to her and the school is a unit Ingrid follows up. Ingrid opens it and sees it listed under her own;
+ * nobody opens a unit above them, and a source is asked about the units below like any other.
+ */
+describe('the units below the reader (D117)', () => {
+  function withIngrid(w: ReturnType<typeof standard>) {
+    const s = w.people.state;
+    const group = (id: string, unitId: string, label: string, parentUnitId: string | null) =>
+      s.groups.set(id, {
+        id,
+        organisationId: 'poc',
+        externalId: 'unit:' + unitId,
+        label,
+        parentUnitId,
+        createdAt: T,
+        updatedAt: T,
+      });
+    s.units.set('unit-grundskola', { organisationId: 'poc', label: 'Grundskola' });
+    group('g-grundskola', 'unit-grundskola', 'Grundskola', null);
+    group('g-skola', 'unit-skola', 'Bergsåkers skola', 'unit-grundskola');
+    s.users.set('ingrid', {
+      id: 'ingrid',
+      organisationId: 'poc',
+      externalId: 'dev:ingrid',
+      userName: 'ingrid',
+      name: 'Ingrid Holm',
+      email: null,
+      phoneNumbers: [],
+      employments: [],
+      title: null,
+      enabled: true,
+      createdAt: T,
+      updatedAt: T,
+    });
+    s.assignments.set('ingrid', [{ unitId: 'unit-grundskola', role: 'manager' }]);
+    s.grants.set('ingrid', { unitId: 'unit-grundskola', unitLabel: 'Grundskola', role: 'manager', capabilities: [] });
+    return w.people.persona('ingrid');
+  }
+  test('Ingrid opens her own unit with the school under it, and the school as a unit whose manager reports to her', async () => {
+    const w = standard();
+    const ingrid = withIngrid(w);
+    expect(await w.entities.detail(ingrid, 'unit', 'unit-grundskola')).toMatchObject({
+      relation: 'member',
+      below: [{ key: 'unit-skola', name: 'Bergsåkers skola' }],
+    });
+    const school = await w.entities.detail(ingrid, 'unit', 'unit-skola');
+    expect(school).toMatchObject({
+      relation: 'below',
+      entity: { kind: 'unit', key: 'unit-skola' },
+      above: { key: 'unit-grundskola', name: 'Grundskola' },
+    });
+    expect(school?.below).toBeUndefined();
+    // Nothing further than the reporting line, and nothing upward.
+    expect(await w.entities.detail(ingrid, 'unit', 'unit-omsorg')).toBeUndefined();
+    expect(await w.entities.detail(w.people.persona('hillevi'), 'unit', 'unit-grundskola')).toBeUndefined();
+    expect((await w.entities.detail(w.people.persona('hillevi'), 'unit', 'unit-skola'))?.relation).toBe('member');
+  });
+  test('the list of units has her own and the ones below, and a source is asked about the unit below', async () => {
+    const calls: string[][] = [];
+    const w = world([
+      connector('hr', 'Personalsystemet', [aboutRead('hr.staffing', 'Bemanning', { calls, entity: 'unit' })]),
+    ]);
+    const ingrid = withIngrid(w as ReturnType<typeof standard>);
+    expect((await w.entities.list(ingrid, 'unit')).groups).toEqual([
+      {
+        id: 'units',
+        label: 'Mina enheter',
+        entities: [
+          {
+            kind: 'unit',
+            key: 'unit-grundskola',
+            sourceKey: 'unit-grundskola',
+            name: 'Grundskola',
+            id: 'unit-grundskola',
+          },
+        ],
+      },
+      {
+        id: 'below',
+        label: 'Enheter under dig',
+        entities: [
+          { kind: 'unit', key: 'unit-skola', sourceKey: 'unit-skola', name: 'Bergsåkers skola', id: 'unit-skola' },
+        ],
+      },
+    ]);
+    expect(await w.entities.section(ingrid, 'unit', 'unit-skola', 'hr.staffing')).toMatchObject({
+      status: 'ok',
+      row: { key: 'unit-skola' },
+    });
+    expect(calls).toContainEqual(['unit-skola']);
+  });
+  test('the units a person follows up travel with the actor when a call has them, and not otherwise', () => {
+    const base = {
+      id: 'ingrid',
+      name: 'Ingrid Holm',
+      unitId: 'unit-grundskola',
+      unitLabel: 'Grundskola',
+      role: 'manager' as const,
+    };
+    expect(actorOf(base)).toEqual(base);
+    const units = [
+      { unitId: 'unit-grundskola', unitLabel: 'Grundskola' },
+      { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola' },
+    ];
+    expect(actorOf({ ...base, units }).units).toEqual(units);
+  });
 });

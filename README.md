@@ -4,6 +4,8 @@ Clew is an open-source workspace for an employee's work across systems. It bring
 
 An employee can find a colleague, check their calendar, review an invoice or follow up a task without first choosing which system to open. Source systems keep their business records. Clew owns the coordination: who may see the work, what the person approved, what happened afterwards and when to bring it back. This includes tasks that need changes in several systems, assembled into one proposal with one approval and a separate outcome for each system.
 
+Follow the [development board](https://github.com/orgs/etori-ai/projects/1/views/1) for the outcomes Clew is working toward and what still needs to be tried. The [tasks and experiments](https://github.com/orgs/etori-ai/projects/1/views/2) show the individual changes and trials behind them.
+
 ## How it fits together
 
 Clew has a web application, a modular backend and independently deployed connectors. A **connector** translates a source system into named operations and data that Clew understands. Its manifest describes those operations and how read results can be displayed. Clew supplies the interface and checks access on every invocation.

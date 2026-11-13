@@ -5,7 +5,8 @@
  * services are reachable by name, after `bun run auth:setup`: that creates the key the secrets are sealed with and the
  * people the holdings are for. `bun run dev:connectors` again fills missing registrations. Existing configuration is preserved; refresh manifests explicitly in administration. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
  * Last it makes the administrator's choice for Personal (D97) that the canvas draws, while nobody has chosen any:
- * `ENTITY_CHOICE`, through the same use case as Administration › Anslutna system.
+ * `ENTITY_CHOICE`, through the same use case as Administration › Anslutna system. When it first adds the Qlik connector it
+ * switches off the figures that connector replaces on Hem (`FIGURES_OFF`), by the same use case.
  *
  *   bun scripts/dev-connectors.ts [--within PT3M] [--host <name or address, default: the service names>]
  */
@@ -50,6 +51,18 @@ export const FIXTURES: Array<[id: string, port: number, options?: { enable: bool
   // The appraisal system (D96 item 9): Clew's built-in talks module answers while it is enabled, so this one is
   // registered for an administrator to switch to on Anslutna system, never enabled here.
   ['appraisals', 4051, { enable: false }],
+  // The Qlik connector on its made-up statistics (D82): sick leave, economy and HME per unit for every manager, the key
+  // figures of the follow-up dialogue (docs/reviews/2026-11-12-absorbing-big-boss-board-into-clew.md).
+  ['qlik', 4048],
+];
+/**
+ * When the Qlik connector is first added, the figures it replaces on Hem are switched off, as an administrator would with
+ * "Visa nyckeltalet" (D54 item 4): the HR fixture's sick leave and the finance fixture's spent frame. Their areas, views
+ * and cards stay. Made once, so a later choice on Anslutna system is kept.
+ */
+export const FIGURES_OFF: Array<{ connector: string; area: string }> = [
+  { connector: 'hr', area: 'employees' },
+  { connector: 'finance', area: 'budget' },
 ];
 /**
  * Personal as the canvas draws it (D97, artboard A2): absence and the round of talks under "Visa", and their presence
@@ -75,7 +88,8 @@ const urlOf = (id: string, port: number) => `http://${host ?? id}:${port}`;
  * operator: the same checks (an about read with a table or list view, the field in it, at most three columns), one audit
  * row per change. The live registry here is this process's; the BFF picks the rows up as it watches them.
  */
-async function chooseForPersonal() {
+/** The connector administration's own use cases (`connectorUsecases`), as the bootstrap operator. */
+function administration() {
   const store = postgresConnectorStore();
   const secrets = {
     seal: (value: string, id: string) => sealSecret(value, secretPurpose(id)),
@@ -83,32 +97,6 @@ async function chooseForPersonal() {
   };
   const live = { register: () => undefined, unregister: () => undefined };
   const clock = () => new Date();
-  // The built-in talks connector's row and its described capabilities, as the BFF writes them at boot.
-  await syncBundledRows({
-    registry,
-    store,
-    secrets,
-    live,
-    bundled: bundledIds,
-    internal: internalIds,
-    offAtFirstBoot,
-    clock,
-  });
-  const rows = await store.list();
-  if (rows.some(r => Object.values(r.capabilities).some(c => c.lens || c.column))) {
-    console.log('entities       kept the lenses and columns an administrator chose');
-    return;
-  }
-  const stale = ENTITY_CHOICE.filter(c => {
-    const manifest = rows.find(r => r.id === c.connector)?.manifest as { capabilities?: Array<{ name: string }> };
-    return !manifest?.capabilities?.some(x => x.name === c.capability);
-  });
-  if (stale.length) {
-    console.log(
-      `entities       not chosen: ${stale.map(c => c.capability).join(', ')} not in the stored manifest; refresh it on Anslutna system and run this again`,
-    );
-    return;
-  }
   const admin = connectorUsecases({
     internal: internalIds,
     store,
@@ -137,6 +125,37 @@ async function chooseForPersonal() {
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     authorize: async () => ({ version: 'bootstrap' }),
   };
+  return { store, secrets, live, clock, admin, operator };
+}
+
+async function chooseForPersonal() {
+  const { store, secrets, live, clock, admin, operator } = administration();
+  // The built-in talks connector's row and its described capabilities, as the BFF writes them at boot.
+  await syncBundledRows({
+    registry,
+    store,
+    secrets,
+    live,
+    bundled: bundledIds,
+    internal: internalIds,
+    offAtFirstBoot,
+    clock,
+  });
+  const rows = await store.list();
+  if (rows.some(r => Object.values(r.capabilities).some(c => c.lens || c.column))) {
+    console.log('entities       kept the lenses and columns an administrator chose');
+    return;
+  }
+  const stale = ENTITY_CHOICE.filter(c => {
+    const manifest = rows.find(r => r.id === c.connector)?.manifest as { capabilities?: Array<{ name: string }> };
+    return !manifest?.capabilities?.some(x => x.name === c.capability);
+  });
+  if (stale.length) {
+    console.log(
+      `entities       not chosen: ${stale.map(c => c.capability).join(', ')} not in the stored manifest; refresh it on Anslutna system and run this again`,
+    );
+    return;
+  }
   for (const c of ENTITY_CHOICE)
     await admin.update(operator, c.connector, {
       lens: { [c.capability]: true },
@@ -145,6 +164,15 @@ async function chooseForPersonal() {
   console.log(
     `entities       chose for Personal: lenses ${ENTITY_CHOICE.map(c => c.capability).join(', ')}; columns ${ENTITY_CHOICE.map(c => `${c.capability} ${c.column}`).join(', ')}`,
   );
+}
+
+/** `FIGURES_OFF`, through the same use case as the switch "Visa nyckeltalet": one audit row per area. */
+async function switchOffReplacedFigures() {
+  const { admin, operator } = administration();
+  const known = new Set((await listConnectors()).map(row => row.id));
+  const off = FIGURES_OFF.filter(f => known.has(f.connector));
+  for (const f of off) await admin.update(operator, f.connector, { figures: { [f.area]: false } });
+  console.log(`figures        switched off on Hem: ${off.map(f => `${f.connector} ${f.area}`).join(', ') || 'none'}`);
 }
 
 /** A service may still be starting when this runs right after the stack came up. */
@@ -167,6 +195,7 @@ async function waitForManifest(url: string, seconds = 60) {
 try {
   await assertFixtureCutover();
   const existingIds = new Set((await listConnectors()).map(row => row.id));
+  let qlikAdded = false;
   for (const [id, port, options] of FIXTURES) {
     const url = urlOf(id, port);
     if (!existingIds.has(id)) await waitForManifest(url);
@@ -180,7 +209,9 @@ try {
     console.log(
       `${id.padEnd(14)} ${existing ? 'kept' : 'added'} as ${state}: ${manifest.source}, ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas`,
     );
+    if (id === 'qlik' && !existing) qlikAdded = true;
   }
+  if (qlikAdded) await switchOffReplacedFigures();
   for (const result of await bindFixtureFollowers(option('within') ?? 'PT3M', true))
     console.log(describeBinding(result));
   // The built-in talks module's round (D96 item 1), opened only when the development organisation has none.

@@ -76,11 +76,36 @@ export function readerUnits(reach: Reach): DirectoryUnit[] {
     (a, b) => a.unitLabel.localeCompare(b.unitLabel, 'sv') || a.unitId.localeCompare(b.unitId),
   );
 }
-/** The groups of `GET /api/entities/:kind`: for a person one per unit the reader manages (none for an employee), for a unit one. */
+/**
+ * The units below the reader that they follow up (D117): the units led by the managers who report to a unit the reader
+ * manages (D99's reporting line), each once, with the reader's unit it reports to; never one the reader belongs to.
+ */
+export function unitsBelow(reach: Reach): Array<DirectoryUnit & { under: string }> {
+  const own = new Set(readerUnits(reach).map(u => u.unitId));
+  const found = new Map<string, DirectoryUnit & { under: string }>();
+  for (const unit of reach.managed)
+    for (const person of unit.people)
+      for (const b of person.below ?? [])
+        if (b.role === 'manager' && isKey('unit', b.unitId) && !own.has(b.unitId) && !found.has(b.unitId))
+          found.set(b.unitId, { unitId: b.unitId, unitLabel: b.unitLabel, under: unit.unitId });
+  return [...found.values()].sort(
+    (a, b) => a.unitLabel.localeCompare(b.unitLabel, 'sv') || a.unitId.localeCompare(b.unitId),
+  );
+}
+/** Every unit the reader follows up (D117): their own, then the ones below, each once. */
+export const followedUnits = (reach: Reach): DirectoryUnit[] => [
+  ...readerUnits(reach),
+  ...unitsBelow(reach).map(({ unitId, unitLabel }) => ({ unitId, unitLabel })),
+];
+/** The groups of `GET /api/entities/:kind`: for a person one per unit the reader manages (none for an employee), for a unit the reader's own and the ones below. */
 export function groupsOf(kind: EntityKind, reach: Reach): EntityList['groups'] {
   if (kind === 'unit') {
-    const units = readerUnits(reach);
-    return units.length ? [{ id: 'units', label: 'Mina enheter', entities: units.map(unitRef) }] : [];
+    const units = readerUnits(reach),
+      below = unitsBelow(reach);
+    return [
+      ...(units.length ? [{ id: 'units', label: 'Mina enheter', entities: units.map(unitRef) }] : []),
+      ...(below.length ? [{ id: 'below', label: 'Enheter under dig', entities: below.map(unitRef) }] : []),
+    ];
   }
   return reach.managed.map(unit => ({
     id: unit.unitId,
@@ -93,10 +118,14 @@ export interface Listed {
   key: string;
   sourceKey: string;
 }
-/** Every entity the reader may ask a source about over the whole list, each once, in the list's order. */
+/**
+ * Every entity the reader may ask a source about over the whole list, each once, in the list's order: for a unit every
+ * one the reader follows up (D117).
+ */
 export function listedKeys(kind: EntityKind, reach: Reach): Listed[] {
   const listed = new Map<string, Listed>();
-  if (kind === 'unit') for (const u of readerUnits(reach)) listed.set(u.unitId, { key: u.unitId, sourceKey: u.unitId });
+  if (kind === 'unit')
+    for (const u of followedUnits(reach)) listed.set(u.unitId, { key: u.unitId, sourceKey: u.unitId });
   else
     for (const unit of reach.managed)
       for (const p of unit.people)
@@ -127,6 +156,8 @@ export function managedPerson(reach: Reach, id: string): Managed | undefined {
 }
 /** A unit the reader manages or belongs to, by its id. */
 export const memberUnit = (reach: Reach, key: string) => readerUnits(reach).find(u => u.unitId === key);
+/** A unit below the reader whose manager reports to them (D117), by its id. */
+export const belowUnit = (reach: Reach, key: string) => unitsBelow(reach).find(u => u.unitId === key);
 
 /** Keys in calls of at most `size` (never more than `ENTITY_KEYS_MAX`), in order. */
 export function chunk(keys: string[], size: number): string[][] {

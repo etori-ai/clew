@@ -22,6 +22,7 @@ import {
   HEADER_STALE_MS,
   siteHeaders,
 } from '../../apps/server/src/connectors/usecases/header';
+import { clewsStart, withClewsStart } from '../../apps/server/src/connectors/header-start';
 import { assertionFor, testJwks } from '../connector-authority';
 
 /**
@@ -44,7 +45,6 @@ const hillevi: Actor = {
   unitLabel: 'Bergsåkers skola',
   role: 'manager',
 };
-const CALENDAR = { id: 'kalender', label: 'Kalender', href: '/calendar' };
 const PORTAL = { site: { name: 'Portalen', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] };
 
 function stack(refused: string[] = []) {
@@ -110,14 +110,13 @@ describe('the intranet connector and the shared header (D88)', () => {
     if (employee.status !== 'answered') throw new Error(`the header was ${employee.status}`);
     expect(employee.connector.id).toBe('intranet');
     expect(employee.output.site).toEqual({ name: 'Startsidan', href: '/' });
+    // Start and its pages are Clew's (D116), so the intranet lists only its own places.
     expect(employee.output.items.map(i => i.id)).toEqual([
-      'start',
       'anstallning-arbetsmiljo',
       'ekonomi-styrning',
       'kompetensforsorjning',
       'organisation',
     ]);
-    expect(employee.output.items[0]!.children).toContainEqual(CALENDAR);
     // The same four sections the stand-in's tree lists for a signed-in visitor, so both sites read the same; the logo is the file's.
     expect(await registry.header(hillevi)).toMatchObject({
       status: 'answered',
@@ -335,10 +334,10 @@ describe('the intranet connector and the shared header (D88)', () => {
     const header = report.items.filter(i => i.label === 'Sidhuvud');
     expect(header.map(i => i.level)).toEqual(['ok', 'ok']);
     expect(header.map(i => i.description)).toEqual([
-      'Kan ge sidhuvudet: för chef 5 platser och en logotyp.',
-      'Kan ge sidhuvudet: för medarbetare 5 platser och en logotyp.',
+      'Kan ge sidhuvudet: för chef 4 platser och en logotyp.',
+      'Kan ge sidhuvudet: för medarbetare 4 platser och en logotyp.',
     ]);
-    expect(report.findings.map(f => f.text)).toContain('header as manager: 5 places, a logo');
+    expect(report.findings.map(f => f.text)).toContain('header as manager: 4 places, a logo');
     expect(JSON.stringify(report)).not.toContain('Kompetensförsörjning');
   });
   test("the conformance check takes a holder's denied as its answer for that person, and fails only a failure", async () => {
@@ -512,8 +511,10 @@ describe('the header a person is served, kept for a minute (D88)', () => {
   }
   /** A refresh started in the background has settled. */
   const settled = () => new Promise(resolve => setTimeout(resolve, 0));
+  /** The places as Hassan is served them: Clew's Start and the row under it first (D116), then the holder's. */
+  const served = (items: typeof PORTAL.items) => withClewsStart(items, clewsStart('employee'));
   const VIEW: SiteHeaderView = {
-    menu: { version: 1, ...PORTAL },
+    menu: { version: 1, site: PORTAL.site, items: served(PORTAL.items) },
     logo: null,
     source: { id: 'portal', label: 'portal' },
   };
@@ -602,7 +603,7 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     state.answer = { ...PORTAL, items: [...PORTAL.items, NEWS] };
     expect(await headers.read(hassanIn)).toEqual(VIEW);
     await settled();
-    expect((await headers.read(hassanIn)).menu.items).toEqual([...PORTAL.items, NEWS]);
+    expect((await headers.read(hassanIn)).menu.items).toEqual(served([...PORTAL.items, NEWS]));
     expect(state.asked).toBe(4);
   });
   test('the last good header is served through failures for an hour after the holder gave it, and then the default', async () => {
@@ -724,7 +725,7 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     state.answer = { ...PORTAL, items: [...PORTAL.items, NEWS] };
     registry.govern('portal', { ...openGovernance(), header: true });
     at(HEADER_FRESH_MS + 1000);
-    expect((await headers.read(hassanIn)).menu.items).toEqual([...PORTAL.items, NEWS]);
+    expect((await headers.read(hassanIn)).menu.items).toEqual(served([...PORTAL.items, NEWS]));
     expect(state.asked).toBe(3);
   });
   test('two first reads at once: a failure that settles after the other read was answered leaves that answer kept', async () => {
@@ -771,7 +772,7 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     // The answer the refresh brought is what is kept.
     state.held = undefined;
     at(HEADER_STALE_MS + 1000);
-    expect((await headers.read(hassanIn)).menu.items).toEqual([...PORTAL.items, NEWS]);
+    expect((await headers.read(hassanIn)).menu.items).toEqual(served([...PORTAL.items, NEWS]));
     expect(state.asked).toBe(3);
   });
   test('the holder refusing the person is its answer: what was kept goes at that answer, and the default is kept until the next refresh', async () => {

@@ -49,6 +49,7 @@ import {
 } from '../composition';
 import { Type, type Static } from 'typebox';
 import { executions } from '../composition/executions';
+import { withFollowedUnits } from '../composition/people';
 import { jobs } from '../composition/jobs-across-systems';
 import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/connectors/protocol';
 import { changesFor } from '../composition/changes';
@@ -305,7 +306,7 @@ api.get('/connectors', c => {
   });
 });
 /** Standing actions and panel views: run one capability directly. GET for reads (input as JSON in `input`), POST for the rest. */
-api.route('/cap', capabilityRoutes({ registry, run: runCapability, people: personKeys }));
+api.route('/cap', capabilityRoutes({ registry, run: runCapability, people: personKeys, follow: withFollowedUnits }));
 api.post('/threads/:id/act', async c => {
   const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType, 64_000);
   return c.json(
