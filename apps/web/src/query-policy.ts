@@ -8,6 +8,8 @@ export function retryPolicy(failureCount: number, error: unknown): boolean {
   if (!(error instanceof ApiError)) return false;
   return error.status >= 500 && failureCount < 1;
 }
+/** How long a read waits before it asks again (D33). */
+export const RETRY_DELAY_MS = 1_000;
 
 /**
  * The sentences the server answers with when a capability is not the person's to read: the registry's own for a hidden

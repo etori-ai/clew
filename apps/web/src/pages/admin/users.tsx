@@ -1,7 +1,8 @@
-import { startTransition, useEffect, useRef, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  GROUP_SEARCH_LIMIT,
   USERS_PAGE_SIZES,
   USERS_QUERY_LIMITS,
   USER_STATUSES,
@@ -21,6 +22,7 @@ import {
   Card,
   EmptyState,
   HStack,
+  Heading,
   List,
   ListItem,
   MoreMenu,
@@ -31,17 +33,20 @@ import {
   Text,
   TextInput,
   Toolbar,
+  Typeahead,
   VStack,
   pixel,
   proportional,
   useMediaQuery,
   useToast,
+  type SearchSource,
+  type SearchableItem,
 } from '@clew/ui';
 import { PersonNameLink } from '../../components/person-name-link';
 import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
-import { errorMessage } from '../../query-policy';
+import { RETRY_DELAY_MS, errorMessage, retryPolicy } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { capabilityLabel, instantText, roleOfOne } from './labels';
 import { AdminShell } from './shell';
@@ -70,6 +75,11 @@ import {
  *
  * A person's title (D110) stands under their name when the catalogue sent one, in the source's own words, and the
  * search box finds it. It is what the person is called at work; the role beside the unit is what Clew acts on.
+ *
+ * A group is chosen for a mapping by searching (D85): the overview holds the organisation's first 10 000 groups by
+ * name, and the server is asked for every group that holds the words, so a catalogue that pushes all its groups can
+ * still be mapped. A search the server could not answer says so, and never that no group matches. Each mapping row is
+ * named by its own group, whatever the overview holds.
  */
 interface Row extends Record<string, unknown> {
   id: string;
@@ -79,7 +89,6 @@ interface MapRow extends Record<string, unknown> {
   id: string;
   m: GroupCapability;
 }
-const EMPTY: UsersAdminOverview = { groupCapabilities: [], groups: [], capabilities: [], units: [], provisioners: [] };
 type ProvisionerRow = UsersAdminOverview['provisioners'][number];
 /** When the catalogue last called (D68): the one sign on this page that people and groups are still being pushed in. */
 const lastSeen = (p: ProvisionerRow) =>
@@ -106,6 +115,43 @@ const count = new Intl.NumberFormat('sv-SE');
 const people = (n: number) => `${count.format(n)} ${n === 1 ? 'person' : 'personer'}`;
 /** How long the list waits after the last keystroke before it asks, so a name is one question and not eight. */
 const TYPING_PAUSE_MS = 250;
+type OfferedGroup = UsersAdminOverview['groups'][number];
+/** A group as the picker offers it: the item's id is the group's external id, which a mapping row is keyed by. */
+const groupItem = (g: OfferedGroup): SearchableItem => ({ id: g.id, label: g.label });
+/** Whether a group holds every word of a search in its name or its external id, as the server matches it. */
+const holdsWords = (g: OfferedGroup, text: string) =>
+  text
+    .toLocaleLowerCase('sv')
+    .split(/\s+/)
+    .filter(Boolean)
+    .every(word => [g.label, g.id].some(value => value.toLocaleLowerCase('sv').includes(word)));
+/**
+ * What the group picker says when the server could not be asked for the groups: the matches among the groups the page
+ * holds may be shown, but whether any other group matches is not known, so the picker never says that none does.
+ */
+const GROUPS_UNSEARCHED = 'Det gick inte att söka bland alla grupper. Försök igen.';
+/** Waits `ms`, or rejects as soon as `signal` aborts: a search that a newer one replaced, or that closing stopped. */
+const pause = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => (clearTimeout(timer), reject(signal.reason)), { once: true });
+  });
+/** The server's answer for the words, a 5xx asked once more after a pause, as the page's other reads are (D33). */
+async function searchedGroups(text: string, signal: AbortSignal) {
+  for (let failures = 0; ; failures++)
+    try {
+      return await api.admin.searchGroups(text, signal);
+    } catch (e) {
+      if (signal.aborted || !retryPolicy(failures, e)) throw e;
+      await pause(RETRY_DELAY_MS, signal);
+    }
+}
+/** A row of the mapping, as its table and its list key it. */
+const mappingKey = (m: GroupCapability) => m.groupExternalId + ':' + m.capability;
 /**
  * A filter's options with the chosen value among them. The address may name a value the options do not hold: a unit
  * that has left the tree since the link was saved, or any value while the options are still being read. The list is
@@ -210,8 +256,73 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     show({ unit: null, role: null, status: null, capability: null });
     searchBox.current?.focus();
   };
-  const [group, setGroup] = useState<string | undefined>();
+  const [group, setGroup] = useState<SearchableItem | null>(null);
   const [capability, setCapability] = useState<string | undefined>();
+  // Whether the server could not be asked for the groups that hold the words typed: the picker says so until the words
+  // change or a group is chosen.
+  const [unsearched, setUnsearched] = useState(false);
+  /**
+   * The group picker's source (D85): the matches among the overview's groups at once, then, after a pause, the
+   * server's answer for every group of the organisation, the first ten by name, after them. It lives as long as the
+   * page and reads the overview's groups as they are when a search starts. A search that a newer one replaced, or
+   * that closing the list stopped, rejects, and so does one the server did not answer: Typeahead then keeps the
+   * matches it already shows and never opens the list again by itself. Only the last is a failure, and the picker
+   * says so (`unsearched`), since its list holds no more than the groups the page has.
+   */
+  const offered = useRef<OfferedGroup[]>([]);
+  offered.current = query.data?.groups ?? [];
+  const groupSource = useMemo<SearchSource>(() => {
+    let asking: AbortController | undefined;
+    const stop = () => asking?.abort();
+    return {
+      bootstrap: () => offered.current.slice(0, GROUP_SEARCH_LIMIT).map(groupItem),
+      cancel: stop,
+      async search(text, context) {
+        stop();
+        const local = offered.current
+          .filter(g => holdsWords(g, text))
+          .slice(0, GROUP_SEARCH_LIMIT)
+          .map(groupItem);
+        context?.update(local);
+        const mine = (asking = new AbortController());
+        await pause(TYPING_PAUSE_MS, mine.signal);
+        const found = await searchedGroups(text.slice(0, USERS_QUERY_LIMITS.text), mine.signal).catch((e: unknown) => {
+          if (!mine.signal.aborted) setUnsearched(true);
+          throw e;
+        });
+        const shown = new Set(local.map(item => item.id));
+        return [...local, ...found.groups.filter(g => !shown.has(g.id)).map(groupItem)];
+      },
+    };
+  }, []);
+  // A mapping row whose "Ta bort" was pressed leaves with the button, and the focus would fall to the top of the
+  // document (2.4.3). Once the row has gone, and only while nothing else holds the focus, the next row's "Ta bort"
+  // takes it, else the previous row's, else the group picker, as the focus goes after a key is taken back.
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>());
+  const removeButton = (key: string) => (button: HTMLButtonElement | null) => {
+    if (button) removeButtons.current.set(key, button);
+    else removeButtons.current.delete(key);
+  };
+  const groupField = useRef<HTMLInputElement>(null);
+  const unmapped = useRef<{ key: string; next: string[] } | null>(null);
+  const mappingKeys = (query.data?.groupCapabilities ?? []).map(mappingKey).join('\n');
+  useEffect(() => {
+    const gone = unmapped.current;
+    if (!gone || mappingKeys.split('\n').includes(gone.key)) return;
+    const frame = requestAnimationFrame(() => {
+      unmapped.current = null;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const next = gone.next.map(key => removeButtons.current.get(key)).find(button => button?.isConnected);
+      if (next) return next.focus();
+      // While a chosen group shows as a token, the token's button is the picker's one tab stop.
+      const field = groupField.current;
+      if (field && field.tabIndex < 0)
+        field.closest('.astryx-typeahead')?.querySelector<HTMLElement>('button')?.focus();
+      else field?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [mappingKeys]);
   const [busy, setBusy] = useState(false);
   // The catalogues' keys (D107): which dialog is open, and about which catalogue.
   const [issuing, setIssuing] = useState(false);
@@ -232,31 +343,38 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     return () => cancelAnimationFrame(frame);
   }, [revoking]);
   usePageTitle('Användare');
-  const data = query.data ?? (query.isError ? EMPTY : null);
+  // An overview that could not be read is no overview: the cards drawn from it wait for one (W3 of the 2026-11-12
+  // review), and the error says why.
+  const data = query.data;
   const error =
     query.isError && query.data === undefined ? errorMessage(query.error, 'Listan kunde inte läsas.') : null;
-  const groupLabel = (id: string) => data?.groups.find(g => g.id === id)?.label ?? id;
   const say = (body: string, id: string) => toast({ body, uniqueID: id });
   const mapIt = async () => {
     if (!group || !capability) return;
     setBusy(true);
     try {
-      const next = await api.admin.addGroupCapability({ groupExternalId: group, capability: capability as Capability });
+      const next = await api.admin.addGroupCapability({
+        groupExternalId: group.id,
+        capability: capability as Capability,
+      });
       client.setQueryData(keys.admin.users, next);
-      say(
-        `Sparat: ${groupLabel(group)} ger ${capabilityLabel[capability as Capability].toLowerCase()}.`,
-        'map:' + group,
-      );
-      setGroup(undefined);
+      say(`Sparat: ${group.label} ger ${capabilityLabel[capability as Capability].toLowerCase()}.`, 'map:' + group.id);
+      setGroup(null);
       setCapability(undefined);
     } catch (e) {
-      toast({ body: errorMessage(e, 'Något gick fel.'), isAutoHide: false, uniqueID: 'map:' + group });
+      toast({ body: errorMessage(e, 'Något gick fel.'), isAutoHide: false, uniqueID: 'map:' + group.id });
     } finally {
       setBusy(false);
       await client.invalidateQueries({ queryKey: keys.admin.users });
     }
   };
   const unmapIt = async (m: GroupCapability) => {
+    const order = groupCapabilities.map(mappingKey),
+      at = order.indexOf(mappingKey(m));
+    unmapped.current = {
+      key: mappingKey(m),
+      next: [order[at + 1], order[at - 1]].filter((key): key is string => key !== undefined),
+    };
     try {
       const next = await api.admin.removeGroupCapability({
         groupExternalId: m.groupExternalId,
@@ -268,6 +386,8 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
         'map:' + m.groupExternalId,
       );
     } catch (e) {
+      // The row stays, and so does the focus on its button.
+      unmapped.current = null;
       toast({ body: errorMessage(e, 'Något gick fel.'), isAutoHide: false, uniqueID: 'map:' + m.groupExternalId });
     } finally {
       await client.invalidateQueries({ queryKey: keys.admin.users });
@@ -363,6 +483,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           label="Ta bort"
           aria-label={`Ta bort: ${r.m.groupLabel ?? r.m.groupExternalId} ger ${capabilityLabel[r.m.capability].toLowerCase()}`}
           onClick={() => unmapIt(r.m)}
+          ref={removeButton(r.id)}
         />
       ),
     },
@@ -390,7 +511,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           {error}
         </Text>
       )}
-      {data === null && (
+      {!data && !query.isError && (
         <Text type="supporting" role="status">
           Läser användarna …
         </Text>
@@ -403,7 +524,9 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
             dividers={['bottom']}
             startContent={
               <VStack gap={0}>
-                <Text weight="semibold">Inläsning från katalogen</Text>
+                <Heading level={3} accessibilityLevel={2}>
+                  Inläsning från katalogen
+                </Heading>
                 <Text type="supporting">
                   Katalogen ska skicka varje ändring till Clew när den sker, och stämma av allt minst en gång per dygn.
                   Tills en ändring har kommit fram gäller den åtkomst personen hade.
@@ -650,19 +773,16 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       )}
       {data && (
         <Card padding={0}>
-          <Toolbar
-            label="Behörigheter från grupper"
-            size="sm"
-            dividers={['bottom']}
-            startContent={
-              <VStack gap={0}>
-                <Text weight="semibold">Behörigheter från grupper</Text>
-                <Text type="supporting">
-                  En grupp från katalogen ger sina medlemmar en behörighet i Clew. Ändringen gäller vid nästa anrop.
-                </Text>
-              </VStack>
-            }
-          />
+          <Section variant="transparent" paddingInline={4} paddingBlock={3} dividers={['bottom']}>
+            <VStack gap={0}>
+              <Heading level={3} accessibilityLevel={2}>
+                Behörigheter från grupper
+              </Heading>
+              <Text type="supporting">
+                En grupp från katalogen ger sina medlemmar en behörighet i Clew. Ändringen gäller vid nästa anrop.
+              </Text>
+            </VStack>
+          </Section>
           <Section variant="transparent" padding={4}>
             <VStack
               gap={3}
@@ -674,15 +794,33 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
               }}
             >
               <HStack gap={3} wrap="wrap" vAlign="end">
-                <Selector
+                <Typeahead
                   label="Grupp"
-                  placeholder={groups.length ? 'Välj grupp' : 'Inga grupper provisionerade'}
-                  options={groups.map(g => ({ value: g.id, label: g.label }))}
+                  placeholder={groups.length ? 'Sök på namn eller id' : 'Inga grupper provisionerade'}
+                  searchSource={groupSource}
+                  debounceMs={0}
                   value={group}
-                  onChange={setGroup}
-                  hasSearch={groups.length > 15}
+                  onChange={chosen => {
+                    setUnsearched(false);
+                    setGroup(chosen);
+                  }}
+                  onChangeQuery={() => setUnsearched(false)}
+                  // A search the server did not answer is not one that found nothing: the list, empty or holding the
+                  // page's own matches, and the field both say so.
+                  emptySearchText={unsearched ? GROUPS_UNSEARCHED : 'Ingen grupp matchar.'}
+                  status={unsearched ? { type: 'error', message: GROUPS_UNSEARCHED } : undefined}
+                  // The name and the external id wrap inside the row, so a long one is read whole at 320 px (1.4.10);
+                  // TypeaheadItem holds each to one line, and the row cut a long one off.
+                  renderItem={item => (
+                    <VStack gap={0} width="100%">
+                      <Text>{item.label}</Text>
+                      <Text type="supporting">{item.id}</Text>
+                    </VStack>
+                  )}
+                  width={mobile ? '100%' : 320}
                   isDisabled={!groups.length}
                   disabledMessage="Grupper visas när katalogen har provisionerat dem genom SCIM."
+                  ref={groupField}
                 />
                 <Selector
                   label="Ger behörigheten"
@@ -706,7 +844,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
             <List aria-label="Behörigheter från grupper" hasDividers>
               {groupCapabilities.map(m => (
                 <ListItem
-                  key={m.groupExternalId + ':' + m.capability}
+                  key={mappingKey(m)}
                   label={<Text weight="semibold">{m.groupLabel ?? m.groupExternalId}</Text>}
                   description={<Text type="supporting">{capabilityLabel[m.capability]}</Text>}
                   endContent={
@@ -716,6 +854,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                       label="Ta bort"
                       aria-label={`Ta bort: ${m.groupLabel ?? m.groupExternalId} ger ${capabilityLabel[m.capability].toLowerCase()}`}
                       onClick={() => unmapIt(m)}
+                      ref={removeButton(mappingKey(m))}
                     />
                   }
                 />
@@ -723,7 +862,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
             </List>
           ) : (
             <Table<MapRow>
-              data={groupCapabilities.map(m => ({ id: m.groupExternalId + ':' + m.capability, m }))}
+              data={groupCapabilities.map(m => ({ id: mappingKey(m), m }))}
               idKey="id"
               columns={mapColumns}
               density="balanced"

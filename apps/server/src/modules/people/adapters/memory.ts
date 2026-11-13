@@ -385,6 +385,30 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       }
       return false;
     },
+    async groupLabels(organisationId, externalIds) {
+      const wanted = new Set(externalIds);
+      return new Map(
+        [...state.groups.values()]
+          .filter(g => g.organisationId === organisationId && g.externalId !== null && wanted.has(g.externalId))
+          .map(g => [g.externalId!, g.label]),
+      );
+    },
+    async searchGroups(organisationId, words, limit) {
+      const folded = (value: string) => value.toLocaleLowerCase('sv');
+      return [...state.groups.values()]
+        .filter(
+          (g): g is GroupRecord & { externalId: string } =>
+            g.organisationId === organisationId &&
+            g.externalId !== null &&
+            words.every(word => [g.label, g.externalId].some(value => folded(value!).includes(folded(word)))),
+        )
+        .sort(
+          (a, b) =>
+            bySwedish(a.label, b.label) || (a.externalId < b.externalId ? -1 : a.externalId > b.externalId ? 1 : 0),
+        )
+        .slice(0, limit)
+        .map(g => ({ externalId: g.externalId, label: g.label }));
+    },
   };
   return {
     state,

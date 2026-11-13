@@ -2315,8 +2315,13 @@ export interface GroupCapability {
   capability: Capability;
 }
 export interface UsersAdminOverview {
+  /** Each row is named by its own group, whichever groups `groups` holds. */
   groupCapabilities: GroupCapability[];
-  /** The provisioned groups with an external id, as the editor offers them. */
+  /**
+   * The organisation's groups with an external id, by name in Swedish order, at most the first 10 000: what the group
+   * picker offers before anything is typed and finds at once. It asks the server for the others
+   * (`POST /api/admin/users/groups/search`), so every group can be chosen however many the catalogue pushes.
+   */
   groups: Array<{ id: string; label: string }>;
   capabilities: Capability[];
   /**
@@ -2344,12 +2349,18 @@ export interface ProvisionerAdminRow {
 /** D107: the name a provisioner is issued under, as `scripts/provisioner-token.ts` takes it. */
 export const PROVISIONER_ID_PATTERN = '^[a-z0-9][a-z0-9-]{1,63}$';
 export const PROVISIONER_LABEL_MAX = 120;
+/**
+ * D107: what a provisioner's label may hold: one line of text, without a control character (Unicode's Cc: U+0000 to
+ * U+001F and U+007F to U+009F). A NUL in particular cannot be stored, so a label with one is refused before it reaches
+ * the store.
+ */
+export const PROVISIONER_LABEL_PATTERN = '^[^\\u0000-\\u001f\\u007f-\\u009f]*$';
 /** D107: how long the key that is replaced may still answer, in hours; 0 ends it at once. */
 export const PROVISIONER_GRACE_HOURS = [24, 168, 0] as const;
 export const ProvisionerIssueInput = Type.Object(
   {
     id: Type.String({ pattern: PROVISIONER_ID_PATTERN }),
-    label: Type.String({ minLength: 1, maxLength: PROVISIONER_LABEL_MAX }),
+    label: Type.String({ minLength: 1, maxLength: PROVISIONER_LABEL_MAX, pattern: PROVISIONER_LABEL_PATTERN }),
   },
   { additionalProperties: false },
 );
@@ -2370,6 +2381,12 @@ export interface ProvisionerKeyIssued {
   /** Where the provisioner sends the key: the address the SCIM server answers at, as the server knows it. */
   address: string;
   overview: UsersAdminOverview;
+  /**
+   * Only on a rotation that ended a key early: until when the key replaced before this one would still have answered.
+   * Clew keeps one replaced key (D107 item 5), so a rotation inside a grace period ends the key replaced earlier at
+   * once, whatever period is chosen.
+   */
+  endedEarlier?: string;
 }
 /**
  * D100: what a person's row says about their access, as the people list narrows by it. `disabled` is a deactivated
@@ -2432,6 +2449,22 @@ export const GroupCapabilityInput = Type.Object(
   { additionalProperties: false },
 );
 export type GroupCapabilityInputType = Static<typeof GroupCapabilityInput>;
+/** How many groups one search of the group picker on Administration › Användare answers with. */
+export const GROUP_SEARCH_LIMIT = 10;
+/**
+ * The group picker on Administration › Användare asks the server for the organisation's groups whose name or external
+ * id holds every word of `text`, without regard to case; in a body, as the people list asks (D100), and no longer than
+ * the people list's search text.
+ */
+export const GroupSearchInput = Type.Object(
+  { text: Type.String({ maxLength: USERS_QUERY_LIMITS.text }) },
+  { additionalProperties: false },
+);
+export type GroupSearchInputType = Static<typeof GroupSearchInput>;
+/** The answer to a search of the group picker: at most `GROUP_SEARCH_LIMIT` groups, by name in Swedish order. */
+export interface GroupSearchResult {
+  groups: UsersAdminOverview['groups'];
+}
 export const ConnectorAudienceSchema = Type.Union([
   object({ mode: Type.Literal('all') }),
   object({

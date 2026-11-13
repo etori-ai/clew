@@ -7,6 +7,8 @@ import {
   type Capability,
   type GroupCapabilityInputType,
   type GroupCapability,
+  GROUP_SEARCH_LIMIT,
+  type GroupSearchResult,
   type OrganisationOverview,
   type OrganisationUnitPeople,
   type ProvisionerIssueInputType,
@@ -786,6 +788,78 @@ export const USERS_ADMIN_CAPABILITY: Capability = 'admin.users';
  * the page says so.
  */
 const PROVISIONER_SILENT_MS = 48 * 60 * 60 * 1000;
+/**
+ * How many of the organisation's groups the overview offers, the first by name. A catalogue may push every group it
+ * has (D85), so the overview stays one bounded read, and the group picker asks the server for the others.
+ */
+const GROUPS_OFFERED = 10_000;
+/**
+ * Whether a value from a request holds a NUL. Nothing stored holds one (SCIM refuses it), and PostgreSQL refuses to
+ * compare one, so such a value names nothing and is never handed to the store.
+ */
+const holdsNul = (value: string) => value.includes('\u0000');
+/**
+ * D107: a provisioner's key replaced, as the page and the operator's script replace it. The key it replaces answers
+ * for the grace period, so the client is switched without a push failing; 0 ends it at once. One replaced key is kept
+ * (item 5): a key replaced before that one and still in its own grace period stops answering now, whatever period is
+ * chosen, and the audit row says until when it would have (`endedEarlier`). Never the key in the audit.
+ */
+async function rotateKey(
+  tx: ProvisionTx,
+  keys: { token: () => string; digest: (token: string) => string },
+  actor: string,
+  held: { id: string; previousValidUntil: string | null },
+  graceHours: number,
+  at: string,
+): Promise<{ token: string; previousValidUntil: string | null; endedEarlier: string | null }> {
+  const token = keys.token(),
+    until = graceHours > 0 ? new Date(Date.parse(at) + graceHours * 60 * 60 * 1000).toISOString() : null,
+    endedEarlier = held.previousValidUntil !== null && held.previousValidUntil > at ? held.previousValidUntil : null;
+  await tx.rotateProvisioner(held.id, keys.digest(token), until);
+  await tx.audit({
+    actor,
+    action: 'provisioner.rotated',
+    subject: 'provisioner:' + held.id,
+    details: { graceHours, previousValidUntil: until, ...(endedEarlier ? { endedEarlier } : {}) },
+  });
+  return { token, previousValidUntil: until, endedEarlier };
+}
+/** D107: every key of a provisioner ended at `at`, audited. Its pushes answer 401 from then on. */
+async function revokeKey(tx: ProvisionTx, actor: string, id: string, at: string) {
+  await tx.revokeProvisioner(id, at);
+  await tx.audit({ actor, action: 'provisioner.revoked', subject: 'provisioner:' + id, details: {} });
+}
+/**
+ * The operator's half of D107 (item 6): `scripts/provisioner-token.ts` replaces and takes back a key through these, in
+ * one transaction of the store with the audit row the page writes, the operator as the actor. The operator holds the
+ * installation, so a provisioner of any organisation is theirs. An id that names no active provisioner answers
+ * undefined and writes nothing.
+ */
+export function provisionerKeyUsecases(deps: {
+  store: ProvisionStore;
+  clock: () => Date;
+  token: () => string;
+  digest: (token: string) => string;
+}) {
+  const active = async (tx: ProvisionTx, id: string) => {
+    const held = await tx.provisionerById(id);
+    return held && !held.revoked ? held : undefined;
+  };
+  return {
+    rotate: (actor: string, id: string, graceHours: number) =>
+      deps.store.transaction(async tx => {
+        const held = await active(tx, id);
+        return held && rotateKey(tx, deps, actor, held, graceHours, deps.clock().toISOString());
+      }),
+    revoke: (actor: string, id: string) =>
+      deps.store.transaction(async tx => {
+        if (!(await active(tx, id))) return undefined;
+        await revokeKey(tx, actor, id, deps.clock().toISOString());
+        return { id };
+      }),
+  };
+}
+export type ProvisionerKeyUsecases = ReturnType<typeof provisionerKeyUsecases>;
 export function usersAdminUsecases(deps: {
   store: ProvisionStore;
   clock: () => Date;
@@ -820,14 +894,15 @@ export function usersAdminUsecases(deps: {
       units = tree
         .map(n => ({ id: n.id, label: n.label, parentLabel: (n.parentId && unitLabel.get(n.parentId)) || null }))
         .sort((a, b) => bySwedish(a.label, b.label) || a.id.localeCompare(b.id));
-    const groups = (await tx.listGroups(persona.organisationId, { startIndex: 1, count: 10_000 })).rows
-      .filter(g => g.externalId)
-      .map(g => ({ id: g.externalId!, label: g.label }))
-      .sort((a, b) => a.label.localeCompare(b.label, 'sv') || a.id.localeCompare(b.id));
-    const names = new Map(groups.map(g => [g.id, g.label]));
+    const groups = (await tx.searchGroups(persona.organisationId, [], GROUPS_OFFERED)).map(g => ({
+      id: g.externalId,
+      label: g.label,
+    }));
     // This organisation's rows, those whose group is gone included (D85: a row outlives its group and applies again
-    // when the group returns). A row belongs to the organisation that wrote it, so another's is not here (D101).
+    // when the group returns). A row belongs to the organisation that wrote it, so another's is not here (D101). Each
+    // is named by its own group, read in one go, and not by what the bounded list of groups above happens to hold.
     const rules = await tx.groupCapabilities(persona.organisationId);
+    const names = await tx.groupLabels(persona.organisationId, [...new Set(rules.map(m => m.groupExternalId))]);
     const groupCapabilities: GroupCapability[] = rules
       .filter((m): m is GroupCapabilityRule & { capability: Capability } => isCapability(m.capability))
       .map(m => ({
@@ -854,12 +929,15 @@ export function usersAdminUsecases(deps: {
     require(persona);
     await persona.authorize();
     if (!isCapability(input.capability)) throw new InputError('Okänd behörighet.');
+    // An id that holds a NUL names no group and no row.
+    const named = !holdsNul(input.groupExternalId);
     return deps.store.transaction(async tx => {
-      const group = await tx.findGroup('externalId', input.groupExternalId);
-      // D101: another organisation's group does not exist for this administrator, to add a row or to remove one. A
-      // row whose group is gone may still be removed.
-      if (group ? group.organisationId !== persona.organisationId : present)
-        throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
+      // D101: another organisation's group does not exist for this administrator, throughout. A row is the
+      // organisation's that wrote it (migration 0051), so a row on an id that another organisation's group took over
+      // is a row whose group is gone, and it may be removed as any such row may (D85). Only adding needs the group.
+      const found = named ? await tx.findGroup('externalId', input.groupExternalId) : undefined,
+        group = found?.organisationId === persona.organisationId ? found : undefined;
+      if (!group && present) throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
       // Locked as a SCIM write of the group locks it, and before its members are read: a member added while the row
       // is being taken away is derived after this change, and does not keep a capability no row gives.
       if (group) await tx.readGroup(persona.organisationId, group.id, true);
@@ -868,12 +946,9 @@ export function usersAdminUsecases(deps: {
       // this change and reads the rows it leaves. That holds for a row whose group is gone and is pushed again meanwhile,
       // which no group lock covers: its members are read after the push commits, or the push reads the rows after this.
       await tx.lockGroupCapabilities(persona.organisationId, 'change');
-      const changed = await tx.setGroupCapability(
-        persona.organisationId,
-        input.groupExternalId,
-        input.capability,
-        present,
-      );
+      const changed =
+        named &&
+        (await tx.setGroupCapability(persona.organisationId, input.groupExternalId, input.capability, present));
       if (changed) {
         await tx.audit({
           actor: 'person:' + persona.id,
@@ -887,7 +962,12 @@ export function usersAdminUsecases(deps: {
           organisationId: persona.organisationId,
           rules: await tx.groupCapabilities(persona.organisationId),
         };
-        await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId), known);
+        // The row applies to the members of the organisation's own group alone, read now that the rows are held, so that
+        // a group pushed again meanwhile is seen with its members; a key another organisation's group holds names none
+        // of this organisation's people (D101).
+        const holder = await tx.findGroup('externalId', input.groupExternalId);
+        if (holder?.organisationId === persona.organisationId)
+          await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId), known);
       }
       return overviewWithin(tx, persona);
     });
@@ -905,13 +985,13 @@ export function usersAdminUsecases(deps: {
    */
   async function keyed(
     persona: AuthenticatedContext,
-    write: (tx: ProvisionTx, at: string) => Promise<{ id: string; token: string }>,
+    write: (tx: ProvisionTx, at: string) => Promise<Omit<ProvisionerKeyIssued, 'address' | 'overview'>>,
   ): Promise<Omit<ProvisionerKeyIssued, 'address'>> {
     require(persona);
     await persona.authorize();
     return deps.store.transaction(async tx => {
-      const { id, token } = await write(tx, deps.clock().toISOString());
-      return { id, token, overview: await overviewWithin(tx, persona) };
+      const written = await write(tx, deps.clock().toISOString());
+      return { ...written, overview: await overviewWithin(tx, persona) };
     });
   }
   return {
@@ -926,19 +1006,28 @@ export function usersAdminUsecases(deps: {
      */
     async people(persona: AuthenticatedContext, query: UsersAdminQueryType = {}): Promise<UsersAdminPage> {
       require(persona);
-      const pageSize = query.pageSize ?? USERS_PAGE_SIZES[0];
+      const pageSize = query.pageSize ?? USERS_PAGE_SIZES[0],
+        words = searchWords(query.text),
+        // A unit id with a NUL names no unit and a word with one is in no name: such a search matches nobody, and the
+        // store is not asked it.
+        nobody = words.some(holdsNul) || (query.unitId !== undefined && holdsNul(query.unitId));
       return deps.store.transaction(async tx => {
         const search: UserSearch = {
-          words: searchWords(query.text),
-          ...(query.unitId === undefined
+          words,
+          ...(query.unitId === undefined || nobody
             ? {}
             : { unitIds: branchOf(await tx.unitTree(persona.organisationId), query.unitId) }),
           ...(query.role === undefined ? {} : { role: query.role }),
           ...(query.status === undefined ? {} : { status: query.status }),
           ...(query.capability === undefined ? {} : { capability: query.capability }),
         };
-        const read = (page: number) =>
-          tx.searchUsers(persona.organisationId, search, { startIndex: (page - 1) * pageSize + 1, count: pageSize });
+        const read = (page: number): Promise<{ total: number; rows: UserRecord[] }> =>
+          nobody
+            ? Promise.resolve({ total: 0, rows: [] })
+            : tx.searchUsers(persona.organisationId, search, {
+                startIndex: (page - 1) * pageSize + 1,
+                count: pageSize,
+              });
         let page = query.page ?? 1,
           listed = await read(page);
         if (!listed.rows.length && listed.total) listed = await read((page = Math.ceil(listed.total / pageSize)));
@@ -980,29 +1069,15 @@ export function usersAdminUsecases(deps: {
         return { id: input.id, token };
       }),
     /**
-     * D107: a new key for a provisioner of the administrator's organisation. The key it replaces answers for the
-     * grace period, so the client is switched without a push failing; 0 ends it at once. One old key is kept: a key
-     * rotated out before that one no longer answers, and the audit row says until when it would have.
+     * D107: a new key for a provisioner of the administrator's organisation, as `rotateKey` replaces it. When the
+     * rotation ended a key replaced earlier before its time, the answer says until when that key would have answered
+     * (`endedEarlier`), so the page can say so.
      */
     rotateProvisioner: (persona: AuthenticatedContext, id: string, input: ProvisionerRotateInputType) =>
       keyed(persona, async (tx, at) => {
         const held = await ownProvisioner(tx, persona, id),
-          token = deps.token(),
-          until =
-            input.graceHours > 0 ? new Date(Date.parse(at) + input.graceHours * 60 * 60 * 1000).toISOString() : null,
-          cutOff = held.previousValidUntil !== null && held.previousValidUntil > at ? held.previousValidUntil : null;
-        await tx.rotateProvisioner(id, deps.digest(token), until);
-        await tx.audit({
-          actor: 'person:' + persona.id,
-          action: 'provisioner.rotated',
-          subject: 'provisioner:' + id,
-          details: {
-            graceHours: input.graceHours,
-            previousValidUntil: until,
-            ...(cutOff ? { endedEarlier: cutOff } : {}),
-          },
-        });
-        return { id, token };
+          { token, endedEarlier } = await rotateKey(tx, deps, 'person:' + persona.id, held, input.graceHours, at);
+        return { id, token, ...(endedEarlier ? { endedEarlier } : {}) };
       }),
     /** D107: ends every key of a provisioner of the administrator's organisation, now. Its pushes answer 401 from here on. */
     async revokeProvisioner(persona: AuthenticatedContext, id: string): Promise<UsersAdminOverview> {
@@ -1010,15 +1085,25 @@ export function usersAdminUsecases(deps: {
       await persona.authorize();
       return deps.store.transaction(async tx => {
         await ownProvisioner(tx, persona, id);
-        await tx.revokeProvisioner(id, deps.clock().toISOString());
-        await tx.audit({
-          actor: 'person:' + persona.id,
-          action: 'provisioner.revoked',
-          subject: 'provisioner:' + id,
-          details: {},
-        });
+        await revokeKey(tx, 'person:' + persona.id, id, deps.clock().toISOString());
         return overviewWithin(tx, persona);
       });
+    },
+    /**
+     * The group picker's search (D85): the organisation's groups whose name or external id holds every word, without
+     * regard to case, the first `GROUP_SEARCH_LIMIT` by name. Another organisation's groups are not searched (D101). A
+     * word with a NUL is in no name and matches nothing. A read writes nothing, so it has no audit row.
+     */
+    async searchGroups(persona: AuthenticatedContext, text: string): Promise<GroupSearchResult> {
+      require(persona);
+      const words = searchWords(text);
+      if (words.some(holdsNul)) return { groups: [] };
+      return deps.store.transaction(async tx => ({
+        groups: (await tx.searchGroups(persona.organisationId, words, GROUP_SEARCH_LIMIT)).map(g => ({
+          id: g.externalId,
+          label: g.label,
+        })),
+      }));
     },
     addGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>
       change(persona, input, true),
@@ -1243,6 +1328,8 @@ export function organisationUsecases(deps: { store: ProvisionStore }) {
      */
     async unit(persona: AuthenticatedContext, unitId: string): Promise<OrganisationUnitPeople> {
       require(persona);
+      // A unit id is the source's and never holds a NUL, which PostgreSQL would refuse to compare: it names no unit.
+      if (holdsNul(unitId)) throw new InputError('Enheten finns inte.');
       return deps.store.transaction(async tx => {
         const group = await tx.findGroup('externalId', UNIT_KEY + unitId),
           node = group?.organisationId === persona.organisationId ? group : undefined,

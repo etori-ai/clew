@@ -232,6 +232,22 @@ export interface ProvisionTx {
     capability: string,
     present: boolean,
   ): Promise<boolean>;
+  /**
+   * The names of the organisation's groups with these external ids, by external id: one read for any number of them,
+   * so every group-capability row is named by its own group. Another organisation's group is not known here (D101),
+   * and an id no group holds is absent.
+   */
+  groupLabels(organisationId: string, externalIds: readonly string[]): Promise<Map<string, string>>;
+  /**
+   * The organisation's groups with an external id whose name or external id holds every word, without regard to case,
+   * by name in Swedish order and then by external id compared character by character; at most `limit` of them. No
+   * words is every such group. A word is matched as written.
+   */
+  searchGroups(
+    organisationId: string,
+    words: readonly string[],
+    limit: number,
+  ): Promise<Array<{ externalId: string; label: string }>>;
 }
 export interface ProvisionStore {
   transaction<T>(fn: (tx: ProvisionTx) => Promise<T>): Promise<T>;

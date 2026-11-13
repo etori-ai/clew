@@ -673,6 +673,45 @@ export function postgresProvisionStore(db: () => Database = database): Provision
         .returning({ capability: schema.groupCapabilities.capability });
       return removed.length > 0;
     },
+    async groupLabels(organisationId, externalIds) {
+      const labels = new Map<string, string>();
+      // In pieces a statement takes, as `usersAmong` reads them.
+      for (let at = 0; at < externalIds.length; at += 1000) {
+        const rows = await tx
+          .select({ externalId: schema.groups.externalId, label: schema.groups.label })
+          .from(schema.groups)
+          .where(
+            and(
+              eq(schema.groups.organisationId, organisationId),
+              inArray(schema.groups.externalId, externalIds.slice(at, at + 1000)),
+            ),
+          );
+        for (const row of rows) if (row.externalId !== null) labels.set(row.externalId, row.label);
+      }
+      return labels;
+    },
+    async searchGroups(organisationId, words, limit) {
+      const rows = await tx
+        .select({ externalId: schema.groups.externalId, label: schema.groups.label })
+        .from(schema.groups)
+        .where(
+          and(
+            eq(schema.groups.organisationId, organisationId),
+            isNotNull(schema.groups.externalId),
+            // As the people list matches a word (D100): as written, without regard to case, under the ICU collation.
+            ...words.map(word => {
+              const pattern = '%' + word.replace(/[\\%_]/g, '\\$&') + '%';
+              return or(
+                folded(sql`${schema.groups.label}`, pattern),
+                folded(sql`${schema.groups.externalId}`, pattern),
+              );
+            }),
+          ),
+        )
+        .orderBy(sql`${schema.groups.label} collate "sv-x-icu"`, sql`${schema.groups.externalId} collate "C"`)
+        .limit(limit);
+      return rows.map(row => ({ externalId: row.externalId!, label: row.label }));
+    },
   });
   return { transaction: fn => db().transaction(tx => fn(txOf(tx))) };
 }

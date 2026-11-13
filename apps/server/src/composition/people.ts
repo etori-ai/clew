@@ -3,6 +3,7 @@ import type { UserReads } from '../modules/people/ports';
 import {
   directoryUsecases,
   organisationUsecases,
+  provisionerKeyUsecases,
   scimUsecases,
   staffUsecases,
   usersAdminUsecases,
@@ -26,6 +27,16 @@ export const userReads: UserReads = {
 export const scim = scimUsecases({ store: postgresProvisionStore(), clock, ids, digest: tokenDigest });
 /** Administration › Användare (D85, D107): the overview, the group-to-capability mapping and the provisioners' keys. */
 export const usersAdmin = usersAdminUsecases({
+  store: postgresProvisionStore(),
+  clock,
+  token: randomToken,
+  digest: tokenDigest,
+});
+/**
+ * The operator's half of D107 (item 6): `scripts/provisioner-token.ts` replaces and takes back a provisioner's key
+ * through these, with the audit rows the users page writes.
+ */
+export const provisionerKeys = provisionerKeyUsecases({
   store: postgresProvisionStore(),
   clock,
   token: randomToken,

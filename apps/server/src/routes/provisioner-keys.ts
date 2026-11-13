@@ -1,6 +1,7 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import Ajv from 'ajv';
 import {
+  PROVISIONER_ID_PATTERN,
   ProvisionerIssueInput,
   type ProvisionerIssueInputType,
   type ProvisionerKeyIssued,
@@ -21,6 +22,14 @@ import { scimAddress } from './scim';
 const ajv = new Ajv({ allErrors: false });
 const validIssue = ajv.compile(ProvisionerIssueInput),
   validRotate = ajv.compile(ProvisionerRotateInput);
+/**
+ * The provisioner an address names. An id is lowercase letters, digits and dashes, so one of any other shape, a NUL
+ * included, which PostgreSQL would refuse to compare, names no provisioner and is answered as an unknown one.
+ */
+const provisionerId = (id: string) => {
+  if (!new RegExp(PROVISIONER_ID_PATTERN).test(id)) throw new InputError('Katalogen finns inte.');
+  return id;
+};
 async function body<T>(request: Request, validate: (value: unknown) => boolean): Promise<T> {
   const text = await request.text();
   if (text.length > 2000) throw new InputError('För stor förfrågan.');
@@ -65,7 +74,7 @@ export function provisionerKeyRoutes(
         c.req.url,
         await keys.rotateProvisioner(
           c.get('session').context,
-          c.req.param('id'),
+          provisionerId(c.req.param('id')),
           await body<ProvisionerRotateInputType>(c.req.raw, validRotate),
         ),
       ),
@@ -74,7 +83,7 @@ export function provisionerKeyRoutes(
     ),
   );
   routes.post('/:id/revoke', async c =>
-    c.json(await keys.revokeProvisioner(c.get('session').context, c.req.param('id'))),
+    c.json(await keys.revokeProvisioner(c.get('session').context, provisionerId(c.req.param('id')))),
   );
   return routes;
 }

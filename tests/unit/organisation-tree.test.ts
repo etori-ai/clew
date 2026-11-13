@@ -10,6 +10,7 @@ import {
   schemaDocuments,
 } from '../../apps/server/src/modules/people/domain';
 import { organisationUsecases, scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
+import { refusingNul } from '../refusing-nul';
 
 /**
  * The organisation tree (D99) on the memory adapter: a `unit:` group carries the unit above it, the server refuses
@@ -757,6 +758,12 @@ describe('Administration › Organisation (D99)', () => {
     await expect(h.organisation.unit(elsewhere, 'it')).rejects.toBeInstanceOf(InputError);
     await expect(h.organisation.unit(h.persona('karin', ['admin.users']), 'finns-inte')).rejects.toBeInstanceOf(
       InputError,
+    );
+    // A NUL names no unit: the same answer, and the store, which refuses one as PostgreSQL does, is never handed it.
+    const refusing = organisationUsecases({ store: refusingNul(h.store) });
+    expect(await refusing.unit(h.persona('karin', ['admin.users']), 'it')).toMatchObject({ unitId: 'it' });
+    await expect(refusing.unit(h.persona('karin', ['admin.users']), 'it\u0000')).rejects.toThrow(
+      new InputError('Enheten finns inte.'),
     );
   });
   test('a parent that names no node is read as no parent, and a chain that is a cycle still ends', () => {
