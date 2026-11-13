@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -18,12 +18,16 @@ import {
   type UsersAdminQueryType,
 } from '@clew/contracts';
 import {
+  Avatar,
   Badge,
+  Banner,
   Button,
   Card,
   EmptyState,
   HStack,
   Heading,
+  Icon,
+  Link,
   List,
   ListItem,
   MoreMenu,
@@ -33,7 +37,7 @@ import {
   Table,
   Text,
   TextInput,
-  Toolbar,
+  Token,
   Typeahead,
   VStack,
   pixel,
@@ -45,6 +49,7 @@ import {
 } from '@clew/ui';
 import { PersonNameLink } from '../../components/person-name-link';
 import { api } from '../../api';
+import { DOT } from '../../dot';
 import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
 import { RETRY_DELAY_MS, errorMessage, retryPolicy } from '../../query-policy';
@@ -60,12 +65,17 @@ import {
 } from './provisioner-key';
 
 /**
- * "Användare" (D62, D68, D85): the people the provisioner pushed, read only, and the one thing an administrator decides
- * here: which provisioned group gives which capability. Identity, units and roles are the source's; this page shows
- * them and never edits them. A Table on a desktop, List rows on a phone, as the other administration pages (D23, D24).
- * Above the people, the catalogue's own state: each provisioner with when it last called, and a warning when it has
- * been silent for two days, because access a person has lost in the catalogue ends in Clew only when the push arrives.
- * A catalogue is added here and handed its key, and a key is replaced or taken back from the row's menu (D107).
+ * "Användare" (D62, D68, D85, D121 item 5): the people the provisioner pushed, read only, and the one thing an
+ * administrator decides here: which provisioned group gives which capability. Identity, units and roles are the
+ * source's; this page shows them and never edits them. The page starts with what a person comes for, the people, then
+ * the groups that give a capability, and last the catalogues' own state: each provisioner with when it last called. A
+ * catalogue that has been silent for two days, or has never called, is said at the top of the page with a way down to
+ * the catalogues, because access a person has lost in the catalogue ends in Clew only when the push arrives. A
+ * catalogue is added there and handed its key, and a key is replaced or taken back from the row's menu (D107).
+ *
+ * A state that is in order is a word ("Har loggat in", "Läser in"), and colour marks only what an administrator must
+ * act on ("Ingen åtkomst", "Tyst i över två dygn"). The people are a Table where its columns fit, from 1267 px with the
+ * rail and the page's margins, and List rows below that; the mappings are a Table from 864 px.
  *
  * The people are read a page at a time (D100) and narrowed above the list: a search box, then one Selector per field
  * that is its own chip, the bare field name unset and the whole clause once set (Astryx's filter bar). Where a person
@@ -75,7 +85,9 @@ import {
  * search is not, because it is a person's name.
  *
  * A person's title (D110) stands under their name when the catalogue sent one, in the source's own words, and the
- * search box finds it. It is what the person is called at work; the role beside the unit is what Clew acts on.
+ * search box finds it. It is what the person is called at work; the role beside the unit is what Clew acts on. The
+ * user name follows it on the same supporting line ("Rektor · hillevi"): an account's identifier, in the supporting
+ * type beside a person, and in code type only where it is itself the value (D121 item 7).
  *
  * A group is chosen for a mapping by searching (D85): the overview holds the organisation's first 10 000 groups by
  * name, and the server is asked for every group that holds the words, so a catalogue that pushes all its groups can
@@ -94,23 +106,45 @@ type ProvisionerRow = UsersAdminOverview['provisioners'][number];
 /** When the catalogue last called (D68): the one sign on this page that people and groups are still being pushed in. */
 const lastSeen = (p: ProvisionerRow) =>
   p.lastSeenAt ? `Senaste anrop ${instantText(p.lastSeenAt)}` : 'Har aldrig anropat Clew';
+/** A state that is in order: a check and a word, without a colour of its own. */
+const inOrder = (label: string) => (
+  <HStack gap={1} vAlign="center">
+    <Icon icon="check" size="sm" color="secondary" />
+    <Text textWrap="nowrap">{label}</Text>
+  </HStack>
+);
 const liveness = (p: ProvisionerRow) =>
-  !p.silent
-    ? { label: 'Läser in', variant: 'success' as const }
-    : p.lastSeenAt
-      ? { label: 'Tyst i över två dygn', variant: 'warning' as const }
-      : { label: 'Inget anrop ännu', variant: 'warning' as const };
+  !p.silent ? (
+    inOrder('Läser in')
+  ) : (
+    <Badge variant="warning" label={p.lastSeenAt ? 'Tyst i över två dygn' : 'Inget anrop ännu'} />
+  );
+/** "A", "A, och B", "A, B och C": whole clauses, so two of them part with a comma before "och". */
+const clauses = (parts: string[]) =>
+  parts.length === 2
+    ? parts.join(', och ')
+    : parts.length < 2
+      ? parts.join('')
+      : `${parts.slice(0, -1).join(', ')} och ${parts.at(-1)}`;
+/** From this width the people's table has room for its columns beside the rail (260) and the page's margins (64). */
+const PEOPLE_TABLE_QUERY = '(min-width: 1267px)';
+/** From this width the mappings are a table. */
+const MAPPINGS_TABLE_QUERY = '(min-width: 864px)';
+/** A press that the browser should keep for itself: a new tab, a new window, a download. */
+const leavesThePage = (e: MouseEvent) => e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
 /** Every unit the person is placed on, the one they act as first: most people have one, and nobody's second is hidden. */
 const placements = (u: UserAdminRow) =>
   [...u.assignments].sort((a, b) => Number(b.unitId === u.active?.unitId) - Number(a.unitId === u.active?.unitId) || 0);
 const statusOf = (u: UserAdminRow): UserStatus =>
   !u.enabled ? 'disabled' : !u.active ? 'no-access' : u.bound ? 'signed-in' : 'not-signed-in';
-const statusLabel: Record<UserStatus, { label: string; variant: 'success' | 'warning' | 'neutral' }> = {
-  'signed-in': { label: 'Har loggat in', variant: 'success' },
-  'not-signed-in': { label: 'Inte inloggad ännu', variant: 'neutral' },
-  'no-access': { label: 'Ingen åtkomst', variant: 'warning' },
-  disabled: { label: 'Avstängd', variant: 'neutral' },
+const statusLabel: Record<UserStatus, string> = {
+  'signed-in': 'Har loggat in',
+  'not-signed-in': 'Inte inloggad ännu',
+  'no-access': 'Ingen åtkomst',
+  disabled: 'Avstängd',
 };
+/** The supporting line under a person's name: the title, then the user name; either alone when only one was sent. */
+const underName = (u: UserAdminRow) => [u.title, u.userName].filter(Boolean).join(DOT);
 const roles: Role[] = ['manager', 'employee'];
 const count = new Intl.NumberFormat('sv-SE');
 const people = (n: number) => `${count.format(n)} ${n === 1 ? 'person' : 'personer'}`;
@@ -201,6 +235,8 @@ function filterOf(params: URLSearchParams) {
 
 export function AdminUsersPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery('(max-width: 720px)');
+  const peopleTable = useMediaQuery(PEOPLE_TABLE_QUERY);
+  const mappingsTable = useMediaQuery(MAPPINGS_TABLE_QUERY);
   const client = useQueryClient();
   const toast = useToast();
   const query = useQuery(adminQueries.users);
@@ -257,10 +293,17 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
   const search = (value: string) => setTyped(value.slice(0, USERS_QUERY_LIMITS.text));
   // A step to another page is taken at the foot of the list and read from its head, so the head comes back into view.
   // Focus stays on the pager, where the next step is taken.
-  const head = useRef<HTMLSpanElement>(null);
+  const head = useRef<HTMLHeadingElement>(null);
   const turn = (next: number) => {
     show({ page: next });
     head.current?.scrollIntoView({ block: 'start' });
+  };
+  // "Till katalogerna" and a mapping's "Ger" lead to another part of the page: its heading takes the focus and is
+  // scrolled to, so a keyboard and a screen reader land where the eye does (2.4.3).
+  const catalogues = useRef<HTMLHeadingElement>(null);
+  const land = (heading: HTMLHeadingElement | null) => {
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView({ block: 'start' });
   };
   const narrowed = !!(pending || filter.unitId || filter.role || filter.status || filter.capability);
   // Rensa filter is gone once it has been used, so the focus goes to the search box: the first thing to narrow by, and
@@ -272,8 +315,20 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     show({ unit: null, role: null, status: null, capability: null });
     searchBox.current?.focus();
   };
+  /** The list narrowed to everyone with one capability, and nothing else, from a mapping's "Ger". */
+  const narrowTo = (capability: Capability) => (e: MouseEvent) => {
+    if (leavesThePage(e)) return;
+    e.preventDefault();
+    setTyped('');
+    startTransition(() => setText(''));
+    show({ unit: null, role: null, status: null, capability });
+    land(head.current);
+  };
   const [group, setGroup] = useState<SearchableItem | null>(null);
   const [capability, setCapability] = useState<string | undefined>();
+  // "Lägg till" was pressed with a field left empty: each empty field says so under itself until it is filled.
+  const [tried, setTried] = useState(false);
+  const capabilityField = useRef<HTMLButtonElement>(null);
   // Whether the server could not be asked for the groups that hold the words typed: the picker says so until the words
   // change or a group is chosen.
   const [unsearched, setUnsearched] = useState(false);
@@ -366,7 +421,15 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     query.isError && query.data === undefined ? errorMessage(query.error, 'Listan kunde inte läsas.') : null;
   const say = (body: string, id: string) => toast({ body, uniqueID: id });
   const mapIt = async () => {
-    if (!group || !capability) return;
+    if (busy) return;
+    if (!group || !capability) {
+      // The button is always there to press (D121 item 5): what is missing is said under its field, and the first
+      // such field takes the focus, so the label and the error are read together.
+      setTried(true);
+      if (!group && !groupField.current?.disabled) groupField.current?.focus();
+      else if (!capability) capabilityField.current?.focus();
+      return;
+    }
     setBusy(true);
     try {
       const next = await api.admin.addGroupCapability({
@@ -377,6 +440,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       say(`Sparat: ${group.label} ger ${capabilityLabel[capability as Capability].toLowerCase()}.`, 'map:' + group.id);
       setGroup(null);
       setCapability(undefined);
+      setTried(false);
     } catch (e) {
       toast({ body: errorMessage(e, 'Något gick fel.'), isAutoHide: false, uniqueID: 'map:' + group.id });
     } finally {
@@ -410,8 +474,17 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     }
   };
   const status = (u: UserAdminRow) => {
-    const a = statusLabel[statusOf(u)];
-    return <Badge variant={a.variant} label={a.label} />;
+    const state = statusOf(u),
+      label = statusLabel[state];
+    return state === 'signed-in' ? (
+      inOrder(label)
+    ) : state === 'not-signed-in' ? (
+      <Text color="secondary" textWrap="nowrap">
+        {label}
+      </Text>
+    ) : (
+      <Badge variant={state === 'no-access' ? 'warning' : 'neutral'} label={label} />
+    );
   };
   // One line per unit in both cells, each held to its line, so a unit and the role on it stay beside each other.
   const lines = (u: UserAdminRow, text: (a: UserAdminRow['assignments'][number]) => string) =>
@@ -428,15 +501,16 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     {
       key: 'person',
       header: 'Person',
-      width: proportional(2, { minWidth: 220 }),
+      // Wider than the others, so a name stands on one line and the line under it seldom wraps.
+      width: proportional(3, { minWidth: 272 }),
       renderCell: (r: Row) => (
-        <VStack gap={0} hAlign="start">
-          <PersonNameLink person={r.u} />
-          {r.u.title && <Text type="supporting">{r.u.title}</Text>}
-          <Text type="code" color="secondary">
-            {r.u.userName ?? r.u.id}
-          </Text>
-        </VStack>
+        <HStack gap={2} vAlign="start">
+          <Avatar name={r.u.name} size="sm" tooltip={false} aria-hidden />
+          <VStack gap={0} hAlign="start">
+            <PersonNameLink person={r.u} />
+            {underName(r.u) && <Text type="supporting">{underName(r.u)}</Text>}
+          </VStack>
+        </HStack>
       ),
     },
     {
@@ -459,7 +533,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
         r.u.capabilities.length ? (
           <HStack gap={1} wrap="wrap">
             {r.u.capabilities.map(c => (
-              <Badge key={c} variant="neutral" label={capabilityLabel[c as Capability] ?? c} />
+              <Token key={c} size="sm" label={capabilityLabel[c as Capability] ?? c} />
             ))}
           </HStack>
         ) : (
@@ -486,7 +560,12 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       key: 'gives',
       header: 'Ger',
       width: proportional(2, { minWidth: 180 }),
-      renderCell: (r: MapRow) => <Text>{capabilityLabel[r.m.capability]}</Text>,
+      // The capability leads to the people who have it: the list above, narrowed.
+      renderCell: (r: MapRow) => (
+        <Link href={`?capability=${r.m.capability}`} hasUnderline onClick={narrowTo(r.m.capability)}>
+          {capabilityLabel[r.m.capability]}
+        </Link>
+      ),
     },
     {
       key: 'remove',
@@ -511,6 +590,10 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
   const groupCapabilities = data?.groupCapabilities ?? [];
   const groups = data?.groups ?? [];
   const provisioners = data?.provisioners ?? [];
+  const silent = provisioners.filter(p => p.silent);
+  const peopleId = useId(),
+    mappingsId = useId(),
+    cataloguesId = useId();
   return (
     <AdminShell user={user} section="anvandare" crumbs={[{ label: 'Användare' }]} pending={query.isPending}>
       <PageHeader
@@ -522,74 +605,22 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           </Text>
         }
       />
-      {error && (
-        <Text as="p" role="alert" color="accent">
-          {error}
-        </Text>
-      )}
-      {query.data && (
-        <Card padding={0}>
-          <Toolbar
-            label="Inläsning från katalogen"
-            size="sm"
-            dividers={['bottom']}
-            startContent={
-              <VStack gap={0}>
-                <Heading level={3} accessibilityLevel={2}>
-                  Inläsning från katalogen
-                </Heading>
-                <Text type="supporting">
-                  Katalogen ska skicka varje ändring till Clew när den sker, och stämma av allt minst en gång per dygn.
-                  Tills en ändring har kommit fram gäller den åtkomst personen hade.
-                </Text>
-              </VStack>
-            }
-            endContent={
-              <Button
-                size="sm"
-                variant="secondary"
-                label="Lägg till katalog"
-                onClick={() => setIssuing(true)}
-                ref={addCatalogue}
-              />
-            }
-          />
-          {provisioners.length === 0 ? (
-            <Section variant="transparent" padding={4}>
-              <Text type="supporting">Ingen katalog har fått en nyckel till Clew ännu.</Text>
-            </Section>
-          ) : (
-            <List aria-label="Inläsning från katalogen" hasDividers>
-              {provisioners.map(p => (
-                <ListItem
-                  key={p.id}
-                  label={<Text weight="semibold">{p.label}</Text>}
-                  description={
-                    <VStack gap={0} hAlign="start">
-                      <Text type="supporting">{lastSeen(p)}</Text>
-                      {p.previousValidUntil && <Text type="supporting">{previousKeyUntil(p.previousValidUntil)}</Text>}
-                    </VStack>
-                  }
-                  endContent={
-                    <HStack gap={2} vAlign="center">
-                      <Badge variant={liveness(p).variant} label={liveness(p).label} />
-                      <MoreMenu
-                        label={`Åtgärder för ${p.label}`}
-                        size="sm"
-                        alignment="end"
-                        presentation="adaptive"
-                        items={[
-                          { id: 'rotate', label: 'Byt nyckel', onClick: () => setRotating(p) },
-                          { id: 'revoke', label: 'Återkalla nyckeln', onClick: () => setRevoking(p) },
-                        ]}
-                      />
-                    </HStack>
-                  }
-                />
-              ))}
-            </List>
-          )}
-        </Card>
+      {error && <Banner status="error" role="alert" collapsible={false} title={error} />}
+      {silent.length > 0 && (
+        // The catalogues stand last on the page, so one that has stopped reading in is said here, with the way down.
+        <Banner
+          status="warning"
+          collapsible={false}
+          title={silent.length === 1 ? '1 katalog läser inte in' : `${silent.length} kataloger läser inte in`}
+          description={`${clauses(
+            silent.map(
+              p => `${p.label} ${p.lastSeenAt ? 'har varit tyst i över två dygn' : 'har aldrig anropat Clew'}`,
+            ),
+          )}. Tills ${silent.length === 1 ? 'dess' : 'deras'} ändringar har kommit fram gäller den åtkomst personerna hade.`}
+          endContent={
+            <Button size="sm" variant="secondary" label="Till katalogerna" onClick={() => land(catalogues.current)} />
+          }
+        />
       )}
       {page?.all === 0 && (
         <Card>
@@ -603,286 +634,365 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       )}
       {/* A list that could not be read keeps its search and filters: what was asked for is what there is to change. */}
       {(page ? page.all > 0 : listError !== null) && (
-        <Card padding={0}>
-          <Toolbar
-            label="Personer"
-            size="sm"
-            dividers={['bottom']}
-            startContent={
-              // The one line that says what the filters did, read out when it changes (4.1.3).
-              <Text weight="semibold" role="status" ref={head}>
+        <VStack as="section" gap={3} aria-labelledby={peopleId}>
+          <HStack gap={4} vAlign="center" justify="between" wrap="wrap">
+            <Heading level={3} accessibilityLevel={2} id={peopleId} ref={head} tabIndex={-1}>
+              Personer
+            </Heading>
+            <HStack gap={2} vAlign="center">
+              {/* The one line that says what the filters did, read out when it changes (4.1.3). */}
+              <Text color="secondary" role="status">
                 {!page
                   ? ''
                   : page.total === page.all
                     ? people(page.all)
                     : `${count.format(page.total)} av ${people(page.all)}`}
               </Text>
-            }
-            endContent={
-              narrowed ? <Button size="sm" variant="ghost" label="Rensa filter" onClick={clear} /> : undefined
-            }
-          />
-          <Section variant="transparent" padding={3}>
-            <HStack gap={2} wrap="wrap" vAlign="center" role="search" aria-label="Sök och filtrera personer">
-              <TextInput
-                label="Sök person"
-                isLabelHidden
-                type="search"
-                size="sm"
-                width={mobile ? '100%' : 280}
-                placeholder="Namn, titel, användarnamn, e-post"
-                startIcon="search"
-                hasClear
-                value={typed}
-                onChange={search}
-                ref={searchBox}
-              />
-              <Selector
-                label="Enhet"
-                isLabelHidden
-                placeholder="Enhet"
-                size="sm"
-                presentation="adaptive"
-                hasClear
-                hasSearch
-                searchPlaceholder="Sök enhet"
-                // The units come with the overview. Without it the panel says why whenever it is opened or searched: in
-                // place of options, or beside the unit the address names, the one it can offer, by its id. Never that
-                // the catalogue has pushed none.
-                emptyText={data ? 'Katalogen har inte fört in några enheter.' : UNITS_UNREAD}
-                emptySearchText={data ? undefined : UNITS_UNREAD}
-                options={withChosen(
-                  (data?.units ?? []).map(u => ({
-                    value: u.id,
-                    label: u.label,
-                    ...(u.parentLabel ? { description: u.parentLabel } : {}),
-                  })),
-                  filter.unitId,
-                  filter.unitId ?? '',
-                  data ? undefined : UNITS_UNREAD,
-                )}
-                value={filter.unitId ?? null}
-                onChange={(unit: string | null) => show({ unit })}
-                renderValue={o => `Enhet: ${o.label}`}
-              />
-              <Selector
-                label="Roll"
-                isLabelHidden
-                placeholder="Roll"
-                size="sm"
-                presentation="adaptive"
-                hasClear
-                options={roles.map(r => ({ value: r, label: roleOfOne[r] }))}
-                value={filter.role ?? null}
-                onChange={(role: string | null) => show({ role })}
-                renderValue={o => `Roll: ${o.label}`}
-              />
-              <Selector
-                label="Status"
-                isLabelHidden
-                placeholder="Status"
-                size="sm"
-                presentation="adaptive"
-                hasClear
-                options={USER_STATUSES.map(s => ({ value: s, label: statusLabel[s].label }))}
-                value={filter.status ?? null}
-                onChange={(status: string | null) => show({ status })}
-                renderValue={o => `Status: ${o.label}`}
-              />
-              <Selector
-                label="Behörighet"
-                isLabelHidden
-                placeholder="Behörighet"
-                size="sm"
-                presentation="adaptive"
-                hasClear
-                // The contract's closed list (D85), which the address is read by too: the filter offers every
-                // capability whether or not the overview could be read, and holds whichever one the address names.
-                options={CAPABILITIES.map(c => ({ value: c, label: capabilityLabel[c] }))}
-                value={filter.capability ?? null}
-                onChange={(capability: string | null) => show({ capability })}
-                renderValue={o => `Behörighet: ${o.label}`}
-              />
+              {narrowed && <Button size="sm" variant="ghost" label="Rensa filter" onClick={clear} />}
             </HStack>
-          </Section>
-          {!page ? (
+          </HStack>
+          <Card padding={0}>
             <Section variant="transparent" padding={3}>
-              <Text as="p" role="alert" color="accent">
-                {listError}
-              </Text>
-            </Section>
-          ) : users.length === 0 ? (
-            <EmptyState
-              isCompact
-              headingLevel={2}
-              title="Inga personer matchar"
-              description="Ingen i katalogen stämmer med sökningen och filtren tillsammans."
-              actions={<Button size="sm" label="Rensa filter" onClick={clear} />}
-            />
-          ) : mobile ? (
-            <List aria-label="Personer" hasDividers>
-              {users.map(u => (
-                <ListItem
-                  key={u.id}
-                  label={<PersonNameLink person={u} />}
-                  description={
-                    <VStack gap={0} hAlign="start">
-                      {u.title && <Text type="supporting">{u.title}</Text>}
-                      <Text type="code" color="secondary">
-                        {u.userName ?? u.id}
-                      </Text>
-                      {u.assignments.length ? (
-                        placements(u).map(a => (
-                          <Text key={a.unitId} type="supporting">
-                            {`${a.unitLabel}\u00a0· ${roleOfOne[a.role]}`}
-                          </Text>
-                        ))
-                      ) : (
-                        <Text type="supporting">Ingen enhet</Text>
-                      )}
-                      {u.capabilities.length > 0 && (
-                        <Text type="supporting">
-                          {u.capabilities.map(c => capabilityLabel[c as Capability] ?? c).join(', ')}
-                        </Text>
-                      )}
-                    </VStack>
-                  }
-                  endContent={status(u)}
-                />
-              ))}
-            </List>
-          ) : (
-            <Table<Row>
-              data={users.map(u => ({ id: u.id, u }))}
-              idKey="id"
-              columns={columns}
-              density="balanced"
-              hasHover
-              rowIndexStart={(page.page - 1) * page.pageSize + 1}
-              rowCount={page.total}
-            />
-          )}
-          {page && page.total > USERS_PAGE_SIZES[0] && (
-            <Section variant="transparent" padding={3}>
-              <HStack justify="center">
-                <Pagination
-                  label="Sidor med personer"
+              <HStack gap={2} wrap="wrap" vAlign="center" role="search" aria-label="Sök och filtrera personer">
+                <TextInput
+                  label="Sök person"
+                  isLabelHidden
+                  type="search"
                   size="sm"
-                  variant={mobile ? 'compact' : 'pages'}
-                  page={page.page}
-                  totalItems={page.total}
-                  pageSize={page.pageSize}
-                  onChange={turn}
-                  {...(mobile
-                    ? {}
-                    : {
-                        pageSizeOptions: [...USERS_PAGE_SIZES],
-                        onPageSizeChange: (size: number) => show({ size: size === USERS_PAGE_SIZES[0] ? null : size }),
-                      })}
-                />
-              </HStack>
-            </Section>
-          )}
-        </Card>
-      )}
-      {data && (
-        <Card padding={0}>
-          <Section variant="transparent" paddingInline={4} paddingBlock={3} dividers={['bottom']}>
-            <VStack gap={0}>
-              <Heading level={3} accessibilityLevel={2}>
-                Behörigheter från grupper
-              </Heading>
-              <Text type="supporting">
-                En grupp från katalogen ger sina medlemmar en behörighet i Clew. Ändringen gäller vid nästa anrop.
-              </Text>
-            </VStack>
-          </Section>
-          <Section variant="transparent" padding={4}>
-            <VStack
-              gap={3}
-              as="form"
-              aria-label="Lägg till behörighet från grupp"
-              onSubmit={e => {
-                e.preventDefault();
-                void mapIt();
-              }}
-            >
-              <HStack gap={3} wrap="wrap" vAlign="end">
-                <Typeahead
-                  label="Grupp"
-                  placeholder={groups.length ? 'Sök på namn eller id' : 'Inga grupper provisionerade'}
-                  searchSource={groupSource}
-                  debounceMs={0}
-                  value={group}
-                  onChange={chosen => {
-                    setUnsearched(false);
-                    setGroup(chosen);
-                  }}
-                  onChangeQuery={() => setUnsearched(false)}
-                  // A search the server did not answer is not one that found nothing: the list, empty or holding the
-                  // page's own matches, and the field both say so.
-                  emptySearchText={unsearched ? GROUPS_UNSEARCHED : 'Ingen grupp matchar.'}
-                  status={unsearched ? { type: 'error', message: GROUPS_UNSEARCHED } : undefined}
-                  // The name and the external id wrap inside the row, so a long one is read whole at 320 px (1.4.10);
-                  // TypeaheadItem holds each to one line, and the row cut a long one off.
-                  renderItem={item => (
-                    <VStack gap={0} width="100%">
-                      <Text>{item.label}</Text>
-                      <Text type="supporting">{item.id}</Text>
-                    </VStack>
-                  )}
-                  width={mobile ? '100%' : 320}
-                  isDisabled={!groups.length}
-                  disabledMessage="Grupper visas när katalogen har provisionerat dem genom SCIM."
-                  ref={groupField}
+                  width={mobile ? '100%' : 280}
+                  placeholder="Namn, titel, användarnamn, e-post"
+                  startIcon="search"
+                  hasClear
+                  value={typed}
+                  onChange={search}
+                  ref={searchBox}
                 />
                 <Selector
-                  label="Ger behörigheten"
-                  placeholder="Välj behörighet"
-                  options={(data.capabilities ?? []).map(c => ({ value: c, label: capabilityLabel[c] }))}
-                  value={capability}
-                  onChange={setCapability}
+                  label="Enhet"
+                  isLabelHidden
+                  placeholder="Enhet"
+                  size="sm"
+                  presentation="adaptive"
+                  hasClear
+                  hasSearch
+                  searchPlaceholder="Sök enhet"
+                  // The units come with the overview. Without it the panel says why whenever it is opened or searched: in
+                  // place of options, or beside the unit the address names, the one it can offer, by its id. Never that
+                  // the catalogue has pushed none.
+                  emptyText={data ? 'Katalogen har inte fört in några enheter.' : UNITS_UNREAD}
+                  emptySearchText={data ? undefined : UNITS_UNREAD}
+                  options={withChosen(
+                    (data?.units ?? []).map(u => ({
+                      value: u.id,
+                      label: u.label,
+                      ...(u.parentLabel ? { description: u.parentLabel } : {}),
+                    })),
+                    filter.unitId,
+                    filter.unitId ?? '',
+                    data ? undefined : UNITS_UNREAD,
+                  )}
+                  value={filter.unitId ?? null}
+                  onChange={(unit: string | null) => show({ unit })}
+                  renderValue={o => `Enhet: ${o.label}`}
                 />
-                <Button type="submit" variant="primary" label="Lägg till" isDisabled={!group || !capability || busy} />
+                <Selector
+                  label="Roll"
+                  isLabelHidden
+                  placeholder="Roll"
+                  size="sm"
+                  presentation="adaptive"
+                  hasClear
+                  options={roles.map(r => ({ value: r, label: roleOfOne[r] }))}
+                  value={filter.role ?? null}
+                  onChange={(role: string | null) => show({ role })}
+                  renderValue={o => `Roll: ${o.label}`}
+                />
+                <Selector
+                  label="Status"
+                  isLabelHidden
+                  placeholder="Status"
+                  size="sm"
+                  presentation="adaptive"
+                  hasClear
+                  options={USER_STATUSES.map(s => ({ value: s, label: statusLabel[s] }))}
+                  value={filter.status ?? null}
+                  onChange={(status: string | null) => show({ status })}
+                  renderValue={o => `Status: ${o.label}`}
+                />
+                <Selector
+                  label="Behörighet"
+                  isLabelHidden
+                  placeholder="Behörighet"
+                  size="sm"
+                  presentation="adaptive"
+                  hasClear
+                  // The contract's closed list (D85), which the address is read by too: the filter offers every
+                  // capability whether or not the overview could be read, and holds whichever one the address names.
+                  options={CAPABILITIES.map(c => ({ value: c, label: capabilityLabel[c] }))}
+                  value={filter.capability ?? null}
+                  onChange={(capability: string | null) => show({ capability })}
+                  renderValue={o => `Behörighet: ${o.label}`}
+                />
               </HStack>
-            </VStack>
-          </Section>
-          {groupCapabilities.length === 0 ? (
-            <Section variant="transparent" padding={4}>
-              <Text type="supporting">
-                Ingen grupp ger någon behörighet ännu. Behörigheter kan också följa med katalogen som grupper med
-                nyckeln capability.
-              </Text>
             </Section>
-          ) : mobile ? (
-            <List aria-label="Behörigheter från grupper" hasDividers>
-              {groupCapabilities.map(m => (
-                <ListItem
-                  key={mappingKey(m)}
-                  label={<Text weight="semibold">{m.groupLabel ?? m.groupExternalId}</Text>}
-                  description={<Text type="supporting">{capabilityLabel[m.capability]}</Text>}
-                  endContent={
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      label="Ta bort"
-                      aria-label={`Ta bort: ${m.groupLabel ?? m.groupExternalId} ger ${capabilityLabel[m.capability].toLowerCase()}`}
-                      onClick={() => unmapIt(m)}
-                      ref={removeButton(mappingKey(m))}
-                    />
-                  }
-                />
-              ))}
-            </List>
-          ) : (
-            <Table<MapRow>
-              data={groupCapabilities.map(m => ({ id: mappingKey(m), m }))}
-              idKey="id"
-              columns={mapColumns}
-              density="balanced"
-            />
-          )}
-        </Card>
+            {!page ? (
+              <Section variant="transparent" padding={3}>
+                <Banner status="error" role="alert" collapsible={false} title={listError} />
+              </Section>
+            ) : users.length === 0 ? (
+              <EmptyState
+                isCompact
+                headingLevel={2}
+                title="Inga personer matchar"
+                description="Ingen i katalogen stämmer med sökningen och filtren tillsammans."
+                actions={<Button size="sm" label="Rensa filter" onClick={clear} />}
+              />
+            ) : !peopleTable ? (
+              <List aria-label="Personer" hasDividers>
+                {users.map(u => (
+                  <ListItem
+                    key={u.id}
+                    align="start"
+                    startContent={<Avatar name={u.name} size="sm" tooltip={false} aria-hidden />}
+                    label={<PersonNameLink person={u} />}
+                    description={
+                      <VStack gap={0} hAlign="start">
+                        {underName(u) && <Text type="supporting">{underName(u)}</Text>}
+                        {u.assignments.length ? (
+                          placements(u).map(a => (
+                            <Text key={a.unitId} type="supporting">
+                              {`${a.unitLabel}${DOT}${roleOfOne[a.role]}`}
+                            </Text>
+                          ))
+                        ) : (
+                          <Text type="supporting">Ingen enhet</Text>
+                        )}
+                        {u.capabilities.length > 0 && (
+                          <Text type="supporting">
+                            {u.capabilities.map(c => capabilityLabel[c as Capability] ?? c).join(', ')}
+                          </Text>
+                        )}
+                      </VStack>
+                    }
+                    endContent={status(u)}
+                  />
+                ))}
+              </List>
+            ) : (
+              <Table<Row>
+                aria-labelledby={peopleId}
+                data={users.map(u => ({ id: u.id, u }))}
+                idKey="id"
+                columns={columns}
+                density="balanced"
+                hasHover
+                rowIndexStart={(page.page - 1) * page.pageSize + 1}
+                rowCount={page.total}
+              />
+            )}
+            {page && page.total > USERS_PAGE_SIZES[0] && (
+              <Section variant="transparent" padding={3}>
+                <HStack justify="center">
+                  <Pagination
+                    label="Sidor med personer"
+                    size="sm"
+                    variant={mobile ? 'compact' : 'pages'}
+                    page={page.page}
+                    totalItems={page.total}
+                    pageSize={page.pageSize}
+                    onChange={turn}
+                    {...(mobile
+                      ? {}
+                      : {
+                          pageSizeOptions: [...USERS_PAGE_SIZES],
+                          onPageSizeChange: (size: number) =>
+                            show({ size: size === USERS_PAGE_SIZES[0] ? null : size }),
+                        })}
+                  />
+                </HStack>
+              </Section>
+            )}
+          </Card>
+        </VStack>
+      )}
+      {data && (
+        <VStack as="section" gap={3} aria-labelledby={mappingsId}>
+          <VStack gap={1}>
+            <Heading level={3} accessibilityLevel={2} id={mappingsId}>
+              Behörigheter från grupper
+            </Heading>
+            <Text type="supporting">
+              En grupp från katalogen ger sina medlemmar en behörighet i Clew. Ändringen gäller vid nästa anrop.
+            </Text>
+          </VStack>
+          <Card padding={0}>
+            <Section variant="transparent" padding={4}>
+              <VStack
+                gap={3}
+                as="form"
+                aria-label="Lägg till behörighet från grupp"
+                onSubmit={e => {
+                  e.preventDefault();
+                  void mapIt();
+                }}
+              >
+                <HStack gap={3} wrap="wrap" vAlign="end">
+                  <Typeahead
+                    label="Grupp"
+                    placeholder={groups.length ? 'Sök på namn eller id' : 'Inga grupper provisionerade'}
+                    searchSource={groupSource}
+                    debounceMs={0}
+                    value={group}
+                    onChange={chosen => {
+                      setUnsearched(false);
+                      setGroup(chosen);
+                    }}
+                    onChangeQuery={() => setUnsearched(false)}
+                    // A search the server did not answer is not one that found nothing: the list, empty or holding the
+                    // page's own matches, and the field both say so.
+                    emptySearchText={unsearched ? GROUPS_UNSEARCHED : 'Ingen grupp matchar.'}
+                    status={
+                      unsearched
+                        ? { type: 'error', message: GROUPS_UNSEARCHED }
+                        : tried && !group && groups.length
+                          ? { type: 'error', message: 'Välj en grupp.' }
+                          : undefined
+                    }
+                    // The name and the external id wrap inside the row, so a long one is read whole at 320 px (1.4.10);
+                    // TypeaheadItem holds each to one line, and the row cut a long one off.
+                    renderItem={item => (
+                      <VStack gap={0} width="100%">
+                        <Text>{item.label}</Text>
+                        <Text type="supporting">{item.id}</Text>
+                      </VStack>
+                    )}
+                    width={mobile ? '100%' : 320}
+                    isDisabled={!groups.length}
+                    disabledMessage="Grupper visas när katalogen har provisionerat dem genom SCIM."
+                    ref={groupField}
+                  />
+                  <Selector
+                    label="Ger behörigheten"
+                    placeholder="Välj behörighet"
+                    options={(data.capabilities ?? []).map(c => ({ value: c, label: capabilityLabel[c] }))}
+                    value={capability}
+                    onChange={setCapability}
+                    status={tried && !capability ? { type: 'error', message: 'Välj en behörighet.' } : undefined}
+                    ref={capabilityField}
+                  />
+                  {/* Always there to press: a field left empty says so itself (D121 item 5). */}
+                  <Button type="submit" variant="primary" label="Lägg till" isLoading={busy} />
+                </HStack>
+              </VStack>
+            </Section>
+            {groupCapabilities.length === 0 ? (
+              <Section variant="transparent" padding={4}>
+                <Text type="supporting">
+                  Ingen grupp ger någon behörighet ännu. Behörigheter kan också följa med katalogen som grupper med
+                  nyckeln capability.
+                </Text>
+              </Section>
+            ) : !mappingsTable ? (
+              <List aria-label="Behörigheter från grupper" hasDividers>
+                {groupCapabilities.map(m => (
+                  <ListItem
+                    key={mappingKey(m)}
+                    label={<Text weight="semibold">{m.groupLabel ?? m.groupExternalId}</Text>}
+                    description={
+                      <Link
+                        href={`?capability=${m.capability}`}
+                        type="supporting"
+                        hasUnderline
+                        onClick={narrowTo(m.capability)}
+                      >
+                        {capabilityLabel[m.capability]}
+                      </Link>
+                    }
+                    endContent={
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        label="Ta bort"
+                        aria-label={`Ta bort: ${m.groupLabel ?? m.groupExternalId} ger ${capabilityLabel[m.capability].toLowerCase()}`}
+                        onClick={() => unmapIt(m)}
+                        ref={removeButton(mappingKey(m))}
+                      />
+                    }
+                  />
+                ))}
+              </List>
+            ) : (
+              <Table<MapRow>
+                aria-labelledby={mappingsId}
+                data={groupCapabilities.map(m => ({ id: mappingKey(m), m }))}
+                idKey="id"
+                columns={mapColumns}
+                density="balanced"
+              />
+            )}
+          </Card>
+        </VStack>
+      )}
+      {data && (
+        <VStack as="section" gap={3} aria-labelledby={cataloguesId}>
+          <VStack gap={1}>
+            <HStack gap={4} vAlign="center" justify="between" wrap="wrap">
+              <Heading level={3} accessibilityLevel={2} id={cataloguesId} ref={catalogues} tabIndex={-1}>
+                Inläsning från katalogen
+              </Heading>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Lägg till katalog"
+                onClick={() => setIssuing(true)}
+                ref={addCatalogue}
+              />
+            </HStack>
+            <Text type="supporting">
+              Katalogen ska skicka varje ändring till Clew när den sker, och stämma av allt minst en gång per dygn.
+              Tills en ändring har kommit fram gäller den åtkomst personen hade.
+            </Text>
+          </VStack>
+          <Card padding={0}>
+            {provisioners.length === 0 ? (
+              <Section variant="transparent" padding={4}>
+                <Text type="supporting">Ingen katalog har fått en nyckel till Clew ännu.</Text>
+              </Section>
+            ) : (
+              <List aria-label="Kataloger" hasDividers>
+                {provisioners.map(p => (
+                  <ListItem
+                    key={p.id}
+                    label={<Text weight="semibold">{p.label}</Text>}
+                    description={
+                      <VStack gap={0} hAlign="start">
+                        <Text type="supporting">{lastSeen(p)}</Text>
+                        {p.previousValidUntil && (
+                          <Text type="supporting">{previousKeyUntil(p.previousValidUntil)}</Text>
+                        )}
+                      </VStack>
+                    }
+                    endContent={
+                      <HStack gap={2} vAlign="center">
+                        {liveness(p)}
+                        <MoreMenu
+                          label={`Åtgärder för ${p.label}`}
+                          size="sm"
+                          alignment="end"
+                          presentation="adaptive"
+                          items={[
+                            { id: 'rotate', label: 'Byt nyckel', onClick: () => setRotating(p) },
+                            { id: 'revoke', label: 'Återkalla nyckeln', onClick: () => setRevoking(p) },
+                          ]}
+                        />
+                      </HStack>
+                    }
+                  />
+                ))}
+              </List>
+            )}
+          </Card>
+        </VStack>
       )}
       <IssueProvisionerDialog isOpen={issuing} onClose={() => setIssuing(false)} />
       <RotateProvisionerDialog provisioner={rotating} onClose={() => setRotating(null)} />
