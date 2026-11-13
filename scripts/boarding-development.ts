@@ -7,25 +7,29 @@
 export const DEVELOPMENT_ORGANISATION = 'poc';
 /**
  * Three introduction layers (everyone; the education administration and every unit below it, Hillevi's school among
- * them; teachers by position) and one leaving layer for everyone.
+ * them; teachers by position) and one leaving layer for everyone. Some items are tied to what they are done with
+ * (`tiedTo`, `boardingTieOf`): the orders to the development stack's IT service desk's order with the catalogue's item
+ * chosen (`servicedesk.order?item=…`, the values of `connectors/servicedesk/manifest.mjs`), the course to the person's
+ * holdings in Kompetens, the return of equipment to what the desk has registered on the person, and the reading on the
+ * municipality's values to a made-up page on the intranet. Capability names are data: nothing here imports a connector.
  */
 export const DEVELOPMENT_LAYERS = [
   'layer;event;condition;value;title;kind;owner;offsetDays;tiedTo',
-  'Alla nyanställda;introduction;all;;Beställ dator och telefon;order;manager;-14;',
-  'Alla nyanställda;introduction;all;;Beställ passerkort;order;manager;-10;',
+  'Alla nyanställda;introduction;all;;Beställ dator och telefon;order;manager;-14;servicedesk.order?item=laptop',
+  'Alla nyanställda;introduction;all;;Beställ passerkort;order;manager;-10;servicedesk.order?item=access-card',
   'Alla nyanställda;introduction;all;;Skicka ett välkomstbrev;todo;manager;-7;',
   'Alla nyanställda;introduction;all;;Välkomstsamtal;meeting;manager;0;',
   'Alla nyanställda;introduction;all;;Lunch med faddern;meeting;buddy;1;',
-  'Alla nyanställda;introduction;all;;Läs om kommunens värdegrund;acknowledge;person;2;',
+  'Alla nyanställda;introduction;all;;Läs om kommunens värdegrund;acknowledge;person;2;https://intranet.example.org/vardegrund',
   'Alla nyanställda;introduction;all;;Informationssäkerhet;course;person;30;competence.holdings',
   'Alla nyanställda;introduction;all;;Uppföljningssamtal efter tre månader;meeting;manager;90;',
   'Barn och utbildning;introduction;unit;unit-forvaltning-utbildning;Läs skolans krisplan;acknowledge;person;3;',
   'Barn och utbildning;introduction;unit;unit-forvaltning-utbildning;Introduktion i lärplattformen;course;person;7;',
-  'Lärare;introduction;position;larare;Få tillgång till schemat;order;manager;-5;',
+  'Lärare;introduction;position;larare;Få tillgång till schemat;order;manager;-5;servicedesk.order?item=system-access',
   'Lärare;introduction;position;larare;Gå igenom elevhälsans rutiner;meeting;buddy;5;',
   'Alla som slutar;leaving;all;;Avslutningssamtal;meeting;manager;-14;',
   'Alla som slutar;leaving;all;;Lämna över pågående arbete;todo;person;-7;',
-  'Alla som slutar;leaving;all;;Lämna tillbaka dator, telefon och passerkort;todo;person;0;',
+  'Alla som slutar;leaving;all;;Lämna tillbaka utrustning;todo;person;0;servicedesk.equipment',
   'Alla som slutar;leaving;all;;Be om att behörigheterna tas bort;order;manager;1;',
 ].join('\n');
 /**

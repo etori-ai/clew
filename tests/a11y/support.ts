@@ -116,7 +116,7 @@ import {
 } from './competence';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { deskRequestOutput, deskRequestSpec, requestsOutput, requestsSpec } from './requests';
-import { BoardingMock, boardingOff } from './boarding';
+import { BoardingMock, boardingOff, equipmentAnswer, orderReceipt } from './boarding';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { previewManifest } from '../../packages/connectors/src/preview';
 import { parseManifest } from '../../packages/connectors/src/remote';
@@ -1527,6 +1527,8 @@ export class MockApi {
       const answered = await this.boarding.handle(route, path);
       if (answered !== null) return answered;
     }
+    // The IT service desk's equipment on a person, a read a plan's item opens (D124).
+    if (path === '/cap/servicedesk.equipment') return json(equipmentAnswer);
     // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
     if (path === '/cap/clew.talks' || path === '/cap/clew.commitments' || path.startsWith('/talks/'))
       return this.handleTalks(route, path, url);
@@ -1735,64 +1737,66 @@ export class MockApi {
         if (refusal) return route.fulfill({ status: 400, json: { error: refusal } });
         const refs = body.refs ?? t.items.filter(i => i.selected).map(i => i.ref);
         const receipt: Thread['receipt'] =
-          action.capability === 'hr.bookTalk'
-            ? {
-                at: NOW,
-                headline: 'Samtalet är registrerat i personalsystemet.',
-                undoUntil: '2026-11-04T08:10:00.000Z',
-                undoCapability: 'hr.unbookTalk',
-                rows: [
-                  {
-                    ref: 'hr:emp:anna',
-                    label: 'Omtankesamtal',
-                    outcome: 'done',
-                    detail: ['registrerat i personalsystemet', values.when && talkTime(values.when), values.place]
-                      .filter(Boolean)
-                      .join(', '),
-                  },
-                ],
-              }
-            : action.capability === 'hr.decideLeave'
+          action.capability === 'servicedesk.order'
+            ? orderReceipt(values.item)
+            : action.capability === 'hr.bookTalk'
               ? {
                   at: NOW,
-                  headline: 'Ansökan är godkänd.',
+                  headline: 'Samtalet är registrerat i personalsystemet.',
                   undoUntil: '2026-11-04T08:10:00.000Z',
-                  undoCapability: 'hr.undecideLeave',
+                  undoCapability: 'hr.unbookTalk',
                   rows: [
                     {
-                      ref: 'hr:leave:1',
-                      label: 'Ansökan 21–22 dec',
+                      ref: 'hr:emp:anna',
+                      label: 'Omtankesamtal',
                       outcome: 'done',
-                      detail: 'godkänd i personalsystemet, medarbetaren meddelad',
+                      detail: ['registrerat i personalsystemet', values.when && talkTime(values.when), values.place]
+                        .filter(Boolean)
+                        .join(', '),
                     },
                   ],
                 }
-              : action.capability === 'communication.acknowledge'
-                ? // A read receipt (D112, amended 2026-11-11), as the communication fixture answers it: no way back.
-                  {
+              : action.capability === 'hr.decideLeave'
+                ? {
                     at: NOW,
-                    headline: 'Läskvittot är registrerat.',
-                    undoUntil: null,
-                    undoCapability: null,
-                    rows: refs.map(ref => ({
-                      ref,
-                      label: t.items.find(i => i.ref === ref)?.label ?? t.title,
-                      outcome: 'done' as const,
-                      detail: 'kvitterat 09:00',
-                    })),
-                  }
-                : {
-                    at: NOW,
-                    headline: `${refs.length} ${refs.length === 1 ? 'faktura attesterad' : 'fakturor attesterade'}`,
+                    headline: 'Ansökan är godkänd.',
                     undoUntil: '2026-11-04T08:10:00.000Z',
-                    undoCapability: 'finance.unapprove',
-                    rows: refs.map(ref => ({
-                      ref,
-                      label: t.items.find(i => i.ref === ref)?.label ?? ref,
-                      outcome: 'done',
-                      detail: 'Läst tillbaka från ekonomisystemet',
-                    })),
-                  };
+                    undoCapability: 'hr.undecideLeave',
+                    rows: [
+                      {
+                        ref: 'hr:leave:1',
+                        label: 'Ansökan 21–22 dec',
+                        outcome: 'done',
+                        detail: 'godkänd i personalsystemet, medarbetaren meddelad',
+                      },
+                    ],
+                  }
+                : action.capability === 'communication.acknowledge'
+                  ? // A read receipt (D112, amended 2026-11-11), as the communication fixture answers it: no way back.
+                    {
+                      at: NOW,
+                      headline: 'Läskvittot är registrerat.',
+                      undoUntil: null,
+                      undoCapability: null,
+                      rows: refs.map(ref => ({
+                        ref,
+                        label: t.items.find(i => i.ref === ref)?.label ?? t.title,
+                        outcome: 'done' as const,
+                        detail: 'kvitterat 09:00',
+                      })),
+                    }
+                  : {
+                      at: NOW,
+                      headline: `${refs.length} ${refs.length === 1 ? 'faktura attesterad' : 'fakturor attesterade'}`,
+                      undoUntil: '2026-11-04T08:10:00.000Z',
+                      undoCapability: 'finance.unapprove',
+                      rows: refs.map(ref => ({
+                        ref,
+                        label: t.items.find(i => i.ref === ref)?.label ?? ref,
+                        outcome: 'done',
+                        detail: 'Läst tillbaka från ekonomisystemet',
+                      })),
+                    };
         const decided = this.update(id, { state: 'handled', handledAt: NOW, receipt });
         // A decision through the dialog is a new version of the item, so its Händelser are read again (D112 item 4).
         if (action.path) decided.updatedAt = '2026-11-04T08:00:01.000Z';

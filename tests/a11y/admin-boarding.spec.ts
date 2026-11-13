@@ -39,13 +39,14 @@ const goodFile = [
   'layer;event;condition;value;title;kind;owner;offsetDays;tiedTo',
   'Alla nyanställda;introduction;all;;Beställ dator och telefon;order;manager;-14;',
   'Alla nyanställda;Introduktion;Alla;;Välkomstsamtal;Möte;Chef;0;',
-  'Undersköterskor;introduction;position;underskoterska;HLR;course;person;30;HLR',
+  'Undersköterskor;introduction;position;underskoterska;HLR;course;person;30;competence.holdings',
 ].join('\n');
 const badFile = [
   'layer;event;condition;value;title;kind;owner;offsetDays;tiedTo',
   'Alla nyanställda;Start;all;;Beställ dator;order;manager;-14;',
   'Alla nyanställda;introduction;all;;Välkomstsamtal;meeting;manager;x;',
   'Undersköterskor;introduction;position;underskoterska;HLR;course;person;30;',
+  'Undersköterskor;introduction;position;underskoterska;Basala hygienrutiner;acknowledge;person;3;Rutinen på intranätet',
 ].join('\n');
 
 const administrator = (api: MockApi) => {
@@ -156,11 +157,13 @@ test.describe('Administration › Introduktion och avslut', () => {
     administrator(api);
     await open(page, IMPORT);
     await upload(page, badFile);
-    await expect(drawn(page, '2 rader kan inte läsas in. Felen står under fältet.')).toBeVisible();
+    await expect(drawn(page, '3 rader kan inte läsas in. Felen står under fältet.')).toBeVisible();
     const problems = page.getByRole('list', { name: 'Det som inte kan läsas in' });
     await expect(problems.getByRole('listitem')).toHaveText([
       /^Rad 2: Händelsen ”Start” finns inte\./,
       /^Rad 3: Antal dagar ska vara ett heltal från -365 till 365\./,
+      // What an item is tied to is a capability or an https address (D124): words are a problem with their row.
+      'Rad 5: Kopplingen ska vara en förmåga, som servicedesk.order eller servicedesk.order?item=laptop, eller en adress som börjar med https://.',
     ]);
     await expect(page.getByRole('button', { name: /^Importera/ })).toHaveCount(0);
     await expect(page.getByRole('table', { name: 'Lagren i filen' })).toHaveCount(0);

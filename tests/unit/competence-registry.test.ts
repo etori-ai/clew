@@ -303,6 +303,13 @@ describe('the competence wiring (D108 item 13)', () => {
       rows: [{ name: 'Anna Lindqvist', competence: 'HLR', issuedOn: '2025-05-10' }],
     });
     expect(w.registry.views(actorOf(acting)).map(v => v.capability)).toContain('competence.approval');
+    // A read that takes one person names the property it takes them in, so a page can open it for a person (D124).
+    expect(w.registry.views(actorOf(acting)).find(v => v.capability === 'competence.holdings')).toMatchObject({
+      person: 'person',
+    });
+    expect(w.registry.views(actorOf(acting)).find(v => v.capability === 'competence.approval')).not.toHaveProperty(
+      'person',
+    );
 
     expect((await w.call(hillevi, 'POST', `/approvals/${holdingId}`, { decision: 'approve' })).status).toBe(204);
     expect(w.store.state.holdings.get(holdingId)).toMatchObject({ state: 'valid', decidedBy: 'hillevi' });

@@ -1555,8 +1555,8 @@ export class Registry implements HoldingsReader {
     return out.sort((a, b) => a.label.localeCompare(b.label, 'sv'));
   }
   /**
-   * The reads a person may open as a view (D116): every read capability they may call, with its title and the kind of
-   * view it declares (D38). Each has a page of its own; the browser opens one that answers with rows there and anything
+   * The reads a person may open as a view (D116): every read capability they may call, with its title, the kind of
+   * view it declares (D38) and the input property it takes one person's key in, when it takes one (D117). Each has a page of its own; the browser opens one that answers with rows there and anything
    * else beside the page it was opened from. A read the person may not call is missing, as one that does not exist is.
    */
   views(actor: Actor): ViewEntry[] {
@@ -1568,6 +1568,8 @@ export class Registry implements HoldingsReader {
         ...(capability.view ? { kind: capability.view.kind } : {}),
         // Clew's own page for the read's rows: only a core connector's read has one.
         ...(capability.page && connector.kind === 'core' ? { page: capability.page } : {}),
+        // Where the read takes one person (D117), so a page can open it for the person it is about (D124).
+        ...(capability.person?.param ? { person: capability.person.param } : {}),
       }));
   }
   /**

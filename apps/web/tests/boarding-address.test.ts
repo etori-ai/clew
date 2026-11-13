@@ -26,6 +26,8 @@ import {
   planTitle,
   previewOwners,
   layerCounts,
+  needsActions,
+  rowControl,
   withTicked,
 } from '../src/boarding';
 import { sourcePageHref } from '../src/talk-address';
@@ -298,5 +300,75 @@ describe("the start dialog's last step says who gets what from which layers", ()
       ['all', 2],
       ['it', 2],
     ]);
+  });
+});
+
+describe('what an item’s row opens, from what it is tied to (D124)', () => {
+  const order = {
+    capability: 'servicedesk.order',
+    connector: 'servicedesk',
+    source: 'IT-servicedesken',
+    title: 'Beställ från IT-servicedesken',
+    kind: 'execute' as const,
+    param: 'person',
+  };
+  const context = {
+    actions: [order],
+    views: [
+      { capability: 'servicedesk.equipment', title: 'IT-utrustning', kind: 'list' as const, person: 'person' },
+      { capability: 'phonebook.directory', title: 'Telefonboken', kind: 'table' as const },
+    ],
+    person: 'anna',
+    from: '/boarding/anna?plan=plan-1&from=%2Fstaff',
+  };
+  const item = (tiedTo: string | undefined, values: { done?: boolean; canTick?: boolean } = {}) => ({
+    canTick: true,
+    done: false,
+    ...(tiedTo === undefined ? {} : { tiedTo }),
+    ...values,
+  });
+  test('an action the reader may start for the person: a button with the answers its dialog starts from', () => {
+    expect(rowControl(item('servicedesk.order?item=laptop'), context)).toEqual({
+      kind: 'action',
+      action: order,
+      values: { item: 'laptop' },
+    });
+    // Done, it starts nothing again.
+    expect(rowControl(item('servicedesk.order?item=laptop', { done: true }), context)).toBeNull();
+  });
+  test('a read the reader may open: its page with the person as its input where it takes one, this page as the way back', () => {
+    expect(rowControl(item('servicedesk.equipment'), context)).toEqual({
+      kind: 'read',
+      title: 'IT-utrustning',
+      href: '/tools/servicedesk.equipment?input=%7B%22person%22%3A%22anna%22%7D&title=IT-utrustning&from=%2Fboarding%2Fanna%3Fplan%3Dplan-1',
+    });
+    expect(rowControl(item('phonebook.directory'), context)).toEqual({
+      kind: 'read',
+      title: 'Telefonboken',
+      href: '/tools/phonebook.directory?title=Telefonboken&from=%2Fboarding%2Fanna%3Fplan%3Dplan-1',
+    });
+    // A done item keeps a read's link; a read that takes a person needs their user name.
+    expect(rowControl(item('servicedesk.equipment', { done: true }), context)?.kind).toBe('read');
+    expect(rowControl(item('servicedesk.equipment'), { ...context, person: null })).toBeNull();
+  });
+  test('an https address: a link out, done or not', () => {
+    expect(rowControl(item('https://intranet.example.org/vardegrund', { done: true }), context)).toEqual({
+      kind: 'link',
+      href: 'https://intranet.example.org/vardegrund',
+      host: 'intranet.example.org',
+    });
+  });
+  test('nothing for a capability the reader may not use, plain words, no tie, or a reader who may not act on the item', () => {
+    expect(rowControl(item('hr.registerAbsence'), context)).toBeNull();
+    expect(rowControl(item('Kursen i HLR'), context)).toBeNull();
+    expect(rowControl(item(undefined), context)).toBeNull();
+    expect(rowControl(item('servicedesk.order?item=laptop', { canTick: false }), context)).toBeNull();
+    expect(rowControl(item('https://intranet.example.org/', { canTick: false }), context)).toBeNull();
+    // An action is read for only where a row names a capability that is no read the reader may open.
+    expect(needsActions([item('servicedesk.equipment'), item('https://intranet.example.org/')], context.views)).toBe(
+      false,
+    );
+    expect(needsActions([item('servicedesk.order?item=laptop')], context.views)).toBe(true);
+    expect(needsActions([item('servicedesk.order?item=laptop', { done: true })], context.views)).toBe(false);
   });
 });

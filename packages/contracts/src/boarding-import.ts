@@ -6,7 +6,8 @@
  *   Alla nyanställda;introduction;all;;Beställ dator och telefon;order;manager;-14;
  *   Alla nyanställda;introduction;all;;Välkomstsamtal;meeting;manager;0;
  *   Vård och omsorg;introduction;unit;unit-omsorg;Läs rutinen för basala hygienrutiner;acknowledge;person;3;
- *   Undersköterskor;introduction;position;underskoterska;HLR;course;person;30;HLR
+ *   Undersköterskor;introduction;position;underskoterska;HLR;course;person;30;https://intranet.example.org/hlr
+ *   Alla nyanställda;introduction;all;;Beställ passerkort;order;manager;-10;servicedesk.order?item=access-card
  *
  * - `layer`: the layer's name, at most 80 characters. A layer is known by its name and its event together, without
  *   regard to case: every row of one layer names the same condition and value, and its rows are its items in the
@@ -24,7 +25,12 @@
  *   `Fadder`).
  * - `offsetDays`: whole days from the plan's day (the first day, or the last day of a leaving plan): negative before
  *   it, 0 on it; from -365 to 365.
- * - `tiedTo`: optional, a capability's name or a link that later phases use; at most 300 characters.
+ * - `tiedTo`: optional, at most 300 characters: what the item is done with, which its row on the plan opens
+ *   (`boardingTieOf`). A capability's name as the protocol writes one (`<connector>.<name>`): an action about the
+ *   person, which the row starts for the plan's person, with answers to its asks after a `?` that the action's dialog
+ *   starts from (`servicedesk.order?item=laptop`), or a read, which the row opens with the person; or an absolute
+ *   `https://` address, which the row opens in a new tab. The plan holds the item, never what it is done with: nothing
+ *   is ordered by a plan, and an order placed does not tick its item.
  *
  * Pure functions with no I/O and nothing of ours imported: the page reads the file with them, and the server checks
  * every row it is sent again with `boardingImportRowProblem` and groups them with `boardingLayersOf`, so the two can
@@ -162,6 +168,65 @@ function textProblem(value: string, what: string, max: number, required = true):
   if (length(value) > max) return `${what} är längre än ${max} tecken.`;
   return null;
 }
+/** What an item is tied to (D124): an action or a read by its capability's name, or a page on the web. */
+export type BoardingTie =
+  | {
+      kind: 'capability';
+      /** `<connector>.<name>`, as the protocol names a capability. */
+      capability: string;
+      /** Answers an action's dialog starts from, by its asks' properties; empty for none. */
+      values: Record<string, string>;
+    }
+  | { kind: 'link'; href: string };
+/** A capability's name as the protocol writes one (`packages/connectors/src/protocol.ts`). */
+const TIE_CAPABILITY = /^[a-z][a-z0-9-]*\.[a-zA-Z][a-zA-Z0-9]*$/;
+const TIE_CAPABILITY_MAX = 80;
+/** An answer's property, as an ask names one. */
+const TIE_KEY = /^[a-zA-Z][a-zA-Z0-9_-]{0,39}$/;
+const TIE_VALUE_MAX = 200;
+const TIE_PROBLEM =
+  'Kopplingen ska vara en förmåga, som servicedesk.order eller servicedesk.order?item=laptop, eller en adress som börjar med https://.';
+/**
+ * What `tiedTo` says, or null when it says nothing usable: an absolute `https://` address, or a capability's name with
+ * an optional `?key=value&…` of simple answers (each key once, the value percent-decoded, one line). Pure; the server
+ * refuses a file whose `tiedTo` this does not read, and the plan's page draws a row's control from it.
+ */
+export function boardingTieOf(text: string | null | undefined): BoardingTie | null {
+  if (!text || /\s/.test(text) || UNSAFE.test(text)) return null;
+  if (/^https:\/\//i.test(text)) {
+    try {
+      const url = new URL(text);
+      return url.protocol === 'https:' && url.hostname && !url.username && !url.password
+        ? { kind: 'link', href: text }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  const at = text.indexOf('?');
+  const capability = at < 0 ? text : text.slice(0, at);
+  if (capability.length > TIE_CAPABILITY_MAX || !TIE_CAPABILITY.test(capability)) return null;
+  const values: Record<string, string> = {};
+  if (at >= 0) {
+    const query = text.slice(at + 1);
+    if (!query) return null;
+    for (const part of query.split('&')) {
+      const eq = part.indexOf('=');
+      if (eq < 1) return null;
+      const key = part.slice(0, eq);
+      let value: string;
+      try {
+        value = decodeURIComponent(part.slice(eq + 1));
+      } catch {
+        return null;
+      }
+      if (!TIE_KEY.test(key) || Object.prototype.hasOwnProperty.call(values, key)) return null;
+      if (!value || [...value].length > TIE_VALUE_MAX || UNSAFE.test(value)) return null;
+      values[key] = value;
+    }
+  }
+  return { kind: 'capability', capability, values };
+}
 const OFFSET_PROBLEM = `Antal dagar ska vara ett heltal från -${BOARDING_OFFSET_MAX} till ${BOARDING_OFFSET_MAX}.`;
 const VALUE_FOR_ALL = 'Ett lager för alla har inget värde.';
 
@@ -194,7 +259,10 @@ export function boardingImportRowProblem(row: BoardingImportCandidate): string |
       ? `Ansvarig finns inte. ${help(BOARDING_OWNER_ROLES, BOARDING_OWNER_WORDS)}`
       : null) ??
     (!Number.isInteger(row.offsetDays) || Math.abs(row.offsetDays) > BOARDING_OFFSET_MAX ? OFFSET_PROBLEM : null) ??
-    (row.tiedTo !== null ? textProblem(row.tiedTo, 'Kopplingen', BOARDING_TIED_TO_MAX) : null)
+    (row.tiedTo !== null
+      ? (textProblem(row.tiedTo, 'Kopplingen', BOARDING_TIED_TO_MAX) ??
+        (boardingTieOf(row.tiedTo) ? null : TIE_PROBLEM))
+      : null)
   );
 }
 

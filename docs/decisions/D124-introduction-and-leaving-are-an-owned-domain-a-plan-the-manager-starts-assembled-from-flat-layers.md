@@ -32,9 +32,20 @@ said that Clew suggests it with a work item and the manager confirms. Every othe
    - A layer is a flat list: no branches, no dependencies between items, no condition per item, no approvals, no forms.
    - An item has a kind from a closed set (`todo`, `order`, `meeting`, `course`, `acknowledge`), an owner role
      (`manager`, `person`, `buddy`), an offset in whole days from the plan's day (negative before it, -365 to 365), a
-     title, and an optional `tiedTo` text (a capability's name or a link) that later phases will use.
-   - In this decision every kind behaves as a plain to-do: nothing is ordered from a service desk, booked in a
-     calendar or checked against competence.
+     title, and an optional `tiedTo`: what the item is done with, one of a capability's name (`<connector>.<name>`,
+     with optional preset answers after a `?`, `servicedesk.order?item=laptop`) or an absolute `https://` address
+     (`boardingTieOf` in `packages/contracts/src/boarding-import.ts`, the rule the page and the import both apply; any
+     other text is a problem with its row).
+   - The plan holds the item, never what it is done with: no order, booking or inventory is stored with a plan, no
+     item is generated from one, and nothing ticks an item by itself. An item's row opens what it is tied to for a
+     reader who may tick it: an action about the person the reader may start for them (those the person's page offers
+     the reader, `GET /api/entities/person/:key`) is a button that starts it on the person's page's own path, its work
+     item beside the plan with the action dialog over it and the preset answers chosen and changeable, nothing sent
+     before its last button and nothing ticked by it; a read the reader may open is a link to its page with the person
+     as its input where it takes one (D116); an https address is a link out in a new tab (rule 10 of the interface
+     reference). Anything else opens nothing, and a done item starts no action but keeps a read's or an address's link.
+     The kinds have no behaviour of their own: `meeting` books nothing in a calendar, `course` checks nothing against
+     competence, and an `order` is ordered only by the tied action the reader starts.
 4. **Owners.** `manager` is the manager who starts the plan; `person` is the one the plan is about, before they can
    sign in too; `buddy` is the buddy the manager chose among their other reports, or the manager when none is chosen.
    An item's due day is the plan's day plus its offset.
@@ -152,8 +163,7 @@ the manager and "Planen finns inte" for anyone else. The start dialog over the p
 steps over `POST /api/boarding/preview`. Administration › Introduktion och avslut, the layers read only, and its import
 page, which reads a file with the server's parser and sends only a whole file without problems. The browser specs on a
 mock (`tests/a11y/boarding.spec.ts`, `boarding-start.spec.ts`, `admin-boarding.spec.ts`), and `boarding.person` among the
-development stack's lenses with the seed run by `bun run dev:connectors`. Not built: an order or a booking button on an
-item, editing a layer in the product, the canvas's order dialog and one layer's page, the groups the canvas draws for a
+development stack's lenses with the seed run by `bun run dev:connectors`. Not built: editing a layer in the product, the canvas's order dialog and one layer's page, the groups the canvas draws for a
 leaving (return, access, handover), "Planen är byggd av" (the plan's output does not name an item's layer), "Fråga Clew"
 on the plan's page (nothing of a plan reaches a model), and a way in for the new hire beyond the cards in Att göra and
 Hem.
@@ -164,6 +174,16 @@ timers; item 6's `tiedTo` on an added item; item 8's neutral row. Also: a layer 
 (`unitLabel`) in the preview and the administrator's list; a file's rows of only delimiters are skipped with their
 numbers kept; the import route takes any file the limits allow, its bound computed from them; and every transaction
 locks a plan before its items, its items before their cards.
+
+**Built 2026-11-13, what an item is done with.** Item 3's `tiedTo` read by one pure rule shared by the import and the
+page (`boardingTieOf`); a file that names anything else is refused with the row's number. The plan's page draws each
+row's control from it (`rowControl` in `apps/web/src/boarding.ts`): an action starts through the person's page's own
+start (`useEntityAction` in `apps/web/src/entity-actions.ts`, which takes the preset answers into the action dialog), a
+read leads to its page with the person in the input property its view entry names (`ViewEntry.person`, the read's
+`person.param`, added to `GET /api/areas`), an address leaves in a new tab. The development layers tie their orders to
+the IT service desk's `servicedesk.order` with the catalogue's item, the return of equipment to `servicedesk.equipment`
+and one reading to a made-up page on `example.org`. Not built: a booking from a `meeting` item, a check of a `course`
+item against competence, and an item that closes when what it was done with is done.
 
 **Not established.** The answers to questions 6 and 11. Whether matching on the free-text employment type is
 acceptable (the directory has no concept of a consultant). Where a new hire finds their plan besides Hem and Att göra.

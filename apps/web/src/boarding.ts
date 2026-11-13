@@ -1,4 +1,5 @@
 import type {
+  AskValues,
   BoardingCondition,
   BoardingEvent,
   BoardingItemRow,
@@ -6,9 +7,12 @@ import type {
   BoardingPlanOutput,
   BoardingPlanSummary,
   BoardingPreview,
+  EntityAction,
+  ViewEntry,
 } from '@clew/contracts';
-import { BOARDING_CONDITION_WORDS, BOARDING_EVENT_WORDS } from '@clew/contracts';
+import { BOARDING_CONDITION_WORDS, BOARDING_EVENT_WORDS, boardingTieOf } from '@clew/contracts';
 import { addDays, dayLabel, displayDate, shortDayLabel } from '@clew/calendar/dates';
+import { viewPageHref } from './view-address';
 
 /**
  * Introduction and leaving on Clew's own pages (D124): the words the plan's page, the start dialog and the
@@ -199,3 +203,62 @@ export function layerCounts(preview: BoardingPreview): Map<string, number> {
   for (const item of preview.items) counted.set(item.layerId, (counted.get(item.layerId) ?? 0) + 1);
   return counted;
 }
+
+/**
+ * What an item's row opens (D124), from what the item is tied to (`tiedTo`, read by `boardingTieOf`, the rule the server
+ * imports layers with): an action about the plan's person the reader may start for them (the actions the person's page
+ * offers the reader, from `GET /api/entities/person/:key`), with the answers its dialog starts from; a read the reader
+ * may open (`views`), its page with the person as its input where it takes one; or an https address, opened in a new tab.
+ * Anything else, and an item the reader may not act on, opens nothing: the item is still a to-do. A done item starts no
+ * action but keeps a read's or an address's link. The plan holds the item, never what it is done with: nothing here
+ * ticks an item, and a placed order does not either.
+ */
+export type RowControl =
+  | { kind: 'action'; action: EntityAction; values: AskValues }
+  | { kind: 'read'; title: string; href: string }
+  | { kind: 'link'; href: string; host: string };
+export function rowControl(
+  row: Pick<BoardingItemRow, 'canTick' | 'done' | 'tiedTo'>,
+  context: {
+    /** The actions about the plan's person the reader may start, as the person's page offers them. */
+    actions: readonly EntityAction[];
+    /** The reads the reader may open. */
+    views: readonly ViewEntry[];
+    /** The plan's person's user name: the key an action and a read take them by. */
+    person: string | null;
+    /** The page the row is on, the way back from a read's page. */
+    from: string;
+  },
+): RowControl | null {
+  if (!row.canTick) return null;
+  const tie = boardingTieOf(row.tiedTo);
+  if (!tie) return null;
+  if (tie.kind === 'link') return { kind: 'link', href: tie.href, host: new URL(tie.href).hostname };
+  const action = context.person ? context.actions.find(a => a.capability === tie.capability) : undefined;
+  if (action) return row.done ? null : { kind: 'action', action, values: tie.values };
+  const view = context.views.find(v => v.capability === tie.capability);
+  // A read that takes one person is opened with the plan's; without their user name it cannot be.
+  if (!view || (view.person && !context.person)) return null;
+  return {
+    kind: 'read',
+    title: view.title,
+    href: viewPageHref(
+      {
+        capability: view.capability,
+        title: view.title,
+        ...(view.person && context.person ? { input: { [view.person]: context.person } } : {}),
+      },
+      context.from,
+    ),
+  };
+}
+/** Whether any row is tied to a capability that is no read the reader may open: what the person's actions are read for. */
+export const needsActions = (
+  rows: readonly Pick<BoardingItemRow, 'canTick' | 'done' | 'tiedTo'>[],
+  views: readonly ViewEntry[],
+) =>
+  rows.some(r => {
+    if (!r.canTick || r.done) return false;
+    const tie = boardingTieOf(r.tiedTo);
+    return tie?.kind === 'capability' && !views.some(v => v.capability === tie.capability);
+  });

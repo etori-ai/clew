@@ -6,13 +6,16 @@ import {
   BOARDING_ITEM_KINDS,
   BOARDING_ITEM_TEXT_MAX,
   BOARDING_KIND_WORDS,
+  type AskValues,
   type BoardingAccess,
   type BoardingEvent,
   type BoardingItemKind,
   type BoardingItemRow,
   type BoardingOwnerRole,
   type BoardingPlanOutput,
+  type EntityAction,
   type SessionUser,
+  type ViewEntry,
 } from '@clew/contracts';
 import {
   AlertDialog,
@@ -29,6 +32,7 @@ import {
   HStack,
   Layout,
   LayoutContent,
+  Link,
   List,
   ListItem,
   MetadataList,
@@ -66,17 +70,21 @@ import {
   hasOpen,
   itemLine,
   longDay,
+  needsActions,
   phaseWhen,
   planCounts,
   planTitle,
+  rowControl,
   shortDay,
   startWords,
   withTicked,
+  type RowControl,
 } from '../boarding';
 import { areasQuery, boardingPersonQuery, boardingPlanQuery, entityDetailQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { useBoardingTick, useBoardingWrite } from '../mutations';
+import { useEntityAction } from '../entity-actions';
 import { usePageTitle } from '../page-title';
 import { pageOnly } from '../panel-address';
 import { insideClew, originOf, pageSubject, personPageHref, toolOf } from '../person-address';
@@ -127,7 +135,9 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
   const planQ = useQuery({ ...boardingPlanQuery(planId ?? ''), enabled: !!planId });
   const detail = planQ.data && planQ.data.plan.personId === personId ? planQ.data : undefined;
   const panel = usePagePanel({ overlayOnly: short });
-  const menu = useQuery(areasQuery).data?.menu;
+  const areas = useQuery(areasQuery).data;
+  const menu = areas?.menu;
+  const views = areas?.views ?? NO_VIEWS;
 
   const refused = (error: unknown) => error instanceof ApiError && error.status < 500;
   const missing =
@@ -139,6 +149,15 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
   const name = detail?.plan.name ?? person?.person.name ?? '';
   const userName = detail?.plan.userName ?? person?.person.userName ?? null;
   const access: BoardingAccess | undefined = detail?.plan.access;
+  // An item tied to an action about the person (D124): the actions the reader may start for them are the ones their
+  // page offers (`GET /api/entities/person/:key`), read only when a row is tied to something that is no read.
+  const actionsQ = useQuery({
+    ...entityDetailQuery('person', userName ?? ''),
+    enabled: !!detail && !!userName && needsActions(detail.rows, views),
+  });
+  const personActions = actionsQ.data?.actions ?? NO_ACTIONS;
+  // The same path a person's page starts an action on: its work item beside this page, the action dialog over it.
+  const entityAction = useEntityAction();
   const title = detail ? planTitle(detail.plan.event, name) : person ? `Introduktion och avslut för ${name}` : null;
   usePageTitle(missing ? 'Planen finns inte' : title);
 
@@ -367,14 +386,26 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
               }
             >
               <List density="balanced" hasDividers edge="flush">
-                {p.items.map(row => (
-                  <ItemRow
-                    key={row.id}
-                    row={row}
-                    pending={pending.has(row.id)}
-                    onTick={done => void onTick(row, done)}
-                  />
-                ))}
+                {p.items.map(row => {
+                  const control = rowControl(row, {
+                    actions: personActions,
+                    views,
+                    person: userName,
+                    from: here,
+                  });
+                  return (
+                    <ItemRow
+                      key={row.id}
+                      row={row}
+                      pending={pending.has(row.id)}
+                      onTick={done => void onTick(row, done)}
+                      control={control}
+                      onAction={(action, values) =>
+                        userName && entityAction.start(action, { kind: 'person', key: userName, name }, values)
+                      }
+                    />
+                  );
+                })}
               </List>
             </PageSection>
           ),
@@ -496,6 +527,7 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
           <>
             {meta}
             {tickError && <Banner status="error" title={tickError} collapsible={false} />}
+            {entityAction.error && <Banner status="error" title={entityAction.error} collapsible={false} />}
           </>
         }
         sections={sections}
@@ -511,6 +543,7 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       {body}
       {panel.overlay}
+      {entityAction.dialog}
       <StartPlanDialog
         event={dialogEvent}
         person={person}
@@ -551,22 +584,60 @@ function ItemRow({
   row,
   pending,
   onTick,
+  control,
+  onAction,
 }: {
   row: BoardingItemRow;
   pending: boolean;
   onTick: (done: boolean) => void;
+  control: RowControl | null;
+  onAction: (action: EntityAction, values: AskValues) => void;
 }) {
   const late = row.status === 'Försenad' ? <Badge variant="warning" label="Försenad" /> : undefined;
   const line = <Text type="supporting">{itemLine(row)}</Text>;
+  // What the item is done with, in the row's label, where Astryx lets a rich label hold a button or a link that keeps
+  // its own behaviour; the checkbox keeps the title alone as its name.
+  const opens = !control ? null : control.kind === 'action' ? (
+    <Button
+      size="sm"
+      variant="secondary"
+      label={control.action.title}
+      aria-label={`${control.action.title}: ${row.title}`}
+      onClick={() => onAction(control.action, control.values)}
+    />
+  ) : control.kind === 'read' ? (
+    <Link href={control.href} aria-label={`${control.title}: ${row.title}`} hasUnderline>
+      {control.title}
+    </Link>
+  ) : (
+    <Link href={control.href} isExternalLink hasUnderline>
+      {control.host}
+    </Link>
+  );
+  // On a phone the row's end has no room beside a control, so "Försenad" stands under the title instead (1.4.10).
+  const mobile = useMediaQuery(mobileQuery);
+  const under = mobile ? late : undefined;
+  const label =
+    under || opens ? (
+      <VStack gap={2} hAlign="start">
+        <Text>{row.title}</Text>
+        {under}
+        {opens}
+      </VStack>
+    ) : (
+      <Text>{row.title}</Text>
+    );
+  const end = mobile ? undefined : late;
   return row.canTick ? (
     <CheckboxListItem
       align="first-line"
-      label={<Text>{row.title}</Text>}
+      aria-label={row.title}
+      label={label}
       description={line}
       isChecked={row.done}
       isLoading={pending}
       onCheck={onTick}
-      endContent={late}
+      endContent={end}
     />
   ) : (
     <ListItem
@@ -577,13 +648,15 @@ function ItemRow({
           label={row.done ? 'Klar' : 'Inte klar'}
         />
       }
-      label={<Text>{row.title}</Text>}
+      label={label}
       description={line}
-      endContent={late}
+      endContent={end}
     />
   );
 }
 
+const NO_VIEWS: ViewEntry[] = [];
+const NO_ACTIONS: EntityAction[] = [];
 /** What closing a plan does, as its confirmation says before it is done (D124 items 5 and 7). */
 const CLOSE_CONSEQUENCE =
   'Planen kan inte ändras efter det, och de punkter som inte är klara försvinner från Att göra hos dem som har dem. Det som är klart står kvar.';

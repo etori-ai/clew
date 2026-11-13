@@ -933,6 +933,11 @@ export const ViewEntrySchema = object({
         "Clew's own page where the read's rows are worked through, a path inside Clew: whatever opens the read without input leads there instead of to the read's page, which stays for an address that names it. Only a read of Clew's own connectors has one (`Capability.page`).",
     }),
   ),
+  /**
+   * The input property the read takes one person's key in (its `person.param`, D117), when it takes one: what a page
+   * that opens the read for a person fills in (a plan's item tied to the read, D124).
+   */
+  person: Type.Optional(Type.String()),
 });
 export type ViewEntry = Static<typeof ViewEntrySchema>;
 /** Whether a view answers with rows (a `table` or a `list`): a list a person works through, which is a page (D116). */
@@ -4786,6 +4791,7 @@ export {
   boardingLayersOf,
   boardingOwnerOf,
   boardingText,
+  boardingTieOf,
   layerKey,
   parseBoardingImport,
   type BoardingCondition,
@@ -4797,6 +4803,7 @@ export {
   type BoardingImportRow,
   type BoardingItemKind,
   type BoardingOwnerRole,
+  type BoardingTie,
 } from './boarding-import';
 /** The import file keeps its own copy of the kinds (it imports nothing of ours); the compiler holds it to this list. */
 type SameKinds = [CompetenceImportKind] extends [CompetenceKind]

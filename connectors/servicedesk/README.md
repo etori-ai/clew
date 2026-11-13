@@ -9,6 +9,12 @@ service behind the connector protocol that imports nothing from the rest of the 
 It is the first connector to answer the requests profile (D123): Clew lists its `servicedesk.requests` with every other
 such read as `clew.requests`, "Beställningar och felanmälningar" on Hem.
 
+The development stack's boarding layers (D124, `scripts/boarding-development.ts`) name two of its capabilities as what an
+item is done with: `servicedesk.order` with the catalogue's item (`servicedesk.order?item=laptop`, `access-card`,
+`system-access`), which the item's row on a plan starts for the plan's person on the same path the person's page uses,
+and `servicedesk.equipment`, which the row of "Lämna tillbaka utrustning" opens with the person. The names are data in a
+layers file; nothing of Clew imports the connector, and an order placed does not tick the item.
+
 ## Capabilities
 
 | Capability | Kind | What |

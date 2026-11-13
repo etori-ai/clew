@@ -4,6 +4,7 @@ import {
   BOARDING_LAYER_ITEMS_MAX,
   boardingImportRowProblem,
   boardingLayersOf,
+  boardingTieOf,
   parseBoardingImport,
   type BoardingImportRow,
 } from '../../packages/contracts/src/index';
@@ -37,7 +38,7 @@ describe('reading a file of layers', () => {
           'Alla nyanställda;introduction;all;;Beställ dator och telefon;order;manager;-14;',
           'Alla nyanställda;Introduktion;Alla;;"Välkomstsamtal; första dagen";Möte;Chef;0;',
           'Vård och omsorg;introduction;Enhet;unit-omsorg;Läs rutinen för basala hygienrutiner;Bekräftelse;Medarbetaren;+3;',
-          'Lärare;introduction;position;larare;HLR;course;person;30;competence:HLR',
+          'Lärare;introduction;position;larare;HLR;course;person;30;competence.holdings',
           'Alla som slutar;Avslut;all;;Återlämna nycklar;todo;Fadder;-1;',
         ),
     );
@@ -65,7 +66,7 @@ describe('reading a file of layers', () => {
         kind: 'course',
         owner: 'person',
         offsetDays: 30,
-        tiedTo: 'competence:HLR',
+        tiedTo: 'competence.holdings',
       }),
       row({
         row: 6,
@@ -194,6 +195,68 @@ describe('a row as the server is sent it', () => {
       'Antal dagar ska vara ett heltal från -365 till 365.',
     );
     expect(boardingImportRowProblem(row({ tiedTo: 'x'.repeat(301) }))).toBe('Kopplingen är längre än 300 tecken.');
+  });
+});
+
+describe('what an item is tied to (`tiedTo`)', () => {
+  const TIE_PROBLEM =
+    'Kopplingen ska vara en förmåga, som servicedesk.order eller servicedesk.order?item=laptop, eller en adress som börjar med https://.';
+  test('a capability by its name, with answers its dialog starts from; an https address; nothing', () => {
+    expect(boardingTieOf('servicedesk.equipment')).toEqual({
+      kind: 'capability',
+      capability: 'servicedesk.equipment',
+      values: {},
+    });
+    expect(boardingTieOf('servicedesk.order?item=laptop&note=Till%20Sara')).toEqual({
+      kind: 'capability',
+      capability: 'servicedesk.order',
+      values: { item: 'laptop', note: 'Till Sara' },
+    });
+    expect(boardingTieOf('https://intranet.example.org/vardegrund?flik=2#start')).toEqual({
+      kind: 'link',
+      href: 'https://intranet.example.org/vardegrund?flik=2#start',
+    });
+    expect(boardingTieOf(null)).toBeNull();
+    expect(boardingTieOf('')).toBeNull();
+  });
+  test('anything else says nothing usable: words, another scheme, a broken answer, a key twice', () => {
+    for (const text of [
+      'HLR',
+      'competence:HLR',
+      'Servicedesk.order',
+      'servicedesk.order?',
+      'servicedesk.order?item',
+      'servicedesk.order?=laptop',
+      'servicedesk.order?item=',
+      'servicedesk.order?item=a&item=b',
+      'servicedesk.order?item=%E0',
+      'servicedesk.order?_item=laptop',
+      'servicedesk.order item=laptop',
+      'http://intranet.example.org/',
+      'https://',
+      'https://user:secret@intranet.example.org/',
+      'javascript:alert(1)',
+      'mailto:hr@example.org',
+      'a.' + 'b'.repeat(79),
+    ])
+      expect(boardingTieOf(text)).toBeNull();
+  });
+  test('a file names one or nothing: anything else is a problem with its row, in Swedish', () => {
+    expect(boardingImportRowProblem(row({ tiedTo: 'servicedesk.order?item=laptop' }))).toBeNull();
+    expect(boardingImportRowProblem(row({ tiedTo: 'https://intranet.example.org/' }))).toBeNull();
+    expect(boardingImportRowProblem(row({ tiedTo: 'HLR' }))).toBe(TIE_PROBLEM);
+    const result = parseBoardingImport(
+      file(
+        'Alla nyanställda;introduction;all;;Beställ dator;order;manager;-14;servicedesk.order?item=laptop',
+        'Alla nyanställda;introduction;all;;Kurs;course;person;30;Kursen i HLR',
+        'Alla nyanställda;introduction;all;;Läs;acknowledge;person;3;http://intranet.example.org/',
+      ),
+    );
+    expect(result.rows.map(r => r.tiedTo)).toEqual(['servicedesk.order?item=laptop']);
+    expect(result.problems).toEqual([
+      { row: 3, message: TIE_PROBLEM },
+      { row: 4, message: TIE_PROBLEM },
+    ]);
   });
 });
 

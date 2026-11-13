@@ -447,7 +447,8 @@ describe('the boarding wiring (D124)', () => {
       kind: 'acknowledge',
       owner: 'manager',
       offsetDays: -365,
-      tiedTo: text(BOARDING_TIED_TO_MAX, 'y'),
+      // An https address, the longest tie a file may name, its path of the character JSON escapes (`boardingTieOf`).
+      tiedTo: 'https://e.org/' + '"'.repeat(BOARDING_TIED_TO_MAX - 'https://e.org/'.length),
     }));
     const body = JSON.stringify({ rows });
     // The page's file at its limits is over a million characters, which the route once refused.

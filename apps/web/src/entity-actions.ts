@@ -40,7 +40,11 @@ export function actionMenuItems(actions: EntityAction[], start: (action: EntityA
 
 /** Starting an action about an entity, and the source's refusal of the last one when it refused. */
 export interface EntityActionStart {
-  start: (action: EntityAction, subject: ActionSubject) => void;
+  /**
+   * Start `action` about `subject`. `values` are answers its dialog starts from (a plan's item tied to the action with
+   * them, D124): prefilled and still the person's to change, never sent before the dialog's last button.
+   */
+  start: (action: EntityAction, subject: ActionSubject, values?: AskValues) => void;
   /** The source's Swedish sentence, shown beside what started it until the next start. */
   error: string | null;
   busy: boolean;
@@ -71,9 +75,12 @@ export function useEntityAction(): EntityActionStart {
   const draftKey = (action: EntityAction, subject: ActionSubject) =>
     `${subject.kind ?? 'person'}:${subject.key}:${action.capability}`;
   const run = useCallback(
-    (action: EntityAction, subject: ActionSubject) => {
+    (action: EntityAction, subject: ActionSubject, values?: AskValues) => {
       const kind = subject.kind ?? 'person';
+      const preset = values && Object.keys(values).length ? values : undefined;
       if (action.kind === 'propose' && opensDialog(action)) {
+        // What the person typed before wins over the preset; the preset fills a dialog opened afresh.
+        if (preset) setDrafts(d => (d[draftKey(action, subject)] ? d : { ...d, [draftKey(action, subject)]: preset }));
         setAsking({ action, subject, open: true });
         return;
       }
@@ -82,9 +89,9 @@ export function useEntityAction(): EntityActionStart {
           if (!started) return;
           if ('threadId' in started) {
             // An execute's answers are given at its decision (D112): its work item opens beside the page with the dialog
-            // over it, on the item's own button.
+            // over it, on the item's own button, starting from the preset answers when there are any.
             if (action.kind === 'execute' && opensDialog(action))
-              requestAction({ threadId: started.threadId, actionId: 'decide' });
+              requestAction({ threadId: started.threadId, actionId: 'decide', ...(preset ? { values: preset } : {}) });
             navigate(withCard(here.current.pathname, here.current.search, started.threadId));
           } else announce(started.error);
         },

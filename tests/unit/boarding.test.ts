@@ -140,7 +140,7 @@ const LAYERS = [
   'Alla nyanställda;introduction;all;;Läs värdegrunden;acknowledge;person;3;',
   'Alla nyanställda;introduction;all;;Lunch med faddern;meeting;buddy;1;',
   'Omsorgen;introduction;unit;u-omsorg;Basala hygienrutiner;acknowledge;person;7;',
-  'Undersköterskor;introduction;position;underskoterska;HLR;course;person;30;HLR',
+  'Undersköterskor;introduction;position;underskoterska;HLR;course;person;30;competence.holdings',
   'Vikarier;introduction;employment_type;Vikariat;Vikariepärmen;todo;person;2;',
   'Skolan;introduction;unit;u-skola;Skolans rutiner;todo;person;1;',
   'Alla som slutar;leaving;all;;Avslutningssamtal;meeting;manager;-7;',
@@ -452,7 +452,7 @@ describe('starting a plan', () => {
       [4, 'Basala hygienrutiner', 'anna', '2026-12-11', false, true],
       [5, 'HLR', 'anna', '2027-01-03', false, true],
     ]);
-    expect(items[5]).toMatchObject({ kind: 'course', tiedTo: 'HLR' });
+    expect(items[5]).toMatchObject({ kind: 'course', tiedTo: 'competence.holdings' });
     // Each card was opened in its owner's stream, before its item, about Anna by her key; even Anna's, who cannot
     // sign in yet: the card waits for her.
     for (const item of items)
@@ -925,6 +925,12 @@ describe('layers', () => {
     await refused(
       boarding.importLayers(ada, { rows: split }),
       'Rad 4: Samma lager som rad 2, men med ett annat villkor.',
+    );
+    // What an item is tied to is a capability's name or an https address (`boardingTieOf`); words are refused.
+    const untied = rows.map(r => (r.row === 7 ? { ...r, tiedTo: 'Kursen i HLR' } : r));
+    await refused(
+      boarding.importLayers(ada, { rows: untied }),
+      'Rad 7: Kopplingen ska vara en förmåga, som servicedesk.order eller servicedesk.order?item=laptop, eller en adress som börjar med https://.',
     );
     expect(store.audit().length).toBe(audited);
     await forbidden(boarding.importLayers(karin, { rows }));

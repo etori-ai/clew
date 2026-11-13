@@ -1,6 +1,16 @@
 import type { Locator, Page } from '@playwright/test';
 import { entityDetail } from './data';
-import { ANNA, BoardingMock, BOARDING_LENS, MARIA, PLAN, boardingRows, boardingSource } from './boarding';
+import {
+  ANNA,
+  BoardingMock,
+  BOARDING_LENS,
+  EQUIPMENT_VIEW,
+  MARIA,
+  ORDER,
+  PLAN,
+  boardingRows,
+  boardingSource,
+} from './boarding';
 import {
   announcements,
   expect,
@@ -11,6 +21,7 @@ import {
   phone,
   reflowProblems,
   test,
+  type MockApi,
 } from './support';
 
 /**
@@ -388,6 +399,158 @@ test.describe('small screens', () => {
     await page.setViewportSize(phone);
     await open(page, PAGE);
     await expect(page.getByRole('main').getByRole('button', { name: 'Lägg till punkt' })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+});
+
+/**
+ * What an item is done with (D124, `tiedTo`): an action about the person the reader may start for them is a button on
+ * the row that starts it on the path a person's page uses (its work item beside the page, the action dialog over it,
+ * the preset answer chosen, nothing sent before the last button, the item not ticked by it); a read the reader may open
+ * is a link to its page with the person as its input; an https address is a link out, marked as leaving. A capability
+ * the reader may not use, and an item the reader may not act on, draw nothing.
+ */
+const rowOf = (page: Page, title: string) => page.getByRole('main').getByRole('listitem').filter({ hasText: title });
+/** The service desk's order offered about Anna (the entities read a person's page uses), and its equipment as a read. */
+function tied(api: MockApi, actions = [ORDER]) {
+  const boarding = (api.boarding = new BoardingMock());
+  api.views = [...api.views, EQUIPMENT_VIEW];
+  api.entityDetailOf = key => {
+    const detail = entityDetail(api.entityList, key);
+    return detail && { ...detail, actions };
+  };
+  return boarding;
+}
+
+test.describe('what an item is done with', () => {
+  test.use({ viewport: wide });
+
+  test('by keyboard: an order about the person opens its work item beside the plan with the dialog over it, the preset chosen; Esc sends nothing; the last button places it and the item stays to do', async ({
+    page,
+    api,
+  }) => {
+    const boarding = tied(api);
+    await open(page, PAGE);
+    const order = rowOf(page, 'Beställ passerkort').getByRole('button', {
+      name: 'Beställ från IT-servicedesken: Beställ passerkort',
+    });
+    await expect(order).toBeVisible();
+    // A done order starts nothing again; a capability nobody here may use draws nothing.
+    await expect(rowOf(page, 'Beställ dator och telefon').getByRole('button')).toHaveCount(0);
+    await expect(rowOf(page, 'Boka välkomstmöte första dagen').getByRole('button')).toHaveCount(0);
+    await expect(rowOf(page, 'Boka välkomstmöte första dagen').getByRole('link')).toHaveCount(0);
+    // The checkbox keeps the item's title alone as its name.
+    await expect(item(page, 'Beställ passerkort')).toBeVisible();
+    await expectNoAxeViolations(page);
+
+    await order.focus();
+    await page.keyboard.press('Enter');
+    // The same path a person's page starts on: the work item first, without the answers, beside this page.
+    await expect(page).toHaveURL(`${PAGE}&card=entity-servicedesk-order-anna`);
+    expect(api.entityStarts).toEqual([{ key: ANNA, capability: 'servicedesk.order' }]);
+    const dialog = page.getByRole('dialog', { name: 'Beställ från IT-servicedesken' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('radio', { name: 'Passerkort' })).toBeChecked();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    const panel = page.getByRole('complementary', { name: 'Ärende' });
+    const decide = panel.getByRole('button', { name: 'Beställ från IT-servicedesken' });
+    await expect(decide).toBeFocused();
+    expect(api.acted).toEqual([]);
+
+    // Its own button opens the dialog again with the answer kept; the last button is the only thing that sends.
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('radio', { name: 'Passerkort' })).toBeChecked();
+    await dialog.getByRole('button', { name: 'Nästa' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('heading', { name: 'När du trycker Beställ från IT-servicedesken' })).toBeFocused();
+    await dialog.getByRole('button', { name: 'Beställ från IT-servicedesken' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeHidden();
+    await expect
+      .poll(() => api.acted.map(a => a.body))
+      .toEqual([{ actionId: 'decide', values: { item: 'access-card' } }]);
+    await expect(panel.getByText('Beställningen är lagd hos IT-servicedesken.')).toBeVisible();
+    // The plan holds the item, never the order: it is not ticked by it.
+    await expect(item(page, 'Beställ passerkort')).not.toBeChecked();
+    expect(boarding.writes).toEqual([]);
+    await expectNoAxeViolations(page);
+    // Closing the work item leaves the plan as it was, with the focus on the row's button that started it.
+    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
+    await expect(page).toHaveURL(PAGE);
+    await expect(order).toBeFocused();
+  });
+
+  test('a read leads to its page with the person as its input, and Back gives the focus to the link; an address leaves in a new tab', async ({
+    page,
+    api,
+  }) => {
+    tied(api);
+    await open(page, PAGE);
+    const read = rowOf(page, 'Informationssäkerhet, grundkurs').getByRole('link', {
+      name: 'IT-utrustning: Informationssäkerhet, grundkurs',
+    });
+    await expect(read).toHaveAttribute(
+      'href',
+      '/tools/servicedesk.equipment?input=%7B%22person%22%3A%22anna%22%7D&title=IT-utrustning&from=%2Fboarding%2Fanna',
+    );
+    const out = rowOf(page, 'Rundvandring, nycklar och arbetsplats').getByRole('link');
+    await expect(out).toHaveAttribute('href', 'https://intranet.example.org/rundvandring');
+    await expect(out).toHaveAttribute('target', '_blank');
+    await expect(out).toHaveAccessibleName(/^intranet\.example\.org.*öppnas i ny flik/);
+    await read.click();
+    await expect(page).toHaveURL(/\/tools\/servicedesk\.equipment\?/);
+    await expect(page.getByRole('main').getByText('Lenovo T14')).toBeVisible();
+    await page.goBack();
+    await expect(read).toBeFocused();
+  });
+
+  test('the person themselves orders for their own item and opens their own read; the manager’s items open nothing for them', async ({
+    page,
+    api,
+  }) => {
+    const boarding = tied(api);
+    boarding.reader = 'person';
+    await open(page, `/boarding/${ANNA}`);
+    await expect(
+      rowOf(page, 'Logga in och byt lösenord').getByRole('button', {
+        name: 'Beställ från IT-servicedesken: Logga in och byt lösenord',
+      }),
+    ).toBeVisible();
+    await expect(
+      rowOf(page, 'Informationssäkerhet, grundkurs').getByRole('link', { name: /^IT-utrustning/ }),
+    ).toBeVisible();
+    // Not theirs to act on: no order on the manager's item, no link on the buddy's.
+    await expect(rowOf(page, 'Beställ passerkort').getByRole('button')).toHaveCount(0);
+    await expect(rowOf(page, 'Rundvandring, nycklar och arbetsplats').getByRole('link')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test("an item's owner sees what their own item opens, and an action the entities read does not give them draws nothing", async ({
+    page,
+    api,
+  }) => {
+    api.employee = true;
+    const boarding = tied(api, []);
+    boarding.reader = 'owner';
+    const input = encodeURIComponent(JSON.stringify({ plan: PLAN }));
+    await open(page, `/tools/boarding.plan?input=${input}&from=%2Ftodo`);
+    await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
+    await expect(
+      rowOf(page, 'Rundvandring, nycklar och arbetsplats').getByRole('link', { name: /intranet\.example\.org/ }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
+  test('at 320 px a row with what it opens reflows', async ({ page, api }) => {
+    tied(api);
+    await page.setViewportSize(narrow);
+    await open(page, PAGE);
+    await expect(
+      rowOf(page, 'Beställ passerkort').getByRole('button', { name: /^Beställ från IT-servicedesken/ }),
+    ).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
   });

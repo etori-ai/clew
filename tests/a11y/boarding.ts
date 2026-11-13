@@ -9,12 +9,16 @@ import type {
   BoardingPlanSummary,
   BoardingPreview,
   BoardingStartBody,
+  EntityAction,
   EntityRows,
   EntitySource,
+  PanelViewSpec,
   View,
+  ViewEntry,
 } from '@clew/contracts';
 import { BOARDING_KIND_WORDS, BOARDING_OWNER_WORDS, BOARDING_PHASE_WORDS } from '@clew/contracts';
 import { NOW, TODAY, user } from './data';
+import { CATALOGUE, manifest as desk } from '../../connectors/servicedesk/manifest.mjs';
 
 /**
  * Introduktion och avslut (D124) as the browser sees it, answered over the mock's own state as the server would: one
@@ -67,6 +71,65 @@ export const boardingRows = (): EntityRows => ({
   ],
 });
 
+/**
+ * The IT service desk's order and equipment as the fixture connector declares them (`connectors/servicedesk`), so the
+ * suite draws the declarations: the order as an action about a person a page offers (its asks as the dialog asks them;
+ * the effect read is left out here, which the action dialog's own spec covers), the equipment as a read the person may
+ * open, which takes one person in `person`.
+ */
+const declared = (name: string) =>
+  desk.capabilities.find(c => c.name === name)! as unknown as {
+    name: string;
+    title: string;
+    description: string;
+    asks: NonNullable<EntityAction['path']>['asks'];
+    view: View;
+  };
+const deskOrder = declared('servicedesk.order');
+export const ORDER: EntityAction = {
+  capability: deskOrder.name,
+  connector: desk.id,
+  source: desk.source,
+  title: deskOrder.title,
+  kind: 'execute',
+  param: 'person',
+  path: { asks: deskOrder.asks, effect: false, description: deskOrder.description },
+};
+const deskEquipment = declared('servicedesk.equipment');
+export const EQUIPMENT_VIEW: ViewEntry = {
+  capability: deskEquipment.name,
+  title: deskEquipment.title,
+  kind: 'list',
+  person: 'person',
+};
+export const equipmentAnswer = {
+  output: {
+    rows: [{ ref: 'eq-1', kind: 'Bärbar dator', model: 'Lenovo T14', inventoryNumber: 'IT-1042', since: '2026-11-02' }],
+  },
+  source: desk.source,
+  view: {
+    ...deskEquipment.view,
+    capability: deskEquipment.name,
+    connector: desk.id,
+    source: desk.source,
+  } as PanelViewSpec,
+};
+/** The receipt the desk's order is read back with: what was ordered, by the catalogue's word. */
+export const orderReceipt = (item: string | undefined) => ({
+  at: NOW,
+  headline: 'Beställningen är lagd hos IT-servicedesken.',
+  undoUntil: null,
+  undoCapability: null,
+  rows: [
+    {
+      ref: 'request:servicedesk:SD-26110050',
+      label: CATALOGUE.find(c => c.value === item)?.label ?? 'Beställning',
+      outcome: 'done' as const,
+      detail: 'beställd, läst tillbaka från IT-servicedesken',
+    },
+  ],
+});
+
 type Who = { id: string; name: string };
 const MANAGER: Who = { id: user.id, name: user.name };
 const PERSON: Who = { id: ANNA, name: 'Anna Lindqvist' };
@@ -79,8 +142,14 @@ type Seed = {
   owner: keyof typeof owners;
   dueOn: string;
   done?: boolean;
+  /** What the item is done with, as a layers file names it (`boardingTieOf`). */
+  tiedTo?: string;
 };
-/** Anna's items, by phase: two before her first day (one done, one overdue), one due soon, two on the day, one in her first week. */
+/**
+ * Anna's items, by phase: two before her first day (one done, one overdue), one due soon, two on the day, one in her
+ * first week. The orders are tied to the IT service desk's order with the catalogue's item, the walk round to a page on
+ * the intranet, the course to the read of her equipment, and the meeting to a capability nobody here may use.
+ */
 const SEEDS: Seed[] = [
   {
     id: 'i-dator',
@@ -89,12 +158,48 @@ const SEEDS: Seed[] = [
     owner: 'manager',
     dueOn: '2026-10-30',
     done: true,
+    tiedTo: 'servicedesk.order?item=laptop',
   },
-  { id: 'i-kort', title: 'Beställ passerkort', kind: 'order', owner: 'manager', dueOn: '2026-11-02' },
-  { id: 'i-mote', title: 'Boka välkomstmöte första dagen', kind: 'meeting', owner: 'manager', dueOn: '2026-11-13' },
-  { id: 'i-rund', title: 'Rundvandring, nycklar och arbetsplats', kind: 'todo', owner: 'buddy', dueOn: '2026-11-16' },
-  { id: 'i-logga', title: 'Logga in och byt lösenord', kind: 'todo', owner: 'person', dueOn: '2026-11-16' },
-  { id: 'i-sakerhet', title: 'Informationssäkerhet, grundkurs', kind: 'course', owner: 'person', dueOn: '2026-11-20' },
+  {
+    id: 'i-kort',
+    title: 'Beställ passerkort',
+    kind: 'order',
+    owner: 'manager',
+    dueOn: '2026-11-02',
+    tiedTo: 'servicedesk.order?item=access-card',
+  },
+  {
+    id: 'i-mote',
+    title: 'Boka välkomstmöte första dagen',
+    kind: 'meeting',
+    owner: 'manager',
+    dueOn: '2026-11-13',
+    tiedTo: 'payroll.salaryChange',
+  },
+  {
+    id: 'i-rund',
+    title: 'Rundvandring, nycklar och arbetsplats',
+    kind: 'todo',
+    owner: 'buddy',
+    dueOn: '2026-11-16',
+    tiedTo: 'https://intranet.example.org/rundvandring',
+  },
+  {
+    id: 'i-logga',
+    title: 'Logga in och byt lösenord',
+    kind: 'todo',
+    owner: 'person',
+    dueOn: '2026-11-16',
+    tiedTo: 'servicedesk.order?item=system-access',
+  },
+  {
+    id: 'i-sakerhet',
+    title: 'Informationssäkerhet, grundkurs',
+    kind: 'course',
+    owner: 'person',
+    dueOn: '2026-11-20',
+    tiedTo: 'servicedesk.equipment',
+  },
 ];
 const phaseOf = (dueOn: string, anchorOn: string): BoardingItemRow['phase'] => {
   const days = Math.round((Date.parse(dueOn) - Date.parse(anchorOn)) / 86_400_000);
@@ -119,6 +224,7 @@ interface Item {
   dueOn: string;
   done: boolean;
   added: boolean;
+  tiedTo: string | null;
 }
 interface Plan {
   id: string;
@@ -156,6 +262,7 @@ export class BoardingMock {
     dueOn: s.dueOn,
     done: !!s.done,
     added: false,
+    tiedTo: s.tiedTo ?? null,
   }));
   /** The reader's other reports, the buddies a start may name, and who may be started for. */
   reports: Array<Who & { userName: string; startOn?: string }> = [
@@ -272,6 +379,7 @@ export class BoardingMock {
       done: item.done,
       ...(item.done ? { doneAt: NOW } : {}),
       status: item.done ? 'Klar' : item.dueOn < TODAY ? 'Försenad' : 'Att göra',
+      ...(item.tiedTo ? { tiedTo: item.tiedTo } : {}),
       added: item.added,
       canTick: plan.closedAt === null && (access === 'manager' || mine),
     };
@@ -436,6 +544,7 @@ export class BoardingMock {
           dueOn: added.dueOn,
           done: false,
           added: true,
+          tiedTo: null,
         });
         return json({ id }, 201);
       }
@@ -477,6 +586,7 @@ export class BoardingMock {
           dueOn: item.dueOn,
           done: false,
           added: false,
+          tiedTo: null,
         });
       return json({ id }, 201);
     }

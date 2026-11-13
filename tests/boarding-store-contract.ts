@@ -154,13 +154,23 @@ export function boardingStoreContract(name: string, make: () => Promise<Boarding
       await w.store.transaction(async tx => {
         await tx.updateLayer(a.id, { name: 'vard', condition: 'unit', value: 'unit-omsorg', updatedAt: T });
         await tx.replaceLayerItems(a.id, [
-          layerItemRow(w.p + '-i4', a.id, 0, { kind: 'course', ownerRole: 'person', offsetDays: 30, tiedTo: 'HLR' }),
+          layerItemRow(w.p + '-i4', a.id, 0, {
+            kind: 'course',
+            ownerRole: 'person',
+            offsetDays: 30,
+            tiedTo: 'competence.holdings',
+          }),
         ]);
       });
       const [read] = (await w.store.transaction(tx => tx.layers(w.org, 'introduction'))).filter(l => l.id === a.id);
       expect(read).toMatchObject({ name: 'vard', condition: 'unit', value: 'unit-omsorg' });
       expect(await w.store.transaction(tx => tx.layerItems([a.id]))).toEqual([
-        layerItemRow(w.p + '-i4', a.id, 0, { kind: 'course', ownerRole: 'person', offsetDays: 30, tiedTo: 'HLR' }),
+        layerItemRow(w.p + '-i4', a.id, 0, {
+          kind: 'course',
+          ownerRole: 'person',
+          offsetDays: 30,
+          tiedTo: 'competence.holdings',
+        }),
       ]);
     });
 
