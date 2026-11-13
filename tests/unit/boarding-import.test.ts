@@ -139,6 +139,22 @@ describe('reading a file of layers', () => {
     ]);
   });
 
+  test('rows of only delimiters, as a spreadsheet program appends, are skipped, and the rows keep their numbers', () => {
+    const result = parseBoardingImport(
+      file(
+        'A;introduction;all;;Ok;todo;manager;1;',
+        ';;;;;;;;',
+        '  ;  ;;;;;;;',
+        'A;introduction;all;;X;email;manager;1;',
+        ';;;;;;;;',
+        ';;;;;;;;;;;;',
+      ) + '\r\n;;;;;;;;\r\n',
+    );
+    expect(result.rows.map(r => r.row)).toEqual([2]);
+    expect(result.problems.map(p => p.row)).toEqual([5]);
+    expect(result.problemCount).toBe(1);
+  });
+
   test('a layer holds at most a hundred items', () => {
     const rows = Array.from({ length: BOARDING_LAYER_ITEMS_MAX + 1 }, (_, i) =>
       row({ row: i + 2, title: 'Uppgift ' + i }),

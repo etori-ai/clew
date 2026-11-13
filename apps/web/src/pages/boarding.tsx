@@ -61,13 +61,13 @@ import {
 } from '../boarding-address';
 import {
   anchorWord,
-  counts,
   defaultPlan,
   distanceWords,
   hasOpen,
   itemLine,
   longDay,
   phaseWhen,
+  planCounts,
   planTitle,
   shortDay,
   startWords,
@@ -242,7 +242,7 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
     }
     setTickError(null);
     const now = client.getQueryData<BoardingPlanOutput>(keys.boarding.plan(id));
-    const c = counts(now?.rows ?? detail.rows);
+    const c = planCounts(now ?? detail);
     announce(`${row.title} är ${done ? 'klar' : 'inte klar'}. ${c.done} av ${c.total} klara.`);
   };
 
@@ -324,7 +324,7 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
           )}
         </HStack>
       ) : undefined;
-    const c = detail ? counts(detail.rows) : null;
+    const c = detail ? planCounts(detail) : null;
     const meta =
       detail && c ? (
         <VStack gap={2}>
@@ -603,8 +603,10 @@ function PlanMissing() {
 const OWNERS: BoardingOwnerRole[] = ['manager', 'person', 'buddy'];
 /**
  * "Lägg till punkt" (D124 item 6): an item the manager adds to this plan alone, with its kind, who does it and the day
- * it is due. Its title is free text about a named person's plan, so the card it makes in the owner's Att göra says only
- * "En uppgift i en introduktion", which the field says before it is sent. A refusal is said beside the buttons, and what
+ * it is due. Its title is free text about a named person's plan: it is read on the plan by the manager, by the person
+ * the plan is about (in a leaving, the one who leaves) and by the item's owner, while the card it makes in the owner's
+ * Att göra says only "En uppgift i en introduktion". The field says both before it is sent. Nothing else is sent (no
+ * `tiedTo`: an added item ties to nothing). A refusal is said beside the buttons, and what
  * was filled in stays; on success the dialog closes, the plan is read again and a toast says it, and Astryx gives the
  * focus back to "Lägg till punkt".
  */
@@ -692,7 +694,7 @@ function AddItemDialog({ plan, isOpen, onClose }: { plan: BoardingPlanOutput; is
           <TextInput
             ref={titleField}
             label="Punkt"
-            description="Vad som ska göras, på en rad. Uppgiften i Att göra visar inte texten, bara att det är en uppgift i planen."
+            description={`Vad som ska göras, på en rad. Texten syns här i planen för dig, för ${plan.plan.name} och för den som ska göra punkten. Uppgiften i Att göra visar den inte, bara att det är en uppgift i planen.`}
             value={title}
             onChange={setTitle}
             autoComplete="off"

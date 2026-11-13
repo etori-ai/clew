@@ -75,7 +75,7 @@ test.describe('Administration › Introduktion och avslut', () => {
     await expect(everyone).toContainText('2');
     await expect(everyone).toContainText('måndag 2 november');
     await expect(intro.getByRole('row', { name: /Skönsmons skola/ })).toContainText(
-      'Enhet: unit-skola och enheterna under den',
+      'Enhet: Skönsmons skola och enheterna under den',
     );
     await expect(
       page.getByRole('table', { name: 'Lager för avslut' }).getByRole('row', { name: /Alla som slutar/ }),

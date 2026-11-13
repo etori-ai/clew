@@ -25,6 +25,8 @@ import type { BoardingUsecases, PersonStanding } from './usecases';
  * cases come built from composition (D25).
  */
 export const BOARDING_SOURCE = 'Clew';
+/** The suggestion card's row: who it is about, without a name (the subject carries the person). */
+export const NEW_HIRE_LABEL = 'Ny medarbetare';
 export const BOARDING_AREA = 'boarding';
 const KeysSchema = Type.Object(
   { keys: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: ENTITY_KEYS_MAX }) },
@@ -181,8 +183,8 @@ export function boardingConnector(
     capabilities: [plan as Capability, aboutPerson as Capability],
     /**
      * Clew suggests, the manager starts (D124): one card for each report whose employment starts within the
-     * suggestion window with no introduction that covers it. The card names nobody in its title, summary or reason; the
-     * person is its row's subject. Its read opens the person's place in boarding, where the manager starts the plan on
+     * suggestion window with no introduction that covers it. The card names nobody, in its title, summary, reason or
+     * row ("Ny medarbetare"); the person is the row's subject, by user name, and the read's input. Its read opens the person's place in boarding, where the manager starts the plan on
      * a day they confirm. Every card is one occurrence per person and start, so a card whose cause is gone (a plan was
      * started, the date passed or moved) is resolved at the next scan and a new start is a new card. The observation is
      * complete: it is the whole of the reader's reports, read now, and a read that fails throws, so the scan is never a
@@ -203,7 +205,9 @@ export function boardingConnector(
           items: [
             {
               ref: `boarding:person:${s.personId}`,
-              label: s.name,
+              // Never the name (vision principle 7): a card's rows reach the model when it is chipped, and erasure
+              // finds a person by subject, not by a label. The person is the row's subject; the page finds them by it.
+              label: NEW_HIRE_LABEL,
               detail: dayWords('introduction', s.startOn),
               selectable: false,
               selected: false,

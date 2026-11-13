@@ -1526,13 +1526,15 @@ export const BoardingStartBodySchema = object({
   buddyId: Type.Optional(id),
 });
 export type BoardingStartBody = Static<typeof BoardingStartBodySchema>;
-/** `POST /api/boarding/plans/:id/items`: an item the manager adds to one plan. Its title is free text, sealed at rest. */
+/**
+ * `POST /api/boarding/plans/:id/items`: an item the manager adds to one plan. Its title is free text, sealed at rest. It
+ * ties to nothing: `tiedTo` is an administrator's, on a layer's item, and a body that carries one is refused.
+ */
 export const BoardingItemAddBodySchema = object({
   title: Type.String({ minLength: 1, maxLength: BOARDING_ITEM_TEXT_MAX * 2 }),
   kind: boardingKind,
   ownerRole: boardingOwnerRole,
   dueOn: calendarDay,
-  tiedTo: Type.Optional(Type.String({ minLength: 1, maxLength: BOARDING_TIED_TO_MAX * 2 })),
 });
 export type BoardingItemAddBody = Static<typeof BoardingItemAddBodySchema>;
 /**
@@ -1662,8 +1664,11 @@ export interface BoardingPreview {
   event: BoardingEvent;
   anchorOn: string;
   buddy: { id: string; name: string } | null;
-  /** The layers that apply, in the order their items are assembled: everyone, unit, position, employment type. */
-  layers: Array<{ id: string; name: string; condition: BoardingCondition; value: string | null }>;
+  /**
+   * The layers that apply, in the order their items are assembled: everyone, unit, position, employment type. A layer
+   * on a unit the directory names carries the unit's name, `unitLabel`.
+   */
+  layers: Array<{ id: string; name: string; condition: BoardingCondition; value: string | null; unitLabel?: string }>;
   /** The items in due order, each with its owner, its phase and the layer it comes from. */
   items: Array<{
     title: string;
@@ -1685,7 +1690,10 @@ export interface BoardingSuggestion {
 export interface BoardingSuggestionsOutput {
   rows: BoardingSuggestion[];
 }
-/** `GET /api/boarding/layers`: the organisation's layers, by event and name, each with its items in order. */
+/**
+ * `GET /api/boarding/layers`: the organisation's layers, by event and name, each with its items in order. A layer on a
+ * unit the directory names carries the unit's name, `unitLabel`.
+ */
 export interface BoardingLayersOutput {
   layers: Array<{
     id: string;
@@ -1693,6 +1701,7 @@ export interface BoardingLayersOutput {
     name: string;
     condition: BoardingCondition;
     value: string | null;
+    unitLabel?: string;
     updatedAt: string;
     items: Array<{
       id: string;

@@ -163,7 +163,8 @@ export class BoardingMock {
     { ...BUDDY, userName: 'erik' },
     { id: MARIA, name: 'Maria Källström', userName: MARIA, startOn: '2026-12-01' },
   ];
-  layers: BoardingLayersOutput['layers'] = [
+  /** The layers, with the name the server gives a unit layer's unit (`unitLabel`), as it answers both reads. */
+  layers: Array<BoardingLayersOutput['layers'][number] & { unitLabel?: string }> = [
     {
       id: 'l-alla',
       event: 'introduction',
@@ -198,6 +199,7 @@ export class BoardingMock {
       name: 'Skönsmons skola',
       condition: 'unit',
       value: 'unit-skola',
+      unitLabel: 'Skönsmons skola',
       updatedAt: '2026-11-03T09:00:00.000Z',
       items: [
         {
@@ -294,8 +296,9 @@ export class BoardingMock {
         startedBy: MANAGER,
         startedAt: plan.startedAt,
         closedAt: plan.closedAt,
-        done: all.filter(i => i.done).length,
-        total: all.length,
+        // Counted over the items the reader is shown, as the server counts them: an owner's are their own.
+        done: shown.filter(i => i.done).length,
+        total: shown.length,
         access,
       },
       phases: order.flatMap(phase => {
@@ -358,12 +361,19 @@ export class BoardingMock {
     const ownerOf = (role: 'manager' | 'person' | 'buddy') =>
       role === 'manager' ? MANAGER : role === 'person' ? { id: person.id, name: person.name } : (buddy ?? MANAGER);
     const shift = (days: number) => new Date(Date.parse(body.anchorOn) + days * 86_400_000).toISOString().slice(0, 10);
+    const applying: Array<BoardingPreview['layers'][number] & { unitLabel?: string }> = layers.map(l => ({
+      id: l.id,
+      name: l.name,
+      condition: l.condition,
+      value: l.value,
+      ...(l.unitLabel ? { unitLabel: l.unitLabel } : {}),
+    }));
     return {
       person: { id: person.id, name: person.name },
       event: body.event,
       anchorOn: body.anchorOn,
       buddy: buddy ? { id: buddy.id, name: buddy.name } : null,
-      layers: layers.map(l => ({ id: l.id, name: l.name, condition: l.condition, value: l.value })),
+      layers: applying,
       items: layers
         .flatMap(l =>
           l.items.map(i => ({

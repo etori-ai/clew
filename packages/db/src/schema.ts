@@ -1111,6 +1111,9 @@ export const boardingPlans = pgTable(
     startedBy: text('started_by').references(() => people.id, { onDelete: 'set null' }),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
+    // When the directory deactivated the person and the plan's holders were recorded (`boarding_plan_holder`); null
+    // while the person is active, and when nothing was recorded.
+    heldAt: timestamp('held_at', { withTimezone: true }),
   },
   t => [
     check('boarding_plan_event', sql`${t.event} IN ('introduction', 'leaving')`),
@@ -1120,6 +1123,23 @@ export const boardingPlans = pgTable(
     index('boarding_plan_person').on(t.personId),
     index('boarding_plan_started_by').on(t.startedBy),
   ],
+);
+/**
+ * D124: who holds a plan once the directory deactivated its person: the managers the person reported to at that moment,
+ * recorded in the transaction that deactivated them (the people module's leavers port) and cleared when they are
+ * activated again. Goes with the plan, and with the holder when that person is erased.
+ */
+export const boardingPlanHolders = pgTable(
+  'boarding_plan_holder',
+  {
+    planId: text('plan_id')
+      .notNull()
+      .references(() => boardingPlans.id, { onDelete: 'cascade' }),
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+  },
+  t => [primaryKey({ columns: [t.planId, t.personId] }), index('boarding_plan_holder_person').on(t.personId)],
 );
 /**
  * D124: one item of a plan, its owner's card `thread_id`. Its title is one of two: template text copied from a layer

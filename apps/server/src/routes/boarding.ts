@@ -2,6 +2,16 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import {
+  BOARDING_CONDITIONS,
+  BOARDING_EVENTS,
+  BOARDING_IMPORT_ROWS_MAX,
+  BOARDING_ITEM_KINDS,
+  BOARDING_LAYER_NAME_MAX,
+  BOARDING_OFFSET_MAX,
+  BOARDING_OWNER_ROLES,
+  BOARDING_TIED_TO_MAX,
+  BOARDING_TITLE_MAX,
+  BOARDING_VALUE_MAX,
   BoardingImportBodySchema,
   BoardingItemAddBodySchema,
   BoardingStartBodySchema,
@@ -49,8 +59,32 @@ const validators = {
   item: ajv.compile<BoardingItemAddBody>(BoardingItemAddBodySchema),
   import: ajv.compile<BoardingImportBody>(BoardingImportBodySchema),
 };
-/** The longest import request: a whole file of at most `BOARDING_IMPORT_ROWS_MAX` rows, each well under 500 characters. */
-const IMPORT_BODY_MAX = 1_000_000;
+const longest = (values: readonly string[]) => values.reduce((a, b) => (b.length > a.length ? b : a), '');
+/**
+ * The longest row an import may carry, as JSON: every field at its longest, each text field's characters counted twice
+ * (a quote or a backslash is escaped, a character outside the first plane is two code units), and the comma after it.
+ */
+const IMPORT_ROW_MAX =
+  JSON.stringify({
+    row: BOARDING_IMPORT_ROWS_MAX + 1,
+    layer: '',
+    event: longest(BOARDING_EVENTS),
+    condition: longest(BOARDING_CONDITIONS),
+    value: '',
+    title: '',
+    kind: longest(BOARDING_ITEM_KINDS),
+    owner: longest(BOARDING_OWNER_ROLES),
+    offsetDays: -BOARDING_OFFSET_MAX,
+    tiedTo: '',
+  }).length +
+  1 +
+  2 * (BOARDING_LAYER_NAME_MAX + BOARDING_VALUE_MAX + BOARDING_TITLE_MAX + BOARDING_TIED_TO_MAX);
+/**
+ * The longest import request: a whole file (`BOARDING_IMPORT_ROWS_MAX` rows, sent at once) at the longest each row may
+ * be, with a tenth more for white space a client may add, so every file the page accepts is a body the route reads. It
+ * is computed from the limits, so the two cannot drift apart. The contract and the row rule bound every field again.
+ */
+export const IMPORT_BODY_MAX = Math.ceil((BOARDING_IMPORT_ROWS_MAX * IMPORT_ROW_MAX + 64) * 1.1);
 /** A character of a body is at most three bytes in UTF-8. */
 const BYTES_PER_CHARACTER = 3;
 const TOO_LARGE = 'För stor förfrågan.';

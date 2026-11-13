@@ -14,6 +14,7 @@ import {
 } from '../src/boarding-address';
 import {
   conditionWords,
+  unitLabelOf,
   counts,
   daysBetween,
   distanceWords,
@@ -21,6 +22,7 @@ import {
   itemLine,
   ownerWords,
   phaseWhen,
+  planCounts,
   planTitle,
   previewOwners,
   layerCounts,
@@ -142,7 +144,14 @@ describe('the words the plan says things in (D124)', () => {
     expect(ownerWords({ mine: false, ownerLabel: 'Chef' })).toBe('Chef');
     expect(itemLine(row)).toBe('Möte · Fadder, Erik Nyström · senast lör 5 dec.');
     expect(conditionWords('all', null)).toBe('Alla anställda');
+    // A unit by the name the server gives it, else by its id as the file wrote it.
+    expect(conditionWords('unit', 'unit-skola', 'Sköndals skola')).toBe(
+      'Enhet: Sköndals skola och enheterna under den',
+    );
     expect(conditionWords('unit', 'unit-omsorg')).toBe('Enhet: unit-omsorg och enheterna under den');
+    expect(unitLabelOf({ condition: 'unit', unitLabel: 'Sköndals skola' })).toBe('Sköndals skola');
+    expect(unitLabelOf({ condition: 'unit' })).toBeUndefined();
+    expect(unitLabelOf({ unitLabel: '' })).toBeUndefined();
     expect(conditionWords('position', 'underskoterska')).toBe('Befattning: underskoterska');
     expect(conditionWords('employment_type', 'Konsult')).toBe('Anställningsform: Konsult');
   });
@@ -195,6 +204,19 @@ describe('a tick is drawn before the server answers, and the counts follow it', 
   };
   test('the counts: done of all, what waits for the reader, what is past its day', () => {
     expect(counts(rows)).toEqual({ done: 1, total: 3, waiting: 1, overdue: 1 });
+    // The header's done of all is the server's; a tick drawn at once moves it with the row.
+    expect(planCounts({ ...plan, plan: { ...plan.plan, done: 4, total: 9 } })).toEqual({
+      done: 4,
+      total: 9,
+      waiting: 1,
+      overdue: 1,
+    });
+    expect(planCounts(withTicked(plan, 'b', true, '2026-11-13'))).toEqual({
+      done: 2,
+      total: 3,
+      waiting: 0,
+      overdue: 0,
+    });
   });
   test('ticking off an overdue item makes it done; opening one again makes it overdue or to do by its day', () => {
     const ticked = withTicked(plan, 'b', true, '2026-11-13');

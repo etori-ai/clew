@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
   BOARDING_IMPORT_COLUMNS,
+  BOARDING_IMPORT_ROWS_MAX,
+  BOARDING_LAYER_ITEMS_MAX,
+  BOARDING_LAYER_NAME_MAX,
+  BOARDING_TIED_TO_MAX,
+  BOARDING_TITLE_MAX,
+  BOARDING_VALUE_MAX,
   BoardingPlanOutputSchema,
+  type BoardingImportRow,
   checkContract,
   parseBoardingImport,
   type AuthenticatedContext,
@@ -25,7 +32,7 @@ import {
 } from '../../apps/server/src/modules/boarding/capabilities';
 import type { Report, Staff } from '../../apps/server/src/modules/boarding/model';
 import { boardingUsecases } from '../../apps/server/src/modules/boarding/usecases';
-import { NOT_ENABLED, boardingRoutes } from '../../apps/server/src/routes/boarding';
+import { IMPORT_BODY_MAX, NOT_ENABLED, boardingRoutes } from '../../apps/server/src/routes/boarding';
 
 /**
  * The boarding wiring as the server assembles it (D124), on memory adapters and the production registry, which denies
@@ -290,14 +297,15 @@ describe('the boarding wiring (D124)', () => {
     expect(draft!.items).toEqual([
       {
         ref: 'boarding:person:p-vilma',
-        label: 'Vilma Strand',
+        // Nobody named, on the row either (vision principle 7): the person is the row's subject and the read's input.
+        label: 'Ny medarbetare',
         detail: 'Börjar 4 dec',
         selectable: false,
         selected: false,
         subject: { entity: 'person', key: 'vilma.strand' },
       },
     ]);
-    for (const text of [draft!.title, draft!.summary, draft!.reason]) expect(text).not.toContain('Vilma');
+    expect(JSON.stringify(draft)).not.toContain('Vilma');
     // Started, the suggestion is gone from the next observation, which resolves the card.
     await w.boarding.startPlan(hillevi, { personId: 'p-vilma', event: 'introduction', anchorOn: '2026-12-04' });
     expect((await w.registry.scanOne(actorOf(hillevi), BOARDING_CONNECTOR)).drafts).toEqual([]);
@@ -375,5 +383,81 @@ describe('the boarding wiring (D124)', () => {
     expect(await bad.json()).toEqual({ error: 'Rad 3: Raden innehåller text som inte är rensad.' });
     const layers = (await (await w.call(mikael, 'GET', '/layers')).json()) as { layers: unknown[] };
     expect(layers.layers).toHaveLength(2);
+  });
+
+  test('an item’s owner reads, through `boarding.plan`, their own items and the counts of those alone', async () => {
+    const w = await switchedOn();
+    const { id } = await w.boarding.startPlan(hillevi, {
+      personId: 'p-vilma',
+      event: 'introduction',
+      anchorOn: '2026-12-04',
+      buddyId: 'p-anna',
+    });
+    await w.boarding.addItem(hillevi, id, {
+      title: 'Visa skolgården',
+      kind: 'meeting',
+      ownerRole: 'buddy',
+      dueOn: '2026-12-05',
+    });
+    const asBuddy = (await w.registry.run(actorOf(anna), 'boarding.plan', { plan: id })) as {
+      note: string;
+      plan: { access: string; done: number; total: number };
+      rows: unknown[];
+    };
+    expect(asBuddy.plan).toMatchObject({ access: 'owner', done: 0, total: 1 });
+    expect(asBuddy.rows).toHaveLength(1);
+    expect(asBuddy.note).toBe('Första dagen 4 december · 0 av 1 klara');
+    const asManager = (await w.registry.run(actorOf(hillevi), 'boarding.plan', { plan: id })) as {
+      plan: { total: number };
+    };
+    expect(asManager.plan.total).toBe(4);
+  });
+
+  test('an added item that names what it ties to is refused: `tiedTo` is the administrator’s, on a layer', async () => {
+    const w = await switchedOn();
+    const { id } = await w.boarding.startPlan(hillevi, {
+      personId: 'p-vilma',
+      event: 'introduction',
+      anchorOn: '2026-12-04',
+    });
+    const refused = await w.call(hillevi, 'POST', `/plans/${id}/items`, {
+      title: 'Gå kursen',
+      kind: 'course',
+      ownerRole: 'person',
+      dueOn: '2026-12-10',
+      tiedTo: 'competence.holdings',
+    });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({ error: 'Ogiltig förfrågan.' });
+    expect(w.store.state.items.size).toBe(3);
+  });
+
+  test('a file at every limit the page accepts is a body the route reads; one larger is refused before it is parsed', async () => {
+    const w = await switchedOn();
+    // Every text at its longest, in a character JSON escapes, so the body is as long as a file the page accepts can make it.
+    const text = (n: number, tag: string) => '"'.repeat(n - tag.length) + tag;
+    const layers = BOARDING_IMPORT_ROWS_MAX / BOARDING_LAYER_ITEMS_MAX;
+    const rows: BoardingImportRow[] = Array.from({ length: BOARDING_IMPORT_ROWS_MAX }, (_, i) => ({
+      row: i + 2,
+      layer: text(BOARDING_LAYER_NAME_MAX, String(Math.floor(i / BOARDING_LAYER_ITEMS_MAX))),
+      event: 'introduction',
+      condition: 'employment_type',
+      value: text(BOARDING_VALUE_MAX, 'x'),
+      title: text(BOARDING_TITLE_MAX, String(i)),
+      kind: 'acknowledge',
+      owner: 'manager',
+      offsetDays: -365,
+      tiedTo: text(BOARDING_TIED_TO_MAX, 'y'),
+    }));
+    const body = JSON.stringify({ rows });
+    // The page's file at its limits is over a million characters, which the route once refused.
+    expect(body.length).toBeGreaterThan(1_000_000);
+    expect(body.length).toBeLessThanOrEqual(IMPORT_BODY_MAX);
+    const imported = await w.call(mikael, 'POST', '/layers/import', { rows });
+    expect(imported.status).toBe(200);
+    expect(await imported.json()).toEqual({ layers, added: layers, replaced: 0, unchanged: 0 });
+    const tooLarge = await w.call(mikael, 'POST', '/layers/import', { rows, padding: ' '.repeat(IMPORT_BODY_MAX) });
+    expect(tooLarge.status).toBe(400);
+    expect(await tooLarge.json()).toEqual({ error: 'För stor förfrågan.' });
   });
 });

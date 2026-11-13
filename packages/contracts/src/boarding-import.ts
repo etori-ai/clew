@@ -31,7 +31,7 @@
  * never disagree. Nothing here throws on what a file holds; what is wrong is a problem with its row, in Swedish, as the
  * page shows it. The CSV is RFC 4180 (a quoted field may hold the delimiter, a line break and `""`), a byte order mark is
  * skipped, `,` or `;` is recognised from the first row, and rows are numbered by record: the header is row 1, an empty
- * line has no number.
+ * line has no number, and a row of only delimiters (what a spreadsheet program appends) is skipped with its number kept.
  */
 
 /** The longest file read, in characters. */
@@ -368,6 +368,9 @@ export function parseBoardingImport(input: string): BoardingImportResult {
   const read: BoardingImportRow[] = [];
   for (const record of body) {
     const { row, fields } = record;
+    // A row of only delimiters, as a spreadsheet program appends below the last one, is no row; the rows keep the
+    // numbers they have in the file.
+    if (!record.malformed && fields.every(f => f.trim() === '')) continue;
     if (record.malformed) {
       problem(row, 'Raden har ett citattecken på fel ställe.');
       continue;

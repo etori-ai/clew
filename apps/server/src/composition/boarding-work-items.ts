@@ -1,11 +1,12 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import { dayRhythm, shiftDate, stockholmInstant, type BoardingEvent, type ThreadAction } from '@clew/contracts';
+import type { BoardingEvent, ThreadAction } from '@clew/contracts';
 import { BOARDING_CONNECTOR } from '@clew/connectors';
 import { schema, type Transaction } from '@clew/db';
 import type { ThreadTx } from '../threads/model';
 import { reminderStart } from '../threads/domain';
 import { authorizationVersion } from '../auth-crypto';
 import type { WorkItemTx } from '../modules/boarding/model';
+import { dueTimerAt } from '../modules/boarding/domain';
 
 /**
  * The owner's card of a plan's item (D124): the boarding module's `WorkItemTx`, implemented over the thread store's
@@ -61,11 +62,6 @@ const swedishDay = (day: string) =>
   new Intl.DateTimeFormat('sv-SE', { timeZone: 'UTC', day: 'numeric', month: 'long' }).format(
     new Date(day + 'T12:00:00Z'),
   );
-/** The morning after the due day, at the day's review (06:00 Europe/Stockholm, daylight saving included); never before `at`. */
-export function boardingDueAt(dueOn: string, at: string) {
-  const morning = stockholmInstant(shiftDate(dueOn, 1), dayRhythm.review);
-  return Date.parse(morning) > Date.parse(at) ? morning : at;
-}
 const summaryFor = (event: BoardingEvent, dueOn: string) =>
   `${CONTEXT[event]} och ska vara klar senast ${swedishDay(dueOn)}.`;
 
@@ -81,15 +77,22 @@ export function boardingWorkItems(tx: Transaction, thread: ThreadTx, options: Bo
       ? { unitId: access.grant.unitId, authorizationVersion: authorizationVersion(access) }
       : { unitId: '', authorizationVersion: '' };
   }
-  /** The caller holds the thread lock (or has just inserted the thread). A replaced generation's wait is cancelled after commit. */
+  /**
+   * The card's timer for the morning after `dueOn` (`dueTimerAt`). None when that morning has passed: starting a plan
+   * late, or opening an overdue item again, leaves the card open and overdue and fires no reminder, so a plan started
+   * a week late does not send one notification per item at once, outside the attention budget. The caller holds the
+   * thread lock (or has just inserted the thread). A replaced generation's wait is cancelled after commit.
+   */
   async function schedule(threadId: string, personId: string, dueOn: string, at: string) {
+    const dueAt = dueTimerAt(dueOn, at);
+    if (!dueAt) return undefined;
     const timer = await thread.scheduleTimer({
       id: boardingTimerId(threadId),
       personId,
       threadId,
       kind: 'boarding',
       ...(await authority(personId)),
-      dueAt: boardingDueAt(dueOn, at),
+      dueAt,
       requestedAt: at,
     });
     await thread.enqueue(reminderStart(timer));
@@ -138,7 +141,13 @@ export function boardingWorkItems(tx: Transaction, thread: ThreadTx, options: Bo
         action: 'thread.pushed',
         subject: `thread:${threadId}`,
         at,
-        details: { item: itemId, plan: planId, owner: personId, timer: timer.id, generation: timer.generation },
+        details: {
+          item: itemId,
+          plan: planId,
+          owner: personId,
+          timer: timer?.id ?? null,
+          generation: timer?.generation ?? null,
+        },
       });
     },
     async close(threadId, at, why) {
@@ -189,7 +198,7 @@ export function boardingWorkItems(tx: Transaction, thread: ThreadTx, options: Bo
         action: 'thread.reopened',
         subject: `thread:${threadId}`,
         at,
-        details: { owner: personId, timer: timer.id, generation: timer.generation },
+        details: { owner: personId, timer: timer?.id ?? null, generation: timer?.generation ?? null },
       });
     },
     async fire(threadId, generation, at) {

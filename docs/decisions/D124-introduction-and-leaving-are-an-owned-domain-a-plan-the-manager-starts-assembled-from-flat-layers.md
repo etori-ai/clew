@@ -1,16 +1,17 @@
 # D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item
 
-**Status:** provisional (two statements by the product owner on 2026-11-13, quoted below; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data; nothing outside the repository has tested it) · **Date:** 2026-11-13 · **Area:** product, people
+**Status:** provisional (two statements by the product owner on 2026-11-13, paraphrased below; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data, and amended the same day after an independent review; nothing outside the repository has tested it) · **Date:** 2026-11-13 · **Area:** product, people
 
 **Decision.** Introduction and leaving (Swedish in the product: **Introduktion och avslut**; in code `boarding`) is a
 domain Clew owns under [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md): a
-module `apps/server/src/modules/boarding/` with its own tables (migration 0067) and the checklist block of
+module `apps/server/src/modules/boarding/` with its own tables (migrations 0067 and 0068) and the checklist block of
 [Core or connector](../maintainers/core-or-connector.md) Part 5, built from the commitment block talks built
 ([D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md)).
 
-The product owner decided on 2026-11-13: onboarding and offboarding should be a core feature of Clew, built as core if
-possible; and a plan is started by the manager: Clew suggests it, nothing starts from directory dates, and a leaver's
-last day is entered by the manager. Every other item below is this build's choice.
+The product owner decided on 2026-11-13, in substance (paraphrased, not quoted): onboarding and offboarding should be a
+core feature of Clew, built as core if possible; and a plan is started by the manager, nothing starts from directory
+dates, and the manager enters a leaver's last day. They chose "the manager starts it" from an option whose description
+said that Clew suggests it with a work item and the manager confirms. Every other item below is this build's choice.
 
 1. **A plan.** A checklist about one person for one event: `introduction`, anchored on a first day, or `leaving`,
    anchored on a last day. The day is the plan's own data, entered or confirmed by the manager; Clew holds no validity
@@ -41,22 +42,41 @@ last day is entered by the manager. Every other item below is this build's choic
    item 5): a pushed card with the due day as its deadline, the plan's person as its subject by user name (D97 item 6),
    one read that opens the plan, and a timer of its own kind, `boarding`, that brings the card back the morning after
    the due day while the item and its plan are open. Ticking the item off closes the card; ticking it back opens it;
-   closing the plan closes every open card. A card for someone who cannot sign in yet waits in their stream.
+   closing the plan closes every open card. A card for someone who cannot sign in yet waits in their stream. A due day
+   whose next morning has already passed (a plan started late, an overdue item ticked back) gets no timer: the card is
+   simply open and overdue, so a late start sends no burst of reminders, one per item, outside the attention budget. A
+   timer that fires while the module is switched off for the installation is dropped: no card comes back and no
+   delivery or audit row is written; the card stays as it was, open and overdue unless its owner put it away, and gets a
+   timer again only when the item is ticked back.
 6. **Text.** A template title is text an administrator wrote, names nobody, and is the card's title. A title a manager
    types for one plan is free text about a named person's plan: sealed at rest (purpose `boarding:item:<id>`) as
    approved execution input is, and never in an audit row, a log line, a card's title, summary or message, or a trace;
-   its card says "En uppgift i en introduktion" (or "… i ett avslut"). Audit rows carry ids, dates, counts and roles.
-7. **Who may do what.**
-   - Start, preview and add an item: the manager the person reports to now, D117's `managed` (`reportsByUnit` over the
-     people module's reach), never a co-manager whose line runs elsewhere nor the manager's own manager.
-   - Read a plan: the person it is about; its manager, who is whoever the person reports to now, or, once the person
-     is deactivated and so reports to nobody, the manager who started it; and an owner of some of its items (a buddy,
-     a former manager), who reads those items only. Anyone else is told the plan does not exist.
-   - Tick an item off or back: its owner, or the plan's manager. Close a plan: its manager. A closed plan is read-only.
+   its card says "En uppgift i en introduktion" (or "… i ett avslut"). An item a manager adds ties to nothing: `tiedTo`
+   is an administrator's, on a layer's item, and a body that carries one is refused. Audit rows carry ids, dates,
+   counts and roles.
+7. **Who may do what.** All of it this build's choice, the deactivation rule amended after review the same day.
+   - Start and preview: the manager the person reports to now, D117's `managed` (`reportsByUnit` over the people
+     module's reach), never a co-manager whose line runs elsewhere nor the manager's own manager.
+   - The plan's manager is whoever the person reports to now. **Once the directory deactivates the person**, the plan is
+     held by the manager or managers they reported to at that moment: the people module's leavers port tells boarding
+     in the transaction that deactivates them (`boardingLeavers`, bound beside competence's in `composition/people.ts`,
+     each domain in a savepoint of its own so one failing never stops the other or the deactivation, D113), and
+     boarding records the holders on every plan of the person, read from the directory in that transaction (D99's line:
+     up from each unit they are on to the nearest one somebody active leads). Activated again, nobody holds the plans
+     and the line decides as before. The call is best effort: when nothing was recorded, the manager who started a plan
+     holds it. A manager who started a plan and is not its holder gets nothing beyond what an item owner gets.
+   - Read a plan: the person it is about; its manager; and an owner of some of its items (a buddy, a former manager),
+     who reads those items only, and the counts and the note over those alone. Anyone else, another organisation's
+     manager included, is told the plan does not exist.
+   - Add an item and close a plan: the plan's manager, by the same rule. Tick an item off or back: its owner, or the
+     plan's manager. A closed plan is read-only.
+   - An item whose owner is gone (erased, or their row deleted) belongs to the plan's manager role: the manager may
+     tick it, it is shown as theirs and counted among what waits for them; the erasure opens no card for it.
 8. **Clew suggests, the manager starts.** A report whose employment starts after today and within six weeks, with no
    introduction that covers that start (an open one, or one anchored at most 90 days before it or later), is suggested:
-   one card per person and start in the manager's stream ("Förbered introduktionen", no name in its title, summary or
-   reason; the person as its row's subject), a complete observation of the manager's reports at each scan, so a card
+   one card per person and start in the manager's stream ("Förbered introduktionen"; no name in its title, summary,
+   reason or row, whose label is "Ny medarbetare", vision principle 7; the person only as the row's subject and the
+   read's input, by user name), a complete observation of the manager's reports at each scan, so a card
    whose cause is gone is resolved. Nothing starts from the date. A leaving is never suggested: the manager enters the
    last day.
 9. **The seam.** A connector of kind `core`, id `boarding`, source "Clew", bundled and created switched off
@@ -85,8 +105,8 @@ last day is entered by the manager. Every other item below is this build's choic
 | 2. The same everywhere | Yes. What differs is data: the layers, their conditions and their items |
 | 3. Work between people who use Clew | Yes. Every open item is a work item in its owner's stream, the new hire's included |
 | 4. Small | Yes, by item 3's rules: the commitment block made a checklist (Part 5), one new timer kind, flat layers. A rules engine, branches or forms would fail this question, which is why they need a new decision |
-| 5. Works with the model off | Yes. No read is a model tool and no text reaches a model |
-| 6. Clew can carry it | **Open.** Not answered: how long a plan is kept after it is closed or the person leaves, whether it is archived, the secrecy rule, and who may read a plan after the manager changes beyond item 7. Built: erasure of one person and the export; a plan is keyed on the person and goes with them; a typed title is sealed; the manager reads content, an item owner reads their own items |
+| 5. Works with the model off | Yes. No read is a model tool, no card names the person or carries a typed title, and no text reaches a model |
+| 6. Clew can carry it | **Open.** Not answered: how long a plan is kept after it is closed or the person leaves, whether it is archived, and the secrecy rule. Built: erasure of one person and the export; a plan is keyed on the person and goes with them; a typed title is sealed; the manager reads content, an item owner reads their own items; after a deactivation the manager the person had then holds the plan (item 7) |
 | 7. Everything that reads it today still can | Nothing reads it: checked against this repository only |
 | 8. A way in and a way out | In: starting empty is acceptable, and the layers are imported from a file. Out: the export |
 | 9. Behind capabilities | Yes, item 9 |
@@ -103,8 +123,10 @@ record is light (a checklist, not notes), it serves every manager and every new 
 the retention clock of other domains. Layers rather than one template per unit: what differs between a nurse and a
 developer is a few items, and an organisation keeps one everyone list instead of copying it into every unit's.
 
-Alternatives weighed. Starting a plan from the directory's start date or a deactivation: rejected by the product owner
-(above). Conditions, dependencies or approvals per item: rejected by question 4, and they are what makes an HR system's
+Alternatives weighed. Starting a plan from the directory's dates: the product owner's decision (above); starting a
+leaving from a deactivation follows from it and is this build's reading. Leaving a deactivated person's plan with the
+manager who started it (the first build): rejected on review, since a manager from years ago would regain the whole
+plan the day the person left, and the manager they had at the end would lose it. Conditions, dependencies or approvals per item: rejected by question 4, and they are what makes an HR system's
 onboarding a workflow engine. One template per unit: rejected, every unit would copy the everyone list. Matching a unit
 exactly, as competence's requirements do: rejected, a layer for an administration must reach its teams. A buddy chosen
 from anyone in the organisation: rejected for the manager's own reports, whom the manager may give work. A suggestion
@@ -112,7 +134,7 @@ for a leaving: rejected, the last day is the manager's to enter. Storing the emp
 rejected by D68; the date is copied into the plan only when the manager confirms it as the plan's day.
 
 **Built 2026-11-13, server side.** The tables `boarding_layer`, `boarding_layer_item`, `boarding_plan` and
-`boarding_item`; the module (`model.ts`, `domain.ts`, `usecases.ts`, `capabilities.ts`, a memory and a Postgres adapter
+`boarding_item`, and (migration 0068, after review) `boarding_plan_holder` with `boarding_plan.held_at`; the module (`model.ts`, `domain.ts`, `usecases.ts`, `capabilities.ts`, a memory and a Postgres adapter
 under one store contract); the cards in `composition/boarding-work-items.ts` and the timer kind `boarding` fired by
 `fireTimer`; the routes; the capability `admin.boarding`; the parser `packages/contracts/src/boarding-import.ts`; the
 operator scripts and the development seed (`scripts/boarding-seed.ts`, data in `scripts/boarding-development.ts`); a
@@ -135,6 +157,13 @@ item, editing a layer in the product, the canvas's order dialog and one layer's 
 leaving (return, access, handover), "Planen är byggd av" (the plan's output does not name an item's layer), "Fråga Clew"
 on the plan's page (nothing of a plan reaches a model), and a way in for the new hire beyond the cards in Att göra and
 Hem.
+
+**Amended 2026-11-13 after an independent review.** Item 7's deactivation rule (above), the counts an item owner is
+told, an item whose owner is gone, and the leavers binding for two domains; item 5's past due days and switched-off
+timers; item 6's `tiedTo` on an added item; item 8's neutral row. Also: a layer on a unit carries the unit's name
+(`unitLabel`) in the preview and the administrator's list; a file's rows of only delimiters are skipped with their
+numbers kept; the import route takes any file the limits allow, its bound computed from them; and every transaction
+locks a plan before its items, its items before their cards.
 
 **Not established.** The answers to questions 6 and 11. Whether matching on the free-text employment type is
 acceptable (the directory has no concept of a consultant). Where a new hire finds their plan besides Hem and Att göra.

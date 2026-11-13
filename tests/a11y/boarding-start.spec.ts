@@ -73,7 +73,7 @@ test.describe('the start dialog', () => {
     await expect(dialog.getByRole('heading', { name: 'Planen får 3 punkter från 2 lager' })).toBeVisible();
     await expect(dialog.getByText('Alla nyanställda', { exact: true })).toBeVisible();
     await expect(dialog.getByText('Alla anställda', { exact: true })).toBeVisible();
-    await expect(dialog.getByText('Enhet: unit-skola och enheterna under den', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Enhet: Skönsmons skola och enheterna under den', { exact: true })).toBeVisible();
     await expect(dialog.getByRole('heading', { name: 'Vem som får vad' })).toBeVisible();
     await expect(
       dialog.getByText('2 punkter i Att göra, den första senast tis 17 nov.', { exact: true }),

@@ -28,6 +28,7 @@ import { ApiError, api } from '../api';
 import {
   anchorWord,
   conditionWords,
+  unitLabelOf,
   itemsWords,
   layerCounts,
   longDay,
@@ -426,7 +427,7 @@ function Effect({ preview, readerId, name }: { preview: BoardingPreview; readerI
                 <ListItem
                   key={l.id}
                   label={<Text weight="semibold">{l.name}</Text>}
-                  description={<Text type="supporting">{conditionWords(l.condition, l.value)}</Text>}
+                  description={<Text type="supporting">{conditionWords(l.condition, l.value, unitLabelOf(l))}</Text>}
                   endContent={
                     <Text type="supporting" textWrap="nowrap">
                       {itemsWords(counted.get(l.id) ?? 0)}

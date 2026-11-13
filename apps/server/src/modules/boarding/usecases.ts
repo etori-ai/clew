@@ -1,6 +1,7 @@
 import type {
   AuthenticatedContext,
   BoardingAccess,
+  BoardingCondition,
   BoardingImportBody,
   BoardingImportOutcome,
   BoardingImportRow,
@@ -26,9 +27,9 @@ import {
   covers,
   daysBetween,
   eventWords,
+  holdsAfterLeaving,
   isCalendarDay,
   itemRow,
-  normaliseTiedTo,
   normaliseTitle,
   orderItems,
   orderPlans,
@@ -42,14 +43,17 @@ import {
   suggestionsOf,
   swedishDay,
   upcomingStart,
+  waitsFor,
   ANCHOR_RANGE_DAYS,
 } from './domain';
 import {
   PlanTaken,
   type BoardingDeps,
+  type BoardingDirectory,
   type BoardingExport,
   type BoardingTx,
   type ItemRecord,
+  type LeaverChange,
   type PersonRef,
   type PlanRecord,
   type Report,
@@ -78,7 +82,6 @@ const BAD_DAY = 'Ange ett giltigt datum.';
 const DAY_OUT_OF_RANGE = 'Dagen ska ligga högst ett år före eller efter i dag.';
 const DUE_OUT_OF_RANGE = 'Uppgiften ska vara klar högst ett år före eller efter planens dag.';
 const BAD_TITLE = 'Skriv uppgiften på en rad, högst 200 tecken.';
-const BAD_TIED_TO = 'Kopplingen ska vara en rad, högst 300 tecken.';
 const BAD_BUDDY = 'Faddern ska vara någon annan som du är chef för.';
 const TOO_MANY_ITEMS = `En plan kan ha högst ${PLAN_ITEMS_MAX} uppgifter.`;
 /** The longest key a card may name a person by (D97, `SubjectSchema`): a longer user name names nobody. */
@@ -108,11 +111,59 @@ export interface PersonStanding {
 }
 
 /**
+ * What a change of a person's `active` means to boarding (D124 item 7), told by the people module's leavers port in the
+ * transaction that changes it (bound in `composition/people.ts`, in a savepoint of its own beside the competence
+ * module's, D113). Deactivated: every plan about the person is held from then on by the managers they report to at
+ * that moment, read from the directory in the same transaction; activated again: nobody holds them, and the line
+ * decides as before. Each plan changed gets an audit row of ids. The call is best effort: when it fails, nothing is
+ * recorded, and the manager who started a plan holds it (`holdsAfterLeaving`).
+ */
+export function boardingLeavers(
+  tx: Pick<BoardingTx, 'plansAbout' | 'holdPlan' | 'releasePlan' | 'audit'>,
+  directory: Pick<BoardingDirectory, 'lineManagers'>,
+) {
+  return {
+    async deactivated({ actor, personId, organisationId, at }: LeaverChange): Promise<void> {
+      // Every plan, open or closed: a closed plan is read-only, but its typed titles are still read by whoever holds it.
+      const plans = (await tx.plansAbout([personId])).filter(p => p.organisationId === organisationId);
+      if (!plans.length) return;
+      const holders = [...new Set(await directory.lineManagers(organisationId, personId))].sort();
+      for (const plan of [...plans].sort((a, b) => a.id.localeCompare(b.id))) {
+        await tx.holdPlan(plan.id, holders, at);
+        await tx.audit({
+          actor,
+          action: 'boarding.plan_held',
+          subject: 'plan:' + plan.id,
+          at,
+          details: { personId, holders },
+        });
+      }
+    },
+    async reactivated({ actor, personId, organisationId, at }: LeaverChange): Promise<void> {
+      const plans = (await tx.plansAbout([personId])).filter(
+        p => p.organisationId === organisationId && p.heldAt !== null,
+      );
+      for (const plan of [...plans].sort((a, b) => a.id.localeCompare(b.id))) {
+        await tx.releasePlan(plan.id);
+        await tx.audit({
+          actor,
+          action: 'boarding.plan_released',
+          subject: 'plan:' + plan.id,
+          at,
+          details: { personId },
+        });
+      }
+    },
+  };
+}
+export type BoardingLeavers = ReturnType<typeof boardingLeavers>;
+
+/**
  * The boarding module's use cases (D124): introduction and leaving plans. A manager's reach is computed from the
  * directory when asked (`deps.staff`: their reports, D99 and D117's `managed`), never stored, so a former manager
- * reaches nothing the day the line changes, except the plans they started for someone since deactivated. Every change
- * is one `deps.store` transaction with its audit row and, for an item, its owner's card. Audit rows carry ids, dates,
- * counts and roles: never a title a manager typed, never a name.
+ * reaches nothing the day the line changes; once a person is deactivated their plans are held by the managers they had
+ * then (`boardingLeavers`). Every change is one `deps.store` transaction with its audit row and, for an item, its
+ * owner's card. Audit rows carry ids, dates, counts and roles: never a title a manager typed, never a name.
  */
 export function boardingUsecases(deps: BoardingDeps) {
   const now = () => deps.clock();
@@ -138,9 +189,11 @@ export function boardingUsecases(deps: BoardingDeps) {
     await persona.authorize();
   };
   /**
-   * How the persona stands to a plan (D124): the person it is about; its manager, who is whoever the person reports to
-   * now, or, once the person is deactivated and so reports to nobody, the manager who started it; or the owner of some
-   * of its items (a buddy). Anyone else is no one, and is told the plan does not exist.
+   * How the persona stands to a plan (D124 item 7): the person it is about; its manager, who is whoever the person
+   * reports to now, or, once the person is deactivated and so reports to nobody, whoever holds the plan
+   * (`holdsAfterLeaving`: the managers they had when they were deactivated, or, with nothing recorded, the manager who
+   * started it); or the owner of some of its items (a buddy, a former manager), who reads those items only. Anyone else
+   * is no one, and is told the plan does not exist.
    */
   function accessOf(
     persona: AuthenticatedContext,
@@ -152,7 +205,7 @@ export function boardingUsecases(deps: BoardingDeps) {
     if (plan.organisationId !== persona.organisationId) return undefined;
     if (plan.personId === persona.id) return 'person';
     if (reports.has(plan.personId)) return 'manager';
-    if (plan.startedBy === persona.id && (!person || !person.enabled)) return 'manager';
+    if (person && !person.enabled && holdsAfterLeaving(plan, persona.id)) return 'manager';
     if (items.some(i => i.ownerId === persona.id)) return 'owner';
     return undefined;
   }
@@ -212,10 +265,11 @@ export function boardingUsecases(deps: BoardingDeps) {
     const { reports } = await staffing(persona);
     const at = now().toISOString();
     await deps.store.transaction(async tx => {
-      const item = await tx.item(id);
-      if (!item) throw new ForbiddenError(NOT_ALLOWED);
-      const plan = await tx.plan(item.planId, true);
-      if (!plan) throw new ForbiddenError(NOT_ALLOWED);
+      // The plan first, then the item (the module's lock order, `BoardingTx`): the item is read once to find its plan.
+      const found = await tx.item(id);
+      const plan = found && (await tx.plan(found.planId, true));
+      const item = plan && (await tx.item(id, true));
+      if (!plan || !item) throw new ForbiddenError(NOT_ALLOWED);
       const [person] = await tx.persons([plan.personId]);
       const asOwner = item.ownerId !== null && item.ownerId === persona.id;
       const asManager = accessOf(persona, plan, person, [], reports) === 'manager';
@@ -336,19 +390,38 @@ export function boardingUsecases(deps: BoardingDeps) {
       return outcome;
     });
   }
-  /** The persona's open plans to list: of their reports, and the ones they started for someone since deactivated. */
+  /** The persona's open plans to list: of their reports, and the ones they hold for someone since deactivated. */
   async function listedPlans(tx: BoardingTx, persona: AuthenticatedContext, reports: ReadonlyMap<string, Report>) {
     const ofReports = (await tx.plansAbout([...reports.keys()])).filter(p => p.closedAt === null);
-    const started = (await tx.openPlansStartedBy(persona.id)).filter(p => !reports.has(p.personId));
-    const persons = new Map((await tx.persons(started.map(p => p.personId))).map(p => [p.id, p]));
+    const theirs = (await tx.openPlansOf(persona.id)).filter(p => !reports.has(p.personId));
+    const persons = new Map((await tx.persons(theirs.map(p => p.personId))).map(p => [p.id, p]));
     return [
       ...ofReports,
-      ...started.filter(
-        p =>
-          p.organisationId === persona.organisationId && p.personId !== persona.id && !persons.get(p.personId)?.enabled,
-      ),
+      ...theirs.filter(p => {
+        const person = persons.get(p.personId);
+        return (
+          p.organisationId === persona.organisationId &&
+          p.personId !== persona.id &&
+          !!person &&
+          !person.enabled &&
+          holdsAfterLeaving(p, persona.id)
+        );
+      }),
     ];
   }
+  /** The name of the unit each layer on a unit applies to, where the directory has the unit. */
+  async function unitLabelsOf(
+    organisationId: string,
+    layers: ReadonlyArray<{ condition: BoardingCondition; value: string | null }>,
+  ) {
+    const ids = [...new Set(layers.flatMap(l => (l.condition === 'unit' && l.value !== null ? [l.value] : [])))];
+    return ids.length && deps.directory ? deps.directory.unitLabels(organisationId, ids) : new Map<string, string>();
+  }
+  /** `unitLabel` for a layer on a unit the directory names; nothing for any other layer. */
+  const labelled = (labels: ReadonlyMap<string, string>, l: { condition: BoardingCondition; value: string | null }) => {
+    const label = l.condition === 'unit' && l.value !== null ? labels.get(l.value) : undefined;
+    return label ? { unitLabel: label } : {};
+  };
 
   /** The suggestions of `suggestions`, on `day`. */
   async function suggestionsFor(persona: AuthenticatedContext, day: string): Promise<BoardingSuggestion[]> {
@@ -372,31 +445,33 @@ export function boardingUsecases(deps: BoardingDeps) {
     /** An administrator reads the organisation's layers (D124), by event and name, each with its items in order. */
     async layers(persona: AuthenticatedContext): Promise<BoardingLayersOutput> {
       await admin(persona);
-      return deps.store.transaction(async tx => {
+      const { layers, items } = await deps.store.transaction(async tx => {
         const layers = await tx.layers(persona.organisationId);
-        const items = await tx.layerItems(layers.map(l => l.id));
-        return {
-          layers: layers.map(l => ({
-            id: l.id,
-            event: l.event,
-            name: l.name,
-            condition: l.condition,
-            value: l.value,
-            updatedAt: l.updatedAt,
-            items: items
-              .filter(i => i.layerId === l.id)
-              .map(i => ({
-                id: i.id,
-                title: i.title,
-                kind: i.kind,
-                ownerRole: i.ownerRole,
-                offsetDays: i.offsetDays,
-                tiedTo: i.tiedTo,
-                phase: phaseOf(l.event, i.offsetDays),
-              })),
-          })),
-        };
+        return { layers, items: await tx.layerItems(layers.map(l => l.id)) };
       });
+      const labels = await unitLabelsOf(persona.organisationId, layers);
+      return {
+        layers: layers.map(l => ({
+          id: l.id,
+          event: l.event,
+          name: l.name,
+          condition: l.condition,
+          value: l.value,
+          ...labelled(labels, l),
+          updatedAt: l.updatedAt,
+          items: items
+            .filter(i => i.layerId === l.id)
+            .map(i => ({
+              id: i.id,
+              title: i.title,
+              kind: i.kind,
+              ownerRole: i.ownerRole,
+              offsetDays: i.offsetDays,
+              tiedTo: i.tiedTo,
+              phase: phaseOf(l.event, i.offsetDays),
+            })),
+        })),
+      };
     },
     /** An administrator with `admin.boarding` imports a file of layers (D124); see `importInto`. */
     async importLayers(persona: AuthenticatedContext, body: BoardingImportBody): Promise<BoardingImportOutcome> {
@@ -420,25 +495,32 @@ export function boardingUsecases(deps: BoardingDeps) {
         [report.id, report.name],
         ...(buddy ? [[buddy.id, buddy.name] as [string, string]] : []),
       ]);
-      return deps.store.transaction(async tx => {
-        const { layers, items } = await assembled(tx, persona, report, tree, body, buddy?.id ?? null);
-        return {
-          person: { id: report.id, name: report.name },
-          event: body.event,
-          anchorOn: body.anchorOn,
-          buddy: buddy ? { id: buddy.id, name: buddy.name } : null,
-          layers: layers.map(l => ({ id: l.id, name: l.name, condition: l.condition, value: l.value })),
-          items: items.map(i => ({
-            title: i.title,
-            kind: i.kind,
-            ownerRole: i.ownerRole,
-            owner: { id: i.ownerId, name: names.get(i.ownerId) ?? '' },
-            dueOn: i.dueOn,
-            phase: phaseOf(body.event, daysBetween(body.anchorOn, i.dueOn)),
-            layerId: i.layerId,
-          })),
-        };
-      });
+      const { layers, items } = await deps.store.transaction(tx =>
+        assembled(tx, persona, report, tree, body, buddy?.id ?? null),
+      );
+      const labels = await unitLabelsOf(persona.organisationId, layers);
+      return {
+        person: { id: report.id, name: report.name },
+        event: body.event,
+        anchorOn: body.anchorOn,
+        buddy: buddy ? { id: buddy.id, name: buddy.name } : null,
+        layers: layers.map(l => ({
+          id: l.id,
+          name: l.name,
+          condition: l.condition,
+          value: l.value,
+          ...labelled(labels, l),
+        })),
+        items: items.map(i => ({
+          title: i.title,
+          kind: i.kind,
+          ownerRole: i.ownerRole,
+          owner: { id: i.ownerId, name: names.get(i.ownerId) ?? '' },
+          dueOn: i.dueOn,
+          phase: phaseOf(body.event, daysBetween(body.anchorOn, i.dueOn)),
+          layerId: i.layerId,
+        })),
+      };
     },
 
     /**
@@ -468,6 +550,8 @@ export function boardingUsecases(deps: BoardingDeps) {
             startedBy: persona.id,
             startedAt: at,
             closedAt: null,
+            heldAt: null,
+            heldBy: [],
           });
         } catch (error) {
           if (error instanceof PlanTaken) throw new BoardingError(ALREADY_OPEN[body.event]);
@@ -525,8 +609,9 @@ export function boardingUsecases(deps: BoardingDeps) {
 
     /**
      * One plan (`boarding.plan`, the plan's page): for its manager and the person it is about, every item; for the
-     * owner of some of its items, those items only. The manager is whoever the person reports to now, or the manager
-     * who started it once the person is deactivated. Reads, so no audit row.
+     * owner of some of its items, those items only, and the counts and the note over those alone. The manager is
+     * whoever the person reports to now, or whoever holds the plan once the person is deactivated (`accessOf`). An item
+     * whose owner is gone is the manager's. Reads, so no audit row.
      */
     async plan(persona: AuthenticatedContext, planId: string): Promise<BoardingPlanOutput> {
       const { reports } = await staffing(persona);
@@ -552,9 +637,11 @@ export function boardingUsecases(deps: BoardingDeps) {
             today: day,
             owner: i.ownerId ? named.get(i.ownerId) : undefined,
             canTick: open && (access === 'manager' || i.ownerId === persona.id),
+            managerReads: access === 'manager',
           }),
         );
-        const { done, total } = progress(items);
+        // An owner who is neither the manager nor the person is told how far their own items have come, nothing more.
+        const { done, total } = progress(shown);
         const ref = (id: string | null) => {
           const p = id ? named.get(id) : undefined;
           return p ? { id: p.id, name: p.name } : null;
@@ -606,6 +693,7 @@ export function boardingUsecases(deps: BoardingDeps) {
                       items.filter(i => i.planId === p.id),
                       persona.id,
                       day,
+                      true,
                     ),
                   ]
                 : [];
@@ -617,8 +705,8 @@ export function boardingUsecases(deps: BoardingDeps) {
 
     /**
      * One person's plans, as the plan page opens on them (D124): for the person themselves their own, for the manager they
-     * report to all of theirs with what starting a new one needs, and for a manager who started a plan for someone since
-     * deactivated, those plans. Anyone else is refused. Reads, so no audit row.
+     * report to all of theirs with what starting a new one needs, and, once the person is deactivated, for whoever
+     * holds a plan of theirs, those plans. Anyone else is refused. Reads, so no audit row.
      */
     async personPlans(persona: AuthenticatedContext, personId: string): Promise<BoardingPersonOutput> {
       const { reports } = await staffing(persona);
@@ -628,8 +716,8 @@ export function boardingUsecases(deps: BoardingDeps) {
         if (!person || person.organisationId !== persona.organisationId) throw new ForbiddenError(NOT_YOURS);
         const report = reports.get(personId);
         const all = await tx.plansAbout([personId]);
-        const plans =
-          personId === persona.id || report ? all : all.filter(p => p.startedBy === persona.id && !person.enabled);
+        const held = all.filter(p => !person.enabled && holdsAfterLeaving(p, persona.id));
+        const plans = personId === persona.id || report ? all : held;
         if (!plans.length && personId !== persona.id && !report) throw new ForbiddenError(NOT_YOURS);
         const items = await tx.items(plans.map(p => p.id));
         const start = report ? upcomingStart(report, day) : undefined;
@@ -644,6 +732,7 @@ export function boardingUsecases(deps: BoardingDeps) {
                 items.filter(i => i.planId === p.id),
                 persona.id,
                 day,
+                !!report || held.includes(p),
               ),
             ),
           ),
@@ -709,7 +798,7 @@ export function boardingUsecases(deps: BoardingDeps) {
                   anchorOn: plan.anchorOn,
                   done,
                   total,
-                  waiting: own.filter(i => i.doneAt === null && i.ownerId === persona.id).length,
+                  waiting: own.filter(i => i.doneAt === null && waitsFor(i, persona.id, true)).length,
                   state: planState(plan, own, day),
                 },
               },
@@ -725,15 +814,14 @@ export function boardingUsecases(deps: BoardingDeps) {
 
     /**
      * The manager adds an item to one plan (D124): its title is free text about this person's plan, sealed at rest and
-     * never on the card, in an audit row or a log line. Its owner is the manager adding it, the person or the buddy (the
-     * manager adding it when there is none). The card is opened first in the same transaction. Returns the item's id.
+     * never on the card, in an audit row or a log line. It ties to nothing: `tiedTo` is an administrator's, on a layer's
+     * item. Its owner is the manager adding it, the person or the buddy (the manager adding it when there is none). The
+     * card is opened first in the same transaction. Returns the item's id.
      */
     async addItem(persona: AuthenticatedContext, planId: string, body: BoardingItemAddBody): Promise<{ id: string }> {
       const title = normaliseTitle(body.title);
       if (!title) throw new BoardingError(BAD_TITLE);
       if (!isCalendarDay(body.dueOn)) throw new BoardingError(BAD_DAY);
-      const tiedTo = body.tiedTo === undefined ? null : normaliseTiedTo(body.tiedTo);
-      if (tiedTo === undefined) throw new BoardingError(BAD_TIED_TO);
       const { reports } = await staffing(persona);
       const at = now().toISOString(),
         id = deps.ids(),
@@ -775,7 +863,7 @@ export function boardingUsecases(deps: BoardingDeps) {
           doneBy: null,
           threadId,
           sourceLayerId: null,
-          tiedTo,
+          tiedTo: null,
           createdAt: at,
         });
         await tx.audit({
@@ -824,17 +912,21 @@ export function boardingUsecases(deps: BoardingDeps) {
     },
 
     /**
-     * The timer of an item's card fired at `generation`. While the item is open and its plan too, the card comes back,
-     * and when it did the audit row says so. A done or unknown item, a closed plan, or a timer the card no longer has,
-     * changes nothing. Returns whether the card came back.
+     * The timer of an item's card fired at `generation`. While the module is switched on and the item and its plan are
+     * open, the card comes back, and when it did the audit row says so. A done or unknown item, a closed plan, or a
+     * timer the card no longer has, changes nothing. While the module is switched off the timer is dropped (D124 item
+     * 5): no card comes back, no delivery and no audit row; the card stays as it was, open and overdue unless its owner
+     * put it away, and gets a timer again only when the item is ticked back. Returns whether the card came back.
      */
     async itemDue(threadId: string, generation: number): Promise<boolean> {
+      if (deps.switchedOn && !(await deps.switchedOn())) return false;
       const at = now().toISOString();
       return deps.store.transaction(async tx => {
-        const item = await tx.itemByThread(threadId);
-        if (!item || item.doneAt !== null) return false;
-        const plan = await tx.plan(item.planId);
-        if (!plan || plan.closedAt !== null) return false;
+        // The plan first, then the item (the module's lock order): the card names the item, the item its plan.
+        const found = await tx.itemByThread(threadId);
+        const plan = found && (await tx.plan(found.planId, true));
+        const item = plan && (await tx.item(found.id, true));
+        if (!plan || !item || item.doneAt !== null || plan.closedAt !== null) return false;
         const fired = await tx.workItems.fire(threadId, generation, at);
         if (fired)
           await tx.audit({

@@ -264,6 +264,33 @@ describe('the card of a plan’s item (D124)', () => {
     expect((await rows(id)).messages.at(-1)?.body).toBe('Planen är avslutad.');
   });
 
+  test('a card whose due day’s next morning has passed gets no timer and no workflow, opened or opened again', async () => {
+    now = new Date('2026-03-01T09:00:00.000Z');
+    const { owner } = await people();
+    const late = card();
+    await open(late, owner, '2026-02-20');
+    const r = await rows(late);
+    expect(r.thread).toMatchObject({ state: 'open', deadline: '2026-02-20' });
+    expect(r.timer).toBeUndefined();
+    expect(await enqueuedWorkflows(boardingTimerId(late))).toEqual([]);
+    expect(r.deliveries.map(d => d.kind)).toEqual(['automatic']);
+    expect(r.audit.map(a => [a.action, a.details.timer, a.details.generation])).toEqual([
+      ['thread.pushed', null, null],
+    ]);
+    // A due day ahead gets its timer; closed, then opened again once the day has passed, it gets none: no burst.
+    const ahead = card();
+    await open(ahead, owner, '2026-03-05');
+    await run(items => items.close(ahead, '2026-03-06T10:00:00.000Z', 'done'));
+    await run(items => items.reopen(ahead, '2026-03-05', '2026-03-07T10:00:00.000Z'));
+    const again = await rows(ahead);
+    expect(again.thread).toMatchObject({ state: 'open', handledAt: null });
+    expect(again.timer).toMatchObject({ state: 'cancelled', generation: 1 });
+    expect((await enqueuedWorkflows(boardingTimerId(ahead))).map(w => w.id)).toEqual([
+      `${boardingTimerId(ahead)}:v2:1`,
+    ]);
+    expect(again.audit.at(-1)).toMatchObject({ action: 'thread.reopened', details: { timer: null, generation: null } });
+  });
+
   test('a boarding timer handed to the reminder path is skipped and writes nothing', async () => {
     const { owner } = await people();
     const id = card();

@@ -138,6 +138,12 @@ test.describe('the plan for its manager', () => {
     const dialog = page.getByRole('dialog', { name: 'Lägg till punkt' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('Introduktion för Anna Lindqvist')).toBeVisible();
+    // Who reads the typed text is said before it is sent: the plan shows it, the card in Att göra does not.
+    await expect(
+      dialog.getByText(
+        'Vad som ska göras, på en rad. Texten syns här i planen för dig, för Anna Lindqvist och för den som ska göra punkten. Uppgiften i Att göra visar den inte, bara att det är en uppgift i planen.',
+      ),
+    ).toBeVisible();
     await dialog.getByRole('button', { name: 'Lägg till', exact: true }).click();
     await expect(drawn(page, dialog, 'Skriv vad som ska göras.')).toBeVisible();
     await expect(drawn(page, dialog, 'Välj dagen då punkten ska vara klar.')).toBeVisible();
@@ -237,7 +243,12 @@ test.describe('the plan for others who read it', () => {
     await expect(main.getByText(/^Du ser bara dina egna punkter i planen/)).toBeVisible();
     await expect(main.getByRole('checkbox')).toHaveCount(1);
     await expect(item(page, 'Rundvandring, nycklar och arbetsplats')).toBeVisible();
+    // The counts are the server's, over the items the owner is shown: one item, not done.
     await expect(main.getByText('0 av 1 klara', { exact: true })).toBeVisible();
+    const progress = main.getByRole('progressbar', { name: 'Klara punkter' });
+    await expect(progress).toHaveAttribute('aria-valuenow', '0');
+    await expect(progress).toHaveAttribute('aria-valuemax', '1');
+    await expect(main.getByText('1 väntar på dig', { exact: true })).toBeVisible();
     await expect(main.getByRole('link', { name: 'Att göra', exact: true })).toHaveAttribute('href', '/todo?item=t1');
     await expectNoAxeViolations(page);
   });

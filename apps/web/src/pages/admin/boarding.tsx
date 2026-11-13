@@ -23,7 +23,7 @@ import {
 import { displayDate } from '@clew/calendar/dates';
 import { ApiError } from '../../api-error';
 import { BOARDING_IMPORT_PATH } from '../../boarding-address';
-import { conditionWords, itemsWords, longDay } from '../../boarding';
+import { conditionWords, itemsWords, longDay, unitLabelOf } from '../../boarding';
 import { boardingLayersQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
@@ -123,7 +123,7 @@ function EventLayers({ event, layers, mobile }: { event: BoardingEvent; layers: 
       key: 'condition',
       header: 'Gäller',
       width: proportional(3, { minWidth: 220 }),
-      renderCell: (r: Row) => <Text>{conditionWords(r.layer.condition, r.layer.value)}</Text>,
+      renderCell: (r: Row) => <Text>{conditionWords(r.layer.condition, r.layer.value, unitLabelOf(r.layer))}</Text>,
     },
     {
       key: 'items',
@@ -165,7 +165,7 @@ function EventLayers({ event, layers, mobile }: { event: BoardingEvent; layers: 
               key={l.id}
               label={<Text weight="semibold">{l.name}</Text>}
               description={
-                <Text type="supporting">{`${conditionWords(l.condition, l.value)} · ${itemsWords(l.items.length)} · ändrad ${changed(l)}`}</Text>
+                <Text type="supporting">{`${conditionWords(l.condition, l.value, unitLabelOf(l))} · ${itemsWords(l.items.length)} · ändrad ${changed(l)}`}</Text>
               }
             />
           ))}

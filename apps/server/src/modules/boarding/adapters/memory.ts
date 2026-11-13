@@ -1,6 +1,8 @@
+import { dueTimerAt, lineUpwards } from '../domain';
 import {
   PlanTaken,
   type BoardingAudit,
+  type BoardingDirectory,
   type BoardingStore,
   type BoardingTx,
   type Erased,
@@ -9,6 +11,8 @@ import {
   type LayerRecord,
   type PersonRef,
   type PlanRecord,
+  type Report,
+  type UnitNode,
   type WorkItemTx,
 } from '../model';
 
@@ -35,6 +39,8 @@ export interface MemoryCard {
   dueOn: string;
   subject?: { entity: 'person' | 'unit'; key: string };
   state: 'open' | 'handled';
+  /** Whether the card has a timer: none for a due day whose next morning has passed (`dueTimerAt`). */
+  timer: boolean;
 }
 export interface MemoryBoardingState {
   layers: Map<string, LayerRecord>;
@@ -98,19 +104,20 @@ export function memoryBoardingStore(seed: { persons?: PersonRef[] } = {}) {
         dueOn: input.dueOn,
         ...(input.subject ? { subject: { ...input.subject } } : {}),
         state: 'open',
+        timer: dueTimerAt(input.dueOn, input.at) !== undefined,
       });
     },
     async close(threadId, at, why) {
       fail('close');
       state.calls.push({ op: 'close', threadId, at, why });
       const card = state.cards.get(threadId);
-      if (card) card.state = 'handled';
+      if (card) Object.assign(card, { state: 'handled', timer: false });
     },
     async reopen(threadId, dueOn, at) {
       fail('reopen');
       state.calls.push({ op: 'reopen', threadId, dueOn, at });
       const card = state.cards.get(threadId);
-      if (card) Object.assign(card, { state: 'open', dueOn });
+      if (card) Object.assign(card, { state: 'open', dueOn, timer: dueTimerAt(dueOn, at) !== undefined });
     },
     async fire(threadId, generation, at) {
       fail('fire');
@@ -171,15 +178,27 @@ export function memoryBoardingStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async plan(id) {
       const p = state.plans.get(id);
-      return p && { ...p };
+      return p && structuredClone(p);
     },
     async plansAbout(personIds) {
-      return newestFirst([...state.plans.values()].filter(p => personIds.includes(p.personId))).map(p => ({ ...p }));
-    },
-    async openPlansStartedBy(personId) {
-      return newestFirst([...state.plans.values()].filter(p => p.startedBy === personId && p.closedAt === null)).map(
-        p => ({ ...p }),
+      return newestFirst([...state.plans.values()].filter(p => personIds.includes(p.personId))).map(p =>
+        structuredClone(p),
       );
+    },
+    async openPlansOf(personId) {
+      return newestFirst(
+        [...state.plans.values()].filter(
+          p => p.closedAt === null && (p.startedBy === personId || p.heldBy.includes(personId)),
+        ),
+      ).map(p => structuredClone(p));
+    },
+    async holdPlan(id, holders, at) {
+      const p = state.plans.get(id);
+      if (p) Object.assign(p, { heldAt: at, heldBy: [...new Set(holders)].sort() });
+    },
+    async releasePlan(id) {
+      const p = state.plans.get(id);
+      if (p) Object.assign(p, { heldAt: null, heldBy: [] });
     },
     async insertPlan(plan) {
       if (state.plans.has(plan.id)) throw new Error('duplicate plan id');
@@ -191,7 +210,7 @@ export function memoryBoardingStore(seed: { persons?: PersonRef[] } = {}) {
         )
       )
         throw new PlanTaken();
-      state.plans.set(plan.id, { ...plan });
+      state.plans.set(plan.id, { ...plan, heldAt: null, heldBy: [] });
     },
     async closePlan(id, at) {
       const p = state.plans.get(id);
@@ -250,6 +269,10 @@ export function memoryBoardingStore(seed: { persons?: PersonRef[] } = {}) {
         }
         if (p.startedBy === personId) {
           p.startedBy = null;
+          cleared.add('plan:' + id);
+        }
+        if (p.heldBy.includes(personId)) {
+          p.heldBy = p.heldBy.filter(h => h !== personId);
           cleared.add('plan:' + id);
         }
       }
@@ -325,3 +348,82 @@ export function memoryBoardingStore(seed: { persons?: PersonRef[] } = {}) {
   };
 }
 export type MemoryBoardingStore = ReturnType<typeof memoryBoardingStore>;
+
+/** A person as the memory directory holds them: their assignments with the role on each, positions and employments. */
+export interface MemoryDirectoryPerson extends Pick<Report, 'positionCodes' | 'employments'> {
+  id: string;
+  organisationId: string;
+  enabled: boolean;
+  assignments: Array<{ unitId: string; role: 'manager' | 'employee' }>;
+}
+/**
+ * The directory in memory (D25): the unit tests' `BoardingDirectory`, held to Postgres by
+ * `tests/boarding-directory-contract.ts`. Seedable, and changed by the test as provisioning would change it.
+ */
+export function memoryBoardingDirectory(
+  seed: {
+    units?: Array<UnitNode & { organisationId: string; label: string }>;
+    people?: MemoryDirectoryPerson[];
+  } = {},
+) {
+  const units = new Map((seed.units ?? []).map(u => [u.id, { ...u }]));
+  const people = new Map((seed.people ?? []).map(p => [p.id, structuredClone(p)]));
+  const directory: BoardingDirectory = {
+    async facts(organisationId, personIds) {
+      const found = new Map<string, Pick<Report, 'unitIds' | 'positionCodes' | 'employments'>>();
+      for (const id of personIds) {
+        const p = people.get(id);
+        if (!p || p.organisationId !== organisationId) continue;
+        found.set(id, {
+          unitIds: p.assignments.map(a => a.unitId).sort(),
+          positionCodes: [...p.positionCodes].sort(),
+          employments: structuredClone(p.employments),
+        });
+      }
+      return found;
+    },
+    async tree(organisationId) {
+      return [...units.values()]
+        .filter(u => u.organisationId === organisationId)
+        .map(u => ({ id: u.id, parentId: u.parentId }));
+    },
+    async unitLabels(organisationId, unitIds) {
+      return new Map(
+        unitIds.flatMap(id => {
+          const u = units.get(id);
+          return u && u.organisationId === organisationId ? [[id, u.label] as const] : [];
+        }),
+      );
+    },
+    async lineManagers(organisationId, personId) {
+      const person = people.get(personId);
+      if (!person || person.organisationId !== organisationId) return [];
+      const parents = new Map(
+        [...units.values()].filter(u => u.organisationId === organisationId).map(u => [u.id, u.parentId]),
+      );
+      const leadersOf = (unitId: string) =>
+        [...people.values()]
+          .filter(
+            p =>
+              p.id !== personId &&
+              p.enabled &&
+              p.organisationId === organisationId &&
+              p.assignments.some(a => a.unitId === unitId && a.role === 'manager'),
+          )
+          .map(p => p.id);
+      return lineUpwards(person.assignments, parents, leadersOf);
+    },
+  };
+  return {
+    ...directory,
+    /** Put a person in the directory, or change them, as provisioning would. */
+    setPerson(person: MemoryDirectoryPerson) {
+      people.set(person.id, structuredClone(person));
+    },
+    /** Put a unit in the tree, or move or rename it. */
+    setUnit(unit: UnitNode & { organisationId: string; label: string }) {
+      units.set(unit.id, { ...unit });
+    },
+  };
+}
+export type MemoryBoardingDirectory = ReturnType<typeof memoryBoardingDirectory>;

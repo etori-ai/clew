@@ -100,14 +100,27 @@ export const ownerWords = (row: Pick<BoardingItemRow, 'mine' | 'owner' | 'ownerL
 /** The line under an item's title: its kind, who does it and the day it is due. */
 export const itemLine = (row: Pick<BoardingItemRow, 'kindLabel' | 'mine' | 'owner' | 'ownerLabel' | 'dueOn'>) =>
   `${row.kindLabel} · ${ownerWords(row)} · senast ${shortDay(row.dueOn)}`;
-/** Whom a layer applies to, in words: "Alla", "Enhet: unit-omsorg och enheterna under den". */
-export function conditionWords(condition: BoardingCondition, value: string | null): string {
+/**
+ * Whom a layer applies to, in words: "Alla anställda", "Enhet: Sköndals skola och enheterna under den". A unit is named
+ * by the name the server gives (`unitLabel`, present while the unit exists), else by its id as the file wrote it (the
+ * import page, which has no unit tree, or a unit since removed).
+ */
+export function conditionWords(condition: BoardingCondition, value: string | null, unitLabel?: string): string {
   if (condition === 'all' || !value) return 'Alla anställda';
-  if (condition === 'unit') return `${BOARDING_CONDITION_WORDS.unit}: ${value} och enheterna under den`;
+  if (condition === 'unit') return `${BOARDING_CONDITION_WORDS.unit}: ${unitLabel || value} och enheterna under den`;
   return `${BOARDING_CONDITION_WORDS[condition]}: ${value}`;
 }
+/**
+ * A layer's unit name as the server sends it (`unitLabel` on a layer of `BoardingPreview` and `BoardingLayersOutput`, for
+ * a unit condition whose unit exists); undefined without one. Read from any layer, so it holds before and after the
+ * field is in the contract.
+ */
+export function unitLabelOf(layer: object): string | undefined {
+  const label = (layer as { unitLabel?: unknown }).unitLabel;
+  return typeof label === 'string' && label ? label : undefined;
+}
 
-/** The counts the plan's header says: done of all, what waits for the reader, what is past its day. */
+/** Counts over rows: done of all, what waits for the reader, what is past its day. */
 export function counts(rows: readonly Pick<BoardingItemRow, 'done' | 'mine' | 'status'>[]) {
   return {
     done: rows.filter(r => r.done).length,
@@ -115,6 +128,17 @@ export function counts(rows: readonly Pick<BoardingItemRow, 'done' | 'mine' | 's
     waiting: rows.filter(r => r.mine && !r.done).length,
     overdue: rows.filter(r => r.status === 'Försenad').length,
   };
+}
+/**
+ * The counts the plan's header says: done of all as the server counts them, over the items the reader is shown (an
+ * item's owner counts their own, D124), one source for the header, the progress and what is said after a tick; what
+ * waits for the reader and what is past its day from the rows, which the server does not count.
+ */
+export function planCounts(plan: {
+  plan: Pick<BoardingPlanOutput['plan'], 'done' | 'total'>;
+  rows: BoardingPlanOutput['rows'];
+}) {
+  return { ...counts(plan.rows), done: plan.plan.done, total: plan.plan.total };
 }
 /** An item ticked off or opened again, as the page draws it until the server's answer is read: its state from `today`. */
 export function ticked<R extends Pick<BoardingItemRow, 'done' | 'dueOn' | 'status' | 'doneAt'>>(

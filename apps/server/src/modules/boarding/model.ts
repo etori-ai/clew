@@ -57,6 +57,12 @@ export interface PlanRecord {
   startedBy: string | null;
   startedAt: string;
   closedAt: string | null;
+  /**
+   * When the directory deactivated the person and who held the plan from then on (D124 item 7): the managers the person
+   * reported to at that moment. Null and empty while the person is active, and when nothing was recorded.
+   */
+  heldAt: string | null;
+  heldBy: string[];
 }
 /** One item of a plan. Its owner's card is `threadId`; null once the card is removed by erasure. */
 export interface ItemRecord {
@@ -124,7 +130,8 @@ export interface BoardingExport {
 export interface WorkItemTx {
   /**
    * Insert the owner's open card `threadId`, admit its delivery, write its message and its `thread.pushed` audit row, and
-   * schedule its timer for 06:00 Europe/Stockholm on the day after `dueOn`. Call it before the item that names
+   * schedule its timer for 06:00 Europe/Stockholm on the day after `dueOn` (`dueTimerAt`); when that morning has already
+   * passed there is no timer: the card is simply open and overdue, and no reminder fires. Call it before the item that names
    * `threadId` is inserted, since that row refers to the card. `title` is the template title, or null for an item a
    * manager typed. The owner need not be able to sign in yet: the card waits in their stream.
    */
@@ -141,7 +148,7 @@ export interface WorkItemTx {
   }): Promise<void>;
   /** Mark the card handled and cancel its timer: the item is done (`done`), or its plan was closed (`closed`). */
   close(threadId: string, at: string, why: 'done' | 'closed'): Promise<void>;
-  /** Open the card again and schedule its timer as `open` does; a day already past gives a timer due at once. */
+  /** Open the card again and schedule its timer as `open` does: none when the morning after `dueOn` has passed. */
   reopen(threadId: string, dueOn: string, at: string): Promise<void>;
   /**
    * The timer fired at `generation`: when it is still active at that generation and due by `at`, mark it fired, bring
@@ -160,7 +167,12 @@ export class PlanTaken extends Error {
   }
 }
 
-/** Everything a boarding use case reads and writes in one transaction. Reads that a write follows take a row lock. */
+/**
+ * Everything a boarding use case reads and writes in one transaction. Reads that a write follows take a row lock, and
+ * every transaction takes its locks in one order, so two never wait on each other: a plan before its items, an item
+ * before its card (the thread), and several plans in id order. Layers are serialised by an advisory lock of the
+ * organisation's (`lockLayers`) and touch no plan.
+ */
 export interface BoardingTx {
   // Layers.
   /** Serialises imports of one organisation's layers: the first call in a transaction waits for any other. */
@@ -180,18 +192,22 @@ export interface BoardingTx {
   plan(id: string, lock?: boolean): Promise<PlanRecord | undefined>;
   /** The plans about these people, open and closed, newest first. */
   plansAbout(personIds: readonly string[]): Promise<PlanRecord[]>;
-  /** The open plans this person started, newest first. */
-  openPlansStartedBy(personId: string): Promise<PlanRecord[]>;
-  /** Insert a plan. A second open plan of the person and event is refused with `PlanTaken`. */
+  /** The open plans this person started or holds, newest first. */
+  openPlansOf(personId: string): Promise<PlanRecord[]>;
+  /** Insert a plan, held by nobody. A second open plan of the person and event is refused with `PlanTaken`. */
   insertPlan(plan: PlanRecord): Promise<void>;
   closePlan(id: string, at: string): Promise<void>;
+  /** Record who holds a plan from `at` on: these people, and nobody else (D124 item 7). */
+  holdPlan(id: string, holders: readonly string[], at: string): Promise<void>;
+  /** Nobody holds the plan any more: its person is active again. */
+  releasePlan(id: string): Promise<void>;
   // Items.
   /** The items of these plans, by plan and position. */
   items(planIds: readonly string[]): Promise<ItemRecord[]>;
-  /** One item, locked. */
-  item(id: string): Promise<ItemRecord | undefined>;
-  /** The item whose card this is, locked: what the timer knows. */
-  itemByThread(threadId: string): Promise<ItemRecord | undefined>;
+  /** One item; locked with `lock`, after its plan. */
+  item(id: string, lock?: boolean): Promise<ItemRecord | undefined>;
+  /** The item whose card this is, what the timer knows; locked with `lock`, after its plan. */
+  itemByThread(threadId: string, lock?: boolean): Promise<ItemRecord | undefined>;
   insertItem(item: ItemRecord): Promise<void>;
   updateItem(id: string, patch: ItemPatch): Promise<void>;
   // People.
@@ -200,8 +216,9 @@ export interface BoardingTx {
   // Erasure and export.
   /**
    * Remove every plan about the person with its items, and remove them from the rest (null `buddyId`, `startedBy`,
-   * `ownerId` with the card pointer, `doneBy`). Returns the counts and the cards to remove; the use case passes those to
-   * `workItems.remove` in the same transaction.
+   * `ownerId` with the card pointer, `doneBy`, and no longer a holder). Every plan it touches is locked first, in id
+   * order. Returns the counts and the cards to remove; the use case passes those to `workItems.remove` in the same
+   * transaction.
    */
   erasePerson(personId: string): Promise<Erased>;
   /** Every layer, plan and item of the organisation, titles opened. */
@@ -243,10 +260,43 @@ export interface Staffing {
  * Someone who manages no unit gets `{ manages: false, reports: [], tree }`.
  */
 export type Staff = (persona: AuthenticatedContext) => Promise<Staffing>;
+/**
+ * The directory as boarding reads it (D68, D99, D108 item 5), as provisioned and never stored by this module:
+ * `adapters/postgres.ts` over Clew's directory tables (on a transaction it is given, or its own), `adapters/memory.ts` in
+ * the unit tests, both held to `tests/boarding-directory-contract.ts`.
+ */
+export interface BoardingDirectory {
+  /** What the layers match each of these people of the organisation on; an unknown id is absent. */
+  facts(
+    organisationId: string,
+    personIds: readonly string[],
+  ): Promise<Map<string, Pick<Report, 'unitIds' | 'positionCodes' | 'employments'>>>;
+  /** The organisation's tree: every unit with the unit above it. */
+  tree(organisationId: string): Promise<UnitNode[]>;
+  /** The names of these units of the organisation, by id; a unit the tree does not hold is absent. */
+  unitLabels(organisationId: string, unitIds: readonly string[]): Promise<Map<string, string>>;
+  /**
+   * Whom the person reports to now (D99 item 4): from each unit they are assigned to (from the unit above, where they
+   * lead it), up to the nearest unit somebody active leads, its leaders, never the person. Empty for someone who reports
+   * to nobody.
+   */
+  lineManagers(organisationId: string, personId: string): Promise<string[]>;
+}
 /** Seals a title a manager typed at rest, as approved execution input is. Used by the Postgres adapter only. */
 export interface Sealer {
   seal(value: string, purpose: string): string;
   open(value: string, purpose: string): string;
+}
+/**
+ * A change of a person's `active` as the people module's leavers port passes it (D124 item 7): who changed it (the
+ * provisioner, `provisioner:<id>`), whom, of which organisation, and when. Each module keeps its own copy of the shape,
+ * since a module imports no other.
+ */
+export interface LeaverChange {
+  actor: string;
+  personId: string;
+  organisationId: string;
+  at: string;
 }
 /** A line in the server's log (D91): a message in English and counts, never a name or a title. */
 export type BoardingLog = (message: string, ...details: unknown[]) => void;
@@ -256,4 +306,11 @@ export interface BoardingDeps {
   clock: () => Date;
   ids: () => string;
   log?: BoardingLog;
+  /** The units' names, for a layer on a unit; without it a layer names its unit by id alone. */
+  directory?: Pick<BoardingDirectory, 'unitLabels'>;
+  /**
+   * Whether the module is switched on for the installation now (composition: the registry's governance of the built-in
+   * connector). A timer that fires while it is off changes nothing (D124 item 5). Without it, always on.
+   */
+  switchedOn?: () => Promise<boolean>;
 }

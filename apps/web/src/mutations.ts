@@ -383,11 +383,17 @@ export function useBoardingWrite({
     reset: mutation.reset,
   };
 }
+/** Every tick of a plan's item, so a tick can tell whether others are still on their way (`isMutating`). */
+const BOARDING_TICK = ['boarding', 'tick'] as const;
 /**
  * Tick an item of a plan off or open it again (D124): the plan in the cache shows it at once (D64: the change is drawn
  * before the server answers, `change`), then the server's answer reads the module, the cards and the sections again.
- * Resolves null once it went through, or the server's Swedish refusal, the plan as it was put back. Settles, never
- * rejects; ticks of different items may run side by side.
+ * Resolves null once it went through, or the server's Swedish refusal, that item put back. Settles, never rejects.
+ *
+ * Ticks of different items may run side by side, and settle once (TanStack Query's concurrent optimistic updates): each
+ * cancels a read of the plan on its way, so an answer from before it cannot draw over it; a refusal puts back its own
+ * item only, never a snapshot that would undo another tick; and the plan is read again only when the last tick has
+ * answered, so a read made between two ticks never draws the second one undone for a moment.
  */
 export function useBoardingTick(
   change: (plan: BoardingPlanOutput, itemId: string, done: boolean) => BoardingPlanOutput,
@@ -396,22 +402,27 @@ export function useBoardingTick(
   const latest = useRef(change);
   latest.current = change;
   // A mutation, so the change stream's notice for the write waits for its answer (`changeNotices`) as for every write.
-  const { mutateAsync } = useMutation<unknown, unknown, Action<unknown>>({ mutationFn: fn => fn() });
+  const { mutateAsync } = useMutation<unknown, unknown, Action<unknown>>({
+    mutationKey: BOARDING_TICK,
+    mutationFn: fn => fn(),
+  });
   return useCallback(
     async (planId: string, itemId: string, done: boolean, fn: Action<unknown>): Promise<string | null> => {
       const key = keys.boarding.plan(planId);
       await client.cancelQueries({ queryKey: key });
-      const before = client.getQueryData<BoardingPlanOutput>(key);
-      if (before) client.setQueryData(key, latest.current(before, itemId, done));
+      client.setQueryData<BoardingPlanOutput>(key, plan => plan && latest.current(plan, itemId, done));
+      let failure: string | null = null;
       try {
         await mutateAsync(fn);
       } catch (error) {
-        if (before) client.setQueryData(key, before);
-        return errorMessage(error, 'Uppgiften kunde inte ändras.');
+        client.setQueryData<BoardingPlanOutput>(key, plan => plan && latest.current(plan, itemId, !done));
+        failure = errorMessage(error, 'Uppgiften kunde inte ändras.');
       }
-      BOARDING_SIDE_KEYS.forEach(queryKey => void client.invalidateQueries({ queryKey }));
-      void client.invalidateQueries({ queryKey: keys.boarding.all });
-      return null;
+      if (!failure) BOARDING_SIDE_KEYS.forEach(queryKey => void client.invalidateQueries({ queryKey }));
+      // The last tick to answer reads the plan, and the person's plans, once.
+      if (client.isMutating({ mutationKey: BOARDING_TICK }) === 0)
+        void client.invalidateQueries({ queryKey: keys.boarding.all });
+      return failure;
     },
     [client, mutateAsync],
   );

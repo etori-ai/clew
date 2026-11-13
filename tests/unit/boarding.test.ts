@@ -10,7 +10,12 @@ import {
 import { ForbiddenError } from '../../apps/server/src/context';
 import { reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import type { Reach, ReachPerson } from '../../apps/server/src/modules/entities/model';
-import { memoryBoardingStore, type MemoryBoardingStore } from '../../apps/server/src/modules/boarding/adapters/memory';
+import {
+  memoryBoardingDirectory,
+  memoryBoardingStore,
+  type MemoryBoardingDirectory,
+  type MemoryBoardingStore,
+} from '../../apps/server/src/modules/boarding/adapters/memory';
 import {
   applyingLayers,
   assemble,
@@ -22,6 +27,7 @@ import type { Report, Staff, UnitNode } from '../../apps/server/src/modules/boar
 import {
   BOARDING_EXPORT_FORMAT,
   BoardingError,
+  boardingLeavers,
   boardingUsecases,
   type BoardingUsecases,
 } from '../../apps/server/src/modules/boarding/usecases';
@@ -33,6 +39,8 @@ import {
  * the import, erasure and export, and every audit row, none of which carries a name or a title a manager typed.
  */
 const ORG = 'org-1';
+/** Another organisation, with a manager and a plan of its own: nothing of either is reachable from the first. */
+const ORG2 = 'org-2';
 /** The tree: the municipality, the care administration, home care, and the team; and a school elsewhere. */
 const TREE: UnitNode[] = [
   { id: 'u-kommun', parentId: null },
@@ -115,6 +123,15 @@ const gun = personaOf('gun', 'Gun Chef');
 const asAnna = personaOf('anna', 'Anna Andersson');
 const asBo = personaOf('bo', 'Bo Berg');
 const ada = personaOf('ada', 'Ada Admin', ['admin.boarding']);
+const zed = { ...personaOf('zed', 'Zed Chef'), organisationId: ORG2 };
+/** The units' names, as the directory has them. */
+const LABELS: Record<string, string> = {
+  'u-kommun': 'Kommunen',
+  'u-omsorg': 'Vård och omsorg',
+  'u-hemtjanst': 'Hemtjänst',
+  'u-team': 'Teamet',
+  'u-skola': 'Skolan',
+};
 
 const LAYERS = [
   'layer;event;condition;value;title;kind;owner;offsetDays;tiedTo',
@@ -140,7 +157,10 @@ let n: number;
 let store: MemoryBoardingStore;
 let boarding: BoardingUsecases;
 let logged: unknown[][];
+let directory: MemoryBoardingDirectory;
+let switchedOn: boolean;
 beforeEach(async () => {
+  switchedOn = true;
   now = new Date('2026-11-13T09:00:00.000Z');
   n = 0;
   logged = [];
@@ -177,7 +197,32 @@ beforeEach(async () => {
         lineReports: [],
       },
     ],
+    [
+      'zed',
+      {
+        units: [{ unitId: 'u-far', unitLabel: 'Långt bort', role: 'manager' }],
+        managed: [{ unitId: 'u-far', unitLabel: 'Långt bort', people: [reach('xavier', 'Xavier Ytter', 'xavier.y')] }],
+        above: [],
+        lineReports: [],
+      },
+    ],
   ]);
+  // The directory: Karin leads the team, Olle the school, Gun home care above the team; the rest are placed.
+  directory = memoryBoardingDirectory({
+    units: [
+      ...TREE.map(u => ({ ...u, organisationId: ORG, label: LABELS[u.id]! })),
+      { id: 'u-far', parentId: null, organisationId: ORG2, label: 'Långt bort' },
+    ],
+    people: [
+      member('karin', 'u-team', 'manager'),
+      member('olle', 'u-skola', 'manager'),
+      member('gun', 'u-hemtjanst', 'manager'),
+      ...['anna', 'bo', 'cia', 'dan'].map(id => member(id, 'u-team')),
+      member('eve', 'u-skola'),
+      member('zed', 'u-far', 'manager', ORG2),
+      member('xavier', 'u-far', 'employee', ORG2),
+    ],
+  });
   const people: Array<[string, string, string | null]> = [
     ['anna', 'Anna Andersson', 'anna.a'],
     ['bo', 'Bo Berg', 'bo.b'],
@@ -189,7 +234,11 @@ beforeEach(async () => {
     ['gun', 'Gun Chef', 'gun.c'],
   ];
   store = memoryBoardingStore({
-    persons: people.map(([id, name, userName]) => ({ id, organisationId: ORG, name, userName, enabled: true })),
+    persons: [
+      ...people.map(([id, name, userName]) => ({ id, organisationId: ORG, name, userName, enabled: true })),
+      { id: 'zed', organisationId: ORG2, name: 'Zed Chef', userName: 'zed.c', enabled: true },
+      { id: 'xavier', organisationId: ORG2, name: 'Xavier Ytter', userName: 'xavier.y', enabled: true },
+    ],
   });
   boarding = boardingUsecases({
     store,
@@ -197,10 +246,27 @@ beforeEach(async () => {
     clock: () => now,
     ids: () => 'id-' + ++n,
     log: (...line) => logged.push(line),
+    directory,
+    switchedOn: async () => switchedOn,
   });
   await boarding.seedLayers('operator:test', ORG, layerRows());
+  await boarding.seedLayers('operator:test', ORG2, layerRows());
 });
 const at = () => now.toISOString();
+/** A person as the directory places them: on one unit, with a role there. */
+const member = (id: string, unitId: string, role: 'manager' | 'employee' = 'employee', organisationId = ORG) => ({
+  id,
+  organisationId,
+  enabled: true,
+  assignments: [{ unitId, role }],
+  positionCodes: [],
+  employments: [],
+});
+/** The people module's leavers port telling boarding, as composition binds it, in a transaction of the store's. */
+const leave = (personId: string, kind: 'deactivated' | 'reactivated' = 'deactivated') =>
+  store.transaction(tx =>
+    boardingLeavers(tx, directory)[kind]({ actor: 'provisioner:test', personId, organisationId: ORG, at: at() }),
+  );
 /** Every audit row's text, so a test can say no name and no typed title is in any of them. */
 const auditText = () => JSON.stringify(store.audit());
 /** Karin starts Anna's introduction on her first day with Bo as her buddy, unless told otherwise; `buddyId: null` names none. */
@@ -374,6 +440,8 @@ describe('starting a plan', () => {
       startedBy: 'karin',
       startedAt: at(),
       closedAt: null,
+      heldAt: null,
+      heldBy: [],
     });
     const items = itemsOf(id);
     expect(items.map(i => [i.position, i.title, i.ownerId, i.dueOn, i.added, i.sourceLayerId !== null])).toEqual([
@@ -396,6 +464,7 @@ describe('starting a plan', () => {
         dueOn: item.dueOn,
         subject: { entity: 'person', key: 'anna.a' },
         state: 'open',
+        timer: true,
       });
     const last = store.audit().at(-1)!;
     expect(last).toEqual({
@@ -639,7 +708,7 @@ describe('reading plans', () => {
     expect((await boarding.plan(karin, id)).rows[0]!.status).toBe('Försenad');
   });
 
-  test('the manager who started it reads and works it after the person is deactivated; a manager who left the line does not before', async () => {
+  test('after the person is deactivated the plan is held by the manager they had then, not by the one who started it', async () => {
     const { id } = await start(karin, { personId: 'bo', event: 'leaving', anchorOn: '2026-12-31', buddyId: null });
     const [talk, keys] = itemsOf(id);
     // Karin hands the team over to Olle while Bo is still active: Olle manages the plan, and Karin keeps only the
@@ -647,23 +716,65 @@ describe('reading plans', () => {
     const karins = reaches.get('karin')!;
     reaches.set('olle', karins);
     reaches.delete('karin');
+    directory.setPerson(member('olle', 'u-team', 'manager'));
+    directory.setPerson(member('karin', 'u-skola', 'employee'));
     expect((await boarding.plan(olle, id)).plan.access).toBe('manager');
     const asOwner = await boarding.plan(karin, id);
     expect(asOwner.plan.access).toBe('owner');
     expect(asOwner.rows.map(r => r.title)).toEqual([talk!.title]);
     await forbidden(boarding.setDone(karin, keys!.id), 'Du kan inte ändra den här uppgiften.');
     await forbidden(boarding.closePlan(karin, id), 'Det är bara chefen för personen som kan ändra planen.');
-    // Karin is back, and Bo leaves: deactivated, he reports to nobody, and the plan stays with the one who started it.
-    reaches.set('karin', karins);
-    reaches.delete('olle');
+    // Bo leaves: the directory deactivates him, and the leavers port tells boarding in that transaction.
     store.deactivate('bo');
+    reaches.get('olle')!.managed[0]!.people.find(p => p.id === 'bo')!.enabled = false;
+    await leave('bo');
+    expect(store.state.plans.get(id)).toMatchObject({ heldAt: at(), heldBy: ['olle'] });
+    expect(store.audit().at(-1)).toEqual({
+      actor: 'provisioner:test',
+      action: 'boarding.plan_held',
+      subject: 'plan:' + id,
+      at: at(),
+      details: { personId: 'bo', holders: ['olle'] },
+    });
+    // Olle holds it: he reads it, ticks, adds, lists it, opens Bo's page on it; Karin, who started it, does not.
+    expect((await boarding.plan(olle, id)).plan.access).toBe('manager');
+    await boarding.setDone(olle, keys!.id);
+    await boarding.addItem(olle, id, {
+      title: 'Samla in nyckelkortet',
+      kind: 'todo',
+      ownerRole: 'manager',
+      dueOn: '2026-12-31',
+    });
+    expect((await boarding.plans(olle)).rows.map(r => [r.personId, r.event])).toEqual([['bo', 'leaving']]);
+    expect((await boarding.personPlans(olle, 'bo')).plans.map(p => p.id)).toEqual([id]);
+    expect((await boarding.personPlans(olle, 'bo')).canStart).toBe(false);
+    expect((await boarding.plan(karin, id)).plan.access).toBe('owner');
+    await forbidden(
+      boarding.addItem(karin, id, { title: 'x', kind: 'todo', ownerRole: 'manager', dueOn: '2026-12-31' }),
+      'Det är bara chefen för personen som kan ändra planen.',
+    );
+    expect((await boarding.plans(karin)).rows).toEqual([]);
+    await forbidden(boarding.personPlans(karin, 'bo'), 'Personen finns inte bland dem du är chef för.');
+    // Bo is activated again: nobody holds the plan, and the line decides as before.
+    store.state.persons.get('bo')!.enabled = true;
+    reaches.get('olle')!.managed[0]!.people.find(p => p.id === 'bo')!.enabled = true;
+    await leave('bo', 'reactivated');
+    expect(store.state.plans.get(id)).toMatchObject({ heldAt: null, heldBy: [] });
+    expect(store.audit().at(-1)).toMatchObject({ action: 'boarding.plan_released', subject: 'plan:' + id });
+    expect((await boarding.plan(olle, id)).plan.access).toBe('manager');
+  });
+
+  test('with nothing recorded at the deactivation (the hook is best effort), the manager who started the plan holds it', async () => {
+    const { id } = await start(karin, { personId: 'bo', event: 'leaving', anchorOn: '2026-12-31', buddyId: null });
     reaches.get('karin')!.managed[0]!.people.find(p => p.id === 'bo')!.enabled = false;
-    const read = await boarding.plan(karin, id);
-    expect(read.plan.access).toBe('manager');
-    await boarding.setDone(karin, keys!.id);
-    expect((await boarding.plans(karin)).rows.map(r => [r.personId, r.event])).toEqual([['bo', 'leaving']]);
-    expect((await boarding.personPlans(karin, 'bo')).plans.map(p => p.id)).toEqual([id]);
-    expect((await boarding.personPlans(karin, 'bo')).canStart).toBe(false);
+    store.deactivate('bo');
+    expect(store.state.plans.get(id)).toMatchObject({ heldAt: null, heldBy: [] });
+    expect((await boarding.plan(karin, id)).plan.access).toBe('manager');
+    expect((await boarding.plans(karin)).rows.map(r => r.id)).toEqual([id]);
+    // Recorded with nobody to hold it (he reported to nobody then): nobody holds it, not even the one who started it.
+    await store.transaction(tx => tx.holdPlan(id, [], at()));
+    expect((await boarding.plan(karin, id)).plan.access).toBe('owner');
+    expect((await boarding.plans(karin)).rows).toEqual([]);
   });
 
   test('the manager’s list holds their reports’ open plans with what waits for them; a person’s page says who may start', async () => {
@@ -797,7 +908,9 @@ describe('layers', () => {
     expect(read.layers.find(l => l.name === 'OMSORGEN')?.items).toEqual([
       expect.objectContaining({ title: 'Basala hygienrutiner', offsetDays: 5, phase: 'firstWeek' }),
     ]);
-    expect(store.audit().filter(a => a.action === 'boarding.layers_imported')).toHaveLength(3);
+    expect(
+      store.audit().filter(a => a.action === 'boarding.layers_imported' && a.subject === 'organisation:' + ORG),
+    ).toHaveLength(3);
   });
 
   test('a bad row refuses the whole import with its number, and only an administrator may import or read', async () => {
@@ -870,5 +983,131 @@ describe('erasure and export', () => {
       details: { layers: 6, plans: 1, items: 7 },
     });
     expect(auditText()).not.toContain('Ring Anna');
+  });
+});
+
+describe('what the review asked for (D124, 2026-11-13)', () => {
+  test('an item’s owner who is neither the manager nor the person is told the counts of their own items only', async () => {
+    const { id } = await start();
+    const lunch = itemsOf(id).find(i => i.title === 'Lunch med faddern')!;
+    await boarding.setDone(karin, itemsOf(id)[0]!.id);
+    const asBuddy = await boarding.plan(asBo, id);
+    expect(asBuddy.plan).toMatchObject({ access: 'owner', done: 0, total: 1 });
+    expect(asBuddy.note).toBe('Första dagen 4 december · 0 av 1 klara');
+    await boarding.setDone(asBo, lunch.id);
+    expect((await boarding.plan(asBo, id)).plan).toMatchObject({ done: 1, total: 1 });
+    // The manager and the person see the whole plan.
+    expect((await boarding.plan(karin, id)).plan).toMatchObject({ done: 2, total: 6 });
+    expect((await boarding.plan(asAnna, id)).plan).toMatchObject({ done: 2, total: 6 });
+  });
+
+  test('a plan started late opens its past items’ cards without a timer, and so does opening an overdue item again', async () => {
+    // Anna started a week ago; the plan is started today.
+    const { id } = await start(karin, { anchorOn: '2026-11-06' });
+    const items = itemsOf(id);
+    const timers = items.map(i => [i.title, i.dueOn, store.state.cards.get(i.threadId!)!.timer]);
+    expect(timers).toEqual([
+      ['Beställ dator', '2026-10-23', false],
+      ['Välkomstsamtal', '2026-11-06', false],
+      ['Lunch med faddern', '2026-11-07', false],
+      ['Läs värdegrunden', '2026-11-09', false],
+      ['Basala hygienrutiner', '2026-11-13', true],
+      ['HLR', '2026-12-06', true],
+    ]);
+    const order = items[0]!;
+    await boarding.setDone(karin, order.id);
+    await boarding.setNotDone(karin, order.id);
+    expect(store.state.cards.get(order.threadId!)).toMatchObject({ state: 'open', timer: false });
+    const hlr = items[5]!;
+    await boarding.setDone(asAnna, hlr.id);
+    await boarding.setNotDone(asAnna, hlr.id);
+    expect(store.state.cards.get(hlr.threadId!)).toMatchObject({ state: 'open', timer: true });
+  });
+
+  test('a timer that fires while the module is switched off changes nothing: no card back, no delivery, no audit row', async () => {
+    const { id } = await start();
+    const order = itemsOf(id)[0]!;
+    now = new Date('2026-11-21T05:00:00.000Z');
+    switchedOn = false;
+    const audited = store.audit().length,
+      calls = store.calls().length;
+    expect(await boarding.itemDue(order.threadId!, 1)).toBe(false);
+    expect(store.audit().length).toBe(audited);
+    expect(store.calls().length).toBe(calls);
+    // On again, the next timer of the card works as before.
+    switchedOn = true;
+    expect(await boarding.itemDue(order.threadId!, 1)).toBe(true);
+    expect(store.audit().at(-1)).toMatchObject({ action: 'boarding.item_due' });
+  });
+
+  test('an item whose owner was erased is the manager’s: shown as theirs, ticked by them, and waits for them', async () => {
+    const { id } = await start();
+    const lunch = itemsOf(id).find(i => i.title === 'Lunch med faddern')!;
+    await boarding.erasePerson('operator:cli', 'bo');
+    expect(store.state.items.get(lunch.id)).toMatchObject({ ownerId: null, threadId: null });
+    // The erasure opened no card for anyone.
+    expect(store.calls().filter(c => c.op === 'open')).toHaveLength(6);
+    const read = await boarding.plan(karin, id);
+    const row = read.rows.find(r => r.id === lunch.id)!;
+    expect(row).toMatchObject({ ownerRole: 'manager', ownerLabel: 'Chef', mine: true, canTick: true });
+    expect(row.owner).toBeUndefined();
+    expect((await boarding.plan(asAnna, id)).rows.find(r => r.id === lunch.id)).toMatchObject({
+      ownerLabel: 'Chef',
+      mine: false,
+      canTick: false,
+    });
+    expect((await boarding.plans(karin)).rows[0]!.waiting).toBe(3);
+    expect((await boarding.aboutPeople(karin, ['anna.a']))[0]!.plan!.waiting).toBe(3);
+    await forbidden(boarding.setDone(asAnna, lunch.id), 'Du kan inte ändra den här uppgiften.');
+    await boarding.setDone(karin, lunch.id);
+    expect(store.state.items.get(lunch.id)?.doneBy).toBe('karin');
+  });
+
+  test('a layer on a unit names the unit in the preview and the administrator’s list; another layer names none', async () => {
+    const preview = await boarding.preview(karin, { personId: 'anna', event: 'introduction', anchorOn: '2026-12-04' });
+    expect(preview.layers.map(l => [l.name, l.unitLabel])).toEqual([
+      ['Alla nyanställda', undefined],
+      ['Omsorgen', 'Vård och omsorg'],
+      ['Undersköterskor', undefined],
+    ]);
+    const layers = await boarding.layers(ada);
+    expect(layers.layers.find(l => l.name === 'Skolan')?.unitLabel).toBe('Skolan');
+    expect(layers.layers.filter(l => 'unitLabel' in l).map(l => l.name)).toEqual(['Omsorgen', 'Skolan']);
+    // A unit the directory does not hold has no name to give.
+    const bare = boardingUsecases({ store, staff, clock: () => now, ids: () => 'id-' + ++n });
+    expect((await bare.layers(ada)).layers.some(l => 'unitLabel' in l)).toBe(false);
+  });
+
+  test('adding an item and closing the plan are refused for the plan’s person; a colleague is refused their page', async () => {
+    const { id } = await start();
+    await forbidden(
+      boarding.addItem(asAnna, id, { title: 'x', kind: 'todo', ownerRole: 'person', dueOn: '2026-12-08' }),
+      'Det är bara chefen för personen som kan ändra planen.',
+    );
+    await forbidden(boarding.closePlan(asAnna, id), 'Det är bara chefen för personen som kan ändra planen.');
+    // Cia is Anna's colleague: neither her page nor her plan is Cia's to read; Bo, her buddy, reads only his items.
+    const asCia = personaOf('cia', 'Cia Carlsson');
+    await forbidden(boarding.personPlans(asCia, 'anna'), 'Personen finns inte bland dem du är chef för.');
+    await forbidden(boarding.plan(asCia, id), 'Planen finns inte, eller så kan du inte se den.');
+    await forbidden(boarding.personPlans(asBo, 'anna'), 'Personen finns inte bland dem du är chef för.');
+  });
+
+  test('a plan and a person of another organisation are nobody’s to read, start or change', async () => {
+    const { id } = await start();
+    const theirs = await boarding.startPlan(zed, { personId: 'xavier', event: 'introduction', anchorOn: '2026-12-04' });
+    await forbidden(boarding.plan(zed, id), 'Planen finns inte, eller så kan du inte se den.');
+    await forbidden(boarding.plan(karin, theirs.id), 'Planen finns inte, eller så kan du inte se den.');
+    await forbidden(boarding.personPlans(zed, 'anna'), 'Personen finns inte bland dem du är chef för.');
+    await forbidden(boarding.personPlans(karin, 'xavier'), 'Personen finns inte bland dem du är chef för.');
+    await forbidden(
+      boarding.startPlan(karin, { personId: 'xavier', event: 'leaving', anchorOn: '2026-12-04' }),
+      'Personen finns inte bland dem du är chef för.',
+    );
+    await forbidden(boarding.setDone(zed, itemsOf(id)[0]!.id), 'Du kan inte ändra den här uppgiften.');
+    await forbidden(boarding.closePlan(zed, id), 'Planen finns inte, eller så kan du inte se den.');
+    expect((await boarding.plans(zed)).rows.map(r => r.id)).toEqual([theirs.id]);
+    expect((await boarding.plans(karin)).rows.map(r => r.id)).toEqual([id]);
+    // The export of one organisation holds its own alone.
+    expect((await boarding.exportDomain('operator:cli', ORG2)).plans.map(p => p.id)).toEqual([theirs.id]);
   });
 });

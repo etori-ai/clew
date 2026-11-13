@@ -505,6 +505,13 @@
       "when": 1794594500780,
       "tag": "0071_boarding",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1794594563956,
+      "tag": "0072_boarding_holders",
+      "breakpoints": true
     }
   ]
 }

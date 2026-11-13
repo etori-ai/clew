@@ -44,7 +44,7 @@ import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
 import { calendar, events, notifier, calendarAuthority, followups, planningRound } from './calendar';
 import { talks } from './talks';
-import { boarding } from './boarding';
+import { boarding, boardingSwitch } from './boarding';
 import { holdingsPort } from './competence';
 import { dialogue } from './dialogue';
 import { TALKS_CAPABILITY } from '../modules/talk-seam/capabilities';
@@ -191,6 +191,7 @@ export async function fireTimer(id: string, generation: number) {
   if (timer?.kind === 'obligation') return followups.fire(timer.threadId, generation);
   if (timer?.kind === 'due') return talks.commitmentDue(timer.threadId, generation);
   if (timer?.kind === 'dialogue-due') return dialogue.activityDue(timer.threadId, generation);
+  // While the module is switched off the use case drops it: no card back, no delivery, no audit row (D124 item 5).
   if (timer?.kind === 'boarding') return boarding.itemDue(timer.threadId, generation);
   return reminders.fire(id, generation);
 }
@@ -247,6 +248,15 @@ export async function boardingWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
   return registry.visible(actorOf(persona), BOARDING_CONNECTOR);
 }
+/**
+ * A boarding timer fires only while the module is switched on for the installation (D124 item 5), the administrator's
+ * choice on Anslutna system, read fresh as above. While it is off the timer is dropped by the use case: no card comes
+ * back, no delivery and no audit row are written, and the card stays open and overdue for when the module returns.
+ */
+boardingSwitch.on = async () => {
+  await refreshConnectors();
+  return registry.governance(BOARDING_CONNECTOR).state === 'enabled';
+};
 /**
  * The copy of what sources hold (D108 item 9) reads only while the module is switched on for the installation, the
  * administrator's choice on Anslutna system, read fresh as above. Filled here because the registry is built over the

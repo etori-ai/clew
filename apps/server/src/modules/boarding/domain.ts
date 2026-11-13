@@ -5,10 +5,11 @@ import {
   BOARDING_KIND_WORDS,
   BOARDING_OWNER_WORDS,
   BOARDING_PHASE_WORDS,
-  BOARDING_TIED_TO_MAX,
   boardingText,
+  dayRhythm,
   shiftDate,
   stockholmDate,
+  stockholmInstant,
   type BoardingEvent,
   type BoardingItemRow,
   type BoardingItemStatus,
@@ -121,6 +122,33 @@ export function layerApplies(
       return layer.value !== null && person.employments.some(e => e.employmentType === layer.value);
   }
 }
+/**
+ * D99's line upwards, as the people module walks it for `above`: from each unit the person is assigned to (from the unit
+ * above, where they lead it) up to the nearest unit somebody leads, its leaders. A cycle ends the walk. Pure, and shared by
+ * both directory adapters, so the two walk alike.
+ */
+export function lineUpwards(
+  assignments: ReadonlyArray<{ unitId: string; role: 'manager' | 'employee' }>,
+  parents: ReadonlyMap<string, string | null>,
+  leadersOf: (unitId: string) => string[],
+): string[] {
+  const found = new Set<string>();
+  for (const a of assignments) {
+    const seen = new Set<string>();
+    for (
+      let at: string | null | undefined = a.role === 'manager' ? parents.get(a.unitId) : a.unitId;
+      at && !seen.has(at);
+      at = parents.get(at)
+    ) {
+      seen.add(at);
+      const leads = leadersOf(at);
+      if (!leads.length) continue;
+      for (const id of leads) found.add(id);
+      break;
+    }
+  }
+  return [...found].sort();
+}
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
 /** The layers that apply to a person, in the order their items are assembled: by condition (`CONDITION_ORDER`), then name. */
 export function applyingLayers<L extends Pick<LayerRecord, 'id' | 'condition' | 'value' | 'name'>>(
@@ -219,12 +247,6 @@ export function normaliseTitle(text: string): string | undefined {
   if (!line || /[\u0000-\u001f\u007f-\u009f]/.test(line)) return undefined;
   return [...line].length <= BOARDING_ITEM_TEXT_MAX ? line : undefined;
 }
-/** What an item is tied to (a capability's name or a link): one line, at most `BOARDING_TIED_TO_MAX` characters. */
-export function normaliseTiedTo(text: string): string | undefined {
-  const line = boardingText(text);
-  if (!line || /[\u0000-\u001f\u007f-\u009f]/.test(line)) return undefined;
-  return [...line].length <= BOARDING_TIED_TO_MAX ? line : undefined;
-}
 
 /**
  * The first start date ahead within the window of a person's employments (D124), or undefined: a start date the
@@ -298,22 +320,46 @@ export const planNote = (plan: Pick<PlanRecord, 'event' | 'anchorOn' | 'closedAt
   `${plan.event === 'introduction' ? 'Första dagen' : 'Sista dagen'} ${swedishDayAndMonth(plan.anchorOn)} · ${done} av ${total} klara` +
   (plan.closedAt !== null ? ' · avslutad' : '');
 
+/**
+ * Whether an item is the reader's to do: they own it, or its owner is gone (erased, or their row deleted) and the reader
+ * is the plan's manager, whose role it falls to (D124 item 7). Nothing opens a card for it: the erasure removed the old
+ * one, and the manager finds it on the plan.
+ */
+export const waitsFor = (item: Pick<ItemRecord, 'ownerId'>, readerId: string, managerReads: boolean) =>
+  item.ownerId === null ? managerReads : item.ownerId === readerId;
+/**
+ * Who holds a plan once its person is deactivated (D124 item 7): the managers recorded when the directory deactivated
+ * them; when nothing was recorded (the leavers call is best effort, D113), the manager who started it.
+ */
+export const holdsAfterLeaving = (plan: Pick<PlanRecord, 'heldAt' | 'heldBy' | 'startedBy'>, personId: string) =>
+  plan.heldAt !== null ? plan.heldBy.includes(personId) : plan.startedBy === personId;
+/**
+ * When an item's card comes back (D124 item 5): 06:00 Swedish time the morning after its due day, daylight saving
+ * included. Undefined when that morning is not after `at`: a due day already past gets no timer, so starting a plan
+ * late or opening an overdue item again fires no burst of reminders; the card is simply open and overdue.
+ */
+export function dueTimerAt(dueOn: string, at: string): string | undefined {
+  const morning = stockholmInstant(shiftDate(dueOn, 1), dayRhythm.review);
+  return Date.parse(morning) > Date.parse(at) ? morning : undefined;
+}
 /** One item as the plan's page and `boarding.plan` list it to the reader. */
 export function itemRow(
   item: ItemRecord,
   plan: Pick<PlanRecord, 'event' | 'anchorOn'>,
-  context: { readerId: string; today: string; owner: PersonRef | undefined; canTick: boolean },
+  context: { readerId: string; today: string; owner: PersonRef | undefined; canTick: boolean; managerReads: boolean },
 ): BoardingItemRow {
   const phase = itemPhase(plan, item.dueOn);
+  // An item whose owner is gone (erased, or their row deleted) is the plan's manager's (D124 item 7).
+  const role = item.ownerId === null ? 'manager' : item.ownerRole;
   return {
     id: item.id,
     title: item.title,
     kind: item.kind,
     kindLabel: BOARDING_KIND_WORDS[item.kind],
-    ownerRole: item.ownerRole,
-    ownerLabel: BOARDING_OWNER_WORDS[item.ownerRole],
+    ownerRole: role,
+    ownerLabel: BOARDING_OWNER_WORDS[role],
     ...(context.owner ? { owner: context.owner.name, ownerId: context.owner.id } : {}),
-    mine: item.ownerId !== null && item.ownerId === context.readerId,
+    mine: waitsFor(item, context.readerId, context.managerReads),
     dueOn: item.dueOn,
     phase,
     phaseLabel: BOARDING_PHASE_WORDS[phase],
@@ -342,6 +388,7 @@ export function planSummary(
   items: readonly ItemRecord[],
   readerId: string,
   today: string,
+  managerReads: boolean,
 ): BoardingPlanSummary {
   const { done, total } = progress(items);
   return {
@@ -355,7 +402,7 @@ export function planSummary(
     closedAt: plan.closedAt,
     done,
     total,
-    waiting: items.filter(i => i.doneAt === null && i.ownerId === readerId).length,
+    waiting: items.filter(i => i.doneAt === null && waitsFor(i, readerId, managerReads)).length,
     overdue: items.filter(i => isOverdue(i, today)).length,
     state: planState(plan, items, today),
   };

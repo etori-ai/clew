@@ -69,6 +69,8 @@ export const planRow = (
   startedBy: null,
   startedAt: T,
   closedAt: null,
+  heldAt: null,
+  heldBy: [],
   ...extra,
 });
 export const itemRow = (id: string, planId: string, position: number, extra: Partial<ItemRecord> = {}): ItemRecord => ({
@@ -189,8 +191,34 @@ export function boardingStoreContract(name: string, make: () => Promise<Boarding
         [leaving.id, null],
         [first.id, '2026-11-14T08:00:00.000Z'],
       ]);
-      expect((await w.store.transaction(tx => tx.openPlansStartedBy(w.boss))).map(p => p.id)).toEqual([leaving.id]);
+      expect((await w.store.transaction(tx => tx.openPlansOf(w.boss))).map(p => p.id)).toEqual([leaving.id]);
       expect(await w.store.transaction(tx => tx.plansAbout([]))).toEqual([]);
+    });
+
+    test('a plan is held by the people recorded for it, read with it, listed as theirs while open, and released again', async () => {
+      const w = await world();
+      const plan = planRow(w.p + '-p1', w.org, w.anna, { startedBy: w.boss });
+      await w.store.transaction(tx => tx.insertPlan(plan));
+      expect((await w.store.transaction(tx => tx.openPlansOf(w.bo))).map(p => p.id)).toEqual([]);
+      const at = '2026-11-20T08:00:00.000Z';
+      await w.store.transaction(tx => tx.holdPlan(plan.id, [w.bo, w.boss, w.bo], at));
+      const held = { ...plan, heldAt: at, heldBy: [w.bo, w.boss].sort() };
+      expect(await w.store.transaction(tx => tx.plan(plan.id))).toEqual(held);
+      expect(await w.store.transaction(tx => tx.plansAbout([w.anna]))).toEqual([held]);
+      expect((await w.store.transaction(tx => tx.openPlansOf(w.bo))).map(p => p.id)).toEqual([plan.id]);
+      // Holding again replaces who holds it; nobody may hold it too.
+      await w.store.transaction(tx => tx.holdPlan(plan.id, [w.bo], at));
+      expect((await w.store.transaction(tx => tx.plan(plan.id)))?.heldBy).toEqual([w.bo]);
+      await w.store.transaction(tx => tx.holdPlan(plan.id, [], at));
+      expect(await w.store.transaction(tx => tx.plan(plan.id))).toEqual({ ...plan, heldAt: at, heldBy: [] });
+      await w.store.transaction(tx => tx.holdPlan(plan.id, [w.bo], at));
+      await w.store.transaction(tx => tx.releasePlan(plan.id));
+      expect(await w.store.transaction(tx => tx.plan(plan.id))).toEqual(plan);
+      expect((await w.store.transaction(tx => tx.openPlansOf(w.bo))).map(p => p.id)).toEqual([]);
+      // A closed plan is listed for nobody.
+      await w.store.transaction(tx => tx.holdPlan(plan.id, [w.bo], at));
+      await w.store.transaction(tx => tx.closePlan(plan.id, at));
+      expect(await w.store.transaction(tx => tx.openPlansOf(w.bo))).toEqual([]);
     });
 
     test('items: a card first, then the item; read by plan and place, by id and by card; done and open again', async () => {
@@ -203,7 +231,9 @@ export function boardingStoreContract(name: string, make: () => Promise<Boarding
       await addWithCard(w, plan, second, w.p + '-t2');
       expect((await w.store.transaction(tx => tx.items([plan.id]))).map(i => i.id)).toEqual([second.id, first.id]);
       expect(await w.store.transaction(tx => tx.item(first.id))).toEqual({ ...first, threadId: w.p + '-t1' });
+      expect(await w.store.transaction(tx => tx.item(first.id, true))).toEqual({ ...first, threadId: w.p + '-t1' });
       expect((await w.store.transaction(tx => tx.itemByThread(w.p + '-t2')))?.id).toBe(second.id);
+      expect((await w.store.transaction(tx => tx.itemByThread(w.p + '-t2', true)))?.id).toBe(second.id);
       expect(await w.store.transaction(tx => tx.itemByThread(w.p + '-none'))).toBeUndefined();
       await w.store.transaction(tx => tx.updateItem(first.id, { doneAt: '2026-11-14T10:00:00.000Z', doneBy: w.boss }));
       expect(await w.store.transaction(tx => tx.item(first.id))).toMatchObject({
@@ -287,17 +317,24 @@ export function boardingStoreContract(name: string, make: () => Promise<Boarding
       await addWithCard(w, his, itemRow(w.p + '-c', his.id, 0, { ownerId: w.anna }), w.p + '-t3');
       await addWithCard(w, his, itemRow(w.p + '-d', his.id, 1, { ownerId: w.boss }), w.p + '-t4');
       await w.store.transaction(tx => tx.updateItem(w.p + '-d', { doneAt: T, doneBy: w.anna }));
+      // The boss's own plan, which Anna and Bo hold.
+      const third = planRow(w.p + '-p3', w.org, w.boss);
+      await w.store.transaction(async tx => {
+        await tx.insertPlan(third);
+        await tx.holdPlan(third.id, [w.anna, w.bo], T);
+      });
       const erased = await w.store.transaction(tx => tx.erasePerson(w.anna));
       expect(erased).toEqual({
         plans: 1,
         items: 2,
-        // Bo's plan (started by and buddied by her), the item she owned and the item she ticked off.
-        cleared: 3,
+        // Bo's plan (started by and buddied by her), the boss's (held by her), the item she owned and the one she ticked.
+        cleared: 4,
         threadIds: [w.p + '-t1', w.p + '-t2', w.p + '-t3'].sort(),
       });
       expect(await w.store.transaction(tx => tx.plan(hers.id))).toBeUndefined();
       expect(await w.store.transaction(tx => tx.items([hers.id]))).toEqual([]);
       expect(await w.store.transaction(tx => tx.plan(his.id))).toMatchObject({ startedBy: null, buddyId: null });
+      expect(await w.store.transaction(tx => tx.plan(third.id))).toMatchObject({ heldAt: T, heldBy: [w.bo] });
       expect(
         (await w.store.transaction(tx => tx.items([his.id]))).map(i => [i.id, i.ownerId, i.threadId, i.doneBy]),
       ).toEqual([
