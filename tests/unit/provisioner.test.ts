@@ -2625,24 +2625,21 @@ test('the published SCIM object examples place an employee and assign their mana
   const { client, grantOf } = stack();
   const guide = await Bun.file(new URL('../../docs/guides/provisioning-for-operations.md', import.meta.url)).text();
   const examples = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)].map(match => match[1]!);
-  expect(examples).toHaveLength(4);
-  await client.request('POST', '/Groups', {
-    schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
-    externalId: 'unit:100',
-    displayName: 'Kommunen',
-  });
-  const unit = await client.request('POST', '/Groups', JSON.parse(examples[0]!));
-  const anna = await client.request('POST', '/Users', JSON.parse(examples[1]!));
+  expect(examples).toHaveLength(5);
+  const [root, child, person, placement, managerGroup] = examples;
+  await client.request('POST', '/Groups', JSON.parse(root!));
+  const unit = await client.request('POST', '/Groups', JSON.parse(child!));
+  const anna = await client.request('POST', '/Users', JSON.parse(person!));
   const employee = await client.request('POST', '/Users', {
-    ...JSON.parse(examples[1]!),
+    ...JSON.parse(person!),
     externalId: 'e-1003',
     userName: 'lena.holm',
     displayName: 'Lena Holm',
     emails: [{ type: 'work', value: 'lena.holm@example.org' }],
   });
-  const membership = examples[2]!.replace("<employee's Clew user ID>", employee.body.id);
+  const membership = placement!.replace("<Lena's Clew user ID>", employee.body.id);
   await client.request('PATCH', '/Groups/' + unit.body.id, JSON.parse(membership));
-  const managers = examples[3]!.replace("<Anna's Clew user ID>", anna.body.id);
+  const managers = managerGroup!.replace("<Anna's Clew user ID>", anna.body.id);
   await client.request('POST', '/Groups', JSON.parse(managers));
   expect(grantOf('lena.holm')).toMatchObject({ unitId: '110', role: 'employee' });
   expect(grantOf('anna.berg')).toMatchObject({ unitId: '110', role: 'manager' });

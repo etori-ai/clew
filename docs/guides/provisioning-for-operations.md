@@ -6,7 +6,17 @@ Your municipality’s provisioner sends people as SCIM `User` resources and unit
 
 Each Clew installation serves one organisation. The provisioner token identifies that organisation for every request. Within it, give each unit its own permanent source ID. Keep that ID when the unit is renamed or moved. Change its parent link when it moves.
 
-Send a `POST /Groups` for each unit, including empty units. Give a root a stable `externalId`, such as `unit:100`, and a `displayName`. For a child, include the unit extension and set its `parent` to the parent's complete external key. This request creates a child of `unit:100`. [Group keys and unit schema](writing-a-provisioner.md#groups)
+Send a `POST /Groups` for each unit, including empty units. Create the root first:
+
+```json
+{
+  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+  "externalId": "unit:100",
+  "displayName": "Kommunen"
+}
+```
+
+Then send a second `POST /Groups` for Utbildning. Its unit extension identifies the parent by the complete external key `unit:100`. [Group keys and unit schema](writing-a-provisioner.md#groups)
 
 ```json
 {
@@ -32,17 +42,17 @@ Give each person a permanent source ID (`externalId`). Keep it through account r
 }
 ```
 
-The response to a successful create contains Clew's `id`. Keep it for subsequent writes. If the response is lost, look up the resource by `externalId` before retrying. The optional profile fields include [phone numbers](writing-a-provisioner.md#phone-numbers), a title and [current employments](writing-a-provisioner.md#current-employments). An employment references the unit by its bare ID, such as `110`. Access comes from group membership.
+Create the employee Lena Holm with the same request format, using `e-1003`, `lena.holm`, `Lena Holm` and `lena.holm@example.org`. Keep the `id` from each successful create response. The next step uses Lena’s ID for the employee placement and Anna’s ID for the manager placement. If the response is lost, look up the resource by `externalId` before retrying. The optional profile fields include [phone numbers](writing-a-provisioner.md#phone-numbers), a title and [current employments](writing-a-provisioner.md#current-employments). An employment references the unit by its bare ID, such as `110`. Access comes from group membership.
 
 ## 3. Send placements, managers and permissions
 
-A membership update targets the **group's Clew ID**. Each `members[].value` contains the **person's Clew ID**. For example, to place an employee in Utbildning, send this body to `PATCH /Groups/<Clew ID of unit:110>` and substitute the ID returned for that employee.
+A membership update targets the **group's Clew ID**. Each `members[].value` contains the **person's Clew ID**. For example, to place Lena in Utbildning, send this body to `PATCH /Groups/<Clew ID of unit:110>` and substitute the ID returned for Lena.
 
 ```json
 {
   "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
   "Operations": [
-    { "op": "add", "path": "members", "value": [{ "value": "<employee's Clew user ID>" }] }
+    { "op": "add", "path": "members", "value": [{ "value": "<Lena's Clew user ID>" }] }
   ]
 }
 ```
@@ -70,7 +80,7 @@ This membership gives Anna her placement as manager. Send one such membership pe
 | Responsibility for unit 110 | `unit-manager:110`. Membership supplies a manager placement on its own. Clew derives reporting lines from placements and the unit tree. |
 | Permission to administer users | `capability:admin.users`. Give the first administrator this membership as well as a unit placement. |
 
-Apply membership changes when responsibility starts or ends. A directory group such as `ad:larare` can also be mapped to a capability by a Clew administrator. An active person needs an employee or manager placement to sign in. [Group semantics and reserved keys](writing-a-provisioner.md#groups)
+When a manager changes, add the incoming manager and remove the outgoing manager’s membership when their responsibility ends. Adding the successor alone leaves both managers responsible for the unit. A directory group such as `ad:larare` can also be mapped to a capability by a Clew administrator. An active person needs an employee or manager placement to sign in. [Group semantics and reserved keys](writing-a-provisioner.md#groups)
 
 ## Test the delivery
 
