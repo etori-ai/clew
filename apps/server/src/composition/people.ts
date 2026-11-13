@@ -13,7 +13,12 @@ import { competenceTx } from '../modules/competence/adapters/postgres';
 import { competenceLeavers } from '../modules/competence/usecases';
 import type { AuthenticatedContext } from '@clew/contracts';
 import { followedUnits } from '../modules/entities/domain';
-import { randomToken, tokenDigest } from '../auth-crypto';
+import { boardingTx, postgresBoardingDirectory } from '../modules/boarding/adapters/postgres';
+import { boardingLeavers } from '../modules/boarding/usecases';
+import { combineLeavers } from '../modules/people/leavers';
+import type { LeaverChange, LeaversTx } from '../modules/people/ports';
+import type { Transaction } from '@clew/db';
+import { openSecret, randomToken, sealSecret, tokenDigest } from '../auth-crypto';
 import { logger } from '../logging';
 import { clock, ids } from './ambient';
 import { ledger } from './durable';
@@ -26,30 +31,52 @@ export const userReads: UserReads = {
   ...postgresUserReads(),
   ...directoryUsecases({ store: postgresProvisionStore() }),
 };
+/** The code a failed leavers call carries, the driver's or its cause's: what the log needs to tell a lock wait apart. */
+const codeOf = (error: unknown) =>
+  (error as { code?: unknown } | null)?.code ?? (error as { cause?: { code?: unknown } } | null)?.cause?.code ?? null;
+/**
+ * The domains a change of `active` is told to, in the SCIM transaction that makes it (D108 item 14, D124 item 7, D113):
+ * the competence module's erasure intent, and boarding's holders of a deactivated person's plans, read from the
+ * directory in that same transaction. Each runs in a savepoint of its own inside the store's savepoint, so one that
+ * fails is rolled back alone and logged, the other is still told, and the deactivation commits whatever either does.
+ * Competence reconciles what it missed with its hourly sweep; boarding falls back to the manager who started a plan.
+ */
+export const leavers = combineLeavers<Transaction>(
+  [
+    { module: 'competence', port: tx => competenceLeavers(competenceTx(tx, ledger)) },
+    {
+      module: 'boarding',
+      // No card port: telling boarding of a change of `active` opens or closes no card.
+      port: tx =>
+        boardingLeavers(
+          boardingTx(tx, { sealer: { seal: sealSecret, open: openSecret } }),
+          postgresBoardingDirectory(tx),
+        ),
+    },
+  ],
+  (tx, fn) => tx.transaction(fn),
+  (error: unknown, change: LeaverChange, kind: keyof LeaversTx, module: string) =>
+    logger.warn(
+      { scope: 'scim', module, person: change.personId, kind, code: codeOf(error) },
+      module === 'competence'
+        ? 'the competence module could not record a change of active; its hourly sweep reconciles it with the directory'
+        : "the boarding module could not record who holds a leaver's plans; the manager who started each holds it",
+    ),
+);
 /**
  * The SCIM server's use cases and the derivation of a person's grant from memberships and the mapping (D68, D85):
  * `scim` serves `/scim/v2`. A grant is derived inside the transaction of the change that moves it, by the SCIM use
  * cases and by the mapping on the users page alike. A change of `active` is told, in the same transaction, to the
- * competence module's leavers (D108 item 14): its erasure intent, on a `CompetenceTx` over the SCIM transaction's own
- * savepoint, bound here because the people module imports no other. A call that fails is logged and left to the
- * competence module's hourly sweep, which records from the directory what no intent recorded (D113: the deactivation
- * commits whatever the competence module does).
+ * domains that keep data about the person (`leavers`), bound here because the people module imports no other; the
+ * store runs the whole call in a savepoint with a lock timeout, and each domain in a savepoint of its own within it.
  */
 export const scim = scimUsecases({
   store: postgresProvisionStore({
-    leavers: tx => competenceLeavers(competenceTx(tx, ledger)),
+    leavers,
     leaverFailed: (error, change, kind) =>
       logger.warn(
-        {
-          scope: 'scim',
-          person: change.personId,
-          kind,
-          code:
-            (error as { code?: unknown } | null)?.code ??
-            (error as { cause?: { code?: unknown } } | null)?.cause?.code ??
-            null,
-        },
-        'the competence module could not record a change of active; its hourly sweep reconciles it with the directory',
+        { scope: 'scim', person: change.personId, kind, code: codeOf(error) },
+        'the leavers port could not be told of a change of active; each domain reconciles what it missed',
       ),
   }),
   clock,

@@ -75,7 +75,7 @@ The list calls only a read an administrator placed as a lens or a column; `/rows
 
 ## The administrator's choice
 
-On Administration › Anslutna system, a connector's page has the section "På Personal och andra listor" for each read about a person or a unit with a table or list view: a switch to offer it under "Visa", and "Kolumn på Alla" to choose one field of its view or "Ingen kolumn". The choice is stored in the connector row's capability overrides (`lens: true`, `column: <field key>`) and audited as `connector.lens` and `connector.column`, one row per read that changed ([admin use cases](../../apps/server/src/connectors/usecases/admin.ts)). A choice past three columns for one kind across every connector is refused. Enabling a connector places nothing. For the development stack, `bun run dev:connectors` offers `hr.person` and `talks.person` as lenses and their fields `presence` and `next` as columns while nobody has chosen ([dev-connectors.ts](../../scripts/dev-connectors.ts)).
+On Administration › Anslutna system, a connector's page has the section "På Personal och andra listor" for each read about a person or a unit with a table or list view: a switch to offer it under "Visa", and "Kolumn på Alla" to choose one field of its view or "Ingen kolumn". The choice is stored in the connector row's capability overrides (`lens: true`, `column: <field key>`) and audited as `connector.lens` and `connector.column`, one row per read that changed ([admin use cases](../../apps/server/src/connectors/usecases/admin.ts)). A choice past three columns for one kind across every connector is refused. Enabling a connector places nothing. For the development stack, `bun run dev:connectors` offers `hr.person`, `talks.person` and `boarding.person` as lenses, and the first two's fields `presence` and `next` as columns, while nobody has chosen ([dev-connectors.ts](../../scripts/dev-connectors.ts)). A source's way in that is a page of its own and no place in the rail (`boarding.person`'s `/boarding/{id}`) takes the page it is drawn on as `from`; a query alone (`?talk={id}`) joins that page's address, and a place in the rail (`/staff?…`) names no way back ([talk-address.ts](../../apps/web/src/talk-address.ts)).
 
 ## Cards and subjects
 
@@ -124,6 +124,8 @@ A started execute about a person keeps the person's id in its input, and its top
 | `qlik.unit` | The Qlik connector's sick leave ([manifest](../../connectors/qlik/manifest.mjs)) | unit | Section on the unit page and column on Dialogstöd |
 | `qlik.economyUnit` | The Qlik connector's economy | unit | Section on the unit page and column on Dialogstöd |
 | `qlik.hmeUnit` | The Qlik connector's employee engagement (HME) | unit | Section on the unit page and column on Dialogstöd |
+| `servicedesk.person` | The IT service desk fixture ([manifest](../../connectors/servicedesk/manifest.mjs)) | person | Section, lens, column; admits `self` and `managed`; the section's way in is the person's equipment, `servicedesk.equipment` |
+| `servicedesk.order` | The IT service desk fixture | person | Menu: "Beställ från IT-servicedesken", an execute that asks what and an optional message, for oneself or a direct report |
 
 A read about a unit is a section on the unit's page and a column on Dialogstöd (`/units`), which asks it about every unit
 the reader follows up ([D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)).

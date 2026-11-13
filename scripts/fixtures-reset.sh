@@ -2,8 +2,8 @@
 # Explicit development reset: stop Clew's BFF/worker first. Only fixture source volumes are erased.
 set -eu
 cd "$(dirname "$0")/.."
-SERVICES="hr finance incidents communication timesheet payroll"
-STATEFUL="hr finance incidents communication timesheet"
+SERVICES="hr finance incidents communication timesheet payroll servicedesk"
+STATEFUL="hr finance incidents communication timesheet servicedesk"
 PROJECT=${COMPOSE_PROJECT_NAME:-clew}
 dev_reset() {
   if [ -f /.dockerenv ]; then bun scripts/dev-reset.ts "$@";

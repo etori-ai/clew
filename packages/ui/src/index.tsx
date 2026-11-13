@@ -160,6 +160,7 @@ export {
   ChartBarIcon,
   ChatBubbleLeftRightIcon,
   CheckCircleIcon,
+  ClipboardDocumentCheckIcon,
   DocumentTextIcon,
   HomeIcon,
   InboxIcon,

@@ -540,6 +540,20 @@
       "when": 1794602844092,
       "tag": "0076_read_log_filters",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1794602845092,
+      "tag": "0077_boarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1794602846092,
+      "tag": "0078_boarding_holders",
+      "breakpoints": true
     }
   ]
 }

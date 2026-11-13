@@ -6,7 +6,7 @@ Every folder here is one connector: an independent service that speaks the
 (`apps/server/src/routes/protocol.ts`). They are here for four different reasons, and this page says which is
 which. To write one, start with [Create a connector](../docs/guides/creating-a-connector.md).
 
-All of them use protocol 2. "Reads", "writes" and "proposes" count the capabilities in the manifest (`read`,
+All of them use protocol 3. "Reads", "writes" and "proposes" count the capabilities in the manifest (`read`,
 `execute`, `propose`); "scan" means the connector can report work that needs a person.
 
 ## A real product
@@ -38,7 +38,7 @@ The project review of 2026-11-10 found that none of these had met its system. Ea
 
 Generic stand-ins for the systems a municipality has, with synthetic data and no vendor behind them (D52, D61). The
 development stack runs each as its own compose service and `bun run dev:connectors` registers them. The unit suite runs
-the first six in process through `tests/fixture-connectors.ts`.
+the first seven in process through `tests/fixture-connectors.ts`.
 
 | Folder | Id | Source | Stands in for | Capabilities | Port |
 |---|---|---|---|---|---|
@@ -48,12 +48,13 @@ the first six in process through `tests/fixture-connectors.ts`.
 | [communication](communication/README.md) | `communication` | Kommunikation | Notices with read receipts ("Viktigt nu"), and the same notices as news (the news profile, D112) | 4 reads, 1 write, scan | 4043 |
 | [timesheet](timesheet/README.md) | `timesheet` | Tidrapporteringen | Time reporting and staffing | 2 reads, 2 writes, 1 propose | 4044 |
 | [payroll](payroll/README.md) | `payroll` | Lönesystemet | Payroll figures; Clew never writes here | 2 reads, 1 propose | 4046 |
+| [servicedesk](servicedesk/README.md) | `servicedesk` | IT-servicedesken | The IT service desk: what a person ordered or reported and waits for, the first source of the requests profile (D123); an order for oneself or a direct report; the equipment registered to a person | 6 reads, 1 write, scan | 4054 |
 | [intranet](intranet/README.md) | `intranet` | Intranätet | The content system that lists the shared header's places (D88) | 1 read, header | 4049 |
 | [appraisals](appraisals/README.md) | `appraisals` | Samtalssystemet | A third-party system that answers the talks profile instead of Clew's own module (D96) | 4 reads | 4051, registered but not enabled |
 
 ## Generated manifests
 
-`bun run docs:generate` writes a complete manifest for `hello`, `phonebook`, the six fixture systems, `appraisals` and
+`bun run docs:generate` writes a complete manifest for `hello`, `phonebook`, the seven fixture systems, `appraisals` and
 `moodle` to [docs/generated](../docs/generated/README.md). The other connectors are not in that list.
 
 ## Adding a folder here

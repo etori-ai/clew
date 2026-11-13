@@ -36,6 +36,11 @@ export function withoutTalk(pathname: string, search: URLSearchParams | string =
   return address(pathname, q);
 }
 
+/** A place in the rail (D112 item 1): a destination of its own, which names no way back. */
+const isPlace = (pathname: string) =>
+  pathname === '/' ||
+  ['/todo', '/calendar', '/staff', '/competence', '/admin'].some(p => pathname === p || pathname.startsWith(p + '/'));
+
 /**
  * A source's page in Clew for one entity (D95, D97: an `about.page`), with `{key}` and `{id}` filled in; null when the
  * page needs Clew's id and the entity has none. This is the one filler, wherever the way in is drawn: a row's menu on
@@ -43,19 +48,29 @@ export function withoutTalk(pathname: string, search: URLSearchParams | string =
  * something laid over the page the person is on (D111 rule 5): its parameters join that page's address and everything
  * else in it is kept. An href that is a path is a page of its own; on the page the person is already on, the page's own
  * address (its lens, what its panel holds) is kept under the way in's parameters, as every address over a page keeps the
- * page's (D83).
+ * page's (D83). A page of its own that is no place in the rail (a plan's page, `/boarding/{id}`, D124) takes `back`, the
+ * page the way in is drawn on, as its `from`, the way back (D116 rule 11); a place in the rail (Personal) names none.
  */
 export function sourcePageHref(
   page: EntityPage,
   entity: { key: string; id?: string | undefined },
   here: { pathname: string; search: string },
+  back?: string | null,
 ): string | null {
   if (page.href.includes('{id}') && !entity.id) return null;
   const filled = page.href
     .replaceAll('{key}', encodeURIComponent(entity.key))
     .replaceAll('{id}', encodeURIComponent(entity.id ?? ''));
   const target = new URL(filled, `http://clew.invalid${here.pathname}`);
-  if (target.pathname !== here.pathname) return filled;
+  if (target.pathname !== here.pathname) {
+    if (!back || isPlace(target.pathname) || target.searchParams.has('from')) return filled;
+    const hashAt = filled.indexOf('#');
+    const base = hashAt < 0 ? filled : filled.slice(0, hashAt);
+    const queryAt = base.indexOf('?');
+    const query = new URLSearchParams(queryAt < 0 ? '' : base.slice(queryAt + 1));
+    query.set('from', back);
+    return address(queryAt < 0 ? base : base.slice(0, queryAt), query) + (hashAt < 0 ? '' : filled.slice(hashAt));
+  }
   const query = new URLSearchParams(here.search);
   target.searchParams.forEach((value, name) => query.set(name, value));
   return address(target.pathname, query) + target.hash;

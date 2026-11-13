@@ -62,6 +62,10 @@ describe('side panel labels (3.1.2)', () => {
       'Giltigt',
     ]);
     expect(VALUE_WORDS.expired).toBe('utgånget');
+    // The words translate every connector's values, so a code as common as `new` or `active` has none: another system's
+    // value is drawn as it gave it. Where a request stands is said by the requests module itself (D123 item 6).
+    for (const code of ['waiting-on-me', 'new', 'active']) expect(VALUE_WORDS).not.toHaveProperty(code);
+    expect(statusWord('Läge', 'Väntar på dig')).toBe('Väntar på dig');
   });
   test('a day is short in a row and long in a sentence or among a record’s facts, one rule', () => {
     expect(shortDay('2026-10-13')).toBe('13 okt. 2026');

@@ -127,6 +127,18 @@ import type {
   EntityRows,
   EntitySection,
 } from '@clew/contracts';
+import type {
+  BoardingImportBody,
+  BoardingImportOutcome,
+  BoardingItemAddBody,
+  BoardingLayersOutput,
+  BoardingPersonOutput,
+  BoardingPlanOutput,
+  BoardingPlansOutput,
+  BoardingPreview,
+  BoardingStartBody,
+  BoardingSuggestionsOutput,
+} from '@clew/contracts';
 
 import { ApiError } from './api-error';
 import { matrixQuery } from './competence-address';
@@ -417,6 +429,41 @@ export const api = {
     addShareTarget: (body: CompetenceShareTargetBody) => post<{ id: string }>('/api/competence/share-targets', body),
     /** Removes a share target. */
     removeShareTarget: (id: string) => del<void>(`/api/competence/share-targets/${encodeURIComponent(id)}`),
+  },
+  /**
+   * Introduktion och avslut (D124): the built-in module's own routes. Every one is refused (403) while the module is
+   * switched off for the person; a refusal of what is asked is a 400 with a Swedish sentence to show as it is. The use
+   * cases decide who may do what: a manager starts, adds and closes; an item's owner or the manager ticks it.
+   */
+  boarding: {
+    /**
+     * The open plans of the reader's reports and those the reader holds for someone since deactivated, the reader's own
+     * open plans apart from them, and whether the reader manages a unit (D124 item 12).
+     */
+    plans: () => call<BoardingPlansOutput>('/api/boarding/plans'),
+    /** The reports whose employment starts soon with no introduction. */
+    suggestions: () => call<BoardingSuggestionsOutput>('/api/boarding/suggestions'),
+    /** One person's plans, whether the reader may start one, the buddies to choose from and a suggested first day. */
+    person: (personId: string) => call<BoardingPersonOutput>(`/api/boarding/people/${encodeURIComponent(personId)}`),
+    /** One plan with its items, by phase; an owner who is neither manager nor person is given their own items. */
+    plan: (id: string) => call<BoardingPlanOutput>(`/api/boarding/plans/${encodeURIComponent(id)}`),
+    /** What starting the plan would make; writes nothing. */
+    preview: (body: BoardingStartBody) => post<BoardingPreview>('/api/boarding/preview', body),
+    /** The manager starts the plan; its items become work items in their owners' Att göra. */
+    start: (body: BoardingStartBody) => post<{ id: string }>('/api/boarding/plans', body),
+    /** The manager adds an item to one plan. */
+    addItem: (planId: string, body: BoardingItemAddBody) =>
+      post<{ id: string }>(`/api/boarding/plans/${encodeURIComponent(planId)}/items`, body),
+    /** The manager closes the plan: every open item's card closes with it. */
+    close: (planId: string) => post<void>(`/api/boarding/plans/${encodeURIComponent(planId)}/close`),
+    /** An item ticked off by its owner or the manager; its card closes. */
+    done: (itemId: string) => post<void>(`/api/boarding/items/${encodeURIComponent(itemId)}/done`),
+    /** An item opened again; its card opens again. */
+    notDone: (itemId: string) => del<void>(`/api/boarding/items/${encodeURIComponent(itemId)}/done`),
+    /** An administrator with `admin.boarding` reads the organisation's layers. */
+    layers: () => call<BoardingLayersOutput>('/api/boarding/layers'),
+    /** An administrator imports a whole file of layers, as the page read it. */
+    importLayers: (body: BoardingImportBody) => post<BoardingImportOutcome>('/api/boarding/layers/import', body),
   },
   /** The manifest field by field (D60): a public document, read with the plain fetch since no session or token belongs on it. */
   manifestReference: async () => {

@@ -63,7 +63,7 @@ has a rule that holds for every input; write examples when the interesting cases
 prints the smallest input that breaks it; add that input as an example before fixing.
 
 **Scenario tests of use cases.** The `world()` helper in `tests/unit/threads.test.ts` is the pattern: a
-`Registry` with the fixture connectors (`fixtureConnectors()` in `tests/fixture-connectors.ts`: the six services of
+`Registry` with the fixture connectors (`fixtureConnectors()` in `tests/fixture-connectors.ts`: the seven services of
 `connectors/` in-process on their memory stores, D61), `memoryThreadStore()`, `memoryTimers()`, a `fakeClock()`
 that the test moves, and sequential ids. `tests/unit/samtal.test.ts` does the same for the calendar with
 `memoryCalendar()` (`@clew/calendar/memory`, the `CalendarProvider` port in memory: seed events, busy time per

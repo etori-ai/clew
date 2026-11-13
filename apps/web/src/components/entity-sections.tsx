@@ -34,7 +34,8 @@ import { today } from '@clew/calendar/dates';
 import { entitySectionQuery, threadsQuery, viewQuery } from '../queries';
 import { actionMenuItems, useEntityAction } from '../entity-actions';
 import { useMarks } from '../marks';
-import { withCard } from '../panel-address';
+import { pageOnly, withCard } from '../panel-address';
+import { wayBack } from '../person-address';
 import { sourcePageHref } from '../talk-address';
 import { rowFacts } from '../work-items';
 import { DOT } from '../dot';
@@ -369,7 +370,9 @@ export function SourceWay({
   entity: { key: string; id?: string | undefined };
 }) {
   const { pathname, search } = useLocation();
-  const href = source.page ? sourcePageHref(source.page, entity, { pathname, search }) : null;
+  const href = source.page
+    ? sourcePageHref(source.page, entity, { pathname, search }, wayBack(pageOnly(pathname, search)))
+    : null;
   return href && source.page ? (
     <Link href={href} weight="semibold" isStandalone>
       {source.page.title}

@@ -45,6 +45,10 @@ import { AdminCompetencePage } from './pages/admin/competence';
 import { AdminCompetenceSourcesPage } from './pages/admin/competence-sources';
 import { AdminCompetenceRequirementsPage } from './pages/admin/competence-requirements';
 import { AdminCompetenceImportPage } from './pages/admin/competence-import';
+import { BoardingPage, BoardingPersonReadPage, BoardingPlanReadPage } from './pages/boarding';
+import { BoardingListPage } from './pages/boarding-list';
+import { AdminBoardingPage } from './pages/admin/boarding';
+import { AdminBoardingImportPage } from './pages/admin/boarding-import';
 import { loadBranding, useBranding } from './branding';
 
 type Shell = {
@@ -262,6 +266,15 @@ function App() {
       />
       {/* A report's own registration (D108 item 7): the page of the read its card opens is the decision over the matrix. */}
       <Route path="/tools/competence.approval" element={<ApprovalPage />} />
+      {/* Introduktion och avslut (D124, D116): the pages of its two reads are the plan's page, keyed on the person. */}
+      <Route
+        path="/tools/boarding.plan"
+        element={<Protected>{shell => <BoardingPlanReadPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      <Route
+        path="/tools/boarding.person"
+        element={<Protected>{shell => <BoardingPersonReadPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
       <Route
         path="/tools/:capability"
         element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>}
@@ -289,6 +302,17 @@ function App() {
       <Route
         path="/people/:key"
         element={<Protected>{shell => <PersonPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* Introduktion och avslut (D124 item 12): the reader's list, where the rail's row leads a manager. */}
+      <Route
+        path="/boarding"
+        element={<Protected>{shell => <BoardingListPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* One person's introduction or leaving (D124): `/boarding/{id}` is the way in `boarding.person` declares, and where
+        the rail's row leads someone whose own plan is the only one they have. */}
+      <Route
+        path="/boarding/:personId"
+        element={<Protected>{shell => <BoardingPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       {/* A unit as a page (D97 items 5 and 6): reached from Läget on Hem and any row that names the unit; no rail entry. */}
       <Route
@@ -371,6 +395,18 @@ function App() {
         path="/admin/competence/import"
         element={admin(shell => (
           <AdminCompetenceImportPage user={shell.user} />
+        ))}
+      />
+      <Route
+        path="/admin/boarding"
+        element={admin(shell => (
+          <AdminBoardingPage user={shell.user} />
+        ))}
+      />
+      <Route
+        path="/admin/boarding/import"
+        element={admin(shell => (
+          <AdminBoardingImportPage user={shell.user} />
         ))}
       />
       <Route

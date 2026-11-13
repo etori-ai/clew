@@ -56,6 +56,7 @@ import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
 import { BriefSkeleton } from '../components/brief';
 import { WorkList, WorkRow } from '../components/work-row';
 import { MyErrands } from '../components/my-errands';
+import { MyRequests, REQUESTS_CAPABILITY, REQUESTS_TITLE } from '../components/my-requests';
 import { MyCommitments } from '../components/my-commitments';
 import { AsideSkeleton, AsyncContent } from '../components/loading';
 import { usePagePanel } from '../components/page-panel';
@@ -90,11 +91,11 @@ const EMPTY_AREAS: Area[] = [];
  * urgent work items, "I dag", the day as the calendar family draws it (D32), and "Nyheter", the newest news from the
  * person's news sources. The work list itself is Att göra's (`/todo`). Under the blocks Läget's figures stand for
  * Dialogstöd, then Verktygslådan, the person's tools, and then what D112 keeps as it was until it is decided: Mina
- * ärenden and the person's own action points. "Sedan i går" and the suggestions under the box ("Menar du") were removed
+ * ärenden, Beställningar och felanmälningar (D123) and the person's own action points. "Sedan i går" and the suggestions under the box ("Menar du") were removed
  * on 2026-11-13: no digest sentences and no suggestion chips on a page. A work item opened from Hem (a row, "Läs", the
  * day's link to an item) and one thing opened from it (a piece of news, an errand, a budget) are in the panel beside
  * Hem, so the person stays on Hem (D112, amended 2026-11-12); opening it is not asking about it (D111 rule 6). A list or
- * a table opened from Hem (a tile of Läget, an answer's "Visa allt") is its own page, with Hem as the way back (D116).
+ * a table opened from Hem (a tile of Läget, an answer's "Visa allt", "Visa allt" under Beställningar och felanmälningar) is its own page, with Hem as the way back (D116).
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
  * names, the card or view that was open when it was asked, or the page it was asked on. The address is the state
  * throughout (`panel-address.ts`).
@@ -379,9 +380,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         twoAcross={mobile}
       />
       <Toolbox />
-      {/* What D112 keeps as it was until decided, under the board's parts: Mina ärenden (D90) and the person's own action
-          points (D96 item 7). */}
+      {/* What D112 keeps as it was until decided, under the board's parts: Mina ärenden (D90), what the person ordered
+          or reported and waits for, apart from the errands they handle (D123), and the person's own action points (D96
+          item 7). */}
       <MyErrands areas={areas} hrefFor={viewHref} />
+      <MyRequests
+        areas={areas}
+        hrefFor={viewHref}
+        listHref={viewHref({ capability: REQUESTS_CAPABILITY, title: REQUESTS_TITLE })}
+      />
       <MyCommitments />
     </VStack>
   );

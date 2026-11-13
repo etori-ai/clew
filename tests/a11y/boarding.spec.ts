@@ -1,0 +1,591 @@
+import type { Locator, Page } from '@playwright/test';
+import { entityDetail } from './data';
+import {
+  ANNA,
+  BoardingMock,
+  BOARDING_LENS,
+  EQUIPMENT_VIEW,
+  MARIA,
+  ORDER,
+  ORDER_ADMITS,
+  PLAN,
+  boardingRows,
+  boardingSource,
+} from './boarding';
+import {
+  announcements,
+  expect,
+  expectNoAxeViolations,
+  hiddenFocusStops,
+  narrow,
+  open,
+  phone,
+  reflowProblems,
+  test,
+  type MockApi,
+} from './support';
+
+/**
+ * One person's introduction or leaving as a page (D124, D116 rule 11), `/boarding/<personId>`: the plan's header with
+ * the way back, its day, its progress and its counts; one section per phase with each item a row; the facts, the
+ * person's plans and "Tillhör" in the rail. For the manager every item ticks, "Lägg till punkt" adds one and "Avsluta
+ * planen" closes the plan after Astryx's confirmation; the person ticks their own; an item's owner sees their own items
+ * and is told so. Without a plan a manager is offered the two starts, anyone else gets "Planen finns inte", as does an
+ * unknown person and a module switched off. The ways in: a person's page and Personal's lens lead here with `from`, and
+ * the pages of the module's two reads (an item's card, the suggestion's card) lead here too. Keyboard, focus,
+ * announcements, axe and reflow at 320 px. The mock's clock stands at 2026-11-04; Anna's first day is 16 November.
+ */
+const wide = { width: 1440, height: 900 };
+const PAGE = `/boarding/${ANNA}?from=%2Fstaff`;
+const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
+const said = async (page: Page, text: string) => (await announcements(page)).some(t => t.includes(text));
+const heading = (page: Page, name: string) => page.getByRole('heading', { level: 1, name, exact: true });
+const item = (page: Page, title: string) => page.getByRole('checkbox', { name: title, exact: true });
+/** Text drawn in the page, not its copy in a live region (a field's status is also said through Astryx's region). */
+const drawn = (page: Page, scope: Locator, text: string) =>
+  scope.getByText(text, { exact: true }).and(page.locator(':not([aria-live])'));
+/** The main column's sections, by their headings, as a screen reader meets them. */
+const sectionsOf = (page: Page) =>
+  page
+    .getByRole('main')
+    .locator('section[aria-labelledby]')
+    .evaluateAll(els =>
+      els
+        .filter(el => !el.closest('[role="complementary"], [role="dialog"], dialog'))
+        .map(el => document.getElementById(el.getAttribute('aria-labelledby') ?? '')?.textContent?.trim() ?? ''),
+    );
+
+test.describe('the plan for its manager', () => {
+  test.use({ viewport: wide });
+
+  test('the header holds the way back, the plan and its day, its progress and counts; a section per phase; the facts and Tillhör in the rail', async ({
+    page,
+    api,
+  }) => {
+    api.boarding = new BoardingMock();
+    await open(page, PAGE);
+    await expect(page).toHaveTitle('Introduktion för Anna Lindqvist · Startsidan');
+    await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
+    const main = page.getByRole('main');
+    await expect(main.getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute('href', '/staff');
+    await expect(main.getByText('Första dagen måndag 16 november', { exact: true })).toBeVisible();
+    await expect(main.getByText('Börjar om 12 dagar', { exact: true })).toBeVisible();
+    await expect(main.getByText('2 väntar på dig', { exact: true })).toBeVisible();
+    await expect(main.getByText('1 försenad', { exact: true })).toBeVisible();
+    await expect(main.getByText('1 av 6 klara', { exact: true })).toBeVisible();
+    const progress = main.getByRole('progressbar', { name: 'Klara punkter' });
+    await expect(progress).toHaveAttribute('aria-valuenow', '1');
+    await expect(progress).toHaveAttribute('aria-valuemax', '6');
+    expect(await sectionsOf(page)).toEqual(['Före första dagen', 'Första dagen', 'Första veckan']);
+    // Every item is the manager's to tick: a checkbox named by its title, its line saying kind, owner and day.
+    await expect(main.getByRole('checkbox')).toHaveCount(6);
+    await expect(item(page, 'Beställ dator och telefon')).toBeChecked();
+    await expect(item(page, 'Beställ passerkort')).not.toBeChecked();
+    await expect(main.getByText('Beställning · Du · senast mån 2 nov.', { exact: true })).toBeVisible();
+    await expect(
+      main.getByText('Att göra · Fadder, Erik Sandström · senast mån 16 nov.', { exact: true }),
+    ).toBeVisible();
+    // An order is a plain to-do in this version: no row orders or books anything.
+    await expect(main.getByRole('button', { name: /^(Beställ|Föreslå tid)$/ })).toHaveCount(0);
+    const rail = page.getByRole('complementary', { name: 'Detaljer' });
+    await expect(rail.getByText('Erik Sandström', { exact: true })).toBeVisible();
+    await expect(rail.getByText('måndag 16 november 2026', { exact: true })).toBeVisible();
+    await expect(rail.getByRole('link', { name: 'Person: Anna Lindqvist' })).toHaveAttribute(
+      'href',
+      `/people/anna?from=%2Fboarding%2Fanna`,
+    );
+    await expectNoAxeViolations(page);
+    const { hidden, unmarked } = await hiddenFocusStops(page);
+    expect(hidden).toEqual([]);
+    expect(unmarked).toEqual([]);
+    // The way back is Personal, with the lens it was opened under kept.
+    await main.getByRole('link', { name: 'Personal', exact: true }).click();
+    await expect(page).toHaveURL('/staff');
+  });
+
+  test('an item is ticked off and opened again on the page: drawn at once, said with the new count, the focus kept', async ({
+    page,
+    api,
+  }) => {
+    const boarding = (api.boarding = new BoardingMock());
+    await open(page, PAGE);
+    const late = item(page, 'Beställ passerkort');
+    await late.focus();
+    await page.keyboard.press('Space');
+    await expect(late).toBeChecked();
+    await expect(late).toBeFocused();
+    await expect.poll(() => said(page, 'Beställ passerkort är klar. 2 av 6 klara.')).toBe(true);
+    await expect(page.getByRole('main').getByText('2 av 6 klara', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('1 försenad')).toHaveCount(0);
+    expect(boarding.writes).toEqual([{ method: 'POST', path: '/boarding/items/i-kort/done', body: {} }]);
+    await page.keyboard.press('Space');
+    await expect(late).not.toBeChecked();
+    await expect(late).toBeFocused();
+    await expect.poll(() => said(page, 'Beställ passerkort är inte klar. 1 av 6 klara.')).toBe(true);
+    expect(boarding.writes.at(-1)).toEqual({ method: 'DELETE', path: '/boarding/items/i-kort/done', body: undefined });
+    await expect(page.getByRole('main').getByText('1 försenad', { exact: true })).toBeVisible();
+  });
+
+  test('a tick the server refuses is put back and said, and the focus stays', async ({ page, api }) => {
+    const boarding = (api.boarding = new BoardingMock());
+    boarding.refusal = 'Planen är avslutad och kan inte ändras.';
+    await open(page, PAGE);
+    const box = item(page, 'Boka välkomstmöte första dagen');
+    await box.focus();
+    await page.keyboard.press('Space');
+    await expect(box).not.toBeChecked();
+    await expect(box).toBeFocused();
+    await expect.poll(() => said(page, 'Planen är avslutad och kan inte ändras.')).toBe(true);
+    await expect(page.getByRole('main').getByText('Planen är avslutad och kan inte ändras.')).toBeVisible();
+  });
+
+  test('Lägg till punkt: what is missing is said on its field, the item is added and the focus returns to the button', async ({
+    page,
+    api,
+  }) => {
+    const boarding = (api.boarding = new BoardingMock());
+    await open(page, PAGE);
+    const add = page.getByRole('main').getByRole('button', { name: 'Lägg till punkt' });
+    await add.click();
+    const dialog = page.getByRole('dialog', { name: 'Lägg till punkt' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Introduktion för Anna Lindqvist')).toBeVisible();
+    // Who reads the typed text is said before it is sent: the plan shows it, the card in Att göra does not.
+    await expect(
+      dialog.getByText(
+        'Vad som ska göras, på en rad. Texten syns här i planen för dig, för Anna Lindqvist och för den som ska göra punkten. Uppgiften i Att göra visar den inte, bara att det är en uppgift i planen.',
+      ),
+    ).toBeVisible();
+    await dialog.getByRole('button', { name: 'Lägg till', exact: true }).click();
+    await expect(drawn(page, dialog, 'Skriv vad som ska göras.')).toBeVisible();
+    await expect(drawn(page, dialog, 'Välj dagen då punkten ska vara klar.')).toBeVisible();
+    await expect(dialog.getByRole('textbox', { name: /^Punkt/ })).toBeFocused();
+    await page.keyboard.type('Visa var kaffet finns');
+    await dialog.getByRole('radio', { name: 'Faddern, Erik Sandström' }).check();
+    const due = dialog.getByLabel('Senast', { exact: false }).and(page.locator('input'));
+    await due.focus();
+    await page.keyboard.type('2026-11-17');
+    await page.keyboard.press('Tab');
+    await expectNoAxeViolations(page);
+    await dialog.getByRole('button', { name: 'Lägg till', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    expect(boarding.writes).toEqual([
+      {
+        method: 'POST',
+        path: `/boarding/plans/${PLAN}/items`,
+        body: { title: 'Visa var kaffet finns', kind: 'todo', ownerRole: 'buddy', dueOn: '2026-11-17' },
+      },
+    ]);
+    await expect(notices(page).getByText('Punkten är tillagd.')).toBeAttached();
+    await expect(item(page, 'Visa var kaffet finns')).toBeVisible();
+    await expect(add).toBeFocused();
+  });
+
+  test('Avsluta planen asks first; Avbryt keeps it, and closing makes the plan read-only with the focus on the heading', async ({
+    page,
+    api,
+  }) => {
+    const boarding = (api.boarding = new BoardingMock());
+    await open(page, PAGE);
+    const more = page.getByRole('main').getByRole('button', { name: 'Fler åtgärder' });
+    await more.click();
+    // An open introduction: the menu closes the plan or starts a leaving, never a second introduction.
+    await expect(page.getByRole('menuitem')).toHaveText(['Avsluta planen', 'Starta avslut']);
+    await page.getByRole('menuitem', { name: 'Avsluta planen' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'Avsluta planen?' });
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByRole('button', { name: 'Avbryt' })).toBeFocused();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(confirm).toBeHidden();
+    expect(boarding.writes).toEqual([]);
+    await more.click();
+    await page.getByRole('menuitem', { name: 'Avsluta planen' }).click();
+    await confirm.getByRole('button', { name: 'Avsluta planen' }).click();
+    await expect(confirm).toBeHidden();
+    expect(boarding.writes).toEqual([{ method: 'POST', path: `/boarding/plans/${PLAN}/close`, body: {} }]);
+    await expect(notices(page).getByText('Planen är avslutad.')).toBeAttached();
+    await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeFocused();
+    const main = page.getByRole('main');
+    await expect(main.getByText('Avslutad', { exact: true }).first()).toBeVisible();
+    await expect(main.getByRole('checkbox')).toHaveCount(0);
+    await expect(main.getByRole('button', { name: 'Lägg till punkt' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+});
+
+test.describe('the plan for others who read it', () => {
+  test.use({ viewport: wide });
+
+  test('the person themselves reads every item and ticks their own; the way back is Hem', async ({ page, api }) => {
+    api.employee = true;
+    const boarding = (api.boarding = new BoardingMock());
+    boarding.reader = 'person';
+    await open(page, `/boarding/${ANNA}`);
+    await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
+    const main = page.getByRole('main');
+    await expect(main.getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/');
+    await expect(main.getByRole('checkbox')).toHaveCount(2);
+    await expect(item(page, 'Logga in och byt lösenord')).toBeVisible();
+    // Another's item is read, its state said by its dot's name; nothing of the manager's is offered.
+    await expect(main.getByRole('img', { name: 'Klar', exact: true })).toHaveCount(1);
+    await expect(main.getByRole('img', { name: 'Inte klar', exact: true })).toHaveCount(3);
+    await expect(main.getByRole('button', { name: 'Lägg till punkt' })).toHaveCount(0);
+    await expect(main.getByRole('button', { name: 'Fler åtgärder' })).toHaveCount(0);
+    await item(page, 'Logga in och byt lösenord').click();
+    await expect(item(page, 'Logga in och byt lösenord')).toBeChecked();
+    await expect.poll(() => said(page, 'Logga in och byt lösenord är klar.')).toBe(true);
+    expect(boarding.writes).toEqual([{ method: 'POST', path: '/boarding/items/i-logga/done', body: {} }]);
+    await expectNoAxeViolations(page);
+  });
+
+  test("an item's owner who is neither sees their own items and is told so, from the card's read", async ({
+    page,
+    api,
+  }) => {
+    api.employee = true;
+    const boarding = (api.boarding = new BoardingMock());
+    boarding.reader = 'owner';
+    // The card's "Visa planen" leads to the read's page, which is the plan's page with the way back to the card.
+    const input = encodeURIComponent(JSON.stringify({ plan: PLAN }));
+    await open(page, `/tools/boarding.plan?input=${input}&from=%2Ftodo%3Fitem%3Dt1`);
+    await expect(page).toHaveURL(`/boarding/${ANNA}?plan=${PLAN}&from=%2Ftodo%3Fitem%3Dt1`);
+    await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
+    const main = page.getByRole('main');
+    await expect(main.getByText(/^Du ser bara dina egna punkter i planen/)).toBeVisible();
+    await expect(main.getByRole('checkbox')).toHaveCount(1);
+    await expect(item(page, 'Rundvandring, nycklar och arbetsplats')).toBeVisible();
+    // The counts are the server's, over the items the owner is shown: one item, not done.
+    await expect(main.getByText('0 av 1 klara', { exact: true })).toBeVisible();
+    const progress = main.getByRole('progressbar', { name: 'Klara punkter' });
+    await expect(progress).toHaveAttribute('aria-valuenow', '0');
+    await expect(progress).toHaveAttribute('aria-valuemax', '1');
+    await expect(main.getByText('1 väntar på dig', { exact: true })).toBeVisible();
+    await expect(main.getByRole('link', { name: 'Att göra', exact: true })).toHaveAttribute('href', '/todo?item=t1');
+    await expectNoAxeViolations(page);
+  });
+});
+
+test.describe('no plan, and no page', () => {
+  test.use({ viewport: wide });
+
+  test('a manager with no plan for the person is offered both starts, the suggested day said', async ({
+    page,
+    api,
+  }) => {
+    api.boarding = new BoardingMock();
+    await open(page, `/boarding/${MARIA}?from=%2Fstaff`);
+    await expect(heading(page, 'Introduktion och avslut för Maria Källström')).toBeVisible();
+    const main = page.getByRole('main');
+    await expect(
+      main.getByRole('heading', { level: 2, name: 'Maria Källström har ingen introduktion eller något avslut' }),
+    ).toBeVisible();
+    await expect(main.getByText(/Anställningen börjar tisdag 1 december enligt katalogen/)).toBeVisible();
+    await expect(main.getByRole('button', { name: 'Starta introduktion' })).toBeVisible();
+    await expect(main.getByRole('button', { name: 'Starta avslut' })).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
+  for (const [what, arrange, path] of [
+    [
+      'the person with no plan of their own',
+      (api: { boarding: BoardingMock | null; employee: boolean }) => {
+        api.employee = true;
+        api.boarding = new BoardingMock();
+        api.boarding.reader = 'person';
+        api.boarding.plans = [];
+      },
+      `/boarding/${ANNA}`,
+    ],
+    [
+      'someone the reader may not see',
+      (api: { boarding: BoardingMock | null; employee: boolean }) => {
+        api.boarding = new BoardingMock();
+      },
+      '/boarding/okand',
+    ],
+    [
+      'the module switched off',
+      (api: { boarding: BoardingMock | null; employee: boolean }) => {
+        api.boarding = null;
+      },
+      PAGE,
+    ],
+  ] as const)
+    test(`${what} is the page's own "Planen finns inte"`, async ({ page, api }) => {
+      arrange(api);
+      await open(page, path);
+      await expect(heading(page, 'Planen finns inte')).toBeVisible();
+      await expect(page).toHaveTitle('Planen finns inte · Startsidan');
+      await expect(page.getByRole('main').getByRole('button', { name: /^Starta/ })).toHaveCount(0);
+      await expectNoAxeViolations(page);
+    });
+});
+
+test.describe('the ways in', () => {
+  test.use({ viewport: wide });
+
+  test("a person's page leads here with itself as the way back, and Back gives the focus to the link", async ({
+    page,
+    api,
+  }) => {
+    api.boarding = new BoardingMock();
+    api.entityRows[BOARDING_LENS] = boardingRows();
+    api.entityDetailOf = key => {
+      const detail = entityDetail(api.entityList, key);
+      return detail && { ...detail, sections: [...detail.sections, boardingSource] };
+    };
+    await open(page, '/people/anna?from=%2Fstaff');
+    const way = page.getByRole('region', { name: 'Introduktion och avslut', exact: true }).getByRole('link', {
+      name: 'Öppna planen',
+    });
+    await expect(way).toHaveAttribute('href', '/boarding/anna?from=%2Fpeople%2Fanna');
+    await way.click();
+    await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
+      'href',
+      '/people/anna',
+    );
+    await page.goBack();
+    await expect(way).toBeFocused();
+  });
+
+  test("Personal's lens offers the plan in each row's menu, with the lens as the way back", async ({ page, api }) => {
+    api.boarding = new BoardingMock();
+    api.entityRows[BOARDING_LENS] = boardingRows();
+    api.entityList = { ...api.entityList, lenses: [...api.entityList.lenses, boardingSource] };
+    await open(page, `/staff?show=${BOARDING_LENS}`);
+    await page.getByRole('button', { name: 'Åtgärder för Maria Källström' }).click();
+    const way = page.getByRole('menuitem', { name: 'Öppna planen' });
+    await expect(way).toHaveAttribute('href', `/boarding/maria?from=%2Fstaff%3Fshow%3D${BOARDING_LENS}`);
+    await way.click();
+    await expect(heading(page, 'Introduktion och avslut för Maria Källström')).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
+      'href',
+      `/staff?show=${BOARDING_LENS}`,
+    );
+  });
+
+  test("the suggestion's card leads to the person's page, where Starta introduktion is one press away", async ({
+    page,
+    api,
+  }) => {
+    api.boarding = new BoardingMock();
+    const input = encodeURIComponent(JSON.stringify({ keys: [MARIA] }));
+    await open(page, `/tools/boarding.person?input=${input}&from=%2Ftodo`);
+    await expect(page).toHaveURL(`/boarding/${MARIA}?from=%2Ftodo`);
+    await expect(page.getByRole('main').getByRole('button', { name: 'Starta introduktion' })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Att göra', exact: true })).toBeVisible();
+  });
+});
+
+test.describe('small screens', () => {
+  test('at 320 px the plan reflows, its facts behind Visa detaljer', async ({ page, api }) => {
+    api.boarding = new BoardingMock();
+    await page.setViewportSize(narrow);
+    await open(page, PAGE);
+    await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await page.getByRole('button', { name: 'Visa detaljer' }).click();
+    const details = page.getByRole('dialog', { name: 'Detaljer' });
+    await expect(details.getByText('Erik Sandström', { exact: true })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'Visa detaljer' })).toBeFocused();
+    await expectNoAxeViolations(page);
+  });
+
+  test('on a phone the actions stand under the name and the page has no axe violations', async ({ page, api }) => {
+    api.boarding = new BoardingMock();
+    await page.setViewportSize(phone);
+    await open(page, PAGE);
+    await expect(page.getByRole('main').getByRole('button', { name: 'Lägg till punkt' })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+});
+
+/**
+ * What an item is done with (D124, `tiedTo`): an action about the person the reader may start for them is a button on
+ * the row that starts it on the path a person's page uses (its work item beside the page, the action dialog over it,
+ * the preset answer chosen, nothing sent before the last button, the item not ticked by it); a read the reader may open
+ * is a link to its page with the person as its input; an https address is a link out, marked as leaving. A capability
+ * the reader may not use, and an item the reader may not act on, draw nothing.
+ */
+const rowOf = (page: Page, title: string) => page.getByRole('main').getByRole('listitem').filter({ hasText: title });
+/** Two frames: what an answer just read changes is drawn, so an absence asserted after it is not an absence before it. */
+const settled = (page: Page) =>
+  page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+/**
+ * Anna's page as the server answers it to the reader (the entities read a plan's rows draw from): how the reader stands
+ * to her, and the service desk's order only where it admits that (D117); and its equipment as a read that admits the
+ * same.
+ */
+function tied(api: MockApi) {
+  const boarding = (api.boarding = new BoardingMock());
+  api.views = [...api.views, EQUIPMENT_VIEW];
+  api.entityDetailOf = key => {
+    const detail = entityDetail(api.entityList, key);
+    const relation = boarding.relation();
+    return detail && { ...detail, relation, actions: ORDER_ADMITS.includes(relation) ? [ORDER] : [] };
+  };
+  return boarding;
+}
+
+test.describe('what an item is done with', () => {
+  test.use({ viewport: wide });
+
+  test('by keyboard: an order about the person opens its work item beside the plan with the dialog over it, the preset chosen; Esc sends nothing; the last button places it and the item stays to do', async ({
+    page,
+    api,
+  }) => {
+    const boarding = tied(api);
+    await open(page, PAGE);
+    const order = rowOf(page, 'Beställ passerkort').getByRole('button', {
+      name: 'Beställ från IT-servicedesken: Beställ passerkort',
+    });
+    await expect(order).toBeVisible();
+    // A done order starts nothing again; a capability nobody here may use draws nothing.
+    await expect(rowOf(page, 'Beställ dator och telefon').getByRole('button')).toHaveCount(0);
+    await expect(rowOf(page, 'Boka välkomstmöte första dagen').getByRole('button')).toHaveCount(0);
+    await expect(rowOf(page, 'Boka välkomstmöte första dagen').getByRole('link')).toHaveCount(0);
+    // The checkbox keeps the item's title alone as its name.
+    await expect(item(page, 'Beställ passerkort')).toBeVisible();
+    await expectNoAxeViolations(page);
+
+    await order.focus();
+    await page.keyboard.press('Enter');
+    // The same path a person's page starts on: the work item first, without the answers, beside this page.
+    await expect(page).toHaveURL(`${PAGE}&card=entity-servicedesk-order-anna`);
+    expect(api.entityStarts).toEqual([{ key: ANNA, capability: 'servicedesk.order' }]);
+    const dialog = page.getByRole('dialog', { name: 'Beställ från IT-servicedesken' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('radio', { name: 'Passerkort' })).toBeChecked();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    const panel = page.getByRole('complementary', { name: 'Ärende' });
+    const decide = panel.getByRole('button', { name: 'Beställ från IT-servicedesken' });
+    await expect(decide).toBeFocused();
+    expect(api.acted).toEqual([]);
+
+    // Its own button opens the dialog again with the answer kept; the last button is the only thing that sends.
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('radio', { name: 'Passerkort' })).toBeChecked();
+    await dialog.getByRole('button', { name: 'Nästa' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('heading', { name: 'När du trycker Beställ från IT-servicedesken' })).toBeFocused();
+    await dialog.getByRole('button', { name: 'Beställ från IT-servicedesken' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeHidden();
+    await expect
+      .poll(() => api.acted.map(a => a.body))
+      .toEqual([{ actionId: 'decide', values: { item: 'access-card' } }]);
+    await expect(panel.getByText('Beställningen är lagd hos IT-servicedesken.')).toBeVisible();
+    // The plan holds the item, never the order: it is not ticked by it.
+    await expect(item(page, 'Beställ passerkort')).not.toBeChecked();
+    expect(boarding.writes).toEqual([]);
+    await expectNoAxeViolations(page);
+    // Closing the work item leaves the plan as it was, with the focus on the row's button that started it.
+    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
+    await expect(page).toHaveURL(PAGE);
+    await expect(order).toBeFocused();
+  });
+
+  test('a read leads to its page with the person as its input, and Back gives the focus to the link; an address leaves in a new tab', async ({
+    page,
+    api,
+  }) => {
+    tied(api);
+    await open(page, PAGE);
+    const read = rowOf(page, 'Informationssäkerhet, grundkurs').getByRole('link', {
+      name: 'IT-utrustning: Informationssäkerhet, grundkurs',
+    });
+    await expect(read).toHaveAttribute(
+      'href',
+      '/tools/servicedesk.equipment?input=%7B%22person%22%3A%22anna%22%7D&title=IT-utrustning&from=%2Fboarding%2Fanna',
+    );
+    const out = rowOf(page, 'Rundvandring, nycklar och arbetsplats').getByRole('link');
+    await expect(out).toHaveAttribute('href', 'https://intranet.example.org/rundvandring');
+    await expect(out).toHaveAttribute('target', '_blank');
+    // Named by what it shows, the row's title and that it leaves, so two rows linking to one host are told apart.
+    await expect(out).toHaveAccessibleName(
+      'intranet.example.org: Rundvandring, nycklar och arbetsplats (öppnas i ny flik)',
+    );
+    await read.click();
+    await expect(page).toHaveURL(/\/tools\/servicedesk\.equipment\?/);
+    await expect(page.getByRole('main').getByText('Lenovo T14')).toBeVisible();
+    await page.goBack();
+    await expect(read).toBeFocused();
+  });
+
+  test('the person themselves orders for their own item and opens their own read; the manager’s items open nothing for them', async ({
+    page,
+    api,
+  }) => {
+    const boarding = tied(api);
+    boarding.reader = 'person';
+    await open(page, `/boarding/${ANNA}`);
+    await expect(
+      rowOf(page, 'Logga in och byt lösenord').getByRole('button', {
+        name: 'Beställ från IT-servicedesken: Logga in och byt lösenord',
+      }),
+    ).toBeVisible();
+    await expect(
+      rowOf(page, 'Informationssäkerhet, grundkurs').getByRole('link', { name: /^IT-utrustning/ }),
+    ).toBeVisible();
+    // Not theirs to act on: no order on the manager's item, no link on the buddy's.
+    await expect(rowOf(page, 'Beställ passerkort').getByRole('button')).toHaveCount(0);
+    await expect(rowOf(page, 'Rundvandring, nycklar och arbetsplats').getByRole('link')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test("an item's owner sees what their own item opens, and an action or a read Anna's page does not admit them to draws nothing", async ({
+    page,
+    api,
+  }) => {
+    api.employee = true;
+    const boarding = tied(api);
+    boarding.reader = 'owner';
+    boarding.tieForBuddy();
+    const phone = 'Hjälp Anna att beställa telefon';
+    const equipment = 'Gå igenom utrustningen med Anna';
+    // Anna's page answers the buddy as a colleague, with no action: the desk's order and the read of her equipment
+    // admit only her and her manager (D117).
+    const answered = page.waitForResponse(r => new URL(r.url()).pathname === `/api/entities/person/${ANNA}`);
+    const input = encodeURIComponent(JSON.stringify({ plan: PLAN }));
+    await open(page, `/tools/boarding.plan?input=${input}&from=%2Ftodo`);
+    await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
+    expect(await (await answered).json()).toMatchObject({ relation: 'colleague', actions: [] });
+    await settled(page);
+    // Their own items, each theirs to tick; the address opens, the order and the read do not.
+    await expect(item(page, phone)).toBeVisible();
+    await expect(item(page, equipment)).toBeVisible();
+    await expect(
+      rowOf(page, 'Rundvandring, nycklar och arbetsplats').getByRole('link', { name: /^intranet\.example\.org/ }),
+    ).toBeVisible();
+    await expect(rowOf(page, phone).getByRole('button')).toHaveCount(0);
+    await expect(rowOf(page, phone).getByRole('link')).toHaveCount(0);
+    await expect(rowOf(page, equipment).getByRole('link')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+
+    // The same items read by Anna's manager, whom her page offers both: the gate is how the reader stands to Anna.
+    boarding.reader = 'manager';
+    await page.reload();
+    await expect(
+      rowOf(page, phone).getByRole('button', { name: `Beställ från IT-servicedesken: ${phone}` }),
+    ).toBeVisible();
+    await expect(rowOf(page, equipment).getByRole('link', { name: `IT-utrustning: ${equipment}` })).toBeVisible();
+  });
+
+  test('at 320 px a row with what it opens reflows', async ({ page, api }) => {
+    tied(api);
+    await page.setViewportSize(narrow);
+    await open(page, PAGE);
+    await expect(
+      rowOf(page, 'Beställ passerkort').getByRole('button', { name: /^Beställ från IT-servicedesken/ }),
+    ).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+});

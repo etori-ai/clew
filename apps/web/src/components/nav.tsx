@@ -8,6 +8,7 @@ import {
   CommandPalette,
   CommandPaletteInput,
   ChatBubbleLeftRightIcon,
+  ClipboardDocumentCheckIcon,
   HomeIcon,
   InboxIcon,
   PlusIcon,
@@ -23,7 +24,8 @@ import {
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { titled, useConversation } from './conversation-context';
-import { areasQuery, threadsQuery } from '../queries';
+import { areasQuery, boardingPlansQuery, threadsQuery } from '../queries';
+import { boardingPlaceHref } from '../boarding-address';
 import { groupThreads } from '../stream';
 import { clewIcon } from '../icons';
 import { cardOverPage } from '../panel-address';
@@ -34,11 +36,12 @@ import { SubRows, type ShellNav } from './shell';
 import { useHeldCapabilities } from '../capabilities';
 
 /** The administration's sections, rows under Administration (D45, administration keeps the rail). */
-export type AdminSection = 'anslutningar' | 'modeller' | 'anvandare' | 'organisation' | 'utseende' | 'kompetens';
+export type AdminSection =
+  'anslutningar' | 'modeller' | 'anvandare' | 'organisation' | 'utseende' | 'kompetens' | 'introduktion';
 /**
  * Each row under Administration with the capability its page is behind on the server (D85): a row is drawn only for a
- * person who holds it, so no row leads to a refusal. Kompetens also needs the module switched on and visible to the
- * person (D108 item 13), which `/api/areas` says by listing the system.
+ * person who holds it, so no row leads to a refusal. Kompetens and Introduktion och avslut also need their module switched
+ * on and visible to the person (D108 item 13, D124 item 9), which `/api/areas` says by listing the system.
  */
 const ADMIN_ROWS: ReadonlyArray<{
   section: AdminSection;
@@ -59,10 +62,17 @@ const ADMIN_ROWS: ReadonlyArray<{
     capability: 'admin.competence',
     system: 'competence',
   },
+  {
+    section: 'introduktion',
+    label: 'Introduktion och avslut',
+    href: '/admin/boarding',
+    capability: 'admin.boarding',
+    system: 'boarding',
+  },
 ];
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
-  surface: 'start' | 'todo' | 'calendar' | 'verktyg' | 'staff' | 'units' | 'competence' | 'admin';
+  surface: 'start' | 'todo' | 'calendar' | 'verktyg' | 'staff' | 'units' | 'competence' | 'boarding' | 'admin';
   conversationId?: string | null;
   /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
@@ -113,7 +123,11 @@ type Found = ({ href: string } | { card: string }) & { detail: string; group: st
  * collapsed until one of them is open. Kalender is drawn while the calendar is the person's to see (D23), and Kompetens
  * for everyone while the competence module is switched on and visible to them (D108 item 13), the same signal as its row
  * under Administration: not before `/api/areas` has said so, since the module is off until an administrator switches it on,
- * except on a page of the place itself, where the reader already is.
+ * except on a page of the place itself, where the reader already is. Introduktion och avslut (D124 item 12) follows
+ * Kompetens and needs the same signal, and then whom it applies to, which the server answers in the list's own read
+ * (`boardingPlaceHref`): the list for a manager, there with their own plan above it; their own plan's page for someone
+ * with one and nothing to manage; no row for anyone else. It is drawn once that read has answered, so it never leads
+ * somewhere and then moves.
  * Every row is a link to a route, so the back button and a reload land in the same place. Returned as the shell's
  * slots so the shell keeps the heading, the person and the way out.
  */
@@ -137,6 +151,9 @@ export function useRail({
   const systems = areasData?.systems;
   const sees = (connector: string) => !systems || systems.some(s => s.connector === connector);
   const held = useHeldCapabilities();
+  // Introduktion och avslut (D124 item 12): read only while the module is on for the person, and drawn from its answer.
+  const boardingOn = !!systems && sees('boarding');
+  const boardingPlace = boardingPlaceHref(useQuery({ ...boardingPlansQuery, enabled: boardingOn }).data);
   const adminRows = admin
     ? ADMIN_ROWS.filter(r => held.includes(r.capability) && (!r.system || (!!systems && sees(r.system))))
     : [];
@@ -279,6 +296,15 @@ export function useRail({
               icon={AcademicCapIcon}
               href="/competence"
               isSelected={current.surface === 'competence'}
+            />
+          )}
+          {/* Introduktion och avslut (D124 item 12): the list, or the reader's own plan; the server says which, or none. */}
+          {boardingOn && boardingPlace && (
+            <SideNavItem
+              label="Introduktion och avslut"
+              icon={ClipboardDocumentCheckIcon}
+              href={boardingPlace}
+              isSelected={current.surface === 'boarding'}
             />
           )}
         </SideNavSection>

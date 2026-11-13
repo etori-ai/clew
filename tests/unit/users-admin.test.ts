@@ -341,7 +341,13 @@ describe('Användare', () => {
       { id: 'S-1-5-21-it-staff', label: 'IT-personal' },
     ]);
     expect(o.groupCapabilities).toEqual([]);
-    expect(o.capabilities).toEqual(['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence']);
+    expect(o.capabilities).toEqual([
+      'admin.connectors',
+      'admin.users',
+      'admin.appearance',
+      'admin.competence',
+      'admin.boarding',
+    ]);
     // D121: the relation a group may give is offered beside the capabilities, and is none of them.
     expect(o.groupRelations).toEqual([]);
     expect(o.relationGrants).toEqual(['registrar']);

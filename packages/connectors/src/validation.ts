@@ -49,8 +49,8 @@ const asSchema = (value: unknown): Schema | undefined =>
   value && typeof value === 'object' ? (value as Schema) : undefined;
 const requires = (schema: Schema | undefined, name: string) =>
   Array.isArray(schema?.required) && schema.required.includes(name);
-/** The names whose shape a profile of the protocol fixes (D26, D35, D89, D96, D112): none of them is about an entity. */
-const PROFILES = ['search', 'fetch', 'errands', 'talks', 'commitments', 'news'];
+/** The names whose shape a profile of the protocol fixes (D26, D35, D89, D96, D112, D123): none of them is about an entity. */
+const PROFILES = ['search', 'fetch', 'errands', 'requests', 'talks', 'commitments', 'news'];
 
 /**
  * Why a capability's `about` (D97) may not be used, or undefined when it may. A read is asked with `{ keys }`, at most

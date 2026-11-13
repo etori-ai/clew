@@ -1,6 +1,7 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import type {
   AskValues,
+  BoardingStartBody,
   CompetenceMatrixInput,
   CompetenceSearchBody,
   Role,
@@ -322,6 +323,56 @@ export const competenceSkillQuery = (holdingId: string) =>
     queryFn: () => api.competence.skill(holdingId),
     retry: false,
   });
+/**
+ * Introduktion och avslut (D124 item 12): the reader's list, the plans they manage or hold and their own, and whether
+ * they manage, from which the rail draws the place's row too. `null` while the module is off for the person: no row,
+ * and the list's page says so. Not retried.
+ */
+export const boardingPlansQuery = queryOptions({
+  queryKey: keys.boarding.plans,
+  queryFn: () => unlessRefused(api.boarding.plans()),
+  retry: false,
+});
+/** The reports Clew suggests an introduction for (D124 item 8), on the list's page; `null` while the module is off. */
+export const boardingSuggestionsQuery = queryOptions({
+  queryKey: keys.boarding.suggestions,
+  queryFn: () => unlessRefused(api.boarding.suggestions()),
+  retry: false,
+});
+/**
+ * Introduktion och avslut (D124): one person's plans and one plan. A refusal (the module is off, a person or a plan the
+ * reader may not see) is the page's own "finns inte", so neither is retried.
+ */
+export const boardingPersonQuery = (personId: string) =>
+  queryOptions({
+    queryKey: keys.boarding.person(personId),
+    queryFn: () => api.boarding.person(personId),
+    retry: false,
+  });
+export const boardingPlanQuery = (planId: string) =>
+  queryOptions({
+    queryKey: keys.boarding.plan(planId),
+    queryFn: () => api.boarding.plan(planId),
+    retry: false,
+  });
+/**
+ * What starting a plan would make (the start dialog's last step), for exactly the body the dialog holds. A refusal is
+ * the dialog's to place, so it is not retried; "Nästa" reads it afresh, and the step shows that answer without asking
+ * again while it is a minute old.
+ */
+export const boardingPreviewQuery = (body: BoardingStartBody) =>
+  queryOptions({
+    queryKey: keys.boarding.preview(body),
+    queryFn: () => api.boarding.preview(body),
+    retry: false,
+    staleTime: 60_000,
+  });
+/** Administration › Introduktion och avslut: the layers. A refusal is the page's own state, so it is not retried. */
+export const boardingLayersQuery = queryOptions({
+  queryKey: keys.boarding.layers,
+  queryFn: () => api.boarding.layers(),
+  retry: false,
+});
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),

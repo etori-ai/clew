@@ -1083,6 +1083,142 @@ export const dialogueActivities = pgTable(
   ],
 );
 /**
+ * D124: a layer of an introduction or a leaving, a flat list of template items an administrator imports: the event it
+ * is for and whom it applies to (everyone; a unit and every unit below it; a position by its code; an employment type
+ * as the directory writes it). One name per organisation and event without regard to case, since an import replaces a
+ * layer by its name. `created_by` is an actor string, not a person.
+ */
+export const boardingLayers = pgTable(
+  'boarding_layer',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    event: text('event').$type<'introduction' | 'leaving'>().notNull(),
+    name: text('name').notNull(),
+    conditionKind: text('condition_kind').$type<'all' | 'unit' | 'position' | 'employment_type'>().notNull(),
+    conditionValue: text('condition_value'),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [
+    check('boarding_layer_event', sql`${t.event} IN ('introduction', 'leaving')`),
+    check('boarding_layer_condition', sql`${t.conditionKind} IN ('all', 'unit', 'position', 'employment_type')`),
+    check('boarding_layer_value', sql`(${t.conditionKind} = 'all') = (${t.conditionValue} IS NULL)`),
+    uniqueIndex('boarding_layer_name').on(t.organisationId, t.event, sql`lower(${t.name})`),
+  ],
+);
+/** D124: one template item of a layer, in its place in the list: template text an administrator wrote, never sealed. */
+export const boardingLayerItems = pgTable(
+  'boarding_layer_item',
+  {
+    id: text('id').primaryKey(),
+    layerId: text('layer_id')
+      .notNull()
+      .references(() => boardingLayers.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    title: text('title').notNull(),
+    kind: text('kind').$type<'todo' | 'order' | 'meeting' | 'course' | 'acknowledge'>().notNull(),
+    ownerRole: text('owner_role').$type<'manager' | 'person' | 'buddy'>().notNull(),
+    offsetDays: integer('offset_days').notNull(),
+    tiedTo: text('tied_to'),
+  },
+  t => [
+    check('boarding_layer_item_kind', sql`${t.kind} IN ('todo', 'order', 'meeting', 'course', 'acknowledge')`),
+    check('boarding_layer_item_owner_role', sql`${t.ownerRole} IN ('manager', 'person', 'buddy')`),
+    check('boarding_layer_item_offset', sql`${t.offsetDays} BETWEEN -365 AND 365`),
+    uniqueIndex('boarding_layer_item_position').on(t.layerId, t.position),
+  ],
+);
+/**
+ * D124: one person's introduction or leaving, anchored on a day the manager entered (the first day, the last day): the
+ * plan's own data, never a directory date. At most one open plan per person and event. The person is the plan's
+ * subject and goes with it; the buddy and the manager who started it are nulled when they are erased.
+ */
+export const boardingPlans = pgTable(
+  'boarding_plan',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    event: text('event').$type<'introduction' | 'leaving'>().notNull(),
+    anchorOn: date('anchor_on', { mode: 'string' }).notNull(),
+    buddyId: text('buddy_id').references(() => people.id, { onDelete: 'set null' }),
+    startedBy: text('started_by').references(() => people.id, { onDelete: 'set null' }),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    // When the directory deactivated the person and the plan's holders were recorded (`boarding_plan_holder`); null
+    // while the person is active, and when nothing was recorded.
+    heldAt: timestamp('held_at', { withTimezone: true }),
+  },
+  t => [
+    check('boarding_plan_event', sql`${t.event} IN ('introduction', 'leaving')`),
+    uniqueIndex('boarding_plan_open')
+      .on(t.personId, t.event)
+      .where(sql`${t.closedAt} IS NULL`),
+    index('boarding_plan_person').on(t.personId),
+    index('boarding_plan_started_by').on(t.startedBy),
+  ],
+);
+/**
+ * D124: who holds a plan once the directory deactivated its person: the managers the person reported to at that moment,
+ * recorded in the transaction that deactivated them (the people module's leavers port) and cleared when they are
+ * activated again. Goes with the plan, and with the holder when that person is erased.
+ */
+export const boardingPlanHolders = pgTable(
+  'boarding_plan_holder',
+  {
+    planId: text('plan_id')
+      .notNull()
+      .references(() => boardingPlans.id, { onDelete: 'cascade' }),
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+  },
+  t => [primaryKey({ columns: [t.planId, t.personId] }), index('boarding_plan_holder_person').on(t.personId)],
+);
+/**
+ * D124: one item of a plan, its owner's card `thread_id`. Its title is one of two: template text copied from a layer
+ * (`title`), or free text a manager typed for this plan, a sealed envelope (`text_sealed`, purpose
+ * `boarding:item:<id>`), never plain. `source_layer_id` is the layer it was copied from, null for one a manager added.
+ */
+export const boardingItems = pgTable(
+  'boarding_item',
+  {
+    id: text('id').primaryKey(),
+    planId: text('plan_id')
+      .notNull()
+      .references(() => boardingPlans.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    title: text('title'),
+    textSealed: text('text_sealed'),
+    kind: text('kind').$type<'todo' | 'order' | 'meeting' | 'course' | 'acknowledge'>().notNull(),
+    ownerRole: text('owner_role').$type<'manager' | 'person' | 'buddy'>().notNull(),
+    ownerId: text('owner_id').references(() => people.id, { onDelete: 'set null' }),
+    dueOn: date('due_on', { mode: 'string' }).notNull(),
+    doneAt: timestamp('done_at', { withTimezone: true }),
+    doneBy: text('done_by').references(() => people.id, { onDelete: 'set null' }),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+    sourceLayerId: text('source_layer_id').references(() => boardingLayers.id, { onDelete: 'set null' }),
+    tiedTo: text('tied_to'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [
+    check('boarding_item_kind', sql`${t.kind} IN ('todo', 'order', 'meeting', 'course', 'acknowledge')`),
+    check('boarding_item_owner_role', sql`${t.ownerRole} IN ('manager', 'person', 'buddy')`),
+    // Template text or a sealed envelope, never both and never neither.
+    check('boarding_item_title', sql`(${t.title} IS NULL) <> (${t.textSealed} IS NULL)`),
+    index('boarding_item_plan').on(t.planId, t.position),
+    // The timer knows only the card; erasing a card nulls its pointer.
+    index('boarding_item_thread').on(t.threadId),
+    index('boarding_item_owner_open')
+      .on(t.ownerId)
+      .where(sql`${t.doneAt} IS NULL`),
+  ],
+);
+/**
  * A manager's own note on an area of a unit (D120): free text sealed at rest, read by its author only. It has no card
  * and no state. The author is never null: a note without its author is nobody's, so it goes with the person.
  */

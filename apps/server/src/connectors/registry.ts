@@ -3,6 +3,7 @@ import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
 import {
   audiencedActorOf,
+  BOARDING_CONNECTOR,
   CapabilityError,
   COMPETENCE_CONNECTOR,
   Registry,
@@ -19,6 +20,8 @@ import { searchConnector, type AnswerCards } from '../modules/search/connector';
 import { searchUsecases } from '../modules/search/usecases';
 import { errandCapabilities } from '../modules/errands/capabilities';
 import { errandUsecases } from '../modules/errands/usecases';
+import { requestCapabilities } from '../modules/requests/capabilities';
+import { requestUsecases } from '../modules/requests/usecases';
 import { newsCapabilities } from '../modules/news/capabilities';
 import { newsUsecases } from '../modules/news/usecases';
 import { talksConnector } from '../modules/talks/capabilities';
@@ -29,6 +32,8 @@ import { competenceConnector } from '../modules/competence/capabilities';
 import { competence } from '../composition/competence';
 import { dialogueConnector } from '../modules/dialogue/capabilities';
 import { dialogue } from '../composition/dialogue';
+import { boardingConnector } from '../modules/boarding/capabilities';
+import { boarding } from '../composition/boarding';
 import { logger } from '../logging';
 import { relations } from '../composition/relations';
 
@@ -58,6 +63,8 @@ export const answerCards: AnswerCards = {};
 const internal = [userCapabilities(userReads)];
 /** The combined errand list (D35 item 4, D89) lists its case systems from the registry the same way. */
 const errands = errandUsecases({ sources: actor => registry.errandSources(actor) });
+/** The combined request list (D123), what a person ordered or reported, lists its service desks from the registry the same way. */
+const requests = requestUsecases({ sources: actor => registry.requestSources(actor) });
 /** The combined news list (D112, amended 2026-11-11) lists its news sources from the registry the same way. */
 const news = newsUsecases({ sources: actor => registry.newsSources(actor) });
 /**
@@ -73,36 +80,45 @@ const talkSeam = talkSeamUsecases({
 });
 /**
  * Clew's own connector is assembled here, the only file that names connectors: the composite search owns the id and the
- * question area, the errand list adds its read and its area, the news list its read, the talks seam its two reads. The
- * modules never import each other (D20).
+ * question area, the errand list adds its read and its area, the request list its read and its area, the news list its
+ * read, the talks seam its two reads. The modules never import each other (D20).
  */
 const core = searchConnector(search, answerCards);
 const errandPart = errandCapabilities(errands, actor => registry.errandSources(actor).length > 0);
+const requestPart = requestCapabilities(requests, actor => registry.requestSources(actor).length > 0);
 const newsPart = newsCapabilities(news, actor => registry.newsSources(actor).length > 0);
 const talkPart = talkSeamCapabilities(talkSeam, actor => !!registry.talkSource(actor));
 const clewConnector = {
   ...core,
-  areas: [...core.areas, ...errandPart.areas],
-  capabilities: [...core.capabilities, ...errandPart.capabilities, ...newsPart.capabilities, ...talkPart.capabilities],
+  areas: [...core.areas, ...errandPart.areas, ...requestPart.areas],
+  capabilities: [
+    ...core.capabilities,
+    ...errandPart.capabilities,
+    ...requestPart.capabilities,
+    ...newsPart.capabilities,
+    ...talkPart.capabilities,
+  ],
 };
 // The built-in talks module (D96 item 9) is bundled, not internal: it gets an administrable row, enabled by default,
 // and an administrator can switch it off so that another system answers the profile.
 // The competence module (D108 item 13) is bundled too, and is the one bundled connector an installation switches on
 // itself: its row is created disabled (`offAtFirstBoot`), so nothing of the domain shows until an administrator enables it.
 // The follow-up dialogue (D118) is bundled and enabled by default, as talks is: an administrator can switch it off.
+// Introduction and leaving (D124) start switched off the same way.
 const bundled = [
   calendarConnector(calendar, events),
   clewConnector,
   talksConnector(talks),
   competenceConnector(competence),
   dialogueConnector(dialogue),
+  boardingConnector(boarding),
 ];
 for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*'] });
 export const internalIds = internal.map(m => m.id);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);
-/** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13). */
-export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR];
+/** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13, D124). */
+export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR, BOARDING_CONNECTOR];
 export { audiencedActorOf };
 /**
  * The holdings port (D108 item 9, D119) over the live registry: the sources that answer the holdings profile for the
