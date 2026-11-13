@@ -692,21 +692,26 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const addRequirement = useRef<HTMLButtonElement>(null);
   const awaitingHeading = useRef<HTMLHeadingElement>(null);
   const [focusAfter, setFocusAfter] = useState<string | null>(null);
+  // A registration just decided (D108 item 7): the focus waits until the page has drawn the matrix without it, since its
+  // row in the list of what waits, and perhaps the list itself, goes with it.
+  const decided = useRef<string | null>(null);
   const requiring = search.get(REQUIREMENT_PARAM) === NEW;
   const approving = approveOf(search);
   const validating = validateOf(search);
   useEffect(() => {
     if (focusAfter === null || requiring || approving || validating) return;
+    if (decided.current && matrixQ.isFetching && data?.awaiting.some(a => a.holdingId === decided.current)) return;
+    decided.current = null;
     setFocusAfter(null);
-    // A row of what waits goes with its decision: then the list's heading, while the list is there.
-    const target =
-      focusAfter === REQUIREMENT_PARAM
-        ? addRequirement.current
-        : (controls.current.get(focusAfter) ??
-          (focusAfter.startsWith(awaitingKey('')) ? awaitingHeading.current : undefined));
-    // A frame later, once the dialogs that closed have given the focus back where they took it from.
-    requestAnimationFrame(() => (target?.isConnected ? target : document.getElementById(TITLE_ID))?.focus());
-  }, [focusAfter, data, requiring, approving, validating]);
+    // A frame later, once the dialogs that closed have given the focus back where they took it from; the target is
+    // found then, among what the page holds at that moment. A row of what waits goes with its decision: then the
+    // list's heading, while the list is there, else the page's.
+    requestAnimationFrame(() => {
+      const control = focusAfter === REQUIREMENT_PARAM ? addRequirement.current : controls.current.get(focusAfter);
+      const list = focusAfter.startsWith(awaitingKey('')) ? awaitingHeading.current : null;
+      [control, list, document.getElementById(TITLE_ID)].find(t => t?.isConnected)?.focus();
+    });
+  }, [focusAfter, data, matrixQ.isFetching, requiring, approving, validating]);
 
   // The decision on a report's own registration (D108 item 7), from a cell's menu or from the approval's card. The
   // cell that opened it takes the focus back; opened by an address, nothing on the page did, so the heading does.
@@ -730,25 +735,36 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   });
   /**
    * Closed after a decision the address is replaced, so Back never comes to a decision already made; closed without one
-   * it is a step of its own, as opening it was.
+   * it is a step of its own, as opening it was. Without a decision the focus goes back at once; after one, `decide`
+   * gives it back once the page has been read again (the control that opened it may have gone with the registration).
    */
-  const closeApproval = (decided = false) => {
+  const closeApproval = (wasDecided = false) => {
     if (approving) client.removeQueries({ queryKey: keys.competenceApproval(approving) });
     decision.reset();
-    navigate(withoutApprove(search), decided ? { replace: true } : undefined);
-    setFocusAfter(reviewedFrom.current ?? TITLE_ID);
+    navigate(withoutApprove(search), wasDecided ? { replace: true } : undefined);
+    const from = reviewedFrom.current ?? TITLE_ID;
     reviewedFrom.current = null;
+    if (!wasDecided) setFocusAfter(from);
+    return from;
   };
   const decide = async (choice: CompetenceDecision) => {
     const a = approvalQ.data;
     if (!a) return;
+    // Set when the decision was made, read once its run has resolved.
+    const closed: { from?: string } = {};
     await decision.run(async () => {
       await api.competence.decide(a.holdingId, choice);
-      closeApproval(true);
+      closed.from = closeApproval(true);
       return choice === 'approve'
         ? `${a.competence} är godkänt för ${a.name}.`
         : `${a.competence} är avvisat för ${a.name}.`;
     });
+    // The run resolves once what the decision changed has been read again (the matrix among it): only then is it known
+    // what is left on the page to take the focus.
+    if (closed.from !== undefined) {
+      decided.current = a.holdingId;
+      setFocusAfter(closed.from);
+    }
   };
 
   // The confirmation of a report's skill (D120 item 2), from a cell's menu or an address, as the approval is.
