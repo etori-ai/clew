@@ -56,6 +56,23 @@ for (const [layout, viewport] of [
         expect(hidden).toEqual([]);
       });
 
+    test('a talk another of the person’s managers booked reads Bokat without a time, and is axe clean (Q12)', async ({
+      page,
+      api,
+    }) => {
+      // Booked through Clew by Lena's other manager: booked for this reader too, and when is that manager's to know.
+      api.talkRows = api.talkRows.map(row => {
+        if (row.personId !== 'lena') return row;
+        const { at: _when, ...booked } = row;
+        return booked;
+      });
+      await open(page, '/staff?talk=lena');
+      const dialog = talk(page, 'Lena Berg');
+      await expect(dialog.getByText('Bokat', { exact: true })).toBeVisible();
+      await expect(dialog.getByText(/kl\. \d/)).toHaveCount(0);
+      await expectNoAxeViolations(page);
+    });
+
     test('the points are grouped: carried over first, then this round, then done, each with who answers and when', async ({
       page,
       api,

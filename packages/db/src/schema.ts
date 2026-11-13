@@ -330,6 +330,11 @@ export const proposals = pgTable(
       >()
       .notNull()
       .default('proposed'),
+    // Whom the proposal invites, by Clew's key (N3): found by it in the team, the round and the reminders whatever their
+    // address is now, and by it a co-manager learns the person is booked (M1). No foreign key, as `thread_subject`
+    // names a person. The address and the name are what the proposal was drawn with: the invitation goes there and the
+    // replies are matched on it.
+    participantId: text('participant_id').notNull(),
     participantEmail: text('participant_email').notNull(),
     participantName: text('participant_name').notNull(),
     start: timestamp('start', { withTimezone: true }).notNull(),
@@ -347,6 +352,7 @@ export const proposals = pgTable(
   t => [
     index('proposal_thread').on(t.threadId),
     index('proposal_person_status').on(t.personId, t.status),
+    index('proposal_participant_status').on(t.participantId, t.status),
     check(
       'proposal_status',
       sql`${t.status} IN ('proposed', 'confirmed', 'final', 'accepted', 'declined-by-invitee', 'counter', 'undone', 'declined', 'superseded')`,

@@ -1,4 +1,10 @@
-import type { CommitmentRow, CommitmentsResult, TalkRow, TalksResult } from '@clew/contracts';
+import {
+  foldSourceKey,
+  type CommitmentRow,
+  type CommitmentsResult,
+  type TalkRow,
+  type TalksResult,
+} from '@clew/contracts';
 import type { DirectoryPerson } from './model';
 
 /**
@@ -8,16 +14,22 @@ import type { DirectoryPerson } from './model';
 
 /** The key another system knows a person by: the user name, or the id for a person provisioned without one. */
 export const personKey = (person: DirectoryPerson) => person.userName ?? person.id;
+/**
+ * A key as the seam compares it (D97, A3): without regard to case and in its composed form, as the protocol says a
+ * person key is compared and as SCIM keeps user names apart, so a source that writes `Anna.Berg` for the directory's
+ * `anna.berg` keeps its rows.
+ */
+export const foldKey = (key: string) => foldSourceKey('person', key);
 
 /**
- * Key to person id. A key two different people share names neither of them, so its rows are dropped rather than
- * shown under the wrong person.
+ * Folded key to person id. A key two different people share names neither of them, so its rows are dropped rather than
+ * shown under the wrong person. Look a row up with `foldKey(row.userName)`.
  */
 export function keyIndex(people: DirectoryPerson[]): ReadonlyMap<string, string> {
   const index = new Map<string, string>();
   const ambiguous = new Set<string>();
   for (const person of people) {
-    const key = personKey(person);
+    const key = foldKey(personKey(person));
     const known = index.get(key);
     if (known !== undefined && known !== person.id) ambiguous.add(key);
     else index.set(key, person.id);
@@ -30,7 +42,7 @@ export function keyIndex(people: DirectoryPerson[]): ReadonlyMap<string, string>
 export function mapTalkRows(rows: TalkRow[], staff: DirectoryPerson[]): TalksResult['rows'] {
   const index = keyIndex(staff);
   return rows.flatMap(row => {
-    const personId = index.get(row.userName);
+    const personId = index.get(foldKey(row.userName));
     return personId === undefined ? [] : [{ ...row, personId }];
   });
 }
@@ -52,13 +64,36 @@ export interface CommitmentMapping {
   person?: string;
   /** Set when the built-in module answered: each row gets its own id from the ref, and a row without one is dropped. */
   builtIn?: string;
+  /**
+   * Who holds the keys of the rows `ownedElsewhere` names, by the key as the row has it (M2): a point the reader owns
+   * about someone they no longer manage stays theirs until it is done (D96 As built item 5), so it keeps its row on the
+   * reader's Hem with the employee's id from the directory. Read only for the built-in module, whose `mine` is Clew's own.
+   */
+  owned?: ReadonlyMap<string, string>;
 }
-/** Action points about the reader or about the people they manage now, each with the employee's person id. */
+/**
+ * The keys of the built-in module's rows that the reader owns about someone who is neither the reader nor one of the
+ * people they manage now (M2): a former manager's own action points. Each key once, as the rows have it.
+ */
+export function ownedElsewhere(rows: CommitmentRow[], mapping: Pick<CommitmentMapping, 'self' | 'staff'>): string[] {
+  const index = keyIndex([mapping.self, ...mapping.staff]);
+  return [...new Set(rows.filter(row => row.mine && !index.has(foldKey(row.userName))).map(row => row.userName))];
+}
+/**
+ * Action points about the reader or about the people they manage now, each with the employee's person id; with the
+ * built-in module, also the points the reader owns about someone they managed before (`owned`).
+ */
 export function mapCommitmentRows(rows: CommitmentRow[], mapping: CommitmentMapping): CommitmentsResult['rows'] {
   const index = keyIndex([mapping.self, ...mapping.staff]);
+  const person = mapping.person === undefined ? undefined : foldKey(mapping.person);
   return rows.flatMap(row => {
-    if (mapping.person !== undefined && row.userName !== mapping.person) return [];
-    const personId = index.get(row.userName);
+    const key = foldKey(row.userName);
+    if (person !== undefined && key !== person) return [];
+    const personId =
+      index.get(key) ??
+      (mapping.builtIn !== undefined && person === undefined && row.mine
+        ? mapping.owned?.get(row.userName)
+        : undefined);
     if (personId === undefined) return [];
     if (mapping.builtIn === undefined) return [{ ...row, personId }];
     const id = builtInId(row.ref, mapping.builtIn);

@@ -196,13 +196,22 @@ export interface TalkStore {
  */
 export type Staff = (persona: AuthenticatedContext) => Promise<StaffOverview>;
 /**
- * Who among the people the manager plans for has a talk in the calendar inside the round's period (D96 item 2), by
- * person id, with when; booked is never stored. `undefined` means the calendar did not answer, which the page says.
+ * Whether this person manages the employee now (D94, D99): the employee is among the people on the units they manage,
+ * as `Staff` lists them for them. False for an unknown or deactivated person and for someone who manages no unit. Asked
+ * when a manager ticks off an action point a manager owns: only one whose owner no longer manages the employee may be
+ * taken over (Q12).
+ */
+export type Manages = (managerId: string, employeeId: string) => Promise<boolean>;
+/**
+ * Who among the people the manager plans for has a talk booked inside the round's period (D96 item 2), by person id;
+ * booked is never stored. `at` is when, for a talk in the manager's own calendar or proposals; absent for one another of
+ * the person's current managers booked through Clew, whose time this manager may not read (Q12). `undefined` means the
+ * calendar did not answer, which the page says.
  */
 export type Bookings = (
   persona: AuthenticatedContext,
   round: Pick<RoundRecord, 'opensOn' | 'dueOn'>,
-) => Promise<ReadonlyMap<string, { at: string }> | undefined>;
+) => Promise<ReadonlyMap<string, { at?: string }> | undefined>;
 /** Seals an action point's text at rest (D96 item 6), as approved execution input is. Used by the Postgres adapter only. */
 export interface Sealer {
   seal(value: string, purpose: string): string;
@@ -211,6 +220,7 @@ export interface Sealer {
 export interface TalkDeps {
   store: TalkStore;
   staff: Staff;
+  manages: Manages;
   bookings: Bookings;
   clock: () => Date;
   ids: () => string;

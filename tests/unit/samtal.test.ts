@@ -68,15 +68,23 @@ function world(options: { round?: PlanningRound | null; team?: UnitMember[] } = 
     obligations = memoryObligations();
   const notified: Array<{ personId: string; draft: NotifyDraft }> = [];
   let n = 0;
-  const setting = { round: options.round === undefined ? ROUND : options.round, team: options.team ?? members };
+  const setting = {
+    round: options.round === undefined ? ROUND : options.round,
+    team: options.team ?? members,
+    // Another manager's own team, calendar and identity, for a person with two managers (M1).
+    teams: new Map<string, UnitMember[]>(),
+    calendars: new Map<string, ReturnType<typeof memoryCalendar>>(),
+    personas: new Map<string, AuthenticatedContext>([['hillevi', hillevi]]),
+  };
   const deps = {
     store,
-    bind: () => ({ provider: calendar }),
-    team: async (p: AuthenticatedContext) => (p.role === 'manager' ? setting.team : []),
+    bind: (p: AuthenticatedContext) => ({ provider: setting.calendars.get(p.id) ?? calendar }),
+    team: async (p: AuthenticatedContext) =>
+      setting.teams.get(p.id) ?? (p.role === 'manager' && p.id === 'hillevi' ? setting.team : []),
     round: async () => setting.round,
     clock,
     ids: () => `id-${++n}`,
-    people: { personaFor: async (id: string) => (id === 'hillevi' ? hillevi : undefined) },
+    people: { personaFor: async (id: string) => setting.personas.get(id) },
     notify: async (personId: string, draft: NotifyDraft) => {
       notified.push({ personId, draft });
       return 'card-' + notified.length;
@@ -133,6 +141,12 @@ const held = (name: string, day: string) =>
     },
     account,
   );
+
+/** The invitee answers the invitation sent to this address. */
+const accept = (w: ReturnType<typeof world>, email: string, response: 'accepted' | 'declined') => {
+  const event = w.calendar.events.find(e => e.participants.some(p => p.email === email))!;
+  event.participants = event.participants.map(p => (p.email === email ? { ...p, response } : p));
+};
 
 describe('the nightly draw', () => {
   test('pushes one proposal thread for a manager with a slot per member, items and an audit row; nothing for an employee', async () => {
@@ -290,10 +304,6 @@ describe('avfärda and the week', () => {
 });
 
 describe('the obligation (D30)', () => {
-  const accept = (w: ReturnType<typeof world>, email: string, response: 'accepted' | 'declined') => {
-    const event = w.calendar.events.find(e => e.participants.some(p => p.email === email))!;
-    event.participants = event.participants.map(p => (p.email === email ? { ...p, response } : p));
-  };
   test('the judgement calls: whoever got no slot is a row with a reason, and the step reads from the proposals', async () => {
     const w = world();
     // Anna is busy every working hour of the week; the planner cannot place her and says why.
@@ -303,9 +313,10 @@ describe('the obligation (D30)', () => {
     );
     const t = (await w.ensureProposalThread(hillevi))!;
     expect(t.proposals.map(p => p.participant.name)).not.toContain('Anna Lindqvist');
+    // The row names her by id (N3), not by an address that may change.
     expect(t.items.filter(i => i.ref.startsWith('unplaced:'))).toEqual([
       {
-        ref: 'unplaced:anna@clew.test',
+        ref: 'unplaced:anna',
         label: 'Anna Lindqvist',
         detail: 'upptagen hela veckan',
         selectable: false,
@@ -545,6 +556,136 @@ describe('the round and the team (D96 item 3)', () => {
       throw new Error('The calendar did not answer.');
     };
     expect(await w.samtalBookings(hillevi, period)).toBeUndefined();
+  });
+});
+
+describe('a person with two managers (M1, Q12)', () => {
+  const period = { opensOn: ROUND.opensOn, dueOn: ROUND.dueOn };
+  const anna = members.find(m => m.name === 'Anna Lindqvist')!;
+  const sara: UnitMember = { personId: 'sara', ref: 'memory:account:sara', email: 'sara@clew.test', name: 'Sara Ek' };
+  const gunnar = { ...persona('gunnar', 'manager'), name: 'Gunnar Holm' };
+  /** Gunnar manages Anna too, and Sara, from his own calendar. */
+  function twoManagers() {
+    const w = world();
+    w.setting.teams.set('gunnar', [anna, sara]);
+    w.setting.personas.set('gunnar', gunnar);
+    w.setting.calendars.set(
+      'gunnar',
+      memoryCalendar({ ref: 'memory:account:gunnar', email: 'gunnar@clew.test', name: 'Gunnar Holm' }),
+    );
+    return w;
+  }
+  test('a talk one manager booked through Clew is booked for the other, without its time: in the bookings, the status, the planner and the nightly count', async () => {
+    const w = twoManagers();
+    const t = (await w.ensureProposalThread(hillevi))!;
+    const annas = t.proposals.find(p => p.participant.name === anna.name)!;
+    // Drawn, not yet booked: Gunnar sees nothing of it.
+    expect(Object.fromEntries((await w.samtalBookings(gunnar, period))!)).toEqual({});
+    await seedConfirmed(w, t.id, [annas.id]);
+    const bookings = (await w.samtalBookings(gunnar, period))!;
+    expect(Object.fromEntries(bookings)).toEqual({ anna: {} });
+    expect(bookings.get('anna')).not.toHaveProperty('at');
+    expect(await w.samtalStatus(gunnar)).toEqual({ held: 0, booked: 1, members: 2, deadline: '28 november' });
+    // His nightly draw proposes no second talk with Anna and counts only Sara as missing.
+    const his = (await w.ensureProposalThread(gunnar))!;
+    expect(his.proposals.map(p => p.participant.name)).toEqual(['Sara Ek']);
+    expect(his.trigger.reason).toBe('1 samtal saknar tid före 28 november');
+    // Hillevi's own read keeps the time, as before.
+    expect((await w.samtalBookings(hillevi, period))!.get('anna')).toEqual({ at: annas.start });
+  });
+  test('a booking counts for the other manager only while its manager manages the person, and only inside the period', async () => {
+    const w = twoManagers();
+    const t = (await w.ensureProposalThread(hillevi))!;
+    await seedConfirmed(w, t.id, [t.proposals.find(p => p.participant.name === anna.name)!.id]);
+    expect((await w.samtalBookings(gunnar, period))!.has('anna')).toBe(true);
+    expect((await w.samtalBookings(gunnar, { opensOn: '2026-12-01', dueOn: '2026-12-20' }))!.size).toBe(0);
+    // Hillevi no longer manages Anna: her booking is hers, and Gunnar plans the talk himself.
+    w.setting.team = members.filter(m => m.personId !== 'anna');
+    expect((await w.samtalBookings(gunnar, period))!.size).toBe(0);
+    expect(await w.samtalStatus(gunnar)).toEqual({ held: 0, booked: 0, members: 2, deadline: '28 november' });
+    // Nor does a booking count whose manager is gone from the directory.
+    w.setting.team = members;
+    w.setting.personas.delete('hillevi');
+    expect((await w.samtalBookings(gunnar, period))!.size).toBe(0);
+  });
+  test('the reader’s own booking keeps its time when another manager booked the person too', async () => {
+    const w = twoManagers();
+    const t = (await w.ensureProposalThread(hillevi))!;
+    await seedConfirmed(w, t.id, [t.proposals.find(p => p.participant.name === anna.name)!.id]);
+    const his = (await w.ensureProposalThread(gunnar))!;
+    // Gunnar draws Sara only, so he books Anna's talk himself by hand in his calendar.
+    const own = w.setting.calendars.get('gunnar')!;
+    const start = localInstant('2026-11-20T10:00');
+    await own.create('own-anna', {
+      title: 'Utvecklingssamtal · Anna Lindqvist',
+      start,
+      end: localInstant('2026-11-20T11:00'),
+      participants: [anna.email],
+    });
+    expect(his.proposals).toHaveLength(1);
+    expect((await w.samtalBookings(gunnar, period))!.get('anna')).toEqual({ at: start });
+  });
+});
+
+describe('a work address that changes during a round (N3)', () => {
+  const period = { opensOn: ROUND.opensOn, dueOn: ROUND.dueOn };
+  /** Anna's address changes: the team, read from the directory, has her new one from now on. */
+  const moved = (w: ReturnType<typeof world>) => {
+    w.setting.team = members.map(m =>
+      m.personId === 'anna' ? { ...m, email: 'anna.lindqvist@clew.test', ref: 'memory:account:anna-new' } : m,
+    );
+  };
+  test('a confirmed talk stays booked and counted, and a redraw does not plan a second one', async () => {
+    const w = world();
+    const t = (await w.ensureProposalThread(hillevi))!;
+    const annas = t.proposals.find(p => p.participant.name === 'Anna Lindqvist')!;
+    expect(annas).toMatchObject({ participant: { email: 'anna@clew.test', name: 'Anna Lindqvist' } });
+    expect((await w.store.readThread('hillevi', t.id))!.proposals.find(p => p.id === annas.id)?.participant).toEqual({
+      personId: 'anna',
+      email: 'anna@clew.test',
+      name: 'Anna Lindqvist',
+    });
+    await seedConfirmed(w, t.id, [annas.id]);
+    const before = await w.samtalStatus(hillevi);
+    moved(w);
+    expect((await w.samtalBookings(hillevi, period))!.get('anna')).toEqual({ at: annas.start });
+    expect(await w.samtalStatus(hillevi)).toEqual(before);
+    const again = await w.replan(hillevi, t.id, '2026-11-16');
+    expect(again.proposals.filter(p => p.status === 'proposed').map(p => p.participant.name)).not.toContain(
+      'Anna Lindqvist',
+    );
+    expect(again.messages.at(-1)!.body).toMatch(/^3 utvecklingssamtal återstår/);
+  });
+  test('a no is answered with two other times at the address she has now, read from her own calendar', async () => {
+    const w = world();
+    const t = (await w.ensureProposalThread(hillevi))!;
+    await seedConfirmed(
+      w,
+      t.id,
+      t.proposals.map(p => p.id),
+    );
+    accept(w, 'anna@clew.test', 'declined');
+    moved(w);
+    const asked: string[] = [];
+    const freeBusy = w.calendar.freeBusy.bind(w.calendar);
+    w.calendar.freeBusy = async (start, end, targets) => {
+      asked.push(...targets.map(x => x.ref));
+      return freeBusy(start, end, targets);
+    };
+    expect((await w.readReplies(t.id)).declined).toHaveLength(1);
+    expect(asked).toEqual(['memory:account:anna-new']);
+    const back = (await w.store.readThread('hillevi', t.id))!;
+    const alternatives = back.proposals.filter(p => p.status === 'proposed');
+    expect(alternatives.map(p => p.participant)).toEqual([
+      { personId: 'anna', email: 'anna.lindqvist@clew.test', name: 'Anna Lindqvist' },
+      { personId: 'anna', email: 'anna.lindqvist@clew.test', name: 'Anna Lindqvist' },
+    ]);
+    // The first alternative is the one selected on the card.
+    expect(back.thread.items.filter(i => i.ref.startsWith('proposal:')).map(i => i.selected)).toEqual([true, false]);
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'proposals.replies',
+      details: { alternatives: alternatives.map(p => p.id) },
+    });
   });
 });
 

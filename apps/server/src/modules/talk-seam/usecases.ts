@@ -10,7 +10,7 @@ import {
   type TalksInput,
   type TalksResult,
 } from '@clew/contracts';
-import { mapCommitmentRows, mapTalkRows } from './domain';
+import { mapCommitmentRows, mapTalkRows, ownedElsewhere } from './domain';
 import { DEFAULT_BUDGET, type TalkCall, type TalkSeamDeps } from './model';
 
 /** Said when no system answers the talks profile for the person (none, or several with the built-in module off). */
@@ -67,7 +67,11 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
     if (!checkContract(TalksResultSchema, result)) throw new CapabilityError(unexpected(source.source));
     return result;
   }
-  /** Action points about the reader or the people they manage now; `person` narrows to one of them. */
+  /**
+   * Action points about the reader or the people they manage now; `person` narrows to one of them. With Clew's own
+   * module, the reader's list keeps the points they own about someone they no longer manage too, until they are done
+   * (M2): the employee's id comes from the directory.
+   */
   async function commitments(actor: Actor, input: CommitmentsInput, call: TalkCall): Promise<CommitmentsResult> {
     const source = sourceFor(actor);
     if (!source.commitments) return { rows: [], writable: false, source: source.source };
@@ -76,12 +80,15 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
       deps.directory(actor),
     ]);
     if (!checkContract(CommitmentsOutputSchema, answer)) throw new CapabilityError(unexpected(source.source));
+    const elsewhere = source.builtIn && input.person === undefined ? ownedElsewhere(answer.rows, directory) : [];
+    const owned = elsewhere.length ? await deps.holders(actor, elsewhere) : undefined;
     const result: CommitmentsResult = {
       rows: mapCommitmentRows(answer.rows, {
         self: directory.self,
         staff: directory.staff,
         ...(input.person !== undefined ? { person: input.person } : {}),
         ...(source.builtIn ? { builtIn: TALKS_CONNECTOR } : {}),
+        ...(owned ? { owned } : {}),
       }),
       writable: source.builtIn,
       source: source.source,

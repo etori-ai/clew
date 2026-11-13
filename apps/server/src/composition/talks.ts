@@ -2,8 +2,8 @@ import type { StaffOverview } from '@clew/contracts';
 import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
 import { talkTx } from '../modules/talks/adapters/postgres';
 import { talkUsecases } from '../modules/talks/usecases';
-import type { Sealer, Staff, TalkStore } from '../modules/talks/model';
-import type { Directory, DirectoryPerson } from '../modules/talk-seam/model';
+import type { Manages, Sealer, Staff, TalkStore } from '../modules/talks/model';
+import type { Directory, DirectoryPerson, Holders } from '../modules/talk-seam/model';
 import { openSecret, sealSecret } from '../auth-crypto';
 import { ForbiddenError } from '../context';
 import { cancelDurable } from '../dbos/start';
@@ -46,9 +46,22 @@ const staff: Staff = async persona => {
     throw error;
   }
 };
+/**
+ * Whether the owner of a manager's action point still manages the employee (Q12), as the talks module counts the people
+ * a manager has: from the owner's own assignments now, read through a context built from their current grant. Someone
+ * without an active grant, deactivated or erased, manages nobody.
+ */
+const manages: Manages = async (managerId, employeeId) => {
+  if (managerId === employeeId) return false;
+  const persona = await systemContext(managerId, 'system:talks');
+  if (!persona) return false;
+  const overview = await staff(persona);
+  return overview.units.some(unit => unit.people.some(p => p.id === employeeId && p.enabled !== false));
+};
 export const talks = talkUsecases({
   store: talkStore,
   staff,
+  manages,
   bookings: (persona, round) => calendar.samtalBookings(persona, round),
   clock,
   ids,
@@ -71,3 +84,8 @@ export const talkDirectory: Directory = async actor => {
         people.set(p.id, { id: p.id, userName: p.userName });
   return { self: { id: actor.id, userName }, staff: [...people.values()] };
 };
+/**
+ * Who holds a talks row's user name in the reader's organisation now (D116): the people module's user reads, asked by the
+ * seam for the action points a former manager still owns (M2).
+ */
+export const talkHolders: Holders = (actor, userNames) => userReads.holders(actor.id, userNames);

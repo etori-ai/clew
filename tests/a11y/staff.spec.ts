@@ -577,6 +577,18 @@ test.describe('Personal', () => {
       await expect(page).toHaveURL('/staff');
       await expect(showMenu(page)).toHaveText('Visa: Alla');
     });
+    test('a talk another of the person’s managers booked is Bokat with no time beside it (Q12)', async ({
+      page,
+      api,
+    }) => {
+      api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.map(r =>
+        r.key === 'erik.sandstrom' ? { key: r.key, state: 'Bokat', next: 'Bokat', open: r.open } : r,
+      );
+      await open(page, LENS);
+      const erik = row(page, 'Erik Sandström').getByRole('cell');
+      await expect(erik.nth(1)).toHaveText('Bokat');
+      await expectNoAxeViolations(page);
+    });
     test('a person the lens has no row for comes last with nothing in its columns', async ({ page, api }) => {
       api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.filter(r => r.key !== 'anna.lindqvist');
       await open(page, LENS);

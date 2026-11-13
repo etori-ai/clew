@@ -1025,7 +1025,8 @@ export const TalkRowSchema = object(
     state: TalkState,
     at: Type.Optional(
       Type.Union([calendarDay, instant], {
-        description: 'When the talk is booked (an instant), or the day it was held (a date). Absent when missing.',
+        description:
+          "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked.",
       }),
     ),
     openCommitments: Type.Integer({

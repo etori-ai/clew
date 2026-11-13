@@ -11,7 +11,12 @@ import { InputError } from '../../../context';
 import type { CalendarBinder, ProposalStore, Team } from '../model';
 import { SAMTAL_TITLE } from './reads';
 
-export type CalendarItem = { id: string; proposalId?: string; label: string } & (
+/**
+ * One change of an approved calendar command. A proposal's items name the invitee by Clew's key, `personId` (N3): the
+ * person is found by it in the team when the command is authorized and run, while the invitation goes to the address
+ * the proposal was drawn with, in `input.participants`.
+ */
+export type CalendarItem = { id: string; proposalId?: string; personId?: string; label: string } & (
   | { action: 'create'; input: MeetingInput }
   | {
       action: 'move';
@@ -172,11 +177,12 @@ export function calendarDecisions({ store, bind, team, clock, approve, previous 
     const selected = current.proposals.filter(x => proposalIds.includes(x.id) && x.status === 'proposed');
     if (selected.length !== new Set(proposalIds).size)
       throw new InputError('Något förslag är inte längre aktuellt. Läs om sidan.');
-    if (new Set(selected.map(x => x.participant.email.toLowerCase())).size !== selected.length)
+    if (new Set(selected.map(x => x.participant.personId)).size !== selected.length)
       throw new InputError('Välj bara en tid per medarbetare.');
     const items: CalendarItem[] = selected.map(x => ({
       id: x.id,
       proposalId: x.id,
+      personId: x.participant.personId,
       label: x.participant.name,
       action: 'create',
       input: {
@@ -188,15 +194,14 @@ export function calendarDecisions({ store, bind, team, clock, approve, previous 
     }));
     // Replacing a declined invitation is part of this exact approval, with the revision last observed by Clew.
     for (const old of current.proposals.filter(
-      x =>
-        x.status === 'declined-by-invitee' &&
-        selected.some(s => s.participant.email.toLowerCase() === x.participant.email.toLowerCase()),
+      x => x.status === 'declined-by-invitee' && selected.some(s => s.participant.personId === x.participant.personId),
     )) {
       if (!old.eventRef || !old.eventRevision)
         throw new InputError('Den tidigare inbjudan behöver kontrolleras först.');
       items.push({
         id: `replace:${old.id}`,
         proposalId: old.id,
+        personId: old.participant.personId,
         label: old.participant.name,
         action: 'cancel',
         ref: old.eventRef,
@@ -253,11 +258,12 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
         throw new InputError('Ogiltigt kalenderbeslut.');
       if (item.action === 'create') {
         window(item.input.start, item.input.end);
-        if (
-          !b.provider.capabilities.create ||
-          item.input.participants.some(e => !members.some(m => m.email.toLowerCase() === e.toLowerCase()))
-        )
-          throw new InputError('Deltagarna måste tillhöra din enhet.');
+        // A proposal's invitee is the person by id, whatever their address is now (N3); anyone else by the address.
+        const invited =
+          item.personId !== undefined
+            ? item.input.participants.length === 1 && members.some(m => m.personId === item.personId)
+            : item.input.participants.every(e => members.some(m => m.email.toLowerCase() === e.toLowerCase()));
+        if (!b.provider.capabilities.create || !invited) throw new InputError('Deltagarna måste tillhöra din enhet.');
       } else if (!item.ref || !item.revision) throw new InputError('Ogiltig kalenderrevision.');
     }
     return {
@@ -284,7 +290,7 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
           i => i.id === item.id,
         );
         if (priorUndo) undo.push(priorUndo);
-        if (item.action === 'create') established.add(item.label);
+        if (item.action === 'create') established.add(item.personId ?? item.label);
         continue;
       }
       const uid = `clew-exec-${e.id}-${item.id}`;
@@ -292,7 +298,7 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
       let found: EventOccurrence | null | undefined,
         outcome: 'done' | 'unknown' | 'skipped' = 'unknown';
       // Never retire an old invitation until this attempt established its replacement.
-      if (item.id.startsWith('replace:') && !established.has(item.label)) {
+      if (item.id.startsWith('replace:') && !established.has(item.personId ?? item.label)) {
         rows.push({
           ref: item.id,
           label: item.label,
@@ -304,8 +310,13 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
       try {
         if (write) {
           if (item.action === 'create') {
+            // The invitee's own calendar as the team has it now, found by id for a proposal (N3).
             const targets = (await team(p))
-              .filter(m => item.input.participants.some(email => email.toLowerCase() === m.email.toLowerCase()))
+              .filter(m =>
+                item.personId !== undefined
+                  ? m.personId === item.personId
+                  : item.input.participants.some(email => email.toLowerCase() === m.email.toLowerCase()),
+              )
               .map(m => ({ ref: m.ref, email: m.email }));
             const [own, busy] = await Promise.all([
               b.provider.list(item.input.start, item.input.end),
@@ -373,11 +384,12 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
       // An undo carries this exact revision, and a room that has yet to answer will change it (D69).
       const undoable = found?.roomResponse !== 'pending';
       if (outcome === 'done' && item.action === 'create' && found) {
-        established.add(item.label);
+        established.add(item.personId ?? item.label);
         if (undoable)
           undo.push({
             id: item.id,
             ...(item.proposalId ? { proposalId: item.proposalId } : {}),
+            ...(item.personId ? { personId: item.personId } : {}),
             label: item.label,
             action: 'cancel',
             ref: found.ref,

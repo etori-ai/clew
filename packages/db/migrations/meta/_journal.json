@@ -386,6 +386,13 @@
       "when": 1794515597764,
       "tag": "0054_execution_subject",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1794528730684,
+      "tag": "0055_proposal_participant",
+      "breakpoints": true
     }
   ]
 }

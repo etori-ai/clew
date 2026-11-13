@@ -25,7 +25,7 @@ const toProposal = (p: ProposalRecord): Proposal => ({
   status: p.status,
   start: p.start,
   end: p.end,
-  participant: { ...p.participant },
+  participant: { email: p.participant.email, name: p.participant.name },
   eventRef: p.eventRef,
   undoUntil: p.undoUntil,
   reminders: p.reminders,
@@ -161,6 +161,16 @@ export function memoryProposalStore(): MemoryProposalStore {
         [...rows.values()]
           .filter(r => r.personId === personId)
           .flatMap(r => r.proposals.filter(p => ['proposed', 'confirmed', 'final', 'accepted'].includes(p.status))),
+      );
+    },
+    async bookedProposals(participantIds) {
+      const wanted = new Set(participantIds);
+      return copy(
+        [...rows.values()].flatMap(r =>
+          r.proposals.filter(
+            p => wanted.has(p.participant.personId) && ['confirmed', 'final', 'accepted'].includes(p.status),
+          ),
+        ),
       );
     },
     async transaction(fn) {

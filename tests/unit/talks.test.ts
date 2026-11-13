@@ -58,7 +58,16 @@ const bo = person('bo', 'Bo Berg', null); // provisioned without a user name: ke
 const cia = person('cia', 'Cia Carlsson', 'cia.c', false); // deactivated
 const dan = person('dan', 'Dan Dahl', 'dan.d');
 const eve = person('eve', 'Eve Ek', 'eve.e');
-const NAMES = ['Anna Andersson', 'Bo Berg', 'Cia Carlsson', 'Dan Dahl', 'Eve Ek', 'Karin Chef', 'Olle Chef'];
+const NAMES = [
+  'Anna Andersson',
+  'Bo Berg',
+  'Cia Carlsson',
+  'Dan Dahl',
+  'Eve Ek',
+  'Karin Chef',
+  'Olle Chef',
+  'Lena Chef',
+];
 
 function personaOf(id: string, role: 'manager' | 'employee', name = id): AuthenticatedContext {
   return {
@@ -78,13 +87,15 @@ function personaOf(id: string, role: 'manager' | 'employee', name = id): Authent
 }
 const boss = personaOf('boss', 'manager', 'Karin Chef');
 const other = personaOf('other', 'manager', 'Olle Chef');
+/** A second manager of unit 1, given people by the tests that need two managers of one person (Q12). */
+const co = personaOf('co', 'manager', 'Lena Chef');
 const asAnna = personaOf('anna', 'employee', 'Anna Andersson');
 const asBo = personaOf('bo', 'employee', 'Bo Berg');
 
 let now: Date;
 let n: number;
 let staff: Map<string, StaffOverview>;
-let bookings: ReadonlyMap<string, { at: string }> | undefined;
+let bookings: ReadonlyMap<string, { at?: string }> | undefined;
 let store: MemoryTalkStore;
 let talks: TalkUsecases;
 beforeEach(() => {
@@ -105,7 +116,7 @@ beforeEach(() => {
   ]);
   bookings = new Map([['dan', { at: '2026-11-20T09:00:00.000Z' }]]);
   store = memoryTalkStore({
-    persons: [anna, bo, cia, dan, eve].map(p => ({
+    persons: [...[anna, bo, cia, dan, eve], person('co', 'Lena Chef', 'lena.c')].map(p => ({
       id: p.id,
       organisationId: ORG,
       name: p.name,
@@ -115,6 +126,10 @@ beforeEach(() => {
   talks = talkUsecases({
     store,
     staff: async persona => staff.get(persona.id) ?? { units: [] },
+    // As composition asks it: the employee is among the people on the units the manager manages now.
+    manages: async (managerId, employeeId) =>
+      managerId !== employeeId &&
+      (staff.get(managerId)?.units ?? []).some(u => u.people.some(p => p.id === employeeId && p.enabled !== false)),
     bookings: async () => bookings,
     clock: () => now,
     ids: () => 'id-' + ++n,
@@ -228,6 +243,22 @@ describe('the round', () => {
     expect(checkContract(TalksOutputSchema, out)).toBe(true);
   });
 
+  test('a talk another of the person’s managers booked reads as booked, without its time (Q12)', async () => {
+    await open();
+    bookings = new Map([
+      ['bo', {}],
+      ['dan', { at: '2026-11-20T09:00:00.000Z' }],
+    ]);
+    const out = await talks.round(boss);
+    expect(checkContract(TalksOutputSchema, out)).toBe(true);
+    expect(out.rows.map(r => [r.userName, r.state, r.at])).toEqual([
+      ['anna.a', 'missing', undefined],
+      ['bo', 'booked', undefined],
+      ['dan.d', 'booked', '2026-11-20T09:00:00.000Z'],
+    ]);
+    expect(out.rows.find(r => r.userName === 'bo')).not.toHaveProperty('at');
+  });
+
   test('an employee is refused the round; a manager of another unit sees only their own people', async () => {
     await open();
     await expect(talks.round(asAnna)).rejects.toBeInstanceOf(ForbiddenError);
@@ -271,6 +302,40 @@ describe('held', () => {
     expect(row.state).toBe('missing');
     // Marked again, the talk keeps its id.
     expect((await talks.markHeld(boss, 'bo', { heldOn: '2026-11-09' })).id).toBe(held.id);
+  });
+
+  test('every current manager of the person marks the one talk held, moves its day and undoes it; the audit row names who (Q12)', async () => {
+    staff.set('co', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo] }] });
+    await open();
+    const held = await talks.markHeld(co, 'anna', { heldOn: '2026-11-03' });
+    expect((await talks.markHeld(boss, 'anna', { heldOn: '2026-11-04' })).id).toBe(held.id);
+    expect(store.state.talks.get(held.id)).toMatchObject({ heldOn: '2026-11-04', heldBy: 'boss' });
+    // One record per person per round: both managers read the same talk.
+    for (const manager of [boss, co])
+      expect((await talks.round(manager)).rows.find(r => r.userName === 'anna.a')).toMatchObject({
+        state: 'held',
+        at: '2026-11-04',
+      });
+    await talks.unmarkHeld(co, 'anna');
+    expect(store.state.talks.size).toBe(1);
+    const details = { roundId: expect.any(String), employeeId: 'anna' };
+    expect(store.audit().filter(a => a.action.startsWith('talks.held'))).toEqual([
+      {
+        actor: 'person:co',
+        action: 'talks.held',
+        subject: 'talk:' + held.id,
+        at: at(),
+        details: { ...details, heldOn: '2026-11-03' },
+      },
+      {
+        actor: 'person:boss',
+        action: 'talks.held',
+        subject: 'talk:' + held.id,
+        at: at(),
+        details: { ...details, heldOn: '2026-11-04' },
+      },
+      { actor: 'person:co', action: 'talks.held_undone', subject: 'talk:' + held.id, at: at(), details },
+    ]);
   });
 
   test('a day that has not come is refused, as is a talk without an open round or with someone not yours', async () => {
@@ -380,7 +445,7 @@ describe('action points', () => {
     expect(store.audit().some(a => a.action === 'talks.commitment_done')).toBe(false);
   });
 
-  test('the owner marks theirs done and the manager opens it again; the card follows; a repeat writes nothing', async () => {
+  test('the owner marks theirs done and opens it again; the card follows; a repeat writes nothing', async () => {
     await open();
     const id = await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' });
     const threadId = store.state.commitments.get(id)!.threadId!;
@@ -390,8 +455,10 @@ describe('action points', () => {
     expect(store.state.commitments.get(id)).toMatchObject({ doneAt: at(), doneBy: 'anna' });
     expect(store.state.cards.get(threadId)?.state).toBe('handled');
     now = new Date('2026-11-13T10:00:00.000Z');
-    await talks.reopenCommitment(boss, id);
-    await talks.reopenCommitment(boss, id);
+    // The employee's own point is hers: her manager may not open it again (Q12).
+    await expect(talks.reopenCommitment(boss, id)).rejects.toBeInstanceOf(ForbiddenError);
+    await talks.reopenCommitment(asAnna, id);
+    await talks.reopenCommitment(asAnna, id);
     expect(store.state.commitments.get(id)).toMatchObject({ doneAt: null, doneBy: null });
     expect(store.calls().filter(c => c.op !== 'open')).toEqual([
       { op: 'close', threadId, at: '2026-11-12T10:00:00.000Z' },
@@ -408,16 +475,16 @@ describe('action points', () => {
         details: { roundId: expect.any(String), ownerRole: 'employee', by: 'owner' },
       },
       {
-        actor: 'person:boss',
+        actor: 'person:anna',
         action: 'talks.commitment_reopened',
         subject: 'commitment:' + id,
         at: '2026-11-13T10:00:00.000Z',
-        details: { roundId: expect.any(String), ownerRole: 'employee', by: 'manager' },
+        details: { roundId: expect.any(String), ownerRole: 'employee', by: 'owner' },
       },
     ]);
   });
 
-  test('someone else is refused; a former manager is refused the day the assignment changes', async () => {
+  test('someone else is refused; a former manager reaches nothing about the person the day the assignment changes', async () => {
     await open();
     const id = await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' });
     await expect(talks.completeCommitment(asBo, id)).rejects.toBeInstanceOf(ForbiddenError);
@@ -429,6 +496,146 @@ describe('action points', () => {
     await expect(talks.markHeld(boss, 'anna')).rejects.toBeInstanceOf(ForbiddenError);
     expect((await talks.round(boss)).rows.map(r => r.userName)).toEqual(['dan.d']);
     expect(store.state.commitments.get(id)?.doneAt).toBeNull();
+  });
+
+  test('a manager ticks off only their own points: a co-manager’s and the employee’s own are left to their owners (Q12)', async () => {
+    // Anna has two current managers: Karin (boss) and Lena (co), both of unit 1.
+    staff.set('co', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo] }] });
+    await open();
+    const karins = await talks.addCommitment(boss, 'anna', {
+      owner: 'manager',
+      text: 'Ordna en mentor',
+      dueOn: '2026-12-15',
+    });
+    const lenas = await talks.addCommitment(co, 'anna', {
+      owner: 'manager',
+      text: 'Boka en kurs',
+      dueOn: '2026-12-20',
+    });
+    const annas = await talks.addCommitment(boss, 'anna', {
+      owner: 'employee',
+      text: 'Läsa boken',
+      dueOn: '2026-12-01',
+    });
+    const audited = store.audit().length;
+    for (const [persona, id] of [
+      [co, karins],
+      [co, annas],
+      [boss, lenas],
+      [boss, annas],
+    ] as const) {
+      await expect(talks.completeCommitment(persona, id)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(talks.reopenCommitment(persona, id)).rejects.toBeInstanceOf(ForbiddenError);
+    }
+    expect(store.audit()).toHaveLength(audited);
+    expect([karins, lenas, annas].map(id => store.state.commitments.get(id)?.doneAt)).toEqual([null, null, null]);
+    // Each owner ticks off their own; the audit row names who, as the owner.
+    await talks.completeCommitment(boss, karins);
+    await talks.completeCommitment(co, lenas);
+    await talks.completeCommitment(asAnna, annas);
+    expect(store.audit().slice(audited)).toEqual(
+      (
+        [
+          ['person:boss', karins, 'manager'],
+          ['person:co', lenas, 'manager'],
+          ['person:anna', annas, 'employee'],
+        ] as const
+      ).map(([actor, id, ownerRole]) => ({
+        actor,
+        action: 'talks.commitment_done',
+        subject: 'commitment:' + id,
+        at: at(),
+        details: { roundId: expect.any(String), ownerRole, by: 'owner' },
+      })),
+    );
+  });
+
+  test('a point whose owner no longer manages the person is a current manager’s to tick off; the former manager keeps their own (Q12, M2)', async () => {
+    staff.set('co', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo] }] });
+    await open();
+    const lenas = await talks.addCommitment(co, 'anna', {
+      owner: 'manager',
+      text: 'Boka en kurs',
+      dueOn: '2026-12-20',
+    });
+    const later = await talks.addCommitment(co, 'anna', { owner: 'manager', text: 'Följa upp', dueOn: '2027-01-20' });
+    // Lena moves to another unit: she manages Eve now, not Anna.
+    staff.set('co', { units: [{ unitId: 'u3', unitLabel: 'Enhet 3', people: [eve] }] });
+    await expect(talks.markHeld(co, 'anna')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(talks.commitments(co, { person: 'anna.a' })).rejects.toBeInstanceOf(ForbiddenError);
+    // Her own points stay hers, on her own list, until they are done.
+    expect((await talks.commitments(co)).rows.map(r => [r.ref, r.mine, r.userName])).toEqual([
+      ['commitment:talks:' + lenas, true, 'anna.a'],
+      ['commitment:talks:' + later, true, 'anna.a'],
+    ]);
+    const audited = store.audit().length;
+    now = new Date('2026-11-12T10:00:00.000Z');
+    await talks.completeCommitment(co, later);
+    // Anna's current manager may tick off the point nobody who manages her owns, and open it again; a manager of
+    // another unit may not.
+    await expect(talks.completeCommitment(other, lenas)).rejects.toBeInstanceOf(ForbiddenError);
+    await talks.completeCommitment(boss, lenas);
+    expect(store.state.commitments.get(lenas)).toMatchObject({ ownerId: 'co', doneAt: at(), doneBy: 'boss' });
+    expect(store.state.cards.get(store.state.commitments.get(lenas)!.threadId!)?.state).toBe('handled');
+    now = new Date('2026-11-13T10:00:00.000Z');
+    await talks.reopenCommitment(boss, lenas);
+    expect(store.audit().slice(audited)).toEqual([
+      {
+        actor: 'person:co',
+        action: 'talks.commitment_done',
+        subject: 'commitment:' + later,
+        at: '2026-11-12T10:00:00.000Z',
+        details: { roundId: expect.any(String), ownerRole: 'manager', by: 'owner' },
+      },
+      {
+        actor: 'person:boss',
+        action: 'talks.commitment_done',
+        subject: 'commitment:' + lenas,
+        at: '2026-11-12T10:00:00.000Z',
+        details: { roundId: expect.any(String), ownerRole: 'manager', by: 'manager' },
+      },
+      {
+        actor: 'person:boss',
+        action: 'talks.commitment_reopened',
+        subject: 'commitment:' + lenas,
+        at: '2026-11-13T10:00:00.000Z',
+        details: { roundId: expect.any(String), ownerRole: 'manager', by: 'manager' },
+      },
+    ]);
+    // Lena is Anna's manager again: the point is hers to tick off once more, not Karin's.
+    staff.set('co', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo] }] });
+    await expect(talks.completeCommitment(boss, lenas)).rejects.toBeInstanceOf(ForbiddenError);
+    await talks.completeCommitment(co, lenas);
+    expect(store.state.commitments.get(lenas)).toMatchObject({ doneBy: 'co' });
+  });
+
+  test('a manager’s point whose owner was erased is a current manager’s to tick off (Q12)', async () => {
+    staff.set('co', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo] }] });
+    await open();
+    const lenas = await talks.addCommitment(co, 'anna', {
+      owner: 'manager',
+      text: 'Boka en kurs',
+      dueOn: '2026-12-20',
+    });
+    await talks.erasePerson('operator:cli', 'co');
+    expect(store.state.commitments.get(lenas)).toMatchObject({ ownerId: null });
+    await talks.completeCommitment(boss, lenas);
+    expect(store.state.commitments.get(lenas)).toMatchObject({ doneAt: at(), doneBy: 'boss' });
+    expect(store.audit().at(-1)).toEqual({
+      actor: 'person:boss',
+      action: 'talks.commitment_done',
+      subject: 'commitment:' + lenas,
+      at: at(),
+      details: { roundId: expect.any(String), ownerRole: 'manager', by: 'manager' },
+    });
+    // An employee's own point stays theirs even so: it is never a manager's to tick off.
+    const annas = await talks.addCommitment(boss, 'anna', {
+      owner: 'employee',
+      text: 'Läsa boken',
+      dueOn: '2026-12-01',
+    });
+    await talks.erasePerson('operator:cli', 'anna');
+    expect(store.state.commitments.get(annas)).toBeUndefined();
   });
 
   test('the lists: a person by user name or id for their manager, and the reader’s own; open ones carry over into the next round', async () => {
@@ -625,7 +832,7 @@ describe('erasure and export', () => {
       dueOn: '2026-12-15',
     });
     await talks.completeCommitment(asAnna, id);
-    await talks.reopenCommitment(boss, id);
+    await talks.reopenCommitment(asAnna, id);
     await talks.commitmentDue(store.state.commitments.get(id)!.threadId!, 1);
     await talks.exportDomain('operator:cli', ORG);
     await talks.erasePerson('operator:cli', 'anna');
@@ -646,6 +853,8 @@ describe('domain', () => {
     expect(swedishShortDay('2026-11-28')).toBe('lör 28 nov');
     expect(swedishShortDay('2026-05-04', false)).toBe('4 maj');
     expect(nextTalk('booked', '2026-11-15T23:30:00.000Z')).toBe('mån 16 nov');
+    // Booked by another of the person's managers, whose time the reader does not see (Q12).
+    expect(nextTalk('booked', undefined)).toBe('Bokat');
     expect(nextTalk('held', '2026-11-04')).toBe('Hållet 4 nov');
     expect(nextTalk('missing', undefined)).toBe('Inte bokat');
     expect([0, 1, 3].map(openWords)).toEqual(['Inga', '1 öppen', '3 öppna']);
@@ -806,6 +1015,19 @@ describe('the built-in connector', () => {
     await expect(
       r.run(actor(boss), 'talks.person', { keys: Array.from({ length: 201 }, (_, i) => 'k' + i) }),
     ).rejects.toThrow('Ogiltig förfrågan');
+  });
+
+  test('a talk another of the person’s managers booked is Bokat without a time, and counts as booked for the unit (Q12)', async () => {
+    const r = registry();
+    await open();
+    bookings = new Map([['dan', {}]]);
+    const person = await r.run(actor(boss), 'talks.person', { keys: ['dan.d'] });
+    expect(checkContract(PersonTalksOutputSchema, person)).toBe(true);
+    expect(person).toMatchObject({ rows: [{ key: 'dan.d', state: 'Bokat', next: 'Bokat', open: 'Inga' }] });
+    expect((person as { rows: Array<Record<string, string>> }).rows[0]).not.toHaveProperty('at');
+    expect(await r.run(actor(boss), 'talks.unit', { keys: ['u2'] })).toMatchObject({
+      rows: [{ key: 'u2', held: '0 av 2 hållna', booked: '1 bokat', missing: '1 saknas' }],
+    });
   });
 
   test('when the calendar does not answer, the note says so and a booked talk reads as missing', async () => {

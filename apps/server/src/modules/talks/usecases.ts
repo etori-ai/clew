@@ -72,9 +72,11 @@ export interface UnitStanding {
 
 /**
  * The talks module's use cases (D96): the round of development talks and its action points. A manager's reach is
- * computed from the assignments when asked (`deps.staff`), never stored, so a former manager reads and writes nothing
- * the day the assignment changes. Every change is one `deps.store` transaction with its audit row and, for an action
- * point, its owner's card. Audit rows carry ids, dates, counts and roles: never an action point's text or a name.
+ * computed from the assignments when asked (`deps.staff`), never stored, so the day the assignment changes a former
+ * manager reads and writes nothing about the person but the action points they own themselves: those stay theirs, on
+ * their own list, until they are done (As built item 5, M2). One record per person per round, read and written by every
+ * current manager (Q12). Every change is one `deps.store` transaction with its audit row and, for an action point, its
+ * owner's card. Audit rows carry ids, dates, counts and roles: never an action point's text or a name.
  */
 export function talkUsecases(deps: TalkDeps) {
   const now = () => deps.clock();
@@ -143,15 +145,29 @@ export function talkUsecases(deps: TalkDeps) {
     dueOn: s.round.dueOn,
     bookedUnknown: !s.bookings,
   });
-  /** Mark a commitment done or open again: for its owner, or for the current manager of the employee's unit. */
+  /**
+   * Mark an action point done or open again (D96 item 4, Q12): its owner does; a current manager of the employee takes
+   * over a manager's point whose owner no longer manages the employee (or was erased), so that nothing stays open for good
+   * when a manager leaves. A co-manager's points and the employee's own are left to their owners. Who may is read before
+   * the transaction, since whether the owner still manages the employee is the people module's to say; the transaction
+   * refuses if the point's owner or employee moved in between.
+   */
   async function setDone(persona: AuthenticatedContext, id: string, done: boolean) {
     const { people } = await managed(persona);
+    const read = await deps.store.transaction(tx => tx.commitment(id));
+    const asOwner = !!read && read.ownerId === persona.id;
+    const asManager =
+      !!read &&
+      !asOwner &&
+      read.ownerRole === 'manager' &&
+      people.has(read.employeeId) &&
+      (read.ownerId === null || !(await deps.manages(read.ownerId, read.employeeId)));
+    if (!read || (!asOwner && !asManager)) throw new ForbiddenError(NOT_ALLOWED);
     const at = now().toISOString();
     await deps.store.transaction(async tx => {
       const c = await tx.commitment(id);
-      const asOwner = !!c && c.ownerId === persona.id,
-        asManager = !!c && people.has(c.employeeId);
-      if (!c || (!asOwner && !asManager)) throw new ForbiddenError(NOT_ALLOWED);
+      if (!c || c.employeeId !== read.employeeId || (c.ownerId !== read.ownerId && !(asManager && c.ownerId === null)))
+        throw new ForbiddenError(NOT_ALLOWED);
       if ((c.doneAt !== null) === done) return;
       if (done) {
         await tx.updateCommitment(id, { doneAt: at, doneBy: persona.id });
@@ -323,9 +339,10 @@ export function talkUsecases(deps: TalkDeps) {
 
     /**
      * `talks.commitments` (D96 items 4 and 8). With `person` (a user name, or the id of a person provisioned without
-     * one): that employee's action points, for the current manager of their unit. Without: the reader's, since both
-     * see them: every one the reader owns and every one about the reader, each once, the reader's own listed first.
-     * Either way every one added in the open round and every open one from earlier rounds.
+     * one): that employee's action points, for any current manager of theirs. Without: the reader's, since both see
+     * them: every one the reader owns, about whomever (a former manager's own points stay theirs until done, M2), and
+     * every one about the reader, each once, the reader's own listed first. Either way every one added in the open
+     * round and every open one from earlier rounds.
      */
     async commitments(persona: AuthenticatedContext, input: CommitmentsInput = {}): Promise<CommitmentsOutput> {
       let about: string | undefined;
@@ -361,7 +378,11 @@ export function talkUsecases(deps: TalkDeps) {
       });
     },
 
-    /** The manager marks the talk with an employee held (D96 item 2), on `heldOn` or today in Swedish time. */
+    /**
+     * A current manager of the employee marks the talk held (D96 item 2), on `heldOn` or today in Swedish time. A person
+     * with two managers has one talk a round: either marks it, moves its day or undoes it, and the audit row names who
+     * (Q12).
+     */
     async markHeld(
       persona: AuthenticatedContext,
       employeeId: string,
@@ -399,7 +420,10 @@ export function talkUsecases(deps: TalkDeps) {
       });
     },
 
-    /** The manager undoes marking a talk held. A talk that is not marked held is left as it is, with no audit row. */
+    /**
+     * A current manager of the employee undoes marking the talk held. A talk that is not marked held is left as it is,
+     * with no audit row.
+     */
     async unmarkHeld(persona: AuthenticatedContext, employeeId: string): Promise<void> {
       await employeeOf(persona, employeeId);
       const at = now().toISOString();
@@ -469,7 +493,10 @@ export function talkUsecases(deps: TalkDeps) {
       });
     },
 
-    /** The owner, or the employee's current manager, marks an action point done; its card closes with it. */
+    /**
+     * The owner marks an action point done, or a current manager of the employee a manager's point whose owner no longer
+     * manages the employee (Q12); its card closes with it.
+     */
     completeCommitment: (persona: AuthenticatedContext, id: string) => setDone(persona, id, true),
     /** The same people open it again; its card opens again with its `due` timer. */
     reopenCommitment: (persona: AuthenticatedContext, id: string) => setDone(persona, id, false),

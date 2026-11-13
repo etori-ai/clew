@@ -17,7 +17,7 @@ import { newsUsecases } from '../modules/news/usecases';
 import { talksConnector } from '../modules/talks/capabilities';
 import { talkSeamCapabilities } from '../modules/talk-seam/capabilities';
 import { talkSeamUsecases } from '../modules/talk-seam/usecases';
-import { talkDirectory, talks } from '../composition/talks';
+import { talkDirectory, talkHolders, talks } from '../composition/talks';
 import { competenceConnector } from '../modules/competence/capabilities';
 import { competence } from '../composition/competence';
 import { logger } from '../logging';
@@ -53,7 +53,11 @@ const news = newsUsecases({ sources: actor => registry.newsSources(actor) });
  * profile for the person, chosen from the registry at call time, so switching the built-in module off on Anslutna system
  * or enabling another system changes who answers from the next read on. Offered only while some system answers.
  */
-const talkSeam = talkSeamUsecases({ source: actor => registry.talkSource(actor), directory: talkDirectory });
+const talkSeam = talkSeamUsecases({
+  source: actor => registry.talkSource(actor),
+  directory: talkDirectory,
+  holders: talkHolders,
+});
 /**
  * Clew's own connector is assembled here, the only file that names connectors: the composite search owns the id and the
  * question area, the errand list adds its read and its area, the news list its read, the talks seam its two reads. The

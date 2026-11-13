@@ -76,13 +76,14 @@ async function world() {
   } as AuthenticatedContext;
   const provider = memoryCalendar({ ref: 'test', email: 'owner@example.test', name: 'Test' });
   const bind = () => ({ provider });
-  const team = async () =>
-    [1, 2].map(n => ({
-      ref: 'guest' + n,
-      personId: 'guest' + n,
-      email: `guest${n}@example.test`,
-      name: 'Guest ' + n,
-    }));
+  // The team as the directory has it now; a test may change an address.
+  const members = [1, 2].map(n => ({
+    ref: 'guest' + n,
+    personId: 'guest' + n,
+    email: `guest${n}@example.test`,
+    name: 'Guest ' + n,
+  }));
+  const team = async () => members;
   let failCommit = false;
   const project = projectExecution(testDurable);
   const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, testDurable, async (tx, e, stage) => {
@@ -123,6 +124,7 @@ async function world() {
     id,
     actor,
     provider,
+    members,
     store,
     proposals,
     uc,
@@ -160,9 +162,9 @@ test('calendar approval creates its card atomically; a source commit before a fa
   expect(w.provider.events).toHaveLength(0);
   expect((await w.decisions.cancelEvent(w.actor, cancel)).execution?.state).toBe('succeeded');
 });
-test('partial confirmation persists per-item evidence and policy; reconciliation never repeats successful items', async () => {
-  const w = await world(),
-    threadId = randomUUID();
+/** A planning thread with one drawn proposal for each guest. */
+async function seedThread(w: Awaited<ReturnType<typeof world>>) {
+  const threadId = randomUUID();
   await w.proposals.transaction(async tx => {
     await tx.insertThread({
       id: threadId,
@@ -182,7 +184,7 @@ test('partial confirmation persists per-item evidence and policy; reconciliation
         threadId,
         personId: w.id,
         status: 'proposed',
-        participant: { email: `guest${n}@example.test`, name: 'Guest ' + n },
+        participant: { personId: 'guest' + n, email: `guest${n}@example.test`, name: 'Guest ' + n },
         start: `2098-11-10T${8 + n}:00:00.000Z`.replace('T9:', 'T09:'),
         end: `2098-11-10T${9 + n}:00:00.000Z`,
         eventRef: null,
@@ -195,6 +197,11 @@ test('partial confirmation persists per-item evidence and policy; reconciliation
       })),
     );
   });
+  return threadId;
+}
+test('partial confirmation persists per-item evidence and policy; reconciliation never repeats successful items', async () => {
+  const w = await world(),
+    threadId = await seedThread(w);
   const create = w.provider.create.bind(w.provider);
   w.provider.create = async (uid, input) => {
     if (uid.endsWith(':p2')) throw new Error('offline');
@@ -217,6 +224,50 @@ test('partial confirmation persists per-item evidence and policy; reconciliation
   expect(result.thread.receipt?.rows.map(r => r.outcome)).toEqual(['done', 'unknown']);
   await w.uc.progress(a.execution!.id);
   expect(w.provider.events).toHaveLength(1);
+});
+test('a proposal is confirmed for its invitee by id after their address changed; a command naming another person is refused (N3)', async () => {
+  const w = await world(),
+    threadId = await seedThread(w);
+  // Guest 1's address changes after the draw: the team has the new one, the proposal the one it was drawn with.
+  w.members[0] = { ...w.members[0]!, ref: 'guest1-new', email: 'guest1.new@example.test' };
+  const t = (await w.proposals.readThread(w.id, threadId))!.thread;
+  // An approval whose invitee is not the proposal's, though on the team, is refused at the projection.
+  const forged: CalendarCommand = {
+    items: [
+      {
+        id: threadId + ':p1',
+        proposalId: threadId + ':p1',
+        personId: 'guest2',
+        label: 'Guest 1',
+        action: 'create',
+        input: {
+          title: 'Utvecklingssamtal · Guest 1',
+          start: '2098-11-10T09:00:00.000Z',
+          end: '2098-11-10T10:00:00.000Z',
+          participants: ['guest1@example.test'],
+        },
+      },
+    ],
+    threadId,
+    followup: { afterWorkdays: 2, maxReminders: 2, expiresAt: '2098-12-05T09:00:00.000Z' },
+  };
+  await expect(
+    w.uc.approve(w.actor, {
+      decisionId: 'forged:' + threadId,
+      operation: 'calendar.confirmProposals',
+      payload: forged,
+      presentation: { threadId, version: t.updatedAt, actionId: 'confirm' },
+    }),
+  ).rejects.toThrow('Förslaget har ändrats. Läs om sidan.');
+  const confirmed = await w.decisions.confirm(w.actor, threadId, [threadId + ':p1']);
+  await w.uc.progress(confirmed.execution!.id);
+  const after = (await w.proposals.readThread(w.id, threadId))!;
+  expect(after.thread.execution?.state).toBe('succeeded');
+  expect(after.proposals.find(p => p.id === threadId + ':p1')).toMatchObject({
+    status: 'confirmed',
+    participant: { personId: 'guest1', email: 'guest1@example.test', name: 'Guest 1' },
+  });
+  expect(w.provider.events.map(e => e.participants.map(p => p.email))).toEqual([['guest1@example.test']]);
 });
 test('uncertain calendar compensation retains the original receipt and remains discoverable', async () => {
   const w = await world(),

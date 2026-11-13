@@ -143,6 +143,7 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
     store: memoryTalkStore({ persons: [{ id: 'anna', organisationId: 'org', name: 'Anna', userName: 'anna.a' }] }),
     staff: async p =>
       p.id === 'boss' ? { units: [{ unitId: 'u1', unitLabel: 'Enheten', people: [anna] }] } : { units: [] },
+    manages: async (managerId, employeeId) => managerId === 'boss' && employeeId === 'anna',
     bookings: async () => new Map(),
     clock: () => new Date('2026-11-10T09:00:00.000Z'),
     ids: () => 'id-' + ++n,
@@ -186,7 +187,11 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   assert.deepEqual(await held.json(), { id: 'id-4', heldOn: '2026-11-03' });
   assert.equal((await call('boss', 'DELETE', '/anna/held')).status, 204);
   assert.equal((await call('anna', 'POST', `/commitments/${id}/done`)).status, 204);
-  assert.equal((await call('boss', 'DELETE', `/commitments/${id}/done`)).status, 204);
+  // The employee's own point is hers: her manager may not open it again (Q12).
+  const notTheirs = await call('boss', 'DELETE', `/commitments/${id}/done`);
+  assert.equal(notTheirs.status, 403);
+  assert.deepEqual(await notTheirs.json(), { error: 'Du kan inte ändra den här åtgärdspunkten.', code: 'denied' });
+  assert.equal((await call('anna', 'DELETE', `/commitments/${id}/done`)).status, 204);
 
   const refused = await call('anna', 'POST', '/anna/held', {});
   assert.equal(refused.status, 403);

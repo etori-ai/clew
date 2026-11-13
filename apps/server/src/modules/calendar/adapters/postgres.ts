@@ -15,7 +15,7 @@ const toRecord = (r: ProposalRow): ProposalRecord => ({
   threadId: r.threadId,
   personId: r.personId,
   status: r.status,
-  participant: { email: r.participantEmail, name: r.participantName },
+  participant: { personId: r.participantId, email: r.participantEmail, name: r.participantName },
   start: r.start.toISOString(),
   end: r.end.toISOString(),
   eventUid: r.eventUid,
@@ -110,6 +110,7 @@ const txOf = (tx: Transaction, durable: DurableQueue): ProposalTx => ({
         threadId: p.threadId,
         personId: p.personId,
         status: p.status,
+        participantId: p.participant.personId,
         participantEmail: p.participant.email,
         participantName: p.participant.name,
         start: new Date(p.start),
@@ -178,6 +179,20 @@ export function postgresProposalStore(durable: DurableQueue): ProposalStore {
             and(
               eq(proposals.personId, personId),
               inArray(proposals.status, ['proposed', 'confirmed', 'final', 'accepted']),
+            ),
+          )
+      ).map(toRecord);
+    },
+    async bookedProposals(participantIds) {
+      if (!participantIds.length) return [];
+      return (
+        await database()
+          .select()
+          .from(proposals)
+          .where(
+            and(
+              inArray(proposals.participantId, [...participantIds]),
+              inArray(proposals.status, ['confirmed', 'final', 'accepted']),
             ),
           )
       ).map(toRecord);

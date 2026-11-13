@@ -87,6 +87,7 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
         item.action !== 'create' ||
         p.start.toISOString() !== item.input.start ||
         p.end.toISOString() !== item.input.end ||
+        p.participantId !== item.personId ||
         p.participantEmail.toLowerCase() !== item.input.participants[0]?.toLowerCase()
       )
         throw new ExecutionError('Förslaget har ändrats. Läs om sidan.');

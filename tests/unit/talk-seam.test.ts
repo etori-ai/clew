@@ -16,10 +16,16 @@ import {
   type Actor,
   type Connector,
 } from '../../packages/connectors/src/index';
-import { builtInId, keyIndex, mapCommitmentRows, mapTalkRows } from '../../apps/server/src/modules/talk-seam/domain';
+import {
+  builtInId,
+  keyIndex,
+  mapCommitmentRows,
+  mapTalkRows,
+  ownedElsewhere,
+} from '../../apps/server/src/modules/talk-seam/domain';
 import { talkSeamCapabilities } from '../../apps/server/src/modules/talk-seam/capabilities';
 import { NO_SOURCE, talkSeamUsecases } from '../../apps/server/src/modules/talk-seam/usecases';
-import type { Directory, DirectoryPerson, TalkCall } from '../../apps/server/src/modules/talk-seam/model';
+import type { Directory, DirectoryPerson, Holders, TalkCall } from '../../apps/server/src/modules/talk-seam/model';
 
 /**
  * The talks seam (D96 items 8 and 9): `clew.talks` and `clew.commitments` ask the one system that answers the talks
@@ -117,7 +123,26 @@ function talkSystem(id: string, source: string, answers: Answers): Connector {
 }
 function world(connectors: Connector[], onRefused?: (id: string, topic: string) => void) {
   const registry = new Registry(onRefused ? { onRefused } : {});
-  const seam = talkSeamUsecases({ source: a => registry.talkSource(a), directory, budget: { perSourceMs: 40 } });
+  // As the people module answers it (D116): who holds each user name in the organisation, active or not, by the name
+  // as asked, compared without regard to case.
+  const asked: Array<readonly string[]> = [];
+  const holders: Holders = async (_actor, names) => {
+    asked.push(names);
+    return new Map(
+      names.flatMap(name => {
+        const holder = Object.values(people).find(
+          p => p.userName?.toLowerCase() === name.normalize('NFC').toLowerCase(),
+        );
+        return holder ? [[name, holder.id] as const] : [];
+      }),
+    );
+  };
+  const seam = talkSeamUsecases({
+    source: a => registry.talkSource(a),
+    directory,
+    holders,
+    budget: { perSourceMs: 40 },
+  });
   for (const c of connectors) registry.register(c);
   registry.register({
     id: SEARCH_CONNECTOR,
@@ -127,7 +152,7 @@ function world(connectors: Connector[], onRefused?: (id: string, topic: string) 
     ...talkSeamCapabilities(seam, a => !!registry.talkSource(a)),
     uses: ['*'],
   });
-  return { registry, seam };
+  return { registry, seam, asked };
 }
 const talks = (registry: Registry, actor: Actor) => registry.run<TalksResult>(actor, 'clew.talks', {});
 const commitments = (registry: Registry, actor: Actor, input: Record<string, unknown> = {}) =>
@@ -147,6 +172,58 @@ describe('rows keyed on the user name become rows about people the reader may se
       'p-hillevi',
       'p-mikael',
     ]);
+  });
+  test('a key is compared without regard to case and in its composed form, as the protocol says (A3)', () => {
+    const anna = { id: 'p-anna', userName: 'Anna.Berg' };
+    const rene = { id: 'p-rene', userName: 'rene\u0301' };
+    expect([...keyIndex([anna, rene])]).toEqual([
+      ['anna.berg', 'p-anna'],
+      ['rené', 'p-rene'],
+    ]);
+    // Two people whose names differ only in case share the key, so it names neither.
+    expect([...keyIndex([people.mikael!, { id: 'p-other', userName: 'MIKAEL' }])]).toEqual([]);
+    expect(
+      mapTalkRows([talk('x', 'ANNA.BERG'), talk('x', 'René'), talk('x', 'anna.berg')], [anna, rene]).map(
+        r => r.personId,
+      ),
+    ).toEqual(['p-anna', 'p-rene', 'p-anna']);
+    const rows = [commitment('x', 1, 'anna.BERG'), commitment('x', 2, 'René'), commitment('x', 3, 'Hillevi')];
+    expect(mapCommitmentRows(rows, { self: people.hillevi!, staff: [anna, rene] }).map(r => r.personId)).toEqual([
+      'p-anna',
+      'p-rene',
+      'p-hillevi',
+    ]);
+    // `person` narrows the same way, whatever case the reader asked in.
+    expect(
+      mapCommitmentRows(rows, { self: people.hillevi!, staff: [anna, rene], person: 'ANNA.berg' }).map(r => r.ref),
+    ).toEqual(['commitment:x:c1']);
+  });
+  test('a point the reader owns about someone outside their staff is named for the built-in module only (M2)', () => {
+    const rows = [
+      commitment('talks', 1, 'stranger', { owner: 'manager', mine: true }),
+      commitment('talks', 2, 'STRANGER', { owner: 'manager', mine: true }),
+      commitment('talks', 3, 'stranger'),
+      commitment('talks', 4, 'mikael', { owner: 'manager', mine: true }),
+      commitment('talks', 5, 'nobody', { owner: 'manager', mine: true }),
+    ];
+    const mapping = { self: people.hillevi!, staff: [people.mikael!] };
+    expect(ownedElsewhere(rows, mapping)).toEqual(['stranger', 'STRANGER', 'nobody']);
+    const owned = new Map([
+      ['stranger', 'p-stranger'],
+      ['STRANGER', 'p-stranger'],
+    ]);
+    expect(
+      mapCommitmentRows(rows, { ...mapping, builtIn: TALKS_CONNECTOR, owned }).map(r => [r.ref, r.personId]),
+    ).toEqual([
+      ['commitment:talks:c1', 'p-stranger'],
+      ['commitment:talks:c2', 'p-stranger'],
+      ['commitment:talks:c4', 'p-mikael'],
+    ]);
+    // Not for another system, whose `mine` is its own, and not when the reader asked about one person.
+    expect(mapCommitmentRows(rows, { ...mapping, owned }).map(r => r.ref)).toEqual(['commitment:talks:c4']);
+    expect(
+      mapCommitmentRows(rows, { ...mapping, builtIn: TALKS_CONNECTOR, owned, person: 'stranger' }).map(r => r.ref),
+    ).toEqual([]);
   });
   test("the built-in module's own id comes from its ref, and only from that form", () => {
     expect(builtInId('commitment:talks:abc-1', 'talks')).toBe('abc-1');
@@ -293,6 +370,61 @@ describe('clew.talks and clew.commitments', () => {
       // The manager reads both.
       expect((await talks(registry, hillevi)).round).toEqual(round);
     }
+  });
+
+  test('a source that writes a user name in another case keeps its rows (A3)', async () => {
+    const { registry } = world([
+      talkSystem('appraisals', 'Samtalssystemet', {
+        talks: { round, rows: [talk('appraisals', 'MIKAEL'), talk('appraisals', 'Stranger')] },
+        commitments: {
+          rows: [
+            commitment('appraisals', 1, 'Mikael'),
+            commitment('appraisals', 2, 'HILLEVI', { owner: 'manager', mine: true }),
+          ],
+        },
+      }),
+    ]);
+    expect((await talks(registry, hillevi)).rows.map(r => [r.userName, r.personId])).toEqual([['MIKAEL', 'p-mikael']]);
+    expect((await commitments(registry, hillevi)).rows.map(r => r.personId)).toEqual(['p-mikael', 'p-hillevi']);
+    expect((await commitments(registry, hillevi, { person: 'mikael' })).rows.map(r => r.ref)).toEqual([
+      'commitment:appraisals:c1',
+    ]);
+    expect((await commitments(registry, mikael)).rows.map(r => r.ref)).toEqual(['commitment:appraisals:c1']);
+  });
+
+  test('with the built-in module, a former manager keeps the points they own about someone they no longer manage (M2)', async () => {
+    const { registry, asked } = world([
+      talkSystem(TALKS_CONNECTOR, 'Clew', {
+        commitments: {
+          rows: [
+            commitment('talks', 1, 'stranger', { owner: 'manager', mine: true }),
+            commitment('talks', 2, 'mikael', { owner: 'manager', mine: true }),
+            commitment('talks', 3, 'nobody', { owner: 'manager', mine: true }),
+          ],
+        },
+      }),
+    ]);
+    const points = await commitments(registry, hillevi);
+    expect(checkContract(CommitmentsResultSchema, points)).toBe(true);
+    expect(points.rows.map(r => [r.id, r.personId, r.mine])).toEqual([
+      ['c1', 'p-stranger', true],
+      ['c2', 'p-mikael', true],
+    ]);
+    // Only the keys outside the reader's staff are asked about, once.
+    expect(asked).toEqual([['stranger', 'nobody']]);
+    // Asked about one person, nothing else is looked up.
+    await commitments(registry, hillevi, { person: 'mikael' });
+    expect(asked).toHaveLength(1);
+  });
+
+  test('another system’s points about someone outside the reader’s staff are dropped, mine or not, and nobody is looked up (M2)', async () => {
+    const { registry, asked } = world([
+      talkSystem('appraisals', 'Samtalssystemet', {
+        commitments: { rows: [commitment('appraisals', 1, 'stranger', { owner: 'manager', mine: true })] },
+      }),
+    ]);
+    expect((await commitments(registry, hillevi)).rows).toEqual([]);
+    expect(asked).toEqual([]);
   });
 
   test('person narrows clew.commitments and is passed to the source unchanged', async () => {

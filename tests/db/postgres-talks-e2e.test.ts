@@ -71,6 +71,7 @@ const usecases = (s: TalkStore) =>
   talkUsecases({
     store: s,
     staff: async p => (p.id === manager ? overview : { units: [] }),
+    manages: async (managerId, employeeId) => managerId === manager && employeeId === employee,
     bookings: async () => new Map(),
     clock,
     ids,
@@ -217,7 +218,9 @@ describe('the talks module on Postgres through the composition store (D96)', () 
     expect(c.thread).toMatchObject({ state: 'handled' });
     expect(c.timer).toMatchObject({ state: 'cancelled', generation: 1 });
     expect(cancelled).toContain(`${dueTimerId(threadId)}:v2:1`);
-    await talks.reopenCommitment(boss, id);
+    // The employee's own point is hers to open again; her manager is refused (Q12).
+    await expect(talks.reopenCommitment(boss, id)).rejects.toThrow('Du kan inte ändra den här åtgärdspunkten.');
+    await talks.reopenCommitment(persona(employee, 'employee'), id);
     c = await card(threadId);
     expect((await commitmentRow(id))!.doneAt).toBeNull();
     expect(c.thread).toMatchObject({ state: 'open', handledAt: null });

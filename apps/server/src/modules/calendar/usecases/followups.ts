@@ -139,8 +139,9 @@ export function followupUsecases(deps: {
       }
       const delivered: string[] = [];
       for (const p of waiting) {
+        // The invitee by id (N3), so a changed address does not stop the reminders.
         const due = nextReminderAt(p, at),
-          member = members.find(m => m.email.toLowerCase() === p.participant.email.toLowerCase());
+          member = members.find(m => m.personId === p.participant.personId);
         if (!member || p.reminders >= current.policy.maxReminders || !due || due > at) continue;
         await tx.deliver(member.personId, p, p.reminders + 1, persona!.name, at);
         await tx.recordReminder(p, at);
@@ -181,7 +182,7 @@ export function followupUsecases(deps: {
         throw new InputError('Uppföljningsplanen gäller inte längre.');
       const delivered: string[] = [];
       for (const p of eligible) {
-        const member = members.find(m => m.email.toLowerCase() === p.participant.email.toLowerCase());
+        const member = members.find(m => m.personId === p.participant.personId);
         if (!member) continue;
         await tx.deliver(member.personId, p, p.reminders + 1, persona.name, at);
         await tx.recordReminder(p, at);

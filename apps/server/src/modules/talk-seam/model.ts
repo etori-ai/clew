@@ -18,6 +18,12 @@ export interface DirectoryPerson {
  * nobody. Read on every call, never cached here, so a change of unit or manager narrows the next read at once.
  */
 export type Directory = (actor: Actor) => Promise<{ self: DirectoryPerson; staff: DirectoryPerson[] }>;
+/**
+ * Who holds these user names now in the reader's organisation, active or not, compared as Clew compares a user name
+ * (D116), keyed by the name as asked; a name nobody there holds is absent. The seam asks only about the action points
+ * the reader owns about someone they no longer manage, when Clew's own module answers (M2).
+ */
+export type Holders = (actor: Actor, userNames: readonly string[]) => Promise<ReadonlyMap<string, string>>;
 export type TalkCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface TalkSeamBudget {
   /** Milliseconds the source gets before it counts as not answering. */
@@ -26,6 +32,7 @@ export interface TalkSeamBudget {
 export interface TalkSeamDeps {
   source: Source;
   directory: Directory;
+  holders: Holders;
   budget?: Partial<TalkSeamBudget>;
 }
 export const DEFAULT_BUDGET: TalkSeamBudget = { perSourceMs: 4_000 };
