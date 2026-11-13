@@ -10,6 +10,8 @@ export interface ToolInfo {
   kind: string;
   source: string;
   view?: View;
+  /** What the model reads in place of the output, from Clew's own connectors (D122, `Capability.forModel`). */
+  forModel?: (output: unknown) => unknown;
 }
 
 const clockOf = (at: string) =>

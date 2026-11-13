@@ -123,12 +123,77 @@ describe('Kompetenssökning on Postgres (D121)', () => {
     expect(await exported()).toHaveLength(1);
   });
 
+  test('a read the assistant makes for a manager is logged with its caller; one as a registrar is refused by the table with its read (D122)', async () => {
+    const manager: AuthenticatedContext = {
+      ...registrar,
+      id: `${ORG}-boss`,
+      principal: { id: `person:${ORG}-boss`, kind: 'person' },
+      role: 'manager',
+      relationGrants: [],
+    };
+    const managing = competenceUsecases({
+      store,
+      staff: async () => ({
+        units: [
+          {
+            unitId: `unit-${tag}`,
+            unitLabel: 'Akuten',
+            people: [
+              {
+                id: anna,
+                name: 'Synthetic Anna',
+                userName: `anna.${tag}`,
+                email: null,
+                role: 'employee',
+                enabled: true,
+              },
+            ],
+          },
+        ],
+      }),
+      clock: () => new Date('2026-03-02T09:00:00.000Z'),
+      ids,
+    });
+    expect((await managing.holdings(manager, { person: `anna.${tag}` }, 'managed', 'assistant')).rows).toHaveLength(1);
+    const callers = () =>
+      database()
+        .select({ caller: schema.competenceReadLog.caller, relation: schema.competenceReadLog.relation })
+        .from(schema.competenceReadLog)
+        .where(eq(schema.competenceReadLog.organisationId, ORG))
+        .orderBy(schema.competenceReadLog.id);
+    expect((await callers()).at(-1)).toEqual({ caller: 'assistant', relation: 'managed' });
+    // The registry never tells the module `registrar` for the assistant (D122 item 5); were it to, the row is refused.
+    const before = (await callers()).length;
+    await expect(competence.holdings(registrar, { person: `anna.${tag}` }, 'registrar', 'assistant')).rejects.toThrow();
+    expect(await callers()).toHaveLength(before);
+    // The reads before were the person's; a row written without saying, as every row from before the column was, is too.
+    expect((await callers()).slice(0, 3).map(r => r.caller)).toEqual(['person', 'person', 'person']);
+    await database()
+      .insert(schema.competenceReadLog)
+      .values({
+        id: `${ORG}-9999`,
+        organisationId: ORG,
+        readerId: manager.id,
+        relation: 'managed',
+        kind: 'person',
+        personId: anna,
+        rows: 1,
+        readAt: new Date('2026-03-02T09:00:00.000Z'),
+      });
+    expect((await callers()).at(-1)).toEqual({ caller: 'person', relation: 'managed' });
+    expect(await managing.readLog({ organisationId: ORG, caller: 'assistant', limit: 10 })).toHaveLength(1);
+    await database()
+      .delete(schema.competenceReadLog)
+      .where(eq(schema.competenceReadLog.id, `${ORG}-9999`));
+  });
+
   test('a deactivated person is no one a registrar opens, and the refusal is not logged', async () => {
     await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, bo));
     await expect(competence.holdings(registrar, { person: `bo.${tag}` }, 'registrar')).rejects.toThrow(
       'Personen finns inte bland dem du är chef för.',
     );
     expect((await competence.search(registrar, { typeId })).rows.map(r => r.name)).toEqual(['Synthetic Anna']);
-    expect((await logged()).map(r => r.kind)).toEqual(['search', 'export', 'person', 'search']);
+    // The three reads of the first test, the assistant's for a manager, and this search.
+    expect((await logged()).map(r => r.kind)).toEqual(['search', 'export', 'person', 'person', 'search']);
   });
 });

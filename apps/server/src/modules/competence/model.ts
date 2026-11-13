@@ -2,6 +2,7 @@ import type {
   AuthenticatedContext,
   CompetenceEvidence,
   CompetenceKind,
+  CompetenceReadCaller,
   CompetenceReadKind,
   CompetenceReadRelation,
   CompetenceReadCounts,
@@ -265,6 +266,11 @@ export interface ReadLogEntry {
   readerId: string;
   /** `self` only on a row written before a person's own reads stopped being logged (2026-11-13); none is written now. */
   relation: CompetenceReadRelation | 'self';
+  /**
+   * Who made the read (D122 item 6): the person, or the assistant reading one person's holdings for them as `managed`;
+   * a row written before the assistant could read is the person's.
+   */
+  caller: CompetenceReadCaller;
   kind: CompetenceReadKind;
   typeId: string | null;
   minLevel: number | null;
@@ -282,6 +288,8 @@ export interface ReadLogQuery {
   readerId?: string;
   /** The reads made as this relation. */
   relation?: CompetenceReadRelation;
+  /** The reads made by this caller: the person, or the assistant for them. */
+  caller?: CompetenceReadCaller;
   /** The reads of this kind. */
   kind?: CompetenceReadKind;
   /** From this instant on. */

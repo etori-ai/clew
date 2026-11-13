@@ -23,6 +23,7 @@ export { Token } from '@astryxdesign/core/Token';
 export { ToggleButton, ToggleButtonGroup } from '@astryxdesign/core/ToggleButton';
 export { List, ListItem } from '@astryxdesign/core/List';
 export { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList';
+export { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 export { Collapsible, CollapsibleGroup } from '@astryxdesign/core/Collapsible';
 export { Grid, GridSpan } from '@astryxdesign/core/Grid';
 export { Divider } from '@astryxdesign/core/Divider';

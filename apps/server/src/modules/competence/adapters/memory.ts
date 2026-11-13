@@ -92,11 +92,13 @@ export interface MemoryCompetenceState {
 }
 /**
  * The checks of `competence_read_log`: a person opened names whom and nothing of a search; a search and its file are a
- * registrar's and name the type and nobody; a manager's matrix as a file names neither.
+ * registrar's and name the type and nobody; a manager's matrix as a file names neither; the assistant reads only one
+ * person's holdings as `managed` (D122 items 5 and 6).
  */
 function assertReadLog(r: ReadLogEntry) {
   const ok =
     r.rows >= 0 &&
+    (r.caller === 'person' || (r.caller === 'assistant' && r.kind === 'person' && r.relation === 'managed')) &&
     (r.minLevel === null || (r.minLevel >= 1 && r.minLevel <= 3)) &&
     (r.kind === 'person'
       ? r.personId !== null && r.typeId === null && r.minLevel === null && r.unitId === null
@@ -905,6 +907,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
             (query.personId === undefined || r.personId === query.personId) &&
             (query.readerId === undefined || r.readerId === query.readerId) &&
             (query.relation === undefined || r.relation === query.relation) &&
+            (query.caller === undefined || r.caller === query.caller) &&
             (query.kind === undefined || r.kind === query.kind) &&
             (query.since === undefined || r.readAt >= query.since),
         )

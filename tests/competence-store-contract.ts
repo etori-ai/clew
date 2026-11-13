@@ -1421,13 +1421,14 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         ]);
       });
 
-      test('the read log keeps a read as it is given and is read the newest first, narrowed by organisation, person, reader, relation, kind and time', async () => {
+      test('the read log keeps a read as it is given and is read the newest first, narrowed by organisation, person, reader, relation, caller, kind and time', async () => {
         const w = await world();
         const entry = (id: string, extra: Partial<ReadLogEntry> = {}): ReadLogEntry => ({
           id: w.p + '-' + id,
           organisationId: w.org,
           readerId: w.boss,
           relation: 'registrar',
+          caller: 'person',
           kind: 'search',
           typeId: w.p + '-t1',
           minLevel: null,
@@ -1457,17 +1458,29 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
             typeId: null,
             rows: 8,
             readAt: '2026-11-10T06:00:00.000Z',
+          }),
+          // A manager's read of a report that the assistant made for them in a conversation (D122 item 6).
+          assisted = entry('l7', {
+            kind: 'person',
+            relation: 'managed',
+            caller: 'assistant',
+            typeId: null,
+            personId: w.bo,
+            rows: 2,
+            readAt: '2026-11-10T05:00:00.000Z',
           });
         await w.store.transaction(async tx => {
-          for (const e of [search, opened, own, file, elsewhere, matrix]) await tx.logRead(e);
+          for (const e of [search, opened, own, file, elsewhere, matrix, assisted]) await tx.logRead(e);
         });
         const read = (query: Partial<ReadLogQuery> = {}) =>
           w.store.transaction(tx => tx.readLog({ organisationId: w.org, limit: 10, ...query }));
         // The newest first, then by id; another organisation's row is not this one's.
-        expect(await read()).toEqual([opened, own, search, file, matrix]);
+        expect(await read()).toEqual([opened, own, search, file, matrix, assisted]);
         expect(await read({ personId: w.anna })).toEqual([opened]);
         expect(await read({ readerId: w.anna })).toEqual([own]);
-        expect(await read({ relation: 'managed' })).toEqual([own, matrix]);
+        expect(await read({ relation: 'managed' })).toEqual([own, matrix, assisted]);
+        expect(await read({ caller: 'assistant' })).toEqual([assisted]);
+        expect(await read({ caller: 'person', relation: 'managed' })).toEqual([own, matrix]);
         expect(await read({ kind: 'export' })).toEqual([file, matrix]);
         expect(await read({ relation: 'registrar', kind: 'export' })).toEqual([file]);
         expect(await read({ since: T })).toEqual([opened, own, search]);
@@ -1485,6 +1498,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           organisationId: w.org,
           readerId: w.boss,
           relation: 'registrar',
+          caller: 'person',
           kind: 'search',
           typeId: w.p + '-t1',
           minLevel: null,
@@ -1508,6 +1522,18 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           { ...base, kind: 'search' as const, relation: 'managed' as const, typeId: null },
           { ...base, minLevel: 4 },
           { ...base, rows: -1 },
+          // The assistant reads one person's holdings as their manager, nothing else (D122 items 5 and 6): never as a
+          // registrar, never a search or a file, and no caller but the two.
+          { ...base, caller: 'assistant' as const },
+          { ...base, kind: 'person' as const, typeId: null, personId: w.anna, caller: 'assistant' as const },
+          {
+            ...base,
+            kind: 'export' as const,
+            relation: 'managed' as const,
+            typeId: null,
+            caller: 'assistant' as const,
+          },
+          { ...base, caller: 'robot' as never },
         ])
           expect(
             await refused(() =>

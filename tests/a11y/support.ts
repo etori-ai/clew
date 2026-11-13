@@ -1972,7 +1972,16 @@ export class MockApi {
     if (kind === 'models') {
       if (!id && method === 'GET') return json({ providers: this.providers, models: this.models });
       if (!id && method === 'POST') {
-        const input = body() as { providerId: string; model: string; title?: string; description?: string };
+        const input = body() as {
+          providerId: string;
+          model: string;
+          title?: string;
+          description?: string;
+          mayProcessPersonalData?: unknown;
+        };
+        // As the server's contract does (D122 item 1): no model without the administrator's statement.
+        if (input.mayProcessPersonalData !== true)
+          return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
         const p = this.providers.find(x => x.id === input.providerId)!;
         const m: ModelSummary = {
           ...this.models[0]!,

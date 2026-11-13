@@ -1,7 +1,14 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { actorOf, CapabilityError, COMPETENCE_CONNECTOR, Registry, type HoldingsReader } from '@clew/connectors';
+import {
+  actorOf,
+  CapabilityError,
+  COMPETENCE_CONNECTOR,
+  Registry,
+  type HoldingsReader,
+  type RunCaller,
+} from '@clew/connectors';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
@@ -105,13 +112,14 @@ export const acceptsEmptyInput = (schema: object) => {
 /**
  * Run a capability through the registry with input validation. The single path for REST, cards, tools and connector
  * callbacks. `direct` is for the one caller that is the person's own session asking for a read itself (`GET /api/cap`):
- * only there is a relation the person holds by grant resolved (D121, `RunContext.direct`).
+ * only there is a relation the person holds by grant resolved (D121, `RunContext.direct`). `caller` is for the
+ * assistant's runner, which reads in a conversation turn for the person (D122 item 6, `RunContext.caller`).
  */
 export async function runCapability<O = unknown>(
   persona: AuthenticatedContext,
   name: string,
   input: unknown,
-  options: { direct?: boolean } = {},
+  options: { direct?: boolean; caller?: RunCaller } = {},
 ): Promise<O> {
   const found = registry.find(name);
   if (!found) throw new InputError('Okänd förmåga.');
@@ -120,6 +128,7 @@ export async function runCapability<O = unknown>(
     const result = await registry.run<O>(actorOf(persona), name, input ?? {}, {
       ...(persona.delegate ? { delegate: persona.delegate } : {}),
       ...(options.direct ? { direct: true } : {}),
+      ...(options.caller ? { caller: options.caller } : {}),
     });
     await persona.authorize();
     return result;

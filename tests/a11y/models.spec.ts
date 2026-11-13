@@ -69,6 +69,12 @@ test.describe('model administration', () => {
       await expect(page).toHaveTitle('Modeller · Startsidan');
       await expect(page.getByRole('link', { name: 'Modeller', exact: true })).toHaveAttribute('aria-current', 'page');
       await expect(page.getByText('Den som inte valt själv får Kapabel (standard).')).toBeVisible();
+      // Above the list, what a model reads and who answers for it (D122 item 1), in the words it was approved in.
+      await expect(
+        page.getByText(
+          'En modell du lägger till får läsa det som personen som frågar får läsa, även personuppgifter. Lägg bara till modeller som organisationen får behandla personuppgifter med.',
+        ),
+      ).toBeVisible();
       const tables = page.getByRole('table');
       await expect(tables).toHaveCount(2);
       await expect(tables.first().getByRole('link', { name: 'Kapabel' })).toBeVisible();
@@ -126,6 +132,24 @@ test.describe('model administration', () => {
       await expect(listed.getByRole('checkbox')).toHaveCount(3);
       await listed.getByRole('checkbox', { name: 'llama3.3:70b' }).check();
       await dialog.getByRole('switch', { name: 'Slå på dem direkt' }).check();
+      // Adding a model is answering for it (D122 item 1): the dialog says what it reads, and without the confirmation
+      // the press is answered on the field, as the first step's required fields are, and nothing is added.
+      await expect(
+        dialog.getByText(/^En modell du lägger till får läsa det som personen som frågar får läsa/),
+      ).toBeVisible();
+      await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
+      await expect(dialog.getByText('Bekräfta det här för att lägga till.', { exact: true }).first()).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Lägg till 1 modell' })).toBeDisabled();
+      await expect(page.getByRole('link', { name: 'llama3.3:70b' })).toHaveCount(0);
+      const confirm = dialog.getByRole('checkbox', {
+        name: /^Organisationen får behandla personuppgifter med den här modellen/,
+      });
+      // The press gives the confirmation the focus, which is where the error is said; Space ticks it.
+      await expect(confirm).toBeFocused();
+      await expect(confirm).toHaveAttribute('aria-invalid', 'true');
+      await page.keyboard.press('Space');
+      await expect(confirm).toBeChecked();
+      await expect(dialog.getByRole('button', { name: 'Lägg till 1 modell' })).toBeEnabled();
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
       await expect(dialog).toHaveCount(0);
@@ -201,6 +225,7 @@ test.describe('model administration', () => {
       await expect(dialog.getByText('Modellen är redan tillagd.').first()).toBeVisible();
       await dialog.getByRole('textbox', { name: /^Eller en modell som inte finns i listan/ }).fill('');
       await listed.getByRole('checkbox', { name: 'llama3.3:70b' }).check();
+      await dialog.getByRole('checkbox', { name: /^Organisationen får behandla personuppgifter/ }).check();
       // The button fades from disabled to enabled: axe measures a colour, so it waits for the one the fade ends on.
       const add = dialog.getByRole('button', { name: 'Lägg till 1 modell' });
       await expect(add).toBeEnabled();
@@ -217,6 +242,10 @@ test.describe('model administration', () => {
       await dialog
         .getByRole('textbox', { name: /^Eller en modell som inte finns i listan|^Modellens id/ })
         .fill('trasig:1b');
+      // A dialog opened again starts unconfirmed.
+      const confirmAgain = dialog.getByRole('checkbox', { name: /^Organisationen får behandla personuppgifter/ });
+      await expect(confirmAgain).not.toBeChecked();
+      await confirmAgain.check();
       await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
       await expect(dialog).toHaveCount(0);
       await expect
@@ -250,6 +279,7 @@ test.describe('model administration', () => {
       );
       await expect(dialog.getByRole('button', { name: 'Klar' })).toBeInViewport();
       await dialog.getByRole('checkbox', { name: 'modell-14' }).check();
+      await dialog.getByRole('checkbox', { name: /^Organisationen får behandla personuppgifter/ }).check();
       const add = dialog.getByRole('button', { name: 'Lägg till 1 modell' });
       await expect(add).toBeInViewport();
       await add.click();
@@ -269,6 +299,14 @@ test.describe('model administration', () => {
       await expect(page.getByRole('list', { name: 'Modeller hos Kommunens modeller' })).toBeVisible();
       await page.getByRole('button', { name: 'Lägg till leverantör' }).click();
       await expect(page.getByRole('dialog', { name: 'Lägg till leverantör' })).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+      // The picker with what a model reads and the confirmation under it (D122 item 1).
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Lägg till modell' }).first().click();
+      const dialog = page.getByRole('dialog', { name: 'Lägg till modell' });
+      await expect(
+        dialog.getByRole('checkbox', { name: /^Organisationen får behandla personuppgifter/ }),
+      ).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
   });

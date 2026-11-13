@@ -4,6 +4,7 @@ import {
   COMPETENCE_STATUSES,
   COMPETENCE_TYPE_SEARCH_MAX,
   ENTITY_KEY_MAX,
+  type CompetenceReadCaller,
   type CompetenceReadRelation,
   type Relation,
   type CompetenceSearchBody,
@@ -505,18 +506,22 @@ export function competenceUsecases(deps: CompetenceDeps) {
   const requireRegistrar = (persona: AuthenticatedContext) => {
     if (!registrar(persona)) throw new ForbiddenError(NOT_A_REGISTRAR);
   };
-  /** A row of the read log (D108 item 15, D121 item 5) for a read made now: ids, a level and a count, never a name. */
+  /**
+   * A row of the read log (D108 item 15, D121 item 5) for a read made now: ids, a level and a count, never a name; and
+   * who made it, the person or the assistant for them (D122 item 6), the person unless said.
+   */
   const readOf = (
     persona: AuthenticatedContext,
     at: Date,
     relation: CompetenceReadRelation,
     read: Pick<ReadLogEntry, 'kind' | 'rows'> &
-      Partial<Pick<ReadLogEntry, 'typeId' | 'minLevel' | 'unitId' | 'personId'>>,
+      Partial<Pick<ReadLogEntry, 'typeId' | 'minLevel' | 'unitId' | 'personId' | 'caller'>>,
   ): ReadLogEntry => ({
     id: deps.ids(),
     organisationId: persona.organisationId,
     readerId: persona.id,
     relation,
+    caller: read.caller ?? 'person',
     kind: read.kind,
     typeId: read.typeId ?? null,
     minLevel: read.minLevel ?? null,
@@ -2451,12 +2456,14 @@ export function competenceUsecases(deps: CompetenceDeps) {
      * skill's level with "Egen bedömning" where no manager has confirmed it (`countingRows`): no requirement the person
      * lacks, no registration of their own that waits or was rejected, no copied row of a type not mapped, no "Vill
      * utveckla". A manager's and a registrar's read writes its row of the read log (D121 item 5), in the transaction
-     * that reads it; the person's own read discloses nothing and writes none.
+     * that reads it, with `caller`: the person, or the assistant reading for them (D122 item 6); the person's own read
+     * discloses nothing and writes none, whoever makes it.
      */
     async holdings(
       persona: AuthenticatedContext,
       input: CompetenceHoldingsInput = {},
       told?: Relation,
+      caller: CompetenceReadCaller = 'person',
     ): Promise<CompetenceHoldingsOutput> {
       let personId = persona.id,
         relation: 'self' | CompetenceReadRelation = 'self';
@@ -2511,7 +2518,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
         // D108 item 15, D121 item 5: another person's competence opened, by whom and as which relation, in the
         // transaction that read it, so the answer is not given unless the row is written.
         if (relation !== 'self')
-          await tx.logRead(readOf(persona, at, relation, { kind: 'person', personId, rows: rows.length }));
+          await tx.logRead(readOf(persona, at, relation, { kind: 'person', personId, rows: rows.length, caller }));
         return { rows };
       });
     },
@@ -2963,8 +2970,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * The manager's matrix (D108 item 11): the people who report to the reader now against the types required of at
-     * least one of them, at most ten columns at a time, with the sets of columns to choose from where more are required
-     * (`matrixOf`). A manager's reports only (D99 item 4); anyone who manages nobody is refused. A read, so no audit row.
+     * least one of them, at most `COMPETENCE_MATRIX_COLUMNS` at a time, with the sets of columns to choose from, by area
+     * and by position (`matrixOf`). A manager's reports only (D99 item 4); anyone who manages nobody is refused. A read,
+     * so no audit row.
      */
     async matrix(persona: AuthenticatedContext, input: CompetenceMatrixInput = {}): Promise<CompetenceMatrixOutput> {
       const { manages, people } = await reports(persona);

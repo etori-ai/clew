@@ -13,8 +13,10 @@ import type {
   TurnEvent,
   TurnStep,
   Verb,
+  View,
   ViewRef,
 } from '@clew/contracts';
+import { viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import { actorOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { displayDate, weekNumber } from '@clew/calendar/dates';
@@ -88,12 +90,27 @@ export class TurnStopped extends Error {
     this.name = 'TurnStopped';
   }
 }
-/** One turn's way out: its events, its stop signal, and the capability runner that reports each read as a step. */
+/**
+ * One read a turn made (D122 item 8): which capability, and how many rows it answered where it answers rows, or that it
+ * failed (refused, as a read about someone the person may not ask about is, or not answered). Never what it answered: the
+ * turn's audit row carries this list, and a row of content never enters it.
+ */
+type TurnRead = { capability: string; rows?: number; failed?: true };
+/**
+ * One turn's way out: its events, its stop signal, the capability runner that reports each read as a step, and the
+ * reads it made, in order.
+ */
 interface Turn {
   emit: (event: TurnEvent) => void;
   signal: AbortSignal | undefined;
   run: <O = unknown>(name: string, input: unknown) => Promise<O>;
+  reads: TurnRead[];
 }
+/** How many rows an output holds: its declared view's rows, else a top-level `rows`; undefined when it has none. */
+const rowCount = (view: View | undefined, output: unknown): number | undefined => {
+  const rows = view ? viewRows(view, output) : (output as { rows?: unknown } | null)?.rows;
+  return Array.isArray(rows) ? rows.length : undefined;
+};
 const isSearchResult = (v: unknown): v is SearchResult =>
   !!v && typeof v === 'object' && Array.isArray((v as SearchResult).rows) && Array.isArray((v as SearchResult).sources);
 const whyLine = (t: Thread) =>
@@ -120,6 +137,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     };
     let n = 0;
     let known: ReturnType<typeof registry.tools> | undefined;
+    const reads: TurnRead[] = [];
     const run = async <O = unknown>(name: string, input: unknown): Promise<O> => {
       known ??= registry.tools(actorOf(persona));
       const info = known.find(t => t.name === name);
@@ -133,15 +151,19 @@ export function assistantUsecases(deps: AssistantDeps) {
       const took = () => Math.max(0, clock().getTime() - started);
       emit({ type: 'step', step: { ...step, status: 'running' } });
       try {
-        const output = await deps.run<O>(persona, name, input);
+        // Every read of the turn is the assistant's, made for the person (D122 items 5 and 6).
+        const output = await deps.run<O>(persona, name, input, { caller: 'assistant' });
         emit({ type: 'step', step: { ...step, status: 'complete', ms: took() } });
+        const rows = rowCount(registry.find(name)?.capability.view, output);
+        reads.push({ capability: name, ...(rows !== undefined ? { rows } : {}) });
         return output;
       } catch (e) {
         emit({ type: 'step', step: { ...step, status: 'error', ms: took() } });
+        reads.push({ capability: name, failed: true });
         throw e;
       }
     };
-    return { emit, signal: observer.signal, run };
+    return { emit, signal: observer.signal, run, reads };
   }
 
   /** The chip path (D12): with one chipped card the assistant does not guess. Clew-side actions are only proposed; drafts change the card, never a source. */
@@ -607,6 +629,8 @@ export function assistantUsecases(deps: AssistantDeps) {
           shape: produced!.shape,
           chips: refs,
           tools: (produced!.toolCalls ?? []).map(c => c.capability),
+          // Every read the turn made through the registry, with its count or that it failed; never a row (D122 item 8).
+          ...(turn.reads.length ? { reads: turn.reads } : {}),
           ...(produced!.view ? { view: produced!.view.capability } : {}),
           // An action the assistant filled in (D112 item 8): which one, on which item, and which asks it answered.
           // The values are the conversation's, never the audit row's.

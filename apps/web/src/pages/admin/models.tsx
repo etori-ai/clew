@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ModelSummary, ProviderSummary, SessionUser } from '@clew/contracts';
 import {
   Badge,
+  Banner,
   Button,
   Card,
   EmptyState,
@@ -27,7 +28,7 @@ import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
-import { AddModelDialog, AddProviderDialog } from './add-model';
+import { AddModelDialog, AddProviderDialog, PERSONAL_DATA_NOTICE } from './add-model';
 import { audienceLabel, modelStatusOf, providerStatusOf } from './labels';
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
@@ -36,6 +37,7 @@ import { PageHeader } from '../../components/page-header';
  * "Modeller" (D24): every provider with the models under it. A provider is a Card with its name, its health and "Lägg
  * till modell" in the toolbar, and its models as a Table (List rows on a phone) with the audience, the default, the
  * tools switch's state and an on/off switch. Astryx has no grouped table, so the grouping is one Card per provider.
+ * Above the list, what a model reads and who answers for it (D122 item 1), as the add dialogs say it too.
  */
 interface Row extends Record<string, unknown> {
   id: string;
@@ -145,6 +147,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
           {error}
         </Text>
       )}
+      <Banner status="info" {...PERSONAL_DATA_NOTICE} />
       {data === null && (
         <Text type="supporting" role="status">
           Läser modellerna …

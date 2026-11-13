@@ -965,6 +965,7 @@ export function competenceTx(
             q.personId === undefined ? undefined : eq(reads.personId, q.personId),
             q.readerId === undefined ? undefined : eq(reads.readerId, q.readerId),
             q.relation === undefined ? undefined : eq(reads.relation, q.relation),
+            q.caller === undefined ? undefined : eq(reads.caller, q.caller),
             q.kind === undefined ? undefined : eq(reads.kind, q.kind),
             q.since === undefined ? undefined : gte(reads.readAt, new Date(q.since)),
           ),

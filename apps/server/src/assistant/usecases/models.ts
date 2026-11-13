@@ -40,6 +40,9 @@ import {
  */
 /** The administration grant (D23) covers the models too: one surface, one grant, until a reason to split them appears. */
 export const MODEL_ADMIN_CAPABILITY = 'admin.connectors';
+/** A model added without the administrator's statement that the organisation may process personal data with it (D122). */
+export const PERSONAL_DATA_UNCONFIRMED =
+  'Bekräfta att organisationen får behandla personuppgifter med modellen innan du lägger till den.';
 export interface ModelDeps {
   store: ModelStore;
   sealer: KeySealer;
@@ -302,13 +305,16 @@ export function modelUsecases(deps: ModelDeps) {
   /**
    * A model under a provider, by the id its endpoint uses. Clew's id is derived from it. It starts switched off, and it is
    * tested at once as "Testa" would (D84), so its reasoning is settled before anyone asks it a question. A failed test does
-   * not undo the addition: the report says what the provider answered.
+   * not undo the addition: the report says what the provider answered. Adding one is the administrator's statement that
+   * the organisation may process its data with it, personal data included (D122 item 1): refused without it, and
+   * recorded in the audit row. Clew cannot verify where a model runs and does not pretend to.
    */
   async function addModel(
     persona: AuthenticatedContext,
     input: AddModelInput,
   ): Promise<{ model: ModelDetail; report: ProviderTestReport }> {
     const { by, at } = await mutating(persona);
+    if (input.mayProcessPersonalData !== true) throw new InputError(PERSONAL_DATA_UNCONFIRMED);
     await mustProvider(input.providerId);
     const existing = await store.listModels();
     if (existing.some(m => m.providerId === input.providerId && m.model === input.model))
@@ -333,7 +339,7 @@ export function modelUsecases(deps: ModelDeps) {
         action: 'model.added',
         subject: 'model:' + id,
         at,
-        details: { provider: input.providerId, model: input.model },
+        details: { provider: input.providerId, model: input.model, mayProcessPersonalData: true },
       });
     });
     const report = await check(persona, (await store.readModel(id))!);

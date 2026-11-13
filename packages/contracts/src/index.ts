@@ -2422,6 +2422,12 @@ export type CompetenceReadKind = (typeof COMPETENCE_READ_KINDS)[number];
  */
 export const COMPETENCE_READ_RELATIONS = ['managed', 'registrar'] as const satisfies readonly PersonRelation[];
 export type CompetenceReadRelation = (typeof COMPETENCE_READ_RELATIONS)[number];
+/**
+ * Who made a logged read (D122 item 6): the person, or the assistant reading for them in a conversation. The assistant
+ * reads only as `managed` and only one person's holdings: never as `registrar`, never a search or a file (D122 item 5).
+ */
+export const COMPETENCE_READ_CALLERS = ['person', 'assistant'] as const;
+export type CompetenceReadCaller = (typeof COMPETENCE_READ_CALLERS)[number];
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),
@@ -3517,12 +3523,18 @@ export const ProviderPatchInput = Type.Partial(object({ title: adminTitle, baseU
 export type ProviderPatchInput = Static<typeof ProviderPatchInput>;
 export const ProviderKeyInput = object({ apiKey: providerKey });
 export type ProviderKeyInput = Static<typeof ProviderKeyInput>;
+/**
+ * A model added under a provider. `mayProcessPersonalData` is the administrator's statement, required and only ever
+ * `true`, that the organisation may process its data with the model, personal data included (D122 item 1): a model
+ * receives whatever the person who asks may read. The audit row of the addition records it.
+ */
 export const AddModelInput = object({
   providerId: adminSlug,
   model: wireModel,
   title: Type.Optional(adminTitle),
   description: Type.Optional(adminDescription),
   tools: Type.Optional(Type.Boolean()),
+  mayProcessPersonalData: Type.Literal(true),
 });
 export type AddModelInput = Static<typeof AddModelInput>;
 export const ModelPatchInput = Type.Partial(

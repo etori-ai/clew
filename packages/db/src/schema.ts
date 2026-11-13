@@ -1242,7 +1242,8 @@ export const competenceShareTargets = pgTable(
  * The read log of the competence domain (D108 item 15, D121 item 5): one row per read of competence about people, kept
  * apart from the audit table since a read changes nothing. A search across the organisation and its export (`type_id`,
  * with the least level and the unit narrowed to), or one person's holdings opened (`person_id`); who read, as which
- * relation, when and how many rows the read returned. Ids and counts only: never a name and never content. Written in
+ * relation, by whom (the person, or the assistant for them, D122 item 6), when and how many rows the read returned. Ids
+ * and counts only: never a name and never content. Written in
  * the transaction that reads what it records, so a read whose row cannot be written answers nothing. No foreign keys:
  * a row stays what it was when the type or the person it names changes, and erasure leaves it (D108 item 14 erases a
  * person's holdings; who read them is not theirs to erase, and how long a row is kept is open, D121).
@@ -1254,6 +1255,8 @@ export const competenceReadLog = pgTable(
     organisationId: text('organisation_id').notNull(),
     readerId: text('reader_id').notNull(),
     relation: text('relation').$type<'self' | 'managed' | 'registrar'>().notNull(),
+    // Who made the read (D122 item 6): the person, or the assistant reading for them. Rows from before are the person's.
+    caller: text('caller').$type<'person' | 'assistant'>().notNull().default('person'),
     kind: text('kind').$type<'search' | 'person' | 'export'>().notNull(),
     typeId: text('type_id'),
     minLevel: integer('min_level'),
@@ -1264,6 +1267,12 @@ export const competenceReadLog = pgTable(
   },
   t => [
     check('competence_read_log_relation', sql`${t.relation} IN ('self', 'managed', 'registrar')`),
+    // The assistant reads one person's holdings as their manager, never as a registrar and never a search or a file
+    // (D122 item 5): a row that says otherwise is refused, and the read with it.
+    check(
+      'competence_read_log_caller',
+      sql`${t.caller} = 'person' OR (${t.caller} = 'assistant' AND ${t.kind} = 'person' AND ${t.relation} = 'managed')`,
+    ),
     check('competence_read_log_kind', sql`${t.kind} IN ('search', 'person', 'export')`),
     // A person opened names whom and no type. A search and its file are a registrar's and name the type and nobody; a
     // manager's matrix as a file is the one other export, naming neither (it holds several types).

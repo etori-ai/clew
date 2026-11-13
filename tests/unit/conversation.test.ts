@@ -1070,14 +1070,16 @@ describe('a question about a person the asker manages (D115)', () => {
     // The prompt names who "Anna" is and the work about her by title, last day and buttons; nothing a source holds.
     expect(system).toContain('Medarbetare som personen nämnde (bland dem personen är chef för):');
     expect(system).toContain(
-      '- "Anna" är Anna Lindqvist på Skönsmons skola. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
+      '- "Anna" är Anna Lindqvist på Skönsmons skola, användarnamn anna. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
     );
     expect(system).toContain('Uppgifter om medarbetarnas hälsa och frånvaro lämnas inte till dig.');
-    // The lookup is Clew's own and answers the same; the routine is policy text, handed whole.
+    // The lookup is Clew's own and answers the same, with the user name a read about one person takes (D122); the
+    // routine is policy text, handed whole.
     expect(JSON.parse(model.handed[2]!)).toEqual({
       found: 'one',
       name: 'Anna Lindqvist',
       unit: 'Skönsmons skola',
+      userName: 'anna',
       workItems: [
         'Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
       ],

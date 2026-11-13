@@ -39,7 +39,8 @@ export type ModelUsage = { inputTokens?: number; outputTokens?: number; finishRe
 /**
  * The model's tool set: every in-scope read capability, run through the same validated path as REST and cards. A tool whose
  * view says the model reads a summary (D38) is still run, so the person's view has its rows, but the model is handed only
- * that the result is shown and how much of it there is.
+ * that the result is shown and how much of it there is. A read of Clew's own that says what the model reads of it
+ * (`forModel`, D122) is handed that: words instead of codes, no internal ids, a bounded number of rows.
  */
 export function buildTools(
   tools: ToolSchemaInfo[],
@@ -55,7 +56,13 @@ export function buildTools(
         execute: async input => {
           try {
             const output = await run(t.name, input);
-            return clip(t.view && readsSummary(t.view) ? viewSummary(t.view, t.title, output) : output);
+            return clip(
+              t.view && readsSummary(t.view)
+                ? viewSummary(t.view, t.title, output)
+                : t.forModel
+                  ? t.forModel(output)
+                  : output,
+            );
           } catch (e) {
             return { error: e instanceof Error ? e.message : 'fel' };
           }
