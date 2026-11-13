@@ -2777,22 +2777,6 @@
       ]
     },
     {
-      "path": "docs/guides/scim-rollout-questions.md",
-      "title": "SCIM rollout questions",
-      "category": "integrator-guide",
-      "headings": [
-        "Which source fields identify a person and a unit?",
-        "Who is responsible for each employee?",
-        "Who should be active in Clew?",
-        "Which profile data may colleagues see?",
-        "How will changes reach Clew?",
-        "Which account claim matches the SCIM userName?",
-        "Who provides the test address and credentials?",
-        "For a later municipal mapping",
-        "Not decided yet"
-      ]
-    },
-    {
       "path": "docs/guides/scim-school-walkthrough.md",
       "title": "SCIM school walkthrough",
       "category": "integrator-guide",

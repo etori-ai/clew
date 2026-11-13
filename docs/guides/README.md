@@ -29,6 +29,5 @@ The first useful result is one authorized read shown in Clew. No scan, write, mo
 3. [Writing a provisioner](writing-a-provisioner.md)
 4. [SCIM directory operations](scim-directory-operations.md)
 5. [SCIM sign-in and hosting](scim-sign-in-and-hosting.md)
-6. [SCIM rollout questions](scim-rollout-questions.md)
 
 Use the [support matrix](../reference/status.md) to distinguish available behavior from designs. Full application setup is in [local development](../maintainers/local-development.md).

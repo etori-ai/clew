@@ -2621,11 +2621,11 @@ test('the profile guide changes one of two work numbers and one of two employmen
   ]);
 });
 
-test('the published SCIM object examples create an employee placement', async () => {
+test('the published SCIM object examples place an employee and assign their manager', async () => {
   const { client, grantOf } = stack();
   const guide = await Bun.file(new URL('../../docs/guides/provisioning-for-operations.md', import.meta.url)).text();
   const examples = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)].map(match => match[1]!);
-  expect(examples).toHaveLength(3);
+  expect(examples).toHaveLength(4);
   await client.request('POST', '/Groups', {
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
     externalId: 'unit:100',
@@ -2633,9 +2633,19 @@ test('the published SCIM object examples create an employee placement', async ()
   });
   const unit = await client.request('POST', '/Groups', JSON.parse(examples[0]!));
   const anna = await client.request('POST', '/Users', JSON.parse(examples[1]!));
-  const membership = examples[2]!.replace("<Anna's Clew user ID>", anna.body.id);
+  const employee = await client.request('POST', '/Users', {
+    ...JSON.parse(examples[1]!),
+    externalId: 'e-1003',
+    userName: 'lena.holm',
+    displayName: 'Lena Holm',
+    emails: [{ type: 'work', value: 'lena.holm@example.org' }],
+  });
+  const membership = examples[2]!.replace("<employee's Clew user ID>", employee.body.id);
   await client.request('PATCH', '/Groups/' + unit.body.id, JSON.parse(membership));
-  expect(grantOf('anna.berg')).toMatchObject({ unitId: '110', role: 'employee' });
+  const managers = examples[3]!.replace("<Anna's Clew user ID>", anna.body.id);
+  await client.request('POST', '/Groups', JSON.parse(managers));
+  expect(grantOf('lena.holm')).toMatchObject({ unitId: '110', role: 'employee' });
+  expect(grantOf('anna.berg')).toMatchObject({ unitId: '110', role: 'manager' });
 });
 
 test('the published school walkthrough produces the printed output and the promised organisation', async () => {
