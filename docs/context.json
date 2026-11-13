@@ -3924,6 +3924,22 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-12-absorbing-big-boss-board-into-clew.md",
+      "title": "Plan: absorbing big-boss-board (Dialogstöd) into Clew · 2026-11-12",
+      "category": "review-history",
+      "headings": [
+        "What was asked",
+        "Changed the same day",
+        "Sources read",
+        "What bbb is",
+        "Where each part goes in Clew",
+        "Decisions this plan rests on",
+        "Phases",
+        "Behaviour that changes for bbb's users",
+        "Risks"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-12-municipal-employment-and-work-placements.md",
       "title": "Municipal employment, work placements and managerial responsibility",
       "category": "review-history",
