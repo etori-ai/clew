@@ -451,7 +451,10 @@ export async function checkConnector(
         if (c.name === manifest.header?.capability && error instanceof CapabilityError && error.code === 'denied') {
           ok(`${c.name} as ${actor.role}: denied, the header lists nothing for this person (${m})`);
           row.note('ok', `Listar inget för ${ROLE[actor.role]}, som då får Clews eget sidhuvud.`);
-        } else if (manifest.delegation && /styrkas|behörighet/.test(m)) {
+        } else if (manifest.delegation && error instanceof CapabilityError && error.code === 'denied') {
+          // The check has no session, so no person's token to send, and a delegating connector refuses the person for
+          // it, in whatever words: `denied`, which a remote connector's error keeps only with its 403 (`remote.ts`). A
+          // 401 is the connector rejecting Clew's key or assertion, whatever its body says, and fails below.
           ok(`${c.name} as ${actor.role}: refused without the person's token, as a delegating connector should (${m})`);
           row.note('ok', 'Nekas utan personens egen inloggning, som väntat.');
         } else if (UNAVAILABLE.test(m)) {

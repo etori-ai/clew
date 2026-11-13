@@ -24,7 +24,7 @@ import { startDurableRuntime } from './dbos/runtime';
 import { bindLiveActivities } from './dbos/activities';
 import { failure } from './context';
 import { signingAuthority } from './connectors/signing';
-import { startupReadiness } from './startup';
+import { STARTING, startupReadiness } from './startup';
 import { databaseAnswers } from '@clew/db';
 import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
@@ -86,12 +86,14 @@ app.route('/api/auth', authRoutes);
 app.route('/api/appearance', appearanceRoutes(appearance));
 // The protocol is a contract, not data: public, and generated from code, so it needs nothing to have started (D60).
 app.route('/api/protocol', protocolRoutes);
+// What a connector reaches of Clew needs no session: the key set is public and the callback carries Clew's own grant,
+// so both are mounted before the session guard. A connector reads them in the protocol's shape, Clew starting included,
+// so they answer that themselves, ahead of the startup gate below, as SCIM answers it in its own shape.
+app.route('/api/connectors', connectorRoutes(startup.ready));
 app.use('/api/*', async (c, next) => {
-  if (!startup.ready()) return c.json({ error: 'Tjänsten startar. Försök igen om en stund.' }, 503);
+  if (!startup.ready()) return c.json({ error: STARTING }, 503);
   await next();
 });
-// Connector callbacks authenticate with Clew's own assertion, not a session, so they are mounted before the session guard.
-app.route('/api/connectors', connectorRoutes);
 // SCIM (D68) authenticates with a provisioner's token, not a session; a machine reads its answers, so they are English.
 app.use('/scim/*', async (c, next) => {
   if (!startup.ready())

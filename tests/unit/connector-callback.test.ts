@@ -15,9 +15,9 @@ import { AssertionError, type CallbackGrant } from '../../apps/server/src/connec
  * `POST /api/connectors/call`, a remote connector calling back into Clew as the person it serves (D21), answers in the
  * published contract (`/api/connectors/call` in the connector OpenAPI document): a capability the person may not know
  * of exactly as one nobody registered, 404 `not-found` (D23); the scope and an execute 403 `denied`; input 400
- * `invalid`; a target that is down 503 `unavailable`. Only what is nobody's to know is logged, with the connector, and
- * answered 503, Clew's own failure to read its key or the person included. Run over a real registry; the grant and the
- * person are the test's.
+ * `invalid`; a target that is down, and Clew while it starts, 503 `unavailable`. Only what is nobody's to know is
+ * logged, with the connector, and answered 503, Clew's own failure to read its key or the person included. Run over a
+ * real registry; the grant and the person are the test's.
  */
 const persona = {
   id: 'hassan',
@@ -81,7 +81,7 @@ const post = async (
   return { status: response.status, headers: [...response.headers].sort(), body: await response.text() };
 };
 const knownPerson: ConnectorCallbackDeps['person'] = async id => (id === persona.id ? persona : undefined);
-function world(person = knownPerson) {
+function world(person = knownPerson, started = () => true) {
   const registry = new Registry();
   registry.register(connector('caller', [capability('caller.read', 'read', answers)], TARGETS));
   registry.register(
@@ -128,6 +128,7 @@ function world(person = knownPerson) {
   /** The connector each logged failure was logged for, when the route knew it. */
   const failedFor: Array<string | undefined> = [];
   const routes = connectorCallback({
+    started,
     verify: async token => {
       if (token === 'grant') return grant();
       if (token === 'circle') return grant(['calendar.today']);
@@ -215,6 +216,25 @@ describe('a connector calling back into Clew (POST /api/connectors/call)', () =>
     expect(failed).toEqual([outage]);
     expect(failedFor).toEqual([undefined]);
   });
+  test('while Clew starts, a connector meets the contract’s shape, 503 unavailable, and nothing is read', async () => {
+    let started = false;
+    const read: string[] = [];
+    const { call, failed } = world(
+      async (id, connectorId) => {
+        read.push('person');
+        return knownPerson(id, connectorId);
+      },
+      () => started,
+    );
+    const starting = answer(503, 'unavailable', 'Tjänsten startar. Försök igen om en stund.');
+    expect(await call('calendar.today')).toEqual(starting);
+    // Not even the grant: the keys it is verified with are among what is starting, and their outage is not logged.
+    expect(await call('calendar.today', {}, 'outage')).toEqual(starting);
+    expect([read, failed]).toEqual([[], []]);
+    started = true;
+    expect(JSON.parse((await call('calendar.today')).body)).toEqual({ output: { ok: true } });
+    expect(read).toEqual(['person']);
+  });
   test("a grant for one of Clew's own connectors, whose reach has no bound, is refused before anything runs", async () => {
     const read: string[] = [];
     const registry = new Registry();
@@ -231,6 +251,7 @@ describe('a connector calling back into Clew (POST /api/connectors/call)', () =>
     for (const id of ['calendar', 'hr']) registry.govern(id, openGovernance());
     const failed: unknown[] = [];
     const routes = connectorCallback({
+      started: () => true,
       // What a grant signed for `calendar`, carrying the `uses` a service's manifest chose, would claim.
       verify: async () => ({ connectorId: 'calendar', actor: actorOf(persona), uses: ['hr.salaries'], chain: [] }),
       person: knownPerson,
@@ -288,6 +309,7 @@ describe('a connector calling back into Clew (POST /api/connectors/call)', () =>
       });
       const failed: unknown[] = [];
       const routes = connectorCallback({
+        started: () => true,
         verify: async () => ({ connectorId: 'caller', actor: actorOf(persona), uses: ['finance.pay'], chain: [] }),
         person: knownPerson,
         refresh: async () => {},

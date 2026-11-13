@@ -528,6 +528,10 @@ what they say.
   connector rejecting Clew's key or assertion, so it is a failure, whatever code it carries; read as a refusal, an
   outage of the content system's key set took everyone's places away. The conformance check, which failed a holder
   that refused one of its people, now takes that refusal as the holder's answer, and the intranet fixture gives it.
+  The check also took a delegating connector's refusal from its words, so a connector that answered every call of
+  Clew's with a 401 passed it; it now takes the refusal from its code alone, a `denied` with its 403, in whatever
+  words. The manifest's published `header` field still gave the first build's rule, the earliest registered connector
+  answering; it now says that only the one an administrator chose answers.
 - `/api/cap` answered 400 for a capability the person may not see and 404 for an unknown one, so the status told them
   apart, against [D23](../decisions/D23-connectors-are-managed-in-the-database.md). Both now answer 404 alike,
   whatever the input. The scope of a connector the person can see stays a 400 with its sentence, decided here: D23
@@ -540,7 +544,9 @@ what they say.
   execute switched on between the two ran from a callback with no decision; the nested call now refuses an execute on
   the lookup it would run. The callback also refuses a grant for one of Clew's own connectors, and logs Clew's own
   failure to read its keys or the person and answers it 503 `unavailable`, where a failed key read was answered as an
-  invalid grant and a failed person read in a body outside the contract.
+  invalid grant and a failed person read in a body outside the contract. While Clew starts, the callback and the key
+  set answer 503 `unavailable` in the contract's shape too, where the startup gate answered a connector with a bare
+  line, and the published 503 says that Clew, not only the target, may be what cannot answer.
 - `connector-check --as` (R2, Q13) took the id of one of Clew's own connectors, whose reach in a callback has no bound,
   and a registered id at any address. It now takes only the id a service was registered under, and checks that service
   only at the address it was registered at.

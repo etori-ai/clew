@@ -26,8 +26,8 @@ import { assertionFor, testJwks } from '../connector-authority';
 
 /**
  * The intranet connector and the header capability (D88): a manifest's `header` names the read that answers the shared
- * header, Clew checks the answer's shape, the person's audience and the connector's switch decide who gets it, and the
- * first registered connector wins when two declare one. Run over the protocol against the fixture.
+ * header, Clew checks the answer's shape, the person's audience and the connector's switch decide who gets it, and only
+ * the connector an administrator chose gives it when two declare one. Run over the protocol against the fixture.
  */
 const secret = 'test-secret-test-secret';
 const hassan: Actor = {

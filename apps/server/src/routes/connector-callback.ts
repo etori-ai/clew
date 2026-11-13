@@ -5,6 +5,7 @@ import { CallbackRequestSchema, type ProtocolErrorCode } from '@clew/connectors/
 import type { AuthenticatedContext } from '@clew/contracts';
 import { InputError, privateHeaders } from '../context';
 import { AssertionError, type CallbackGrant } from '../connectors/authority';
+import { STARTING } from '../startup';
 
 /**
  * The one way back in for a remote connector (D21): run another connector's `read` or `propose` as the person the connector
@@ -13,6 +14,11 @@ import { AssertionError, type CallbackGrant } from '../connectors/authority';
  * `routes/connectors.ts` serves it over the live registry; a test passes its own.
  */
 export interface ConnectorCallbackDeps {
+  /**
+   * Whether Clew has finished starting (`startup.ts`). Until it has, the callback reads nothing and answers 503
+   * `unavailable` in the contract's shape, as for any other outage of Clew.
+   */
+  started(): boolean;
   /**
    * The callback grant the bearer carries; throws `AssertionError` for one Clew did not issue, and anything else when
    * Clew cannot read its own keys.
@@ -28,6 +34,8 @@ export interface ConnectorCallbackDeps {
 }
 const error = (code: string, message: string, status: 400 | 401 | 403 | 404 | 503) =>
   Response.json({ error: { code, message } }, { status, headers: privateHeaders });
+/** What a connector reaching Clew meets while Clew starts: 503 `unavailable` in the protocol's shape, before any read. */
+export const starting = () => error('unavailable', STARTING, 503);
 /**
  * The status of each code, as the published contract gives it (`/api/connectors/call` in the connector OpenAPI
  * document): a target the person may not know of is `not-found`, exactly as one nobody registered (D23); the scope, an
@@ -45,6 +53,7 @@ export function connectorCallback(deps: ConnectorCallbackDeps) {
   const { registry } = deps;
   const routes = new Hono();
   routes.post('/call', async c => {
+    if (!deps.started()) return starting();
     const header = c.req.header('authorization') ?? '';
     if (!header.startsWith('Bearer ')) return error('denied', 'Saknar behörighetsbevis.', 401);
     let assertion: CallbackGrant;
