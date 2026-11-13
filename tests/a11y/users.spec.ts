@@ -746,7 +746,7 @@ test.describe('users administration', () => {
       await expect(page.getByText(/^Ingen grupp ger någon behörighet ännu/)).toHaveCount(0);
       await expect(page.getByRole('list', { name: 'Inläsning från katalogen' })).toHaveCount(0);
     });
-    test('an overview that cannot be read says so once, and nothing about groups or catalogues it has not read (W3)', async ({
+    test('an overview that cannot be read says so once, and nothing about groups, catalogues or units it has not read (W3)', async ({
       page,
       api,
     }) => {
@@ -764,6 +764,33 @@ test.describe('users administration', () => {
       await expect(page.getByText('Ingen katalog har fått en nyckel till Clew ännu.')).toHaveCount(0);
       // The people are a read of their own, and are listed.
       await expect(readout(page)).toHaveText('4 personer');
+      // The units come with the overview, so the unit filter says they could not be read, on screen and aloud, and a
+      // word typed in its search finds the same; never that the catalogue has pushed none.
+      await filters(page)
+        .getByRole('button', { name: /^Enhet/ })
+        .click();
+      const units = page.getByRole('listbox');
+      await expect(units).toHaveText('Enheterna kunde inte läsas.');
+      await expect.poll(() => announcements(page)).toContainEqual('Enheterna kunde inte läsas.');
+      await page.keyboard.type('hem');
+      await expect(units).toHaveText('Enheterna kunde inte läsas.');
+      await page.keyboard.press('Escape');
+      expect(await announcements(page)).not.toContainEqual('Katalogen har inte fört in några enheter.');
+      expect(await announcements(page)).not.toContainEqual('Inga resultat hittades');
+      // The capabilities are the contract's closed list, so that filter offers every one and narrows the list.
+      const capability = filters(page).getByRole('combobox', { name: 'Behörighet' });
+      await capability.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('option')).toHaveText([
+        'Administrera anslutna system',
+        'Administrera användare',
+        'Administrera utseende',
+        'Administrera kompetenskatalogen',
+      ]);
+      await page.getByRole('option', { name: 'Administrera användare', exact: true }).click();
+      await expect(page).toHaveURL(/\/admin\/users\?capability=admin\.users$/);
+      await expect(readout(page)).toHaveText('1 av 4 personer');
+      await expect(page.getByRole('table').first().locator('tbody tr')).toHaveText([/Mikael Lund/]);
       await expectNoAxeViolations(page);
     });
   });

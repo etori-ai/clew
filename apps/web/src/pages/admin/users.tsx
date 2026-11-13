@@ -2,6 +2,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  CAPABILITIES,
   GROUP_SEARCH_LIMIT,
   USERS_PAGE_SIZES,
   USERS_QUERY_LIMITS,
@@ -134,6 +135,12 @@ const holdsWords = (g: OfferedGroup, text: string) =>
  * holds may be shown, but whether any other group matches is not known, so the picker never says that none does.
  */
 const GROUPS_UNSEARCHED = 'Det gick inte att söka bland alla grupper. Försök igen.';
+/**
+ * What the unit filter says when the overview, which holds the units, could not be read: the people are a read of
+ * their own and are still listed and narrowed, but which units there are is not known, so the filter never says that
+ * there are none.
+ */
+const UNITS_UNREAD = 'Enheterna kunde inte läsas.';
 /** Waits `ms`, or rejects as soon as `signal` aborts: a search that a newer one replaced, or that closing stopped. */
 const pause = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -158,8 +165,8 @@ async function searchedGroups(text: string, signal: AbortSignal) {
 const mappingKey = (m: GroupCapability) => m.groupExternalId + ':' + m.capability;
 /**
  * A filter's options with the chosen value among them. The address may name a value the options do not hold: a unit
- * that has left the tree since the link was saved, or any value while the options are still being read. The list is
- * narrowed by it all the same, so the chip says so, by the value itself when nothing better is known.
+ * that has left the tree since the link was saved, or any unit while the overview that holds them could not be read.
+ * The list is narrowed by it all the same, so the chip says so, by the value itself when nothing better is known.
  */
 const withChosen = <T extends { value: string; label: string }>(
   options: T[],
@@ -639,7 +646,10 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 hasClear
                 hasSearch
                 searchPlaceholder="Sök enhet"
-                emptyText="Katalogen har inte fört in några enheter."
+                // The units come with the overview. Without it there are none to offer, and the panel says why, typed
+                // into or not, never that the catalogue has pushed none.
+                emptyText={data ? 'Katalogen har inte fört in några enheter.' : UNITS_UNREAD}
+                emptySearchText={data ? undefined : UNITS_UNREAD}
                 options={withChosen(
                   (data?.units ?? []).map(u => ({
                     value: u.id,
@@ -684,11 +694,9 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 size="sm"
                 presentation="adaptive"
                 hasClear
-                options={withChosen(
-                  (data?.capabilities ?? []).map(c => ({ value: c, label: capabilityLabel[c] })),
-                  filter.capability,
-                  filter.capability ? capabilityLabel[filter.capability] : '',
-                )}
+                // The contract's closed list (D85), which the address is read by too: the filter offers every
+                // capability whether or not the overview could be read, and holds whichever one the address names.
+                options={CAPABILITIES.map(c => ({ value: c, label: capabilityLabel[c] }))}
                 value={filter.capability ?? null}
                 onChange={(capability: string | null) => show({ capability })}
                 renderValue={o => `Behörighet: ${o.label}`}

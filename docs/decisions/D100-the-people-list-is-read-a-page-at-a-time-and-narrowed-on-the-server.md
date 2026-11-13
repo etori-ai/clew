@@ -1,6 +1,6 @@
 # D100 · The people list is read a page at a time and narrowed on the server
 
-**Status:** provisional (product owner, 2026-11-11: the list of Administration › Användare is paged and filtered, and where a person is placed is told apart from whether they are a manager or an employee), built 2026-11-11 and tried signed in on the development stack the same day; items 3, 5 and 6 are choices made in the build and stand until the product owner says otherwise; recorded as accepted until 2026-11-12, when the fixes of the review of users and the organisation made it provisional, since nothing outside the repository has tested it (Q10): accepted once the list has been used against a real directory; item 2 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional): a word is also looked for in the person's title, and by [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) (2026-11-12, provisional): and in the titles of the person's employments; item 2's matching amended 2026-11-12 in the same fixes (L12, L13): a word and each column are put in the composed form (NFC) and folded to lower case under ICU's root collation, and the order stays Swedish; no manual screen-reader pass yet · **Date:** 2026-11-11 · **Area:** ui, identity
+**Status:** provisional (product owner, 2026-11-11: the list of Administration › Användare is paged and filtered, and where a person is placed is told apart from whether they are a manager or an employee), built 2026-11-11 and tried signed in on the development stack the same day; items 3, 5 and 6 are choices made in the build and stand until the product owner says otherwise; recorded as accepted until 2026-11-12, when the fixes of the review of users and the organisation made it provisional, since nothing outside the repository has tested it (Q10): accepted once the list has been used against a real directory; item 2 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional): a word is also looked for in the person's title, and by [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) (2026-11-12, provisional): and in the titles of the person's employments; item 2's matching amended 2026-11-12 in the same fixes (L12, L13): a word and each column are put in the composed form (NFC) and folded to lower case under ICU's root collation, and the order stays Swedish; items 1 and 7 amended 2026-11-12 in the same fixes (W3): the capability filter offers the contract's closed list, and the unit filter says when the units could not be read; no manual screen-reader pass yet · **Date:** 2026-11-11 · **Area:** ui, identity
 
 **Amended 2026-11-12.** In the fixes of the
 [review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
@@ -25,6 +25,12 @@ paragraph, this paragraph holds.
   value stored decomposed. Å and å, Ä and ä, Ö and ö still match each other in a database created with the locale C.
   Only case and composition are folded: the letter a does not match å. The order of item 6 is still name in Swedish
   order (`sv-x-icu`) and then id.
+- **Items 1 and 7, the filters when the overview cannot be read (W3).** The people and the overview are two reads, so
+  the list and its filters are drawn when only the overview could not be read. The capability filter offers the
+  closed list `CAPABILITIES` from the contract, which the address is read by too, and not the overview's copy of it,
+  so it offers every capability either way. The unit filter offers the units the overview holds; without them it says
+  "Enheterna kunde inte läsas." when it is opened or searched, and never that the catalogue has pushed no units. A
+  unit the address names still narrows the list, shown by its id (item 5).
 
 **Decision.** Administration › Användare reads its people a page at a time. The server narrows, orders and counts;
 the browser never holds the organisation.
