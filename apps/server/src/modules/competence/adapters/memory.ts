@@ -1,5 +1,5 @@
 import { foldEntityKey, type Subject } from '@clew/contracts';
-import { PendingTaken, RequirementTaken, ShareTargetTaken, TypeNameTaken } from '../model';
+import { PendingTaken, RequirementTaken, ShareTargetTaken, SkillTaken, TypeNameTaken } from '../model';
 import type {
   ApprovalOutcome,
   ApprovalWorkItemTx,
@@ -146,14 +146,49 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       throw new Error('holding references an unknown decider');
     assertDecision(holding);
   };
-  /** The checks `competence_holding_own` and `competence_holding_decided` (D108 item 7). */
+  /**
+   * The checks `competence_holding_own`, `competence_holding_decided` (D108 item 7), `competence_holding_skill` and
+   * `competence_holding_validated` (D120).
+   */
   const assertDecision = (h: HoldingRecord) => {
     if ((h.state === 'pending' || h.state === 'rejected') && h.evidence !== 'self')
       throw new Error("only a person's own registration waits or is rejected");
     if (h.decidedBy !== null && h.decidedAt === null) throw new Error('a decision has its time');
     if (h.threadId !== null && h.evidence !== 'self') throw new Error("only a person's own registration has cards");
-    if (h.evidence === 'self' ? (h.state === 'pending') !== (h.decidedAt === null) : h.decidedAt !== null)
+    if (
+      h.level !== null
+        ? h.decidedAt !== null
+        : h.evidence === 'self'
+          ? (h.state === 'pending') !== (h.decidedAt === null)
+          : h.decidedAt !== null
+    )
       throw new Error("a person's own registration is decided exactly when it no longer waits");
+    if (
+      h.level !== null &&
+      (!Number.isInteger(h.level) ||
+        h.level < 1 ||
+        h.level > 3 ||
+        h.expiresOn !== null ||
+        h.copy !== null ||
+        h.evidence === 'system' ||
+        h.threadId !== null ||
+        (h.state !== 'valid' && h.state !== 'revoked'))
+    )
+      throw new Error('a skill has a level from 1 to 3, no end date, no source and no approval');
+    if (h.validatedBy !== null && h.validatedAt === null) throw new Error('a confirmation has its time');
+    if ((h.validatedAt !== null || h.interest) && h.level === null)
+      throw new Error('only a skill is confirmed or carries an interest mark');
+    if (h.validatedBy !== null && !state.persons.has(h.validatedBy))
+      throw new Error('holding references an unknown person who confirmed it');
+  };
+  /** The unique index `competence_holding_one_skill`: one skill of a type that counts per person (D120 item 1). */
+  const assertOneSkill = (h: HoldingRecord) => {
+    if (h.level === null || h.state !== 'valid') return;
+    const other = [...state.holdings.values()].some(
+      x =>
+        x.id !== h.id && x.level !== null && x.state === 'valid' && x.personId === h.personId && x.typeId === h.typeId,
+    );
+    if (other) throw new SkillTaken();
   };
   /** The unique index `competence_holding_pending`: one registration of a type waiting per person. */
   const assertOnePending = (h: HoldingRecord) => {
@@ -257,6 +292,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       if (state.holdings.has(holding.id)) throw new Error('duplicate holding id');
       assertHolding(holding);
       assertOnePending(holding);
+      assertOneSkill(holding);
       state.holdings.set(holding.id, structuredClone(holding));
     },
     async updateHolding(id, patch) {
@@ -265,8 +301,11 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       const next = { ...h, ...patch };
       if (next.decidedBy !== null && !state.persons.has(next.decidedBy))
         throw new Error('holding references an unknown decider');
+      if (next.registeredBy !== null && !state.persons.has(next.registeredBy))
+        throw new Error('holding references an unknown registrar');
       assertDecision(next);
       assertOnePending(next);
+      assertOneSkill(next);
       state.holdings.set(id, next);
     },
     async deleteHolding(id) {
@@ -533,7 +572,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
           holdings++;
           continue;
         }
-        for (const column of ['registeredBy', 'revokedBy', 'decidedBy'] as const)
+        for (const column of ['registeredBy', 'revokedBy', 'decidedBy', 'validatedBy'] as const)
           if (h[column] === personId) {
             h[column] = null;
             cleared.add(id);

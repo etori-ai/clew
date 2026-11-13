@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { competenceTypes, holdingsWithOwn } from './competence';
+import { competenceTypes, holdingsOutput, holdingsWithOwn, ownEnglish, withSkills } from './competence';
 import {
   desktop,
   expect,
@@ -20,7 +20,9 @@ import {
  * required type they lack as "Saknas", and for a manager the place's pages as tabs that are links, the matrix one of
  * them. The page's own answer with nothing held or required and with the module off. A certificate of the reader's own
  * added in a dialog named in the address (`add=new`, D108 item 7), what waits for the manager's decision in a card of its
- * own with "Ta tillbaka". Keyboard, structure, axe and reflow, at desktop, phone and 320 px.
+ * own with "Ta tillbaka". A skill of the reader's own (D120) added in the same dialog, whose fields change with the kind
+ * chosen, then changed in a dialog named in the address (`skill=<holding id>`) and removed after the confirmation, in a
+ * card of its own. Keyboard, structure, axe and reflow, at desktop, phone and 320 px.
  */
 const OWN = '/competence';
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
@@ -49,6 +51,40 @@ async function tabTo(page: Page, target: Locator, max = 60) {
   }
   await expect(target).toBeFocused();
 }
+const skillDialog = (page: Page, name: string) => page.getByRole('dialog', { name });
+/** The reader's list with her Engelska, which the page draws in its own card, and a skill required of her she lacks. */
+const withEnglish = (api: MockApi) => {
+  api.competenceTypes = withSkills();
+  api.competenceOwn = { approver: true, pending: [], skills: [ownEnglish()] };
+  api.competenceHoldings = {
+    rows: [
+      ...holdingsOutput.rows,
+      {
+        ref: 'holding:competence:skill-eng',
+        userName: 'anna.lindqvist',
+        name: 'Anna Lindqvist',
+        competence: 'Engelska',
+        area: 'Språk',
+        kind: 'skill',
+        status: 'valid',
+        evidence: 'self',
+        level: 'Självständig',
+        assessment: 'Egen bedömning',
+        interest: 'Vill utveckla',
+      },
+      {
+        ref: 'holding:competence:missing:p-anna:t-journal',
+        userName: 'anna.lindqvist',
+        name: 'Anna Lindqvist',
+        competence: 'Journalsystem',
+        area: 'Digital kompetens',
+        kind: 'skill',
+        status: 'missing',
+        required: 'Självständig',
+      },
+    ],
+  };
+};
 const twoWaiting = (api: MockApi) => {
   api.competenceOwn = {
     approver: true,
@@ -62,6 +98,7 @@ const twoWaiting = (api: MockApi) => {
       },
       { holdingId: 'own-3', typeId: 't-hlr', competence: 'HLR', issuedOn: '2026-09-15' },
     ],
+    skills: [],
   };
   api.competenceHoldings = holdingsWithOwn;
 };
@@ -232,7 +269,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       api,
     }) => {
       switchedOn(api);
-      api.competenceOwn = { approver: false, pending: [] };
+      api.competenceOwn = { approver: false, pending: [], skills: [] };
       await open(page, `${OWN}?add=new`);
       const dialog = addDialog(page);
       await expect(
@@ -271,6 +308,157 @@ test.describe('Kompetens › Mina kompetenser', () => {
     });
   });
 
+  test.describe('desktop: a skill of the reader’s own (D120)', () => {
+    test.use({ viewport: desktop });
+    test('it is added by keyboard with a level and the interest mark: the fields change with the kind, which is said, and it is listed at once as her own rating', async ({
+      page,
+      api,
+    }) => {
+      api.competenceTypes = withSkills();
+      await open(page, OWN);
+      const add = addLink(page);
+      await tabTo(page, add);
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(`${OWN}?add=new`);
+      const dialog = addDialog(page);
+      // The sentence about the kind chosen is a status region, so its change is said as well as shown.
+      await expect(dialog.getByRole('status').filter({ hasText: 'Din chef' })).toHaveText(
+        'Din chef behöver godkänna intyget innan det räknas.',
+      );
+      // The competence chosen by keyboard: a skill takes a level, not dates, and the sentence says what it means.
+      const competence = dialog.getByRole('combobox', { name: /Kompetens/ });
+      await competence.focus();
+      // Typing on the closed trigger chooses the option it names, as a native select does.
+      await page.keyboard.type('Engelska');
+      const skill = skillDialog(page, 'Lägg till färdighet');
+      await expect(skill).toBeVisible();
+      await expect(skill.getByRole('combobox', { name: /Kompetens/ })).toContainText('Engelska');
+      await expect(skill.getByRole('status').filter({ hasText: 'Färdigheten' })).toHaveText(
+        'Färdigheten visas direkt som din egen bedömning. Den räknas mot ett krav när din chef har bekräftat nivån.',
+      );
+      await expect(skill.getByLabel('Utfärdat', { exact: false })).toHaveCount(0);
+      const levels = skill.getByRole('radiogroup', { name: /Nivå/ });
+      await expect(levels.getByRole('radio')).toHaveCount(3);
+      await settled(page);
+      await expectNoAxeViolations(page);
+      // Saved with no level: it is said on the group, whose first choice takes the focus.
+      const save = skill.getByRole('button', { name: 'Spara', exact: true });
+      await save.focus();
+      await page.keyboard.press('Enter');
+      await expect(levels).toHaveAttribute('aria-invalid', 'true');
+      await expect(skill.getByText('Välj en nivå.', { exact: true }).first()).toBeVisible();
+      await expect(skill.getByRole('radio', { name: /Grundläggande/ })).toBeFocused();
+      expect(api.skillWrites).toEqual([]);
+      // The arrow keys choose among the three; the interest mark is a switch.
+      await page.keyboard.press('ArrowDown');
+      await expect(skill.getByRole('radio', { name: /Självständig/ })).toBeChecked();
+      await expect(levels).not.toHaveAttribute('aria-invalid', 'true');
+      const interest = skill.getByRole('switch', { name: /Vill utveckla/ });
+      await tabTo(page, interest, 6);
+      await page.keyboard.press('Space');
+      await expect(interest).toBeChecked();
+      await tabTo(page, save, 6);
+      await page.keyboard.press('Enter');
+      await expect(skill).toBeHidden();
+      await expect(page).toHaveURL(OWN);
+      expect(api.skillWrites).toEqual([
+        { method: 'POST', path: '/competence/own/skills', body: { typeId: 't-eng', level: 2, interest: true } },
+      ]);
+      await expect(notices(page).getByText('Engelska är sparad som din egen bedömning.')).toBeAttached();
+      await expect(add).toBeFocused();
+      // Listed at once in a card of its own, marked as her own rating; nothing waits for anyone.
+      const skills = page.getByRole('list', { name: 'Färdigheter' });
+      const english = skills.getByRole('listitem').filter({ hasText: 'Engelska' });
+      await expect(english).toContainText('Självständig');
+      await expect(english).toContainText('Egen bedömning');
+      await expect(english).toContainText('Vill utveckla');
+      await expect(page.getByRole('heading', { level: 2, name: 'Väntar på godkännande' })).toHaveCount(0);
+    });
+
+    test('it is changed in a dialog with its address and removed after the confirmation, by keyboard, the focus coming back each time', async ({
+      page,
+      api,
+    }) => {
+      withEnglish(api);
+      await open(page, OWN);
+      const main = page.getByRole('main');
+      // In its own card, not twice; a skill required of her that she lacks stays in the list with the level asked.
+      await expect(main.getByRole('listitem').filter({ hasText: 'Engelska' })).toHaveCount(1);
+      const lacking = main.getByRole('listitem').filter({ hasText: 'Journalsystem' });
+      await expect(lacking).toContainText(/saknas/i);
+      await expect(lacking).toContainText('Självständig');
+      await expectNoAxeViolations(page);
+      const menu = main.getByRole('button', { name: 'Åtgärder: Engelska' });
+      await tabTo(page, menu);
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Ändra', 'Ta bort']);
+      await expect(page.getByRole('menuitem', { name: 'Ändra' })).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(`${OWN}?skill=skill-eng`);
+      const change = skillDialog(page, 'Ändra färdighet');
+      await expect(change.getByText('Engelska', { exact: true })).toBeVisible();
+      const current = change.getByRole('radio', { name: /Självständig/ });
+      await expect(current).toBeChecked();
+      await expect(change.getByRole('switch', { name: /Vill utveckla/ })).toBeChecked();
+      await settled(page);
+      await expectNoAxeViolations(page);
+      await current.focus();
+      await page.keyboard.press('ArrowDown');
+      await expect(change.getByRole('radio', { name: /Expert/ })).toBeChecked();
+      await tabTo(page, change.getByRole('button', { name: 'Spara', exact: true }), 8);
+      await page.keyboard.press('Enter');
+      await expect(change).toBeHidden();
+      await expect(page).toHaveURL(OWN);
+      expect(api.skillWrites).toEqual([
+        { method: 'POST', path: '/competence/own/skills', body: { typeId: 't-eng', level: 3, interest: true } },
+      ]);
+      await expect(notices(page).getByText('Engelska är sparad.')).toBeAttached();
+      await expect(main.getByRole('listitem').filter({ hasText: 'Engelska' })).toContainText('Expert');
+      await expect(menu).toBeFocused();
+      // Removed after the confirmation: its card goes with it, so the page's heading takes the focus.
+      await page.keyboard.press('Enter');
+      await page.getByRole('menuitem', { name: 'Ta bort' }).press('Enter');
+      const confirm = page.getByRole('alertdialog', { name: 'Ta bort Engelska?' });
+      await expect(confirm).toContainText('Färdigheten tas bort från din lista.');
+      await settled(page);
+      await expectNoAxeViolations(page);
+      await tabTo(page, confirm.getByRole('button', { name: 'Ta bort', exact: true }), 4);
+      await page.keyboard.press('Enter');
+      await expect(confirm).toBeHidden();
+      expect(api.skillWrites.at(-1)).toEqual({ method: 'DELETE', path: '/competence/own/skills/skill-eng' });
+      await expect(notices(page).getByText('Engelska är borttagen.')).toBeAttached();
+      await expect(main.getByRole('heading', { level: 2, name: 'Färdigheter' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeFocused();
+    });
+
+    test('an address from before opens the change, and Esc closes it to the skill’s menu', async ({ page, api }) => {
+      withEnglish(api);
+      await open(page, `${OWN}?skill=skill-eng`);
+      const change = skillDialog(page, 'Ändra färdighet');
+      await expect(change).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(change).toBeHidden();
+      await expect(page).toHaveURL(OWN);
+      await expect(page.getByRole('main').getByRole('button', { name: 'Åtgärder: Engelska' })).toBeFocused();
+      expect(api.skillWrites).toEqual([]);
+    });
+
+    test('someone who reports to nobody is offered the skills alone, which need no approval', async ({ page, api }) => {
+      api.competenceTypes = withSkills();
+      api.competenceOwn = { approver: false, pending: [], skills: [] };
+      await open(page, `${OWN}?add=new`);
+      const dialog = addDialog(page);
+      await expect(
+        dialog.getByText(/Registreringen kan inte skickas: ingen chef är registrerad för dig\./),
+      ).toBeVisible();
+      await expect(dialog.getByText(/Du kan lägga till en färdighet med din egen bedömning/)).toBeVisible();
+      await dialog.getByRole('combobox', { name: /Kompetens/ }).click();
+      await expect(page.getByRole('option')).toHaveText(['Engelska', 'Journalsystem']);
+      await settled(page);
+      await expectNoAxeViolations(page);
+    });
+  });
+
   test.describe('phone', () => {
     test.use({ viewport: phone });
     test('the place is in the rail’s drawer and the page reads as a list', async ({ page, api }) => {
@@ -295,6 +483,16 @@ test.describe('Kompetens › Mina kompetenser', () => {
       expect(await reflowProblems(page)).toEqual([]);
       await open(page, `${OWN}?add=new`);
       await expect(addDialog(page).getByRole('button', { name: 'Skicka för godkännande' })).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+    });
+    test('the skills and the change of one reflow at 320 px', async ({ page, api }) => {
+      withEnglish(api);
+      await page.setViewportSize(narrow);
+      await open(page, OWN);
+      await expect(page.getByRole('button', { name: 'Åtgärder: Engelska' })).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+      await open(page, `${OWN}?skill=skill-eng`);
+      await expect(skillDialog(page, 'Ändra färdighet').getByRole('radio', { name: /Expert/ })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
   });

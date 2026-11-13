@@ -7,8 +7,11 @@ import {
   CompetenceMappingBodySchema,
   CompetenceRequirementBodySchema,
   CompetenceShareTargetBodySchema,
+  CompetenceSkillBodySchema,
+  CompetenceSkillRatingBodySchema,
   CompetenceTypeBodySchema,
   CompetenceTypePatchSchema,
+  CompetenceValidationBodySchema,
   type AuthenticatedContext,
   type CompetenceDecisionBody,
   type CompetenceHoldingBody,
@@ -16,8 +19,11 @@ import {
   type CompetenceMatrixInput,
   type CompetenceRequirementBody,
   type CompetenceShareTargetBody,
+  type CompetenceSkillBody,
+  type CompetenceSkillRatingBody,
   type CompetenceTypeBody,
   type CompetenceTypePatch,
+  type CompetenceValidationBody,
 } from '@clew/contracts';
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { CompetenceUsecases } from '../modules/competence/usecases';
@@ -26,8 +32,9 @@ import type { CompetenceUsecases } from '../modules/competence/usecases';
  * The competence module's own routes (D108): the catalogue an administrator keeps, the sources whose holdings are
  * copied in and their mappings to the catalogue (item 9), the requirements and share targets (item 6), a manager's
  * registration of a certificate, the manager's matrix and its file (item 11), which is no declared view because its
- * columns are chosen and a cell writes, and a person's own registration with the decision of the manager they report to
- * (item 7). A person's holdings, what needs attention and a unit's coverage have no route here:
+ * columns are chosen and a cell writes, a person's own registration with the decision of the manager they report to
+ * (item 7), and skills (D120): a person's own rating, its removal, and the manager's registration and confirmation of
+ * a level. A person's holdings, what needs attention and a unit's coverage have no route here:
  * Clew reads `competence.holdings`, `competence.attention` and `competence.coverage` through the capability route. Each
  * route parses, validates, calls one use case and maps its errors; the use cases own who may do what. Every route first
  * refuses unless the built-in module is switched on and visible to the person, so nothing of the domain is read or
@@ -60,6 +67,11 @@ export interface CompetenceRouteDeps {
     | 'withdrawOwn'
     | 'approval'
     | 'decideHolding'
+    | 'rateOwnSkill'
+    | 'removeOwnSkill'
+    | 'registerSkill'
+    | 'skillValidation'
+    | 'validateSkill'
   >;
   /** Whether the built-in module is on for this person now (composition: `competenceWritable`). */
   writable: (persona: AuthenticatedContext) => Promise<boolean>;
@@ -76,6 +88,9 @@ const validators = {
   requirement: ajv.compile<CompetenceRequirementBody>(CompetenceRequirementBodySchema),
   target: ajv.compile<CompetenceShareTargetBody>(CompetenceShareTargetBodySchema),
   decision: ajv.compile<CompetenceDecisionBody>(CompetenceDecisionBodySchema),
+  rating: ajv.compile<CompetenceSkillRatingBody>(CompetenceSkillRatingBodySchema),
+  skill: ajv.compile<CompetenceSkillBody>(CompetenceSkillBodySchema),
+  validation: ajv.compile<CompetenceValidationBody>(CompetenceValidationBodySchema),
 };
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 2000): Promise<T> {
   const text = await request.text();
@@ -176,6 +191,30 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
   });
   routes.delete('/own/holdings/:id', async c => {
     await competence.withdrawOwn(c.get('session').context, param(c.req.param('id')));
+    return c.body(null, 204);
+  });
+  // A skill (D120): the person's own rating, stored at once and changed by rating again, and removed by them.
+  routes.post('/own/skills', async c => {
+    const input = await body(c.req.raw, validators.rating);
+    return c.json({ id: await competence.rateOwnSkill(c.get('session').context, input) }, 200);
+  });
+  routes.delete('/own/skills/:id', async c => {
+    await competence.removeOwnSkill(c.get('session').context, param(c.req.param('id')));
+    return c.body(null, 204);
+  });
+  // A manager the person reports to registers a skill for them, confirmed, or confirms the level of one they hold.
+  routes.post('/people/:personId/skills', async c => {
+    const personId = param(c.req.param('personId')),
+      input = await body(c.req.raw, validators.skill);
+    return c.json({ id: await competence.registerSkill(c.get('session').context, personId, input) }, 201);
+  });
+  routes.get('/skills/:id', async c =>
+    c.json(await competence.skillValidation(c.get('session').context, param(c.req.param('id'))), 200, privateHeaders),
+  );
+  routes.post('/skills/:id/validation', async c => {
+    const id = param(c.req.param('id')),
+      input = await body(c.req.raw, validators.validation);
+    await competence.validateSkill(c.get('session').context, id, input);
     return c.body(null, 204);
   });
   // Its decision by the manager the person reports to now: the registration as they read it, and approve or reject.

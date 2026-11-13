@@ -2,8 +2,10 @@ import type {
   CompetenceApproval,
   CompetenceMatrixCell,
   CompetenceMatrixOutput,
+  CompetenceOwnSkill,
   CompetenceRequirementsOutput,
   CompetenceShareTarget,
+  CompetenceSkillValidation,
   CompetenceSource,
   CompetenceType,
   PanelViewSpec,
@@ -27,6 +29,10 @@ export const holdingsSpec: PanelViewSpec = {
       format: 'status',
       tones: { expired: 'alert', missing: 'alert', expiring: 'warn', 'awaiting-approval': 'none', rejected: 'none' },
     },
+    { key: 'level', label: 'Nivå' },
+    { key: 'assessment', label: 'Bedömning', format: 'status', tones: { 'Egen bedömning': 'none' }, beside: true },
+    { key: 'interest', label: 'Utveckling', format: 'status', tones: { 'Vill utveckla': 'none' }, beside: true },
+    { key: 'required', label: 'Krävd nivå' },
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     { key: 'issuedOn', label: 'Utfärdat', format: 'date' },
     { key: 'area', label: 'Område' },
@@ -343,3 +349,74 @@ export const holdingsWithOwn = {
     },
   ],
 };
+
+/**
+ * Skills (D120): two types of the kind Färdighet, held at a level and never ending. A spec that needs them adds them to
+ * the catalogue (`withSkills`), so the specs of the certificates read the catalogue they always have.
+ */
+export const skillTypes = (): CompetenceType[] => [
+  { id: 't-eng', name: 'Engelska', area: 'Språk', kind: 'skill', archived: false },
+  { id: 't-journal', name: 'Journalsystem', area: 'Digital kompetens', kind: 'skill', archived: false },
+];
+export const withSkills = (): CompetenceType[] => [...competenceTypes(), ...skillTypes()];
+/** The reader's Engelska, rated by herself at Självständig and wanting to develop it, as her page lists it. */
+export const ownEnglish = (): CompetenceOwnSkill => ({
+  holdingId: 'skill-eng',
+  typeId: 't-eng',
+  competence: 'Engelska',
+  area: 'Språk',
+  level: 2,
+  validated: false,
+  interest: true,
+});
+/**
+ * The matrix with a skill's column (D120 items 1 and 4): Journalsystem required of every report at least Självständig.
+ * Anna rated herself Expert, unconfirmed, so it is missing with her rating beside it; Erik's Självständig is confirmed and
+ * meets it; Lena holds nothing of it.
+ */
+export const withJournal = (m: CompetenceMatrixOutput): CompetenceMatrixOutput => {
+  const asked = { required: true, through: [onPosition], least: 2 as const };
+  const cells: Record<string, CompetenceMatrixCell> = {
+    anna: cell('t-journal', {
+      status: 'missing',
+      ...asked,
+      holdingId: 'h-anna-journal',
+      evidence: 'self',
+      revocable: true,
+      level: 3,
+      validated: false,
+      interest: true,
+    }),
+    erik: cell('t-journal', {
+      status: 'valid',
+      ...asked,
+      holdingId: 'h-erik-journal',
+      evidence: 'self',
+      revocable: true,
+      level: 2,
+      validated: true,
+    }),
+    lena: cell('t-journal', { status: 'missing', ...asked }),
+  };
+  return {
+    ...m,
+    columns: [
+      ...m.columns,
+      { typeId: 't-journal', name: 'Journalsystem', area: 'Digital kompetens', kind: 'skill', levels: [2] },
+    ],
+    rows: m.rows.map(r => ({ ...r, cells: [...r.cells, cells[r.personId]!] })),
+    required: m.required + 1,
+  };
+};
+/** Anna's Journalsystem as her manager confirms it: her own rating, Expert. */
+export const annaJournal = (): CompetenceSkillValidation => ({
+  holdingId: 'h-anna-journal',
+  personId: 'anna',
+  name: 'Anna Lindqvist',
+  typeId: 't-journal',
+  competence: 'Journalsystem',
+  area: 'Digital kompetens',
+  level: 3,
+  validated: false,
+  interest: true,
+});

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Ref, type RefObject } fr
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type {
+  CompetenceLevel,
   CompetencePosition,
   CompetenceRequirement,
   CompetenceShareTarget,
@@ -44,6 +45,7 @@ import { usePageTitle } from '../../page-title';
 import { DialogFrame } from '../../components/dialog-frame';
 import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
+import { LevelField, isSkillType, levelLabel } from '../../components/register-holding';
 import { AdminShell } from './shell';
 
 /**
@@ -94,11 +96,15 @@ interface TargetRow extends Record<string, unknown> {
   archived: boolean;
 }
 
-/** The competence a row names, and that it is archived when it is: such a requirement counts towards nothing. */
-function CompetenceCell({ name, archived }: { name: string; archived: boolean }) {
+/**
+ * The competence a row names, and that it is archived when it is: such a requirement counts towards nothing. A skill's
+ * requirement says the least level it asks (D120 item 4).
+ */
+function CompetenceCell({ name, archived, level }: { name: string; archived: boolean; level?: number | undefined }) {
   return (
     <VStack gap={1} hAlign="start">
       <Text weight="semibold">{name}</Text>
+      {level !== undefined && <Text type="supporting">{`Minst ${levelLabel(level)}`}</Text>}
       {archived && <Badge variant="neutral" label="Arkiverad" />}
     </VStack>
   );
@@ -153,7 +159,11 @@ function useFocusOnClose(opener: RefObject<HTMLElement | null>) {
   return frame;
 }
 
-/** Adding a requirement on a position or a unit. Filled afresh each time it opens; what is missing is said on its field. */
+/**
+ * Adding a requirement on a position or a unit, and for a skill the least level a confirmed holding must reach (D120
+ * item 4), Grundläggande unless another is chosen. Filled afresh each time it opens; what is missing is said on its
+ * field.
+ */
 function RequirementDialog({
   isOpen,
   catalogue,
@@ -179,6 +189,7 @@ function RequirementDialog({
   const [typeId, setTypeId] = useState<string | null>(null);
   const [on, setOn] = useState<'position' | 'unit'>('position');
   const [targetId, setTargetId] = useState<string | null>(null);
+  const [minLevel, setMinLevel] = useState<CompetenceLevel>(1);
   const [tried, setTried] = useState(false);
   const typeField = useRef<HTMLButtonElement>(null);
   const targetField = useRef<HTMLButtonElement>(null);
@@ -186,11 +197,13 @@ function RequirementDialog({
     setTypeId(null);
     setOn('position');
     setTargetId(null);
+    setMinLevel(1);
     setTried(false);
     save.reset();
     // Filled once per opening: a refetch while the dialog is open must not undo the choices being made.
   }, [isOpen]);
   const types = typeOptions(catalogue);
+  const skill = isSkillType(catalogue.find(t => t.id === typeId));
   const targets =
     on === 'position'
       ? positions.map(p => ({ value: p.code, label: p.label, description: p.code }))
@@ -205,11 +218,12 @@ function RequirementDialog({
     const type = catalogue.find(t => t.id === typeId);
     const target = targets.find(t => t.value === targetId);
     await save.run(async () => {
+      const level = skill ? { minLevel } : {};
       await api.competence.addRequirement(
-        on === 'position' ? { typeId, positionCode: targetId } : { typeId, unitId: targetId },
+        on === 'position' ? { typeId, positionCode: targetId, ...level } : { typeId, unitId: targetId, ...level },
       );
       onClose();
-      return `${type?.name ?? 'Kompetensen'} krävs nu av ${onWords({ on, targetLabel: target?.label ?? '' })}.`;
+      return `${type?.name ?? 'Kompetensen'} krävs nu av ${onWords({ on, targetLabel: target?.label ?? '' })}${skill ? ` på minst nivån ${levelLabel(minLevel)}` : ''}.`;
     });
   };
   const onOpenChange = (next: boolean) => {
@@ -251,6 +265,14 @@ function RequirementDialog({
               emptyText="Katalogen är tom"
               {...required(typeId, 'Välj en kompetens.')}
             />
+            {skill && (
+              <LevelField
+                label="Lägsta nivå"
+                description="Kravet uppfylls av en färdighet som chefen har bekräftat på den här nivån eller högre."
+                value={minLevel}
+                onChange={setMinLevel}
+              />
+            )}
             <RadioList
               label="Gäller"
               value={on}
@@ -510,7 +532,9 @@ function RequirementsCard({
               label={<Text weight="semibold">{row.r.targetLabel}</Text>}
               description={
                 <HStack gap={1} wrap="wrap" vAlign="center">
-                  <Text type="supporting">{row.name}</Text>
+                  <Text type="supporting">
+                    {row.r.minLevel !== undefined ? `${row.name}, minst ${levelLabel(row.r.minLevel)}` : row.name}
+                  </Text>
                   {row.r.on === 'position' && row.r.targetId !== row.r.targetLabel && (
                     <Text type="code" color="secondary">
                       {row.r.targetId}
@@ -545,7 +569,7 @@ function RequirementsCard({
               key: 'competence',
               header: 'Kompetens',
               width: proportional(3, { minWidth: 200 }),
-              renderCell: row => <CompetenceCell name={row.name} archived={row.archived} />,
+              renderCell: row => <CompetenceCell name={row.name} archived={row.archived} level={row.r.minLevel} />,
             },
             { key: 'remove', header: 'Ta bort', width: pixel(110), renderCell: removeButton },
           ]}

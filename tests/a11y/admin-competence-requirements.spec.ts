@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { competenceCatalogue, competenceRequirements, competenceShareTargets } from './competence';
+import { competenceCatalogue, competenceRequirements, competenceShareTargets, skillTypes } from './competence';
 import {
   desktop,
   expect,
@@ -180,6 +180,80 @@ test.describe('Administration › Kompetens › Krav', () => {
           .nth(1)
           .getByRole('row', { name: /Hemtjänst Norr/ }),
       ).toContainText('Heta arbeten');
+    });
+
+    test('a skill is required at a least level (D120): the level is asked once a skill is chosen, Grundläggande unless another is', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      api.competenceTypes = [...competenceCatalogue(), ...skillTypes()];
+      api.competenceRequirements = {
+        ...competenceRequirements(),
+        rows: [
+          ...competenceRequirements().rows,
+          {
+            id: 'r-eng-ssk',
+            typeId: 't-eng',
+            on: 'position',
+            targetId: 'sjukskoterska',
+            targetLabel: 'Sjuksköterska',
+            minLevel: 3,
+          },
+        ],
+      };
+      await open(page, REQUIREMENTS);
+      // A skill's requirement says its least level where it is listed.
+      await expect(
+        page
+          .getByRole('table')
+          .first()
+          .getByRole('row', { name: /Engelska/ }),
+      ).toContainText('Minst Expert');
+      await page.getByRole('link', { name: 'Lägg till krav' }).focus();
+      await page.keyboard.press('Enter');
+      const dialog = requirementDialog(page);
+      await expect(dialog).toBeVisible();
+      // Not asked of a certificate.
+      await expect(dialog.getByRole('radiogroup', { name: /Lägsta nivå/ })).toHaveCount(0);
+      const competence = dialog.getByRole('combobox', { name: /Kompetens/ });
+      await competence.focus();
+      await page.keyboard.type('Journalsystem');
+      await expect(competence).toContainText('Journalsystem');
+      const least = dialog.getByRole('radiogroup', { name: /Lägsta nivå/ });
+      await expect(least).toBeVisible();
+      const basic = dialog.getByRole('radio', { name: /Grundläggande/ });
+      await expect(basic).toBeChecked();
+      await settled(page);
+      await expectNoAxeViolations(page);
+      await basic.focus();
+      await page.keyboard.press('ArrowDown');
+      await expect(dialog.getByRole('radio', { name: /Självständig/ })).toBeChecked();
+      const position = dialog.getByRole('combobox', { name: /Befattning/ });
+      await position.focus();
+      await page.keyboard.type('Under');
+      await expect(position).toContainText('Undersköterska');
+      await dialog.getByRole('button', { name: 'Spara', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(dialog).toBeHidden();
+      expect(api.requirementWrites).toEqual([
+        {
+          method: 'POST',
+          path: '/competence/requirements',
+          body: { typeId: 't-journal', positionCode: 'underskoterska', minLevel: 2 },
+        },
+      ]);
+      await expect(
+        notices(page).getByText(
+          'Journalsystem krävs nu av dem med befattningen Undersköterska på minst nivån Självständig.',
+        ),
+      ).toBeAttached();
+      await expect(
+        page
+          .getByRole('table')
+          .first()
+          .getByRole('row', { name: /Journalsystem/ }),
+      ).toContainText('Minst Självständig');
     });
 
     test('a removal is asked for in the confirmation: Esc lets go of it, the second press removes and the focus goes to the card', async ({

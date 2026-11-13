@@ -1,8 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { CompetenceHoldingBody, CompetenceType } from '@clew/contracts';
-import { Button, DateInput, Dialog, DialogHeader, FormLayout, Selector, Text, VStack, useMediaQuery } from '@clew/ui';
+import {
+  COMPETENCE_LEVELS,
+  COMPETENCE_LEVEL_DESCRIPTIONS,
+  COMPETENCE_LEVEL_LABELS,
+  SKILL_KIND,
+  isCompetenceLevel,
+  type CompetenceHoldingBody,
+  type CompetenceLevel,
+  type CompetenceOwnSkill,
+  type CompetenceSkillRatingBody,
+  type CompetenceType,
+} from '@clew/contracts';
+import {
+  Button,
+  DateInput,
+  Dialog,
+  DialogHeader,
+  FormLayout,
+  RadioList,
+  RadioListItem,
+  Selector,
+  Switch,
+  Text,
+  VStack,
+  useMediaQuery,
+} from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { api } from '../api';
 import { useAdminAction } from '../mutations';
@@ -13,10 +37,12 @@ import { DialogFrame } from './dialog-frame';
 import { mobileQuery } from './shell';
 
 /**
- * Registering a holding (D108 item 7): by the manager a person reports to, for them (`RegisterHolding`), or by the person
- * for themselves, for that manager to approve (`AddOwnHolding`). Both ask the same: which competence, the day it was
- * issued and, where the issuer set one, the day it ends (`useHoldingFields`). The server computes where the holding
- * stands; the form only says what the certificate says.
+ * Registering a holding (D108 item 7, D120): by the manager a person reports to, for them (`RegisterHolding`), or by the
+ * person for themselves (`AddOwnHolding`). Both ask the same: which competence and, by its kind, either the day it was
+ * issued and, where the issuer set one, the day it ends, or for a skill the level it is held at (`useHoldingFields`). One
+ * dialog changes its fields with the kind of the competence chosen, and a sentence above them says what the chosen kind
+ * means, in a status region, so the change is said as well as shown. The server computes where the holding stands; the
+ * form only says what the certificate or the person says.
  *
  * The date fields take any day: a field that refused a day would drop what was typed without a word, and the form
  * would then register a certificate without the end date the person meant. A day that has not come, or an end before
@@ -32,47 +58,157 @@ const options = (types: CompetenceType[]) => {
   }));
 };
 const months = (n: number) => (n % 12 === 0 ? `${n / 12} år` : `${n} månader`);
+/** Whether a type of the catalogue is a skill (D120): held at a level, with no dates of its own. */
+export const isSkillType = (type: Pick<CompetenceType, 'kind'> | undefined) => type?.kind === SKILL_KIND;
+/** A level as a person reads it: "Självständig". */
+export const levelLabel = (level: number) =>
+  isCompetenceLevel(level) ? COMPETENCE_LEVEL_LABELS[level] : String(level);
+/** The first of a group's choices, the chosen one where there is one: what takes the focus when the group is wrong. */
+export function focusChoice(group: RefObject<HTMLDivElement | null>) {
+  const inputs = [...(group.current?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? [])];
+  (inputs.find(i => i.checked) ?? inputs[0])?.focus();
+}
+
+/**
+ * The level of a skill (D120 item 1) as one choice among three, Astryx's radio list: the group's label is drawn, each
+ * level says what it means, and a wrong or missing choice is said on the group (`aria-invalid`). `groupRef` is the
+ * group, whose chosen or first choice `focusChoice` focuses.
+ */
+export function LevelField({
+  label = 'Nivå',
+  description,
+  value,
+  onChange,
+  problem,
+  groupRef,
+}: {
+  label?: string;
+  description?: string;
+  value: CompetenceLevel | null;
+  onChange: (level: CompetenceLevel) => void;
+  /** What is wrong, said on the group; null when nothing is. */
+  problem?: string | null;
+  groupRef?: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <RadioList
+      {...(groupRef ? { ref: groupRef } : {})}
+      label={label}
+      {...(description ? { description } : {})}
+      value={value === null ? '' : String(value)}
+      onChange={next => {
+        const level = Number(next);
+        if (isCompetenceLevel(level)) onChange(level);
+      }}
+      {...(problem ? { status: { type: 'error' as const, message: problem } } : {})}
+    >
+      {COMPETENCE_LEVELS.map(level => (
+        <RadioListItem
+          key={level}
+          value={String(level)}
+          label={COMPETENCE_LEVEL_LABELS[level]}
+          description={COMPETENCE_LEVEL_DESCRIPTIONS[level]}
+        />
+      ))}
+    </RadioList>
+  );
+}
+
+/** "Vill utveckla" (D120 item 3): set by the person alone, shown where the skill is listed, counting towards nothing. */
+export function InterestField({ value, onChange }: { value: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <Switch
+      label="Vill utveckla"
+      description="Visas där färdigheten listas. Det påverkar inget krav."
+      value={value}
+      onChange={next => onChange(next)}
+    />
+  );
+}
+
+/** Who fills the form in: the manager for a report, or the person for themselves. */
+export type HoldingFormMode = 'manager' | 'own';
+/** What the form answers when it is right: a certificate's body with its dates, or a skill's with its level. */
+export type ReadyHolding =
+  | { kind: 'dated'; body: CompetenceHoldingBody; type: CompetenceType }
+  | { kind: 'skill'; body: CompetenceSkillRatingBody; type: CompetenceType };
+/**
+ * The sentence above the fields, by who fills the form in and the kind chosen (D108 item 7, D120 item 2): a person's
+ * certificate waits for the manager they report to; a person's skill is shown at once as their own rating; a manager's
+ * certificate is registered with its dates and a manager's skill confirmed by them.
+ */
+const NOTICE: Record<HoldingFormMode, Record<'dated' | 'skill', string>> = {
+  own: {
+    dated: 'Din chef behöver godkänna intyget innan det räknas.',
+    skill: 'Färdigheten visas direkt som din egen bedömning. Den räknas mot ett krav när din chef har bekräftat nivån.',
+  },
+  manager: {
+    dated: 'Ett intyg registreras med dagen det utfärdades och, om det har ett, slutdatumet.',
+    skill: 'En färdighet registreras med en nivå, som räknas som bekräftad av dig.',
+  },
+};
 
 /**
  * The fields a holding is registered with, and what is wrong with them: the competence from the catalogue grouped by
- * area (starting on `preset` while it can be registered), the day it was issued, and the day it ends. `ready` says
- * what is wrong on the fields and gives the first the focus, or answers the body to send; `reset` empties them.
+ * area (starting on `preset` while it can be registered), then by its kind either the day it was issued and the day it
+ * ends, or the level and, for the person's own, whether they want to develop it. `notice` is the sentence about the
+ * kind chosen, a status region placed above the fields, so a change of kind is announced. `ready` says what is wrong on
+ * the fields and gives the first the focus, or answers what to send; `reset` empties them.
  */
-export function useHoldingFields(types: CompetenceType[], preset: string | null) {
+export function useHoldingFields(types: CompetenceType[], preset: string | null, mode: HoldingFormMode = 'manager') {
   // The type the person chose; until they choose, the one the address starts on, while it can be registered.
   const [picked, setTypeId] = useState<string | undefined>(undefined);
   const typeId = picked ?? (preset && types.some(t => t.id === preset) ? preset : undefined);
   const [issuedOn, setIssuedOn] = useState<string | undefined>(undefined);
   const [expiresOn, setExpiresOn] = useState<string | undefined>(undefined);
+  const [level, setLevel] = useState<CompetenceLevel | null>(null);
+  const [interest, setInterest] = useState(false);
   const [tried, setTried] = useState(false);
   const typeField = useRef<HTMLButtonElement>(null);
   const issuedField = useRef<HTMLInputElement>(null);
   const expiresField = useRef<HTMLInputElement>(null);
+  const levelField = useRef<HTMLDivElement>(null);
   const type = types.find(t => t.id === typeId);
+  const skill = isSkillType(type);
   const typeProblem = typeId ? null : 'Välj en kompetens.';
-  const issuedProblem = !issuedOn
-    ? 'Välj dagen då intyget utfärdades.'
-    : issuedOn > today()
-      ? 'Dagen har inte kommit.'
-      : null;
+  const levelProblem = skill && level === null ? 'Välj en nivå.' : null;
+  const issuedProblem = skill
+    ? null
+    : !issuedOn
+      ? 'Välj dagen då intyget utfärdades.'
+      : issuedOn > today()
+        ? 'Dagen har inte kommit.'
+        : null;
   const expiresProblem =
-    expiresOn && issuedOn && expiresOn < issuedOn ? 'Slutdatumet kan inte vara före utfärdandet.' : null;
+    !skill && expiresOn && issuedOn && expiresOn < issuedOn ? 'Slutdatumet kan inte vara före utfärdandet.' : null;
   const reset = () => {
     setTypeId(undefined);
     setIssuedOn(undefined);
     setExpiresOn(undefined);
+    setLevel(null);
+    setInterest(false);
     setTried(false);
   };
-  const ready = (): { body: CompetenceHoldingBody; type: CompetenceType } | null => {
-    if (typeProblem || issuedProblem || expiresProblem || !type || !issuedOn) {
+  const ready = (): ReadyHolding | null => {
+    if (typeProblem || levelProblem || issuedProblem || expiresProblem || !type) {
       setTried(true);
-      (typeProblem ? typeField : issuedProblem ? issuedField : expiresField).current?.focus();
+      if (typeProblem) typeField.current?.focus();
+      else if (levelProblem) focusChoice(levelField);
+      else (issuedProblem ? issuedField : expiresField).current?.focus();
       return null;
     }
-    return { body: { typeId: type.id, issuedOn, ...(expiresOn ? { expiresOn } : {}) }, type };
+    if (skill && level !== null)
+      return { kind: 'skill', body: { typeId: type.id, level, interest: mode === 'own' && interest }, type };
+    if (!issuedOn) return null;
+    return { kind: 'dated', body: { typeId: type.id, issuedOn, ...(expiresOn ? { expiresOn } : {}) }, type };
   };
   const status = (problem: string | null) =>
     tried && problem ? { status: { type: 'error' as const, message: problem } } : {};
+  const notice = (
+    <Text as="p" type="supporting" role="status">
+      {NOTICE[mode][skill ? 'skill' : 'dated']}
+    </Text>
+  );
   const fields = (
     <FormLayout direction="vertical" defaultOptionality="required">
       <Selector
@@ -89,42 +225,53 @@ export function useHoldingFields(types: CompetenceType[], preset: string | null)
         presentation="adaptive"
         {...status(typeProblem)}
       />
-      <DateInput
-        ref={issuedField}
-        label="Utfärdat"
-        value={issuedOn as never}
-        onChange={value => setIssuedOn(value ?? undefined)}
-        weekStartsOn="mon"
-        placeholder="Välj ett datum"
-        presentation="adaptive-bottom-sheet"
-        {...status(issuedProblem)}
-      />
-      <DateInput
-        ref={expiresField}
-        label="Giltigt till"
-        description={
-          type?.validityMonths
-            ? `Lämna tomt om intyget saknar slutdatum: då gäller det ${months(type.validityMonths)} från utfärdandet.`
-            : 'Slutdatumet som står på intyget. Lämna tomt om det inte har något.'
-        }
-        value={expiresOn as never}
-        onChange={value => setExpiresOn(value ?? undefined)}
-        weekStartsOn="mon"
-        placeholder="Välj ett datum"
-        presentation="adaptive-bottom-sheet"
-        isOptional
-        {...status(expiresProblem)}
-      />
+      {skill ? (
+        <>
+          <LevelField groupRef={levelField} value={level} onChange={setLevel} problem={tried ? levelProblem : null} />
+          {mode === 'own' && <InterestField value={interest} onChange={setInterest} />}
+        </>
+      ) : (
+        <>
+          <DateInput
+            ref={issuedField}
+            label="Utfärdat"
+            value={issuedOn as never}
+            onChange={value => setIssuedOn(value ?? undefined)}
+            weekStartsOn="mon"
+            placeholder="Välj ett datum"
+            presentation="adaptive-bottom-sheet"
+            {...status(issuedProblem)}
+          />
+          <DateInput
+            ref={expiresField}
+            label="Giltigt till"
+            description={
+              type?.validityMonths
+                ? `Lämna tomt om intyget saknar slutdatum: då gäller det ${months(type.validityMonths)} från utfärdandet.`
+                : 'Slutdatumet som står på intyget. Lämna tomt om det inte har något.'
+            }
+            value={expiresOn as never}
+            onChange={value => setExpiresOn(value ?? undefined)}
+            weekStartsOn="mon"
+            placeholder="Välj ett datum"
+            presentation="adaptive-bottom-sheet"
+            isOptional
+            {...status(expiresProblem)}
+          />
+        </>
+      )}
     </FormLayout>
   );
-  return { fields, ready, reset };
+  return { fields, notice, ready, reset, skill };
 }
 
 /**
- * Registering a certificate for a person who reports to the manager (D108 item 7). A dialog over the list, with the
- * person named in its heading and in the address (`?register=<personId>`, D83): closing it, by Avbryt, Esc or the close
- * button, is the list again with the focus on what opened it, which Astryx gives back. The way in is the page the
- * competence module declares on its read about a person (D97): "Registrera intyg" in the person's Kompetens section.
+ * Registering a holding for a person who reports to the manager (D108 item 7, D120 item 2). A dialog over the list,
+ * with the person named in its heading and in the address (`?register=<personId>`, D83): closing it, by Avbryt, Esc or
+ * the close button, is the list again with the focus on what opened it, which Astryx gives back. The way in is the page
+ * the competence module declares on its read about a person (D97): "Registrera intyg" in the person's Kompetens section.
+ * Its title names what is registered: a certificate with its dates, or a skill with its level, confirmed by the manager
+ * who registers it.
  *
  * On the matrix (D108 item 11) a cell opens it for its person and its type (`?competence=<typeId>`), which the form
  * starts on and the person may change; closing it gives the focus to the cell's own control (`opener`), since the menu
@@ -173,6 +320,11 @@ export function RegisterHolding({
     const ready = form.ready();
     if (!ready) return;
     await action.run(async () => {
+      if (ready.kind === 'skill') {
+        await api.competence.registerSkill(person.id, { typeId: ready.body.typeId, level: ready.body.level });
+        close();
+        return `${ready.type.name} är registrerad för ${person.name} på nivån ${levelLabel(ready.body.level)}.`;
+      }
       await api.competence.register(person.id, ready.body);
       close();
       return `Intyget är registrerat för ${person.name}.`;
@@ -213,7 +365,7 @@ export function RegisterHolding({
       <DialogFrame
         header={
           <DialogHeader
-            title="Registrera intyg"
+            title={form.skill ? 'Registrera färdighet' : 'Registrera intyg'}
             subtitle={person ? `För ${person.name}` : undefined}
             onOpenChange={onOpenChange}
           />
@@ -233,6 +385,7 @@ export function RegisterHolding({
         }
       >
         <VStack gap={3} ref={frame}>
+          {form.notice}
           {form.fields}
         </VStack>
       </DialogFrame>
@@ -244,11 +397,14 @@ export function RegisterHolding({
 export const NO_APPROVER = 'Registreringen kan inte skickas: ingen chef är registrerad för dig.';
 
 /**
- * A person registers a certificate of their own (D108 item 7), on Mina kompetenser in a dialog named in the address
- * (`?add=new`). It asks what the manager's registration asks, says before it is sent that the manager they report to
- * must approve it before it counts, and sends it for approval. Someone who reports to nobody (`approver` false) is told
- * it cannot be sent, in the server's words, and offered nothing to fill in. On success the dialog closes, the page's
- * own lists are read again and a toast says it was sent; the page gives the focus back (`onClose`).
+ * A person adds a competence of their own (D108 item 7, D120 item 2), on Mina kompetenser in a dialog named in the
+ * address (`?add=new`). A certificate asks what the manager's registration asks and is sent for the manager they report
+ * to to approve, which the dialog says before it is sent. A skill asks the level and whether they want to develop it,
+ * and is saved at once as their own rating, which the dialog says instead; the sentence is a status region, so the change
+ * of kind is announced. Someone who reports to nobody (`approver` false) is told, in the server's words, that a
+ * certificate cannot be sent, and offered the skills alone, which need no approval; with no skill in the catalogue they
+ * are offered nothing to fill in. On success the dialog closes, the page's own lists are read again and a toast says it
+ * was sent or saved; the page gives the focus back (`onClose`).
  */
 export function AddOwnHolding({
   isOpen,
@@ -262,12 +418,15 @@ export function AddOwnHolding({
 }) {
   const mobile = useMediaQuery(mobileQuery);
   const typesQ = useQuery({ ...competenceOwnTypesQuery, enabled: isOpen });
-  const types = (typesQ.data?.rows ?? []).filter(t => !t.archived);
+  const open = (typesQ.data?.rows ?? []).filter(t => !t.archived);
+  const noApprover = approver === false;
+  // Without anyone to approve a certificate, the skills alone: they need no approval (D120 item 2).
+  const types = noApprover ? open.filter(t => isSkillType(t)) : open;
   const action = useAdminAction({
     invalidate: [keys.competenceAll, keys.viewAll, keys.entities.all],
     toastId: 'competence:own',
   });
-  const form = useHoldingFields(types, null);
+  const form = useHoldingFields(types, null, 'own');
   useEffect(() => {
     form.reset();
     action.reset();
@@ -278,15 +437,20 @@ export function AddOwnHolding({
     const ready = form.ready();
     if (!ready) return;
     await action.run(async () => {
+      if (ready.kind === 'skill') {
+        await api.competence.rateOwnSkill(ready.body);
+        onClose();
+        return `${ready.type.name} är sparad som din egen bedömning.`;
+      }
       await api.competence.registerOwn(ready.body);
       onClose();
       return `${ready.type.name} är skickat till din chef för godkännande.`;
     });
   };
-  const onOpenChange = (open: boolean) => {
-    if (!open) onClose();
+  const onOpenChange = (next: boolean) => {
+    if (!next) onClose();
   };
-  const blocked = approver === false;
+  const blocked = noApprover && typesQ.isSuccess && types.length === 0;
   return (
     <Dialog
       isOpen={isOpen}
@@ -296,7 +460,9 @@ export function AddOwnHolding({
       variant={mobile ? 'fullscreen' : 'standard'}
     >
       <DialogFrame
-        header={<DialogHeader title="Lägg till intyg" onOpenChange={onOpenChange} />}
+        header={
+          <DialogHeader title={form.skill ? 'Lägg till färdighet' : 'Lägg till intyg'} onOpenChange={onOpenChange} />
+        }
         error={action.error}
         primary={
           blocked ? (
@@ -307,7 +473,7 @@ export function AddOwnHolding({
               <Button
                 size="sm"
                 variant="primary"
-                label="Skicka för godkännande"
+                label={form.skill ? 'Spara' : 'Skicka för godkännande'}
                 isLoading={action.busy}
                 onClick={() => void submit()}
               />
@@ -319,12 +485,85 @@ export function AddOwnHolding({
           <Text as="p">{NO_APPROVER} Den som administrerar Startsidan kan rätta det.</Text>
         ) : (
           <VStack gap={3}>
-            <Text as="p" type="supporting">
-              Din chef behöver godkänna intyget innan det räknas.
-            </Text>
+            {noApprover && (
+              <Text as="p">
+                {NO_APPROVER} Du kan lägga till en färdighet med din egen bedömning, som inte behöver godkännas.
+              </Text>
+            )}
+            {form.notice}
             {form.fields}
           </VStack>
         )}
+      </DialogFrame>
+    </Dialog>
+  );
+}
+
+/**
+ * A person changes a skill of their own (D120 items 2 and 3), on Mina kompetenser in a dialog named in the address
+ * (`?skill=<holding id>`): its level, chosen afresh among the three, and whether they want to develop it. The skill
+ * itself is shown and cannot be changed here. A new level is their own rating again until the manager they report to
+ * confirms it, which the dialog says where a manager has confirmed the one it has; the interest mark alone changes
+ * nothing else. On success the dialog closes, the page's lists are read again and a toast says it is saved; the page
+ * gives the focus back (`onClose`).
+ */
+export function ChangeOwnSkill({ skill, onClose }: { skill: CompetenceOwnSkill | undefined; onClose: () => void }) {
+  const mobile = useMediaQuery(mobileQuery);
+  const action = useAdminAction({
+    invalidate: [keys.competenceAll, keys.viewAll, keys.entities.all],
+    toastId: 'competence:skill',
+  });
+  const [level, setLevel] = useState<CompetenceLevel | null>(null);
+  const [interest, setInterest] = useState(false);
+  useEffect(() => {
+    setLevel(skill?.level ?? null);
+    setInterest(skill?.interest ?? false);
+    action.reset();
+    // Filled from the skill each time it opens for another one: a refetch must not undo what is being chosen.
+  }, [skill?.holdingId]);
+  const submit = async () => {
+    if (action.busy || !skill || level === null) return;
+    await action.run(async () => {
+      await api.competence.rateOwnSkill({ typeId: skill.typeId, level, interest });
+      onClose();
+      return `${skill.competence} är sparad.`;
+    });
+  };
+  const onOpenChange = (next: boolean) => {
+    if (!next) onClose();
+  };
+  const relevelled = !!skill && level !== skill.level;
+  return (
+    <Dialog
+      isOpen={!!skill}
+      onOpenChange={onOpenChange}
+      width={480}
+      purpose="form"
+      variant={mobile ? 'fullscreen' : 'standard'}
+    >
+      <DialogFrame
+        header={<DialogHeader title="Ändra färdighet" subtitle={skill?.competence} onOpenChange={onOpenChange} />}
+        error={action.error}
+        primary={
+          <>
+            <Button size="sm" variant="ghost" label="Avbryt" onClick={onClose} />
+            <Button size="sm" variant="primary" label="Spara" isLoading={action.busy} onClick={() => void submit()} />
+          </>
+        }
+      >
+        <VStack gap={3}>
+          <Text as="p" type="supporting" role="status">
+            {skill?.validated && relevelled
+              ? 'Din chef har bekräftat den nivå du har nu. En ny nivå är din egen bedömning tills din chef bekräftar den.'
+              : skill?.validated
+                ? 'Din chef har bekräftat nivån.'
+                : 'Nivån är din egen bedömning tills din chef bekräftar den.'}
+          </Text>
+          <FormLayout direction="vertical" defaultOptionality="required">
+            <LevelField value={level} onChange={setLevel} />
+            <InterestField value={interest} onChange={setInterest} />
+          </FormLayout>
+        </VStack>
       </DialogFrame>
     </Dialog>
   );

@@ -98,6 +98,10 @@ import type {
   CompetenceApproval,
   CompetenceDecision,
   CompetenceOwnOutput,
+  CompetenceSkillBody,
+  CompetenceSkillRatingBody,
+  CompetenceSkillValidation,
+  CompetenceValidationBody,
   EntityActionStarted,
   EntityDetail,
   EntityKind,
@@ -284,6 +288,18 @@ export const api = {
     registerOwn: (body: CompetenceHoldingBody) => post<{ id: string }>('/api/competence/own/holdings', body),
     /** The reader takes back their own registration while it waits. */
     withdrawOwn: (id: string) => del<void>(`/api/competence/own/holdings/${encodeURIComponent(id)}`),
+    /** The reader rates a skill of their own (D120): stored at once; rating one they hold again changes it. */
+    rateOwnSkill: (body: CompetenceSkillRatingBody) => post<{ id: string }>('/api/competence/own/skills', body),
+    /** The reader removes a skill of their own. */
+    removeOwnSkill: (id: string) => del<void>(`/api/competence/own/skills/${encodeURIComponent(id)}`),
+    /** A manager registers a skill for a person who reports to them, confirmed at once. */
+    registerSkill: (personId: string, body: CompetenceSkillBody) =>
+      post<{ id: string }>(`/api/competence/people/${encodeURIComponent(personId)}/skills`, body),
+    /** A report's skill as the manager confirms it. */
+    skill: (id: string) => call<CompetenceSkillValidation>(`/api/competence/skills/${encodeURIComponent(id)}`),
+    /** The manager confirms the skill's level, or sets another. */
+    validateSkill: (id: string, body: CompetenceValidationBody) =>
+      post<void>(`/api/competence/skills/${encodeURIComponent(id)}/validation`, body),
     /** A registration of a report's own that waits for the reader's decision. */
     approval: (id: string) => call<CompetenceApproval>(`/api/competence/approvals/${encodeURIComponent(id)}`),
     /** The reader approves or rejects it. */

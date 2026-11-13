@@ -243,6 +243,10 @@ describe('a person’s cards close, stay and come back (D108 item 12, D47)', () 
       decidedBy: null,
       decidedAt: null,
       threadId: null,
+      level: null,
+      interest: false,
+      validatedBy: null,
+      validatedAt: null,
       copy: {
         connectorId: 'lms',
         sourceId: 'row-' + id,

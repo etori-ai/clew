@@ -66,6 +66,8 @@ export const keys = {
   competenceOwn: ['competence', 'own'] as const,
   competenceOwnTypes: ['competence', 'own', 'types'] as const,
   competenceApproval: (holdingId: string) => ['competence', 'approval', holdingId] as const,
+  /** A report's skill as the manager confirms its level (D120). */
+  competenceSkill: (holdingId: string) => ['competence', 'skill', holdingId] as const,
   competenceAll: ['competence'] as const,
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {

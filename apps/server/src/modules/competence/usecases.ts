@@ -1,6 +1,7 @@
 import {
   COMPETENCE_STATUSES,
   ENTITY_KEY_MAX,
+  isCompetenceLevel,
   type AuthenticatedContext,
   type Capability,
   type CompetenceApproval,
@@ -8,6 +9,11 @@ import {
   type CompetenceDecision,
   type CompetenceHoldingBody,
   type CompetenceOwnOutput,
+  type CompetenceOwnSkill,
+  type CompetenceSkillBody,
+  type CompetenceSkillRatingBody,
+  type CompetenceSkillValidation,
+  type CompetenceValidationBody,
   type CompetenceHoldingsInput,
   type CompetenceHoldingsOutput,
   type CompetenceMappingBody,
@@ -33,8 +39,13 @@ import { ForbiddenError, InputError } from '../../context';
 import {
   awaiting,
   branchOf,
+  confirmed,
   counts,
   coverageOf,
+  isSkill,
+  leastLevels,
+  levelOf,
+  reachesLevel,
   dailyCopyStart,
   deciding,
   endOf,
@@ -84,6 +95,7 @@ import {
   PendingTaken,
   RequirementTaken,
   ShareTargetTaken,
+  SkillTaken,
   TypeNameTaken,
   type CompetenceDeps,
   type CompetenceExport,
@@ -125,9 +137,11 @@ export const COMPETENCE_ADMIN: Capability = 'admin.competence';
  * requirement and a share target name a position by its code (`positionCode`) and a unit by the id of its `unit:` key,
  * never by an internal row, and `createdBy` may be null (its author was erased). Version 5 (item 7): a holding may be a
  * person's own registration (evidence `self`, `pending` or `rejected`), and carries the decision on one (`decidedBy`,
- * `decidedAt`) and its approval's key (`threadId`).
+ * `decidedAt`) and its approval's key (`threadId`). Version 6 (D120): a type may be of kind `skill`; a holding carries
+ * its `level` (null on every kind but a skill), `interest`, and the confirmation of a skill's level (`validatedBy`,
+ * `validatedAt`); a requirement of a skill carries its least level (`minLevel`).
  */
-export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/5';
+export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/6';
 /** The actor of the scheduled copy (D108 item 9) in its audit rows. */
 export const COPY_ACTOR = 'system:competence-copy';
 const NOT_A_MANAGER = 'Intyg registreras av den som är chef för en enhet.';
@@ -162,6 +176,18 @@ const NOT_YOURS_TO_DECIDE = 'Registreringen finns inte bland dem du kan granska.
 const DECIDED = 'Registreringen är redan granskad.';
 const NOT_YOUR_OWN = 'Du har ingen sådan registrering.';
 const DECIDED_OWN = 'Registreringen är redan granskad och kan inte tas tillbaka.';
+const SKILL_ONLY = 'Bara en färdighet bedöms med en nivå.';
+const SKILL_NOT_DATED = 'En färdighet registreras med en nivå, inte med datum.';
+const BAD_LEVEL = 'Välj en nivå: Grundläggande, Självständig eller Expert.';
+const SKILL_NO_VALIDITY = 'En färdighet har ingen giltighetstid.';
+const KIND_LOCKED =
+  'Kompetensen har registrerade innehav eller krav och kan inte göras om till eller från en färdighet.';
+const NOT_YOUR_SKILL = 'Du har ingen sådan färdighet.';
+const NOT_YOURS_TO_VALIDATE = 'Färdigheten finns inte bland dem du kan bekräfta.';
+const SKILL_HELD = 'Personen har redan den färdigheten. Bekräfta nivån i stället.';
+const SKILL_TAKEN = 'Färdigheten är redan registrerad. Försök igen.';
+const LEVEL_ON_SKILL_ONLY = 'Bara en färdighet kan krävas på en viss nivå.';
+const SKILL_UNMAPPABLE = 'En färdighet kan inte kopplas till en källa: det som läses in har ingen nivå.';
 /**
  * A unit's coverage (D108 items 6 and 8) as the read about a unit and its table answer it: counts only, each share
  * target set on the unit with its position's label.
@@ -171,14 +197,33 @@ export interface UnitCoverageResult extends Omit<UnitCoverage, 'targets'> {
   unitLabel: string;
   targets: Array<UnitCoverage['targets'][number] & { positionLabel: string }>;
 }
-/** The keys a requirement's audit row carries: ids and a position's code, never a name. */
+/** The keys a requirement's audit row carries: ids, a position's code and a skill's least level, never a name. */
 const requirementDetails = (r: RequirementRecord) => ({
   organisationId: r.organisationId,
   typeId: r.typeId,
   positionCode: r.positionCode,
   unitId: r.unitId,
   personId: r.personId,
+  ...(r.minLevel !== null ? { minLevel: r.minLevel } : {}),
 });
+/** A holding registered in Clew before what makes it one kind or another: the columns no new holding sets. */
+const registered = {
+  revokedAt: null,
+  revokedBy: null,
+  copy: null,
+  decidedBy: null,
+  decidedAt: null,
+  threadId: null,
+  level: null,
+  interest: false,
+  validatedBy: null,
+  validatedAt: null,
+} satisfies Partial<HoldingRecord>;
+/** The person's own skills (D120) in the order the page lists them: by area, then name, in Swedish order. */
+const bySkillName = (a: CompetenceOwnSkill, b: CompetenceOwnSkill) =>
+  a.area.localeCompare(b.area, 'sv') ||
+  a.competence.localeCompare(b.competence, 'sv') ||
+  a.typeId.localeCompare(b.typeId);
 const targetDetails = (t: ShareTargetRecord) => ({
   organisationId: t.organisationId,
   typeId: t.typeId,
@@ -240,23 +285,26 @@ export function competenceUsecases(deps: CompetenceDeps) {
   }
   /**
    * The types required of each of these people (D108 item 6): by the positions they hold, the units they are assigned
-   * to and the requirements set on them alone, in their organisation.
+   * to and the requirements set on them alone, in their organisation; and the least level each asks of a skill (D120
+   * item 4).
    */
   async function requiredFor(
     tx: CompetenceTx,
     organisationId: string,
     personIds: readonly string[],
-  ): Promise<Map<string, string[]>> {
-    if (!personIds.length) return new Map();
+  ): Promise<{ required: Map<string, string[]>; least: Map<string, Map<string, number>> }> {
+    const required = new Map<string, string[]>(),
+      least = new Map<string, Map<string, number>>();
+    if (!personIds.length) return { required, least };
     const requirements = await tx.requirements(organisationId);
-    if (!requirements.length) return new Map();
+    if (!requirements.length) return { required, least };
     const placed = new Map((await tx.placesOf(organisationId, personIds)).map(p => [p.personId, p]));
-    return new Map(
-      personIds.map(id => [
-        id,
-        requiredOf(placed.get(id) ?? { personId: id, unitIds: [], positionCodes: [] }, requirements),
-      ]),
-    );
+    for (const id of personIds) {
+      const place = placed.get(id) ?? { personId: id, unitIds: [], positionCodes: [] };
+      required.set(id, requiredOf(place, requirements));
+      least.set(id, leastLevels(place, requirements));
+    }
+    return { required, least };
   }
   /** Whom the reader reports to now (D99 item 4), each once, never the reader; nobody without the port. */
   const managersOf = async (persona: AuthenticatedContext) =>
@@ -279,13 +327,13 @@ export function competenceUsecases(deps: CompetenceDeps) {
     types: ReadonlyMap<string, TypeRecord>;
   }> {
     const holdings = await tx.holdingsOf(personIds);
-    const required = await requiredFor(tx, organisationId, personIds);
+    const { required, least } = await requiredFor(tx, organisationId, personIds);
     const typeIds = [
       ...new Set([...holdings.flatMap(h => (h.typeId === null ? [] : [h.typeId])), ...[...required.values()].flat()]),
     ];
     const types = new Map((await tx.typesById(typeIds)).map(t => [t.id, t]));
     return {
-      standings: deciding(holdings, types, today, required),
+      standings: deciding(holdings, types, today, required, least),
       waiting: holdings.filter(uncounted),
       own: holdings.filter(h => h.evidence === 'self' && (h.state === 'pending' || h.state === 'rejected')),
       types,
@@ -380,13 +428,16 @@ export function competenceUsecases(deps: CompetenceDeps) {
     (await tx.units(organisationId)).some(u => u.id === unitId);
   /**
    * Add a requirement as `actor` (D108 item 6). The type must be the organisation's and not archived, the position's code
-   * one the organisation has and the unit one of its tree; who may set it on what is the caller's to check.
+   * one the organisation has and the unit one of its tree; who may set it on what is the caller's to check. A
+   * requirement of a skill names the least level a confirmed holding must reach, 1 when the body names none; one of any
+   * other kind names none, and a level for it is refused (D120 item 4).
    */
   async function insertRequirement(
     actor: string,
     organisationId: string,
     body: CompetenceRequirementBody,
   ): Promise<string> {
+    if (body.minLevel !== undefined && !isCompetenceLevel(body.minLevel)) throw new CompetenceError(BAD_LEVEL);
     const at = now().toISOString(),
       id = deps.ids();
     try {
@@ -394,6 +445,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
         const type = await tx.type(body.typeId);
         if (!type || type.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
         if (type.archivedAt) throw new CompetenceError(ARCHIVED_REQUIREMENT);
+        if (body.minLevel !== undefined && !isSkill(type)) throw new CompetenceError(LEVEL_ON_SKILL_ONLY);
         if (body.positionCode !== undefined && !(await positionExists(tx, organisationId, body.positionCode)))
           throw new CompetenceError(NO_POSITION);
         if (body.unitId !== undefined && !(await unitExists(tx, organisationId, body.unitId)))
@@ -405,7 +457,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
           positionCode: body.positionCode ?? null,
           unitId: body.unitId ?? null,
           personId: body.personId ?? null,
-          minLevel: null,
+          minLevel: isSkill(type) ? (body.minLevel ?? 1) : null,
           createdBy: actor,
           createdAt: at,
         };
@@ -506,9 +558,10 @@ export function competenceUsecases(deps: CompetenceDeps) {
     }
     return patch;
   }
-  /** Add a type as `actor`; the administrator's and the operator's path share it. */
+  /** Add a type as `actor`; the administrator's and the operator's path share it. A skill has no validity rule (D120). */
   async function insertType(actor: string, organisationId: string, body: CompetenceTypeBody): Promise<string> {
     const { name, area } = typeFields(body);
+    if (isSkill(body) && (body.validityMonths ?? null) !== null) throw new CompetenceError(SKILL_NO_VALIDITY);
     const at = now().toISOString(),
       id = deps.ids();
     try {
@@ -586,7 +639,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
     const id = deps.ids();
     return deps.store.transaction(async tx => {
       const type = await registrable(tx, organisationId, body.typeId);
+      if (isSkill(type)) throw new CompetenceError(SKILL_NOT_DATED);
       await tx.insertHolding({
+        ...registered,
         id,
         personId,
         typeId: type.id,
@@ -596,12 +651,6 @@ export function competenceUsecases(deps: CompetenceDeps) {
         state: 'valid',
         registeredBy,
         createdAt: iso,
-        revokedAt: null,
-        revokedBy: null,
-        copy: null,
-        decidedBy: null,
-        decidedAt: null,
-        threadId: null,
       });
       await tx.audit({
         actor,
@@ -612,6 +661,81 @@ export function competenceUsecases(deps: CompetenceDeps) {
       });
       return id;
     });
+  }
+  /** The skill of this type the person holds that counts (D120 item 1): one at most, which rating again changes. */
+  const liveSkill = async (tx: CompetenceTx, personId: string, typeId: string) =>
+    (await tx.holdingsOf([personId])).find(h => h.typeId === typeId && h.level !== null && counts(h));
+  /** A skill type a holding can be registered for in the organisation: its own, not archived, and of kind `skill`. */
+  async function skillType(tx: CompetenceTx, organisationId: string, typeId: string) {
+    const type = await registrable(tx, organisationId, typeId);
+    if (!isSkill(type)) throw new CompetenceError(SKILL_ONLY);
+    return type;
+  }
+  /**
+   * A skill stored for `personId` at `level` (D120 item 2): confirmed at once by a manager (`by`, the manager; null for
+   * an operator's), or, `by` undefined, the person's own rating, as the development seed writes both. One per person
+   * and type: a second is refused. Audited `competence.skill_registered` (confirmed) or `competence.skill_rated`.
+   */
+  async function insertSkill(
+    actor: string,
+    organisationId: string,
+    personId: string,
+    body: CompetenceSkillBody & { interest?: boolean },
+    by: string | null | undefined,
+  ): Promise<string> {
+    if (!isCompetenceLevel(body.level)) throw new CompetenceError(BAD_LEVEL);
+    const at = now(),
+      iso = at.toISOString(),
+      id = deps.ids();
+    const own = by === undefined;
+    try {
+      return await deps.store.transaction(async tx => {
+        const type = await skillType(tx, organisationId, body.typeId);
+        if (await liveSkill(tx, personId, type.id)) throw new CompetenceError(own ? SKILL_TAKEN : SKILL_HELD);
+        await tx.insertHolding({
+          ...registered,
+          id,
+          personId,
+          typeId: type.id,
+          issuedOn: swedishDay(at),
+          expiresOn: null,
+          evidence: own ? 'self' : 'manager',
+          state: 'valid',
+          registeredBy: own ? personId : by,
+          createdAt: iso,
+          level: body.level,
+          interest: body.interest ?? false,
+          validatedBy: own ? null : by,
+          validatedAt: own ? null : iso,
+        });
+        await tx.audit({
+          actor,
+          action: own ? 'competence.skill_rated' : 'competence.skill_registered',
+          subject: 'holding:' + id,
+          at: iso,
+          details: own
+            ? { personId, typeId: type.id, level: body.level, levelBefore: null }
+            : { personId, typeId: type.id, level: body.level },
+        });
+        return id;
+      });
+    } catch (error) {
+      if (error instanceof SkillTaken) throw new CompetenceError(own ? SKILL_TAKEN : SKILL_HELD);
+      throw error;
+    }
+  }
+  /**
+   * A skill held by someone who reports to the reader now (D99 item 4), for the reader to confirm (D120 item 2): one
+   * that exists, is a skill that counts, and is not the reader's own. Anything else is refused in the same words, so a
+   * refusal never tells whether it exists.
+   */
+  async function confirmable(persona: AuthenticatedContext, holdingId: string) {
+    const refused = () => new ForbiddenError(NOT_YOURS_TO_VALIDATE);
+    const found = await deps.store.transaction(tx => tx.holding(holdingId));
+    if (!found || found.level === null || !counts(found) || found.typeId === null) throw refused();
+    const person = (await reports(persona)).people.get(found.personId);
+    if (!person || person.id === persona.id) throw refused();
+    return { found, person, refused };
   }
 
   /**
@@ -977,6 +1101,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
         const type = await tx.type(body.typeId);
         if (!type || type.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
         if (type.archivedAt) throw new CompetenceError(ARCHIVED_MAPPING);
+        // A copied row has no level (D120): a source's type is never a skill.
+        if (isSkill(type)) throw new CompetenceError(SKILL_UNMAPPABLE);
       }
       const before = (await tx.mappings(organisationId, connectorId)).find(m => m.sourceType === sourceType);
       if ((before?.typeId ?? null) === body.typeId) return { holdings: 0 };
@@ -1060,6 +1186,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
     /**
      * An administrator changes a type: its name, area, kind or the employer's validity. A new validity applies at once
      * to every holding counted from the rule (D108 item 3); `validityImpact` says what that does before this is called.
+     * A skill has no validity rule, and a type becomes a skill, or stops being one, only while nothing is held of it and
+     * nothing requires it (D120 item 1): a holding's dates and level, and a requirement's least level, belong to one
+     * kind or the other.
      */
     async updateType(persona: AuthenticatedContext, typeId: string, body: CompetenceTypePatch): Promise<void> {
       await admin(persona);
@@ -1073,6 +1202,13 @@ export function competenceUsecases(deps: CompetenceDeps) {
           if (!type || type.organisationId !== persona.organisationId) throw new CompetenceError(NO_TYPE);
           const changed = (Object.keys(patch) as Array<keyof typeof patch>).filter(key => patch[key] !== type[key]);
           if (!changed.length) return;
+          const after = { ...type, ...patch };
+          if (isSkill(after) && after.validityMonths !== null) throw new CompetenceError(SKILL_NO_VALIDITY);
+          if (isSkill(after) !== isSkill(type)) {
+            const held = (await tx.holdingsOfType(typeId)).length > 0;
+            const required = (await tx.requirements(type.organisationId)).some(r => r.typeId === typeId);
+            if (held || required) throw new CompetenceError(KIND_LOCKED);
+          }
           await tx.updateType(typeId, patch);
           await tx.audit({
             actor: persona.principal.id,
@@ -1128,6 +1264,159 @@ export function competenceUsecases(deps: CompetenceDeps) {
       insertHolding(actor, null, organisationId, personId, body),
 
     /**
+     * The manager a person reports to registers a skill for them at a level (D120 item 2): stored confirmed at once,
+     * evidence `manager`, with the manager as the one who confirmed it, and audited `competence.skill_registered`. A
+     * skill the person holds already is refused: its level is confirmed instead (`validateSkill`). Returns its id.
+     */
+    async registerSkill(persona: AuthenticatedContext, personId: string, body: CompetenceSkillBody): Promise<string> {
+      if (!isCompetenceLevel(body.level)) throw new CompetenceError(BAD_LEVEL);
+      await reportOf(persona, personId);
+      return insertSkill(persona.principal.id, persona.organisationId, personId, body, persona.id);
+    },
+    /**
+     * An operator stores a skill for a person of an organisation, as the development seed does: the person's own rating,
+     * or (`confirmed`) one confirmed with nobody named as having confirmed it.
+     */
+    seedSkill: (
+      actor: string,
+      organisationId: string,
+      personId: string,
+      body: CompetenceSkillBody & { interest?: boolean; confirmed?: boolean },
+    ) => insertSkill(actor, organisationId, personId, body, body.confirmed ? null : undefined),
+
+    /**
+     * A person rates a skill of their own (D120 items 2 and 3): a skill type of the catalogue, the level and whether they
+     * want to develop it. It is stored at once with evidence `self` and listed at once to whoever may read their holdings,
+     * marked as their own rating; it opens no work item and waits for nothing, since a self-rating meets no requirement
+     * until the manager they report to confirms it. Rating a skill they hold again changes that holding: a new level
+     * makes it their own rating again (the confirmation goes, and so does a manager's registration), while the interest
+     * mark alone changes nothing else. The same rating again writes nothing. Audited `competence.skill_rated` with the
+     * ids and the levels. Returns the holding's id.
+     */
+    async rateOwnSkill(persona: AuthenticatedContext, body: CompetenceSkillRatingBody): Promise<string> {
+      if (!isCompetenceLevel(body.level)) throw new CompetenceError(BAD_LEVEL);
+      const at = now(),
+        iso = at.toISOString();
+      try {
+        const updated = await deps.store.transaction(async tx => {
+          const type = await skillType(tx, persona.organisationId, body.typeId);
+          const held = await liveSkill(tx, persona.id, type.id);
+          if (!held) return null;
+          const interest = body.interest === true;
+          const relevelled = held.level !== body.level;
+          if (!relevelled && held.interest === interest) return held.id;
+          await tx.updateHolding(held.id, {
+            interest,
+            ...(relevelled
+              ? {
+                  level: body.level,
+                  evidence: 'self' as const,
+                  registeredBy: persona.id,
+                  issuedOn: swedishDay(at),
+                  validatedBy: null,
+                  validatedAt: null,
+                }
+              : {}),
+          });
+          await tx.audit({
+            actor: persona.principal.id,
+            action: 'competence.skill_rated',
+            subject: 'holding:' + held.id,
+            at: iso,
+            details: { personId: persona.id, typeId: type.id, level: body.level, levelBefore: held.level },
+          });
+          return held.id;
+        });
+        if (updated) return updated;
+      } catch (error) {
+        if (error instanceof SkillTaken) throw new CompetenceError(SKILL_TAKEN);
+        throw error;
+      }
+      return insertSkill(persona.principal.id, persona.organisationId, persona.id, body, undefined);
+    },
+
+    /**
+     * A person removes a skill of their own (D120 item 2), whoever rated or confirmed it: the row goes, since a skill is
+     * what the person says they can do, and the audit row `competence.skill_removed` keeps that it was, with the ids and
+     * the level. Anything else is refused in the same words.
+     */
+    async removeOwnSkill(persona: AuthenticatedContext, holdingId: string): Promise<void> {
+      const at = now().toISOString();
+      await deps.store.transaction(async tx => {
+        const holding = await tx.holding(holdingId);
+        if (!holding || holding.personId !== persona.id || holding.level === null || !counts(holding) || holding.copy)
+          throw new ForbiddenError(NOT_YOUR_SKILL);
+        await tx.deleteHolding(holdingId);
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'competence.skill_removed',
+          subject: 'holding:' + holdingId,
+          at,
+          details: { personId: persona.id, typeId: holding.typeId, level: holding.level },
+        });
+      });
+    },
+
+    /**
+     * A skill as the manager a person reports to confirms it (D120 item 2): who holds it, which skill, its level and
+     * whether it is confirmed already. Only for a manager the person reports to now, never the person themselves;
+     * anything else is refused as the confirmation is.
+     */
+    async skillValidation(persona: AuthenticatedContext, holdingId: string): Promise<CompetenceSkillValidation> {
+      const { found, person, refused } = await confirmable(persona, holdingId);
+      const [type] = await deps.store.transaction(tx => tx.typesById([found.typeId!]));
+      const level = levelOf(found);
+      if (!type || level === undefined) throw refused();
+      return {
+        holdingId: found.id,
+        personId: person.id,
+        name: person.name,
+        typeId: type.id,
+        competence: type.name,
+        area: type.area,
+        level,
+        validated: confirmed(found),
+        interest: found.interest,
+      };
+    },
+
+    /**
+     * The manager a person reports to now confirms a skill's level, or sets another (D120 item 2): who and when are
+     * stored, and from then the skill meets a requirement that asks for no more than its level. Confirming again, or
+     * another of the person's managers confirming it, stores who and when anew. The person themselves never confirms
+     * their own, even where they manage a unit, and a former manager confirms nothing. Audited
+     * `competence.skill_validated` with the level before and after.
+     */
+    async validateSkill(
+      persona: AuthenticatedContext,
+      holdingId: string,
+      body: CompetenceValidationBody = {},
+    ): Promise<void> {
+      if (body.level !== undefined && !isCompetenceLevel(body.level)) throw new CompetenceError(BAD_LEVEL);
+      const { found, refused } = await confirmable(persona, holdingId);
+      const at = now().toISOString();
+      await deps.store.transaction(async tx => {
+        const holding = await tx.holding(holdingId);
+        if (!holding || holding.personId !== found.personId || holding.level === null || !counts(holding))
+          throw refused();
+        const level = body.level ?? holding.level;
+        await tx.updateHolding(holdingId, { level, validatedBy: persona.id, validatedAt: at });
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'competence.skill_validated',
+          subject: 'holding:' + holdingId,
+          at,
+          details: {
+            personId: holding.personId,
+            typeId: holding.typeId,
+            levelBefore: holding.level,
+            levelAfter: level,
+          },
+        });
+      });
+    },
+
+    /**
      * The manager a person reports to now takes back a holding registered in Clew, an approved one of the person's own
      * included: it stays as a row, marked revoked, and counts towards nothing. Revoking twice is one. A registration that
      * waits or was rejected is no holding to revoke (D108 item 7).
@@ -1177,7 +1466,10 @@ export function competenceUsecases(deps: CompetenceDeps) {
       try {
         return await deps.store.transaction(async tx => {
           const type = await registrable(tx, persona.organisationId, body.typeId);
+          // A skill is rated, not registered with dates for approval (D120 item 2).
+          if (isSkill(type)) throw new CompetenceError(SKILL_NOT_DATED);
           await tx.insertHolding({
+            ...registered,
             id,
             personId: persona.id,
             typeId: type.id,
@@ -1187,11 +1479,6 @@ export function competenceUsecases(deps: CompetenceDeps) {
             state: 'pending',
             registeredBy: persona.id,
             createdAt: iso,
-            revokedAt: null,
-            revokedBy: null,
-            copy: null,
-            decidedBy: null,
-            decidedAt: null,
             threadId,
           });
           // The cards are about the person (D97 item 6), by the key another system knows them by; nobody without one.
@@ -1229,16 +1516,22 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * What the reader's own registration needs (D108 item 7): whether anyone would decide it, and the registrations of
-     * theirs that wait for a decision, oldest first.
+     * theirs that wait for a decision, oldest first; and the skills they hold (D120), each with its level, whether a
+     * manager confirmed it, the interest mark and, where a requirement asks for more than it meets, the least level asked.
      */
     async ownRegistrations(persona: AuthenticatedContext): Promise<CompetenceOwnOutput> {
       const approver = (await managersOf(persona)).length > 0;
-      const pending = await deps.store.transaction(async tx => {
-        const own = (await tx.holdingsOf([persona.id])).filter(awaiting);
+      return deps.store.transaction(async tx => {
+        const holdings = await tx.holdingsOf([persona.id]);
+        const own = holdings.filter(awaiting);
+        const skills = holdings.filter(h => h.level !== null && counts(h));
         const types = new Map(
-          (await tx.typesById([...new Set(own.flatMap(h => (h.typeId ? [h.typeId] : [])))])).map(t => [t.id, t]),
+          (await tx.typesById([...new Set([...own, ...skills].flatMap(h => (h.typeId ? [h.typeId] : [])))])).map(t => [
+            t.id,
+            t,
+          ]),
         );
-        return own.flatMap(h => {
+        const pending = own.flatMap(h => {
           const type = h.typeId ? types.get(h.typeId) : undefined;
           if (!type) return [];
           const end = endOf(h, type);
@@ -1252,8 +1545,38 @@ export function competenceUsecases(deps: CompetenceDeps) {
             },
           ];
         });
+        // The reader's skills (D120), each with the least level a requirement asks where it does not reach it.
+        const { required, least } = skills.length
+          ? await requiredFor(tx, persona.organisationId, [persona.id])
+          : { required: new Map<string, string[]>(), least: new Map<string, Map<string, number>>() };
+        const asked = new Set(required.get(persona.id) ?? []);
+        const rated = skills.flatMap((h): CompetenceOwnSkill[] => {
+          const type = h.typeId ? types.get(h.typeId) : undefined;
+          const level = levelOf(h);
+          if (!type || level === undefined) return [];
+          const leastLevel = least.get(persona.id)?.get(type.id) ?? 1;
+          const short =
+            asked.has(type.id) &&
+            type.archivedAt === null &&
+            !reachesLevel(h, type, leastLevel) &&
+            isCompetenceLevel(leastLevel)
+              ? { short: leastLevel }
+              : {};
+          return [
+            {
+              holdingId: h.id,
+              typeId: type.id,
+              competence: type.name,
+              area: type.area,
+              level,
+              validated: confirmed(h),
+              interest: h.interest,
+              ...short,
+            },
+          ];
+        });
+        return { approver, pending, skills: rated.sort(bySkillName) };
       });
-      return { approver, pending };
     },
 
     /**
@@ -1486,17 +1809,17 @@ export function competenceUsecases(deps: CompetenceDeps) {
       const own = await deps.store.transaction(async tx => {
         const holdings = await tx.holdingsOf([persona.id]);
         const [placed] = await tx.placesOf(org, [persona.id]);
-        const applying = requirementsOn(
-          placed ?? { personId: persona.id, unitIds: [], positionCodes: [] },
-          await tx.requirements(org),
-        );
+        const place = placed ?? { personId: persona.id, unitIds: [], positionCodes: [] };
+        const requirements = await tx.requirements(org);
+        const applying = requirementsOn(place, requirements);
         const typeIds = new Set([
           ...holdings.flatMap(h => (h.typeId ? [h.typeId] : [])),
           ...applying.map(r => r.typeId),
         ]);
         const types = new Map((await tx.typesById([...typeIds])).map(t => [t.id, t]));
         const required = new Map([[persona.id, [...new Set(applying.map(r => r.typeId))]]]);
-        return deciding(holdings, types, today, required)
+        const least = new Map([[persona.id, leastLevels(place, requirements)]]);
+        return deciding(holdings, types, today, required, least)
           .filter(needsAttention)
           .sort(byUrgency)
           .map(standing => ({
@@ -1542,7 +1865,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
         const positionLabel = new Map(positions.map(p => [p.code, p.label])),
           unitLabel = new Map(units.map(u => [u.id, u.label]));
         // A position or a unit that is gone keeps its requirement, which counts towards nothing until it comes back, and
-        // is listed by its key and marked, so an administrator can remove it.
+        // is listed by its key and marked, so an administrator can remove it. A skill's requirement says its least level.
         const on = (
           r: RequirementRecord,
           kind: 'position' | 'unit',
@@ -1554,6 +1877,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
           on: kind,
           targetId: key,
           targetLabel: label ?? key,
+          ...(isCompetenceLevel(r.minLevel) ? { minLevel: r.minLevel } : {}),
           ...(label === undefined ? { gone: true as const } : {}),
         });
         const listed = rows.flatMap((r): CompetenceRequirement[] =>
@@ -1580,7 +1904,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
     /**
      * Add a requirement (D108 item 6) for exactly one of a position or a unit, as an administrator with the capability
      * and the step-up, or one person, as the manager that person reports to (never as an administrator, D118). One
-     * requirement per type and target; the same again is refused. Returns its id.
+     * requirement per type and target; the same again is refused. A requirement of a skill names its least level, 1 by
+     * default; a level on any other kind is refused (D120 item 4). Returns its id.
      */
     async addRequirement(persona: AuthenticatedContext, body: CompetenceRequirementBody): Promise<string> {
       const named = [body.positionCode, body.unitId, body.personId].filter(v => v !== undefined);

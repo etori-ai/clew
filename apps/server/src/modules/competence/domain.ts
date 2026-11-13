@@ -1,12 +1,19 @@
 import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import {
+  COMPETENCE_LEVEL_LABELS,
   COMPETENCE_MATRIX_COLUMNS,
   COMPETENCE_ROW_STATUSES,
+  INTEREST_WORD,
+  SELF_RATED_WORD,
+  SKILL_KIND,
   daysUntil,
+  isCompetenceLevel,
   stockholmDate,
   stockholmInstant,
   type CompetenceHoldingRow,
+  type CompetenceLevel,
   type CompetenceMatrixCell,
+  type CompetenceMatrixColumn,
   type CompetenceMatrixGroup,
   type CompetenceMatrixOutput,
   type CompetenceMatrixReason,
@@ -107,6 +114,21 @@ export function statusOn(end: string | null, today: string): HeldStatus {
 }
 /** A holding counts when it is `valid` as stored: not pending, rejected or revoked. */
 export const counts = (holding: Pick<HoldingRecord, 'state'>) => holding.state === 'valid';
+/** Whether a type is a skill (D120 item 1): its holdings carry a level, have no dates of their own and never end. */
+export const isSkill = (type: Pick<TypeRecord, 'kind'>) => type.kind === SKILL_KIND;
+/** Whether a skill's level is confirmed by a manager (D120 item 2): the person's own rating alone is not. */
+export const confirmed = (holding: Pick<HoldingRecord, 'validatedAt'>) => holding.validatedAt !== null;
+/** A stored level as one of the three, or undefined for a holding that has none. */
+export const levelOf = (holding: Pick<HoldingRecord, 'level'>): CompetenceLevel | undefined =>
+  isCompetenceLevel(holding.level) ? holding.level : undefined;
+/**
+ * Whether a holding that counts meets a requirement of its type that asks for `least` (D120 item 4): a holding of any
+ * kind but a skill always does; a skill only when a manager has confirmed it and its level is at least `least`.
+ */
+export function reachesLevel(holding: HoldingRecord, type: Pick<TypeRecord, 'kind'>, least: number): boolean {
+  if (!isSkill(type)) return true;
+  return confirmed(holding) && (holding.level ?? 0) >= least;
+}
 /** A person's own registration that waits for their manager's decision (D108 item 7): it counts towards nothing. */
 export const awaiting = (holding: Pick<HoldingRecord, 'state' | 'evidence'>) =>
   holding.evidence === 'self' && holding.state === 'pending';
@@ -119,13 +141,19 @@ export interface HeldStanding {
   end: string | null;
   status: HeldStatus;
 }
-/** A type required of a person (D108 item 6) that they hold nothing of that counts: no holding, no end. */
+/**
+ * A type required of a person (D108 item 6) that they hold nothing of that counts: no holding, no end. On a skill
+ * (D120 item 4), `least` is the least level required of them and `held` the skill they hold that does not meet it: one
+ * only they have rated, or one confirmed below that level.
+ */
 export interface MissingStanding {
   personId: string;
   holding: null;
   type: TypeRecord;
   end: null;
   status: 'missing';
+  held?: HoldingRecord;
+  least?: number;
 }
 /** Where a person stands on one type on one day: by the holding that decides, or missing where one is required. */
 export type Standing = HeldStanding | MissingStanding;
@@ -134,13 +162,17 @@ export type Standing = HeldStanding | MissingStanding;
  * one that never ends before any that does, the most recently issued on a tie. Holdings of an unknown type are left out.
  * With `required` (each person's required types, `requiredOf`), a required type the person has no deciding holding of is
  * a `missing` standing (item 6); a required type that is archived or unknown is required of nobody, since nobody can be
- * registered for it. An expired holding stays `expired`: the person had it.
+ * registered for it. An expired holding stays `expired`: the person had it. A required skill (D120 item 4) is met only
+ * by a holding a manager has confirmed at the least level `least` names for the person and type (1 where it names
+ * none); one only the person has rated, or one confirmed below that level, is a `missing` standing that carries it as
+ * `held`. A skill never ends, so it is `valid` wherever it is not required.
  */
 export function deciding(
   holdings: readonly HoldingRecord[],
   types: ReadonlyMap<string, TypeRecord>,
   today: string,
   required?: ReadonlyMap<string, readonly string[]>,
+  least?: ReadonlyMap<string, ReadonlyMap<string, number>>,
 ): Standing[] {
   const best = new Map<string, HeldStanding>();
   const later = (a: HeldStanding, b: HeldStanding) => {
@@ -171,16 +203,47 @@ export function deciding(
   for (const [personId, typeIds] of required ?? [])
     for (const typeId of new Set(typeIds)) {
       const type = types.get(typeId);
-      if (!type || type.archivedAt !== null || best.has(keyOf(personId, typeId))) continue;
-      missing.push({ personId, holding: null, type, end: null, status: 'missing' });
+      if (!type || type.archivedAt !== null) continue;
+      const key = keyOf(personId, typeId);
+      const held = best.get(key);
+      const level = isSkill(type) ? (least?.get(personId)?.get(typeId) ?? 1) : null;
+      if (held && (level === null || reachesLevel(held.holding, type, level))) continue;
+      // A skill that does not reach what is asked: the type is missing, and the skill held is said beside it.
+      if (held) best.delete(key);
+      missing.push({
+        personId,
+        holding: null,
+        type,
+        end: null,
+        status: 'missing',
+        ...(held ? { held: held.holding } : {}),
+        ...(level !== null ? { least: level } : {}),
+      });
     }
   return [...best.values(), ...missing];
 }
 /** Whether a standing needs a person: it has expired, is missing or expires within `EXPIRING_DAYS`. */
 export const needsAttention = (standing: Pick<Standing, 'status'>) => standing.status !== 'valid';
-/** Whether a standing meets what is required: a holding that counts and has not run out (expiring still meets it). */
-export const meets = (standing: Pick<Standing, 'status'>) =>
-  standing.status === 'valid' || standing.status === 'expiring';
+/**
+ * Whether a standing meets a requirement that asks for `least` (D108 item 6, D120 item 4): a holding that counts and
+ * has not run out (expiring still meets it); a skill only confirmed and at least at that level.
+ */
+export const meetsAt = (standing: Standing, least: number) =>
+  standing.status !== 'missing' &&
+  standing.status !== 'expired' &&
+  reachesLevel(standing.holding, standing.type, least);
+/** Whether a standing meets what is required at the least level there is: a share target asks no more (D120 item 4). */
+export const meets = (standing: Standing) => meetsAt(standing, 1);
+/**
+ * The least level each type required of one person asks for (D120 item 4): of the requirements that apply, the highest
+ * they name, 1 where none names one. A type that is no skill ignores it.
+ */
+export function leastLevels(person: Placed, requirements: readonly RequirementRecord[]): Map<string, number> {
+  const least = new Map<string, number>();
+  for (const r of requirementsOn(person, requirements))
+    least.set(r.typeId, Math.max(least.get(r.typeId) ?? 1, r.minLevel ?? 1));
+  return least;
+}
 /**
  * The requirements that apply to one person (D108 item 6): those set on a position they hold (by its code), on a unit
  * they are assigned to, and on them alone. A requirement whose position or unit no longer exists applies to nobody,
@@ -334,7 +397,9 @@ const shareOf = (meeting: number, holders: number, minShare: number) => ({
  *
  * Each person comes with every unit and position of theirs (a requirement on a unit outside the branch still applies to
  * a person in it); `standings` are the holdings that decide for them (`deciding`). A requirement or a target whose type
- * is archived or unknown counts towards nothing, and so does one whose position or unit is gone.
+ * is archived or unknown counts towards nothing, and so does one whose position or unit is gone. A required skill is met
+ * only by one a manager has confirmed at the least level asked of the person, a share target's by one confirmed at any
+ * level (D120 item 4).
  */
 export function coverageOf(input: {
   people: readonly Placed[];
@@ -350,9 +415,15 @@ export function coverageOf(input: {
     return type && type.archivedAt === null ? type : undefined;
   };
   const known = (personId: string) => input.reports.has(personId) || personId === input.reader;
-  const met = new Set(input.standings.filter(meets).map(s => s.personId + '\n' + s.type.id));
-  const meetsType = (personId: string, typeId: string) => met.has(personId + '\n' + typeId);
+  const standingOf = new Map(input.standings.map(s => [s.personId + '\n' + s.type.id, s]));
+  /** Whether a person meets a type at a least level: a skill confirmed at it, anything else that counts (D120 item 4). */
+  const meetsType = (personId: string, typeId: string, least = 1) => {
+    const standing = standingOf.get(personId + '\n' + typeId);
+    return !!standing && meetsAt(standing, least);
+  };
   const own = input.people.filter(p => input.reports.has(p.personId));
+  const levels = new Map(own.map(p => [p.personId, leastLevels(p, input.requirements)]));
+  const leastOf = (personId: string, typeId: string) => levels.get(personId)?.get(typeId) ?? 1;
   const required = new Map(
     own.map(p => [
       p.personId,
@@ -366,7 +437,7 @@ export function coverageOf(input: {
     requirements.push({
       type: live(typeId)!,
       under: under.length,
-      meeting: under.filter(p => meetsType(p.personId, typeId)).length,
+      meeting: under.filter(p => meetsType(p.personId, typeId, leastOf(p.personId, typeId))).length,
     });
   }
   const anything = own.filter(p => requiredOfPerson(p).length);
@@ -406,7 +477,9 @@ export function coverageOf(input: {
     sv(a.type.area, b.type.area) || sv(a.type.name, b.type.name) || a.type.id.localeCompare(b.type.id);
   return {
     under: anything.length,
-    meetingAll: anything.filter(p => requiredOfPerson(p).every(id => meetsType(p.personId, id))).length,
+    meetingAll: anything.filter(p =>
+      requiredOfPerson(p).every(id => meetsType(p.personId, id, leastOf(p.personId, id))),
+    ).length,
     requirements: requirements.sort(byName),
     targets: targets.sort((a, b) => byName(a, b) || a.target.id.localeCompare(b.target.id)),
   };
@@ -455,25 +528,47 @@ function copiedFrom(holding: HoldingRecord, sourceNames: ReadonlyMap<string, str
   const source = sourceNames.get(holding.copy.connectorId) ?? holding.copy.connectorId;
   return { source: [...source].slice(0, 120).join(''), readAt: holding.copy.readAt };
 }
+/** A level as a person reads it: "Självständig". */
+export const levelWord = (level: number) => (isCompetenceLevel(level) ? COMPETENCE_LEVEL_LABELS[level] : String(level));
+/**
+ * What a row says of a skill (D120 items 1 to 3): its level in words, "Egen bedömning" while no manager has confirmed
+ * it, and "Vill utveckla" where the person wants to develop it. Nothing for a holding of another kind.
+ */
+function skillFields(holding: HoldingRecord): Pick<CompetenceHoldingRow, 'level' | 'assessment' | 'interest'> {
+  const level = levelOf(holding);
+  if (level === undefined) return {};
+  return {
+    level: COMPETENCE_LEVEL_LABELS[level],
+    ...(confirmed(holding) ? {} : { assessment: SELF_RATED_WORD }),
+    ...(holding.interest ? { interest: INTEREST_WORD } : {}),
+  };
+}
 /**
  * One standing as a read lists it; a copied one with its source and when it was read; a missing one with its type and
- * no dates, since there is no holding.
+ * no dates, since there is no holding. A skill (D120) has no dates of its own: its row says its level and marks
+ * instead, and a required skill it does not meet is `missing` with the skill held and the least level asked beside it.
  */
 export function holdingRow(
   standing: Standing,
   person: Pick<PersonRef, 'id' | 'name' | 'userName'>,
   sourceNames: ReadonlyMap<string, string> = new Map(),
 ): CompetenceHoldingRow {
-  if (standing.holding === null)
+  if (standing.holding === null) {
+    const held = standing.held;
+    const least = standing.least;
     return {
-      ref: missingRef(person.id, standing.type.id),
+      ref: held ? holdingRef(held.id) : missingRef(person.id, standing.type.id),
       userName: personKey(person),
       name: person.name,
       competence: standing.type.name,
       area: standing.type.area,
       kind: standing.type.kind,
       status: 'missing',
+      ...(held ? { evidence: held.evidence, ...skillFields(held) } : {}),
+      ...(least !== undefined && isCompetenceLevel(least) ? { required: COMPETENCE_LEVEL_LABELS[least] } : {}),
     };
+  }
+  const skill = isSkill(standing.type);
   return {
     ref: holdingRef(standing.holding.id),
     userName: personKey(person),
@@ -481,11 +576,12 @@ export function holdingRow(
     competence: standing.type.name,
     area: standing.type.area,
     kind: standing.type.kind,
-    issuedOn: standing.holding.issuedOn,
+    ...(skill ? {} : { issuedOn: standing.holding.issuedOn }),
     ...(standing.end ? { expiresOn: standing.end } : {}),
     status: standing.status,
     evidence: standing.holding.evidence,
     ...copiedFrom(standing.holding, sourceNames),
+    ...skillFields(standing.holding),
   };
 }
 /**
@@ -538,7 +634,8 @@ export const uncounted = (holding: HoldingRecord) =>
   holding.copy !== null && holding.typeId === null && counts(holding);
 /**
  * What a person's standings add up to: how many have run out, how many required types they lack, how many soon run
- * out, and how many holdings count at all (a missing type is no holding).
+ * out, and how many are registered (a missing type is no holding; a skill held below what is required, or not yet
+ * confirmed, is registered and missing both, D120).
  */
 export interface PersonSummary {
   expired: number;
@@ -546,13 +643,13 @@ export interface PersonSummary {
   expiring: number;
   holdings: number;
 }
-export function summarise(standings: readonly Pick<Standing, 'status'>[]): PersonSummary {
+export function summarise(standings: readonly Standing[]): PersonSummary {
   const count = (status: CompetenceStatus) => standings.filter(s => s.status === status).length;
   return {
     expired: count('expired'),
     missing: count('missing'),
     expiring: count('expiring'),
-    holdings: standings.length - count('missing'),
+    holdings: standings.filter(s => s.holding !== null || ('held' in s && !!s.held)).length,
   };
 }
 /**
@@ -604,7 +701,10 @@ const REASON_ORDER = ['position', 'unit', 'person'] as const;
  * `missing` where the type is required of them and nothing counts, or `none` where it is neither held nor required),
  * what requires it of them, and whether the reader may revoke the holding: one registered in Clew may be, one copied
  * from a source never (D108 item 9). Where the person's own registration of the type waits for a decision (item 7), the
- * cell names it (`pending`) beside the status it has without it.
+ * cell names it (`pending`) beside the status it has without it. A skill's cell (D120) carries the level held, whether
+ * a manager confirmed it and the interest mark, and, where it is required, the least level asked; a skill held that
+ * does not reach it is `missing` and still names the holding, so its level can be confirmed from the cell. A skill
+ * column lists the least levels asked of the people shown.
  */
 export function matrixOf(input: {
   people: readonly MatrixPerson[];
@@ -629,6 +729,8 @@ export function matrixOf(input: {
     input.people.map(p => [p.id, requirementsOn(placeOf(p.id), input.requirements).filter(r => live(r.typeId))]),
   );
   const required = new Map([...applying].map(([id, rs]) => [id, [...new Set(rs.map(r => r.typeId))]]));
+  // The least level each required skill asks of each person (D120 item 4).
+  const least = new Map([...applying].map(([id, rs]) => [id, leastLevels(placeOf(id), rs)]));
   const all = orderTypes([...new Set([...required.values()].flat())].map(id => live(id)!));
   const positionLabel = new Map(input.positions.map(p => [p.code, p.label])),
     unitLabel = new Map(input.units.map(u => [u.id, u.label]));
@@ -673,8 +775,30 @@ export function matrixOf(input: {
     shown = all.filter(t => ids.has(t.id));
   }
 
-  const standings = deciding(input.holdings, input.types, input.today, required);
+  const standings = deciding(input.holdings, input.types, input.today, required, least);
   const at = new Map(standings.map(s => [s.personId + '\n' + s.type.id, s]));
+  /** What a cell says of a skill held (D120): its level, whether a manager confirmed it, and the interest mark. */
+  const skillOf = (h: HoldingRecord): Pick<CompetenceMatrixCell, 'level' | 'validated' | 'interest'> => {
+    const level = levelOf(h);
+    return level === undefined
+      ? {}
+      : { level, validated: confirmed(h), ...(h.interest ? { interest: true as const } : {}) };
+  };
+  /** On a skill required of the person: the least level asked of them. */
+  const askedOf = (personId: string, type: TypeRecord, isRequired: boolean): Pick<CompetenceMatrixCell, 'least'> => {
+    if (!isRequired || !isSkill(type)) return {};
+    const level = least.get(personId)?.get(type.id) ?? 1;
+    return isCompetenceLevel(level) ? { least: level } : {};
+  };
+  /** A skill column's least levels over the people shown, each once, the lowest first. */
+  const levelsOf = (type: TypeRecord): Pick<CompetenceMatrixColumn, 'levels'> => {
+    if (!isSkill(type)) return {};
+    const asked = input.people.flatMap(p =>
+      required.get(p.id)?.includes(type.id) ? [least.get(p.id)?.get(type.id) ?? 1] : [],
+    );
+    const levels = [...new Set(asked)].sort((a, b) => a - b).filter(isCompetenceLevel);
+    return levels.length ? { levels } : {};
+  };
   // A person's own registration waiting for a decision (D108 item 7) counts towards nothing: the cell's status is what
   // it is without it, and the cell says it waits.
   const waits = new Map(
@@ -686,7 +810,8 @@ export function matrixOf(input: {
       : r.unitId !== null
         ? { on: 'unit', label: unitLabel.get(r.unitId) ?? r.unitId }
         : { on: 'person', requirementId: r.id };
-  const cell = (personId: string, typeId: string): CompetenceMatrixCell => {
+  const cell = (personId: string, type: TypeRecord): CompetenceMatrixCell => {
+    const typeId = type.id;
     const through = applying
       .get(personId)!
       .filter(r => r.typeId === typeId)
@@ -701,9 +826,23 @@ export function matrixOf(input: {
     const required = through.length > 0;
     const pendingId = waits.get(personId + '\n' + typeId);
     const pending = pendingId ? { pending: pendingId } : {};
-    if (!standing) return { typeId, status: 'none', required, through, revocable: false, ...pending };
-    if (standing.holding === null)
-      return { typeId, status: 'missing', required, through, revocable: false, ...pending };
+    const asked = askedOf(personId, type, required);
+    if (!standing) return { typeId, status: 'none', required, through, revocable: false, ...pending, ...asked };
+    if (standing.holding === null) {
+      // A skill held that does not reach what is asked (D120 item 4): the cell names it, so it can be confirmed.
+      const held = standing.held;
+      return {
+        typeId,
+        status: 'missing',
+        required,
+        through,
+        ...(held
+          ? { holdingId: held.id, evidence: held.evidence, revocable: held.evidence !== 'system', ...skillOf(held) }
+          : { revocable: false }),
+        ...pending,
+        ...asked,
+      };
+    }
     return {
       typeId,
       status: standing.status,
@@ -714,15 +853,17 @@ export function matrixOf(input: {
       evidence: standing.holding.evidence,
       revocable: standing.holding.evidence !== 'system',
       ...pending,
+      ...skillOf(standing.holding),
+      ...asked,
     };
   };
   const rows = [...input.people]
     .sort((a, b) => sv(a.name, b.name) || a.id.localeCompare(b.id))
-    .map(p => ({ personId: p.id, key: personKey(p), name: p.name, cells: shown.map(t => cell(p.id, t.id)) }));
+    .map(p => ({ personId: p.id, key: personKey(p), name: p.name, cells: shown.map(t => cell(p.id, t)) }));
   return {
     ...(chosen ? { by: chosen.by, part: chosen.part } : {}),
     groups: sets.map(({ typeIds: _typeIds, ...group }) => group),
-    columns: shown.map(t => ({ typeId: t.id, name: t.name, area: t.area, kind: t.kind })),
+    columns: shown.map(t => ({ typeId: t.id, name: t.name, area: t.area, kind: t.kind, ...levelsOf(t) })),
     rows,
     required: all.length,
   };
@@ -736,13 +877,40 @@ const CSV_WORDS: Record<CompetenceMatrixStatus, string> = {
   valid: 'Giltigt',
   none: 'Krävs inte',
 };
-export function matrixCellText(cell: Pick<CompetenceMatrixCell, 'status' | 'expiresOn' | 'required'>): string {
+/**
+ * What a skill's cell says (D120 items 1 and 4), in the words the page draws it with: the level held ("Självständig"),
+ * "Egen bedömning: Självständig" while only the person has rated it, and where a requirement is not met "Saknas (kräver
+ * Expert, har Självständig)", or "Saknas (kräver Självständig, egen bedömning: Expert)", or "Saknas (kräver
+ * Grundläggande)" where nothing is held. Undefined for a cell that is no skill held or required.
+ */
+export function skillCellText(
+  cell: Pick<CompetenceMatrixCell, 'status' | 'level' | 'validated' | 'least'>,
+): string | undefined {
+  const held =
+    cell.level === undefined
+      ? undefined
+      : cell.validated
+        ? levelWord(cell.level)
+        : `${SELF_RATED_WORD}: ${levelWord(cell.level)}`;
+  if (cell.status === 'missing' && cell.least !== undefined) {
+    const asked = `kräver ${levelWord(cell.least)}`;
+    if (cell.level === undefined) return `${CSV_WORDS.missing} (${asked})`;
+    return cell.validated
+      ? `${CSV_WORDS.missing} (${asked}, har ${levelWord(cell.level)})`
+      : `${CSV_WORDS.missing} (${asked}, ${SELF_RATED_WORD.toLowerCase()}: ${levelWord(cell.level)})`;
+  }
+  return cell.status === 'none' ? undefined : held;
+}
+export function matrixCellText(
+  cell: Pick<CompetenceMatrixCell, 'status' | 'expiresOn' | 'required' | 'level' | 'validated' | 'least'>,
+): string {
   const word =
-    cell.status === 'valid' && cell.expiresOn
+    skillCellText(cell) ??
+    (cell.status === 'valid' && cell.expiresOn
       ? `Giltigt till ${cell.expiresOn}`
       : cell.expiresOn && (cell.status === 'expired' || cell.status === 'expiring')
         ? `${CSV_WORDS[cell.status]} ${cell.expiresOn}`
-        : CSV_WORDS[cell.status];
+        : CSV_WORDS[cell.status]);
   return !cell.required && cell.status !== 'none' ? `${word} (krävs inte)` : word;
 }
 /**
@@ -756,7 +924,8 @@ function csvField(value: string): string {
 /**
  * The matrix as shown, as a file (D108 item 11): a heading row of "Namn", "Användarnamn" and the columns' names, then
  * one row per person with their name, their user name (Clew's id for someone provisioned without one), so two reports
- * who share a name can be told apart, and each cell in words. Separated by semicolons with a byte order mark and CRLF
+ * who share a name can be told apart, and each cell in words, a skill's with its level (D120). Separated by semicolons
+ * with a byte order mark and CRLF
  * line ends, which a spreadsheet set up for Swedish opens as columns with å, ä and ö intact.
  */
 export function matrixCsv(matrix: Pick<CompetenceMatrixOutput, 'columns' | 'rows'>): string {
@@ -957,6 +1126,11 @@ export function planCopy(input: {
       decidedBy: null,
       decidedAt: null,
       threadId: null,
+      // A source's row is never a skill: a source type cannot be mapped to one (D120), so it has no level.
+      level: null,
+      interest: false,
+      validatedBy: null,
+      validatedAt: null,
     };
     if (old && sameCopy(old, next)) {
       touch.push(holding.id);

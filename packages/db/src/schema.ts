@@ -942,8 +942,8 @@ export const competenceTypes = pgTable(
     organisationId: text('organisation_id').notNull(),
     name: text('name').notNull(),
     area: text('area').notNull(),
-    kind: text('kind').$type<'certificate' | 'degree' | 'course' | 'authorisation'>().notNull(),
-    // The employer's rule (item 3): months from the issue date. Null: no rule.
+    kind: text('kind').$type<'certificate' | 'degree' | 'course' | 'authorisation' | 'skill'>().notNull(),
+    // The employer's rule (item 3): months from the issue date. Null: no rule, and always on a skill (D120 item 1).
     validityMonths: integer('validity_months'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     // An actor string (a person's principal id, `operator:cli`), not a person.
@@ -951,8 +951,10 @@ export const competenceTypes = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   t => [
-    check('competence_type_kind', sql`${t.kind} IN ('certificate', 'degree', 'course', 'authorisation')`),
+    check('competence_type_kind', sql`${t.kind} IN ('certificate', 'degree', 'course', 'authorisation', 'skill')`),
     check('competence_type_validity', sql`${t.validityMonths} IS NULL OR ${t.validityMonths} BETWEEN 1 AND 600`),
+    // A skill never ends (D120 item 1): no employer's rule.
+    check('competence_type_skill', sql`${t.kind} <> 'skill' OR ${t.validityMonths} IS NULL`),
     uniqueIndex('competence_type_name')
       .on(t.organisationId, sql`lower(${t.name})`)
       .where(sql`${t.archivedAt} IS NULL`),
@@ -1001,6 +1003,12 @@ export const competenceHoldings = pgTable(
     decidedBy: text('decided_by').references(() => people.id, { onDelete: 'set null' }),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     threadId: text('thread_id'),
+    // A skill (D120): the level it is held at (1 to 3), whether the person wants to develop it, and the manager who
+    // confirmed the level and when. Null `validated_at` on a skill: the person's own rating alone.
+    level: integer('level'),
+    interest: boolean('interest').notNull().default(false),
+    validatedBy: text('validated_by').references(() => people.id, { onDelete: 'set null' }),
+    validatedAt: timestamp('validated_at', { withTimezone: true }),
   },
   t => [
     check('competence_holding_evidence', sql`${t.evidence} IN ('system', 'manager', 'self')`),
@@ -1008,16 +1016,35 @@ export const competenceHoldings = pgTable(
     check('competence_holding_period', sql`${t.expiresOn} IS NULL OR ${t.expiresOn} >= ${t.issuedOn}`),
     // Only a person's own registration waits or is rejected.
     check('competence_holding_own', sql`${t.state} NOT IN ('pending', 'rejected') OR ${t.evidence} = 'self'`),
-    // A person's own registration is decided exactly when it no longer waits; nothing else is decided or has cards. A
-    // decision keeps its time when its manager is erased.
+    // A person's own registration of a certificate is decided exactly when it no longer waits; nothing else is decided
+    // or has cards, a skill included (D120: it is stored at once and confirmed, not approved). A decision keeps its time
+    // when its manager is erased.
     check(
       'competence_holding_decided',
-      sql`(${t.decidedBy} IS NULL OR ${t.decidedAt} IS NOT NULL) AND (${t.threadId} IS NULL OR ${t.evidence} = 'self') AND CASE WHEN ${t.evidence} = 'self' THEN (${t.state} = 'pending') = (${t.decidedAt} IS NULL) ELSE ${t.decidedAt} IS NULL END`,
+      sql`(${t.decidedBy} IS NULL OR ${t.decidedAt} IS NOT NULL) AND (${t.threadId} IS NULL OR ${t.evidence} = 'self') AND CASE WHEN ${t.level} IS NOT NULL THEN ${t.decidedAt} IS NULL WHEN ${t.evidence} = 'self' THEN (${t.state} = 'pending') = (${t.decidedAt} IS NULL) ELSE ${t.decidedAt} IS NULL END`,
+    ),
+    // A skill (D120 item 1) is held at one of three levels and has no end date, no source, no approval: it is valid or
+    // revoked, registered in Clew by the person or a manager. That a level goes with a type of kind `skill` alone is the
+    // use case's to keep, since the kind lives on the type.
+    check(
+      'competence_holding_skill',
+      sql`${t.level} IS NULL OR (${t.level} BETWEEN 1 AND 3 AND ${t.expiresOn} IS NULL AND ${t.connectorId} IS NULL AND ${t.evidence} <> 'system' AND ${t.threadId} IS NULL AND ${t.state} IN ('valid', 'revoked'))`,
+    ),
+    // Only a skill is confirmed or carries an interest mark. A confirmation keeps its time when its manager is erased,
+    // as a decision does, so a confirmed level never turns back into the person's own rating.
+    check(
+      'competence_holding_validated',
+      sql`(${t.validatedBy} IS NULL OR ${t.validatedAt} IS NOT NULL) AND (${t.validatedAt} IS NULL OR ${t.level} IS NOT NULL) AND (NOT ${t.interest} OR ${t.level} IS NOT NULL)`,
     ),
     // One registration of a type waiting per person: a second is refused until the first is decided or taken back.
     uniqueIndex('competence_holding_pending')
       .on(t.personId, t.typeId)
       .where(sql`${t.state} = 'pending'`),
+    // One skill of a type per person (D120 item 1): rating it again changes that row. A revoked one stays as it was
+    // and does not count.
+    uniqueIndex('competence_holding_one_skill')
+      .on(t.personId, t.typeId)
+      .where(sql`${t.level} IS NOT NULL AND ${t.state} = 'valid'`),
     // A copied row has every column of its source and nobody who registered it; a row registered in Clew has none.
     check(
       'competence_holding_copy',
@@ -1103,9 +1130,10 @@ export const competenceSources = pgTable(
  * `auth_position` or `auth_unit`, so a position group removed and pushed again under the same code, or a unit nobody is
  * placed on, keeps its requirements; one whose position or unit is gone counts towards nothing until it comes back.
  * Kept by `admin.competence` for a position or a unit and by the manager a person reports to for that person (D118).
- * One requirement per type and target. `min_level` is the least level a skill must be held at (D120 item 4), unused
- * until skills are built. `created_by` is an actor string, as `competence_type.created_by` is, emptied when that person
- * is erased. Goes with its type and its person.
+ * One requirement per type and target. `min_level` is the least level a confirmed skill must be held at (D120 item 4),
+ * set on a requirement of a skill and on nothing else, which the use case keeps since the kind lives on the type.
+ * `created_by` is an actor string, as `competence_type.created_by` is, emptied when that person is erased. Goes with
+ * its type and its person.
  */
 export const competenceRequirements = pgTable(
   'competence_requirement',

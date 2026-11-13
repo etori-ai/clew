@@ -73,9 +73,12 @@ interface Row extends Record<string, unknown> {
   id: string;
   t: CompetenceSourceType;
 }
-/** The catalogue's types a source's type can be mapped to, grouped by area: archived types take nothing new. */
+/**
+ * The catalogue's types a source's type can be mapped to, grouped by area: archived types take nothing new, and a skill
+ * is left out, since a copied row has no level (D120).
+ */
 const typeOptions = (types: CompetenceType[]) => {
-  const open = types.filter(t => !t.archived);
+  const open = types.filter(t => !t.archived && t.kind !== 'skill');
   return [...new Set(open.map(t => t.area))].map(area => ({
     type: 'section' as const,
     title: area,

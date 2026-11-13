@@ -92,9 +92,36 @@ export interface HoldingRecord {
    * (`approvalCardId`), all of them on one topic, so one decision closes every one. Null on every other holding.
    */
   threadId: string | null;
+  /**
+   * The level a skill is held at (D120 item 1), 1 to 3; null on every other kind. A holding with a level has no end
+   * date, no source and no approval, and is one per person and type while it counts (`SkillTaken`).
+   */
+  level: number | null;
+  /** The person wants to develop the skill (D120 item 3); false on every other kind. Counts towards nothing. */
+  interest: boolean;
+  /**
+   * The manager who confirmed a skill's level (D120 item 2) and when: both null while it is the person's own rating
+   * alone; `validatedBy` null with a time once that manager was erased, so it stays confirmed. Null on every other kind.
+   */
+  validatedBy: string | null;
+  validatedAt: string | null;
 }
 export type HoldingPatch = Partial<
-  Pick<HoldingRecord, 'state' | 'revokedAt' | 'revokedBy' | 'decidedBy' | 'decidedAt'>
+  Pick<
+    HoldingRecord,
+    | 'state'
+    | 'revokedAt'
+    | 'revokedBy'
+    | 'decidedBy'
+    | 'decidedAt'
+    | 'level'
+    | 'interest'
+    | 'validatedBy'
+    | 'validatedAt'
+    | 'evidence'
+    | 'registeredBy'
+    | 'issuedOn'
+  >
 >;
 /** A source's type mapped to the catalogue for one organisation (D108 item 9). `mappedBy` is an actor string. */
 export interface SourceMapping {
@@ -142,8 +169,8 @@ export interface SourceTypeCount {
  * What is required of whom (D108 item 6): a type and exactly one of a position (by its code in the organisation), a unit
  * (by the id of its `unit:` key) or one person. A position and a unit are named by key, not by a row, so one that is
  * pushed again keeps its requirements and one that is gone counts towards nothing until it comes back. `minLevel` is the
- * least level of a skill (D120 item 4), stored and unused until skills are built. `createdBy` is an actor string, null
- * once that person was erased.
+ * least level a confirmed skill must reach (D120 item 4), set on a requirement of a skill and null on any other.
+ * `createdBy` is an actor string, null once that person was erased.
  */
 export interface RequirementRecord {
   id: string;
@@ -231,7 +258,7 @@ export interface Erased {
 }
 /**
  * The whole domain for one organisation (D108 item 14), copied rows, the mappings of sources, the requirements and the
- * share targets included; the use case turns it into `clew.competence/5`.
+ * share targets included; the use case turns it into `clew.competence/6`.
  */
 export interface CompetenceExport {
   types: TypeRecord[];
@@ -259,6 +286,14 @@ export class PendingTaken extends Error {
   constructor() {
     super('The person has a registration of this type waiting already.');
     this.name = 'PendingTaken';
+  }
+}
+
+/** The store's refusal of a second skill of one type that counts for the same person (D120 item 1). */
+export class SkillTaken extends Error {
+  constructor() {
+    super('The person holds this skill already.');
+    this.name = 'SkillTaken';
   }
 }
 
@@ -342,9 +377,12 @@ export interface CompetenceTx {
   holding(id: string): Promise<HoldingRecord | undefined>;
   /**
    * Insert a holding. A second `pending` one of the same person and type is refused with `PendingTaken` (D108 item 7);
-   * only a holding of evidence `self` may be pending or rejected, and only it is decided or has an approval's key.
+   * only a holding of evidence `self` may be pending or rejected, and only it is decided or has an approval's key. A
+   * second skill of one type that counts for the same person is refused with `SkillTaken` (D120 item 1); a skill has
+   * no end date, no source and no approval, and only a skill is confirmed or has an interest mark.
    */
   insertHolding(holding: HoldingRecord): Promise<void>;
+  /** Change a holding; the same rules as `insertHolding`. An unknown id changes nothing. */
   updateHolding(id: string, patch: HoldingPatch): Promise<void>;
   /**
    * Remove one holding registered in Clew, as a person's own registration taken back is (D108 item 7). A copied row is
@@ -442,8 +480,8 @@ export interface CompetenceTx {
   // Erasure and export (D108 item 14).
   /**
    * Remove the person's holdings, copied ones included, and the requirements set on them alone, and remove them from
-   * other people's holdings (null `registeredBy`, `revokedBy`, `decidedBy`) and from the requirements and share targets
-   * they set (null `createdBy`, which holds `person:<id>`). Takes the row lock of every source the person has copied
+   * other people's holdings (null `registeredBy`, `revokedBy`, `decidedBy`, `validatedBy`, each keeping its time) and
+   * from the requirements and share targets they set (null `createdBy`, which holds `person:<id>`). Takes the row lock of every source the person has copied
    * rows from first, in the order of their ids. Returns the approval keys of the removed holdings, whose cards the use
    * case removes with `workItems` in the same transaction.
    */

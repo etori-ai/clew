@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import type { CompetenceMatrixOutput } from '@clew/contracts';
-import { competenceTypes, lenaApproval, withLenaWaiting } from './competence';
+import { annaJournal, competenceTypes, lenaApproval, withJournal, withLenaWaiting, withSkills } from './competence';
 import {
   desktop,
   expect,
@@ -24,7 +24,9 @@ import {
  * a phone and at 320 px the table is a list of one person per item. The page's own answer for someone who manages
  * nobody and with the module off. A report's own registration that waits (D108 item 7) is noted in its cell, and is
  * approved or, after the confirmation, rejected in a dialog named in the address (`approve`), from the cell, from a cold
- * address, and from the page the approval's card leads to. The mock's clock stands at 2026-11-04.
+ * address, and from the page the approval's card leads to. A skill's column (D120) says the least level asked and each
+ * cell the level held in words; a skill is confirmed at a level in a dialog named in the address (`validate`), from the
+ * cell and from a cold address, and registered for a report with a level. The mock's clock stands at 2026-11-04.
  */
 const MATRIX = '/competence/matrix';
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
@@ -50,6 +52,13 @@ const switchedOn = (api: MockApi) => {
 };
 const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Medarbetarnas kompetens' });
 const approvalDialog = (page: Page) => page.getByRole('dialog', { name: 'Granska intyg' });
+const validation = (page: Page) => page.getByRole('dialog', { name: 'Bekräfta nivå' });
+/** Journalsystem is required of every report at least Självständig; Anna's own rating of it waits to be confirmed. */
+const journal = (api: MockApi) => {
+  api.competenceTypes = withSkills();
+  api.competenceMatrix = withJournal(api.competenceMatrix);
+  api.competenceSkills = { 'h-anna-journal': annaJournal() };
+};
 /** Lena has registered HLR herself, and it waits for the reader. */
 const lenaWaits = (api: MockApi) => {
   api.competenceMatrix = withLenaWaiting(api.competenceMatrix);
@@ -473,6 +482,129 @@ test.describe('Kompetens › Medarbetare', () => {
       await expect(page).toHaveURL(MATRIX);
       await expect(heading(page)).toBeFocused();
       expect(api.approvalWrites).toEqual([]);
+    });
+
+    test('a skill’s column says the level asked and each cell the level held in words; its level is confirmed from the cell by keyboard, preset to what was rated', async ({
+      page,
+      api,
+    }) => {
+      journal(api);
+      await open(page, MATRIX);
+      const table = page.getByRole('table');
+      await expect(table.getByRole('columnheader').nth(4)).toHaveText(
+        'JournalsystemDigital kompetensMinst Självständig',
+      );
+      const at = (name: string) => row(page, name).getByRole('cell').nth(3);
+      // Her own rating meets nothing until it is confirmed: missing, with what is asked and what she rated beside it.
+      await expect(at('Anna Lindqvist')).toContainText('Saknas');
+      await expect(at('Anna Lindqvist')).toContainText('kräver Självständig, egen bedömning: Expert');
+      await expect(at('Anna Lindqvist')).toContainText('Vill utveckla');
+      await expect(at('Erik Sandström')).toContainText('Självständig');
+      await expect(at('Erik Sandström')).not.toContainText('Saknas');
+      await expect(at('Lena Berg')).toContainText('Saknas');
+      await expect(at('Lena Berg')).toContainText('kräver Självständig');
+      await expectNoAxeViolations(page);
+      const control = cell(page, 'Journalsystem', 'Anna Lindqvist');
+      await tabTo(page, control);
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Bekräfta nivå', 'Återkalla färdigheten']);
+      await expect(page.getByRole('menuitem', { name: 'Bekräfta nivå' })).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(`${MATRIX}?validate=h-anna-journal`);
+      const dialog = validation(page);
+      await expect(dialog.getByText('Journalsystem för Anna Lindqvist')).toBeVisible();
+      await expect(dialog).toContainText('Egen bedömning');
+      const rated = dialog.getByRole('radio', { name: /Expert/ });
+      await expect(rated).toBeChecked();
+      await settled(page);
+      await expectNoAxeViolations(page);
+      // Another level than she rated, chosen with the arrow keys.
+      await rated.focus();
+      await page.keyboard.press('ArrowUp');
+      await expect(dialog.getByRole('radio', { name: /Självständig/ })).toBeChecked();
+      await tabTo(page, dialog.getByRole('button', { name: 'Bekräfta nivå' }), { max: 8 });
+      await page.keyboard.press('Enter');
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(MATRIX);
+      expect(api.skillWrites).toEqual([
+        { method: 'POST', path: '/competence/skills/h-anna-journal/validation', body: { level: 2 } },
+      ]);
+      await expect(
+        notices(page).getByText('Journalsystem för Anna Lindqvist är bekräftad på nivån Självständig.'),
+      ).toBeAttached();
+      await expect(at('Anna Lindqvist')).toContainText('Självständig');
+      await expect(at('Anna Lindqvist')).not.toContainText('Saknas');
+      await expect(control).toBeFocused();
+      // Confirmed, the cell offers to change the level.
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('menuitem', { name: 'Ändra nivå' })).toBeFocused();
+      await page.keyboard.press('Escape');
+    });
+
+    test('from a cold address the confirmation opens over the matrix and Esc closes it to the heading; one the reader may not confirm opens nothing', async ({
+      page,
+      api,
+    }) => {
+      journal(api);
+      await open(page, `${MATRIX}?validate=h-anna-journal`);
+      const dialog = validation(page);
+      await expect(dialog.getByText('Journalsystem för Anna Lindqvist')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(MATRIX);
+      await expect(heading(page)).toBeFocused();
+      expect(api.skillWrites).toEqual([]);
+      await open(page, `${MATRIX}?validate=h-elsewhere`);
+      await expect(page.getByRole('main').getByRole('alert')).toHaveText(
+        'Färdigheten finns inte bland dem du kan bekräfta.',
+      );
+      await expect(page).toHaveURL(MATRIX);
+      await expect(validation(page)).toHaveCount(0);
+      await expectNoAxeViolations(page);
+    });
+
+    test('a skill is registered for a report from a cell by keyboard with a level, confirmed by the manager at once', async ({
+      page,
+      api,
+    }) => {
+      journal(api);
+      await open(page, MATRIX);
+      const control = cell(page, 'Journalsystem', 'Lena Berg');
+      await tabTo(page, control);
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Registrera färdighet']);
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(`${MATRIX}?register=lena&competence=t-journal`);
+      const dialog = page.getByRole('dialog', { name: 'Registrera färdighet' });
+      await expect(
+        dialog
+          .getByRole('status')
+          .filter({ hasText: 'En färdighet registreras med en nivå, som räknas som bekräftad av dig.' }),
+      ).toBeVisible();
+      await expect(dialog.getByLabel('Utfärdat', { exact: false })).toHaveCount(0);
+      await expect(dialog.getByRole('switch')).toHaveCount(0);
+      await settled(page);
+      await expectNoAxeViolations(page);
+      // No level chosen: said on the group, whose first choice takes the focus; the arrow keys choose.
+      await dialog.getByRole('button', { name: 'Registrera', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(dialog.getByRole('radiogroup', { name: /Nivå/ })).toHaveAttribute('aria-invalid', 'true');
+      await expect(dialog.getByRole('radio', { name: /Grundläggande/ })).toBeFocused();
+      await page.keyboard.press('ArrowDown');
+      await expect(dialog.getByRole('radio', { name: /Självständig/ })).toBeChecked();
+      await tabTo(page, dialog.getByRole('button', { name: 'Registrera', exact: true }), { max: 8 });
+      await page.keyboard.press('Enter');
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(MATRIX);
+      expect(api.skillWrites).toEqual([
+        { method: 'POST', path: '/competence/people/lena/skills', body: { typeId: 't-journal', level: 2 } },
+      ]);
+      await expect(
+        notices(page).getByText('Journalsystem är registrerad för Lena Berg på nivån Självständig.'),
+      ).toBeAttached();
+      await expect(row(page, 'Lena Berg').getByRole('cell').nth(3)).toContainText('Självständig');
+      await expect(row(page, 'Lena Berg').getByRole('cell').nth(3)).not.toContainText('Saknas');
+      await expect(control).toBeFocused();
     });
 
     test('more required than ten columns hold: the set is chosen with the selector, kept in the address and in the file', async ({

@@ -55,6 +55,10 @@ import { REQUIREMENTS_PATH } from './competence-requirements';
  * A change of the validity applies at once to every holding counted from the rule. Before it is saved the page asks
  * the server what it would do and says how many holdings it turns expired; the second press saves.
  *
+ * A skill (D120) is held at a level and never ends, so the validity is not asked for a type of the kind Färdighet: the
+ * fields for it go when that kind is chosen, and a type made into a skill loses its rule. Whether a type may become a
+ * skill, or stop being one, is the server's to say (not while anything is held of it or required of anyone).
+ *
  * The page is refused while the module is switched off under Anslutna system, and to an administrator without the
  * capability; it says which and where to go.
  */
@@ -68,10 +72,17 @@ export const kindLabel: Record<CompetenceKind, string> = {
   degree: 'Examen',
   course: 'Kurs',
   authorisation: 'Behörighet',
+  skill: 'Färdighet',
 };
-/** "24 månader (2 år)", "18 månader"; no rule reads "Ingen regel". */
-const validityText = (months: number | undefined) =>
-  months ? (months % 12 === 0 ? `${months} månader (${months / 12} år)` : `${months} månader`) : 'Ingen regel';
+/** "24 månader (2 år)", "18 månader"; no rule reads "Ingen regel", and a skill, which never ends, "Går inte ut". */
+const validityText = (months: number | undefined, kind?: CompetenceKind) =>
+  kind === 'skill'
+    ? 'Går inte ut'
+    : months
+      ? months % 12 === 0
+        ? `${months} månader (${months / 12} år)`
+        : `${months} månader`
+      : 'Ingen regel';
 const holdingsText = (n: number) => `${n} intyg`;
 interface Row extends Record<string, unknown> {
   id: string;
@@ -135,11 +146,13 @@ function TypeDialog({
     : trimmedArea.length > AREA_MAX
       ? `Högst ${AREA_MAX} tecken.`
       : null;
+  // A skill has no validity (D120 item 1): its fields are not drawn, and its rule is none.
+  const skill = kind === 'skill';
   const monthsProblem =
-    ruled && (months === null || !Number.isInteger(months) || months < 1 || months > MONTHS_MAX)
+    !skill && ruled && (months === null || !Number.isInteger(months) || months < 1 || months > MONTHS_MAX)
       ? `Ange antal månader, 1 till ${MONTHS_MAX}.`
       : null;
-  const validity = ruled ? months : null;
+  const validity = ruled && !skill ? months : null;
   const validityChanged = !!type && (type.validityMonths ?? null) !== validity;
   const submit = async () => {
     if (save.busy) return;
@@ -154,8 +167,9 @@ function TypeDialog({
         onClose();
         return `${trimmedName} finns nu i katalogen.`;
       }
-      // A new validity moves every holding counted from the rule: the server says what it does before it is saved.
-      if (validityChanged && !impact) {
+      // A new validity moves every holding counted from the rule: the server says what it does before it is saved. A
+      // type made into a skill has nothing held of it, which the server checks, so there is nothing to count.
+      if (validityChanged && !impact && !skill) {
         setImpact(await api.competence.validityImpact(type.id, validity));
         return;
       }
@@ -257,19 +271,30 @@ function TypeDialog({
               label="Typ"
               options={COMPETENCE_KINDS.map(k => ({ value: k, label: kindLabel[k] }))}
               value={kind}
-              onChange={value => value && setKind(value as CompetenceKind)}
-              presentation="adaptive"
-            />
-            <Switch
-              label="Arbetsgivaren bestämmer giltighetstiden"
-              description="Slå på när intyget ska förnyas med ett visst mellanrum och utfärdaren inte anger något slutdatum."
-              value={ruled}
-              onChange={next => {
-                setRuled(next);
+              onChange={value => {
+                if (!value) return;
+                setKind(value as CompetenceKind);
                 setImpact(null);
               }}
+              presentation="adaptive"
             />
-            {ruled && (
+            {skill ? (
+              <Text as="p" type="supporting">
+                En färdighet anges med en nivå: Grundläggande, Självständig eller Expert. Den går inte ut, så den har
+                ingen giltighetstid.
+              </Text>
+            ) : (
+              <Switch
+                label="Arbetsgivaren bestämmer giltighetstiden"
+                description="Slå på när intyget ska förnyas med ett visst mellanrum och utfärdaren inte anger något slutdatum."
+                value={ruled}
+                onChange={next => {
+                  setRuled(next);
+                  setImpact(null);
+                }}
+              />
+            )}
+            {ruled && !skill && (
               <NumberInput
                 ref={monthsField}
                 label="Giltigt i"
@@ -348,7 +373,7 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
       header: 'Giltighet',
       width: proportional(2, { minWidth: 160 }),
       renderCell: (r: Row) => (
-        <Text color={r.t.validityMonths ? 'primary' : 'secondary'}>{validityText(r.t.validityMonths)}</Text>
+        <Text color={r.t.validityMonths ? 'primary' : 'secondary'}>{validityText(r.t.validityMonths, r.t.kind)}</Text>
       ),
     },
     {
@@ -428,7 +453,7 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
                   description={
                     <VStack gap={1} hAlign="start">
                       <Text type="supporting">
-                        {t.area} · {kindLabel[t.kind]} · {validityText(t.validityMonths)}
+                        {t.area} · {kindLabel[t.kind]} · {validityText(t.validityMonths, t.kind)}
                       </Text>
                       {t.archived && <Badge variant="neutral" label="Arkiverad" />}
                     </VStack>

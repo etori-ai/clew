@@ -23,6 +23,13 @@ export const DEVELOPMENT_CATALOGUE: CompetenceTypeBody[] = [
   { name: 'Informationssäkerhet', area: 'Information', kind: 'course', validityMonths: 24 },
   { name: 'Livsmedelshygien', area: 'Kök', kind: 'course' },
   { name: 'HLR-instruktör', area: 'Akut omhändertagande', kind: 'authorisation' },
+  // Skills (D120): held at a level, rated by the person and confirmed by their manager; never ending, so no rule.
+  { name: 'Engelska', area: 'Språk', kind: 'skill' },
+  { name: 'Teckenspråk', area: 'Språk', kind: 'skill' },
+  { name: 'Lättläst svenska', area: 'Språk', kind: 'skill' },
+  { name: 'Kalkylprogram', area: 'Digital kompetens', kind: 'skill' },
+  { name: 'Digitala möten', area: 'Digital kompetens', kind: 'skill' },
+  { name: 'Journalsystem', area: 'Digital kompetens', kind: 'skill' },
 ];
 /**
  * The development learning platform's courses (by the `idnumber` its seed gives them, `.devcontainer/moodle/seed.php`)
@@ -38,9 +45,9 @@ export const DEVELOPMENT_MAPPINGS: ReadonlyArray<readonly [string, string]> = [
 /**
  * What the development catalogue requires of the synthetic directory's positions (D108 item 6), by the position's code
  * (`scripts/provisioner/directory.ts`) and the type's name: enough for a manager's reports to lack something and for a
- * unit's coverage to have something to count.
+ * unit's coverage to have something to count. A skill's requirement names its least level (D120 item 4).
  */
-export const DEVELOPMENT_REQUIREMENTS: ReadonlyArray<{ position: string; type: string }> = [
+export const DEVELOPMENT_REQUIREMENTS: ReadonlyArray<{ position: string; type: string; minLevel?: 1 | 2 | 3 }> = [
   { position: 'underskoterska', type: 'HLR' },
   { position: 'underskoterska', type: 'Brandskydd' },
   { position: 'sjukskoterska', type: 'HLR' },
@@ -48,6 +55,7 @@ export const DEVELOPMENT_REQUIREMENTS: ReadonlyArray<{ position: string; type: s
   { position: 'maskinforare', type: 'Arbete på väg' },
   { position: 'maskinforare', type: 'Fallskydd' },
   { position: 'enhetschef', type: 'Informationssäkerhet' },
+  { position: 'sjukskoterska', type: 'Journalsystem', minLevel: 2 },
 ];
 /** A share target across the whole organisation: at least half of the undersköterskor hold a delegation. */
 export const DEVELOPMENT_SHARE_TARGETS: ReadonlyArray<{ position: string; type: string; minShare: number }> = [

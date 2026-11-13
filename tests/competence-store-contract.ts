@@ -76,6 +76,10 @@ export const holdingRow = (
   decidedBy: null,
   decidedAt: null,
   threadId: null,
+  level: null,
+  interest: false,
+  validatedBy: null,
+  validatedAt: null,
   ...extra,
 });
 /** A row copied from a source (D108 item 9): evidence `system`, nobody who registered it, the source's ids and label. */
@@ -407,6 +411,164 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         state: 'rejected',
         decidedBy: null,
         decidedAt: T2,
+      });
+    });
+
+    /** A skill (D120) as Anna rates it: a level, no end date, evidence `self`, valid at once and not yet confirmed. */
+    const skill = (w: { p: string; anna: string }, id: string, typeId: string, extra: Partial<HoldingRecord> = {}) =>
+      holdingRow(w.p + '-' + id, w.anna, w.p + '-' + typeId, {
+        evidence: 'self',
+        registeredBy: w.anna,
+        level: 2,
+        ...extra,
+      });
+
+    test('a skill keeps its level, interest and confirmation, and is changed as rated again and confirmed', async () => {
+      const w = await world();
+      await w.store.transaction(async tx => {
+        await tx.insertType(typeRow(w.p + '-s1', w.org, { kind: 'skill' }));
+        await tx.insertHolding(skill(w, 'h1', 's1', { interest: true }));
+      });
+      expect(await w.store.transaction(tx => tx.holding(w.p + '-h1'))).toEqual(
+        skill(w, 'h1', 's1', { interest: true }),
+      );
+      // Her manager confirms it at another level.
+      await w.store.transaction(tx =>
+        tx.updateHolding(w.p + '-h1', { level: 3, validatedBy: w.boss, validatedAt: T2 }),
+      );
+      expect(await w.store.transaction(tx => tx.holding(w.p + '-h1'))).toEqual(
+        skill(w, 'h1', 's1', { interest: true, level: 3, validatedBy: w.boss, validatedAt: T2 }),
+      );
+      // She rates it again at a new level: her own rating, from another day, the confirmation gone.
+      await w.store.transaction(tx =>
+        tx.updateHolding(w.p + '-h1', {
+          level: 1,
+          interest: false,
+          evidence: 'self',
+          registeredBy: w.anna,
+          issuedOn: '2026-11-11',
+          validatedBy: null,
+          validatedAt: null,
+        }),
+      );
+      expect(await w.store.transaction(tx => tx.holding(w.p + '-h1'))).toEqual(
+        skill(w, 'h1', 's1', { level: 1, issuedOn: '2026-11-11' }),
+      );
+      // A manager's registration: evidence `manager`, confirmed by them.
+      await w.store.transaction(tx =>
+        tx.insertHolding(
+          skill(w, 'h2', 's1', {
+            personId: w.bo,
+            evidence: 'manager',
+            registeredBy: w.boss,
+            validatedBy: w.boss,
+            validatedAt: T2,
+          }),
+        ),
+      );
+      expect((await w.store.transaction(tx => tx.holding(w.p + '-h2')))?.validatedBy).toBe(w.boss);
+    });
+
+    test('one skill of a type counts per person: a second is SkillTaken, a revoked one stands aside', async () => {
+      const w = await world();
+      await w.store.transaction(async tx => {
+        await tx.insertType(typeRow(w.p + '-s1', w.org, { kind: 'skill' }));
+        await tx.insertType(typeRow(w.p + '-s2', w.org, { kind: 'skill' }));
+        await tx.insertHolding(skill(w, 'h1', 's1'));
+      });
+      const again = await refused(() => w.store.transaction(tx => tx.insertHolding(skill(w, 'h2', 's1'))));
+      expect(again?.name).toBe('SkillTaken');
+      // Another type, or another person, is not the same skill.
+      await w.store.transaction(tx => tx.insertHolding(skill(w, 'h3', 's2')));
+      await w.store.transaction(tx => tx.insertHolding(skill(w, 'h4', 's1', { personId: w.bo, registeredBy: w.bo })));
+      // Revoked, it stands aside for a new one, and cannot come back while that one counts.
+      await w.store.transaction(tx =>
+        tx.updateHolding(w.p + '-h1', { state: 'revoked', revokedAt: T2, revokedBy: w.boss }),
+      );
+      await w.store.transaction(tx => tx.insertHolding(skill(w, 'h5', 's1')));
+      const back = await refused(() =>
+        w.store.transaction(tx => tx.updateHolding(w.p + '-h1', { state: 'valid', revokedAt: null, revokedBy: null })),
+      );
+      expect(back?.name).toBe('SkillTaken');
+      expect((await w.store.transaction(tx => tx.holdingsOf([w.anna]))).map(h => [h.id, h.state])).toEqual([
+        [w.p + '-h1', 'revoked'],
+        [w.p + '-h3', 'valid'],
+        [w.p + '-h5', 'valid'],
+      ]);
+      // A certificate may still be held twice of one type: only a level makes a holding a skill.
+      await w.store.transaction(async tx => {
+        await tx.insertType(typeRow(w.p + '-t1', w.org));
+        await tx.insertHolding(holdingRow(w.p + '-c1', w.anna, w.p + '-t1'));
+        await tx.insertHolding(holdingRow(w.p + '-c2', w.anna, w.p + '-t1', { createdAt: T2 }));
+      });
+    });
+
+    test('a skill has a level from 1 to 3, no end date, source or approval; only a skill is confirmed or marked', async () => {
+      const w = await world();
+      await w.store.transaction(async tx => {
+        await tx.insertType(typeRow(w.p + '-s1', w.org, { kind: 'skill' }));
+        await tx.insertType(typeRow(w.p + '-t1', w.org));
+      });
+      for (const row of [
+        skill(w, 'x1', 's1', { level: 0 }),
+        skill(w, 'x2', 's1', { level: 4 }),
+        skill(w, 'x3', 's1', { expiresOn: '2030-01-01' }),
+        skill(w, 'x4', 's1', { state: 'pending', threadId: w.p + '-a' }),
+        skill(w, 'x5', 's1', { decidedBy: w.boss, decidedAt: T2 }),
+        skill(w, 'x6', 's1', { evidence: 'system', registeredBy: null }),
+        // A confirmer has a time; a certificate is never confirmed or marked.
+        skill(w, 'x7', 's1', { validatedBy: w.boss }),
+        holdingRow(w.p + '-x8', w.anna, w.p + '-t1', { validatedAt: T2 }),
+        holdingRow(w.p + '-x9', w.anna, w.p + '-t1', { interest: true }),
+      ])
+        expect(await refused(() => w.store.transaction(tx => tx.insertHolding(row)))).toBeDefined();
+      expect(await w.store.transaction(tx => tx.holdingsOf([w.anna]))).toEqual([]);
+      // A confirmation kept after its manager is gone (erasure nulls who confirmed) stands.
+      await w.store.transaction(tx => tx.insertHolding(skill(w, 'h1', 's1', { validatedAt: T2 })));
+      expect((await w.store.transaction(tx => tx.holding(w.p + '-h1')))?.validatedAt).toBe(T2);
+      // A skill revoked by a manager keeps its level.
+      await w.store.transaction(tx =>
+        tx.updateHolding(w.p + '-h1', { state: 'revoked', revokedAt: T2, revokedBy: w.boss }),
+      );
+      expect(await w.store.transaction(tx => tx.holding(w.p + '-h1'))).toMatchObject({ state: 'revoked', level: 2 });
+    });
+
+    test('erasure takes a person’s skills and their id off the skills they confirmed, keeping when; the export carries both', async () => {
+      const w = await world();
+      await w.store.transaction(async tx => {
+        await tx.insertType(typeRow(w.p + '-s1', w.org, { kind: 'skill' }));
+        await tx.insertHolding(skill(w, 'h1', 's1', { interest: true }));
+        await tx.insertHolding(
+          skill(w, 'h2', 's1', { personId: w.bo, registeredBy: w.bo, validatedBy: w.anna, validatedAt: T2 }),
+        );
+        await tx.insertRequirement({
+          id: w.p + '-r1',
+          organisationId: w.org,
+          typeId: w.p + '-s1',
+          positionCode: 'usk',
+          unitId: null,
+          personId: null,
+          minLevel: 2,
+          createdBy: 'operator:test',
+          createdAt: T,
+        });
+      });
+      const exported = await w.store.transaction(tx => tx.exportOrganisation(w.org));
+      expect(exported.holdings).toEqual([
+        skill(w, 'h1', 's1', { interest: true }),
+        skill(w, 'h2', 's1', { personId: w.bo, registeredBy: w.bo, validatedBy: w.anna, validatedAt: T2 }),
+      ]);
+      expect(exported.requirements.map(r => r.minLevel)).toEqual([2]);
+      expect(await w.store.transaction(tx => tx.erasePerson(w.anna))).toEqual({
+        holdings: 1,
+        cleared: 1,
+        requirements: 0,
+        threadIds: [],
+      });
+      expect(await w.store.transaction(tx => tx.holding(w.p + '-h2'))).toMatchObject({
+        validatedBy: null,
+        validatedAt: T2,
+        level: 2,
       });
     });
 

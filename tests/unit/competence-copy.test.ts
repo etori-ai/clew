@@ -253,6 +253,10 @@ describe('a read of a source', () => {
         decidedBy: null,
         decidedAt: null,
         threadId: null,
+        level: null,
+        interest: false,
+        validatedBy: null,
+        validatedAt: null,
         copy: {
           connectorId: 'lms',
           sourceId: 'badge:4:user:1',
@@ -277,6 +281,10 @@ describe('a read of a source', () => {
         decidedBy: null,
         decidedAt: null,
         threadId: null,
+        level: null,
+        interest: false,
+        validatedBy: null,
+        validatedAt: null,
         copy: {
           connectorId: 'lms',
           sourceId: 'course:7:user:1',
@@ -677,6 +685,11 @@ describe('status and reads with copied rows', () => {
     expect(holdingsView.kind === 'list' && holdingsView.fields.map(f => [f.key, f.format ?? 'text'])).toEqual([
       ['competence', 'text'],
       ['status', 'status'],
+      // A skill's level and its marks (D120), drawn with the catalogue's existing formats.
+      ['level', 'text'],
+      ['assessment', 'status'],
+      ['interest', 'status'],
+      ['required', 'text'],
       ['expiresOn', 'date'],
       ['issuedOn', 'date'],
       ['area', 'text'],
@@ -856,7 +869,7 @@ describe('leaving', () => {
     platform();
     await competence.copySource(COPY_ACTOR, 'run-1', lms);
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc.format).toBe('clew.competence/5');
+    expect(doc.format).toBe('clew.competence/6');
     expect(doc.holdings.map(h => [h.typeId, h.copy?.sourceId])).toEqual([
       [hlr, 'course:7:user:1'],
       [null, 'badge:4:user:1'],

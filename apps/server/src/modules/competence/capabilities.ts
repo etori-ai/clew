@@ -6,6 +6,8 @@ import {
   CompetenceHoldingsInputSchema,
   CompetenceHoldingsOutputSchema,
   ENTITY_KEYS_MAX,
+  INTEREST_WORD,
+  SELF_RATED_WORD,
   type AuthenticatedContext,
   type CompetenceAttentionInput,
   type CompetenceHoldingsInput,
@@ -14,7 +16,15 @@ import {
   literals,
 } from '@clew/contracts';
 import { systemContext } from '../../system-context';
-import { APPROVAL_READ, personStatus, swedishDayAndMonth, type CardIdentity } from './domain';
+import {
+  APPROVAL_READ,
+  confirmed,
+  levelWord,
+  personStatus,
+  swedishDayAndMonth,
+  type CardIdentity,
+  type MissingStanding,
+} from './domain';
 import type { CompetenceUsecases, UnitCoverageResult } from './usecases';
 
 /**
@@ -57,7 +67,9 @@ export const attentionView: View = {
 /**
  * One person's holdings: the reader's own with no input, a report's for their manager. A type required of the person
  * that they hold nothing of is a row with the status `missing` ("saknas"). A copied row whose type is not mapped is
- * listed under the source's label with the status `uncounted` ("räknas inte"), which has no tone.
+ * listed under the source's label with the status `uncounted` ("räknas inte"), which has no tone. A skill (D120) says
+ * its level, with "Egen bedömning" beside it while no manager has confirmed it and "Vill utveckla" where the person
+ * wants to develop it, both neutral badges; a required skill it does not meet says the least level asked.
  */
 export const holdingsView: View = {
   kind: 'list',
@@ -74,6 +86,10 @@ export const holdingsView: View = {
       format: 'status',
       tones: { ...statusTones, 'awaiting-approval': 'none', rejected: 'none' },
     },
+    { key: 'level', label: 'Nivå' },
+    { key: 'assessment', label: 'Bedömning', format: 'status', tones: { [SELF_RATED_WORD]: 'none' }, beside: true },
+    { key: 'interest', label: 'Utveckling', format: 'status', tones: { [INTEREST_WORD]: 'none' }, beside: true },
+    { key: 'required', label: 'Krävd nivå' },
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     { key: 'issuedOn', label: 'Utfärdat', format: 'date' },
     { key: 'area', label: 'Område' },
@@ -332,6 +348,20 @@ async function systemPersona(actor: Actor): Promise<AuthenticatedContext> {
   return persona;
 }
 const plural = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
+/**
+ * What a person's card says of a required type they lack (D108 item 6). A skill (D120 item 4) says what would meet it:
+ * a level of their own rated and waiting for their manager to confirm it, a confirmed level below the one asked, or none.
+ */
+export function missingSummary(s: MissingStanding): string {
+  if (s.least === undefined)
+    return 'Det här krävs i ditt arbete men finns inte registrerat för dig. Prata med din chef om hur du får det.';
+  const asked = levelWord(s.least);
+  if (!s.held || s.held.level === null)
+    return `Det här krävs i ditt arbete på minst nivån ${asked}. Lägg till färdigheten med din nivå, så kan din chef bekräfta den.`;
+  if (!confirmed(s.held))
+    return `Det här krävs i ditt arbete på minst nivån ${asked}. Din egen bedömning räknas när din chef har bekräftat nivån.`;
+  return `Det här krävs i ditt arbete på minst nivån ${asked}, och din bekräftade nivå är ${levelWord(s.held.level)}. Prata med din chef om hur du kommer dit.`;
+}
 
 /** `persona` turns the registry's actor into a use-case persona; the unit tests hand in their own. */
 export function competenceConnector(
@@ -528,8 +558,7 @@ export function competenceConnector(
             topic: card.topic,
             area: COMPETENCE_AREA,
             title: `${s.type.name} saknas`,
-            summary:
-              'Det här krävs i ditt arbete men finns inte registrerat för dig. Prata med din chef om hur du får det.',
+            summary: missingSummary(s),
             reason: 'Saknas',
             actions: [...open],
             occurrences: occurrence(card),

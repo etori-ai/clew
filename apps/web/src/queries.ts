@@ -261,6 +261,16 @@ export const competenceApprovalQuery = (holdingId: string) =>
     queryFn: () => api.competence.approval(holdingId),
     retry: false,
   });
+/**
+ * A report's skill as the manager a person reports to confirms its level (D120 item 2). A refusal (not theirs to
+ * confirm) is the page's to say, so it is not retried.
+ */
+export const competenceSkillQuery = (holdingId: string) =>
+  queryOptions({
+    queryKey: keys.competenceSkill(holdingId),
+    queryFn: () => api.competence.skill(holdingId),
+    retry: false,
+  });
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),

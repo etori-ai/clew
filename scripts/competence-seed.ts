@@ -4,11 +4,13 @@
  * holdings have expired, some expire within 90 days, most are valid; which person gets what follows from their place
  * in the list of people by id, so two runs on the same directory give the same result. It also sets a handful of
  * requirements on the directory's positions and one share target (item 6), so that some people lack something and a
- * unit's coverage has something to count. Runs inside the app container with the server's local settings
- * (DATABASE_URL); the development seed (`dev-connectors.ts`) calls it. It adds the types the organisation lacks, holdings
- * for the people who have none, and the requirements and targets that are not there yet (a position the provisioner has
- * not pushed is skipped), so it can be run again after the provisioner has pushed more. Every row is audited with the
- * actor `operator:cli`.
+ * unit's coverage has something to count. Some people have skills (D120): rated by themselves alone, or confirmed, at
+ * a level, a few marked as ones they want to develop; one position requires a skill at a least level. Runs inside the
+ * app container with the server's local settings (DATABASE_URL); the development seed (`dev-connectors.ts`) calls it. It
+ * adds the types the organisation lacks, holdings for the people who have none, skills for the people who have no
+ * skill, and the requirements and targets that are not there yet (a position the provisioner has not pushed is
+ * skipped), so it can be run again after the provisioner has pushed more. Every row is audited with the actor
+ * `operator:cli`.
  *
  *   bun scripts/competence-seed.ts [--organisation poc]
  *
@@ -50,9 +52,9 @@ export async function seedCompetence(organisationId: string, today = new Date())
     .from(schema.people)
     .where(and(eq(schema.people.organisationId, organisationId), eq(schema.people.enabled, true)))
     .orderBy(asc(schema.people.id));
-  const held = new Set(
-    (await competenceStore.transaction(tx => tx.holdingsOf(people.map(p => p.id)))).map(h => h.personId),
-  );
+  const all = await competenceStore.transaction(tx => tx.holdingsOf(people.map(p => p.id)));
+  const held = new Set(all.filter(h => h.level === null).map(h => h.personId));
+  const rated = new Set(all.filter(h => h.level !== null).map(h => h.personId));
   let seeded = 0;
   let holdings = 0;
   const hold = async (personId: string, type: string, issuedOn: string, expiresOn?: string) => {
@@ -81,7 +83,28 @@ export async function seedCompetence(organisationId: string, today = new Date())
     if (i % 13 === 0) await hold(person.id, 'Delegering läkemedel', daysFrom(today, i % 26 === 0 ? -340 : -100));
     if (i % 17 === 0) await hold(person.id, 'Socionomexamen', '2015-06-05');
   }
-  return { types, people: seeded, holdings, ...(await seedRequirements(organisationId, ids)) };
+  let skills = 0;
+  const skill = async (personId: string, type: string, level: 1 | 2 | 3, confirmed: boolean, interest = false) => {
+    await competence.seedSkill(OPERATOR, organisationId, personId, {
+      typeId: ids.get(type)!,
+      level,
+      confirmed,
+      interest,
+    });
+    skills++;
+  };
+  for (const [i, person] of people.entries()) {
+    // One person in six has one skill, the kind turning with them: the person's own rating until a manager confirms
+    // it, some wanting to develop it.
+    if (rated.has(person.id) || i % 6 !== 0) continue;
+    const n = i / 6;
+    if (n % 5 === 0) await skill(person.id, 'Journalsystem', ((n % 3) + 1) as 1 | 2 | 3, n % 2 === 0);
+    else if (n % 5 === 1) await skill(person.id, 'Engelska', n % 4 === 1 ? 3 : 2, true);
+    else if (n % 5 === 2) await skill(person.id, 'Kalkylprogram', 1, false, true);
+    else if (n % 5 === 3) await skill(person.id, 'Teckenspråk', 1, false, n % 2 === 1);
+    else await skill(person.id, 'Digitala möten', 2, true, n % 3 === 0);
+  }
+  return { types, people: seeded, holdings, skills, ...(await seedRequirements(organisationId, ids)) };
 }
 
 /**
@@ -105,7 +128,11 @@ async function seedRequirements(organisationId: string, typeIds: ReadonlyMap<str
   for (const r of DEVELOPMENT_REQUIREMENTS) {
     const typeId = typeIds.get(r.type);
     if (!typeId || !positions.has(r.position) || required.has(typeId + '\n' + r.position)) continue;
-    await competence.seedRequirement(OPERATOR, organisationId, { typeId, positionCode: r.position });
+    await competence.seedRequirement(OPERATOR, organisationId, {
+      typeId,
+      positionCode: r.position,
+      ...(r.minLevel ? { minLevel: r.minLevel } : {}),
+    });
     requirements++;
   }
   for (const t of DEVELOPMENT_SHARE_TARGETS) {
@@ -137,7 +164,7 @@ if (import.meta.main) {
   try {
     const seeded = await seedCompetence(organisationId);
     console.log(
-      `Seeded competence for organisation "${organisationId}": ${seeded.types} new types, ${seeded.holdings} holdings for ${seeded.people} people who had none, ${seeded.requirements} requirements and ${seeded.targets} share targets.`,
+      `Seeded competence for organisation "${organisationId}": ${seeded.types} new types, ${seeded.holdings} holdings for ${seeded.people} people who had none, ${seeded.skills} skills, ${seeded.requirements} requirements and ${seeded.targets} share targets.`,
     );
   } catch (error) {
     console.error(`Could not seed: ${(error as Error).message}`);

@@ -66,6 +66,10 @@ import type {
   CompetenceDecisionBody,
   CompetenceHoldingBody,
   CompetenceOwnOutput,
+  CompetenceSkillBody,
+  CompetenceSkillRatingBody,
+  CompetenceSkillValidation,
+  CompetenceValidationBody,
   CompetenceMappingBody,
   CompetenceMatrixCell,
   CompetenceMatrixOutput,
@@ -315,7 +319,7 @@ export class MockApi {
    * The reader's own registration (D108 item 7): whether anyone would decide it, and the ones that wait, as the writes
    * from the page change them. Every write to them in order; the next registration answers 400 with `ownFail`.
    */
-  competenceOwn: CompetenceOwnOutput = { approver: true, pending: [] };
+  competenceOwn: CompetenceOwnOutput = { approver: true, pending: [], skills: [] };
   ownWrites: Array<{ method: string; path: string; body?: unknown }> = [];
   ownFail: string | null = null;
   /**
@@ -324,6 +328,13 @@ export class MockApi {
    */
   competenceApprovals: Record<string, CompetenceApproval> = {};
   approvalWrites: Array<{ path: string; body: CompetenceDecisionBody }> = [];
+  /**
+   * Skills (D120): the reports' skills the reader may confirm, by holding id (an id not here is refused as the server
+   * refuses one the reader may not confirm), and every write to a skill in order: the reader's own ratings and removals,
+   * a manager's registration and confirmation.
+   */
+  competenceSkills: Record<string, CompetenceSkillValidation> = {};
+  skillWrites: Array<{ method: string; path: string; body?: unknown }> = [];
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -1057,6 +1068,7 @@ export class MockApi {
             on: body.unitId ? 'unit' : 'position',
             targetId: (body.unitId ?? body.positionCode)!,
             targetLabel: (unit?.label ?? position?.label)!,
+            ...(body.minLevel !== undefined ? { minLevel: body.minLevel } : {}),
           });
         return route.fulfill({ status: 201, json: { id: created } });
       }
@@ -1067,6 +1079,77 @@ export class MockApi {
         else this.competenceRequirements.rows = this.competenceRequirements.rows.filter(r => r.id !== id);
         return route.fulfill({ status: 204, body: '' });
       }
+    }
+    // Skills (D120): the reader's own rating, changed by rating again, and removed; a manager's registration and
+    // confirmation from the matrix, which change the cell as the server's would.
+    if (path === '/competence/own/skills' && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as CompetenceSkillRatingBody;
+      this.skillWrites.push({ method: 'POST', path, body });
+      const held = this.competenceOwn.skills.find(k => k.typeId === body.typeId);
+      const type = this.competenceTypes?.find(t => t.id === body.typeId);
+      const id = held?.holdingId ?? 'skill-' + this.skillWrites.length;
+      const next = {
+        holdingId: id,
+        typeId: body.typeId,
+        competence: type?.name ?? body.typeId,
+        area: type?.area ?? '',
+        level: body.level,
+        validated: !!held?.validated && held.level === body.level,
+        interest: body.interest,
+      };
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        skills: held
+          ? this.competenceOwn.skills.map(k => (k.holdingId === id ? next : k))
+          : [...this.competenceOwn.skills, next],
+      };
+      return json({ id });
+    }
+    const ownSkill = /^\/competence\/own\/skills\/([^/]+)$/.exec(path);
+    if (ownSkill && route.request().method() === 'DELETE') {
+      const id = decodeURIComponent(ownSkill[1]!);
+      this.skillWrites.push({ method: 'DELETE', path });
+      this.competenceOwn = { ...this.competenceOwn, skills: this.competenceOwn.skills.filter(k => k.holdingId !== id) };
+      return route.fulfill({ status: 204, body: '' });
+    }
+    const registeringSkill = /^\/competence\/people\/([^/]+)\/skills$/.exec(path);
+    if (registeringSkill && route.request().method() === 'POST') {
+      const personId = decodeURIComponent(registeringSkill[1]!);
+      const body = route.request().postDataJSON() as CompetenceSkillBody;
+      this.skillWrites.push({ method: 'POST', path, body });
+      const id = 'skill-new-' + this.skillWrites.length;
+      this.changeMatrix((c, p) =>
+        p === personId && c.typeId === body.typeId
+          ? {
+              ...c,
+              status: c.least !== undefined && body.level < c.least ? 'missing' : 'valid',
+              holdingId: id,
+              evidence: 'manager',
+              revocable: true,
+              level: body.level,
+              validated: true,
+            }
+          : c,
+      );
+      return route.fulfill({ status: 201, json: { id } });
+    }
+    const skillPath = /^\/competence\/skills\/([^/]+?)(\/validation)?$/.exec(path);
+    if (skillPath) {
+      const id = decodeURIComponent(skillPath[1]!);
+      const found = this.competenceSkills[id];
+      if (!found)
+        return route.fulfill({ status: 403, json: { error: 'Färdigheten finns inte bland dem du kan bekräfta.' } });
+      if (route.request().method() === 'GET' && !skillPath[2]) return json(found);
+      const body = route.request().postDataJSON() as CompetenceValidationBody;
+      this.skillWrites.push({ method: 'POST', path, body });
+      const level = body.level ?? found.level;
+      this.competenceSkills[id] = { ...found, level, validated: true };
+      this.changeMatrix(c =>
+        c.holdingId === id
+          ? { ...c, level, validated: true, status: c.least !== undefined && level < c.least ? 'missing' : 'valid' }
+          : c,
+      );
+      return route.fulfill({ status: 204, body: '' });
     }
     // A person's own registration (D108 item 7): what waits, a new one and one taken back.
     if (path === '/competence/own' && route.request().method() === 'GET') return json(this.competenceOwn);

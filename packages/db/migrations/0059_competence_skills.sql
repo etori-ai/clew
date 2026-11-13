@@ -1,0 +1,17 @@
+-- D120 items 1 to 4: a skill is a holding of a type of kind `skill`, held at a level from 1 to 3 with no end date,
+-- rated by the person (stored at once, `validated_at` empty) and confirmed by the manager they report to
+-- (`validated_by`, `validated_at`), with an interest mark. One live skill of a type per person; a skill is never
+-- pending, rejected, copied from a source or decided as a certificate is. A skill type has no employer's validity rule.
+ALTER TABLE "competence_holding" DROP CONSTRAINT "competence_holding_decided";--> statement-breakpoint
+ALTER TABLE "competence_type" DROP CONSTRAINT "competence_type_kind";--> statement-breakpoint
+ALTER TABLE "competence_holding" ADD COLUMN "level" integer;--> statement-breakpoint
+ALTER TABLE "competence_holding" ADD COLUMN "interest" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "competence_holding" ADD COLUMN "validated_by" text;--> statement-breakpoint
+ALTER TABLE "competence_holding" ADD COLUMN "validated_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "competence_holding" ADD CONSTRAINT "competence_holding_validated_by_auth_person_id_fk" FOREIGN KEY ("validated_by") REFERENCES "public"."auth_person"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "competence_holding_one_skill" ON "competence_holding" USING btree ("person_id","type_id") WHERE "competence_holding"."level" IS NOT NULL AND "competence_holding"."state" = 'valid';--> statement-breakpoint
+ALTER TABLE "competence_holding" ADD CONSTRAINT "competence_holding_skill" CHECK ("competence_holding"."level" IS NULL OR ("competence_holding"."level" BETWEEN 1 AND 3 AND "competence_holding"."expires_on" IS NULL AND "competence_holding"."connector_id" IS NULL AND "competence_holding"."evidence" <> 'system' AND "competence_holding"."thread_id" IS NULL AND "competence_holding"."state" IN ('valid', 'revoked')));--> statement-breakpoint
+ALTER TABLE "competence_holding" ADD CONSTRAINT "competence_holding_validated" CHECK (("competence_holding"."validated_by" IS NULL OR "competence_holding"."validated_at" IS NOT NULL) AND ("competence_holding"."validated_at" IS NULL OR "competence_holding"."level" IS NOT NULL) AND (NOT "competence_holding"."interest" OR "competence_holding"."level" IS NOT NULL));--> statement-breakpoint
+ALTER TABLE "competence_holding" ADD CONSTRAINT "competence_holding_decided" CHECK (("competence_holding"."decided_by" IS NULL OR "competence_holding"."decided_at" IS NOT NULL) AND ("competence_holding"."thread_id" IS NULL OR "competence_holding"."evidence" = 'self') AND CASE WHEN "competence_holding"."level" IS NOT NULL THEN "competence_holding"."decided_at" IS NULL WHEN "competence_holding"."evidence" = 'self' THEN ("competence_holding"."state" = 'pending') = ("competence_holding"."decided_at" IS NULL) ELSE "competence_holding"."decided_at" IS NULL END);--> statement-breakpoint
+ALTER TABLE "competence_type" ADD CONSTRAINT "competence_type_skill" CHECK ("competence_type"."kind" <> 'skill' OR "competence_type"."validity_months" IS NULL);--> statement-breakpoint
+ALTER TABLE "competence_type" ADD CONSTRAINT "competence_type_kind" CHECK ("competence_type"."kind" IN ('certificate', 'degree', 'course', 'authorisation', 'skill'));

@@ -242,8 +242,8 @@ describe('the competence wiring (D108 item 13)', () => {
     // Anna reports to Hillevi; Hillevi reports to nobody, so hers cannot be sent.
     const mine = await w.call(anna, 'GET', '/own');
     expect(mine.headers.get('cache-control')).toContain('no-store');
-    expect(await mine.json()).toEqual({ approver: true, pending: [] });
-    expect(await (await w.call(hillevi, 'GET', '/own')).json()).toEqual({ approver: false, pending: [] });
+    expect(await mine.json()).toEqual({ approver: true, pending: [], skills: [] });
+    expect(await (await w.call(hillevi, 'GET', '/own')).json()).toEqual({ approver: false, pending: [], skills: [] });
     const nobody = await w.call(hillevi, 'POST', '/own/holdings', { typeId, issuedOn: '2025-05-10' });
     expect(nobody.status).toBe(400);
     expect(await nobody.json()).toMatchObject({
@@ -257,6 +257,7 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(await (await w.call(anna, 'GET', '/own')).json()).toEqual({
       approver: true,
       pending: [{ holdingId, typeId, competence: 'HLR', issuedOn: '2025-05-10' }],
+      skills: [],
     });
     const twice = await w.call(anna, 'POST', '/own/holdings', { typeId, issuedOn: '2025-06-10' });
     expect(twice.status).toBe(400);
@@ -295,6 +296,99 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(w.store.state.holdings.has(second)).toBe(false);
   });
 
+  test('the routes carry a skill (D120): her own rating, its removal, and her manager’s registration and confirmation', async () => {
+    const w = world();
+    await syncBundledRows(w.reconcile);
+    await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
+    const add = async (body: unknown) =>
+      ((await (await w.call(mikael, 'POST', '/types', body)).json()) as { id: string }).id;
+    const english = await add({ name: 'Engelska', area: 'Språk', kind: 'skill' });
+    const sheets = await add({ name: 'Kalkylprogram', area: 'Digital kompetens', kind: 'skill' });
+    const hlr = await add({ name: 'HLR', area: 'Akut', kind: 'course' });
+    const ruled = await w.call(mikael, 'POST', '/types', {
+      name: 'Tyska',
+      area: 'Språk',
+      kind: 'skill',
+      validityMonths: 12,
+    });
+    expect(ruled.status).toBe(400);
+    expect(await ruled.json()).toMatchObject({ error: 'En färdighet har ingen giltighetstid.' });
+
+    // Her own rating is stored at once and needs nobody; rating it again answers the same holding.
+    const rated = await w.call(anna, 'POST', '/own/skills', { typeId: english, level: 2, interest: true });
+    expect(rated.status).toBe(200);
+    const { id: holdingId } = (await rated.json()) as { id: string };
+    expect(await (await w.call(anna, 'GET', '/own')).json()).toEqual({
+      approver: true,
+      pending: [],
+      skills: [
+        {
+          holdingId,
+          typeId: english,
+          competence: 'Engelska',
+          area: 'Språk',
+          level: 2,
+          validated: false,
+          interest: true,
+        },
+      ],
+    });
+    const again = await w.call(anna, 'POST', '/own/skills', { typeId: english, level: 3, interest: true });
+    expect(await again.json()).toEqual({ id: holdingId });
+    // A level outside the three, a person named in the body, and a type that is no skill each have their answer.
+    expect((await w.call(anna, 'POST', '/own/skills', { typeId: english, level: 4, interest: false })).status).toBe(
+      400,
+    );
+    expect(
+      (await w.call(hillevi, 'POST', '/own/skills', { typeId: english, level: 1, interest: false, personId: 'p-anna' }))
+        .status,
+    ).toBe(400);
+    const course = await w.call(anna, 'POST', '/own/skills', { typeId: hlr, level: 1, interest: false });
+    expect(course.status).toBe(400);
+    expect(await course.json()).toMatchObject({ error: 'Bara en färdighet bedöms med en nivå.' });
+    const dated = await w.call(anna, 'POST', '/own/holdings', { typeId: english, issuedOn: '2025-05-10' });
+    expect(await dated.json()).toMatchObject({ error: 'En färdighet registreras med en nivå, inte med datum.' });
+
+    // Her manager reads it and confirms it, at another level; Mikael may not, nor may she.
+    const read = await w.call(hillevi, 'GET', `/skills/${holdingId}`);
+    expect(read.status).toBe(200);
+    expect(read.headers.get('cache-control')).toContain('no-store');
+    expect(await read.json()).toEqual({
+      holdingId,
+      personId: 'p-anna',
+      name: 'Anna Lindqvist',
+      typeId: english,
+      competence: 'Engelska',
+      area: 'Språk',
+      level: 3,
+      validated: false,
+      interest: true,
+    });
+    for (const who of [anna, mikael]) {
+      expect((await w.call(who, 'GET', `/skills/${holdingId}`)).status).toBe(403);
+      expect((await w.call(who, 'POST', `/skills/${holdingId}/validation`, {})).status).toBe(403);
+    }
+    expect((await w.call(hillevi, 'POST', `/skills/${holdingId}/validation`, { level: 0 })).status).toBe(400);
+    expect((await w.call(hillevi, 'POST', `/skills/${holdingId}/validation`, { level: 2 })).status).toBe(204);
+    expect(w.store.state.holdings.get(holdingId)).toMatchObject({ level: 2, validatedBy: 'hillevi', validatedAt: T0 });
+
+    // Her manager registers another for her, confirmed; the same again is refused, and nobody registers for himself.
+    const registered = await w.call(hillevi, 'POST', '/people/p-anna/skills', { typeId: sheets, level: 1 });
+    expect(registered.status).toBe(201);
+    const twice = await w.call(hillevi, 'POST', '/people/p-anna/skills', { typeId: sheets, level: 2 });
+    expect(twice.status).toBe(400);
+    expect(await twice.json()).toMatchObject({
+      error: 'Personen har redan den färdigheten. Bekräfta nivån i stället.',
+    });
+    expect((await w.call(anna, 'POST', '/people/p-anna/skills', { typeId: sheets, level: 1 })).status).toBe(403);
+
+    // She removes her own; nobody else can, and an unknown one is refused alike.
+    expect((await w.call(hillevi, 'DELETE', `/own/skills/${holdingId}`)).status).toBe(403);
+    expect((await w.call(anna, 'DELETE', `/own/skills/${holdingId}`)).status).toBe(204);
+    expect(w.store.state.holdings.has(holdingId)).toBe(false);
+    expect((await w.call(anna, 'DELETE', `/own/skills/${holdingId}`)).status).toBe(403);
+  });
+
   test('the routes carry requirements and share targets (D108 item 6) and map each refusal', async () => {
     const w = world();
     await syncBundledRows(w.reconcile);
@@ -307,8 +401,12 @@ describe('the competence wiring (D108 item 13)', () => {
     const onPosition = await w.call(mikael, 'POST', '/requirements', { typeId, positionCode: 'usk' });
     expect(onPosition.status).toBe(201);
     const { id: requirementId } = (await onPosition.json()) as { id: string };
-    // A body outside the contract, a body naming no target, a taken one and a missing capability each have their answer.
-    expect((await w.call(mikael, 'POST', '/requirements', { typeId, positionCode: 'usk', minLevel: 2 })).status).toBe(
+    // A least level on a type that is no skill (D120), a body naming no target, a taken one and a missing capability
+    // each have their answer.
+    const level = await w.call(mikael, 'POST', '/requirements', { typeId, positionCode: 'usk', minLevel: 2 });
+    expect(level.status).toBe(400);
+    expect(((await level.json()) as { error: string }).error).toBe('Bara en färdighet kan krävas på en viss nivå.');
+    expect((await w.call(mikael, 'POST', '/requirements', { typeId, positionCode: 'usk', minLevel: 4 })).status).toBe(
       400,
     );
     const none = await w.call(mikael, 'POST', '/requirements', { typeId });

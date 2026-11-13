@@ -159,6 +159,47 @@ test.describe('Administration › Kompetens', () => {
         '36 månader (3 år)',
       );
     });
+    test('a type of the kind Färdighet (D120) is added without a validity, which is not asked for, and is listed as never ending', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.competenceTypes = competenceCatalogue();
+      await open(page, '/admin/competence?type=new');
+      const dialog = dialogOf(page, 'Lägg till kompetens');
+      await dialog.getByRole('textbox', { name: /Namn/ }).fill('Engelska');
+      await dialog.getByRole('textbox', { name: /Område/ }).fill('Språk');
+      // The employer's rule is switched on first, then the kind made a skill: the validity's fields go.
+      await dialog.getByRole('switch', { name: /Arbetsgivaren bestämmer giltighetstiden/ }).focus();
+      await page.keyboard.press('Space');
+      await expect(dialog.getByRole('spinbutton', { name: /Giltigt i/ })).toBeVisible();
+      const kind = dialog.getByRole('combobox', { name: /Typ/ });
+      await kind.focus();
+      // Typing on the closed trigger chooses the kind it names, as a native select does (ASCII: Playwright sends a
+      // letter outside it as inserted text, which no trigger reads).
+      await page.keyboard.type('F');
+      await expect(kind).toContainText('Färdighet');
+      await expect(kind).toBeFocused();
+      await expect(dialog.getByRole('switch', { name: /Arbetsgivaren bestämmer giltighetstiden/ })).toHaveCount(0);
+      await expect(dialog.getByRole('spinbutton', { name: /Giltigt i/ })).toHaveCount(0);
+      await expect(dialog.getByText(/En färdighet anges med en nivå/)).toBeVisible();
+      await settled(page);
+      await expectNoAxeViolations(page);
+      await dialog.getByRole('button', { name: 'Spara', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(dialog).toBeHidden();
+      expect(api.catalogueWrites).toEqual([
+        {
+          method: 'POST',
+          path: '/competence/types',
+          body: { name: 'Engelska', area: 'Språk', kind: 'skill', validityMonths: null },
+        },
+      ]);
+      await expect(notices(page).getByText('Engelska finns nu i katalogen.')).toBeAttached();
+      const listed = page.getByRole('table').getByRole('row', { name: /Engelska/ });
+      await expect(listed).toContainText('Färdighet');
+      await expect(listed).toContainText('Går inte ut');
+    });
     test('a new validity says what it does to the holdings before it is saved, and the second press saves', async ({
       page,
       api,

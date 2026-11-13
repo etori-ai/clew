@@ -414,6 +414,13 @@
       "when": 1794525331307,
       "tag": "0058_competence_own_registration",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794527563011,
+      "tag": "0059_competence_skills",
+      "breakpoints": true
     }
   ]
 }

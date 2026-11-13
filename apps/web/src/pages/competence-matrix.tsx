@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  CompetenceApproval,
-  CompetenceDecision,
-  CompetenceMatrixCell,
-  CompetenceMatrixColumn,
-  CompetenceMatrixGroup,
-  CompetenceMatrixOutput,
-  CompetenceMatrixRow,
-  SessionUser,
+import {
+  SKILL_KIND,
+  type CompetenceApproval,
+  type CompetenceDecision,
+  type CompetenceLevel,
+  type CompetenceMatrixCell,
+  type CompetenceMatrixColumn,
+  type CompetenceMatrixGroup,
+  type CompetenceMatrixOutput,
+  type CompetenceMatrixRow,
+  type CompetenceSkillValidation,
+  type SessionUser,
 } from '@clew/contracts';
 import {
   AlertDialog,
@@ -52,13 +55,16 @@ import {
   matrixHref,
   matrixInputOf,
   requirementHref,
+  validateHref,
+  validateOf,
   withoutApprove,
   withoutRequirement,
+  withoutValidate,
 } from '../competence-address';
 import { useAdminAction } from '../mutations';
 import { usePageTitle } from '../page-title';
 import { personPageFrom } from '../person-address';
-import { competenceApprovalQuery, competenceMatrixQuery, competenceTypesQuery } from '../queries';
+import { competenceApprovalQuery, competenceMatrixQuery, competenceSkillQuery, competenceTypesQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage, refused } from '../query-policy';
 import { registerHref } from '../register-address';
@@ -68,13 +74,14 @@ import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { usePagePanel } from '../components/page-panel';
 import { panelBesideQuery } from '../components/panel';
 import { DialogFrame } from '../components/dialog-frame';
-import { RegisterHolding } from '../components/register-holding';
+import { LevelField, RegisterHolding, levelLabel } from '../components/register-holding';
 import {
   CellStatus,
   CompetenceHeader,
   PersonRequirementDialog,
   cellDay,
   instantDay,
+  levelsWords,
   reasonWords,
 } from './competence-parts';
 
@@ -120,8 +127,11 @@ interface CellContext {
  * where the holding that decides was registered in Clew, never for one copied from a source; "Ta bort kravet" where the
  * competence is required of the person by the manager's own requirement. Where the person's own registration of the
  * competence waits for the manager's decision (D108 item 7), "Granska" comes first and opens the decision over the page
- * with the registration in the address (`approve`). The trigger is the cell's control, which takes the focus back when
- * a dialog or a confirmation opened from it closes.
+ * with the registration in the address (`approve`). In a skill's column (D120) a skill the person holds has "Bekräfta
+ * nivå" ("Ändra nivå" once confirmed), which opens the confirmation over the page with the skill in the address
+ * (`validate`), in place of a registration, since a person holds one skill of a type; where none is held,
+ * "Registrera färdighet". The trigger is the cell's control, which takes the focus back when a dialog or a confirmation
+ * opened from it closes.
  */
 function CellMenu({
   row,
@@ -135,6 +145,8 @@ function CellMenu({
   ctx: CellContext;
 }) {
   const own = cell.through.find(r => r.on === 'person' && r.requirementId)?.requirementId;
+  const skill = column.kind === SKILL_KIND;
+  const heldSkill = skill && cell.holdingId !== undefined && cell.level !== undefined ? cell.holdingId : null;
   const items: MenuItems = [
     {
       type: 'section',
@@ -151,16 +163,23 @@ function CellMenu({
               },
             ]
           : []),
-        {
-          id: 'register',
-          label: 'Registrera intyg',
-          href: registerHref(MATRIX_PATH, row.personId, ctx.search, column.typeId),
-        },
+        heldSkill
+          ? {
+              id: 'validate',
+              label: cell.validated ? 'Ändra nivå' : 'Bekräfta nivå',
+              href: validateHref(heldSkill, ctx.search),
+              onClick: () => ctx.review(row.personId, column.typeId),
+            }
+          : {
+              id: 'register',
+              label: skill ? 'Registrera färdighet' : 'Registrera intyg',
+              href: registerHref(MATRIX_PATH, row.personId, ctx.search, column.typeId),
+            },
         ...(cell.revocable && cell.holdingId
           ? [
               {
                 id: 'revoke',
-                label: 'Återkalla intyget',
+                label: skill ? 'Återkalla färdigheten' : 'Återkalla intyget',
                 onClick: () => ctx.confirm({ kind: 'revoke', row, column, id: cell.holdingId! }),
               },
             ]
@@ -189,13 +208,21 @@ function CellMenu({
   );
 }
 
-/** A column's heading in two lines, as Personal draws one: the competence, and its area under it. */
+/**
+ * A column's heading in two lines, as Personal draws one: the competence, and its area under it; for a skill (D120 item
+ * 4), the least level asked of the people shown under that.
+ */
 const columnHeader = (c: CompetenceMatrixColumn) => (
   <VStack gap={0}>
     <Text weight="semibold">{c.name}</Text>
     <Text type="supporting" weight="normal">
       {c.area}
     </Text>
+    {c.levels && c.levels.length > 0 && (
+      <Text type="supporting" weight="normal">
+        {levelsWords(c.levels)}
+      </Text>
+    )}
   </VStack>
 );
 interface TableRow extends Record<string, unknown> {
@@ -243,7 +270,7 @@ function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCon
             width: CELL_WIDTH,
             renderCell: (r: TableRow) => (
               <HStack gap={2} vAlign="center" justify="between">
-                <CellStatus cell={r.row.cells[i]!} />
+                <CellStatus cell={r.row.cells[i]!} skill={c.kind === SKILL_KIND} />
                 <CellMenu row={r.row} column={c} cell={r.row.cells[i]!} ctx={ctx} />
               </HStack>
             ),
@@ -285,7 +312,7 @@ function MatrixList({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCont
                     key={c.typeId}
                     align="start"
                     label={<Text>{c.name}</Text>}
-                    description={<CellStatus cell={row.cells[i]!} />}
+                    description={<CellStatus cell={row.cells[i]!} skill={c.kind === SKILL_KIND} />}
                     endContent={<CellMenu row={row} column={c} cell={row.cells[i]!} ctx={ctx} />}
                   />
                 ))}
@@ -442,6 +469,84 @@ function ApprovalDialog({
 }
 
 /**
+ * The confirmation of a report's skill (D120 item 2), a dialog over the matrix named in the address
+ * (`validate=<holding id>`): who holds it, which skill, the level they or a manager set and whether it is their own
+ * rating, and the level to confirm, preset to the one held. "Bekräfta nivå" confirms it at the level chosen. The
+ * server's refusal is said beside the buttons. Open while `skill` is given.
+ */
+function SkillDialog({
+  skill,
+  error,
+  busy,
+  onConfirm,
+  onClose,
+}: {
+  skill: CompetenceSkillValidation | undefined;
+  error: string | null;
+  busy: boolean;
+  onConfirm: (level: CompetenceLevel) => Promise<void>;
+  onClose: () => void;
+}) {
+  const mobile = useMediaQuery(mobileQuery);
+  const [level, setLevel] = useState<CompetenceLevel | null>(null);
+  useEffect(() => setLevel(skill?.level ?? null), [skill?.holdingId, skill?.level]);
+  const onOpenChange = (open: boolean) => {
+    if (!open) onClose();
+  };
+  return (
+    <Dialog
+      isOpen={!!skill}
+      onOpenChange={onOpenChange}
+      width={480}
+      purpose="form"
+      variant={mobile ? 'fullscreen' : 'standard'}
+    >
+      <DialogFrame
+        header={
+          <DialogHeader
+            title="Bekräfta nivå"
+            subtitle={skill ? `${skill.competence} för ${skill.name}` : undefined}
+            onOpenChange={onOpenChange}
+          />
+        }
+        error={error}
+        primary={
+          <>
+            <Button size="sm" variant="ghost" label="Avbryt" onClick={onClose} />
+            <Button
+              size="sm"
+              variant="primary"
+              label="Bekräfta nivå"
+              isLoading={busy}
+              onClick={() => level !== null && void onConfirm(level)}
+            />
+          </>
+        }
+      >
+        {skill && (
+          <VStack gap={3}>
+            <MetadataList columns="single">
+              <MetadataListItem label="Medarbetare">{skill.name}</MetadataListItem>
+              <MetadataListItem label="Färdighet">{skill.competence}</MetadataListItem>
+              <MetadataListItem label="Område">{skill.area}</MetadataListItem>
+              <MetadataListItem label={skill.validated ? 'Bekräftad nivå' : 'Egen bedömning'}>
+                {levelLabel(skill.level)}
+              </MetadataListItem>
+              {skill.interest && <MetadataListItem label="Vill utveckla">Ja</MetadataListItem>}
+            </MetadataList>
+            <LevelField
+              description="Förvald är nivån som är registrerad nu. Välj en annan om den inte stämmer."
+              value={level}
+              onChange={setLevel}
+            />
+          </VStack>
+        )}
+      </DialogFrame>
+    </Dialog>
+  );
+}
+
+/**
  * Medarbetarnas kompetens at `/competence/matrix` (D108 item 11, D120 item 8), the second page of the place Kompetens:
  * the people who report to the reader against the competences required of at least one of them, built on Astryx's
  * `table-comparison` template. It is no declared view: its columns are chosen, and a cell writes (D95 item 4). At most
@@ -453,7 +558,8 @@ function ApprovalDialog({
  * matrix as shown as a file. A report's own registration that waits for the reader's decision (D108 item 7) is noted in
  * its cell, whose menu opens the decision in a dialog named in the address (`approve`), as the approval's card in the
  * reader's stream does; an address for a registration the reader may not decide, or one decided already, opens nothing
- * and the page says why. Closing a dialog or a confirmation gives the focus back to the cell's control, or to the
+ * and the page says why. A skill's cell (D120) says the level held in words and its menu confirms it in a dialog named
+ * in the address (`validate`), which an address the reader may not confirm opens nothing of, as for an approval. Closing a dialog or a confirmation gives the focus back to the cell's control, or to the
  * page's heading where the cell has gone with what was removed or where no cell opened it (D83 rule 7). The table gives way to a list where it does
  * not fit, on a phone and beside the panel, as Personal does, so at 320 px nothing scrolls sideways; on a wider window the
  * table scrolls sideways inside its own region, the names pinned, as the template's does.
@@ -501,13 +607,14 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const [focusAfter, setFocusAfter] = useState<string | null>(null);
   const requiring = search.get(REQUIREMENT_PARAM) === NEW;
   const approving = approveOf(search);
+  const validating = validateOf(search);
   useEffect(() => {
-    if (focusAfter === null || requiring || approving) return;
+    if (focusAfter === null || requiring || approving || validating) return;
     setFocusAfter(null);
     const target = focusAfter === REQUIREMENT_PARAM ? addRequirement.current : controls.current.get(focusAfter);
     // A frame later, once the dialogs that closed have given the focus back where they took it from.
     requestAnimationFrame(() => (target?.isConnected ? target : document.getElementById(TITLE_ID))?.focus());
-  }, [focusAfter, data, requiring, approving]);
+  }, [focusAfter, data, requiring, approving, validating]);
 
   // The decision on a report's own registration (D108 item 7), from a cell's menu or from the approval's card. The
   // cell that opened it takes the focus back; opened by an address, nothing on the page did, so the heading does.
@@ -515,8 +622,8 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const approvalQ = useQuery({ ...competenceApprovalQuery(approving ?? ''), enabled: !!approving && !off });
   const [refusal, setRefusal] = useState<string | null>(null);
   useEffect(() => {
-    if (approving) setRefusal(null);
-  }, [approving]);
+    if (approving || validating) setRefusal(null);
+  }, [approving, validating]);
   // An address the reader may not decide, or one decided already, opens nothing: the page says why and lets go of it.
   useEffect(() => {
     if (!approving || !approvalQ.isError) return;
@@ -548,6 +655,35 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     });
   };
 
+  // The confirmation of a report's skill (D120 item 2), from a cell's menu or an address, as the approval is.
+  const skillQ = useQuery({ ...competenceSkillQuery(validating ?? ''), enabled: !!validating && !off });
+  useEffect(() => {
+    if (!validating || !skillQ.isError) return;
+    setRefusal(errorMessage(skillQ.error, 'Färdigheten kunde inte läsas.'));
+    reviewedFrom.current = null;
+    navigate(withoutValidate(search), { replace: true });
+  }, [validating, skillQ.isError]);
+  const validation = useAdminAction({
+    invalidate: [['competence', 'matrix'], keys.viewAll, keys.entities.all, keys.attention, keys.areas],
+    toastId: 'competence:validate',
+  });
+  const closeValidation = () => {
+    if (validating) client.removeQueries({ queryKey: keys.competenceSkill(validating) });
+    validation.reset();
+    navigate(withoutValidate(search));
+    setFocusAfter(reviewedFrom.current ?? TITLE_ID);
+    reviewedFrom.current = null;
+  };
+  const confirmLevel = async (level: CompetenceLevel) => {
+    const v = skillQ.data;
+    if (!v || validation.busy) return;
+    await validation.run(async () => {
+      await api.competence.validateSkill(v.holdingId, { level });
+      closeValidation();
+      return `${v.competence} för ${v.name} är bekräftad på nivån ${levelLabel(level)}.`;
+    });
+  };
+
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const change = useAdminAction({
     invalidate: [keys.competenceAll, keys.entities.all, keys.viewAll],
@@ -565,7 +701,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
       if (c.kind === 'revoke') await api.competence.revokeHolding(c.id);
       else await api.competence.removeRequirement(c.id);
       return c.kind === 'revoke'
-        ? `${c.column.name} är återkallat för ${c.row.name}.`
+        ? `${c.column.name} är ${c.column.kind === SKILL_KIND ? 'återkallad' : 'återkallat'} för ${c.row.name}.`
         : `${c.column.name} krävs inte längre av ${c.row.name}.`;
     });
     // Done or refused, the confirmation lets go: a refusal is said on the page, not behind a modal.
@@ -715,20 +851,41 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
         onDecide={decide}
         onClose={closeApproval}
       />
+      <SkillDialog
+        skill={validating && !off && !skillQ.isError ? skillQ.data : undefined}
+        error={validation.error}
+        busy={validation.busy}
+        onConfirm={confirmLevel}
+        onClose={closeValidation}
+      />
       <AlertDialog
         isOpen={!!confirming}
         onOpenChange={open => {
           if (!open) cancel();
         }}
-        title={confirming?.kind === 'revoke' ? 'Återkalla intyget?' : 'Ta bort kravet?'}
+        title={
+          confirming?.kind === 'revoke'
+            ? confirming.column.kind === SKILL_KIND
+              ? 'Återkalla färdigheten?'
+              : 'Återkalla intyget?'
+            : 'Ta bort kravet?'
+        }
         description={
           !confirming
             ? ''
             : confirming.kind === 'revoke'
-              ? `${confirming.column.name} för ${confirming.row.name} räknas inte längre. Intyget finns kvar, markerat som återkallat.`
+              ? confirming.column.kind === SKILL_KIND
+                ? `${confirming.column.name} för ${confirming.row.name} räknas inte längre. Färdigheten finns kvar, markerad som återkallad.`
+                : `${confirming.column.name} för ${confirming.row.name} räknas inte längre. Intyget finns kvar, markerat som återkallat.`
               : `${confirming.column.name} krävs inte längre av ${confirming.row.name}. Det som är registrerat ligger kvar.`
         }
-        actionLabel={confirming?.kind === 'revoke' ? 'Återkalla intyget' : 'Ta bort kravet'}
+        actionLabel={
+          confirming?.kind === 'revoke'
+            ? confirming.column.kind === SKILL_KIND
+              ? 'Återkalla färdigheten'
+              : 'Återkalla intyget'
+            : 'Ta bort kravet'
+        }
         cancelLabel="Avbryt"
         isActionLoading={change.busy}
         onAction={() => void confirm()}

@@ -6,9 +6,10 @@ import type { CompetenceMatrixInput } from '@clew/contracts';
  * of columns in the address, `by` (`area:<the area>` or `position:<the position's id>`) and `part` (from 1, left out for
  * the first), so a reload, a link and Back show the same columns. Over the matrix, `requirement=new` is the dialog that
  * adds a requirement for one person, `register` and `competence` the registration of a certificate
- * (`register-address.ts`), and `approve=<holding id>` the decision on a report's own registration (D108 item 7). Over
- * the reader's own page, `add=new` is the dialog in which they register one of their own. This file imports nothing of
- * the page, so a unit test loads it on its own.
+ * (`register-address.ts`), `approve=<holding id>` the decision on a report's own registration (D108 item 7), and
+ * `validate=<holding id>` the confirmation of a report's skill (D120 item 2). Over the reader's own page, `add=new` is
+ * the dialog in which they register one of their own, and `skill=<holding id>` the one in which they change a skill
+ * of theirs. This file imports nothing of the page, so a unit test loads it on its own.
  */
 export const COMPETENCE_PATH = '/competence';
 export const MATRIX_PATH = '/competence/matrix';
@@ -18,6 +19,8 @@ export const REQUIREMENT_PARAM = 'requirement';
 export const NEW = 'new';
 export const ADD_PARAM = 'add';
 export const APPROVE_PARAM = 'approve';
+export const VALIDATE_PARAM = 'validate';
+export const SKILL_PARAM = 'skill';
 /**
  * The read a manager's card of an approval opens (D108 item 7, `competence.approval`): it answers with rows, so the card
  * leads to its page (D116), and that page is the approval over the matrix (`approvalPageHref`).
@@ -115,4 +118,36 @@ export function approvalPageHref(search: URLSearchParams | string): string {
     holding = undefined;
   }
   return typeof holding === 'string' && holding && holding.length <= 80 ? approveHref(holding) : MATRIX_PATH;
+}
+/** A holding's id as an address names one: 1 to 80 characters, else none. */
+const holdingIn = (value: string | null) => (value && value.length <= 80 ? value : null);
+/** The skill whose level the address opens for confirmation over the matrix (D120 item 2), or null for none. */
+export const validateOf = (search: URLSearchParams | string) =>
+  holdingIn(new URLSearchParams(search).get(VALIDATE_PARAM));
+/** The matrix with the confirmation of this skill's level over it; the set of columns and the rest of the address kept. */
+export function validateHref(holdingId: string, search: URLSearchParams | string = ''): string {
+  const q = new URLSearchParams(search);
+  q.set(VALIDATE_PARAM, holdingId);
+  return address(MATRIX_PATH, q);
+}
+/** The matrix with that confirmation closed. */
+export function withoutValidate(search: URLSearchParams | string): string {
+  const q = new URLSearchParams(search);
+  q.delete(VALIDATE_PARAM);
+  return address(MATRIX_PATH, q);
+}
+/** The reader's own skill the address opens to change (D120 item 2), or null for none. */
+export const skillOf = (search: URLSearchParams | string) => holdingIn(new URLSearchParams(search).get(SKILL_PARAM));
+/** The reader's own page with the dialog that changes this skill of theirs over it, the rest of the address kept. */
+export function skillHref(holdingId: string, search: URLSearchParams | string = ''): string {
+  const q = new URLSearchParams(search);
+  q.delete(ADD_PARAM);
+  q.set(SKILL_PARAM, holdingId);
+  return address(COMPETENCE_PATH, q);
+}
+/** The reader's own page with that dialog closed. */
+export function withoutSkill(search: URLSearchParams | string): string {
+  const q = new URLSearchParams(search);
+  q.delete(SKILL_PARAM);
+  return address(COMPETENCE_PATH, q);
 }

@@ -1581,15 +1581,45 @@ export type EntityEffectInput = Static<typeof EntityEffectInputSchema>;
 export const EntityActionStartedSchema = object({ threadId: id });
 export type EntityActionStarted = Static<typeof EntityActionStartedSchema>;
 /**
- * What a competence type is (D108 item 2). A closed list: a certificate and a competence are one record, a holding, and
- * the kind says which the type is.
+ * What a competence type is (D108 item 2, D120 item 1). A closed list: a certificate, a competence and a skill are one
+ * record, a holding, and the kind says which the type is.
  */
-export const COMPETENCE_KINDS = ['certificate', 'degree', 'course', 'authorisation'] as const;
+export const COMPETENCE_KINDS = ['certificate', 'degree', 'course', 'authorisation', 'skill'] as const;
 export const CompetenceKind = literals(COMPETENCE_KINDS, {
   description:
-    '`certificate`: a certificate with an issuer. `degree`: an examination. `course`: a completed course. `authorisation`: a right to perform a task, such as a delegation.',
+    '`certificate`: a certificate with an issuer. `degree`: an examination. `course`: a completed course. `authorisation`: a right to perform a task, such as a delegation. `skill`: something a person can do, held at a level (D120) and never ending.',
 });
 export type CompetenceKind = (typeof COMPETENCE_KINDS)[number];
+/** The kind whose holdings carry a level and no dates of their own (D120 item 1). */
+export const SKILL_KIND = 'skill' satisfies CompetenceKind;
+/**
+ * The level a skill is held at (D120 item 1): a closed list of three, what a person can rate consistently and what a
+ * matrix cell can show. 1 is the least.
+ */
+export const COMPETENCE_LEVELS = [1, 2, 3] as const;
+export type CompetenceLevel = (typeof COMPETENCE_LEVELS)[number];
+export const CompetenceLevelSchema = literals(COMPETENCE_LEVELS, {
+  description: '1: Grundläggande, 2: Självständig, 3: Expert (D120 item 1).',
+});
+/** Swedish. Each level as a person reads it, the one wording for the server's rows and the browser's forms. */
+export const COMPETENCE_LEVEL_LABELS: Record<CompetenceLevel, string> = {
+  1: 'Grundläggande',
+  2: 'Självständig',
+  3: 'Expert',
+};
+/** Swedish. What each level means, as a form explains it beside the choice. */
+export const COMPETENCE_LEVEL_DESCRIPTIONS: Record<CompetenceLevel, string> = {
+  1: 'Kan grunderna och arbetar med stöd.',
+  2: 'Arbetar på egen hand.',
+  3: 'Kan lära ut och leda andra.',
+};
+/** Whether a value is one of the three levels. */
+export const isCompetenceLevel = (value: unknown): value is CompetenceLevel =>
+  (COMPETENCE_LEVELS as readonly unknown[]).includes(value);
+/** Swedish. The mark of a skill that only the person has rated, until a manager confirms it (D120 item 2). */
+export const SELF_RATED_WORD = 'Egen bedömning';
+/** Swedish. The mark of a skill the person wants to develop (D120 item 3). */
+export const INTEREST_WORD = 'Vill utveckla';
 /**
  * Where a person stands on a type on a day (D108 items 4 and 6), computed when read and never stored. The order here is
  * the order a list is drawn in and the precedence of one word for a person: what needs a person first. An expired
@@ -1681,6 +1711,30 @@ export const CompetenceHoldingRowSchema = object(
       }),
     ),
     readAt: Type.Optional({ ...instant, description: 'When it was last read from that system. Absent with `source`.' }),
+    level: Type.Optional(
+      literals(Object.values(COMPETENCE_LEVEL_LABELS), {
+        description:
+          'Swedish. The level a skill is held at (D120 item 1): "Grundläggande", "Självständig" or "Expert". Absent on every other kind, and on a skill required of the person that they hold nothing of.',
+      }),
+    ),
+    assessment: Type.Optional(
+      Type.Literal(SELF_RATED_WORD, {
+        description:
+          'Swedish. "Egen bedömning": a skill only the person has rated, which no manager has confirmed and which meets no requirement (D120 item 2). Absent once confirmed.',
+      }),
+    ),
+    interest: Type.Optional(
+      Type.Literal(INTEREST_WORD, {
+        description:
+          'Swedish. "Vill utveckla": the person wants to develop this skill (D120 item 3). It counts towards nothing.',
+      }),
+    ),
+    required: Type.Optional(
+      literals(Object.values(COMPETENCE_LEVEL_LABELS), {
+        description:
+          'Swedish. On a `missing` skill: the least level required of the person, which a confirmed holding must reach (D120 item 4).',
+      }),
+    ),
   },
   'One holding of one person (D108).',
 );
@@ -1734,6 +1788,56 @@ export const CompetenceHoldingBodySchema = object({
   expiresOn: Type.Optional(calendarDay),
 });
 export type CompetenceHoldingBody = Static<typeof CompetenceHoldingBodySchema>;
+/**
+ * A person rates a skill of their own (D120 items 2 and 3): the type, the level and whether they want to develop it.
+ * Stored at once as their own rating; rating a skill they hold again changes it. It names no person: it is always the
+ * reader's own.
+ */
+export const CompetenceSkillRatingBodySchema = object({
+  typeId: id,
+  level: CompetenceLevelSchema,
+  interest: Type.Boolean(),
+});
+export type CompetenceSkillRatingBody = Static<typeof CompetenceSkillRatingBodySchema>;
+/** The manager a person reports to registers a skill for them at a level, confirmed at once (D120 item 2). */
+export const CompetenceSkillBodySchema = object({ typeId: id, level: CompetenceLevelSchema });
+export type CompetenceSkillBody = Static<typeof CompetenceSkillBodySchema>;
+/** The manager a person reports to confirms a skill's level, or sets another (D120 item 2). Absent: as rated. */
+export const CompetenceValidationBodySchema = object({ level: Type.Optional(CompetenceLevelSchema) });
+export type CompetenceValidationBody = Static<typeof CompetenceValidationBodySchema>;
+/**
+ * One skill the reader holds (D120 items 2 and 3), as their own page lists it with its actions: the level, whether a
+ * manager has confirmed it, the interest mark, and, where a requirement asks for more than it meets, the least level
+ * asked.
+ */
+export interface CompetenceOwnSkill {
+  holdingId: string;
+  typeId: string;
+  /** The type's name, as a person reads it. */
+  competence: string;
+  area: string;
+  level: CompetenceLevel;
+  /** Confirmed, or registered, by a manager: false while it is the person's own rating alone. */
+  validated: boolean;
+  interest: boolean;
+  /** Required of the person and not met by this holding: the least level asked (D120 item 4). */
+  short?: CompetenceLevel;
+}
+/**
+ * A skill as the manager a person reports to confirms it (D120 item 2): who holds it, which skill, the level they or a
+ * manager set, and whether it is confirmed already.
+ */
+export interface CompetenceSkillValidation {
+  holdingId: string;
+  personId: string;
+  name: string;
+  typeId: string;
+  competence: string;
+  area: string;
+  level: CompetenceLevel;
+  validated: boolean;
+  interest: boolean;
+}
 /** One of the reader's own registrations that waits for their manager's decision (D108 item 7). */
 export interface CompetenceOwnPending {
   holdingId: string;
@@ -1752,6 +1856,8 @@ export interface CompetenceOwnPending {
 export interface CompetenceOwnOutput {
   approver: boolean;
   pending: CompetenceOwnPending[];
+  /** The skills the reader holds (D120), by area and name. */
+  skills: CompetenceOwnSkill[];
 }
 /**
  * A registration of a person's own as the manager who decides it reads it (D108 item 7): who registered it, which
@@ -1868,6 +1974,8 @@ export interface CompetenceRequirement {
    * The key itself where the position or the unit is gone.
    */
   targetLabel: string;
+  /** On a skill (D120 item 4): the least level a confirmed holding must reach. Absent on every other kind. */
+  minLevel?: CompetenceLevel;
   /**
    * The position or the unit is no longer one the organisation has: the requirement counts towards nothing until one
    * comes back under the same key, and is listed so that it can be removed.
@@ -1904,6 +2012,10 @@ export const CompetenceRequirementBodySchema = object({
   positionCode: Type.Optional(positionCode),
   unitId: Type.Optional(id),
   personId: Type.Optional(id),
+  minLevel: Type.Optional({
+    ...CompetenceLevelSchema,
+    description: 'On a skill only (D120 item 4): the least level a confirmed holding must reach. Absent: 1.',
+  }),
 });
 export type CompetenceRequirementBody = Static<typeof CompetenceRequirementBodySchema>;
 /**
@@ -1980,6 +2092,13 @@ export const CompetenceMatrixColumnSchema = object({
   name: competenceName,
   area: competenceArea,
   kind: CompetenceKind,
+  levels: Type.Optional(
+    Type.Array(CompetenceLevelSchema, {
+      maxItems: 3,
+      description:
+        'On a skill (D120 item 4): the least levels required of the people shown, each once, the lowest first.',
+    }),
+  ),
 });
 export type CompetenceMatrixColumn = Static<typeof CompetenceMatrixColumnSchema>;
 /** What requires a type of a person: a position they hold, a unit they are placed on, or their manager's requirement. */
@@ -2001,7 +2120,11 @@ export const CompetenceMatrixCellSchema = object({
   expiresOn: Type.Optional({ ...calendarDay, description: 'The last day the holding that decides is valid.' }),
   required: Type.Boolean(),
   through: Type.Array(CompetenceMatrixReasonSchema, { maxItems: 100 }),
-  holdingId: Type.Optional({ ...id, description: 'The holding that decides the status, when one does.' }),
+  holdingId: Type.Optional({
+    ...id,
+    description:
+      'The holding that decides the status, when one does; on a skill held below what is required, or not yet confirmed, that skill (D120).',
+  }),
   evidence: Type.Optional(literals(COMPETENCE_EVIDENCE)),
   revocable: Type.Boolean({
     description: 'Whether the reader may revoke that holding: one registered in Clew, never one copied from a source.',
@@ -2010,6 +2133,21 @@ export const CompetenceMatrixCellSchema = object({
     ...id,
     description:
       "The person's own registration of this type that waits for the reader's decision (D108 item 7), by its id. It counts towards nothing, so the status is what it is without it.",
+  }),
+  level: Type.Optional({
+    ...CompetenceLevelSchema,
+    description:
+      'On a skill the person holds (D120): its level. With `holdingId`, also where the status is `missing` because the level is too low or not confirmed.',
+  }),
+  validated: Type.Optional(
+    Type.Boolean({
+      description: "On a skill the person holds: whether a manager has confirmed it. False: the person's own rating.",
+    }),
+  ),
+  interest: Type.Optional(Type.Literal(true, { description: 'The person wants to develop this skill (D120 item 3).' })),
+  least: Type.Optional({
+    ...CompetenceLevelSchema,
+    description: 'On a skill required of the person: the least level asked of them (D120 item 4).',
   }),
 });
 export type CompetenceMatrixCell = Static<typeof CompetenceMatrixCellSchema>;

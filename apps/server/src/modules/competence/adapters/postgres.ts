@@ -6,6 +6,7 @@ import {
   PendingTaken,
   RequirementTaken,
   ShareTargetTaken,
+  SkillTaken,
   TypeNameTaken,
   type ApprovalWorkItemTx,
   type CompetenceStore,
@@ -80,6 +81,20 @@ async function once(write: () => Promise<unknown>, indexes: readonly string[], t
     throw error;
   }
 }
+/**
+ * Run a write of a holding, turning a refusal of the one pending registration of a type (D108 item 7) into
+ * `PendingTaken` and of the one skill of a type (D120 item 1) into `SkillTaken`.
+ */
+async function taken(write: () => Promise<unknown>) {
+  try {
+    await write();
+  } catch (error) {
+    const index = uniqueIndexOf(error);
+    if (index === 'competence_holding_pending') throw new PendingTaken();
+    if (index === 'competence_holding_one_skill') throw new SkillTaken();
+    throw error;
+  }
+}
 const REQUIREMENT_INDEXES = [
   'competence_requirement_position',
   'competence_requirement_unit',
@@ -98,6 +113,7 @@ const holdingOf = ({ connectorId, sourceId, sourceType, sourceLabel, readAt, ...
   createdAt: r.createdAt.toISOString(),
   revokedAt: iso(r.revokedAt),
   decidedAt: iso(r.decidedAt),
+  validatedAt: iso(r.validatedAt),
   copy:
     connectorId && sourceId && sourceType && sourceLabel && readAt
       ? { connectorId, sourceId, sourceType, sourceLabel, readAt: readAt.toISOString() }
@@ -109,6 +125,7 @@ const rowOf = ({ copy, ...h }: HoldingRecord): typeof holdings.$inferInsert => (
   createdAt: new Date(h.createdAt),
   revokedAt: date(h.revokedAt),
   decidedAt: date(h.decidedAt),
+  validatedAt: date(h.validatedAt),
   connectorId: copy?.connectorId ?? null,
   sourceId: copy?.sourceId ?? null,
   sourceType: copy?.sourceType ?? null,
@@ -209,11 +226,7 @@ export function competenceTx(
       return r ? holdingOf(r) : undefined;
     },
     async insertHolding(h) {
-      await once(
-        () => tx.insert(holdings).values(rowOf(h)),
-        ['competence_holding_pending'],
-        () => new PendingTaken(),
-      );
+      await taken(() => tx.insert(holdings).values(rowOf(h)));
     },
     async updateHolding(id, patch) {
       const set: Partial<typeof holdings.$inferInsert> = {};
@@ -222,12 +235,15 @@ export function competenceTx(
       if ('revokedBy' in patch) set.revokedBy = patch.revokedBy ?? null;
       if ('decidedAt' in patch) set.decidedAt = date(patch.decidedAt ?? null);
       if ('decidedBy' in patch) set.decidedBy = patch.decidedBy ?? null;
+      if ('level' in patch) set.level = patch.level ?? null;
+      if ('interest' in patch && patch.interest !== undefined) set.interest = patch.interest;
+      if ('validatedAt' in patch) set.validatedAt = date(patch.validatedAt ?? null);
+      if ('validatedBy' in patch) set.validatedBy = patch.validatedBy ?? null;
+      if ('evidence' in patch && patch.evidence !== undefined) set.evidence = patch.evidence;
+      if ('registeredBy' in patch) set.registeredBy = patch.registeredBy ?? null;
+      if ('issuedOn' in patch && patch.issuedOn !== undefined) set.issuedOn = patch.issuedOn;
       if (!Object.keys(set).length) return;
-      await once(
-        () => tx.update(holdings).set(set).where(eq(holdings.id, id)),
-        ['competence_holding_pending'],
-        () => new PendingTaken(),
-      );
+      await taken(() => tx.update(holdings).set(set).where(eq(holdings.id, id)));
     },
     async deleteHolding(id) {
       await tx.delete(holdings).where(and(eq(holdings.id, id), isNull(holdings.connectorId)));
@@ -591,7 +607,7 @@ export function competenceTx(
         .where(eq(requirements.personId, personId))
         .returning({ id: requirements.id });
       const cleared = new Set<string>();
-      for (const column of ['registeredBy', 'revokedBy', 'decidedBy'] as const)
+      for (const column of ['registeredBy', 'revokedBy', 'decidedBy', 'validatedBy'] as const)
         for (const r of await tx
           .update(holdings)
           .set({ [column]: null })

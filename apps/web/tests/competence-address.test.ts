@@ -12,9 +12,15 @@ import {
   matrixInputOf,
   matrixQuery,
   requirementHref,
+  skillHref,
+  skillOf,
+  validateHref,
+  validateOf,
   withoutAdd,
   withoutApprove,
   withoutRequirement,
+  withoutSkill,
+  withoutValidate,
 } from '../src/competence-address';
 import { registerHref, registerOf, registerTypeOf, withoutRegister } from '../src/register-address';
 
@@ -79,5 +85,23 @@ describe("a person's own registration and its decision have addresses of their o
     expect(approvalPageHref(`?input=${input}&from=%2F`)).toBe(`${MATRIX_PATH}?approve=h-1`);
     for (const bad of ['', '?input=nonsense', `?input=${encodeURIComponent('{"holding":7}')}`, '?input=%7B%7D'])
       expect(approvalPageHref(bad)).toBe(MATRIX_PATH);
+  });
+});
+
+describe('a skill is changed and confirmed over its page, named in the address (D120 item 2)', () => {
+  test('`validate` over the matrix names the skill whose level is confirmed, the set of columns kept', () => {
+    expect(validateHref('h-1', '?by=area%3AS%C3%A5k&part=2')).toBe(
+      `${MATRIX_PATH}?by=area%3AS%C3%A5k&part=2&validate=h-1`,
+    );
+    expect(validateOf('?validate=h-1')).toBe('h-1');
+    expect(validateOf('?validate=' + 'x'.repeat(81))).toBeNull();
+    expect(validateOf('')).toBeNull();
+    expect(withoutValidate('?by=area%3AAkut&validate=h-1')).toBe(`${MATRIX_PATH}?by=area%3AAkut`);
+  });
+  test('`skill` over the reader’s own page names the skill they change; it replaces `add`', () => {
+    expect(skillHref('h-2', '?add=new&card=x')).toBe(`${COMPETENCE_PATH}?card=x&skill=h-2`);
+    expect(skillOf('?skill=h-2')).toBe('h-2');
+    expect(skillOf('?skill=')).toBeNull();
+    expect(withoutSkill('?skill=h-2&card=x')).toBe(`${COMPETENCE_PATH}?card=x`);
   });
 });
