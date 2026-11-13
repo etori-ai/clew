@@ -84,6 +84,7 @@ const declared = (name: string) =>
     description: string;
     asks: NonNullable<EntityAction['path']>['asks'];
     view: View;
+    person: { param?: string; admits: string[] };
   };
 const deskOrder = declared('servicedesk.order');
 export const ORDER: EntityAction = {
@@ -95,12 +96,15 @@ export const ORDER: EntityAction = {
   param: 'person',
   path: { asks: deskOrder.asks, effect: false, description: deskOrder.description },
 };
+/** Whom the order is offered about (D117): the relations it admits, as the person's page filters its actions by them. */
+export const ORDER_ADMITS = deskOrder.person.admits;
 const deskEquipment = declared('servicedesk.equipment');
 export const EQUIPMENT_VIEW: ViewEntry = {
   capability: deskEquipment.name,
   title: deskEquipment.title,
   kind: 'list',
-  person: 'person',
+  person: deskEquipment.person.param!,
+  admits: deskEquipment.person.admits,
 };
 export const equipmentAnswer = {
   output: {
@@ -148,7 +152,8 @@ type Seed = {
 /**
  * Anna's items, by phase: two before her first day (one done, one overdue), one due soon, two on the day, one in her
  * first week. The orders are tied to the IT service desk's order with the catalogue's item, the walk round to a page on
- * the intranet, the course to the read of her equipment, and the meeting to a capability nobody here may use.
+ * the intranet, the course to the read of her equipment, and the meeting to a capability nobody here may use. The
+ * buddy's items tied to what Anna's page does not offer them are added by the spec that needs them (`tieForBuddy`).
  */
 const SEEDS: Seed[] = [
   {
@@ -363,6 +368,7 @@ export class BoardingMock {
   }
   private row(item: Item, plan: Plan, access: 'manager' | 'person' | 'owner'): BoardingItemRow {
     const mine = item.owner.id === this.readerId();
+    const canTick = plan.closedAt === null && (access === 'manager' || mine);
     return {
       id: item.id,
       title: item.title,
@@ -379,10 +385,37 @@ export class BoardingMock {
       done: item.done,
       ...(item.done ? { doneAt: NOW } : {}),
       status: item.done ? 'Klar' : item.dueOn < TODAY ? 'Försenad' : 'Att göra',
-      ...(item.tiedTo ? { tiedTo: item.tiedTo } : {}),
+      // As the server: what an item is done with only to a reader who may tick it (D124 item 3).
+      ...(item.tiedTo && canTick ? { tiedTo: item.tiedTo } : {}),
       added: item.added,
-      canTick: plan.closedAt === null && (access === 'manager' || mine),
+      canTick,
     };
+  }
+  /**
+   * Two more of the buddy's own items, tied to what Anna's page offers only her and her manager (D117): the desk's order
+   * about her, and the read of her equipment. The buddy may tick them, so is told what they are tied to.
+   */
+  tieForBuddy() {
+    const buddyItem = (id: string, title: string, dueOn: string, tiedTo: string): Item => ({
+      id,
+      planId: PLAN,
+      title,
+      kind: 'todo',
+      ownerRole: 'buddy',
+      owner: BUDDY,
+      dueOn,
+      done: false,
+      added: false,
+      tiedTo,
+    });
+    this.items.push(
+      buddyItem('i-telefon', 'Hjälp Anna att beställa telefon', '2026-11-17', 'servicedesk.order?item=phone'),
+      buddyItem('i-utrustning', 'Gå igenom utrustningen med Anna', '2026-11-18', 'servicedesk.equipment'),
+    );
+  }
+  /** How the reader stands to Anna (D117), as her page answers it: her manager, herself, or a colleague (the buddy). */
+  relation(): 'managed' | 'self' | 'colleague' {
+    return this.reader === 'manager' ? 'managed' : this.reader === 'person' ? 'self' : 'colleague';
   }
   /** One plan as `GET /api/boarding/plans/:id` answers it to the reader. */
   planOutput(plan: Plan): BoardingPlanOutput {

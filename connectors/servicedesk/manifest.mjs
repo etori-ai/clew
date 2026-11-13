@@ -56,13 +56,8 @@ const requestRow = {
 const requiredRow = ['ref', 'label', 'state', 'status', 'since'];
 const text = maxLength => ({ type: 'string', minLength: 1, maxLength });
 
-/** The shared state as a badge, in Clew's words for it: only what waits on the person has a tone (D123 item 6). */
-const stateField = {
-  key: 'state',
-  label: 'Läge',
-  format: 'status',
-  tones: { 'waiting-on-me': 'warn', new: 'none', active: 'none', closed: 'none' },
-};
+// The shared state (`state`) is a code for Clew to order by: Clew's combined list says it in its own words (D123 item
+// 6). The desk's own views draw the desk's own word for it, `status`, so none of them shows a code.
 /** What a row opens: one request, in the panel. */
 export const REQUEST_TITLE = 'Beställning eller felanmälan';
 
@@ -88,7 +83,6 @@ const requests = {
     open: { capability: 'servicedesk.request', title: REQUEST_TITLE, params: { ref: 'ref' } },
     fields: [
       { key: 'label', label: 'Beställning eller felanmälan' },
-      stateField,
       { key: 'status', label: 'Status' },
       { key: 'expectedAt', label: 'Beräknas klar', format: 'date' },
       { key: 'since', label: 'Registrerad', format: 'date' },
@@ -121,7 +115,6 @@ const request = {
     kind: 'detail',
     title: 'label',
     fields: [
-      stateField,
       { key: 'status', label: 'Status' },
       { key: 'expectedAt', label: 'Beräknas klar', format: 'date' },
       { key: 'since', label: 'Registrerad', format: 'date' },

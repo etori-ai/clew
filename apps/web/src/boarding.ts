@@ -8,9 +8,11 @@ import type {
   BoardingPlanSummary,
   BoardingPreview,
   EntityAction,
+  EntityDetail,
+  EntitySource,
   ViewEntry,
 } from '@clew/contracts';
-import { BOARDING_CONDITION_WORDS, BOARDING_EVENT_WORDS, boardingTieOf } from '@clew/contracts';
+import { BOARDING_CONDITION_WORDS, BOARDING_EVENT_WORDS, STRICT_RELATIONS, boardingTieOf } from '@clew/contracts';
 import { addDays, dayLabel, displayDate, shortDayLabel } from '@clew/calendar/dates';
 import { viewPageHref } from './view-address';
 
@@ -212,11 +214,22 @@ export function layerCounts(preview: BoardingPreview): Map<string, number> {
  * Anything else, and an item the reader may not act on, opens nothing: the item is still a to-do. A done item starts no
  * action but keeps a read's or an address's link. The plan holds the item, never what it is done with: nothing here
  * ticks an item, and a placed order does not either.
+ *
+ * A read that takes the person is opened for them only where it admits how the reader stands to them (D117: the view
+ * entry's `admits` against the person's page's `relation`, and a relation the reader holds by grant to a colleague,
+ * D121), so the page never offers a read the server refuses; until that is known it offers none. About someone else it
+ * is named as the person's page names it in a section's way in (`view.open.title`, "Kompetenser"), since the read's own
+ * title is the reader's ("Mina kompetenser"); about the reader themself, by its own title.
  */
 export type RowControl =
   | { kind: 'action'; action: EntityAction; values: AskValues }
   | { kind: 'read'; title: string; href: string }
   | { kind: 'link'; href: string; host: string };
+/** How the reader stands to the plan's person (D117): what their page answers, and the relations held by grant (D121). */
+export interface PersonStanding {
+  relation: EntityDetail['relation'];
+  grants: readonly string[];
+}
 export function rowControl(
   row: Pick<BoardingItemRow, 'canTick' | 'done' | 'tiedTo'>,
   context: {
@@ -226,6 +239,10 @@ export function rowControl(
     views: readonly ViewEntry[];
     /** The plan's person's user name: the key an action and a read take them by. */
     person: string | null;
+    /** How the reader stands to the plan's person; null until the person's page has answered. */
+    standing: PersonStanding | null;
+    /** The sections of the person's page, whose ways in name a read about someone else. */
+    sections: readonly EntitySource[];
     /** The page the row is on, the way back from a read's page. */
     from: string;
   },
@@ -237,28 +254,46 @@ export function rowControl(
   const action = context.person ? context.actions.find(a => a.capability === tie.capability) : undefined;
   if (action) return row.done ? null : { kind: 'action', action, values: tie.values };
   const view = context.views.find(v => v.capability === tie.capability);
-  // A read that takes one person is opened with the plan's; without their user name it cannot be.
-  if (!view || (view.person && !context.person)) return null;
+  if (!view) return null;
+  // A read that takes one person is opened with the plan's, and only where it admits the reader for them.
+  const about = view.person ? context.person : null;
+  if (view.person && !(about && admitted(view.admits ?? STRICT_RELATIONS, context.standing))) return null;
+  const title =
+    about && context.standing?.relation !== 'self'
+      ? (openTitle(context.sections, view.capability) ?? view.title)
+      : view.title;
   return {
     kind: 'read',
-    title: view.title,
+    title,
     href: viewPageHref(
-      {
-        capability: view.capability,
-        title: view.title,
-        ...(view.person && context.person ? { input: { [view.person]: context.person } } : {}),
-      },
+      { capability: view.capability, title, ...(view.person && about ? { input: { [view.person]: about } } : {}) },
       context.from,
     ),
   };
 }
-/** Whether any row is tied to a capability that is no read the reader may open: what the person's actions are read for. */
-export const needsActions = (
+/** Whether a read that admits `admits` answers the reader about the plan's person (D117, D121). */
+const admitted = (admits: readonly string[], standing: PersonStanding | null) =>
+  !!standing &&
+  (admits.includes(standing.relation) ||
+    (standing.relation === 'colleague' && standing.grants.some(g => admits.includes(g))));
+/** The title a section of the person's page gives its way into `capability`, the read about them in full. */
+const openTitle = (sections: readonly EntitySource[], capability: string) =>
+  sections
+    .map(s => (s.view.kind === 'table' || s.view.kind === 'list' ? s.view.open : undefined))
+    .find(open => open?.capability === capability)?.title;
+/**
+ * Whether the person's page is read for the rows (`GET /api/entities/person/:key`): a row the reader may act on is tied
+ * to a capability that is no read the reader may open (an action, which the page offers), or to a read that takes the
+ * person (how the reader stands to them, and what the page calls the read).
+ */
+export const needsPersonPage = (
   rows: readonly Pick<BoardingItemRow, 'canTick' | 'done' | 'tiedTo'>[],
   views: readonly ViewEntry[],
 ) =>
   rows.some(r => {
-    if (!r.canTick || r.done) return false;
+    if (!r.canTick) return false;
     const tie = boardingTieOf(r.tiedTo);
-    return tie?.kind === 'capability' && !views.some(v => v.capability === tie.capability);
+    if (tie?.kind !== 'capability') return false;
+    const view = views.find(v => v.capability === tie.capability);
+    return view ? !!view.person : !r.done;
   });

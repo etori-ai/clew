@@ -14,6 +14,7 @@ import {
   type BoardingOwnerRole,
   type BoardingPlanOutput,
   type EntityAction,
+  type EntitySource,
   type SessionUser,
   type ViewEntry,
 } from '@clew/contracts';
@@ -70,7 +71,7 @@ import {
   hasOpen,
   itemLine,
   longDay,
-  needsActions,
+  needsPersonPage,
   phaseWhen,
   planCounts,
   planTitle,
@@ -85,6 +86,7 @@ import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { useBoardingTick, useBoardingWrite } from '../mutations';
 import { useEntityAction } from '../entity-actions';
+import { useHeldRelations } from '../capabilities';
 import { usePageTitle } from '../page-title';
 import { pageOnly } from '../panel-address';
 import { insideClew, originOf, pageSubject, personPageHref, toolOf } from '../person-address';
@@ -149,13 +151,17 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
   const name = detail?.plan.name ?? person?.person.name ?? '';
   const userName = detail?.plan.userName ?? person?.person.userName ?? null;
   const access: BoardingAccess | undefined = detail?.plan.access;
-  // An item tied to an action about the person (D124): the actions the reader may start for them are the ones their
-  // page offers (`GET /api/entities/person/:key`), read only when a row is tied to something that is no read.
-  const actionsQ = useQuery({
+  // An item tied to an action about the person or a read that takes them (D124): the actions the reader may start for
+  // them, how the reader stands to them and what a read about them is called are their page's
+  // (`GET /api/entities/person/:key`), read only when a row needs them.
+  const personPageQ = useQuery({
     ...entityDetailQuery('person', userName ?? ''),
-    enabled: !!detail && !!userName && needsActions(detail.rows, views),
+    enabled: !!detail && !!userName && needsPersonPage(detail.rows, views),
   });
-  const personActions = actionsQ.data?.actions ?? NO_ACTIONS;
+  const personPage = personPageQ.data;
+  const personActions = personPage?.actions ?? NO_ACTIONS;
+  const grants = useHeldRelations();
+  const standing = personPage ? { relation: personPage.relation, grants } : null;
   // The same path a person's page starts an action on: its work item beside this page, the action dialog over it.
   const entityAction = useEntityAction();
   const title = detail ? planTitle(detail.plan.event, name) : person ? `Introduktion och avslut för ${name}` : null;
@@ -391,6 +397,8 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
                     actions: personActions,
                     views,
                     person: userName,
+                    standing,
+                    sections: personPage?.sections ?? NO_SECTIONS,
                     from: here,
                   });
                   return (
@@ -596,7 +604,9 @@ function ItemRow({
   const late = row.status === 'Försenad' ? <Badge variant="warning" label="Försenad" /> : undefined;
   const line = <Text type="supporting">{itemLine(row)}</Text>;
   // What the item is done with, in the row's label, where Astryx lets a rich label hold a button or a link that keeps
-  // its own behaviour; the checkbox keeps the title alone as its name.
+  // its own behaviour; the checkbox keeps the title alone as its name. Each control's name begins with what it shows
+  // and adds the row's title, so two rows that open the same thing are told apart (2.4.4, 2.5.3); a link's through
+  // Astryx's `label`, which replaces its new-tab words, so a link out says them itself.
   const opens = !control ? null : control.kind === 'action' ? (
     <Button
       size="sm"
@@ -606,11 +616,11 @@ function ItemRow({
       onClick={() => onAction(control.action, control.values)}
     />
   ) : control.kind === 'read' ? (
-    <Link href={control.href} aria-label={`${control.title}: ${row.title}`} hasUnderline>
+    <Link href={control.href} label={`${control.title}: ${row.title}`} hasUnderline>
       {control.title}
     </Link>
   ) : (
-    <Link href={control.href} isExternalLink hasUnderline>
+    <Link href={control.href} label={`${control.host}: ${row.title} ${NEW_TAB}`} isExternalLink hasUnderline>
       {control.host}
     </Link>
   );
@@ -657,6 +667,9 @@ function ItemRow({
 
 const NO_VIEWS: ViewEntry[] = [];
 const NO_ACTIONS: EntityAction[] = [];
+const NO_SECTIONS: EntitySource[] = [];
+/** What a link out says after its name, as Astryx's own new-tab words (`@astryx.link.newTab`) say it in Swedish. */
+const NEW_TAB = '(öppnas i ny flik)';
 /** What closing a plan does, as its confirmation says before it is done (D124 items 5 and 7). */
 const CLOSE_CONSEQUENCE =
   'Planen kan inte ändras efter det, och de punkter som inte är klara försvinner från Att göra hos dem som har dem. Det som är klart står kvar.';

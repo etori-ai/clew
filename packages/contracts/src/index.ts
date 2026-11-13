@@ -797,10 +797,6 @@ export const VALUE_WORDS: Readonly<Record<string, string>> = {
   unknown: 'okänt',
   vab: 'vab',
   'waiting-safety-rep': 'väntar på skyddsombud',
-  // Where something a person ordered or reported stands (D123); `closed` is above.
-  'waiting-on-me': 'väntar på dig',
-  new: 'ny',
-  active: 'pågår',
 };
 /** A value's word (`VALUE_WORDS`), or the value as given. */
 export const valueWord = (value: string): string =>
@@ -938,6 +934,11 @@ export const ViewEntrySchema = object({
    * that opens the read for a person fills in (a plan's item tied to the read, D124).
    */
   person: Type.Optional(Type.String()),
+  /**
+   * Beside `person`: the relations to that person the read admits (D117, `PersonRelation`; `self` and `managed` when
+   * it declares none), so a page offers to open it for a person only where the server would answer (D124).
+   */
+  admits: Type.Optional(Type.Array(Type.String())),
 });
 export type ViewEntry = Static<typeof ViewEntrySchema>;
 /** Whether a view answers with rows (a `table` or a `list`): a list a person works through, which is a page (D116). */
@@ -1168,12 +1169,18 @@ export type RequestsOutput = Static<typeof RequestsOutputSchema>;
 /**
  * What the composite `clew.requests` returns (D123): every system's rows in one list, each marked with the connector it
  * came from and the view that opens it there, and every system's part in the answer. `unanswered` names the systems
- * that did not answer, as a person reads them.
+ * that did not answer, as a person reads them. A row's `state` is Clew's Swedish word for the shared state, which the
+ * requests module gives it; a connector answers the code (`RequestRow.state`).
  */
 export const RequestsResultSchema = object({
   rows: Type.Array(
     object({
       ...RequestRowSchema.properties,
+      state: Type.String({
+        minLength: 1,
+        maxLength: 40,
+        description: "Swedish. Clew's word for where the request stands: Väntar på dig, Ny, Pågår or Stängd.",
+      }),
       connector: Type.String(),
       system: Type.String(),
       view: Type.Optional(ViewRefSchema),
@@ -1583,6 +1590,7 @@ export const BoardingItemRowSchema = object({
   done: Type.Boolean(),
   doneAt: Type.Optional(instant),
   status: literals(BOARDING_ITEM_STATUS_WORDS),
+  /** What the item is done with (D124 item 3, `boardingTieOf`): only on an item the reader may tick. */
   tiedTo: Type.Optional(Type.String({ maxLength: BOARDING_TIED_TO_MAX * 2 })),
   /** A manager typed it for this plan: free text, never on a card. False for an item from a layer. */
   added: Type.Boolean(),

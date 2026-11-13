@@ -51,9 +51,13 @@ its own, combined across systems as the errand list is, but into a list of its o
    system it came from, with the focus on the panel's heading; closing gives it back to the row. The shared state is a
    badge on every row, in Clew's words for it ("Väntar på dig", "Ny", "Pågår", "Stängd"), and only "Väntar på dig" has
    a tone, `warn`; the system's own status stays beside it. This uses what views already have: a `status` field over
-   `state` with `tones` keyed on the state, its words from the shared dictionary of value words (`VALUE_WORDS` in `@clew/contracts`),
-   which already gives the talks round's and the competence register's states theirs. No field and no view feature was
-   added. While the read is on its way the section keeps its
+   `state` with `tones` keyed on the words. `clew.requests` gives each row its word (`REQUEST_STATE_WORDS` in the
+   requests module's `domain.ts`, as the talks round gives its states theirs with `TALK_STATE_WORDS`), so the combined
+   list's `state` is the word and a connector's `RequestRow.state` stays the code. The words are not in the shared
+   dictionary of value words (`VALUE_WORDS` in `@clew/contracts`): it translates every value of every connector's views
+   and of what the model reads, so another system's `new` or `active` would have been drawn as "Ny" or "Pågår". For the
+   same reason a desk's own views draw its own `status` and not the code (`connectors/servicedesk`). No field and no
+   view feature was added. While the read is on its way the section keeps its
    place with a skeleton; a read that fails is an alert with the server's sentence and "Försök igen". As D90 item 6 says
    of the errands: nothing is stored or pushed, and the section is not counted in "Behöver dig", the rail or Lugnt
    läge. Code: `apps/web/src/components/my-requests.tsx` and one element in `apps/web/src/pages/start.tsx`; Astryx
@@ -85,8 +89,9 @@ its own, combined across systems as the errand list is, but into a list of its o
    `expectedAt` that is neither a day nor an instant) dropped whole, a row with no view when the person may not open it,
    an input refused, scope, the area and the menu row, the model's one tool, the errand and request lists never asking
    each other's sources, a connector outside Clew declaring the profile on protocol 3 and answering over the protocol
-   with `about` refused on it, and a delegating desk given the person's own token and named when it has none.
-   `tests/unit/panel-labels.test.ts`: the state words. `tests/a11y/requests.spec.ts`: the section directly after Mina
+   with `about` refused on it, and a delegating desk given the person's own token and named when it has none, and the
+   state words with their tones. `tests/unit/panel-labels.test.ts`: none of the codes in the shared value words.
+   `tests/a11y/requests.spec.ts`: the section directly after Mina
    ärenden, the first five, the badge on what waits on the person only, the missing system named, a row opening beside
    Hem with the focus on the panel's heading and back on the row, "Visa allt" to the page with the focus on its heading,
    Hem as its way back and the focus back on "Visa allt", nothing to follow with five or fewer, no section without a

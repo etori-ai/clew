@@ -1,6 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import type { RequestRow, RequestsResult } from '../../packages/contracts/src/index';
+import { VALUE_WORDS, fieldTone, type RequestRow, type RequestsResult } from '../../packages/contracts/src/index';
 import { CapabilityError, SEARCH_CONNECTOR, type Actor, type Connector } from '../../packages/connectors/src/index';
 import {
   DELEGATED_TOKEN_HEADER,
@@ -9,7 +9,7 @@ import {
   remoteConnector,
   type FetchLike,
 } from '../../packages/connectors/src/remote';
-import { merge, systemReport, unanswered } from '../../apps/server/src/modules/requests/domain';
+import { REQUEST_STATE_WORDS, merge, systemReport, unanswered } from '../../apps/server/src/modules/requests/domain';
 import { requestCapabilities } from '../../apps/server/src/modules/requests/capabilities';
 import { requestUsecases } from '../../apps/server/src/modules/requests/usecases';
 import { errandCapabilities } from '../../apps/server/src/modules/errands/capabilities';
@@ -258,7 +258,9 @@ describe('clew.requests', () => {
     const result = await list(registry, mikael);
     expect(result.rows).toEqual([
       {
-        ...row('it', 7, { state: 'waiting-on-me' }),
+        ...row('it', 7),
+        // The shared state in Clew's word for it, given by the list, never by the system.
+        state: 'Väntar på dig',
         connector: 'it',
         system: 'IT-servicedesken',
         view: {
@@ -269,7 +271,8 @@ describe('clew.requests', () => {
         },
       },
       {
-        ...row('facilities', 1, { state: 'active', expectedAt: '2026-11-20' }),
+        ...row('facilities', 1, { expectedAt: '2026-11-20' }),
+        state: 'Pågår',
         connector: 'facilities',
         system: 'Fastighetsjouren',
         view: {
@@ -287,6 +290,41 @@ describe('clew.requests', () => {
     expect(result.unanswered).toEqual([]);
     // Every system is asked the same question, and nothing else.
     expect(calls).toEqual([{}, {}]);
+  });
+
+  test('each row says where it stands in Clew’s word for the shared state, and only what waits on the person warns', async () => {
+    const registry = world([
+      desk('it', 'IT-servicedesken', [
+        row('it', 1, { state: 'closed', since: ago(3) }),
+        row('it', 2, { state: 'new', since: ago(2) }),
+        row('it', 3, { state: 'active', since: ago(1) }),
+        row('it', 4, { state: 'waiting-on-me', since: ago(4) }),
+      ]),
+    ]);
+    // The order is the shared state's (the use case, in codes); the words are the list's, the same in every system.
+    expect((await list(registry, mikael)).rows.map(r => [r.ref, r.state])).toEqual([
+      ['request:it:4', 'Väntar på dig'],
+      ['request:it:2', 'Ny'],
+      ['request:it:3', 'Pågår'],
+      ['request:it:1', 'Stängd'],
+    ]);
+    expect(REQUEST_STATE_WORDS).toEqual({
+      'waiting-on-me': 'Väntar på dig',
+      new: 'Ny',
+      active: 'Pågår',
+      closed: 'Stängd',
+    });
+    const view = registry.viewFor(mikael, 'clew.requests');
+    const state = view && 'fields' in view ? view.fields.find(f => f.key === 'state') : undefined;
+    expect(state).toMatchObject({ format: 'status' });
+    expect(Object.values(REQUEST_STATE_WORDS).map(word => fieldTone(state!, word))).toEqual([
+      'warn',
+      'none',
+      'none',
+      'none',
+    ]);
+    // Not from the value words every connector's values are drawn with: another system's `new` or `active` is its own.
+    for (const code of ['waiting-on-me', 'new', 'active']) expect(VALUE_WORDS).not.toHaveProperty(code);
   });
 
   test('a system that fails or is late is named, and the rest are listed', async () => {
@@ -526,8 +564,8 @@ describe('clew.requests', () => {
     const result = await list(registry, mikael);
     expect(posted).toEqual(['http://desk/clew/capabilities/desk.requests']);
     expect(result.rows.map(r => [r.label, r.state, r.status, r.system])).toEqual([
-      ['DESK-4711 · Dator, Felanmälan', 'waiting-on-me', 'Väntar på ditt svar', 'IT-servicedesken'],
-      ['DESK-4702 · Dator, Felanmälan', 'closed', 'Levererad', 'IT-servicedesken'],
+      ['DESK-4711 · Dator, Felanmälan', 'Väntar på dig', 'Väntar på ditt svar', 'IT-servicedesken'],
+      ['DESK-4702 · Dator, Felanmälan', 'Stängd', 'Levererad', 'IT-servicedesken'],
     ]);
     expect(result.rows[0]!.view).toEqual({
       capability: 'desk.request',

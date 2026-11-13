@@ -42,8 +42,12 @@ said that Clew suggests it with a work item and the manager confirms. Every othe
      the reader, `GET /api/entities/person/:key`) is a button that starts it on the person's page's own path, its work
      item beside the plan with the action dialog over it and the preset answers chosen and changeable, nothing sent
      before its last button and nothing ticked by it; a read the reader may open is a link to its page with the person
-     as its input where it takes one (D116); an https address is a link out in a new tab (rule 10 of the interface
-     reference). Anything else opens nothing, and a done item starts no action but keeps a read's or an address's link.
+     as its input where it takes one (D116), and such a read only where it admits how the reader stands to the person
+     ([D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md): its `admits` against the relation the
+     person's page answers, a buddy being a colleague), named for someone else as the person's page names its way into
+     it ("Kompetenser", not the reader's own "Mina kompetenser"); an https address is a link out in a new tab (rule 10
+     of the interface reference), named with the item's title. Anything else opens nothing, and a done item starts no
+     action but keeps a read's or an address's link.
      The kinds have no behaviour of their own: `meeting` books nothing in a calendar, `course` checks nothing against
      competence, and an `order` is ordered only by the tied action the reader starts.
 4. **Owners.** `manager` is the manager who starts the plan; `person` is the one the plan is about, before they can
@@ -78,7 +82,9 @@ said that Clew suggests it with a work item and the manager confirms. Every othe
      holds it. A manager who started a plan and is not its holder gets nothing beyond what an item owner gets.
    - Read a plan: the person it is about; its manager; and an owner of some of its items (a buddy, a former manager),
      who reads those items only, and the counts and the note over those alone. Anyone else, another organisation's
-     manager included, is told the plan does not exist.
+     manager included, is told the plan does not exist. What an item is tied to (`tiedTo`) is sent only on an item the
+     reader may tick: a capability's name says a connector exists, which the person reading the manager's items may be
+     outside the audience of (D23).
    - Add an item and close a plan: the plan's manager, by the same rule. Tick an item off or back: its owner, or the
      plan's manager. A closed plan is read-only.
    - An item whose owner is gone (erased, or their row deleted) belongs to the plan's manager role: the manager may
@@ -178,9 +184,11 @@ locks a plan before its items, its items before their cards.
 **Built 2026-11-13, what an item is done with.** Item 3's `tiedTo` read by one pure rule shared by the import and the
 page (`boardingTieOf`); a file that names anything else is refused with the row's number. The plan's page draws each
 row's control from it (`rowControl` in `apps/web/src/boarding.ts`): an action starts through the person's page's own
-start (`useEntityAction` in `apps/web/src/entity-actions.ts`, which takes the preset answers into the action dialog), a
+start (`useEntityAction` in `apps/web/src/entity-actions.ts`, which takes the preset answers into the action dialog and
+keeps what is typed per start and preset, `askDraftKey`, so one row's answers never fill another's), a
 read leads to its page with the person in the input property its view entry names (`ViewEntry.person`, the read's
-`person.param`, added to `GET /api/areas`), an address leaves in a new tab. The development layers tie their orders to
+`person.param`, added to `GET /api/areas`) where the relations beside it admit the reader (`ViewEntry.admits`, read
+against `EntityDetail.relation` and a relation held by grant), an address leaves in a new tab. The development layers tie their orders to
 the IT service desk's `servicedesk.order` with the catalogue's item, the return of equipment to `servicedesk.equipment`
 and one reading to a made-up page on `example.org`. Not built: a booking from a `meeting` item, a check of a `course`
 item against competence, and an item that closes when what it was done with is done.

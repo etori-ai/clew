@@ -43,6 +43,7 @@ import {
   HoldingsOutputSchema,
   MAX_DOCUMENT_BYTES,
   RELATION_GRANTS,
+  STRICT_RELATIONS,
   SiteHeaderOutputSchema,
   contractProblems,
   foldEntityKey,
@@ -1556,8 +1557,10 @@ export class Registry implements HoldingsReader {
   }
   /**
    * The reads a person may open as a view (D116): every read capability they may call, with its title, the kind of
-   * view it declares (D38) and the input property it takes one person's key in, when it takes one (D117). Each has a page of its own; the browser opens one that answers with rows there and anything
-   * else beside the page it was opened from. A read the person may not call is missing, as one that does not exist is.
+   * view it declares (D38) and the input property it takes one person's key in, when it takes one, with the relations
+   * to that person it admits (D117). Each has a page of its own; the browser opens one that answers with rows there and
+   * anything else beside the page it was opened from. A read the person may not call is missing, as one that does not
+   * exist is.
    */
   views(actor: Actor): ViewEntry[] {
     return this.capabilitiesFor(actor)
@@ -1568,8 +1571,14 @@ export class Registry implements HoldingsReader {
         ...(capability.view ? { kind: capability.view.kind } : {}),
         // Clew's own page for the read's rows: only a core connector's read has one.
         ...(capability.page && connector.kind === 'core' ? { page: capability.page } : {}),
-        // Where the read takes one person (D117), so a page can open it for the person it is about (D124).
-        ...(capability.person?.param ? { person: capability.person.param } : {}),
+        // Where the read takes one person (D117), so a page can open it for the person it is about (D124), and whom
+        // through it: what the registry resolves the key against on that page's own read (`narrow`, granted).
+        ...(capability.person?.param
+          ? {
+              person: capability.person.param,
+              admits: [...(this.named.get(capability.name)?.admits ?? STRICT_RELATIONS)],
+            }
+          : {}),
       }));
   }
   /**

@@ -38,6 +38,24 @@ export function actionMenuItems(actions: EntityAction[], start: (action: EntityA
   }));
 }
 
+/**
+ * Where what the person typed in a propose's dialog is kept while the page stays (D112 item 10): per entity and action,
+ * and per the answers the dialog was started from (a plan's row tied to the action with them, D124), so a row's answers
+ * fill its own dialog and never another row's, while a dialog closed and opened again from the same row or button keeps
+ * what was typed. A start without answers (a person's page, Personal's row menu) is keyed as it always was.
+ */
+export function askDraftKey(action: Pick<EntityAction, 'capability'>, subject: ActionSubject, preset?: AskValues) {
+  const base = `${subject.kind ?? 'person'}:${subject.key}:${action.capability}`;
+  const answers = preset ? Object.entries(preset).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) : [];
+  return answers.length ? `${base}?${JSON.stringify(answers)}` : base;
+}
+/** The drafts with a dialog's starting answers filled in where nothing was typed under its key yet. */
+export const withPreset = (
+  drafts: Readonly<Record<string, AskValues>>,
+  key: string,
+  preset: AskValues | undefined,
+): Readonly<Record<string, AskValues>> => (preset && !drafts[key] ? { ...drafts, [key]: preset } : drafts);
+
 /** Starting an action about an entity, and the source's refusal of the last one when it refused. */
 export interface EntityActionStart {
   /**
@@ -68,20 +86,24 @@ export function useEntityAction(): EntityActionStart {
   here.current = location;
   const announce = useAnnounce();
   const { start, busy, error, reset } = useEntityStart();
-  // A propose that asks is filled in before it starts (D112 item 10): its dialog, and what the person typed per action
-  // and entity while the page stays, so a closed and reopened dialog keeps it.
-  const [asking, setAsking] = useState<{ action: EntityAction; subject: ActionSubject; open: boolean } | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, AskValues>>({});
-  const draftKey = (action: EntityAction, subject: ActionSubject) =>
-    `${subject.kind ?? 'person'}:${subject.key}:${action.capability}`;
+  // A propose that asks is filled in before it starts (D112 item 10): its dialog, and what the person typed while the
+  // page stays (`askDraftKey`), so a closed and reopened dialog keeps it.
+  const [asking, setAsking] = useState<{
+    action: EntityAction;
+    subject: ActionSubject;
+    draft: string;
+    open: boolean;
+  } | null>(null);
+  const [drafts, setDrafts] = useState<Readonly<Record<string, AskValues>>>({});
   const run = useCallback(
     (action: EntityAction, subject: ActionSubject, values?: AskValues) => {
       const kind = subject.kind ?? 'person';
       const preset = values && Object.keys(values).length ? values : undefined;
       if (action.kind === 'propose' && opensDialog(action)) {
-        // What the person typed before wins over the preset; the preset fills a dialog opened afresh.
-        if (preset) setDrafts(d => (d[draftKey(action, subject)] ? d : { ...d, [draftKey(action, subject)]: preset }));
-        setAsking({ action, subject, open: true });
+        // What the person typed from this start before wins over its preset; the preset fills a dialog opened afresh.
+        const draft = askDraftKey(action, subject, preset);
+        setDrafts(d => withPreset(d, draft, preset));
+        setAsking({ action, subject, draft, open: true });
         return;
       }
       void start(() => api.entities.start(kind, subject.key, action.capability), { kind, key: subject.key }).then(
@@ -102,7 +124,7 @@ export function useEntityAction(): EntityActionStart {
   /** The propose with its answers: the work item it drafts opens beside the page; a refusal stays in the dialog. */
   const send = async (values: AskValues): Promise<string | null> => {
     if (!asking) return null;
-    const { action, subject } = asking;
+    const { action, subject, draft } = asking;
     const kind = subject.kind ?? 'person';
     const started = await start(() => api.entities.start(kind, subject.key, action.capability, values), {
       kind,
@@ -115,7 +137,7 @@ export function useEntityAction(): EntityActionStart {
       return started.error;
     }
     setAsking({ ...asking, open: false });
-    setDrafts(({ [draftKey(action, subject)]: _sent, ...rest }) => rest);
+    setDrafts(({ [draft]: _sent, ...rest }) => rest);
     navigate(withCard(here.current.pathname, here.current.search, started.threadId));
     return null;
   };
@@ -130,8 +152,8 @@ export function useEntityAction(): EntityActionStart {
         onOpenChange: open => {
           if (!open) setAsking({ ...asking, open: false });
         },
-        values: drafts[draftKey(asking.action, asking.subject)] ?? {},
-        onValuesChange: values => setDrafts(d => ({ ...d, [draftKey(asking.action, asking.subject)]: values })),
+        values: drafts[asking.draft] ?? {},
+        onValuesChange: values => setDrafts(d => ({ ...d, [asking.draft]: values })),
         onSend: send,
       })
     : null;

@@ -137,17 +137,6 @@
             "label": "Beställning eller felanmälan"
           },
           {
-            "key": "state",
-            "label": "Läge",
-            "format": "status",
-            "tones": {
-              "waiting-on-me": "warn",
-              "new": "none",
-              "active": "none",
-              "closed": "none"
-            }
-          },
-          {
             "key": "status",
             "label": "Status"
           },
@@ -273,17 +262,6 @@
         "kind": "detail",
         "title": "label",
         "fields": [
-          {
-            "key": "state",
-            "label": "Läge",
-            "format": "status",
-            "tones": {
-              "waiting-on-me": "warn",
-              "new": "none",
-              "active": "none",
-              "closed": "none"
-            }
-          },
           {
             "key": "status",
             "label": "Status"

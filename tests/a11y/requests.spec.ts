@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import type { Area, RequestsResult } from '@clew/contracts';
 import { desktop, expect, expectNoAxeViolations, heading, narrow, open, reflowProblems, test } from './support';
 import { deskRequestTitle, requestsOutput, requestsSpec } from './requests';
+import { REQUEST_STATE_WORDS } from '../../apps/server/src/modules/requests/domain';
 
 /**
  * Beställningar och felanmälningar on Hem (D123): what the person ordered or reported in a service desk and waits for,
@@ -31,7 +32,7 @@ const errandArea: Area = {
 const closed = (n: number): RequestsResult['rows'][number] => ({
   ref: `request:servicedesk:SD-2610040${n}`,
   label: `SD-2610040${n} · Programvara, Beställning`,
-  state: 'closed',
+  state: REQUEST_STATE_WORDS.closed,
   status: 'Levererad',
   since: `2026-10-0${n}T09:00:00.000Z`,
   connector: 'servicedesk',
@@ -82,6 +83,8 @@ test.describe('Beställningar och felanmälningar on Hem', () => {
     await expect(first).toContainText('IT-servicedesken');
     await expect(requests.getByRole('listitem').nth(1)).toContainText('Pågår');
     await expect(requests.getByRole('listitem').nth(2)).toContainText('Fastighetsjouren');
+    await expect(requests.getByRole('listitem').nth(2).getByText('Ny', { exact: true })).toBeVisible();
+    await expect(requests.getByRole('listitem').nth(3).getByText('Stängd', { exact: true })).toBeVisible();
     await expect(requests.getByText('HR-servicedesken svarade inte.')).toBeVisible();
     await expectNoAxeViolations(page);
 

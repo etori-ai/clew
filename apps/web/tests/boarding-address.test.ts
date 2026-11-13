@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { BoardingPlanOutput, BoardingPreview } from '@clew/contracts';
+import type { BoardingPlanOutput, BoardingPreview, EntitySource } from '@clew/contracts';
 import {
   BOARDING_LENS_HREF,
   boardingHref,
@@ -26,7 +26,7 @@ import {
   planTitle,
   previewOwners,
   layerCounts,
-  needsActions,
+  needsPersonPage,
   rowControl,
   withTicked,
 } from '../src/boarding';
@@ -312,13 +312,42 @@ describe('what an item’s row opens, from what it is tied to (D124)', () => {
     kind: 'execute' as const,
     param: 'person',
   };
+  const holdings = {
+    capability: 'competence.holdings',
+    title: 'Mina kompetenser',
+    kind: 'list' as const,
+    person: 'person',
+    admits: ['self', 'managed', 'registrar'],
+  };
+  /** A section of the person's page whose way in is the holdings, as `competence.person` declares it. */
+  const competenceSection: EntitySource = {
+    capability: 'competence.person',
+    connector: 'competence',
+    source: 'Clew',
+    title: 'Kompetens',
+    view: {
+      kind: 'list',
+      title: 'status',
+      fields: [{ key: 'status', label: 'Kompetens' }],
+      open: { capability: 'competence.holdings', title: 'Kompetenser', params: { person: 'key' } },
+    },
+  };
   const context = {
     actions: [order],
     views: [
-      { capability: 'servicedesk.equipment', title: 'IT-utrustning', kind: 'list' as const, person: 'person' },
+      {
+        capability: 'servicedesk.equipment',
+        title: 'IT-utrustning',
+        kind: 'list' as const,
+        person: 'person',
+        admits: ['self', 'managed'],
+      },
       { capability: 'phonebook.directory', title: 'Telefonboken', kind: 'table' as const },
+      holdings,
     ],
     person: 'anna',
+    standing: { relation: 'managed' as const, grants: [] },
+    sections: [competenceSection],
     from: '/boarding/anna?plan=plan-1&from=%2Fstaff',
   };
   const item = (tiedTo: string | undefined, values: { done?: boolean; canTick?: boolean } = {}) => ({
@@ -351,6 +380,36 @@ describe('what an item’s row opens, from what it is tied to (D124)', () => {
     expect(rowControl(item('servicedesk.equipment', { done: true }), context)?.kind).toBe('read');
     expect(rowControl(item('servicedesk.equipment'), { ...context, person: null })).toBeNull();
   });
+  test('a read about the person only where it admits how the reader stands to them, named as their page names it', () => {
+    // About a report, the read is named as the person's page names its way in, never by the reader's own title.
+    expect(rowControl(item('competence.holdings'), context)).toEqual({
+      kind: 'read',
+      title: 'Kompetenser',
+      href: '/tools/competence.holdings?input=%7B%22person%22%3A%22anna%22%7D&title=Kompetenser&from=%2Fboarding%2Fanna%3Fplan%3Dplan-1',
+    });
+    // About themself, the reader's own title is right.
+    const self = { ...context, standing: { relation: 'self' as const, grants: [] } };
+    expect(rowControl(item('competence.holdings'), self)).toMatchObject({ kind: 'read', title: 'Mina kompetenser' });
+    // A buddy is a colleague: neither read admits one, so neither is offered, nor anything before the page has answered.
+    const buddy = { ...context, standing: { relation: 'colleague' as const, grants: [] } };
+    expect(rowControl(item('servicedesk.equipment'), buddy)).toBeNull();
+    expect(rowControl(item('competence.holdings'), buddy)).toBeNull();
+    expect(rowControl(item('servicedesk.equipment'), { ...context, standing: null })).toBeNull();
+    // A colleague who holds `registrar` by grant is admitted where the read admits it (D121); a read that takes no
+    // person is no one's to admit.
+    const registrar = { ...context, standing: { relation: 'colleague' as const, grants: ['registrar'] } };
+    expect(rowControl(item('competence.holdings'), registrar)).toMatchObject({ kind: 'read', title: 'Kompetenser' });
+    expect(rowControl(item('servicedesk.equipment'), registrar)).toBeNull();
+    expect(rowControl(item('phonebook.directory'), { ...buddy, standing: null })).toMatchObject({ kind: 'read' });
+    // A read that says nothing of whom it admits admits the person themself and their manager (D117's default).
+    const { admits: _admits, ...undeclared } = holdings;
+    expect(rowControl(item('competence.holdings'), { ...buddy, views: [undeclared] })).toBeNull();
+    expect(rowControl(item('competence.holdings'), { ...context, views: [undeclared] })?.kind).toBe('read');
+    // Without a section that names it, a read about someone else keeps its own title.
+    expect(rowControl(item('competence.holdings'), { ...context, sections: [] })).toMatchObject({
+      title: 'Mina kompetenser',
+    });
+  });
   test('an https address: a link out, done or not', () => {
     expect(rowControl(item('https://intranet.example.org/vardegrund', { done: true }), context)).toEqual({
       kind: 'link',
@@ -364,11 +423,14 @@ describe('what an item’s row opens, from what it is tied to (D124)', () => {
     expect(rowControl(item(undefined), context)).toBeNull();
     expect(rowControl(item('servicedesk.order?item=laptop', { canTick: false }), context)).toBeNull();
     expect(rowControl(item('https://intranet.example.org/', { canTick: false }), context)).toBeNull();
-    // An action is read for only where a row names a capability that is no read the reader may open.
-    expect(needsActions([item('servicedesk.equipment'), item('https://intranet.example.org/')], context.views)).toBe(
+    // The person's page is read where a row names an action, or a read that takes the person, which it admits through.
+    expect(needsPersonPage([item('phonebook.directory'), item('https://intranet.example.org/')], context.views)).toBe(
       false,
     );
-    expect(needsActions([item('servicedesk.order?item=laptop')], context.views)).toBe(true);
-    expect(needsActions([item('servicedesk.order?item=laptop', { done: true })], context.views)).toBe(false);
+    expect(needsPersonPage([item('servicedesk.equipment')], context.views)).toBe(true);
+    expect(needsPersonPage([item('servicedesk.equipment', { done: true })], context.views)).toBe(true);
+    expect(needsPersonPage([item('servicedesk.equipment', { canTick: false })], context.views)).toBe(false);
+    expect(needsPersonPage([item('servicedesk.order?item=laptop')], context.views)).toBe(true);
+    expect(needsPersonPage([item('servicedesk.order?item=laptop', { done: true })], context.views)).toBe(false);
   });
 });

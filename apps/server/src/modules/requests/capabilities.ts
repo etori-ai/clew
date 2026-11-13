@@ -1,5 +1,6 @@
 import { SEARCH_CONNECTOR, type Actor, type Capability, type Connector } from '@clew/connectors';
-import { RequestsInputSchema, RequestsResultSchema, type RequestsInput } from '@clew/contracts';
+import { RequestsInputSchema, RequestsResultSchema, type RequestsInput, type RequestsResult } from '@clew/contracts';
+import { REQUEST_STATE_WORDS } from './domain';
 import type { RequestUsecases } from './usecases';
 
 /**
@@ -38,13 +39,19 @@ export function requestCapabilities(
       empty: 'Du har inga beställningar eller felanmälningar här.',
       fields: [
         { key: 'label', label: 'Beställning eller felanmälan' },
-        // The shared state as a badge, in Clew's words for it (`panel-labels.ts`), the same in every system: only what
-        // waits on the person has a tone, the rest are neutral, as the talks round draws its states (D96).
+        // The shared state as a badge, in Clew's words for it (`REQUEST_STATE_WORDS`, given on the rows below), the
+        // same in every system: only what waits on the person has a tone, the rest are neutral, as the talks round draws
+        // its states (D96).
         {
           key: 'state',
           label: 'Läge',
           format: 'status',
-          tones: { 'waiting-on-me': 'warn', new: 'none', active: 'none', closed: 'none' },
+          tones: {
+            [REQUEST_STATE_WORDS['waiting-on-me']]: 'warn',
+            [REQUEST_STATE_WORDS.new]: 'none',
+            [REQUEST_STATE_WORDS.active]: 'none',
+            [REQUEST_STATE_WORDS.closed]: 'none',
+          },
         },
         { key: 'status', label: 'Status' },
         { key: 'expectedAt', label: 'Beräknas klar', format: 'date' },
@@ -52,7 +59,11 @@ export function requestCapabilities(
         { key: 'since', label: 'Registrerad', format: 'date' },
       ],
     },
-    run: (actor, _input, clew) => requests.list(actor, clew.call),
+    // The list in the order the shared state gives, each row's state then said in Clew's word for it.
+    run: async (actor, _input, clew): Promise<RequestsResult> => {
+      const list = await requests.list(actor, clew.call);
+      return { ...list, rows: list.rows.map(row => ({ ...row, state: REQUEST_STATE_WORDS[row.state] })) };
+    },
   };
   return {
     areas: [

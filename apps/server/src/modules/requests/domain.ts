@@ -1,10 +1,22 @@
-import type { RequestRow, RequestState, SearchSource } from '@clew/contracts';
+import type { RequestRow, RequestState, SearchSource, ViewRef } from '@clew/contracts';
 
 /**
  * The pure part of the combined request list (D123): how rows from several service desks become one list and how a
  * fan-out's outcome is reported. No I/O and no clock: the order depends only on what the systems answered.
  */
 export const ROW_LIMIT = 200;
+/**
+ * Where a request stands as the list says it, the same whichever system holds it (D123 item 6): Clew's words for the
+ * shared state, given on the rows here, as the talks round gives its states theirs (`TALK_STATE_WORDS`). Never from the
+ * shared value words, which translate every connector's values and would turn another system's `new` or `active` into
+ * these.
+ */
+export const REQUEST_STATE_WORDS: Record<RequestState, string> = {
+  'waiting-on-me': 'Väntar på dig',
+  new: 'Ny',
+  active: 'Pågår',
+  closed: 'Stängd',
+};
 /**
  * The order a list is drawn in: what waits on the person first, then what is open, then what is closed. `new` and
  * `active` are one rank, since for the person who waits both are the desk's move; the oldest of them comes first.
@@ -16,6 +28,12 @@ export type SystemOutcome = { id: string; source: string } & (
   { status: 'ok'; rows: RequestRow[] } | { status: 'unavailable' | 'timeout' }
 );
 export type MergedRequestRow = RequestRow & { connector: string; system: string };
+/** The combined list as the use case answers it, the state still the shared code; `clew.requests` puts it in words. */
+export interface RequestList {
+  rows: Array<MergedRequestRow & { view?: ViewRef }>;
+  systems: SearchSource[];
+  unanswered: string[];
+}
 
 const time = (value: string) => {
   const at = Date.parse(value);

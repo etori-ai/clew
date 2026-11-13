@@ -366,7 +366,9 @@ export function itemRow(
     done: item.doneAt !== null,
     ...(item.doneAt ? { doneAt: item.doneAt } : {}),
     status: itemStatus(item, context.today),
-    ...(item.tiedTo ? { tiedTo: item.tiedTo } : {}),
+    // What the item is done with goes only to a reader who may tick it, the one its row opens it for (D124 item 3): a
+    // capability's name says a connector exists, which a reader outside its audience is never told (D23).
+    ...(item.tiedTo && context.canTick ? { tiedTo: item.tiedTo } : {}),
     added: item.added,
     canTick: context.canTick,
   };

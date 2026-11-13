@@ -7,6 +7,7 @@ import {
   EQUIPMENT_VIEW,
   MARIA,
   ORDER,
+  ORDER_ADMITS,
   PLAN,
   boardingRows,
   boardingSource,
@@ -412,13 +413,21 @@ test.describe('small screens', () => {
  * the reader may not use, and an item the reader may not act on, draw nothing.
  */
 const rowOf = (page: Page, title: string) => page.getByRole('main').getByRole('listitem').filter({ hasText: title });
-/** The service desk's order offered about Anna (the entities read a person's page uses), and its equipment as a read. */
-function tied(api: MockApi, actions = [ORDER]) {
+/** Two frames: what an answer just read changes is drawn, so an absence asserted after it is not an absence before it. */
+const settled = (page: Page) =>
+  page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+/**
+ * Anna's page as the server answers it to the reader (the entities read a plan's rows draw from): how the reader stands
+ * to her, and the service desk's order only where it admits that (D117); and its equipment as a read that admits the
+ * same.
+ */
+function tied(api: MockApi) {
   const boarding = (api.boarding = new BoardingMock());
   api.views = [...api.views, EQUIPMENT_VIEW];
   api.entityDetailOf = key => {
     const detail = entityDetail(api.entityList, key);
-    return detail && { ...detail, actions };
+    const relation = boarding.relation();
+    return detail && { ...detail, relation, actions: ORDER_ADMITS.includes(relation) ? [ORDER] : [] };
   };
   return boarding;
 }
@@ -499,7 +508,10 @@ test.describe('what an item is done with', () => {
     const out = rowOf(page, 'Rundvandring, nycklar och arbetsplats').getByRole('link');
     await expect(out).toHaveAttribute('href', 'https://intranet.example.org/rundvandring');
     await expect(out).toHaveAttribute('target', '_blank');
-    await expect(out).toHaveAccessibleName(/^intranet\.example\.org.*öppnas i ny flik/);
+    // Named by what it shows, the row's title and that it leaves, so two rows linking to one host are told apart.
+    await expect(out).toHaveAccessibleName(
+      'intranet.example.org: Rundvandring, nycklar och arbetsplats (öppnas i ny flik)',
+    );
     await read.click();
     await expect(page).toHaveURL(/\/tools\/servicedesk\.equipment\?/);
     await expect(page.getByRole('main').getByText('Lenovo T14')).toBeVisible();
@@ -528,20 +540,42 @@ test.describe('what an item is done with', () => {
     await expectNoAxeViolations(page);
   });
 
-  test("an item's owner sees what their own item opens, and an action the entities read does not give them draws nothing", async ({
+  test("an item's owner sees what their own item opens, and an action or a read Anna's page does not admit them to draws nothing", async ({
     page,
     api,
   }) => {
     api.employee = true;
-    const boarding = tied(api, []);
+    const boarding = tied(api);
     boarding.reader = 'owner';
+    boarding.tieForBuddy();
+    const phone = 'Hjälp Anna att beställa telefon';
+    const equipment = 'Gå igenom utrustningen med Anna';
+    // Anna's page answers the buddy as a colleague, with no action: the desk's order and the read of her equipment
+    // admit only her and her manager (D117).
+    const answered = page.waitForResponse(r => new URL(r.url()).pathname === `/api/entities/person/${ANNA}`);
     const input = encodeURIComponent(JSON.stringify({ plan: PLAN }));
     await open(page, `/tools/boarding.plan?input=${input}&from=%2Ftodo`);
     await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
+    expect(await (await answered).json()).toMatchObject({ relation: 'colleague', actions: [] });
+    await settled(page);
+    // Their own items, each theirs to tick; the address opens, the order and the read do not.
+    await expect(item(page, phone)).toBeVisible();
+    await expect(item(page, equipment)).toBeVisible();
     await expect(
-      rowOf(page, 'Rundvandring, nycklar och arbetsplats').getByRole('link', { name: /intranet\.example\.org/ }),
+      rowOf(page, 'Rundvandring, nycklar och arbetsplats').getByRole('link', { name: /^intranet\.example\.org/ }),
     ).toBeVisible();
+    await expect(rowOf(page, phone).getByRole('button')).toHaveCount(0);
+    await expect(rowOf(page, phone).getByRole('link')).toHaveCount(0);
+    await expect(rowOf(page, equipment).getByRole('link')).toHaveCount(0);
     await expectNoAxeViolations(page);
+
+    // The same items read by Anna's manager, whom her page offers both: the gate is how the reader stands to Anna.
+    boarding.reader = 'manager';
+    await page.reload();
+    await expect(
+      rowOf(page, phone).getByRole('button', { name: `Beställ från IT-servicedesken: ${phone}` }),
+    ).toBeVisible();
+    await expect(rowOf(page, equipment).getByRole('link', { name: `IT-utrustning: ${equipment}` })).toBeVisible();
   });
 
   test('at 320 px a row with what it opens reflows', async ({ page, api }) => {

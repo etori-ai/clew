@@ -708,6 +708,31 @@ describe('reading plans', () => {
     expect((await boarding.plan(karin, id)).rows[0]!.status).toBe('Försenad');
   });
 
+  test('what an item is tied to reaches only a reader who may tick it: never the capability on someone else’s item', async () => {
+    // The manager's order tied to the service desk's order, beside the person's course tied to their holdings.
+    const tied = LAYERS.replace(
+      'Beställ dator;order;manager;-14;',
+      'Beställ dator;order;manager;-14;servicedesk.order',
+    );
+    await boarding.importLayers(ada, { rows: layerRows(tied) });
+    const { id } = await start();
+    const tiesOf = (rows: Array<{ title: string; canTick: boolean; tiedTo?: string }>) =>
+      rows.filter(r => r.title === 'Beställ dator' || r.title === 'HLR').map(r => [r.title, r.canTick, r.tiedTo]);
+    expect(tiesOf((await boarding.plan(karin, id)).rows)).toEqual([
+      ['Beställ dator', true, 'servicedesk.order'],
+      ['HLR', true, 'competence.holdings'],
+    ]);
+    // Anna reads the manager's order but may not tick it, so she is not told what it is done with (D23); her own course
+    // she is.
+    const asPerson = (await boarding.plan(asAnna, id)).rows;
+    expect(tiesOf(asPerson)).toEqual([
+      ['Beställ dator', false, undefined],
+      ['HLR', true, 'competence.holdings'],
+    ]);
+    expect(asPerson.find(r => r.title === 'Beställ dator')).not.toHaveProperty('tiedTo');
+    expect(JSON.stringify(asPerson)).not.toContain('servicedesk');
+  });
+
   test('after the person is deactivated the plan is held by the manager they had then, not by the one who started it', async () => {
     const { id } = await start(karin, { personId: 'bo', event: 'leaving', anchorOn: '2026-12-31', buddyId: null });
     const [talk, keys] = itemsOf(id);

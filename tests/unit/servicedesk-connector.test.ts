@@ -221,10 +221,10 @@ describe('the service-desk fixture connector', () => {
     expect(mine.unanswered).toEqual([]);
     // What waits on her first, then what is open from the oldest, then what was closed lately (D123 item 4).
     expect(mine.rows.map(r => [r.label, r.state, r.status, r.expectedAt ?? null])).toEqual([
-      ['SD-26110047 · Skrivare, Felanmälan', 'waiting-on-me', 'Väntar på ditt svar', null],
-      ['SD-26110041 · Dator, Beställning', 'active', 'Under leverans', '2026-11-16'],
-      ['SD-26110052 · Behörighet, Beställning', 'new', 'Mottagen', null],
-      ['SD-26110033 · Mobiltelefon, Beställning', 'closed', 'Levererad', null],
+      ['SD-26110047 · Skrivare, Felanmälan', 'Väntar på dig', 'Väntar på ditt svar', null],
+      ['SD-26110041 · Dator, Beställning', 'Pågår', 'Under leverans', '2026-11-16'],
+      ['SD-26110052 · Behörighet, Beställning', 'Ny', 'Mottagen', null],
+      ['SD-26110033 · Mobiltelefon, Beställning', 'Stängd', 'Levererad', null],
     ]);
     expect(mine.rows[0]).toMatchObject({
       ref: 'request:servicedesk:SD-26110047',
@@ -241,8 +241,8 @@ describe('the service-desk fixture connector', () => {
     // The computer Hillevi ordered for Anna is Hillevi's; Anna's list has her own fault report only.
     expect((await list(anna)).rows.map(r => r.label)).toEqual(['SD-26110049 · Dator, Felanmälan']);
     expect((await list(hassan)).rows.map(r => [r.label, r.state, r.status])).toEqual([
-      ['SD-26110044 · Mobiltelefon, Beställning', 'waiting-on-me', 'Klar att hämta'],
-      ['SD-26110038 · Programvara, Felanmälan', 'closed', 'Löst'],
+      ['SD-26110044 · Mobiltelefon, Beställning', 'Väntar på dig', 'Klar att hämta'],
+      ['SD-26110038 · Programvara, Felanmälan', 'Stängd', 'Löst'],
     ]);
     // The model is offered the combined list, never the desk's own read beside it.
     expect(registry.tools(hillevi).map(t => t.name)).toContain('clew.requests');
@@ -297,7 +297,7 @@ describe('the service-desk fixture connector', () => {
     });
     // The order is the manager's: in her list, not in Anna's.
     expect((await list(hillevi)).rows.find(r => r.ref === 'request:servicedesk:SD-26110101')).toMatchObject({
-      state: 'new',
+      state: 'Ny',
       status: 'Mottagen',
       expectedAt: '2026-11-23',
     });
@@ -545,7 +545,7 @@ describe('the service-desk fixture connector', () => {
     const malformed = await w.advance('SD-%E0%A4%A', 'closed');
     expect(malformed.status).toBe(400);
     expect((await malformed.json()) as unknown).toMatchObject({ error: { code: 'invalid' } });
-    expect((await w.list(hillevi)).rows.find(r => r.ref.endsWith('SD-26110041'))?.state).toBe('active');
+    expect((await w.list(hillevi)).rows.find(r => r.ref.endsWith('SD-26110041'))?.state).toBe('Pågår');
   });
 
   test('a closed request stays in the list for thirty days and is gone after', async () => {
