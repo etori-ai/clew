@@ -53,9 +53,11 @@ function activity<K extends keyof Activities>(name: K): Activities[K] {
 }
 /**
  * One checkpointed call of a use case. Retries are the step's; a step that still fails ends the workflow in ERROR, where
- * an operator resumes it. An attempt is timed out after a minute unless `timeoutMS` is null: the engine would start the
- * next attempt beside one that is still running, so a step that reads a whole source has no timeout of its own and
- * relies on the source's own per-call timeout.
+ * it stays until an operator starts it again from that step once the cause is fixed (`scripts/workflows-move.ts`):
+ * `resumeWorkflow` changes nothing for a workflow that has ended. An attempt that runs past `timeoutMS` is given up and
+ * retried, but the engine does not stop it: it goes on beside the retry. A step with no timeout (`null`) runs for as
+ * long as its use case does, so a step that reads a whole source has none and relies on the source's own per-call
+ * timeout.
  */
 const step = <T>(name: keyof Activities, run: () => Promise<T>, maxAttempts = 5, timeoutMS: number | null = 60_000) =>
   DBOS.runStep(run, {
@@ -72,11 +74,15 @@ async function sleepUntil(at: string) {
   if (wait > 0) await DBOS.sleep(wait);
 }
 
-/** A scheduled job (D15, D47): wait for its run time, then run it once the ledger lets go of it. */
+/**
+ * A scheduled job (D15, D47): wait for its run time, then run it once the ledger lets go of it. Its step has no timeout:
+ * the run keeps its claim on the job for as long as it lasts (`scheduledJobRunner`), and an attempt given up at a
+ * timeout would go on beside its retry, which would run the job a second time once the claim's lease had passed.
+ */
 export const scheduledJob = DBOS.registerWorkflow(
   async (input: { id: string; dueAt: string }): Promise<void> => {
     await sleepUntil(input.dueAt);
-    while ((await step('runScheduledJob', () => activity('runScheduledJob')(input.id), 10)) === 'busy')
+    while ((await step('runScheduledJob', () => activity('runScheduledJob')(input.id), 10, null)) === 'busy')
       await DBOS.sleep(30_000);
   },
   { name: 'scheduledJob', serialization: 'portable' },

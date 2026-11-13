@@ -486,11 +486,11 @@ describe('the Nextcloud Approval connector', () => {
     const listed = await card(hillevi, 625);
     for (const claims of [{ aud: 'eneo' }, { exp: at / 1000 - 1 }, { preferred_username: 'nobody' }]) {
       await expect(registry.run(hillevi, `${ID}.pending`, {}, as('hillevi', claims))).rejects.toThrow(
-        'Nextcloud godtar inte din inloggning just nu.',
+        'Nextcloud godtar inte din inloggning.',
       );
       expect((await decide(hillevi, 'approve', listed, as('hillevi', claims))).rows[0]).toMatchObject({
         outcome: 'failed',
-        detail: 'Nextcloud godtar inte din inloggning just nu. Inget beslut skickades.',
+        detail: 'Nextcloud godtar inte din inloggning. Inget beslut skickades.',
       });
     }
     nextcloud.controls.disable('hillevi');
@@ -499,15 +499,15 @@ describe('the Nextcloud Approval connector', () => {
     expect((await state(hillevi, 625)).status).toBe('Väntar på dig');
   });
 
-  test("a token for one person is never used under another person's assertion", async () => {
+  test("a token is used only under an assertion whose user name is the token's account id", async () => {
     const { registry, card, decide, scan, state } = stack();
     await expect(registry.run(hillevi, `${ID}.pending`, {}, as('hassan'))).rejects.toThrow(
-      'Inloggningen mot Nextcloud hör till en annan person än den som använder Clew.',
+      'Kontot i Nextcloud har ett annat användarnamn än ditt konto i Clew.',
     );
     // Hillevi's assertion with Hassan's token and Hassan's card: refused before anything is sent.
     expect((await decide(hillevi, 'approve', await card(hassan, 631), as('hassan'))).rows[0]).toMatchObject({
       outcome: 'failed',
-      detail: 'Inloggningen mot Nextcloud hör till en annan person än den som använder Clew. Inget beslut skickades.',
+      detail: 'Kontot i Nextcloud har ett annat användarnamn än ditt konto i Clew. Inget beslut skickades.',
     });
     expect((await state(hassan, 631)).status).toBe('Väntar på dig');
     expect(await scan(hillevi, 'hassan')).toMatchObject({
@@ -523,6 +523,12 @@ describe('the Nextcloud Approval connector', () => {
     expect(await registry.run(person('Hillevi', 'Hillevi Berg'), `${ID}.pending`, {}, as('hillevi'))).toMatchObject({
       rows: expect.any(Array),
     });
+    // Names are compared, not people: someone else given the name `hillevi` (another Clew id) reaches the account left
+    // under it, which is why a leaver's account is deleted before the name is given again (README, Identity).
+    const newcomer = { ...person('hillevi', 'Hillevi Nyström'), id: 'person-newcomer' };
+    expect((await registry.run<{ rows: unknown[] }>(newcomer, `${ID}.pending`, {}, as('hillevi'))).rows).toHaveLength(
+      3,
+    );
   });
 
   test('a lost answer is settled by reading the state back, and stays unknown when the read-back does not show it', async () => {

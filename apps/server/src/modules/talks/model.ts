@@ -61,13 +61,18 @@ export interface CommitmentRecord {
   threadId: string | null;
 }
 export type CommitmentPatch = Partial<Pick<CommitmentRecord, 'doneAt' | 'doneBy'>>;
-/** A person as the domain needs them: to key a row on the user name (D96 item 8) and to name the employee to the reader. */
+/**
+ * A person as the domain needs them: to key a row on the user name (D96 item 8), to name the employee to the reader, and
+ * to erase only a person the source has deactivated (D123 item 3).
+ */
 export interface PersonRef {
   id: string;
   organisationId: string;
   name: string;
   /** Null for a person provisioned without one. */
   userName: string | null;
+  /** False once the source has deactivated the person (D68 item 1). */
+  enabled: boolean;
 }
 /** One audit row, written in the same transaction as the change. Metadata only: ids, dates, counts and roles. */
 export interface TalkAudit {
@@ -108,8 +113,8 @@ export interface WorkItemTx {
    * schedule its `due` timer for 06:00 Europe/Stockholm on the day after `dueOn` (with this commit, D86). The timer
    * carries the owner's current unit and authorisation version, read in the same transaction. Call it before the action
    * point that names `threadId` is inserted, since that row refers to the card. `subject` is the employee the talk is
-   * with, by user name (D97 item 6): the card is about them, so it shows under "Behöver dig" on that person for its
-   * owner, while nothing drawn on the card or read by the assistant names them (item 6).
+   * with, by Clew's key, their id (D97 item 6, D122): the card is about them, so it shows under "Behöver dig" on that
+   * person for its owner, while nothing drawn on the card or read by the assistant names them (item 6).
    */
   open(input: {
     threadId: string;
@@ -117,7 +122,7 @@ export interface WorkItemTx {
     commitmentId: string;
     dueOn: string;
     at: string;
-    subject?: Subject;
+    subject: Subject;
   }): Promise<void>;
   /** Mark the card handled and cancel its `due` timer. A card that no longer exists is no error. */
   close(threadId: string, at: string): Promise<void>;
@@ -196,13 +201,22 @@ export interface TalkStore {
  */
 export type Staff = (persona: AuthenticatedContext) => Promise<StaffOverview>;
 /**
- * Who among the people the manager plans for has a talk in the calendar inside the round's period (D96 item 2), by
- * person id, with when; booked is never stored. `undefined` means the calendar did not answer, which the page says.
+ * Whether this person manages the employee now (D94, D99): the employee is among the people on the units they manage,
+ * as `Staff` lists them for them. False for an unknown or deactivated person and for someone who manages no unit. Asked
+ * when a manager ticks off an action point a manager owns: only one whose owner no longer manages the employee may be
+ * taken over (Q12).
+ */
+export type Manages = (managerId: string, employeeId: string) => Promise<boolean>;
+/**
+ * Who among the people the manager plans for has a talk booked inside the round's period (D96 item 2), by person id;
+ * booked is never stored. `at` is when, for a talk in the manager's own calendar or proposals; absent for one another of
+ * the person's current managers booked through Clew, whose time this manager may not read (Q12). `undefined` means the
+ * calendar did not answer, which the page says.
  */
 export type Bookings = (
   persona: AuthenticatedContext,
   round: Pick<RoundRecord, 'opensOn' | 'dueOn'>,
-) => Promise<ReadonlyMap<string, { at: string }> | undefined>;
+) => Promise<ReadonlyMap<string, { at?: string }> | undefined>;
 /** Seals an action point's text at rest (D96 item 6), as approved execution input is. Used by the Postgres adapter only. */
 export interface Sealer {
   seal(value: string, purpose: string): string;
@@ -211,6 +225,7 @@ export interface Sealer {
 export interface TalkDeps {
   store: TalkStore;
   staff: Staff;
+  manages: Manages;
   bookings: Bookings;
   clock: () => Date;
   ids: () => string;

@@ -2,10 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import {
   activeOf,
+  assertAcceptedKey,
   deriveAuthority,
   derivePositions,
+  givesAuthority,
   sameGrant,
   samePositions,
+  unitGroupOf,
+  unitOfKey,
 } from '../../apps/server/src/modules/people/domain';
 import { memberKey, memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
@@ -88,6 +92,128 @@ describe('deriveAuthority', () => {
     expect(samePositions([], [{ code: 'usk', label: 'Undersköterska' }])).toBe(false);
     expect(samePositions([{ code: 'usk', label: 'USK' }], [])).toBe(false);
     expect(samePositions([], [])).toBe(true);
+  });
+  test('the lowest unit id is the lowest by code unit, which no locale and no upgrade of ICU moves (A5, Q4)', () => {
+    // Each pair sorts the other way under the English collation that once chose: an id is a key, not a word.
+    for (const [first, second] of [
+      ['Bx', 'ax'],
+      ['Skola', 'förskola'],
+      ['Z-skola', 'a-skola'],
+      ['skola-2', 'skola_2'],
+    ] as const) {
+      expect(first.localeCompare(second, 'en')).toBe(1);
+      const both = [
+        { unitId: second, role: 'employee' as const },
+        { unitId: first, role: 'employee' as const },
+      ];
+      expect(activeOf(both)).toEqual({ unitId: first, role: 'employee' });
+      expect(activeOf([...both].reverse())).toEqual({ unitId: first, role: 'employee' });
+      const derived = deriveAuthority(
+        [
+          { externalId: 'unit:' + second, label: 'Second' },
+          { externalId: 'unit:' + first, label: 'First' },
+        ],
+        [],
+      );
+      expect(derived.assignments.map(a => a.unitId)).toEqual([first, second]);
+      expect(derived.grant).toMatchObject({ unitId: first, unitLabel: 'First' });
+    }
+    // A managed unit still comes before an employed one, whatever its id.
+    expect(
+      activeOf([
+        { unitId: 'Bx', role: 'employee' },
+        { unitId: 'ax', role: 'manager' },
+      ]),
+    ).toEqual({ unitId: 'ax', role: 'manager' });
+  });
+  test('a group gives its members something by a key the derivation reads or by a D85 row that names it, and otherwise nothing (B1)', () => {
+    const rules = [{ groupExternalId: 'S-1-5-21-ad', capability: 'admin.users' }];
+    for (const key of ['unit:skola', 'unit-manager:skola', 'capability:admin.users', 'protected', 'S-1-5-21-ad'])
+      expect(givesAuthority(key, rules)).toBe(true);
+    // A capability name outside the closed list gives nothing, yet its group's members are derived when it is written,
+    // so a name a later release takes off the list is taken back from them.
+    expect(givesAuthority('capability:admin.nope', [])).toBe(true);
+    // A plain key, one no row of this organisation names, a key the derivation does not read (one whose shape is
+    // written wrong, D96), and no key at all.
+    for (const key of [
+      'ad:audience',
+      'S-1-5-21-other',
+      'Unit:skola',
+      'units:skola',
+      'capability: admin.users',
+      'unit-manager: skola',
+      null,
+    ])
+      expect(givesAuthority(key, rules)).toBe(false);
+    expect(givesAuthority('S-1-5-21-ad', [])).toBe(false);
+    // What the derivation makes of the same keys.
+    expect(
+      deriveAuthority(
+        [
+          { externalId: 'Unit:skola', label: 'X' },
+          { externalId: 'ad:audience', label: 'Y' },
+        ],
+        rules,
+      ),
+    ).toMatchObject({
+      assignments: [],
+      capabilities: [],
+    });
+  });
+  test('a unit key the SCIM boundary refuses gives nothing, also on a group stored before D96 refused it: the boundary and the derivation read a key one way', () => {
+    const accepted = (externalId: string) => {
+      try {
+        assertAcceptedKey({ externalId, label: 'Stored before D96', parent: null, members: [] });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    // Space after the prefix, at the end or in place of an id, written with a tab or a no-break space too, and the
+    // reserved words written wrong that never derived anything; beside them the keys written right, one with space
+    // inside the id, which is part of the id.
+    const written = [
+      'unit: skola',
+      'unit:skola ',
+      'unit-manager: skola',
+      'unit-manager:skola ',
+      'unit: ',
+      'unit-manager:\tskola',
+      'unit: skola',
+      'unit:',
+      'Unit:skola',
+      ' unit:skola',
+      'unit :skola',
+    ];
+    for (const key of [...written, 'unit:skola', 'unit-manager:skola', 'unit:sko la']) {
+      const derived = deriveAuthority([{ externalId: key, label: 'Stored before D96' }], []);
+      expect([key, derived.assignments.length > 0, givesAuthority(key, [])]).toEqual([
+        key,
+        accepted(key),
+        accepted(key),
+      ]);
+    }
+    expect(deriveAuthority([{ externalId: 'unit:sko la', label: 'X' }], []).assignments).toEqual([
+      { unitId: 'sko la', role: 'employee' },
+    ]);
+    // A manager's key written wrong beside a unit key written right: the person is an employee of the unit the right
+    // key names, and manages nothing.
+    expect(
+      deriveAuthority(
+        [
+          { externalId: 'unit:skola', label: 'Skolan' },
+          { externalId: 'unit-manager: skola', label: 'Chefer' },
+          { externalId: 'unit-manager:skola ', label: 'Chefer' },
+        ],
+        [],
+      ),
+    ).toMatchObject({
+      assignments: [{ unitId: 'skola', role: 'employee' }],
+      grant: { unitId: 'skola', unitLabel: 'Skolan', role: 'employee', capabilities: [] },
+    });
+    expect(unitOfKey('unit-manager: skola')).toBeUndefined();
+    expect(unitGroupOf('unit:skola ')).toBeUndefined();
+    expect([unitOfKey('unit-manager:skola'), unitGroupOf('unit:skola')]).toEqual(['skola', 'skola']);
   });
   test('sameGrant compares authority and label, not identity', () => {
     const g = { unitId: 'u', unitLabel: 'U', role: 'manager' as const, capabilities: ['admin.users' as const] };

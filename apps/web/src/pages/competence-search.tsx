@@ -188,7 +188,7 @@ function saveFile(blob: Blob, filename: string) {
 }
 
 /**
- * The person's name, a link to the person (`/people/<user name>`, with the search as the way back), as a name opens the
+ * The person's name, a link to the person (`/people/<id>`, D122, with the search as the way back), as a name opens the
  * person on every list (`view.tsx`). There a registrar sees what a colleague sees (D121: only `competence.holdings`
  * admits the relation). Someone provisioned without a user name has no page, so their name is text.
  */
@@ -208,7 +208,7 @@ function PersonName({ row, href }: { row: CompetenceSearchRow; href: string | nu
  */
 function HoldingsLink({ row, from }: { row: CompetenceSearchRow; from: string }) {
   return row.key ? (
-    <Link href={holdingsPageHref(row.key, from)} isStandalone aria-label={`Kompetenser för ${row.name}`}>
+    <Link href={holdingsPageHref(row.key, from, row.personId)} isStandalone aria-label={`Kompetenser för ${row.name}`}>
       Kompetenser
     </Link>
   ) : null;
@@ -367,7 +367,7 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
   const from = location.pathname + location.search;
   // A name opens the person, the search as the way back; the holdings are the row's own link (`HoldingsLink`).
   const personOf = (row: CompetenceSearchRow) =>
-    row.key ? personPageFrom(location.pathname, location.search, row.key) : null;
+    row.key ? personPageFrom(location.pathname, location.search, row.personId) : null;
   const rows = data?.rows ?? [];
   const units = options.data?.units ?? [];
   const unitName = (id: string) => units.find(u => u.id === id)?.label ?? 'en enhet som inte finns';

@@ -1,6 +1,6 @@
 {
-  "id": "733819fb-69d5-4e66-be1d-da33adaeab81",
-  "prevId": "bb87c19e-9d7d-4a96-a994-44fb6a6b28db",
+  "id": "616807ba-1a93-45a6-9666-678513f08452",
+  "prevId": "b877ea4b-26ba-4b80-bf9e-67d117fa5c35",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -317,710 +317,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.boarding_item": {
-      "name": "boarding_item",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "plan_id": {
-          "name": "plan_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "text_sealed": {
-          "name": "text_sealed",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_role": {
-          "name": "owner_role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "due_on": {
-          "name": "due_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "done_at": {
-          "name": "done_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "done_by": {
-          "name": "done_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_layer_id": {
-          "name": "source_layer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tied_to": {
-          "name": "tied_to",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "boarding_item_plan": {
-          "name": "boarding_item_plan",
-          "columns": [
-            {
-              "expression": "plan_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "boarding_item_thread": {
-          "name": "boarding_item_thread",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "boarding_item_owner_open": {
-          "name": "boarding_item_owner_open",
-          "columns": [
-            {
-              "expression": "owner_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"boarding_item\".\"done_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "boarding_item_plan_id_boarding_plan_id_fk": {
-          "name": "boarding_item_plan_id_boarding_plan_id_fk",
-          "tableFrom": "boarding_item",
-          "tableTo": "boarding_plan",
-          "columnsFrom": [
-            "plan_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "boarding_item_owner_id_auth_person_id_fk": {
-          "name": "boarding_item_owner_id_auth_person_id_fk",
-          "tableFrom": "boarding_item",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "boarding_item_done_by_auth_person_id_fk": {
-          "name": "boarding_item_done_by_auth_person_id_fk",
-          "tableFrom": "boarding_item",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "done_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "boarding_item_thread_id_thread_id_fk": {
-          "name": "boarding_item_thread_id_thread_id_fk",
-          "tableFrom": "boarding_item",
-          "tableTo": "thread",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "boarding_item_source_layer_id_boarding_layer_id_fk": {
-          "name": "boarding_item_source_layer_id_boarding_layer_id_fk",
-          "tableFrom": "boarding_item",
-          "tableTo": "boarding_layer",
-          "columnsFrom": [
-            "source_layer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "boarding_item_kind": {
-          "name": "boarding_item_kind",
-          "value": "\"boarding_item\".\"kind\" IN ('todo', 'order', 'meeting', 'course', 'acknowledge')"
-        },
-        "boarding_item_owner_role": {
-          "name": "boarding_item_owner_role",
-          "value": "\"boarding_item\".\"owner_role\" IN ('manager', 'person', 'buddy')"
-        },
-        "boarding_item_title": {
-          "name": "boarding_item_title",
-          "value": "(\"boarding_item\".\"title\" IS NULL) <> (\"boarding_item\".\"text_sealed\" IS NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.boarding_layer_item": {
-      "name": "boarding_layer_item",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "layer_id": {
-          "name": "layer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_role": {
-          "name": "owner_role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "offset_days": {
-          "name": "offset_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tied_to": {
-          "name": "tied_to",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "boarding_layer_item_position": {
-          "name": "boarding_layer_item_position",
-          "columns": [
-            {
-              "expression": "layer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "boarding_layer_item_layer_id_boarding_layer_id_fk": {
-          "name": "boarding_layer_item_layer_id_boarding_layer_id_fk",
-          "tableFrom": "boarding_layer_item",
-          "tableTo": "boarding_layer",
-          "columnsFrom": [
-            "layer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "boarding_layer_item_kind": {
-          "name": "boarding_layer_item_kind",
-          "value": "\"boarding_layer_item\".\"kind\" IN ('todo', 'order', 'meeting', 'course', 'acknowledge')"
-        },
-        "boarding_layer_item_owner_role": {
-          "name": "boarding_layer_item_owner_role",
-          "value": "\"boarding_layer_item\".\"owner_role\" IN ('manager', 'person', 'buddy')"
-        },
-        "boarding_layer_item_offset": {
-          "name": "boarding_layer_item_offset",
-          "value": "\"boarding_layer_item\".\"offset_days\" BETWEEN -365 AND 365"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.boarding_layer": {
-      "name": "boarding_layer",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event": {
-          "name": "event",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "condition_kind": {
-          "name": "condition_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "condition_value": {
-          "name": "condition_value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "boarding_layer_name": {
-          "name": "boarding_layer_name",
-          "columns": [
-            {
-              "expression": "organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "event",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "lower(\"name\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "boarding_layer_event": {
-          "name": "boarding_layer_event",
-          "value": "\"boarding_layer\".\"event\" IN ('introduction', 'leaving')"
-        },
-        "boarding_layer_condition": {
-          "name": "boarding_layer_condition",
-          "value": "\"boarding_layer\".\"condition_kind\" IN ('all', 'unit', 'position', 'employment_type')"
-        },
-        "boarding_layer_value": {
-          "name": "boarding_layer_value",
-          "value": "(\"boarding_layer\".\"condition_kind\" = 'all') = (\"boarding_layer\".\"condition_value\" IS NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.boarding_plan_holder": {
-      "name": "boarding_plan_holder",
-      "schema": "",
-      "columns": {
-        "plan_id": {
-          "name": "plan_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "boarding_plan_holder_person": {
-          "name": "boarding_plan_holder_person",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "boarding_plan_holder_plan_id_boarding_plan_id_fk": {
-          "name": "boarding_plan_holder_plan_id_boarding_plan_id_fk",
-          "tableFrom": "boarding_plan_holder",
-          "tableTo": "boarding_plan",
-          "columnsFrom": [
-            "plan_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "boarding_plan_holder_person_id_auth_person_id_fk": {
-          "name": "boarding_plan_holder_person_id_auth_person_id_fk",
-          "tableFrom": "boarding_plan_holder",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "boarding_plan_holder_plan_id_person_id_pk": {
-          "name": "boarding_plan_holder_plan_id_person_id_pk",
-          "columns": [
-            "plan_id",
-            "person_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.boarding_plan": {
-      "name": "boarding_plan",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event": {
-          "name": "event",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "anchor_on": {
-          "name": "anchor_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "buddy_id": {
-          "name": "buddy_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_by": {
-          "name": "started_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "held_at": {
-          "name": "held_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "boarding_plan_open": {
-          "name": "boarding_plan_open",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "event",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"boarding_plan\".\"closed_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "boarding_plan_person": {
-          "name": "boarding_plan_person",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "boarding_plan_started_by": {
-          "name": "boarding_plan_started_by",
-          "columns": [
-            {
-              "expression": "started_by",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "boarding_plan_person_id_auth_person_id_fk": {
-          "name": "boarding_plan_person_id_auth_person_id_fk",
-          "tableFrom": "boarding_plan",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "boarding_plan_buddy_id_auth_person_id_fk": {
-          "name": "boarding_plan_buddy_id_auth_person_id_fk",
-          "tableFrom": "boarding_plan",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "buddy_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "boarding_plan_started_by_auth_person_id_fk": {
-          "name": "boarding_plan_started_by_auth_person_id_fk",
-          "tableFrom": "boarding_plan",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "started_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "boarding_plan_event": {
-          "name": "boarding_plan_event",
-          "value": "\"boarding_plan\".\"event\" IN ('introduction', 'leaving')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.competence_erasure": {
@@ -1561,13 +857,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "caller": {
-          "name": "caller",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'person'"
-        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -1579,13 +868,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "type_ids": {
-          "name": "type_ids",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
         },
         "min_level": {
           "name": "min_level",
@@ -1602,19 +884,6 @@
         "person_id": {
           "name": "person_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "until": {
-          "name": "until",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -1693,14 +962,6 @@
           "name": "competence_read_log_relation",
           "value": "\"competence_read_log\".\"relation\" IN ('self', 'managed', 'registrar')"
         },
-        "competence_read_log_types": {
-          "name": "competence_read_log_types",
-          "value": "CASE WHEN \"competence_read_log\".\"type_id\" IS NULL THEN cardinality(\"competence_read_log\".\"type_ids\") = 0 ELSE coalesce(\"competence_read_log\".\"type_ids\"[1] = \"competence_read_log\".\"type_id\", false) END"
-        },
-        "competence_read_log_caller": {
-          "name": "competence_read_log_caller",
-          "value": "\"competence_read_log\".\"caller\" = 'person' OR (\"competence_read_log\".\"caller\" = 'assistant' AND \"competence_read_log\".\"kind\" = 'person' AND \"competence_read_log\".\"relation\" = 'managed')"
-        },
         "competence_read_log_kind": {
           "name": "competence_read_log_kind",
           "value": "\"competence_read_log\".\"kind\" IN ('search', 'person', 'export')"
@@ -1712,18 +973,6 @@
         "competence_read_log_level": {
           "name": "competence_read_log_level",
           "value": "\"competence_read_log\".\"min_level\" IS NULL OR \"competence_read_log\".\"min_level\" BETWEEN 1 AND 3"
-        },
-        "competence_read_log_status": {
-          "name": "competence_read_log_status",
-          "value": "\"competence_read_log\".\"status\" IN ('{}'::text[], '{valid}'::text[], '{expiring}'::text[], '{expired}'::text[], '{valid,expiring}'::text[], '{valid,expired}'::text[], '{expiring,expired}'::text[], '{valid,expiring,expired}'::text[])"
-        },
-        "competence_read_log_until": {
-          "name": "competence_read_log_until",
-          "value": "\"competence_read_log\".\"until\" IS NULL OR \"competence_read_log\".\"until\" IN (30, 90, 180)"
-        },
-        "competence_read_log_filters": {
-          "name": "competence_read_log_filters",
-          "value": "(cardinality(\"competence_read_log\".\"status\") = 0 AND \"competence_read_log\".\"until\" IS NULL) OR (\"competence_read_log\".\"relation\" = 'registrar' AND \"competence_read_log\".\"kind\" IN ('search', 'export'))"
         },
         "competence_read_log_rows": {
           "name": "competence_read_log_rows",
@@ -3158,6 +2407,103 @@
       },
       "isRLSEnabled": false
     },
+    "public.dialogue_note": {
+      "name": "dialogue_note",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "area_key": {
+          "name": "area_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text_sealed": {
+          "name": "text_sealed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "dialogue_note_author_unit": {
+          "name": "dialogue_note_author_unit",
+          "columns": [
+            {
+              "expression": "author_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "unit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "dialogue_note_author_id_auth_person_id_fk": {
+          "name": "dialogue_note_author_id_auth_person_id_fk",
+          "tableFrom": "dialogue_note",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "author_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.dialogue_question": {
       "name": "dialogue_question",
       "schema": "",
@@ -3604,6 +2950,12 @@
         "checking_session": {
           "name": "checking_session",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject": {
+          "name": "subject",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         }
@@ -4874,6 +4226,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "name_changed_at": {
+          "name": "name_changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -4888,6 +4246,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"auth_person\".\"external_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4896,13 +4255,28 @@
           "name": "auth_person_user_name",
           "columns": [
             {
-              "expression": "lower(\"user_name\")",
+              "expression": "lower(\"user_name\" collate \"und-x-icu\")",
               "asc": true,
               "isExpression": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_person_user_name_nfc": {
+          "name": "auth_person_user_name_nfc",
+          "columns": [
+            {
+              "expression": "lower(normalize(\"user_name\", NFC) collate \"und-x-icu\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -5138,6 +4512,12 @@
           "notNull": true,
           "default": "'proposed'"
         },
+        "participant_id": {
+          "name": "participant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "participant_email": {
           "name": "participant_email",
           "type": "text",
@@ -5192,6 +4572,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "reminders": {
           "name": "reminders",
           "type": "integer",
@@ -5234,6 +4620,27 @@
           "columns": [
             {
               "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "proposal_participant_status": {
+          "name": "proposal_participant_status",
+          "columns": [
+            {
+              "expression": "participant_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5570,6 +4977,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "refresh_claim": {
+          "name": "refresh_claim",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_claim_until": {
+          "name": "refresh_claim_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "idle_expires_at": {
           "name": "idle_expires_at",
           "type": "timestamp with time zone",
@@ -5636,7 +5055,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "auth_session_refresh_claim_pair": {
+          "name": "auth_session_refresh_claim_pair",
+          "value": "(\"auth_session\".\"refresh_claim\" is null) = (\"auth_session\".\"refresh_claim_until\" is null)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.talk_commitment": {
@@ -7060,8 +6484,8 @@
   "policies": {},
   "views": {},
   "_meta": {
-    "columns": {},
     "schemas": {},
-    "tables": {}
+    "tables": {},
+    "columns": {}
   }
 }

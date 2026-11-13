@@ -685,7 +685,7 @@ function Review({
       <VStack gap={1}>
         <Heading level={1}>{title}</Heading>
         <Text type="supporting" color="secondary">
-          {`${thread.title} · ${readOnly ? 'resultat och underlag' : 'inget skrivs förrän du skickar'}`}
+          {`${thread.title}\u00a0· ${readOnly ? 'resultat och underlag' : 'inget skrivs förrän du skickar'}`}
         </Text>
       </VStack>
       <HStack gap={2} vAlign="center" wrap="wrap">

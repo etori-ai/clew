@@ -11,6 +11,7 @@ import {
   TypeNameTaken,
   TypeUriTaken,
   type ApprovalWorkItemTx,
+  type CompetenceCardsTx,
   type CompetenceStore,
   type CompetenceTx,
   type ErasureRecord,
@@ -187,17 +188,30 @@ const noCards: ApprovalWorkItemTx = {
   async removeOwned() {},
 };
 /**
+ * A store with no thread store beside it has no way to remove a person's own cards (D108 item 14), so an erasure through
+ * it is refused, and its transaction with it, rather than leave the cards behind. Composition builds the server's store
+ * with them (`competenceStoreWithCards`).
+ */
+const noOwnCards: CompetenceCardsTx = {
+  async removeOwn() {
+    throw new Error('This competence store cannot remove cards: build it with competenceStoreWithCards.');
+  },
+};
+/**
  * The competence tables (D108) on one Postgres transaction. Reads that a write follows take a row lock. The catalogue's
  * order is Swedish and is sorted here, since the database's collation is not Clew's to choose. `durable` names the
  * engine's application and queue, so a workflow start commits with the transaction that decides it (D86). `workItems` is
- * the approvals' cards over the same transaction (D108 item 7).
+ * the approvals' cards over the same transaction (D108 item 7), and `cards` the person's own cards for an erasure,
+ * which composition shares with the thread store (`composition/competence.ts`).
  */
 export function competenceTx(
   tx: Transaction,
   durable: DurableQueue,
   workItems: ApprovalWorkItemTx = noCards,
+  cards: CompetenceCardsTx = noOwnCards,
 ): CompetenceTx {
   return {
+    cards,
     async types(organisationId, options = {}) {
       const rows = await tx
         .select()
@@ -686,6 +700,7 @@ export function competenceTx(
               organisationId: people.organisationId,
               name: people.name,
               userName: people.userName,
+              enabled: people.enabled,
             })
             .from(people)
             .where(inArray(people.id, slice))),
@@ -702,6 +717,7 @@ export function competenceTx(
               organisationId: people.organisationId,
               name: people.name,
               userName: people.userName,
+              enabled: people.enabled,
             })
             .from(people)
             .where(and(eq(people.enabled, true), inArray(sql`lower(${people.userName})`, slice)))),
@@ -975,9 +991,9 @@ export function competenceTx(
           and(
             q.organisationId === undefined ? undefined : eq(reads.organisationId, q.organisationId),
             q.personId === undefined ? undefined : eq(reads.personId, q.personId),
-            // A search or a file that asked for the type, alone or among others (migration 0068).
+            // A search or a file that asked for the type, alone or among others (migration 0074).
             q.typeId === undefined ? undefined : sql`${q.typeId} = ANY(${reads.typeIds})`,
-            // A search or a file that narrowed by the status, alone or among others, or by the window (migration 0070).
+            // A search or a file that narrowed by the status, alone or among others, or by the window (migration 0076).
             q.status === undefined ? undefined : sql`${q.status} = ANY(${reads.status})`,
             q.until === undefined ? undefined : eq(reads.until, q.until),
             q.readerId === undefined ? undefined : eq(reads.readerId, q.readerId),
@@ -995,8 +1011,9 @@ export function competenceTx(
   };
 }
 /**
- * The competence store over its own `database().transaction`, with no approval cards: for a caller that registers nothing
- * of a person's own. The server's store shares the transaction with the thread store (`competenceStoreWithCards`).
+ * The competence store over its own `database().transaction`, with no cards: for a caller that registers nothing of a
+ * person's own and erases nobody. An erasure through it fails, and its transaction with it, rather than leave the
+ * person's cards behind. The server's store shares the transaction with the thread store (`competenceStoreWithCards`).
  */
 export function postgresCompetenceStore(durable: DurableQueue): CompetenceStore {
   return { transaction: fn => database().transaction(tx => fn(competenceTx(tx, durable))) };

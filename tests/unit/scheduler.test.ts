@@ -1,9 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import type { Job, JobQueue } from '../../apps/server/src/scheduler/model';
-import { createScheduler, NIGHTLY } from '../../apps/server/src/scheduler/usecases';
+import {
+  JOB_LEASE_MS,
+  JOB_RUN_LONG_MS,
+  type Job,
+  type JobExecutions,
+  type JobQueue,
+} from '../../apps/server/src/scheduler/model';
+import {
+  createScheduler,
+  NIGHTLY,
+  SCAN_PAGE,
+  scheduledJobRunner,
+  seedNightly,
+  SIGN_IN_CLEANUP,
+} from '../../apps/server/src/scheduler/usecases';
 
-/** The Postgres-backed scheduler (D15) driven by hand (D25): a queue in memory, use cases that only record what they were asked. */
+/** The scheduled jobs (D15, D47) driven by hand (D25): a job table in memory, use cases that only record what they were asked. */
 const T0 = '2026-11-04T07:00:00.000Z';
 const persona = (id: string): AuthenticatedContext => ({
   id,
@@ -21,40 +34,116 @@ const persona = (id: string): AuthenticatedContext => ({
     return { version: 'v1' };
   },
 });
-function memoryQueue() {
-  const rows: Array<Job & { runAt: string; status: 'due' | 'running' | 'done' | 'failed'; error?: string }> = [];
-  const queue: JobQueue & { rows: typeof rows } = {
+type Row = Job & { runAt: string; status: 'temporal' | 'executing' | 'done'; attempts: number; leaseUntil?: string };
+/**
+ * The job table as the engine sees it: a row is claimed once its run time has come, under the lease, which its run
+ * renews. The jobs in `stranded` wait under a replaced release until they are taken over; `asked` is what each take-over
+ * looked at.
+ */
+function memoryJobs() {
+  const rows: Row[] = [];
+  const finished: Array<[string, number]> = [];
+  const stranded = new Set<string>();
+  const asked: string[][] = [];
+  let renewFails = false;
+  const holds = (row: Row | undefined, attempt: number): row is Row =>
+    !!row && row.status === 'executing' && row.attempts === attempt;
+  const queue: JobQueue &
+    JobExecutions & {
+      rows: Row[];
+      finished: typeof finished;
+      stranded: Set<string>;
+      asked: string[][];
+      failRenewal: (fails: boolean) => void;
+    } = {
     rows,
-    async claim(now) {
-      const job = rows
-        .filter(r => r.status === 'due' && r.runAt <= now)
-        .sort((a, b) => a.runAt.localeCompare(b.runAt))[0];
-      if (!job) return undefined;
-      job.status = 'running';
-      return { id: job.id, kind: job.kind, payload: job.payload };
-    },
-    async finish(id, error) {
-      const job = rows.find(r => r.id === id)!;
-      job.status = error ? 'failed' : 'done';
-      job.error = error;
+    finished,
+    stranded,
+    asked,
+    failRenewal: fails => {
+      renewFails = fails;
     },
     async schedule(job) {
-      if (!rows.some(r => r.id === job.id)) rows.push({ ...job, payload: job.payload ?? {}, status: 'due' });
+      if (!rows.some(r => r.id === job.id))
+        rows.push({ ...job, payload: job.payload ?? {}, status: 'temporal', attempts: 0 });
+    },
+    async takeOver(ids) {
+      asked.push(ids);
+      const taken = ids.filter(id => stranded.has(id));
+      taken.forEach(id => stranded.delete(id));
+      return taken;
+    },
+    async unfinished(prefix) {
+      return rows.filter(r => r.id.startsWith(prefix) && r.status !== 'done').map(r => r.id);
+    },
+    async claimExecution(id, at) {
+      const row = rows.find(r => r.id === id);
+      if (!row || row.status === 'done') return undefined;
+      if (row.runAt > at || (row.status === 'executing' && row.leaseUntil! > at)) return 'busy';
+      Object.assign(row, {
+        status: 'executing',
+        attempts: row.attempts + 1,
+        leaseUntil: new Date(Date.parse(at) + JOB_LEASE_MS).toISOString(),
+      });
+      return { id, kind: row.kind, payload: row.payload, attempt: row.attempts };
+    },
+    async renew(id, attempt, at) {
+      if (renewFails) throw new Error('database unavailable');
+      const row = rows.find(r => r.id === id);
+      if (!holds(row, attempt)) return false;
+      row.leaseUntil = new Date(Date.parse(at) + JOB_LEASE_MS).toISOString();
+      return true;
+    },
+    async completed(id, attempt) {
+      const row = rows.find(r => r.id === id);
+      if (!holds(row, attempt)) return false;
+      row.status = 'done';
+      finished.push([id, attempt]);
+      return true;
     },
   };
   return queue;
 }
-function world() {
-  const jobs = memoryQueue(),
+/** The runner's repeating timer, fired by hand: `fire` runs every tick still running and lets what they started settle. */
+function manualTimer() {
+  const running = new Set<{ ms: number; tick: () => void }>();
+  return {
+    every(ms: number, tick: () => void) {
+      const timer = { ms, tick };
+      running.add(timer);
+      return () => void running.delete(timer);
+    },
+    intervals: () => [...running].map(t => t.ms),
+    async fire() {
+      for (const timer of [...running]) timer.tick();
+      await settle();
+    },
+  };
+}
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+function world(granted = ['hillevi', 'gone', 'hassan']) {
+  const jobs = memoryJobs(),
+    timer = manualTimer(),
     calls: string[] = [],
-    logged: unknown[][] = [];
+    logged: unknown[][] = [],
+    gates = new Map<string, Promise<void>>();
   let time = Date.parse(T0);
+  let cleanupFails = false;
+  const clock = () => new Date(time);
+  // The people with a grant, in id order, a page at a time as the store reads them.
+  const sorted = [...granted].sort();
   const scheduler = createScheduler({
     jobs,
-    clock: () => new Date(time),
+    clock,
+    signIns: {
+      removeExpired: async now => {
+        calls.push('clean:' + now.toISOString());
+        if (cleanupFails) throw new Error('database unavailable');
+      },
+    },
     log: (...args) => logged.push(args),
     people: {
-      granted: async () => ['hillevi', 'gone', 'hassan'],
+      granted: async ({ after, limit }) => sorted.filter(id => after === undefined || id > after).slice(0, limit),
       personaFor: async id => (id === 'gone' ? undefined : persona(id)),
     },
     threads: {
@@ -67,39 +156,423 @@ function world() {
       },
     },
     calendar: {
+      // An undo window whose thread has a gate closes when the test opens it: a run that lasts.
       closeUndoWindow: async id => {
-        if (id === 'explode') throw new Error('kaboom');
         calls.push('undo:' + id);
+        await gates.get(id);
       },
     },
   });
+  const runJob = scheduledJobRunner({
+    executions: jobs,
+    release: async batch => {
+      calls.push('release:' + batch);
+    },
+    run: scheduler.run,
+    clock,
+    every: timer.every,
+    log: (...args) => logged.push(args),
+  });
   return {
     jobs,
+    timer,
     calls,
     logged,
     scheduler,
+    runJob,
     advance: (ms: number) => {
       time += ms;
+    },
+    failCleanup: () => {
+      cleanupFails = true;
+    },
+    /** Holds the undo window of `threadId` open until the function it returns is called. */
+    gate: (threadId: string) => {
+      let open = () => undefined as void;
+      gates.set(
+        threadId,
+        new Promise<void>(resolve => {
+          open = resolve;
+        }),
+      );
+      return () => open();
     },
   };
 }
 
-describe('the scheduler', () => {
+describe('the scheduled jobs', () => {
   test('schedules the nightly scan at the next 06:00 Stockholm, once per date', async () => {
     const w = world();
     await w.scheduler.scheduleNightly();
     await w.scheduler.scheduleNightly();
     expect(w.jobs.rows).toEqual([
-      { id: 'scan:2026-11-05', kind: NIGHTLY, runAt: '2026-11-05T05:00:00.000Z', payload: {}, status: 'due' },
+      {
+        id: 'scan:2026-11-05',
+        kind: NIGHTLY,
+        runAt: '2026-11-05T05:00:00.000Z',
+        payload: {},
+        status: 'temporal',
+        attempts: 0,
+      },
     ]);
   });
-  test('a tick runs what is due, in order, finishes each job and never lets one failure stop the rest', async () => {
+  test('schedules the sign-in clean-up at the next 03:00 Stockholm, once per date', async () => {
+    const w = world();
+    await w.scheduler.scheduleCleanup();
+    await w.scheduler.scheduleCleanup();
+    expect(w.jobs.rows).toEqual([
+      {
+        id: 'sign-in-cleanup:2026-11-05',
+        kind: SIGN_IN_CLEANUP,
+        runAt: '2026-11-05T02:00:00.000Z',
+        payload: {},
+        status: 'temporal',
+        attempts: 0,
+      },
+    ]);
+  });
+  test('a start schedules the next night of the scan and of the clean-up, and takes over a night a deployment left under the replaced release', async () => {
+    const w = world();
+    // The night of the scan was scheduled by an earlier start or night, and its workflow waits under the release that
+    // a deployment replaced: only a night's run schedules the night after it, so it must be taken over.
+    await w.jobs.schedule({ id: 'scan:2026-11-05', kind: NIGHTLY, runAt: '2026-11-05T05:00:00.000Z' });
+    w.jobs.stranded.add('scan:2026-11-05');
+    expect(await w.scheduler.startNightly()).toEqual(['scan:2026-11-05']);
+    expect(w.jobs.rows.map(r => [r.id, r.status])).toEqual([
+      ['scan:2026-11-05', 'temporal'],
+      ['sign-in-cleanup:2026-11-05', 'temporal'],
+    ]);
+    // It looks at the last night of each job too: at 08:00 Stockholm, this morning's.
+    expect(w.jobs.asked).toEqual([
+      ['scan:2026-11-04', 'scan:2026-11-05', 'sign-in-cleanup:2026-11-04', 'sign-in-cleanup:2026-11-05'],
+    ]);
+    // A second start of the same release finds nothing to take over and schedules nothing more.
+    expect(await w.scheduler.startNightly()).toEqual([]);
+    expect(w.jobs.rows).toHaveLength(2);
+  });
+  test('a start after the nights a deployment’s downtime spanned takes those nights over too, and the next ones are new', async () => {
+    const w = world();
+    // The older release scheduled this morning's nights the day before and stopped before 03:00; this release starts
+    // at 08:00. Their workflows wait under the replaced release, which no process runs any more.
+    await w.jobs.schedule({
+      id: 'sign-in-cleanup:2026-11-04',
+      kind: SIGN_IN_CLEANUP,
+      runAt: '2026-11-04T02:00:00.000Z',
+    });
+    await w.jobs.schedule({ id: 'scan:2026-11-04', kind: NIGHTLY, runAt: '2026-11-04T05:00:00.000Z' });
+    w.jobs.stranded.add('sign-in-cleanup:2026-11-04').add('scan:2026-11-04');
+    expect(await w.scheduler.startNightly()).toEqual(['scan:2026-11-04', 'sign-in-cleanup:2026-11-04']);
+    // Taken over, each runs at once, late, and schedules its next night, which this start scheduled already.
+    expect(await w.runJob('scan:2026-11-04')).toBe('done');
+    expect(await w.runJob('sign-in-cleanup:2026-11-04')).toBe('done');
+    expect(w.jobs.rows.map(r => [r.id, r.status])).toEqual([
+      ['sign-in-cleanup:2026-11-04', 'done'],
+      ['scan:2026-11-04', 'done'],
+      ['scan:2026-11-05', 'temporal'],
+      ['sign-in-cleanup:2026-11-05', 'temporal'],
+    ]);
+    expect(w.calls).toEqual(['scan:hassan', 'scan:hillevi', 'clean:' + T0]);
+  });
+  test('a start takes over the page of the last night’s scan that a deployment left under the replaced release, and the rest of that night runs', async () => {
+    const people = Array.from({ length: SCAN_PAGE + 1 }, (_, i) => 'p' + String(i).padStart(4, '0'));
+    const w = world(people);
+    // The older release ran this morning's first page, which scheduled the second, and was replaced before that ran.
+    await w.jobs.schedule({ id: 'scan:2026-11-04', kind: NIGHTLY, runAt: '2026-11-04T05:00:00.000Z' });
+    expect(await w.runJob('scan:2026-11-04')).toBe('done');
+    w.jobs.stranded.add('scan:2026-11-04:2');
+    expect(await w.scheduler.startNightly()).toEqual(['scan:2026-11-04:2']);
+    expect(w.jobs.asked).toEqual([
+      [
+        'scan:2026-11-04',
+        'scan:2026-11-04:2',
+        'scan:2026-11-05',
+        'sign-in-cleanup:2026-11-04',
+        'sign-in-cleanup:2026-11-05',
+      ],
+    ]);
+    // Taken over, the page runs at once and scans the rest of the night: everyone, once.
+    expect(await w.runJob('scan:2026-11-04:2')).toBe('done');
+    expect(w.calls.filter(call => call.startsWith('scan:'))).toEqual(people.map(id => 'scan:' + id));
+    // A page that completed is not looked at again.
+    expect(await w.scheduler.startNightly()).toEqual([]);
+    expect(w.jobs.asked[1]).not.toContain('scan:2026-11-04:2');
+  });
+  test('a server’s start waits for its durable engine, then schedules and takes over the nights and says which it took over', async () => {
+    const w = world();
+    w.jobs.stranded.add('sign-in-cleanup:2026-11-04');
+    const said: unknown[][] = [],
+      failed: unknown[][] = [],
+      retries: Array<() => Promise<void>> = [];
+    let launch!: () => void;
+    const engine = new Promise<void>(resolve => (launch = resolve));
+    const seeded = seedNightly({
+      engine,
+      startNightly: w.scheduler.startNightly,
+      log: (...args) => said.push(args),
+      fail: (...args) => failed.push(args),
+      retry: run => retries.push(run),
+    });
+    // Until the engine has launched, this release is not the latest, and a night it scheduled would wait in the queue
+    // for the older one: nothing is scheduled or taken over.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(w.jobs.rows).toEqual([]);
+    expect(w.jobs.asked).toEqual([]);
+    launch();
+    await seeded;
+    expect(w.jobs.rows.map(r => r.id)).toEqual(['scan:2026-11-05', 'sign-in-cleanup:2026-11-05']);
+    expect(said).toEqual([['nightly work taken over from the replaced release', ['sign-in-cleanup:2026-11-04']]]);
+    expect(failed).toEqual([]);
+    expect(retries).toEqual([]);
+  });
+  test('a start whose scheduling fails says so and tries again until it succeeds, and says nothing of a take-over when it took nothing over', async () => {
+    const w = world();
+    let answering = false;
+    const said: unknown[][] = [],
+      failed: unknown[][] = [],
+      retries: Array<() => Promise<void>> = [];
+    await seedNightly({
+      engine: Promise.resolve(),
+      startNightly: async () => {
+        if (!answering) throw new Error('database unavailable');
+        return w.scheduler.startNightly();
+      },
+      log: (...args) => said.push(args),
+      fail: (...args) => failed.push(args),
+      retry: run => retries.push(run),
+    });
+    expect(failed).toEqual([['nightly work could not be scheduled, retrying', new Error('database unavailable')]]);
+    expect(retries).toHaveLength(1);
+    answering = true;
+    await retries[0]!();
+    expect(retries).toHaveLength(1);
+    expect(w.jobs.rows.map(r => r.id)).toEqual(['scan:2026-11-05', 'sign-in-cleanup:2026-11-05']);
+    expect(said).toEqual([]);
+    expect(failed).toHaveLength(1);
+  });
+  test('the sign-in clean-up removes what expired by its clock and schedules the next night', async () => {
     const w = world();
     await w.jobs.schedule({
-      id: 'u1',
-      kind: 'undo-expiry',
-      runAt: '2026-11-04T06:30:00.000Z',
-      payload: { threadId: 't1' },
+      id: 'sign-in-cleanup:2026-11-04',
+      kind: SIGN_IN_CLEANUP,
+      runAt: '2026-11-04T02:00:00.000Z',
+    });
+    expect(await w.runJob('sign-in-cleanup:2026-11-04')).toBe('done');
+    expect(w.calls).toEqual(['clean:' + T0]);
+    expect(w.jobs.rows.map(r => [r.id, r.status, r.runAt])).toEqual([
+      ['sign-in-cleanup:2026-11-04', 'done', '2026-11-04T02:00:00.000Z'],
+      ['sign-in-cleanup:2026-11-05', 'temporal', '2026-11-05T02:00:00.000Z'],
+    ]);
+    expect(w.logged).toEqual([]);
+  });
+  test('a night whose clean-up fails says so and completes, and the next night is scheduled to clean what it left', async () => {
+    const w = world();
+    w.failCleanup();
+    await w.jobs.schedule({
+      id: 'sign-in-cleanup:2026-11-04',
+      kind: SIGN_IN_CLEANUP,
+      runAt: '2026-11-04T02:00:00.000Z',
+    });
+    // As the engine's step runs a job: the run resolves, so the night completes in the ledger. A run that threw would
+    // be claimed again by its workflow every few minutes for as long as the failure lasted.
+    expect(await w.runJob('sign-in-cleanup:2026-11-04')).toBe('done');
+    expect(w.calls).toEqual(['clean:' + T0]);
+    expect(w.logged).toEqual([['sign-in clean-up failed', new Error('database unavailable')]]);
+    expect(w.jobs.rows.map(r => [r.id, r.status, r.runAt])).toEqual([
+      ['sign-in-cleanup:2026-11-04', 'done', '2026-11-04T02:00:00.000Z'],
+      ['sign-in-cleanup:2026-11-05', 'temporal', '2026-11-05T02:00:00.000Z'],
+    ]);
+    // The next night fails too, and completes as well, never left to be claimed again.
+    w.advance(24 * 3600_000);
+    expect(await w.runJob('sign-in-cleanup:2026-11-05')).toBe('done');
+    expect(w.jobs.rows.map(r => [r.id, r.status])).toEqual([
+      ['sign-in-cleanup:2026-11-04', 'done'],
+      ['sign-in-cleanup:2026-11-05', 'done'],
+      ['sign-in-cleanup:2026-11-06', 'temporal'],
+    ]);
+    expect(w.jobs.finished).toEqual([
+      ['sign-in-cleanup:2026-11-04', 1],
+      ['sign-in-cleanup:2026-11-05', 1],
+    ]);
+    expect(w.logged).toHaveLength(2);
+  });
+  test('each kind reaches its use case, a job without its thread changes nothing and an unknown kind is refused', async () => {
+    const w = world();
+    await w.scheduler.run({ id: 'u1', kind: 'undo-expiry', payload: { threadId: 't1' } });
+    await w.scheduler.run({ id: 'r1', kind: 'receipt-final', payload: { threadId: 't2' } });
+    await w.scheduler.run({ id: 'bad', kind: 'receipt-final', payload: {} });
+    await expect(w.scheduler.run({ id: 'x', kind: 'something-else', payload: {} })).rejects.toThrow(
+      'Unsupported scheduled job kind: something-else',
+    );
+    expect(w.calls).toEqual(['undo:t1', 'receipt:t2']);
+  });
+  test('the nightly scan runs for everyone with a grant, skips a gone grant, logs a failed person and reschedules itself', async () => {
+    const w = world();
+    await w.scheduler.run({ id: 'scan:2026-11-04', kind: NIGHTLY, payload: {} });
+    expect(w.calls).toEqual(['scan:hassan', 'scan:hillevi']);
+    expect(w.logged).toEqual([['scan', 'hassan', expect.any(Error)]]);
+    expect(w.jobs.rows.map(r => r.id)).toEqual(['scan:2026-11-05']);
+  });
+  test('every process schedules both nights when it starts, the scan at 06:00 and the clean-up at 03:00 Stockholm, once per date', async () => {
+    const w = world();
+    expect(await w.scheduler.startNightly()).toEqual([]);
+    expect(await w.scheduler.startNightly()).toEqual([]);
+    expect(w.jobs.rows).toEqual([
+      {
+        id: 'scan:2026-11-05',
+        kind: NIGHTLY,
+        runAt: '2026-11-05T05:00:00.000Z',
+        payload: {},
+        status: 'temporal',
+        attempts: 0,
+      },
+      {
+        id: 'sign-in-cleanup:2026-11-05',
+        kind: SIGN_IN_CLEANUP,
+        runAt: '2026-11-05T02:00:00.000Z',
+        payload: {},
+        status: 'temporal',
+        attempts: 0,
+      },
+    ]);
+  });
+  test('the nightly scan runs a page at a time, each page a job of its own, and only the first page schedules the next night', async () => {
+    const people = Array.from({ length: 2 * SCAN_PAGE + 1 }, (_, i) => 'p' + String(i).padStart(4, '0'));
+    const w = world(people);
+    await w.jobs.schedule({ id: 'scan:2026-11-04', kind: NIGHTLY, runAt: '2026-11-04T05:00:00.000Z' });
+    expect(await w.runJob('scan:2026-11-04')).toBe('done');
+    // The first page: the next night, then the first page of people, then the next page to run at once.
+    expect(w.calls).toEqual(people.slice(0, SCAN_PAGE).map(id => 'scan:' + id));
+    expect(w.jobs.rows.map(r => [r.id, r.status, r.runAt, r.payload])).toEqual([
+      ['scan:2026-11-04', 'done', '2026-11-04T05:00:00.000Z', {}],
+      ['scan:2026-11-05', 'temporal', '2026-11-05T05:00:00.000Z', {}],
+      ['scan:2026-11-04:2', 'temporal', T0, { night: 'scan:2026-11-04', page: 2, after: people[SCAN_PAGE - 1] }],
+    ]);
+    w.advance(10_000);
+    expect(await w.runJob('scan:2026-11-04:2')).toBe('done');
+    // A page run again, as after a failure, scans its own people again and schedules the same next page.
+    await w.scheduler.run({ id: 'scan:2026-11-04:2', kind: NIGHTLY, payload: w.jobs.rows[2]!.payload });
+    expect(w.calls.slice(SCAN_PAGE)).toEqual(
+      [...people.slice(SCAN_PAGE, 2 * SCAN_PAGE), ...people.slice(SCAN_PAGE, 2 * SCAN_PAGE)].map(id => 'scan:' + id),
+    );
+    expect(await w.runJob('scan:2026-11-04:3')).toBe('done');
+    // The last page is not full and ends the night: everyone was scanned, and the next night is scheduled once.
+    expect(new Set(w.calls)).toEqual(new Set(people.map(id => 'scan:' + id)));
+    expect(w.calls.at(-1)).toBe('scan:' + people.at(-1));
+    expect(w.jobs.rows.map(r => [r.id, r.status])).toEqual([
+      ['scan:2026-11-04', 'done'],
+      ['scan:2026-11-05', 'temporal'],
+      ['scan:2026-11-04:2', 'done'],
+      ['scan:2026-11-04:3', 'done'],
+    ]);
+    expect(w.jobs.rows[3]!.payload).toEqual({ night: 'scan:2026-11-04', page: 3, after: people[2 * SCAN_PAGE - 1] });
+    expect(w.logged).toEqual([]);
+  });
+  test('a run that outlasts its lease keeps its claim: the workflow’s next attempt finds the job claimed, and it runs and completes once', async () => {
+    const w = world();
+    const open = w.gate('slow');
+    await w.jobs.schedule({ id: 'u', kind: 'undo-expiry', runAt: T0, payload: { threadId: 'slow' } });
+    const first = w.runJob('u');
+    await settle();
+    expect(w.timer.intervals()).toEqual([JOB_LEASE_MS / 4]);
+    // Three minutes on the clock, renewed at every quarter of the lease.
+    for (let quarter = 0; quarter < 6; quarter++) {
+      w.advance(JOB_LEASE_MS / 4);
+      await w.timer.fire();
+    }
+    const next = w.runJob('u');
+    open();
+    expect(await next).toBe('busy');
+    expect(await first).toBe('done');
+    expect(w.calls).toEqual(['undo:slow']);
+    expect(w.jobs.rows[0]).toMatchObject({ status: 'done', attempts: 1 });
+    expect(w.jobs.finished).toEqual([['u', 1]]);
+    // The renewal ends with the run.
+    expect(w.timer.intervals()).toEqual([]);
+    expect(w.logged).toEqual([]);
+  });
+  test('a run that lasts ten minutes is said once, with the job and the attempt, and keeps its claim until it settles', async () => {
+    const w = world();
+    const open = w.gate('hung');
+    await w.jobs.schedule({ id: 'u', kind: 'undo-expiry', runAt: T0, payload: { threadId: 'hung' } });
+    const first = w.runJob('u');
+    await settle();
+    // Renewed at every quarter of the lease, and nothing said, until the run has lasted ten minutes.
+    for (let lasted = JOB_LEASE_MS / 4; lasted < JOB_RUN_LONG_MS; lasted += JOB_LEASE_MS / 4) {
+      w.advance(JOB_LEASE_MS / 4);
+      await w.timer.fire();
+    }
+    expect(w.logged).toEqual([]);
+    w.advance(JOB_LEASE_MS / 4);
+    await w.timer.fire();
+    const long = [
+      'scheduled job still running after ten minutes; it holds its claim until the run settles or its process stops',
+      'u',
+      1,
+    ];
+    expect(w.logged).toEqual([long]);
+    // Said once: the claim is still renewed, so the workflow's next attempt finds the job claimed.
+    for (let quarter = 0; quarter < 8; quarter++) {
+      w.advance(JOB_LEASE_MS / 4);
+      await w.timer.fire();
+    }
+    expect(await w.runJob('u')).toBe('busy');
+    open();
+    expect(await first).toBe('done');
+    expect(w.jobs.finished).toEqual([['u', 1]]);
+    expect(w.timer.intervals()).toEqual([]);
+    expect(w.logged).toEqual([long]);
+  });
+  test('a renewal that fails is said and tried again at the next quarter, and the run completes', async () => {
+    const w = world();
+    const open = w.gate('slow');
+    await w.jobs.schedule({ id: 'u', kind: 'undo-expiry', runAt: T0, payload: { threadId: 'slow' } });
+    const first = w.runJob('u');
+    await settle();
+    w.jobs.failRenewal(true);
+    w.advance(JOB_LEASE_MS / 4);
+    await w.timer.fire();
+    w.jobs.failRenewal(false);
+    w.advance(JOB_LEASE_MS / 4);
+    await w.timer.fire();
+    w.advance(JOB_LEASE_MS / 2);
+    const next = w.runJob('u');
+    open();
+    expect(await next).toBe('busy');
+    expect(await first).toBe('done');
+    expect(w.jobs.finished).toEqual([['u', 1]]);
+    expect(w.logged).toEqual([['scheduled job claim not renewed', 'u', new Error('database unavailable')]]);
+  });
+  test('a run whose claim was taken all the same, after its process stood still past the lease, says so, and only the attempt that holds the job completes it', async () => {
+    const w = world();
+    const open = w.gate('stalled');
+    await w.jobs.schedule({ id: 'u', kind: 'undo-expiry', runAt: T0, payload: { threadId: 'stalled' } });
+    const first = w.runJob('u');
+    await settle();
+    // No renewal ran while the process stood still, and the job's workflow claimed it again elsewhere.
+    w.advance(JOB_LEASE_MS + 1);
+    const second = w.runJob('u');
+    await settle();
+    expect(w.jobs.rows[0]).toMatchObject({ status: 'executing', attempts: 2 });
+    await w.timer.fire();
+    expect(w.logged).toEqual([['scheduled job lost its claim while it ran', 'u', 1]]);
+    open();
+    expect(await first).toBe('done');
+    expect(await second).toBe('done');
+    expect(w.jobs.finished).toEqual([['u', 2]]);
+    expect(w.logged).toEqual([
+      ['scheduled job lost its claim while it ran', 'u', 1],
+      ['scheduled job finished after another attempt took it; its completion is not recorded', 'u', 1],
+    ]);
+    expect(w.timer.intervals()).toEqual([]);
+  });
+  test('a job’s workflow step waits for the run time, makes an attention batch ready, runs any other kind and completes the attempt it claimed', async () => {
+    const w = world();
+    const batch = 'automatic:p1:2026-11-04T11:00:00.000Z';
+    await w.jobs.schedule({
+      id: 'attention:' + batch,
+      kind: 'attention-release',
+      runAt: '2026-11-04T11:00:00.000Z',
+      payload: { batch },
     });
     await w.jobs.schedule({
       id: 'r1',
@@ -107,42 +580,29 @@ describe('the scheduler', () => {
       runAt: '2026-11-04T06:00:00.000Z',
       payload: { threadId: 't2' },
     });
-    await w.jobs.schedule({ id: 'bad', kind: 'receipt-final', runAt: '2026-11-04T06:10:00.000Z', payload: {} });
-    await w.jobs.schedule({
-      id: 'boom',
-      kind: 'undo-expiry',
-      runAt: '2026-11-04T06:20:00.000Z',
-      payload: { threadId: 'explode' },
-    });
-    await w.jobs.schedule({
-      id: 'later',
-      kind: 'receipt-final',
-      runAt: '2026-11-04T08:00:00.000Z',
-      payload: { threadId: 't3' },
-    });
-    await w.scheduler.tick();
-    expect(w.calls).toEqual(['receipt:t2', 'undo:t1']);
-    expect(w.jobs.rows.map(r => [r.id, r.status, r.error])).toEqual([
-      ['u1', 'done', undefined],
-      ['r1', 'done', undefined],
-      ['bad', 'done', undefined],
-      ['boom', 'failed', 'kaboom'],
-      ['later', 'due', undefined],
+    expect(await w.runJob('attention:' + batch)).toBe('busy');
+    expect(await w.runJob('r1')).toBe('done');
+    w.advance(4 * 3600_000);
+    expect(await w.runJob('attention:' + batch)).toBe('done');
+    expect(w.calls).toEqual(['receipt:t2', 'release:' + batch]);
+    expect(w.jobs.finished).toEqual([
+      ['r1', 1],
+      ['attention:' + batch, 1],
     ]);
-    w.advance(2 * 3600_000);
-    await w.scheduler.tick();
-    expect(w.calls.at(-1)).toBe('receipt:t3');
-    expect(w.jobs.rows.find(r => r.id === 'later')!.status).toBe('done');
+    // A replayed step, or a job the engine does not hold, changes nothing.
+    expect(await w.runJob('attention:' + batch)).toBe('done');
+    expect(await w.runJob('missing')).toBe('done');
+    expect(w.calls).toHaveLength(2);
   });
-  test('the nightly scan runs for everyone with a grant, skips a gone grant, logs a failed person and reschedules itself', async () => {
+  test('a job whose run fails is not completed, its claim is no longer renewed, and its next attempt waits for the lease', async () => {
     const w = world();
-    await w.jobs.schedule({ id: 'scan:2026-11-04', kind: NIGHTLY, runAt: '2026-11-04T05:00:00.000Z' });
-    await w.scheduler.tick();
-    expect(w.calls).toEqual(['scan:hillevi', 'scan:hassan']);
-    expect(w.logged).toEqual([['scan', 'hassan', expect.any(Error)]]);
-    expect(w.jobs.rows.map(r => [r.id, r.status])).toEqual([
-      ['scan:2026-11-04', 'done'],
-      ['scan:2026-11-05', 'due'],
-    ]);
+    await w.jobs.schedule({ id: 'x', kind: 'something-else', runAt: T0 });
+    await expect(w.runJob('x')).rejects.toThrow('Unsupported scheduled job kind');
+    expect(w.timer.intervals()).toEqual([]);
+    expect(await w.runJob('x')).toBe('busy');
+    w.advance(JOB_LEASE_MS + 1);
+    await expect(w.runJob('x')).rejects.toThrow('Unsupported scheduled job kind');
+    expect(w.jobs.rows[0]).toMatchObject({ status: 'executing', attempts: 2 });
+    expect(w.jobs.finished).toEqual([]);
   });
 });

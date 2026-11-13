@@ -362,7 +362,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       ? dayLabel(anchor)
       : view === 'month'
         ? monthLabel(anchor)
-        : `Vecka ${weekNumber(anchor)} · ${rangeLabel(anchor, 5)}`;
+        : `Vecka ${weekNumber(anchor)}\u00a0· ${rangeLabel(anchor, 5)}`;
   const shortTitle = view === 'week' ? `Vecka ${weekNumber(anchor)}` : capital(title);
   /** The weeks the view needs: one for a day or a week, every week the month grid shows. */
   const weeks = useMemo(() => (view === 'month' ? weeksOfMonth(anchor) : [weekStart(anchor)]), [view, anchor]);
@@ -449,12 +449,12 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     if (item.proposal) {
       const p = item.proposal;
       const chips: ChipRef[] = CHIP_REF.test('proposal:' + p.id)
-        ? [{ ref: 'proposal:' + p.id, kind: 'proposal', label: `${item.title} · ${p.participant.name}` }]
+        ? [{ ref: 'proposal:' + p.id, kind: 'proposal', label: `${item.title}\u00a0· ${p.participant.name}` }]
         : [];
       return {
         id: 'entry:' + item.id,
         title: item.title,
-        subtitle: `Förslag · ${mark?.source ?? 'Kalendern'}`,
+        subtitle: `Förslag\u00a0· ${mark?.source ?? 'Kalendern'}`,
         // The name is the way in (2026-11-13): the proposal's work item as a page, with Kalender as the way back.
         page: itemPageHref(p.threadId, pathname + search),
         subject: {
@@ -478,7 +478,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     return {
       id: 'entry:' + item.id,
       title: item.title,
-      subtitle: `${item.kind === 'booked' ? 'Bokat samtal' : 'Möte'} · Kalendern`,
+      subtitle: `${item.kind === 'booked' ? 'Bokat samtal' : 'Möte'}\u00a0· Kalendern`,
       subject: {
         key: ref,
         label: 'mötet',
@@ -511,7 +511,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const pageThing: OwnThing = {
     id: `page:calendar:${view}:${anchor}`,
     title: shortTitle,
-    subtitle: `Kalendern · ${view === 'week' ? rangeLabel(anchor, 5) : title}`,
+    subtitle: `Kalendern\u00a0· ${view === 'week' ? rangeLabel(anchor, 5) : title}`,
     subject: {
       key: `range:${view}:${anchor}`,
       label: rangeWord,

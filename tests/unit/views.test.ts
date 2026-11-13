@@ -1,6 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import type { SearchResult, View } from '../../packages/contracts/src/index';
+import { subjectKeys, type SearchResult, type View } from '../../packages/contracts/src/index';
 import {
   fieldTone,
   markFields,
@@ -335,6 +335,45 @@ describe('the rules of a declared view', () => {
       source: 'X',
     });
     expect(openRef(open, { name: 'A' }, 'X')).toBeUndefined();
+  });
+  test("the user names a view's records name people by are read once each, for Clew to resolve to ids (D97 item 6, D122)", () => {
+    const person = { entity: 'person' as const, key: 'userName' };
+    const named: View = { ...table, subject: person };
+    // A table's rows: each user name once, in the order met; a record without a string in the property names nobody.
+    expect(
+      subjectKeys(named, {
+        rows: [
+          { name: 'A', userName: 'anna.l' },
+          { name: 'B', userName: 'Bo.Ek' },
+          { name: 'A igen', userName: 'anna.l' },
+          { name: 'C' },
+          { name: 'D', userName: '' },
+          { name: 'E', userName: 7 },
+          { name: 'F', userName: null },
+          'skräp',
+        ],
+      }),
+    ).toEqual(['anna.l', 'Bo.Ek']);
+    // Another spelling is another key: the server resolves each as asked, without regard to case.
+    expect(subjectKeys(named, { rows: [{ userName: 'anna.l' }, { userName: 'Anna.L' }] })).toEqual([
+      'anna.l',
+      'Anna.L',
+    ]);
+    // A list reads its rows where the view says; output that does not hold them there names nobody.
+    const list: View = { kind: 'list', title: 'name', fields: table.fields, rows: 'people', subject: person };
+    expect(subjectKeys(list, { people: [{ userName: 'karin.l' }] })).toEqual(['karin.l']);
+    expect(subjectKeys(list, { rows: [{ userName: 'karin.l' }] })).toEqual([]);
+    expect(subjectKeys(named, 'skräp')).toEqual([]);
+    // A detail's record is the output itself.
+    const detail: View = { kind: 'detail', title: 'name', fields: table.fields, subject: person };
+    expect(subjectKeys(detail, { name: 'A', userName: 'anna.l' })).toEqual(['anna.l']);
+    expect(subjectKeys(detail, { name: 'A' })).toEqual([]);
+    expect(subjectKeys(detail, ['anna.l'])).toEqual([]);
+    // A unit's key is its id on both sides, and a view without a subject names nobody: nothing to resolve.
+    expect(subjectKeys({ ...table, subject: { entity: 'unit', key: 'unitId' } }, { rows: [{ unitId: 'u1' }] })).toEqual(
+      [],
+    );
+    expect(subjectKeys(table, { rows: [{ userName: 'anna.l' }] })).toEqual([]);
   });
   test('a tone is the one named for the value, else the `*` tone for any other value that is present (D97); only warn and alert mark a row', () => {
     const late = { key: 'late', label: 'Försenade', format: 'status' as const, tones: { '*': 'warn' as const } };

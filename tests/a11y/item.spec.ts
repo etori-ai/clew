@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, short, test } from './support';
-import { NOTICE_REASON, NOTICE_TEXT, asNotice } from './data';
+import { NOTICE_REASON, NOTICE_TEXT, NOW, asNotice } from './data';
 
 /**
  * A work item as a page (D112 item 4, board WorkItem, `/items/<threadId>`, the `work-item-detail` template): reached
@@ -49,8 +49,10 @@ test.describe('the work item as a page', () => {
     for (let i = 1; i < levels.length; i++) expect(levels[i]! - levels[i - 1]!).toBeLessThanOrEqual(1);
     for (const name of ['Varför ser jag detta?', 'Rader', 'Händelser'])
       await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
-    // The status as the queue's dot says it, with its word; the badges: when it is due and its area.
-    await expect(page.getByRole('img', { name: 'Ska göras i dag' }).first()).toBeVisible();
+    // The status as the queue's dot says it, in words; the dot beside its word is decoration with no name of its own,
+    // so the state is heard once. The badges: when it is due and its area.
+    await expect(page.getByText('Ska göras i dag', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Ska göras i dag' })).toHaveCount(0);
     await expect(page.getByText('Förfaller i dag', { exact: true })).toBeVisible();
     // The rows are a checklist with how many are chosen, the action's label counting them.
     await expect(page.getByText('2 av 3 valda', { exact: true })).toBeVisible();
@@ -189,6 +191,26 @@ test.describe('the work item as a page', () => {
     await expect(first).toBeVisible();
     await expect(why).toHaveCount(0);
     await expectNoAxeViolations(page);
+  });
+
+  test('an item reminded today that has no day says Påminnelse as its state, with no badge that repeats it', async ({
+    page,
+    api,
+  }) => {
+    const card = api.threads.find(t => t.id === 'ledighet')!;
+    card.deadline = null;
+    card.remindedAt = NOW;
+    // The row: the state begins its line, and no badge says the same word at its end.
+    await open(page, '/todo');
+    const row = page.getByRole('main').locator('#work-ledighet');
+    await expect(row).toContainText('Påminnelse\u00a0· Ansökan väntar på beslut');
+    await expect(row.getByText('Påminnelse', { exact: true })).toHaveCount(0);
+    // The page: the word in the status line, with the area's badge beside it and none that says the word again.
+    await open(page, '/items/ledighet');
+    await expect(page.getByRole('heading', { level: 1, name: card.title })).toBeVisible();
+    await expect(page.getByText('Påminnelse', { exact: true }).first()).toBeVisible();
+    await expect(page.locator('.astryx-badge').filter({ hasText: 'Personal' }).first()).toBeVisible();
+    await expect(page.locator('.astryx-badge').filter({ hasText: 'Påminnelse' })).toHaveCount(0);
   });
 
   test('an item that is not the person’s says so as the page', async ({ page, api: _ }) => {

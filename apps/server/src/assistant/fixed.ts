@@ -1,6 +1,6 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { dayLabel, displayDate, timeRange, weekNumber, nextWeekStart } from '@clew/calendar/dates';
-import { actorOf } from '@clew/connectors';
+import { audiencedActorOf } from '@clew/connectors';
 import type { AssistantDeps } from './ports';
 
 export type FixedAnswer = { title: string; body: string; reason: string; source: string; forslagThreadId?: string };
@@ -60,7 +60,7 @@ export async function routeFixed(
   }
   if (asksForFigures(q, options.namesPerson ?? false)) {
     // The figures the person's connectors answer (D54), as Läget draws them; one whose words the question names, else all.
-    const figures = (await deps.registry.areas(actorOf(persona)))
+    const figures = (await deps.registry.areas(audiencedActorOf(persona)))
       .filter(a => a.figure?.value && !a.figure.unavailable)
       .map(a => ({ ...a.figure!, area: a.title, source: a.source }));
     const words = q.match(/[a-zåäö]{5,}/g) ?? [];

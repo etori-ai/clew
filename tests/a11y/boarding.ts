@@ -69,8 +69,16 @@ export const boardingRows = (): EntityRows => ({
   capability: BOARDING_LENS,
   status: 'ok',
   rows: [
-    { key: ANNA, status: 'Försenad', event: 'Introduktion', day: 'Börjar 16 nov.', progress: '1 av 6', plan: PLAN },
-    { key: MARIA, status: 'Plan saknas', event: 'Introduktion', day: 'Börjar 1 dec.' },
+    // A source's rows name a person by their user name (D122), as the list's people carry it in `sourceKey`.
+    {
+      key: 'anna.lindqvist',
+      status: 'Försenad',
+      event: 'Introduktion',
+      day: 'Börjar 16 nov.',
+      progress: '1 av 6',
+      plan: PLAN,
+    },
+    { key: 'maria.kallstrom', status: 'Plan saknas', event: 'Introduktion', day: 'Börjar 1 dec.' },
   ],
 });
 

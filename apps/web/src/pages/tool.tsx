@@ -117,8 +117,10 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   });
   // A view of one person's (its input names `person`) opened without a name of its own is named for them from the
   // directory, as their page names them (D121, the review of 2026-11-13): a person's name never rides in the address.
-  // Until both have answered the heading waits; a person the directory does not answer for keeps the read's own name.
-  const whose = !entry && search.get('title') === null ? personOf(inputJson) : null;
+  // The directory is asked by Clew's key, the person's id (D122): the address's `of` where the opener knew it, else the
+  // input's own key, which is the id of a person without a user name. Until both have answered the heading waits; a
+  // person the directory does not answer for keeps the read's own name.
+  const whose = !entry && search.get('title') === null ? (search.get('of') ?? personOf(inputJson)) : null;
   const person = useQuery({ ...entityDetailQuery('person', whose ?? ''), enabled: whose !== null });
   const noun = main.shown?.capability === capability ? nounOf(main.shown.spec) : undefined;
   const title =

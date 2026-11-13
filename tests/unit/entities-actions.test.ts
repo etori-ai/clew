@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuthenticatedContext } from '../../packages/contracts/src/index';
+import { SUBJECT_CHANGED, type AuthenticatedContext } from '../../packages/contracts/src/index';
 import {
-  actorOf,
+  audiencedActorOf,
   CapabilityError,
   openGovernance,
   Registry,
@@ -9,28 +9,32 @@ import {
   type Connector,
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
-import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
+import { personErasureUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import { entityActionUsecases } from '../../apps/server/src/modules/entities/actions';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { startedCards } from '../../apps/server/src/threads/usecases/started';
 import { cardDecisions } from '../../apps/server/src/threads/usecases/decisions';
+import { subjectErasure } from '../../apps/server/src/threads/usecases/subjects';
 import { threadAccess } from '../../apps/server/src/threads/access';
 import { entityRoutes, type EntityRouteDeps } from '../../apps/server/src/routes/entities';
 import { InputError } from '../../apps/server/src/context';
 import { fixtureConnectors } from '../fixture-connectors';
+import { memoryPersonKeys } from '../person-keys';
+import { startedDecision, startedTopic, takesStarted } from '../../apps/server/src/threads/domain';
 
 /**
  * An action about a person, started from the person's menu without the model (D97, D8): the real registry with small
  * in-test sources, the people module's directory on its memory store, the entities use cases, and the stream's started
  * card on the memory thread store, wired as the composition wires them. A propose's draft becomes the card; an execute
  * becomes a card whose button is the human decision and reaches nothing before it; whatever the reader may not reach
- * answers undefined (the route's 404) and writes nothing.
+ * answers undefined (the route's 404) and writes nothing. A person is started on by their id and the source is asked by
+ * their user name (D122); in the in-test world the two differ, as they do in an installation.
  */
 const T = '2026-11-10T08:00:00.000Z';
 
-function directory() {
+function directory(userNames: Record<string, string> = {}) {
   const store = memoryProvisionStore(),
     s = store.state;
   const person = (id: string, name: string, userName: string, unitId: string, role: 'manager' | 'employee') => {
@@ -38,7 +42,7 @@ function directory() {
       id,
       organisationId: unitId === 'unit-annan' ? 'other' : 'poc',
       externalId: 'dev:' + id,
-      userName,
+      userName: userNames[id] ?? userName,
       name,
       email: null,
       phoneNumbers: [],
@@ -80,7 +84,7 @@ function directory() {
       authorize: async () => ({ version }),
     };
   };
-  return { staff: staffUsecases({ store }), persona };
+  return { staff: staffUsecases({ store }), persona, state: s, store };
 }
 
 const personInput = (extra: Record<string, unknown> = {}) =>
@@ -96,7 +100,7 @@ const anything = { type: 'object' } as never;
 function sources() {
   const asked = { prepare: [] as unknown[], report: [] as unknown[], flag: [] as unknown[] };
   /** The HR system knows two people on the school, by user name. */
-  const employees: Record<string, string> = { maria: 'hr:emp:1', anna: 'hr:emp:2' };
+  const employees: Record<string, string> = { 'maria.o': 'hr:emp:1', 'anna.l': 'hr:emp:2' };
   const prepare: Capability = {
     name: 'hr.prepare',
     kind: 'propose',
@@ -217,12 +221,18 @@ function sources() {
 
 /** The world as the composition wires it; with `fixture`, the HR system is the development stack's own (D61). */
 function world(options: { fixture?: boolean } = {}) {
-  const people = directory();
+  // The development stack's HR system knows the seed's user names; the in-test one knows its own.
+  const people = directory(options.fixture ? {} : { maria: 'maria.o', anna: 'anna.l' });
+  const keys = memoryPersonKeys(people.state);
   const { asked, connectors: inTest } = sources();
   const fixtures = fixtureConnectors({ only: ['hr'], clock: () => new Date(T) });
   const connectors = options.fixture ? fixtures.connectors : inTest;
   // Who may be asked about (D117) as the composition installs it: the entities module's rule over the same directory.
-  const relations = relationUsecases({ directory: people.staff, reader: async actor => people.persona(actor.id) });
+  const relations = relationUsecases({
+    directory: people.staff,
+    reader: async actor => people.persona(actor.id),
+    holders: keys.holders,
+  });
   const registry = new Registry({ relations: relations.relate });
   for (const c of connectors) registry.register(c).govern(c.id, openGovernance());
   const store = memoryThreadStore();
@@ -230,7 +240,7 @@ function world(options: { fixture?: boolean } = {}) {
   // The server's `runCapability`: the registry's call path as the person, a source's refusal as a Swedish input error.
   const run = async (persona: AuthenticatedContext, name: string, input: unknown) => {
     try {
-      return await registry.run(actorOf(persona), name, input);
+      return await registry.run(audiencedActorOf(persona), name, input);
     } catch (error) {
       throw error instanceof CapabilityError ? new InputError(error.message) : error;
     }
@@ -242,6 +252,7 @@ function world(options: { fixture?: boolean } = {}) {
     digest: value => JSON.stringify(value),
     clock: () => new Date(T),
     ids: () => `card-${++n}`,
+    people: keys,
   });
   const entities = entityUsecases({
     directory: people.staff,
@@ -250,7 +261,7 @@ function world(options: { fixture?: boolean } = {}) {
       actions: async (actor, kind) => registry.aboutActions(actor, kind),
     },
     read: (persona, capability, input, signal) =>
-      registry.clewFor(actorOf(persona), { signal }).call(capability, input),
+      registry.clewFor(audiencedActorOf(persona), { signal }).call(capability, input),
     cards: async () => [],
   });
   const access = threadAccess(store, registry);
@@ -263,6 +274,7 @@ function world(options: { fixture?: boolean } = {}) {
       approvals.push(input);
     },
     clock: () => new Date(T),
+    people: keys,
   });
   const actions = entityActionUsecases({
     open: entities.detail,
@@ -293,12 +305,12 @@ function world(options: { fixture?: boolean } = {}) {
 }
 
 describe('an action about a person, started from the menu', () => {
-  test('a propose becomes one card for the reader: its draft, the key in the directory spelling, the audit row', async () => {
+  test('a propose becomes one card for the reader: its draft, the person by id, the audit row', async () => {
     const w = world();
     const hillevi = w.people.persona('hillevi');
-    const { threadId } = (await w.actions.start(hillevi, 'person', 'MARIA', 'hr.prepare'))!;
-    // The source was asked with the key alone, as the directory spells it; nothing was written anywhere.
-    expect(w.asked.prepare).toEqual([{ person: 'maria' }]);
+    const { threadId } = (await w.actions.start(hillevi, 'person', 'maria', 'hr.prepare'))!;
+    // The source was asked with its own key alone, the user name as the directory spells it; nothing was written anywhere.
+    expect(w.asked.prepare).toEqual([{ person: 'maria.o' }]);
     expect(w.asked.report).toEqual([]);
     const card = (await w.access.read(hillevi, threadId))!;
     expect(card).toMatchObject({
@@ -352,6 +364,7 @@ describe('an action about a person, started from the menu', () => {
     const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
     expect(w.asked.flag).toEqual([]);
     const card = (await w.access.read(hillevi, threadId))!;
+    // The card keeps the person by id (D122): a rename before the decision leaves it as it is.
     expect(card).toMatchObject({
       connector: 'hr',
       area: 'employees',
@@ -382,16 +395,172 @@ describe('an action about a person, started from the menu', () => {
     expect(w.store.audit.map(a => [a.action, a.details?.kind, a.details?.about])).toEqual([
       ['thread.started', 'execute', { entity: 'person', id: 'anna' }],
     ]);
-    // The button is the human decision: it hands the approved intent to the ledger (D45), still without the source.
+    // The button is the human decision: it hands the approved intent to the ledger (D45), still without the source. The
+    // payload names Anna by the user name she has as the decision is made, and the person it is about goes with it, so
+    // that dispatch can check the name is still hers (D122).
+    w.people.state.users.get('anna')!.userName = 'anna.lindqvist';
     expect(await w.decisions.act(hillevi, threadId, 'decide')).toMatchObject({ kind: 'execute' });
     expect(w.approvals).toEqual([
       expect.objectContaining({
         operation: 'hr.flag',
-        payload: { person: 'anna' },
+        payload: { person: 'anna.lindqvist' },
         presentation: expect.objectContaining({ threadId, actionId: 'decide' }),
+        subject: { param: 'person', personId: 'anna' },
       }),
     ]);
     expect(w.asked.flag).toEqual([]);
+  });
+
+  test('a decision whose dispatch was refused because the user name moved is decided again, on the name the person has now (D122)', async () => {
+    const w = world();
+    const hillevi = w.people.persona('hillevi');
+    const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
+    await w.decisions.act(hillevi, threadId, 'decide');
+    const first = w.approvals[0] as { decisionId: string };
+    // Dispatch found 'anna.l' no longer Anna's and failed the execution without sending it (D122); the card shows that.
+    w.people.state.users.get('anna')!.userName = 'anna.lindqvist';
+    // The ledger's projection writes the settled execution onto the card (composition/execution-projection.ts).
+    const settled = (reason: string, at: string) =>
+      w.store.transaction(tx =>
+        tx.updateThread(threadId, {
+          execution: {
+            id: 'e1',
+            decisionId: first.decisionId,
+            operation: 'hr.flag',
+            state: 'failed',
+            reason,
+            compensates: null,
+          },
+          updatedAt: at,
+        } as never),
+      );
+    await settled(SUBJECT_CHANGED, '2026-11-12T08:05:00.000Z');
+    await w.decisions.act(hillevi, threadId, 'decide');
+    const again = w.approvals[1] as { decisionId: string };
+    expect(again).toMatchObject({
+      payload: { person: 'anna.lindqvist' },
+      subject: { param: 'person', personId: 'anna' },
+    });
+    // A new decision, not a replay of the refused one: the ledger keeps what the first was approved with.
+    expect(again.decisionId).not.toBe(first.decisionId);
+    // Any other failure is the same decision asked again, which the ledger answers with the execution it already has.
+    await settled('approval-expired', '2026-11-12T08:10:00.000Z');
+    await w.decisions.act(hillevi, threadId, 'decide');
+    expect((w.approvals[2] as { decisionId: string }).decisionId).toBe(first.decisionId);
+    expect(w.asked.flag).toEqual([]);
+  });
+
+  test('an execute about someone no longer in the directory cannot be decided, and nothing is approved (D122)', async () => {
+    const w = world();
+    const hillevi = w.people.persona('hillevi');
+    const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
+    w.people.state.users.get('anna')!.userName = null;
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(
+      'Personen finns inte längre i katalogen. Inget har skickats.',
+    );
+    w.people.state.users.delete('anna');
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(
+      'Personen finns inte längre i katalogen. Inget har skickats.',
+    );
+    expect(w.approvals).toEqual([]);
+    expect(w.asked.flag).toEqual([]);
+  });
+
+  test('an execute about someone an operator has since erased cannot be decided, and nothing is approved (D122, D123)', async () => {
+    const w = world();
+    const hillevi = w.people.persona('hillevi');
+    const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
+    // The source deactivates Anna; the runbook erases her from every card first and her record last. The card's rows
+    // and subjects no longer name her, but its action keeps her id, so the card itself can still be decided.
+    w.people.state.users.get('anna')!.enabled = false;
+    const clock = () => new Date(T),
+      operator = 'operator:cli';
+    const cards = subjectErasure({ store: w.store, clock, people: memoryPersonKeys(w.people.state) });
+    expect(await cards.eraseSubject(operator, { entity: 'person', key: 'anna' })).toMatchObject({ cards: 1, rows: 1 });
+    const record = personErasureUsecases({ store: w.people.store, clock });
+    expect(await record.erasePerson(operator, 'anna')).toMatchObject({ erased: { fields: 3 } });
+    // Her record holds no user name: neither her id nor the name she had resolves to anyone, so no name can be sent.
+    const keys = memoryPersonKeys(w.people.state);
+    expect(await keys.userName('anna')).toBeNull();
+    expect(await keys.holders('hillevi', ['anna', 'anna.l'])).toEqual(new Map());
+    const audited = structuredClone(w.store.audit),
+      gone = 'Personen finns inte längre i katalogen. Inget har skickats.';
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(gone);
+    await expect(w.decisions.effect(hillevi, threadId, 'decide')).rejects.toThrow(gone);
+    // Nothing reached the ledger, so there is no execution and no approval row, and the source was asked nothing.
+    expect(w.approvals).toEqual([]);
+    expect(w.store.audit).toEqual(audited);
+    expect(w.asked.flag).toEqual([]);
+  });
+
+  test('an execute whose capability no longer takes the person where the card keeps them cannot be decided, and nothing is approved (D122)', async () => {
+    const w = world();
+    const hillevi = w.people.persona('hillevi');
+    const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
+    // The card says which property of its input keeps the person: the capability's declaration as the card was made.
+    const card = (await w.access.read(hillevi, threadId))!;
+    expect(card.topic).toMatch(/^started:hr\.flag:.+:person:person$/);
+    const declared = w.registry.connector('hr')!;
+    const redeclare = (change: (flag: Capability) => Capability) =>
+      w.registry.replace({
+        ...declared,
+        capabilities: declared.capabilities.map(c => (c.name === 'hr.flag' ? change(c) : c)),
+      });
+    const changed = 'Åtgärden har ändrats sedan ärendet skapades. Inget har skickats.';
+    // No longer about a person: the card's id would reach the source as if it were a user name.
+    redeclare(({ about: _, ...flag }) => flag);
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(changed);
+    // What it would do is not asked either: the same input would be the wrong one.
+    await expect(w.decisions.effect(hillevi, threadId, 'decide')).rejects.toThrow(changed);
+    // About a person, in another property of its input.
+    redeclare(flag => ({
+      ...flag,
+      about: { entity: 'person', param: 'employee' },
+      input: {
+        type: 'object',
+        properties: { employee: { type: 'string' } },
+        required: ['employee'],
+        additionalProperties: false,
+      } as never,
+    }));
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(changed);
+    // About a unit, in the same property: the card's person id would be sent as a unit's.
+    redeclare(flag => ({ ...flag, about: { entity: 'unit', param: 'person' } }));
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(changed);
+    expect(w.approvals).toEqual([]);
+    expect(w.asked.flag).toEqual([]);
+    // Declared as the card was made, the decision goes through on the user name Anna has.
+    w.registry.replace(declared);
+    await w.decisions.act(hillevi, threadId, 'decide');
+    expect(w.approvals).toEqual([
+      expect.objectContaining({ payload: { person: 'anna.l' }, subject: { param: 'person', personId: 'anna' } }),
+    ]);
+  });
+
+  test("a started card's topic says where its person is, and only a started execute's decision reads it (D122)", () => {
+    const decide = { id: 'decide', kind: 'execute' as const, capability: 'hr.flag', input: { person: 'anna' } };
+    const topic = startedTopic('hr.flag', 'abc', 'person');
+    expect(topic).toBe('started:hr.flag:abc:person:person');
+    expect(startedDecision(topic, decide)).toEqual({ person: { param: 'person', personId: 'anna' } });
+    // An id the card does not hold in that property is no id: the directory finds nobody, and nothing is sent.
+    expect(startedDecision(topic, { ...decide, input: {} })).toEqual({ person: { param: 'person', personId: '' } });
+    // About a unit, or about nobody: the topic names no property, and there is nobody to resolve.
+    expect(startedDecision(startedTopic('units.close', 'abc'), { ...decide, capability: 'units.close' })).toEqual({});
+    // Another card, another action on a started card, another capability's topic and a propose are not started decisions.
+    expect(startedDecision('hr:absence-draft:1', decide)).toBeUndefined();
+    expect(startedDecision(topic, { ...decide, id: 'report' })).toBeUndefined();
+    expect(startedDecision(startedTopic('hr.flagged', 'abc', 'person'), decide)).toBeUndefined();
+    expect(startedDecision(topic, { ...decide, kind: 'propose' })).toBeUndefined();
+    // The capability as declared now must take the person where the card keeps them, and a card about no person
+    // must stay about none.
+    const person = { person: { param: 'person' } };
+    expect(takesStarted(person, { entity: 'person', param: 'person' })).toBe(true);
+    expect(takesStarted(person, { entity: 'person', param: 'employee' })).toBe(false);
+    expect(takesStarted(person, { entity: 'unit', param: 'person' })).toBe(false);
+    expect(takesStarted(person, undefined)).toBe(false);
+    expect(takesStarted({}, { entity: 'unit', param: 'unit' })).toBe(true);
+    expect(takesStarted({}, undefined)).toBe(true);
+    expect(takesStarted({}, { entity: 'person', param: 'person' })).toBe(false);
   });
 
   test('an action not about that kind, a key outside the rule and an action the reader may not call answer undefined and write nothing', async () => {
@@ -400,8 +569,8 @@ describe('an action about a person, started from the menu', () => {
     // About a unit, not a person; and a person's action asked on a unit.
     expect(await w.actions.start(hillevi, 'person', 'anna', 'units.plan')).toBeUndefined();
     expect(await w.actions.start(hillevi, 'unit', 'unit-skola', 'hr.prepare')).toBeUndefined();
-    // Another organisation, a deactivated person, nobody at all.
-    for (const key of ['stranger', 'bo', 'nobody'])
+    // Another organisation, a deactivated person, nobody at all, and a user name, which is the source's key and not Clew's.
+    for (const key of ['stranger', 'bo', 'nobody', 'maria.o', 'MARIA'])
       expect([key, await w.actions.start(hillevi, 'person', key, 'hr.prepare')]).toEqual([key, undefined]);
     // A capability that does not exist, and a write that is not about anyone.
     for (const capability of ['hr.nothing', 'hr.report'])
@@ -419,8 +588,11 @@ describe('an action about a person, started from the menu', () => {
     const w = world();
     const hillevi = w.people.persona('hillevi');
     const first = (await w.actions.start(hillevi, 'person', 'maria', 'hr.prepare'))!;
-    expect(await w.actions.start(hillevi, 'person', 'Maria', 'hr.prepare')).toEqual(first);
+    expect(await w.actions.start(hillevi, 'person', 'maria', 'hr.prepare')).toEqual(first);
     const flagged = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
+    expect(await w.actions.start(hillevi, 'person', 'anna', 'hr.flag')).toEqual(flagged);
+    // A rename leaves the request as it was: the card names Anna by id (D122), so it is the same card.
+    w.people.state.users.get('anna')!.userName = 'anna.lindqvist';
     expect(await w.actions.start(hillevi, 'person', 'anna', 'hr.flag')).toEqual(flagged);
     expect(w.store.dump()).toHaveLength(2);
     expect(w.store.audit).toHaveLength(2);

@@ -319,7 +319,7 @@ function MatrixTable({
       name={TABLE_NAME}
       personHeader="Medarbetare"
       renderPerson={r => (
-        <Link href={personPageFrom(location.pathname, location.search, r.key)} weight="semibold" hasUnderline>
+        <Link href={personPageFrom(location.pathname, location.search, r.personId)} weight="semibold" hasUnderline>
           {r.name}
         </Link>
       )}
@@ -351,7 +351,11 @@ function MatrixList({ data, ctx, narrowed }: { data: CompetenceMatrixOutput; ctx
             itemKey={row.personId}
             align="start"
             label={
-              <Link href={personPageFrom(location.pathname, location.search, row.key)} weight="semibold" hasUnderline>
+              <Link
+                href={personPageFrom(location.pathname, location.search, row.personId)}
+                weight="semibold"
+                hasUnderline
+              >
                 {row.name}
               </Link>
             }
@@ -515,7 +519,11 @@ function Awaiting({
           <ListItem
             key={row.holdingId}
             label={
-              <Link href={personPageFrom(location.pathname, location.search, row.key)} weight="semibold" hasUnderline>
+              <Link
+                href={personPageFrom(location.pathname, location.search, row.personId)}
+                weight="semibold"
+                hasUnderline
+              >
                 {row.name}
               </Link>
             }

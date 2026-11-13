@@ -1,7 +1,7 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
-import { type Actor } from '../../packages/connectors/src/index';
+import { type Actor, type CapabilityError } from '../../packages/connectors/src/index';
 import { protocolSchema } from '../../packages/connectors/src/protocol';
 import {
   ManifestError,
@@ -11,6 +11,7 @@ import {
   type FetchLike,
 } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as helloManifest } from '../../connectors/hello/connector.mjs';
+import { createVerifier } from '../../connectors/hello/verification.mjs';
 import { loadConnectors, registerConnector } from '../../apps/server/src/connectors/remote';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
 import { decodeJwt } from 'jose';
@@ -263,6 +264,30 @@ describe('a remote connector in the registry', () => {
     );
     await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow(/Ogiltigt behörighetsbevis/);
   });
+  test("an error keeps the connector's code as far as its status bears it out: denied only with a 403, never with a 401", async () => {
+    // A 401 is the connector rejecting Clew's key or assertion, about Clew and not the person: a failure, `unavailable`.
+    const outcome = async (status: number, code: string) => {
+      const registry = new Registry().register(
+        remoteConnector(parseManifest(helloManifest), {
+          url: 'http://hello',
+          key: secret,
+          assert: assertionFor('hello', secret),
+          fetch: async () => Response.json({ error: { code, message: 'Nej.' } }, { status }),
+        }),
+      );
+      return registry.run(hassan, 'hello.greeting', {}).then(
+        () => undefined,
+        (error: CapabilityError) => [error.message, error.code],
+      );
+    };
+    expect(await outcome(403, 'denied')).toEqual(['Nej.', 'denied']);
+    expect(await outcome(401, 'denied')).toEqual(['Nej.', 'unavailable']);
+    expect(await outcome(401, 'invalid')).toEqual(['Nej.', 'unavailable']);
+    expect(await outcome(400, 'denied')).toEqual(['Nej.', 'unavailable']);
+    expect(await outcome(400, 'invalid')).toEqual(['Nej.', 'invalid']);
+    expect(await outcome(404, 'not-found')).toEqual(['Nej.', 'not-found']);
+    expect(await outcome(503, 'unavailable')).toEqual(['Hello svarar inte just nu.', 'unavailable']);
+  });
   test('a connector that is down degrades to a Swedish unavailable error and a warning figure', async () => {
     const down: FetchLike = async () => {
       throw new Error('ECONNREFUSED');
@@ -458,6 +483,58 @@ describe('a user-delegated connector (D26)', () => {
     expect(parseManifest(delegating, 'hello').delegation).toEqual({ audience: 'eneo' });
     expect(() => parseManifest({ ...delegating, delegation: { audience: '' } })).toThrow(ManifestError);
     expect(() => parseManifest({ ...delegating, delegation: { audience: 'eneo', extra: 1 } })).toThrow(ManifestError);
+  });
+  test("the check takes a call refused without the person's token from its code: a 403 denied in any words, never a 401", async () => {
+    // A delegating service as the fixtures are, with nothing but its capabilities for the check to ask: Clew's key and
+    // assertion first, a 401 when they do not hold, and then the person's token, which the check has none of.
+    const manifest = { ...delegating, scan: false, areas: [] };
+    const verify = createVerifier({ secret, jwks: testJwks }, 'hello');
+    const service =
+      (status: number, message: string): FetchLike =>
+      async (input, init) => {
+        if (String(input).endsWith('/clew/manifest')) return Response.json(manifest);
+        const h = new Headers(init?.headers);
+        return (await verify((h.get('authorization') ?? '').slice('Bearer '.length), h.get('x-clew-connector-key')))
+          ? Response.json({ error: { code: 'denied', message } }, { status })
+          : Response.json({ error: { code: 'denied', message: 'Ogiltigt behörighetsbevis.' } }, { status: 401 });
+      };
+    const check = (fetch: FetchLike) =>
+      checkConnector({
+        key: secret,
+        url: 'http://hello',
+        id: 'hello',
+        assert: assertionFor('hello', secret),
+        assertForeign: assertionFor('hello', 'another-secret-another'),
+        fetch,
+      });
+    const failures = (report: Awaited<ReturnType<typeof check>>) =>
+      report.findings.filter(f => f.level === 'fail').map(f => f.text);
+    // Refused with a 403 for want of the person's token: the expected answer, in whatever words the connector has.
+    for (const message of [
+      'Din inloggning kan inte styrkas mot Eneo i den här sessionen.',
+      'Eneo vet inte vem du är.',
+    ]) {
+      const report = await check(service(403, message));
+      expect([message, failures(report)]).toEqual([message, []]);
+      expect(report.findings.map(f => f.text)).toContain(
+        `hello.greeting as employee: refused without the person's token, as a delegating connector should (${message})`,
+      );
+    }
+    // Every one of Clew's calls rejected with a 401, as by a service that does not hold Clew's key set: a failure, though
+    // its body says denied and its words say "behörighet".
+    const rejected = await check(service(401, 'Ogiltigt behörighetsbevis.'));
+    expect(rejected.ok).toBe(false);
+    expect(failures(rejected)).toEqual([
+      'hello.greeting as manager: Ogiltigt behörighetsbevis.',
+      'hello.greeting as employee: Ogiltigt behörighetsbevis.',
+      'hello.openItems as manager: Ogiltigt behörighetsbevis.',
+      'hello.dayWithMeetings as manager: Ogiltigt behörighetsbevis.',
+      'hello.dayWithMeetings as employee: Ogiltigt behörighetsbevis.',
+    ]);
+    expect(rejected.items.find(i => i.capability === 'hello.greeting')).toMatchObject({
+      level: 'fail',
+      description: 'Fel för chef: Ogiltigt behörighetsbevis. Fel för medarbetare: Ogiltigt behörighetsbevis.',
+    });
   });
 });
 

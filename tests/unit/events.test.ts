@@ -55,7 +55,9 @@ function world() {
     clock = fakeClock();
   let n = 0;
   const bind = () => ({ provider: calendar });
-  const team = async (p: AuthenticatedContext) => (p.role === 'manager' ? members : []);
+  // The team as the directory has it now; a test may change an address.
+  const setting = { team: members };
+  const team = async (p: AuthenticatedContext) => (p.role === 'manager' ? setting.team : []);
   const ids = () => `id-${++n}`;
   const samtal = calendarUsecases({
     store,
@@ -68,7 +70,7 @@ function world() {
     notify: async () => undefined,
     obligations: memoryObligations(),
   });
-  return { calendar, store, clock, samtal, ...eventUsecases({ store, bind, team, clock, ids }) };
+  return { calendar, store, clock, samtal, setting, ...eventUsecases({ store, bind, team, clock, ids }) };
 }
 const booking = {
   title: 'Ledningsgrupp',
@@ -146,6 +148,30 @@ describe('a proposal moved by the person', () => {
       start: p.start,
       end: p.end,
     });
+  });
+});
+
+describe('a proposal whose invitee changed address since the draw (N3)', () => {
+  test('is checked against the calendar the person has now, found by id, and keeps the address it was drawn with', async () => {
+    const w = world();
+    const t = (await w.samtal.ensureProposalThread(hillevi))!;
+    const p = t.proposals.find(x => x.participant.email === anna.email)!;
+    w.setting.team = members.map(m =>
+      m.personId === anna.personId ? { ...m, email: 'anna.lindqvist@clew.test', ref: 'memory:account:anna-new' } : m,
+    );
+    w.calendar.options.busy['memory:account:anna-new'] = [
+      { start: at('2026-11-12T13:00'), end: at('2026-11-12T14:00') },
+    ];
+    await expect(
+      w.moveProposal(hillevi, t.id, p.id, { start: at('2026-11-12T13:30'), end: at('2026-11-12T14:30') }),
+    ).rejects.toThrow('Anna Lindqvist är upptagen tors 12 nov. 13:30–14:30.');
+    const start = at('2026-11-12T15:00');
+    const thread = await w.moveProposal(hillevi, t.id, p.id, { start, end: at('2026-11-12T16:00') });
+    expect(thread.proposals.find(x => x.id === p.id)).toMatchObject({
+      start,
+      participant: { email: 'anna@clew.test', name: 'Anna Lindqvist' },
+    });
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'proposal.moved', details: { proposal: p.id } });
   });
 });
 

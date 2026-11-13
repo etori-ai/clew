@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import {
-  actorOf,
+  audiencedActorOf,
   menuEligible,
   menuProblem,
   menuRowOf,
@@ -161,7 +161,8 @@ function world() {
 }
 const menuAudit = (store: ReturnType<typeof memoryConnectorStore>) =>
   store.audit.filter(a => a.action === 'connector.menu');
-const labels = (registry: Registry, who: AuthenticatedContext) => registry.menu(actorOf(who)).map(e => e.label);
+const labels = (registry: Registry, who: AuthenticatedContext) =>
+  registry.menu(audiencedActorOf(who)).map(e => e.label);
 
 describe('which views can be tools, and what a connector may say about its row', () => {
   const view = { kind: 'text' as const, body: 'text' };
@@ -289,18 +290,18 @@ describe('who gets a row', () => {
   });
   test('nobody until an administrator chooses the view: naming a row does not take a place in the menu', () => {
     const r = registry();
-    expect(r.menu(actorOf(hassan))).toEqual([]);
+    expect(r.menu(audiencedActorOf(hassan))).toEqual([]);
     r.govern('phonebook', governed({}));
-    expect(r.menu(actorOf(hassan))).toEqual([]);
+    expect(r.menu(audiencedActorOf(hassan))).toEqual([]);
     r.govern('phonebook', governed({ 'phonebook.directory': { menu: true } }));
-    expect(r.menu(actorOf(hassan))).toEqual([search as never]);
+    expect(r.menu(audiencedActorOf(hassan))).toEqual([search as never]);
   });
   test('each view is chosen by itself, and several of one connector come in alphabetical order', () => {
     const r = registry();
     r.govern('phonebook', governed({ 'phonebook.team': { menu: true } }));
-    expect(r.menu(actorOf(hassan))).toEqual([team as never]);
+    expect(r.menu(audiencedActorOf(hassan))).toEqual([team as never]);
     r.govern('phonebook', governed({ 'phonebook.directory': { menu: true }, 'phonebook.team': { menu: true } }));
-    expect(r.menu(actorOf(hassan))).toEqual([team, search] as never[]);
+    expect(r.menu(audiencedActorOf(hassan))).toEqual([team, search] as never[]);
   });
   test('only a person in the audience, only while the connector and the read are on, and never a view that cannot be a tool', () => {
     const r = registry();
@@ -314,6 +315,14 @@ describe('who gets a row', () => {
     expect(labels(r, mikael)).toEqual(['Mitt team']);
     // The contact card needs a reference: a stored choice for it is never a row.
     r.govern('phonebook', governed({ 'phonebook.person': { menu: true } }));
+    expect(labels(r, mikael)).toEqual([]);
+  });
+  test('an audience of one provisioned group gives its members the row and nobody else (D68)', () => {
+    const r = registry();
+    const both = { 'phonebook.directory': { menu: true as const }, 'phonebook.team': { menu: true as const } };
+    r.govern('phonebook', governed(both, { audience: { mode: 'selected', groups: ['S-1-5-21-vaxeln'] } }));
+    expect(labels(r, { ...hassan, groups: ['S-1-5-21-vaxeln'] })).toEqual(['Mitt team', 'Telefonbok']);
+    expect(labels(r, { ...hassan, groups: ['S-1-5-21-annan'] })).toEqual([]);
     expect(labels(r, mikael)).toEqual([]);
   });
   test('tools of several connectors come in one alphabetical order, whatever order they were registered in', () => {
@@ -371,7 +380,7 @@ describe('every read a person may open is a view with a page of its own (D116)',
   test('each read with its title and the kind of view it declares, placed in the menu or not', () => {
     const r = registry();
     r.govern('phonebook', on());
-    expect(r.views(actorOf(hassan))).toEqual([
+    expect(r.views(audiencedActorOf(hassan))).toEqual([
       { capability: 'phonebook.directory', title: 'Sök i telefonboken', kind: 'table' },
       { capability: 'phonebook.team', title: 'Mitt teams kontaktlista', kind: 'list' },
       { capability: 'phonebook.person', title: 'Kontaktkort', kind: 'detail' },
@@ -383,12 +392,12 @@ describe('every read a person may open is a view with a page of its own (D116)',
   test('a read the person may not call is missing, exactly as one that does not exist', () => {
     const r = registry();
     r.govern('phonebook', on({ audience: { mode: 'selected', units: ['unit-it'] } }));
-    expect(r.views(actorOf(hassan))).toEqual([]);
-    expect(r.views(actorOf(mikael)).map(v => v.capability)).toContain('phonebook.directory');
+    expect(r.views(audiencedActorOf(hassan))).toEqual([]);
+    expect(r.views(audiencedActorOf(mikael)).map(v => v.capability)).toContain('phonebook.directory');
     r.govern('phonebook', on({ capabilities: { 'phonebook.directory': { enabled: false } } }));
-    expect(r.views(actorOf(hassan)).map(v => v.capability)).not.toContain('phonebook.directory');
+    expect(r.views(audiencedActorOf(hassan)).map(v => v.capability)).not.toContain('phonebook.directory');
     r.govern('phonebook', on({ state: 'disabled' }));
-    expect(r.views(actorOf(hassan))).toEqual([]);
+    expect(r.views(audiencedActorOf(hassan))).toEqual([]);
   });
 });
 
@@ -411,7 +420,7 @@ describe('the administrator chooses, view by view', () => {
       ['phonebook.fetch', null],
     ]);
     await admin.update(mikael, 'phonebook', { state: 'enabled' });
-    expect(registry.menu(actorOf(hassan))).toEqual([]);
+    expect(registry.menu(audiencedActorOf(hassan))).toEqual([]);
     expect((await admin.preview(mikael, 'phonebook', { role: 'employee' })).menu).toEqual([]);
 
     const updated = await admin.update(mikael, 'phonebook', { menu: { 'phonebook.directory': true } });
@@ -426,14 +435,14 @@ describe('the administrator chooses, view by view', () => {
         details: { capability: 'phonebook.directory', to: true, label: 'Telefonbok' },
       },
     ]);
-    expect(registry.menu(actorOf(hassan))).toEqual([search as never]);
+    expect(registry.menu(audiencedActorOf(hassan))).toEqual([search as never]);
     // The same choice again changes nothing and writes nothing.
     await admin.update(mikael, 'phonebook', { menu: { 'phonebook.directory': true } });
     expect(menuAudit(store)).toHaveLength(1);
 
     // A second view of the same connector, and the first one out, in one go: one audit row each.
     await admin.update(mikael, 'phonebook', { menu: { 'phonebook.team': true, 'phonebook.directory': false } });
-    expect(registry.menu(actorOf(hassan))).toEqual([team as never]);
+    expect(registry.menu(audiencedActorOf(hassan))).toEqual([team as never]);
     expect((await store.read('phonebook'))!.capabilities).toEqual({ 'phonebook.team': { menu: true } });
     expect(menuAudit(store).map(a => a.details)).toEqual([
       { capability: 'phonebook.directory', to: true, label: 'Telefonbok' },
@@ -458,9 +467,9 @@ describe('the administrator chooses, view by view', () => {
     expect((await store.read('phonebook'))!.capabilities).toEqual({
       'phonebook.directory': { enabled: false, menu: true },
     });
-    expect(registry.menu(actorOf(hassan))).toEqual([]);
+    expect(registry.menu(audiencedActorOf(hassan))).toEqual([]);
     await admin.update(mikael, 'phonebook', { capabilities: { 'phonebook.directory': {} } });
-    expect(registry.menu(actorOf(hassan))).toEqual([search as never]);
+    expect(registry.menu(audiencedActorOf(hassan))).toEqual([search as never]);
     await admin.update(mikael, 'phonebook', { menu: { 'phonebook.directory': false } });
     expect((await store.read('phonebook'))!.capabilities).toEqual({});
   });
@@ -495,7 +504,7 @@ describe('the administrator chooses, view by view', () => {
       on: false,
     });
     await admin.update(mikael, 'phonebook', { state: 'enabled', menu: { 'phonebook.team': true } });
-    expect(registry.menu(actorOf(hassan))).toEqual([
+    expect(registry.menu(audiencedActorOf(hassan))).toEqual([
       { ...team, label: 'Mitt teams kontaktlista', icon: 'document' } as never,
     ]);
     // The service starts naming its rows: the refetched manifest lists the capabilities as changed, and the chosen view takes the name.
@@ -505,7 +514,7 @@ describe('the administrator chooses, view by view', () => {
       changed: ['phonebook.directory', 'phonebook.team'],
     });
     await admin.refreshManifest(mikael, 'phonebook', { apply: true });
-    expect(registry.menu(actorOf(hassan))).toEqual([team as never]);
+    expect(registry.menu(audiencedActorOf(hassan))).toEqual([team as never]);
   });
   test('a view that stops being a tool in a new manifest drops out of the menu, though it was chosen', async () => {
     const { admin, registry, served } = world();
@@ -525,6 +534,6 @@ describe('the administrator chooses, view by view', () => {
     await admin.update(mikael, 'phonebook', { state: 'enabled', menu: { 'phonebook.team': true } });
     const restarted = new Registry();
     await applyRow(reconcile(restarted), (await store.read('phonebook'))!);
-    expect(restarted.menu(actorOf(hassan))).toEqual([team as never]);
+    expect(restarted.menu(audiencedActorOf(hassan))).toEqual([team as never]);
   });
 });

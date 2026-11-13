@@ -59,7 +59,7 @@ function world() {
   );
   registry.govern(ID, openGovernance());
   const store = memoryCompetenceStore({
-    persons: CLEW_PEOPLE.map(p => ({ id: 'p-' + p, organisationId: ORG, name: p, userName: p })),
+    persons: CLEW_PEOPLE.map(p => ({ id: 'p-' + p, organisationId: ORG, name: p, userName: p, enabled: true })),
   });
   let n = 0;
   const competence = competenceUsecases({

@@ -12,6 +12,8 @@ import {
   type GroupCapabilityInputType,
   GroupRelationInput,
   type GroupRelationInputType,
+  GroupSearchInput,
+  type GroupSearchInputType,
   UsersAdminQuery,
   type UsersAdminQueryType,
   AddConnectorInput,
@@ -60,6 +62,7 @@ const validators = {
   patchModel: ajv.compile(ModelPatchInput),
   groupCapability: ajv.compile(GroupCapabilityInput),
   groupRelation: ajv.compile(GroupRelationInput),
+  groupSearch: ajv.compile(GroupSearchInput),
   usersQuery: ajv.compile(UsersAdminQuery),
   appearanceTheme: ajv.compile(AppearanceThemeInput),
   appearanceLogo: ajv.compile(AppearanceLogoInput),
@@ -89,6 +92,15 @@ adminRoutes.post('/users/search', async c =>
     await usersAdmin.people(
       c.get('session').context,
       await body<UsersAdminQueryType>(c.req.raw, validators.usersQuery),
+    ),
+  ),
+);
+// The group picker searches the organisation's groups here (D85): the overview offers the first of them only.
+adminRoutes.post('/users/groups/search', async c =>
+  c.json(
+    await usersAdmin.searchGroups(
+      c.get('session').context,
+      (await body<GroupSearchInputType>(c.req.raw, validators.groupSearch)).text,
     ),
   ),
 );

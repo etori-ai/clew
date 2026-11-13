@@ -1,5 +1,5 @@
 import { and, eq, inArray, like } from 'drizzle-orm';
-import { foldEntityKey, type ThreadAction } from '@clew/contracts';
+import type { ThreadAction } from '@clew/contracts';
 import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import { schema, type Transaction } from '@clew/db';
 import type { ThreadTx } from '../threads/model';
@@ -219,7 +219,7 @@ export function competenceWorkItems(
       await removeCards(cards.map(c => c.id));
     },
     async removeAbout(subject) {
-      // Through the index from entity to cards, which holds a person's key as Clew compares it (D97 item 6).
+      // Through the index from entity to cards, which holds a person by Clew's key, their id, compared exactly (D122).
       const rows = await tx
         .selectDistinct({ id: threads.id })
         .from(threads)
@@ -229,7 +229,7 @@ export function competenceWorkItems(
             eq(threads.connector, COMPETENCE_CONNECTOR),
             like(threads.topic, approvalTopic('%')),
             eq(schema.threadSubjects.entity, subject.entity),
-            eq(schema.threadSubjects.key, foldEntityKey(subject.entity, subject.key)),
+            eq(schema.threadSubjects.key, subject.key),
           ),
         )
         .orderBy(threads.id);

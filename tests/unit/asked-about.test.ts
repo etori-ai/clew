@@ -30,13 +30,16 @@ import { executionUsecases } from '../../apps/server/src/modules/executions/usec
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import type { AuthorizeOptions, ExecutionSource } from '../../apps/server/src/modules/executions/model';
 import { createVerifier } from '../../connectors/hello/verification.mjs';
-import { callbackRefusal } from '../../apps/server/src/connectors/callback-errors';
+import { memoryPersonKeys } from '../person-keys';
 import { memoryCompetenceStore } from '../../apps/server/src/modules/competence/adapters/memory';
 import { competenceConnector } from '../../apps/server/src/modules/competence/capabilities';
 import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
 import { reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { testAuthority, testJwks } from '../connector-authority';
 
+/** What `POST /api/connectors/call` answers for a refusal (`routes/connector-callback.ts`): the protocol's code. */
+const refusal = (error: unknown) =>
+  error instanceof CapabilityError ? { code: error.code, message: error.message } : undefined;
 /**
  * Who may be asked about, in the core and on every path (D97 item 8, D117). The registry resolves how the caller stands
  * to every person or unit an input names, from the people directory on its memory store (D99's reporting line), before
@@ -153,6 +156,7 @@ function directory() {
   const relations = relationUsecases({
     directory: staff,
     reader: async actor => (s.users.get(actor.id)?.enabled ? persona(actor.id) : undefined),
+    holders: memoryPersonKeys(s).holders,
   });
   return { persona, staff, relations, state: s };
 }
@@ -524,6 +528,7 @@ describe('the rule, resolved from the directory', () => {
       reader: async () => {
         throw new Error('connection reset');
       },
+      holders: async () => new Map(),
     });
     await expect(broken.relate(actorOf(people.persona('anna')), 'person', ['anna'], ['self'])).rejects.toThrow(
       'connection reset',
@@ -913,10 +918,9 @@ describe('the relation registrar (D121): competence across the organisation, and
     const callback = (name: string, input: unknown) =>
       w.registry.clewFor(w.people.persona('regina'), { chain: ['src.person'] }, 'src').call(name, input);
     await expect(callback('src.notes', { person: 'anna' })).rejects.toThrow('Okänd förmåga.');
-    expect(callbackRefusal(await callback('src.notes', { person: 'anna' }).catch(e => e))).toEqual({
+    expect(refusal(await callback('src.notes', { person: 'anna' }).catch(e => e))).toEqual({
       code: 'not-found',
       message: 'Okänd förmåga.',
-      status: 404,
     });
     expect(w.asked('src.notes')).toEqual([]);
   });
@@ -1005,12 +1009,12 @@ describe('the relation registrar (D121): competence across the organisation, and
     ]);
     // `/api/connectors/call` from a connector that serves her, as the route makes it: refused exactly as it is for a
     // colleague without the grant, `not-found`.
-    const unknown = { code: 'not-found', message: 'Okänd förmåga.', status: 404 } as const;
+    const unknown = { code: 'not-found', message: 'Okänd förmåga.' } as const;
     for (const who of ['regina', 'hassan']) {
       const callback = w.registry
         .clewFor(w.people.persona(who), { chain: ['rogue.peek'] }, 'rogue')
         .call('competence.holdings', { person: 'anna' });
-      expect(callbackRefusal(await callback.catch(e => e))).toEqual(unknown);
+      expect(refusal(await callback.catch(e => e))).toEqual(unknown);
     }
     // `clew.call` of an in-process connector she asked herself, a scan's handle (`clewFor` with the connector's id), and
     // every other path that is not her direct read: a card, a tool, a job.
@@ -1151,7 +1155,8 @@ describe('every other path into the registry', () => {
       row: { key: 'karin', state: 'Bokat' },
     });
     who = 'hillevi';
-    expect(await section('ERIK.S', 'src.team')).toEqual({
+    // A person is opened by Clew's id (D122); the source answers by the user name it was asked with.
+    expect(await section('erik', 'src.team')).toEqual({
       capability: 'src.team',
       status: 'ok',
       row: { key: 'Erik.S', state: 'Bokat' },
@@ -1345,15 +1350,18 @@ describe('a remote connector is told the relation, bound to the request', () => 
     expect(w.asked('src.notes')).toEqual([
       { name: 'src.notes', input: { person: 'hassan' }, about: { entity: 'person', relations: { hassan: 'self' } } },
     ]);
-    // What the route answers: a refused person, an unknown one and a capability not in `uses` read the same, `not-found`,
-    // never the logged 503 a failure gets.
-    const answer = async (name: string, input: unknown) =>
-      callbackRefusal(await callback('hassan', name, input).catch(e => e));
-    const unknown = { code: 'not-found', message: 'Okänd förmåga.', status: 404 } as const;
+    // What the route answers (`routes/connector-callback.ts`): a refusal carries the protocol's code, and a refused
+    // person, an unknown one and a capability not in `uses` read the same, `not-found`, never the logged 503 a failure
+    // gets. A directory that cannot be read is no refusal: it is not a `CapabilityError`, so the route answers 503.
+    const answer = async (name: string, input: unknown) => {
+      const error = await callback('hassan', name, input).catch(e => e);
+      return error instanceof CapabilityError ? { code: error.code, message: error.message } : undefined;
+    };
+    const unknown = { code: 'not-found', message: 'Okänd förmåga.' } as const;
     expect(await answer('src.notes', { person: 'karin' })).toEqual(unknown);
     expect(await answer('src.notes', { person: 'nobody-at-all' })).toEqual(unknown);
     expect(await answer('src.person', { keys: ['hassan'] })).toEqual(unknown);
-    expect(callbackRefusal(new RelationsUnavailableError())).toBeUndefined();
+    expect(new RelationsUnavailableError()).not.toBeInstanceOf(CapabilityError);
   });
   test('a connector on protocol 2 still loads for its window: no `about` in its bodies, its looser rules, and a warning', async () => {
     // Protocol 3 is a break (D60, D117): `about` in closed request objects, the binding the verifier requires, and the

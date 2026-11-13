@@ -418,9 +418,9 @@ describe('the use cases end to end on the composed store (D124)', () => {
     ]);
     for (const i of items)
       expect((await rows(i.threadId!)).thread).toMatchObject({ personId: i.ownerId, state: 'open' });
-    // The hire's card is about them by key, and waits although they cannot sign in.
+    // The hire's card is about them by their id (D122), and waits although they cannot sign in.
     expect((await postgresThreadStore(options).readThread(w.hire, items[2]!.threadId!))?.subjects).toEqual([
-      { entity: 'person', key: `ny.${w.tag}` },
+      { entity: 'person', key: w.hire },
     ]);
     const added = await boarding.addItem(boss, id, {
       title: TYPED,

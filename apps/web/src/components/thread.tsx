@@ -43,6 +43,7 @@ import { useThreadAction } from '../mutations';
 import { executionStatus } from '../execution-status';
 import { useMarks } from '../marks';
 import { itemPageHref } from '../work-items';
+import { DOT } from '../dot';
 
 type Props = {
   thread: Thread;
@@ -68,8 +69,8 @@ const statusLine = (thread: Thread) => {
   const step = obligationStep(thread.proposals),
     sum = replySummary(thread.proposals);
   if (step === 'klart')
-    return { badge: false, label: sum.declined ? `Alla har svarat · ${sum.declined} nej` : 'Alla har svarat ja' };
-  if (step === 'svar') return { badge: false, label: `Svar · ${sum.accepted} av ${sum.total}` };
+    return { badge: false, label: sum.declined ? `Alla har svarat\u00a0· ${sum.declined} nej` : 'Alla har svarat ja' };
+  if (step === 'svar') return { badge: false, label: `Svar\u00a0· ${sum.accepted} av ${sum.total}` };
   if (step === 'inbjudningar') return { badge: false, label: 'Inbjudningar skickade' };
   return { badge: true, label: 'Förslag att bekräfta' };
 };
@@ -108,7 +109,12 @@ function Conversation({ messages }: { messages: Thread['messages'] }) {
     <Collapsible
       defaultIsOpen={false}
       chevronPosition="start"
-      trigger={<Text type="supporting">Historik · {messages.length} meddelanden</Text>}
+      trigger={
+        <Text type="supporting">
+          Historik{DOT}
+          {messages.length} meddelanden
+        </Text>
+      }
     >
       <VStack gap={2}>
         {older.length > 0 && list(older)}
@@ -212,8 +218,10 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
       <HStack gap={2} vAlign="center" wrap="wrap">
         <AreaChip ordinal={mark.ordinal} icon={mark.icon} label={mark.title} />
         <Text type="supporting">
-          {mark.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} />
-          {thread.state === 'open' && thread.waitingOn ? ` · Väntar på ${thread.waitingOn}` : ''}
+          {mark.source}
+          {DOT}
+          <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} />
+          {thread.state === 'open' && thread.waitingOn ? `\u00a0· Väntar på ${thread.waitingOn}` : ''}
         </Text>
         {status.badge ? (
           <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={status.label} />
@@ -275,11 +283,14 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
       {open && unplaced.length > 0 && (
         <HStack gap={1} vAlign="center" wrap="wrap" role="group" aria-label={`Oplacerade: ${unplaced.length}`}>
           <Text type="supporting" weight="semibold">
-            Oplacerade · {unplaced.length}
+            Oplacerade{DOT}
+            {unplaced.length}
           </Text>
           {unplaced.map(u => (
             <Text key={u.ref} type="supporting">
-              {u.label} · {u.detail}
+              {u.label}
+              {DOT}
+              {u.detail}
             </Text>
           ))}
         </HStack>
@@ -293,7 +304,8 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
           {accepted.length > 0 && (
             <HStack gap={2} vAlign="center" wrap="wrap">
               <Text type="supporting" weight="semibold">
-                Accepterat · {accepted.length}
+                Accepterat{DOT}
+                {accepted.length}
               </Text>
               <AvatarGroup size="sm">
                 {accepted.slice(0, 5).map(p => (
@@ -345,7 +357,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
                   key={p.id}
                   value={p.id}
                   label={
-                    <Text>{`${p.participant.name} · ${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`}</Text>
+                    <Text>{`${p.participant.name}\u00a0· ${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`}</Text>
                   }
                   isChecked={p.status !== 'proposed' || selected.includes(p.id)}
                   isDisabled={p.status !== 'proposed'}
@@ -420,7 +432,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
                 ...addItems,
                 {
                   id: 'dismiss',
-                  label: 'Avfärda · inte aktuellt',
+                  label: 'Avfärda\u00a0· inte aktuellt',
                   onClick: () =>
                     void run(async () => {
                       const t = await api.dismiss(thread.id);
@@ -435,7 +447,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
           {undoOpen && undoUntil && (
             <Button
               variant="destructive"
-              label={`Ångra allt · ${Math.max(0, Math.ceil((Date.parse(undoUntil) - now) / 60000))} min kvar`}
+              label={`Ångra allt\u00a0· ${Math.max(0, Math.ceil((Date.parse(undoUntil) - now) / 60000))} min kvar`}
               clickAction={() => run(() => api.undo(thread.id))}
             />
           )}

@@ -12,6 +12,7 @@ import {
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
+import { memoryPersonKeys } from '../person-keys';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
 import { personKey, reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { memoryCompetenceStore } from '../../apps/server/src/modules/competence/adapters/memory';
@@ -120,7 +121,11 @@ function directory() {
     };
   };
   const staff = staffUsecases({ store });
-  const relations = relationUsecases({ directory: staff, reader: async actor => persona(actor.id) });
+  const relations = relationUsecases({
+    directory: staff,
+    reader: async actor => persona(actor.id),
+    holders: memoryPersonKeys(s).holders,
+  });
   return { persona, staff, relations, state: s };
 }
 

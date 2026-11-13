@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import type { ConnectorAudience } from '@clew/contracts';
-import { database } from './index';
+import { database, type Database, type Transaction } from './index';
 import {
   people,
   accessGrants,
@@ -45,14 +45,17 @@ export async function readSession(digest: string) {
   const [row] = await database().select().from(sessions).where(activeSession(digest));
   return row;
 }
-export async function readAccess(personId: string) {
-  const [row] = await database()
+/** A sign-in can read access through the same transaction as its binding. */
+type Reader = Pick<Transaction, 'select'>;
+export async function readAccess(personId: string, db: Reader = database()) {
+  const [row] = await db
     .select({ person: people, grant: accessGrants })
     .from(people)
     .innerJoin(accessGrants, eq(accessGrants.personId, people.id))
     .where(and(eq(people.id, personId), eq(people.enabled, true)));
   return row;
 }
+export type Access = NonNullable<Awaited<ReturnType<typeof readAccess>>>;
 /** The external ids of the provisioned groups a person is in, for connector audiences (D23, D68). */
 export async function readGroups(personId: string): Promise<string[]> {
   const rows = await database()
@@ -127,6 +130,11 @@ export async function organisationInAudiences(organisationId: string, audiences:
     .limit(1);
   return !!row;
 }
+/** Revalidate the same ordered audience keys the context received. A plain membership can change without a new grant. */
+export async function groupsStillMatch(personId: string, snapshot: readonly string[]) {
+  const current = await readGroups(personId);
+  return current.length === snapshot.length && current.every((key, i) => key === snapshot[i]);
+}
 export async function resolveSubject(issuer: string, subject: string) {
   const [row] = await database()
     .select()
@@ -135,46 +143,127 @@ export async function resolveSubject(issuer: string, subject: string) {
   return row ? readAccess(row.personId) : undefined;
 }
 /**
- * First login (D68 item 6): the verified subject binds to the one enabled, provisioned person whose `userName` equals the
- * configured claim's value without regard to case (RFC 7643's default for `userName`; Keycloak lowercases account names,
- * Entra does not). Exactly one match, never an e-mail address, one binding per person and issuer; a subject that
- * differs from an existing binding is refused and audited, because a change of subject needs a person's review. Returns
- * the person's access when bound, undefined when not; the caller treats undefined as a denied login.
+ * A person's `userName` equals `name` without regard to case (RFC 7643's default for it; Keycloak lowercases account
+ * names, Entra does not), folded under ICU's root collation on both sides, so that Å and å are one letter on a database
+ * created with the C locale too (L13). `name` is NFC-normalised first, as stored user names are (L12).
  */
-export async function bindFirstLogin(issuer: string, subject: string, claim: string, value: string) {
-  return database().transaction(async tx => {
-    const matches = await tx
-      .select({ id: people.id, enabled: people.enabled })
-      .from(people)
-      .where(sql`lower(${people.userName}) = lower(${value})`);
+export const sameUserName = (name: string) =>
+  sql`lower(${people.userName} collate "und-x-icu") = lower(${name.normalize('NFC')}::text collate "und-x-icu")`;
+/** A sign-in's outcome: the access when it may go on, and the person it concerned when one is known (L10). */
+export interface SignIn {
+  access?: Access;
+  personId?: string;
+}
+/**
+ * The person a verified sign-in is (D68 item 6). A subject seen before is its person, unless the binding claim names
+ * another person: then the account's name has moved to someone else in the identity provider while the subject stayed
+ * bound here, and the sign-in is refused with `identity-conflict` naming both, the claim's value and the subject, and
+ * nothing is rebound (L2); an operator settles it with `scripts/identity-rebind.ts`. A claim that names nobody, or no
+ * claim, does not refuse: the subject is the identity, and the provider may rename before Clew does. A subject seen for
+ * the first time binds by the claim (`bindFirstLogin`). Compared at each sign-in, never on each request. `db` is the
+ * server's pool unless a test names another database.
+ */
+export async function signIn(
+  issuer: string,
+  subject: string,
+  claim: string,
+  value: string | undefined,
+  db: Database = database(),
+): Promise<SignIn> {
+  const name = value?.normalize('NFC');
+  const [bound] = await db
+    .select({ personId: identityBindings.personId })
+    .from(identityBindings)
+    .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.subject, subject)));
+  if (!bound) return name ? bindFirstLogin(issuer, subject, claim, name, db) : {};
+  if (name) {
+    const named = await db.select({ id: people.id }).from(people).where(sameUserName(name));
+    const [claimed] = named;
+    if (claimed && !named.some(p => p.id === bound.personId)) {
+      await db.transaction(tx =>
+        refuseConflict(tx, { issuer, claim, value: name, subject, claimed: claimed.id, holder: bound.personId }),
+      );
+      return { personId: bound.personId };
+    }
+  }
+  return accessOf(db, bound.personId);
+}
+async function accessOf(db: Reader, personId: string): Promise<SignIn> {
+  const access = await readAccess(personId, db);
+  return access ? { access, personId } : { personId };
+}
+/**
+ * A sign-in refused because its subject and its claim name different people, audited in the transaction that found it:
+ * `identity-conflict` in the authentication log on the claimed person, and `identity.conflict` on that person with the
+ * claim's value, the refused subject and the person who holds that subject, if anyone does (L10).
+ */
+async function refuseConflict(
+  tx: Transaction,
+  c: { issuer: string; claim: string; value: string; subject: string; claimed: string; holder?: string },
+) {
+  await tx.insert(authenticationAudit).values({ action: 'identity-conflict', actor: 'person:' + c.claimed });
+  await tx.insert(audit).values({
+    actor: 'person:' + c.claimed,
+    action: 'identity.conflict',
+    subject: 'person:' + c.claimed,
+    details: {
+      issuer: c.issuer,
+      claim: c.claim,
+      value: c.value,
+      subject: c.subject,
+      ...(c.holder ? { holder: 'person:' + c.holder } : {}),
+    },
+  });
+}
+/**
+ * First login (D68 item 6): the verified subject binds to the one enabled, provisioned person whose `userName` equals
+ * the configured claim's value (`sameUserName`). Exactly one match, never an e-mail address, one binding per person and
+ * issuer; a subject that differs from the person's binding, or that another person holds, is refused and audited,
+ * because a change of subject needs an operator (`scripts/identity-rebind.ts`). Everything it reads, the access
+ * included, goes through its own transaction: a second connection asked for inside it waits for the pool, and enough
+ * first sign-ins at once held every connection while waiting for one (L1).
+ */
+export async function bindFirstLogin(
+  issuer: string,
+  subject: string,
+  claim: string,
+  value: string,
+  db: Database = database(),
+): Promise<SignIn> {
+  const name = value.normalize('NFC');
+  return db.transaction(async tx => {
+    const matches = await tx.select({ id: people.id, enabled: people.enabled }).from(people).where(sameUserName(name));
     const [person] = matches;
     if (matches.length !== 1 || !person || !person.enabled) {
-      // The claim is the account name the IdP vouched for, not a person Clew knows; it is what an operator needs to see.
-      await tx.insert(authenticationAudit).values({ action: 'identity-unmatched', actor: 'claim:' + value });
-      return undefined;
+      // The claim is the account name the IdP vouched for, not a person Clew knows: what an operator needs to see.
+      await tx.insert(authenticationAudit).values({ action: 'identity-unmatched', actor: 'claim:' + name });
+      return matches.length === 1 && person ? { personId: person.id } : {};
     }
     const [bound] = await tx
       .select({ subject: identityBindings.subject })
       .from(identityBindings)
       .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.personId, person.id)));
     if (bound) {
-      if (bound.subject === subject) return readAccess(person.id);
-      await tx.insert(authenticationAudit).values({ action: 'identity-conflict', actor: 'person:' + person.id });
-      await tx.insert(audit).values({
-        actor: 'person:' + person.id,
-        action: 'identity.conflict',
-        subject: 'person:' + person.id,
-        details: { issuer, claim },
-      });
-      return undefined;
+      if (bound.subject === subject) return accessOf(tx, person.id);
+      await refuseConflict(tx, { issuer, claim, value: name, subject, claimed: person.id });
+      return { personId: person.id };
     }
-    // Another binding may have claimed this subject between the lookup and here; the primary key says so.
     const inserted = await tx
       .insert(identityBindings)
       .values({ issuer, subject, personId: person.id })
       .onConflictDoNothing()
       .returning({ personId: identityBindings.personId });
-    if (!inserted.length) return undefined;
+    if (!inserted.length) {
+      // Another sign-in bound this subject or this person since the reads above. The person's own sign-in at the same
+      // moment bound it to them; anything else is a conflict, named with whoever holds the subject (L10).
+      const [holder] = await tx
+        .select({ personId: identityBindings.personId })
+        .from(identityBindings)
+        .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.subject, subject)));
+      if (holder?.personId === person.id) return accessOf(tx, person.id);
+      await refuseConflict(tx, { issuer, claim, value: name, subject, claimed: person.id, holder: holder?.personId });
+      return { personId: holder?.personId ?? person.id };
+    }
     await tx.insert(authenticationAudit).values({ action: 'identity-bound', actor: 'person:' + person.id });
     await tx.insert(audit).values({
       actor: 'person:' + person.id,
@@ -182,20 +271,108 @@ export async function bindFirstLogin(issuer: string, subject: string, claim: str
       subject: 'person:' + person.id,
       details: { issuer, claim },
     });
-    return readAccess(person.id);
+    return accessOf(tx, person.id);
+  });
+}
+/** Why an operator's rebind was refused; nothing was written. `holder` holds the subject, when that is why. */
+export class RebindRefused extends Error {
+  holder?: string;
+  constructor(message: string, holder?: string) {
+    super(message);
+    this.name = 'RebindRefused';
+    this.holder = holder;
+  }
+}
+/**
+ * An operator binds a person to a new sign-in account, or releases their binding (Q8 of the 2026-11-12 users review,
+ * amending D68 item 6): the person's binding under the issuer moves to the new subject, or with `subject: null` is
+ * removed, so that the next sign-in whose claim names the person binds them again as a first login does. One
+ * `identity.rebound` audit row about the person (issuer, old subject, new subject or null, the operator's name) is
+ * written in the same transaction. Refused, writing nothing, for a person id the people table does not hold and for a
+ * subject already bound to another person: a subject is moved off its holder only by releasing the holder first, named
+ * by its own id, so every change is audited on the person it changes. Never automatic and never on a page:
+ * `scripts/identity-rebind.ts` is its one caller. The person's sessions under the old subject end at their next
+ * request, because that subject no longer resolves to them.
+ */
+export async function rebindIdentity(
+  actor: string,
+  input: { issuer: string; personId: string; subject: string | null; operator: string },
+) {
+  const { issuer, personId, subject, operator } = input;
+  return database().transaction(async tx => {
+    // Repairs and erasure take the person before the binding, including when there is no binding yet.
+    const [person] = await tx
+      .select({ id: people.id })
+      .from(people)
+      .where(eq(people.id, personId))
+      .for('no key update');
+    if (!person) throw new RebindRefused(`no person has the id "${personId}"`);
+    if (subject !== null) {
+      const [holder] = await tx
+        .select({ personId: identityBindings.personId })
+        .from(identityBindings)
+        .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.subject, subject)));
+      if (holder && holder.personId !== personId)
+        throw new RebindRefused(
+          `the subject is already bound to another person, "${holder.personId}"`,
+          holder.personId,
+        );
+    }
+    const [current] = await tx
+      .select({ subject: identityBindings.subject })
+      .from(identityBindings)
+      .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.personId, personId)));
+    const oldSubject = current?.subject ?? null;
+    if (oldSubject === subject) return { changed: false, oldSubject };
+    if (current)
+      await tx
+        .delete(identityBindings)
+        .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.personId, personId)));
+    if (subject !== null) {
+      // A first sign-in may bind the subject between the read above and here; the primary key refuses it then.
+      const inserted = await tx
+        .insert(identityBindings)
+        .values({ issuer, subject, personId })
+        .onConflictDoNothing()
+        .returning({ personId: identityBindings.personId });
+      if (!inserted.length) throw new RebindRefused('the subject was bound to another person meanwhile');
+    }
+    await tx.insert(audit).values({
+      actor,
+      action: 'identity.rebound',
+      subject: 'person:' + personId,
+      details: { issuer, oldSubject, newSubject: subject, operator },
+    });
+    return { changed: true, oldSubject };
   });
 }
 export async function auditAuth(action: string, actor?: string) {
   await database().insert(authenticationAudit).values({ action, actor });
 }
-export async function revokeSession(digest: string, action = 'logout') {
+export async function revokeSession(
+  digest: string,
+  action = 'logout',
+  expected?: { tokens: string; claim: string | null },
+) {
   return database().transaction(async tx => {
     const [row] = await tx
       .update(sessions)
-      .set({ revokedAt: new Date(), tokens: '' })
-      .where(and(eq(sessions.digest, digest), isNull(sessions.revokedAt)))
+      .set({ revokedAt: new Date(), tokens: '', refreshClaim: null, refreshClaimUntil: null })
+      .where(
+        and(
+          eq(sessions.digest, digest),
+          isNull(sessions.revokedAt),
+          expected ? eq(sessions.tokens, expected.tokens) : undefined,
+          expected
+            ? expected.claim === null
+              ? isNull(sessions.refreshClaim)
+              : eq(sessions.refreshClaim, expected.claim)
+            : undefined,
+        ),
+      )
       .returning();
     if (row) await tx.insert(authenticationAudit).values({ action, actor: 'person:' + row.personId });
+    return !!row;
   });
 }
 export async function touchSession(digest: string) {
@@ -207,9 +384,70 @@ export async function touchSession(digest: string) {
     .returning();
   return row;
 }
+/**
+ * Exclusive ownership of one active token generation. Each statement releases its connection before the provider
+ * is called. An expired claim is never taken over: the token may already have been consumed by its former owner.
+ */
+export async function claimSessionRefresh(digest: string, previous: string, claim: { id: string; until: Date }) {
+  const [row] = await database()
+    .update(sessions)
+    .set({ refreshClaim: claim.id, refreshClaimUntil: claim.until })
+    .where(and(activeSession(digest), eq(sessions.tokens, previous), isNull(sessions.refreshClaim)))
+    .returning();
+  return row;
+}
+/** A failed grant returned no tokens; only its owner may release this generation for a later request. */
+export async function releaseSessionRefresh(digest: string, previous: string, claim: string) {
+  await database()
+    .update(sessions)
+    .set({ refreshClaim: null, refreshClaimUntil: null })
+    .where(and(activeSession(digest), eq(sessions.tokens, previous), eq(sessions.refreshClaim, claim)));
+}
+/** Only the owner of the still-active token generation may commit a provider's answer, clearing its claim. */
+export async function storeRefreshedTokens(
+  digest: string,
+  previous: string,
+  claim: string,
+  next: { tokens: string; tokenExpiresAt: Date },
+) {
+  const [row] = await database()
+    .update(sessions)
+    .set({ ...next, refreshClaim: null, refreshClaimUntil: null })
+    .where(and(activeSession(digest), eq(sessions.tokens, previous), eq(sessions.refreshClaim, claim)))
+    .returning();
+  return row;
+}
 export async function consumeLogin(digest: string) {
   const [row] = await database().delete(loginTransactions).where(eq(loginTransactions.digest, digest)).returning();
   return row && row.expiresAt > new Date() ? row : undefined;
+}
+/**
+ * Ends the open sessions an identity provider's logout names, by the provider's session id (`sid`), the subject or
+ * both, under this installation's issuer and client, each with a row in the authentication log whose action says which
+ * logout ended it. Both logout channels end sessions here (D121). A logout that names neither is refused, since it
+ * would end every session of the client.
+ */
+async function endProviderSessions(
+  tx: Transaction,
+  input: { issuer: string; clientId: string; sid?: string; subject?: string },
+  action: 'backchannel-logout' | 'frontchannel-logout',
+) {
+  if (!input.sid && !input.subject) throw new Error('A provider logout must name a sid or a subject');
+  const ended = await tx
+    .update(sessions)
+    .set({ revokedAt: new Date(), tokens: '', refreshClaim: null, refreshClaimUntil: null })
+    .where(
+      and(
+        eq(sessions.issuer, input.issuer),
+        eq(sessions.clientId, input.clientId),
+        isNull(sessions.revokedAt),
+        input.sid ? eq(sessions.sid, input.sid) : undefined,
+        input.subject ? eq(sessions.subject, input.subject) : undefined,
+      ),
+    )
+    .returning({ personId: sessions.personId });
+  if (ended.length)
+    await tx.insert(authenticationAudit).values(ended.map(row => ({ actor: 'person:' + row.personId, action })));
 }
 export async function backchannelRevoke(input: {
   issuer: string;
@@ -225,42 +463,36 @@ export async function backchannelRevoke(input: {
       .onConflictDoNothing()
       .returning();
     if (!inserted.length) return;
-    const revoked = await tx
-      .update(sessions)
-      .set({ revokedAt: new Date(), tokens: '' })
-      .where(
-        and(
-          eq(sessions.issuer, input.issuer),
-          eq(sessions.clientId, input.clientId),
-          isNull(sessions.revokedAt),
-          input.sid ? eq(sessions.sid, input.sid) : undefined,
-          input.subject ? eq(sessions.subject, input.subject) : undefined,
-        ),
-      )
-      .returning({ personId: sessions.personId });
-    for (const row of revoked)
-      await tx.insert(authenticationAudit).values({ actor: 'person:' + row.personId, action: 'backchannel-logout' });
+    await endProviderSessions(tx, input, 'backchannel-logout');
   });
 }
-export async function pruneAuthentication() {
-  const now = new Date();
-  await database().delete(loginTransactions).where(lte(loginTransactions.expiresAt, now));
-  await database().delete(logoutReceipts).where(lte(logoutReceipts.expiresAt, now));
+/**
+ * OpenID Connect Front-Channel Logout 1.0 (D121): the open sessions of the provider's `sid` end as a back-channel
+ * logout ends them, each with a `frontchannel-logout` row. No receipt is kept: the request carries no token that could
+ * be replayed, and a second request for sessions that have ended ends nothing.
+ */
+export async function frontchannelRevoke(input: { issuer: string; clientId: string; sid: string }) {
+  await database().transaction(tx => endProviderSessions(tx, input, 'frontchannel-logout'));
+}
+/**
+ * The nightly clean-up of sign-in machinery (D123; L3 of the 2026-11-12 users review), in one transaction: every
+ * session past either expiry is removed with its sealed tokens, and one that was still open is ended with an `expired`
+ * row in the authentication log; login transactions and logout receipts past their expiry are removed. The
+ * authentication log itself is kept, since how long sign-in history is kept is the organisation's decision (Q7). One
+ * statement removes the sessions and writes their rows, so however many sessions expired, it is one request.
+ */
+export async function removeExpiredSignIns(now: Date) {
+  const at = now.toISOString();
   await database().transaction(async tx => {
-    const expired = await tx
-      .update(sessions)
-      .set({ revokedAt: now, tokens: '' })
-      .where(and(isNull(sessions.revokedAt), or(lte(sessions.expiresAt, now), lte(sessions.idleExpiresAt, now))))
-      .returning({ personId: sessions.personId });
-    if (expired.length)
-      await tx
-        .insert(authenticationAudit)
-        .values(expired.map(row => ({ actor: 'person:' + row.personId, action: 'expired' })));
+    await tx.execute(sql`
+      with removed as (
+        delete from ${sessions}
+         where ${sessions.expiresAt} <= ${at}::timestamptz or ${sessions.idleExpiresAt} <= ${at}::timestamptz
+        returning person_id, revoked_at
+      )
+      insert into ${authenticationAudit} (actor, action)
+      select 'person:' || person_id, 'expired' from removed where revoked_at is null`);
+    await tx.delete(loginTransactions).where(lte(loginTransactions.expiresAt, now));
+    await tx.delete(logoutReceipts).where(lte(logoutReceipts.expiresAt, now));
   });
-  await database()
-    .delete(sessions)
-    .where(lte(sessions.expiresAt, new Date(Date.now() - 86400_000)));
-  await database()
-    .delete(authenticationAudit)
-    .where(lte(authenticationAudit.createdAt, new Date(Date.now() - 30 * 86400_000)));
 }

@@ -16,7 +16,7 @@ import type {
   ProviderSummary,
   ProviderTestReport,
 } from '@clew/contracts';
-import { actorOf } from '@clew/connectors';
+import { audiencedActorOf } from '@clew/connectors';
 import { ForbiddenError, InputError } from '../../context';
 import { choicesFor, pickModel, slugFor } from '../domain';
 import {
@@ -510,7 +510,7 @@ export function modelUsecases(deps: ModelDeps) {
       store.listProviders(),
       store.readChoice(persona.id),
     ]);
-    const choices = choicesFor(models, new Set(providers.map(p => p.id)), actorOf(persona));
+    const choices = choicesFor(models, new Set(providers.map(p => p.id)), audiencedActorOf(persona));
     return { choices, current: pickModel(choices, saved), providers };
   }
   /** What the composer reads (D8, D24): the person's models, the one in use, and whether its endpoint answers. */

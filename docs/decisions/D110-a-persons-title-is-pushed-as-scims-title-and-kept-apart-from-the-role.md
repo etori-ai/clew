@@ -1,8 +1,34 @@
 # D110 · A person's title is pushed as SCIM's `title` and kept apart from the role
 
-**Status:** provisional (product owner, 2026-11-11: the user list should say what a person is called at work, and that is another fact than manager or employee; built against the freeze on new surface on his word), built 2026-11-11; amended by D114 on 2026-11-12 for multiple employments and titles on the profile; accepted once a real directory has pushed titles; no manual screen-reader pass yet · **Date:** 2026-11-11 · **Area:** identity, ui
+**Status:** provisional (product owner, 2026-11-11: the user list should say what a person is called at work, and that is another fact than manager or employee; built against the freeze on new surface on the product owner's word), built 2026-11-11; amended by D114 on 2026-11-12 for multiple employments and titles on the profile; item 4 amended 2026-11-12 in the fixes of the review of users and the organisation (Q1, X3): a title's value never refuses a request, while an `add` or `replace` on `title` without a value is malformed and refused with 400 `invalidValue`, except beside a deactivation; the Open paragraph answered by D114 item 6 the same day (X5); accepted once a real directory has pushed titles; no manual screen-reader pass yet · **Date:** 2026-11-11 · **Area:** identity, ui
 
 **Amended 2026-11-12.** [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) gives each current employment its own optional title on the profile.
+
+Later the same day, in the fixes of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
+which the product owner asked for on 2026-11-12 with every open decision taken in the work:
+
+- **Item 4 (Q1, X3).** A title's value still never refuses a request: text past 512 characters is cut, a run of
+  control or invalid Unicode characters becomes one space, and a value that is not text is no title. An operation
+  without a value is another matter. An `add` or `replace` on `title` that carries no `value` member is malformed, as
+  on every path of a user and a group, and is refused with 400 `invalidValue` ("Operation '<op>' on 'title' requires
+  a value."), with nothing written. Beside a deactivation the refusal waits and the person is deactivated, with the title left as it was
+  ([D113](D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md)). A `replace` with `null`, a `remove`
+  and a `PUT` that leaves the title out still clear it. Item 4's "A title never refuses a request" means its value.
+- **Open (X5).** The paragraph below is answered by D114 item 6: a person's titles are the titles of their current
+  employments, each with its unit, and the core title is shown where no employment carries one. The row it points to
+  in `docs/maintainers/open-questions.md` was removed when D114 settled it. Whether a title belongs to a work
+  placement at another unit than the employment's is part of D114's section on work placements, which is not sent
+  today.
+
+**Why item 4 changed.** The choice was taken in the work, as the product owner asked. RFC 7644 §3.5.2.1 and §3.5.2.3
+require a value for `add` and `replace`, and its Table 9 calls a missing one `invalidValue`. Read as `null`, a missing
+value once emptied a person's lists and took a unit's key or parent away, each with a 200. A JavaScript provisioner
+sends exactly this when a lookup answers `undefined`, since `JSON.stringify` leaves the member out. Microsoft Entra ID
+and Okta never send one, so only a hand-written provisioner meets the refusal, and it learns of its mistake at once
+instead of losing data without notice. Keeping a title the one path that accepts a missing value was weighed and left:
+one rule for every path is what a directory team can follow, and the deferral beside a deactivation keeps what item 4
+was written to protect.
 
 **Decision.** Clew holds two facts about a person's work and never lets one stand in for the other.
 
@@ -93,7 +119,10 @@ person, a row in a list still needs one line to show.
 
 **Open.** Whether a person needs several titles, and whether a title belongs to a placement on a unit with a period
 of its own, waits for the review of how Clew describes people, positions and manager responsibility, and for what
-the directory can deliver. It is in `docs/maintainers/open-questions.md`.
+the directory can deliver. It is in `docs/maintainers/open-questions.md`. (Answered 2026-11-12 by
+[D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) item 6: a title on each current
+employment; for work placements see D114's section
+[Employment and work placement in a municipality](D114-person-profiles-show-employments-and-categorised-phone-numbers.md#employment-and-work-placement-in-a-municipality).)
 
 **As built.** `auth_person.title` (migration `0050_person_title`). `ScimUserInputSchema`, `userFields`,
 `applyUserPatch`, `userResource` and the User schema document in `modules/people` take, clear and answer it;

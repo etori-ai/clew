@@ -58,11 +58,12 @@ export const sameUserName = (userName: string | null | undefined, key: string) =
 /** How a list about people (D97) says where a person stands in the round: the words Personal uses. */
 export const TALK_STATE_WORDS: Record<TalkState, string> = { missing: 'Saknas', booked: 'Bokat', held: 'Hållet' };
 /**
- * The next talk in a column (D97, artboard A2): the day it is booked ("mån 16 nov"), the day it was held ("Hållet 4
- * nov"), or "Inte bokat". `at` is the booked instant or the held calendar day.
+ * The next talk in a column (D97, artboard A2): the day it is booked ("mån 16 nov"), "Bokat" for a talk another of the
+ * person's managers booked, whose time the reader does not see (Q12), the day it was held ("Hållet 4 nov"), or "Inte
+ * bokat". `at` is the booked instant or the held calendar day.
  */
 export function nextTalk(state: TalkState, at: string | undefined): string {
-  if (state === 'booked' && at) return swedishShortDay(stockholmDate(at));
+  if (state === 'booked') return at ? swedishShortDay(stockholmDate(at)) : TALK_STATE_WORDS.booked;
   if (state === 'held' && at) return 'Hållet ' + swedishShortDay(at.slice(0, 10), false);
   return 'Inte bokat';
 }
@@ -103,15 +104,16 @@ export function normaliseLabel(label: string): string | undefined {
 }
 
 /**
- * Where one person stands in the round (D96 item 2): held when the manager marked the talk held, else booked when the
- * calendar has one, else missing. `at` is the day it was held or the instant it is booked.
+ * Where one person stands in the round (D96 item 2): held when a manager marked the talk held, else booked when a talk is
+ * booked, else missing. `at` is the day it was held or the instant it is booked; a talk another of the person's managers
+ * booked is booked without one (Q12).
  */
 export function talkState(
   talk: Pick<TalkRecord, 'heldOn'> | undefined,
-  booking: { at: string } | undefined,
+  booking: { at?: string } | undefined,
 ): { state: TalkState; at?: string } {
   if (talk?.heldOn) return { state: 'held', at: talk.heldOn };
-  if (booking) return { state: 'booked', at: booking.at };
+  if (booking) return booking.at ? { state: 'booked', at: booking.at } : { state: 'booked' };
   return { state: 'missing' };
 }
 /** An action point is carried over when it is open and was added in another round than the current one (D96 item 4). */
@@ -143,7 +145,7 @@ export function orderCommitmentRows<T extends Pick<CommitmentRow, 'carried' | 'd
 export function talkRow(
   person: Pick<PersonRef, 'id' | 'name' | 'userName'>,
   talk: Pick<TalkRecord, 'heldOn'> | undefined,
-  booking: { at: string } | undefined,
+  booking: { at?: string } | undefined,
   openCommitments: number,
 ): TalkRow {
   const { state, at } = talkState(talk, booking);

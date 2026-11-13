@@ -5,7 +5,6 @@ import {
   COMPETENCE_STATUSES,
   competenceMatrixNeeding,
   COMPETENCE_TYPE_SEARCH_MAX,
-  ENTITY_KEY_MAX,
   type CompetenceReadCaller,
   type CompetenceReadRelation,
   type Relation,
@@ -167,15 +166,6 @@ export class CompetenceError extends InputError {
     this.name = 'CompetenceError';
   }
 }
-/** Erasure was asked for a person who is still active (D108 item 14); an operator's error, so in English. */
-export class PersonStillActive extends Error {
-  constructor() {
-    super(
-      'The person is still active. Erasure is for a person the directory has deactivated (D108 item 14): an active person would get their copied holdings back at the next read of the source.',
-    );
-    this.name = 'PersonStillActive';
-  }
-}
 /** The grant capability behind the catalogue (D108 item 8). */
 export const COMPETENCE_ADMIN: Capability = 'admin.competence';
 /**
@@ -196,6 +186,11 @@ export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/8';
 export const COPY_ACTOR = 'system:competence-copy';
 /** The actor of the reconciliation of approvals' cards (D108 item 7) in its audit rows. */
 export const RECONCILE_ACTOR = 'system:competence-approvals';
+/**
+ * What erasing one person from the domain did, counts only (D108 item 14), or why it erased nothing: an id the people
+ * table does not hold, or a person the source has not deactivated (D122 item 7, D123 item 3).
+ */
+export type CompetenceErasure = { refused: 'unknown' | 'active' } | ErasedCounts;
 const NOT_A_MANAGER = 'Intyg registreras av den som är chef för en enhet.';
 const NOT_YOURS = 'Personen finns inte bland dem du är chef för.';
 const NO_TYPE = 'Kompetensen finns inte i katalogen.';
@@ -344,6 +339,8 @@ export interface ErasedCounts {
   cleared: number;
   requirements: number;
   approvals: number;
+  /** The cards of the module in the person's own stream. */
+  cards: number;
 }
 /** What one round of the erasure sweep did (D108 item 14), counts only. */
 export interface SweepCounts {
@@ -401,13 +398,18 @@ async function eraseWithin(
   // The cards of their registrations' approvals: by the approvals the rows name, and by the person the cards are
   // about, which also finds those of a registration they took back, whose row is gone.
   if (erased.threadIds.length) await tx.workItems.remove(erased.threadIds);
-  if (person?.userName) await tx.workItems.removeAbout({ entity: 'person', key: person.userName });
+  // By Clew's key for the person, their id, as the cards name them (D122).
+  if (person) await tx.workItems.removeAbout({ entity: 'person', key: person.id });
+  // Every card of the module in their own stream, each with a `thread.removed` row by the eraser; then what the scan
+  // keeps for them.
+  const cards = await tx.cards.removeOwn(personId, actor, at);
   await tx.workItems.removeOwned(personId);
   const counted = {
     holdings: erased.holdings,
     cleared: erased.cleared,
     requirements: erased.requirements,
     approvals: erased.threadIds.length,
+    cards,
   };
   await tx.audit({
     actor,
@@ -542,7 +544,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
   /**
    * What a search asked for, as its read-log row and its file's audit row carry it: the types' ids in the order chosen,
    * a level, a unit's id, the statuses in the contract's order, each once (as the log's check holds them), and the
-   * validity window (migration 0070). Not the order, which discloses nothing.
+   * validity window (migration 0076). Not the order, which discloses nothing.
    */
   const searched = (body: CompetenceSearchFileBody) => {
     const status = COMPETENCE_SEARCH_STATUSES.filter(s => body.status?.includes(s));
@@ -661,9 +663,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
     }
     return deciders;
   }
-  /** The card's subject: the person who registered, by the key another system knows them by; nobody without one. */
-  const subjectOf = (userName: string | null | undefined) =>
-    userName && [...userName].length <= ENTITY_KEY_MAX ? { subject: { entity: 'person' as const, key: userName } } : {};
+  /** The card's subject: the person who registered, by Clew's key for them, their id (D122). */
+  const subjectOf = (personId: string) => ({ subject: { entity: 'person' as const, key: personId } });
   /**
    * Make the open cards of one registration that waits (D108 item 7) match exactly the people who can decide it now
    * (`decidersOf`), in one transaction with one audit row of counts, `competence.approval_reconciled`. A card of
@@ -694,8 +695,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
       if (close.length) await tx.workItems.close(threadId, at, holder ? 'reassigned' : 'paused', close);
       if (reopen.length) await tx.workItems.reopen(threadId, reopen, at);
       if (open.length) {
-        const [person] = await tx.persons([holding.personId]);
-        await tx.workItems.open({ threadId, holdingId, managers: open, at, ...subjectOf(person?.userName) });
+        await tx.workItems.open({ threadId, holdingId, managers: open, at, ...subjectOf(holding.personId) });
       }
       await tx.audit({
         actor,
@@ -2286,9 +2286,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
             createdAt: iso,
             threadId,
           });
-          // The cards are about the person (D97 item 6), by the key another system knows them by; nobody without one.
-          const [self] = await tx.persons([persona.id]);
-          await tx.workItems.open({ threadId, holdingId: id, managers, at: iso, ...subjectOf(self?.userName) });
+          // The cards are about the person (D97 item 6), by Clew's key for them (D122).
+          await tx.workItems.open({ threadId, holdingId: id, managers, at: iso, ...subjectOf(persona.id) });
           await tx.audit({
             actor: persona.principal.id,
             action: 'competence.holding_submitted',
@@ -3307,31 +3306,32 @@ export function competenceUsecases(deps: CompetenceDeps) {
     /**
      * Erase one person from the domain by hand (D108 item 14), as `scripts/competence-erase.ts` does: their holdings,
      * copied ones included, the requirements set on them alone (item 6), their id on the holdings they registered,
-     * revoked or decided for others, and every card of the module in their own stream; the cards of their own
-     * registrations' approvals go from every manager's stream (item 7). Only for a person the directory has
-     * deactivated: an active person is refused with `PersonStillActive`. Audited with the cause `operator`; `actor` is
-     * the operator's. Their intent is marked erased, so the sweep finds nothing more to do for them until a later
-     * deactivation.
+     * revoked or decided for others, and every card of the module in their own stream, each with a `thread.removed`
+     * row; the cards of their own registrations' approvals go from every manager's stream (item 7). An id the people
+     * table does not hold (a user name, a typo) and a person who is still active erase nothing and write no audit row:
+     * only a person the directory has deactivated is erased (D123 item 3), since an active person's copied rows would come
+     * back at the next read of their source. Audited with the cause `operator`; `actor` is the operator's. Their intent
+     * is marked erased, so the sweep finds nothing more to do for them until a later deactivation.
      */
-    async erasePerson(actor: string, personId: string): Promise<ErasedCounts> {
+    async erasePerson(actor: string, personId: string): Promise<CompetenceErasure> {
       const at = now().toISOString();
-      return deps.store.transaction(async tx => {
+      return deps.store.transaction(async (tx): Promise<CompetenceErasure> => {
         const [person] = await tx.persons([personId]);
+        if (!person) return { refused: 'unknown' };
         // The intent first (the lock order), then whether the person is active: a reactivation locks the intent too.
-        const intent = person ? await tx.erasure(personId) : undefined;
+        const intent = await tx.erasure(personId);
         // Erasure is for a person the directory has deactivated (item 14): an active person's copied rows would come
         // back at the next read of their source, and their manager's attestations are still in use.
-        if ((await tx.activeIds([personId])).has(personId)) throw new PersonStillActive();
+        if ((await tx.activeIds([personId])).has(personId)) return { refused: 'active' };
         const counted = await eraseWithin(tx, actor, personId, person, at, 'operator');
-        if (person)
-          await tx.putErasure({
-            personId,
-            organisationId: person.organisationId,
-            state: 'erased',
-            inactiveSince: intent?.inactiveSince ?? null,
-            generation: intent?.generation ?? 0,
-            updatedAt: at,
-          });
+        await tx.putErasure({
+          personId,
+          organisationId: person.organisationId,
+          state: 'erased',
+          inactiveSince: intent?.inactiveSince ?? null,
+          generation: intent?.generation ?? 0,
+          updatedAt: at,
+        });
         return counted;
       });
     },

@@ -107,10 +107,13 @@ export function whenWord(instant: string, now = today()): string {
   const day = days === 0 ? 'i dag' : days === -1 ? 'i går' : days === 1 ? 'i morgon' : longDate(date);
   return `${day} ${clock(instant)}`;
 }
-/** A due day as the header's badge says it (board WorkItem: "Förfaller i dag"). */
-function dueBadge(thread: Thread, now: string) {
+/**
+ * A due day as the header's badge says it (board WorkItem: "Förfaller i dag"). A badge that only repeats the state's
+ * word beside it ("Påminnelse") is left out, as on the item's row.
+ */
+function dueBadge(thread: Thread, now: string, state: string) {
   const due = dueOf(thread, now);
-  if (!due) return null;
+  if (!due || due.label === state) return null;
   const label =
     due.label === 'Försenad' || due.label === 'Påminnelse'
       ? due.label
@@ -200,8 +203,10 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void, idBase:
 type ItemState = ReturnType<typeof useWorkItem>;
 
 /**
- * The status (the state the queue's dot shows, as text with its dot) and the badges: when it is due, its area, what it is
- * about; and, while the item's system does not answer, that it may be old and since when (D116, amended 2026-11-12).
+ * The status (the state the queue's dot shows, as text with its dot) and the badges: when it is due, its area, what it
+ * is about; and, while the item's system does not answer, that it may be old and since when (D116, amended
+ * 2026-11-12). The dot beside its word is decoration, hidden from assistive technology as the row's is, so the state is
+ * heard once.
  */
 function StatusLine({ thread, item }: { thread: Thread; item: ItemState }) {
   const now = new Date().toISOString(),
@@ -224,16 +229,16 @@ function StatusLine({ thread, item }: { thread: Thread; item: ItemState }) {
               : '',
           ]
             .filter(Boolean)
-            .join(' · ')
+            .join('\u00a0· ')
         : '';
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
       <HStack gap={1.5} vAlign="center">
-        <StatusDot variant={state.variant} label={state.label} />
+        <StatusDot variant={state.variant} label={state.label} aria-hidden />
         <Text weight="semibold">{state.label}</Text>
       </HStack>
       {detail && <Text type="supporting">{detail}</Text>}
-      {dueBadge(thread, day)}
+      {dueBadge(thread, day, state.label)}
       <AreaChip ordinal={item.mark.ordinal} icon={item.mark.icon} label={item.mark.title} />
       {about && <Badge variant="neutral" label={about.label} />}
       {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
@@ -288,7 +293,7 @@ function Receipt({ thread, actions, systems }: { thread: Thread; actions: Action
           <Button
             size="sm"
             variant="secondary"
-            label={`${pending ? 'Ångra bekräftade' : 'Ångra'} · ${minutes} min kvar`}
+            label={`${pending ? 'Ångra bekräftade' : 'Ångra'}\u00a0· ${minutes} min kvar`}
             clickAction={() => actions.run(() => api.undoReceipt(thread.id))}
           />
         ) : undefined
@@ -676,7 +681,7 @@ export function WorkItem({
     <>
       <VStack gap={1}>
         <Text type="supporting" color="secondary">
-          {[item.mark.source, item.mark.title].filter(Boolean).join(' · ')}
+          {[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}
         </Text>
         <HStack gap={3} vAlign="start" wrap="wrap">
           <StackItem size="fill">
@@ -769,12 +774,12 @@ function Details({ thread, item }: { thread: Thread; item: ItemState }) {
         <MetadataList>
           <MetadataListItem label="Status">
             <HStack gap={2} vAlign="center">
-              <StatusDot variant={state.variant} label={state.label} />
+              <StatusDot variant={state.variant} label={state.label} aria-hidden />
               <Text>{state.label}</Text>
             </HStack>
           </MetadataListItem>
           <MetadataListItem label="Källa">
-            <Text>{[item.mark.source, item.mark.title].filter(Boolean).join(' · ')}</Text>
+            <Text>{[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}</Text>
           </MetadataListItem>
           {deadline && (
             <MetadataListItem label="Förfaller">
@@ -913,7 +918,7 @@ export function WorkItemPage({
       {!mobile && <Divider orientation="vertical" />}
       {!mobile && (
         <Text type="supporting" color="secondary">
-          {[item.mark.source, item.mark.title].filter(Boolean).join(' · ')}
+          {[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}
         </Text>
       )}
     </HStack>
@@ -936,7 +941,7 @@ export function WorkItemPage({
         <VStack gap={2}>
           {mobile && (
             <Text type="supporting" color="secondary">
-              {[item.mark.source, item.mark.title].filter(Boolean).join(' · ')}
+              {[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}
             </Text>
           )}
           <HStack gap={4} vAlign="start" wrap="wrap">

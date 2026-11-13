@@ -114,7 +114,7 @@ export const ActorSchema = object(
       Type.Array(object({ unitId: Type.String({ minLength: 1, maxLength: 256 }), unitLabel: Type.String() }), {
         maxItems: 200,
         description:
-          'The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone.',
+          "The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone.",
       }),
     ),
   },
@@ -471,7 +471,7 @@ export const ConnectorManifestSchema = Type.Object(
               "One of this manifest's read capabilities, taking no input and answering a SiteHeaderOutput: the site's name, the places in the band with their own pages, and the logo when the system has one.",
           }),
         },
-        "The shared header (D88): this connector gives Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. When several enabled connectors declare one, the earliest registered answers. Clew keeps no header of its own beyond its default (the site's name and Start).",
+        "The shared header (D88): this connector can give Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. Declaring it makes the connector a candidate, not the holder: only the one connector an administrator chose to give the header answers, whatever the order connectors were registered in. Clew keeps no header of its own beyond its default (the site's name and Start).",
       ),
     ),
   },
@@ -513,6 +513,7 @@ export const ProtocolErrorSchema = object({
   ]),
   message: swedish('Swedish. Shown to the person.'),
 });
+export type ProtocolErrorCode = Static<typeof ProtocolErrorSchema>['code'];
 export const CallResponseSchema = Type.Union([
   object({ output: Type.Unknown() }),
   object({ error: ProtocolErrorSchema }),
@@ -1228,6 +1229,9 @@ export function openApiDocument(options: OpenApiOptions = {}) {
                 },
               },
             },
+            '503': {
+              description: 'Clew is starting or cannot read its keys now; keep the keys you have and retry later.',
+            },
           },
         },
       },
@@ -1252,7 +1256,10 @@ export function openApiDocument(options: OpenApiOptions = {}) {
             '401': json('CallResponse', 'Missing or invalid grant.'),
             '403': json('CallResponse', 'Denied: the person, the origin or the target is out of scope.'),
             '404': json('CallResponse', 'Unknown capability.'),
-            '503': json('CallResponse', 'The target is unavailable.'),
+            '503': json(
+              'CallResponse',
+              'Unavailable: the target or Clew cannot answer now, Clew still starting included; retry later.',
+            ),
           },
         },
       },

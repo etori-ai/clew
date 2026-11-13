@@ -55,7 +55,7 @@ export function followupFixture(id: string): FollowupSnapshot {
         threadId: id,
         personId: id,
         status: 'final',
-        participant: { email: 'invitee@example.test', name: 'Invitee' },
+        participant: { personId: id + ':invitee', email: 'invitee@example.test', name: 'Invitee' },
         start: '2026-11-09T10:00:00Z',
         end: '2026-11-09T11:00:00Z',
         eventRef: 'test',
@@ -71,7 +71,7 @@ export function followupFixture(id: string): FollowupSnapshot {
 }
 type Harness = { id: string; store: FollowupStore; deliveries(): Promise<number>; audits(): Promise<string[]> };
 export function followupContract(name: string, make: () => Promise<Harness>) {
-  const build = (h: Harness, version = 'v1', at = followupAt) => {
+  const build = (h: Harness, version = 'v1', at = followupAt, email = 'invitee@example.test') => {
     const actor = {
       id: h.id,
       name: 'Sender',
@@ -83,8 +83,8 @@ export function followupContract(name: string, make: () => Promise<Harness>) {
     const team: Team = async () => [
       {
         personId: h.id + ':invitee',
-        ref: 'mailto:invitee@example.test',
-        email: 'invitee@example.test',
+        ref: 'mailto:' + email,
+        email,
         name: 'Invitee',
       },
     ];
@@ -141,6 +141,20 @@ export function followupContract(name: string, make: () => Promise<Harness>) {
     });
     await expect(build(h).uc.remindNow(build(h).actor, h.id)).rejects.toThrow();
     expect(await h.deliveries()).toBe(0);
+  });
+  test(name + ': an invitee whose address changed since the invitation is reminded, found by id (N3)', async () => {
+    const h = await make(),
+      moved = 'invitee.new@example.test';
+    await build(h, 'v1', followupAt, moved).uc.fire(h.id, 1);
+    expect(await h.deliveries()).toBe(1);
+    expect((await h.store.read(h.id))?.proposals[0]).toMatchObject({
+      reminders: 1,
+      participant: { personId: h.id + ':invitee', email: 'invitee@example.test' },
+    });
+    const { uc, actor } = build(h, 'v1', followupAt, moved);
+    await uc.remindNow(actor, h.id);
+    expect(await h.deliveries()).toBe(2);
+    expect((await h.audits()).filter(x => x === 'obligation.reminded')).toHaveLength(1);
   });
   test(name + ': the bound applies to manual reminders too; expiry cannot loop behind an unknown outcome', async () => {
     const h = await make(),

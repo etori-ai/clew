@@ -155,9 +155,10 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
   const access: BoardingAccess | undefined = detail?.plan.access;
   // An item tied to an action about the person or a read that takes them (D124): the actions the reader may start for
   // them, how the reader stands to them and what a read about them is called are their page's
-  // (`GET /api/entities/person/:key`), read only when a row needs them.
+  // (`GET /api/entities/person/:id`, D122), read only when a row needs them, and only for a person with a user name,
+  // since no read about a person without one is answered.
   const personPageQ = useQuery({
-    ...entityDetailQuery('person', userName ?? ''),
+    ...entityDetailQuery('person', personId),
     enabled: !!detail && !!userName && needsPersonPage(detail.rows, views),
   });
   const personPage = personPageQ.data;
@@ -169,12 +170,12 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
   const title = detail ? planTitle(detail.plan.event, name) : person ? `Introduktion och avslut för ${name}` : null;
   usePageTitle(missing ? 'Planen finns inte' : title);
 
-  // The way back (D116 rule 11): the page in `from` when Clew can name it (the person's own page by their name, the list
+  // The way back (D116 rule 11): the page in `from` when Clew can name it (the person's own page by their id, the list
   // Introduktion och avslut), else where the reader works from: Personal for the manager, Att göra for an item's owner,
   // Hem for the person.
   const fromSubject = from ? pageSubject(from.split('?')[0]!) : null;
   const back =
-    fromSubject?.entity === 'person' && userName && fromSubject.key.toLowerCase() === userName.toLowerCase()
+    fromSubject?.entity === 'person' && fromSubject.key === personId
       ? { label: name, href: from! }
       : (originOf(from, menu) ??
         (from
@@ -417,7 +418,7 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
                       onTick={done => void onTick(row, done)}
                       control={control}
                       onAction={(action, values) =>
-                        userName && entityAction.start(action, { kind: 'person', key: userName, name }, values)
+                        userName && entityAction.start(action, { kind: 'person', key: personId, name }, values)
                       }
                     />
                   );
@@ -514,7 +515,7 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
         )}
         <RailSection title="Tillhör">
           {userName ? (
-            <ClickableCard label={`Person: ${name}`} href={personPageHref(userName, { from: here })} padding={3}>
+            <ClickableCard label={`Person: ${name}`} href={personPageHref(personId, { from: here })} padding={3}>
               <VStack gap={0}>
                 <Text type="supporting" color="secondary">
                   Person

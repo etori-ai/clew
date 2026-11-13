@@ -42,7 +42,7 @@ const toProposal = (p: ProposalRecord): Thread['proposals'][number] => ({
   status: p.status,
   start: p.start,
   end: p.end,
-  participant: { ...p.participant },
+  participant: { email: p.participant.email, name: p.participant.name },
   eventRef: p.eventRef,
   undoUntil: p.undoUntil,
   reminders: p.reminders,
@@ -173,7 +173,8 @@ export function eventUsecases({ store, bind, team, clock, ids }: EventDeps) {
       ...others.filter(p => p.id !== proposal.id).map(interval),
     ];
     if (collides(interval(input), taken)) throw new InputError(`Tiden ${when} krockar med din kalender.`);
-    const member = (await team(persona)).find(m => m.email.toLowerCase() === proposal.participant.email.toLowerCase());
+    // The invitee by id (N3): their calendar as the team has it now, whatever address the proposal was drawn with.
+    const member = (await team(persona)).find(m => m.personId === proposal.participant.personId);
     if (member) {
       const [busy] = await binding.provider.freeBusy(dayStart(day), dayStart(addDays(day, 1)), [
         { ref: member.ref, email: member.email },

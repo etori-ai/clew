@@ -1,10 +1,15 @@
-import type { ExecutionSummary } from '@clew/contracts';
+import { SUBJECT_CHANGED, type ExecutionSummary } from '@clew/contracts';
 /**
  * What a decision that the source has not confirmed says on the work item (D45, D47). `silent`: the item's system does
  * not answer now (D116, amended 2026-11-12), so a decision on its way says that it is queued and read back.
  */
 export function executionStatus(execution: ExecutionSummary | null | undefined, silent = false): string | null {
   if (!execution) return null;
+  // A started action whose user name moved to someone else, or away, before it was sent (D122).
+  if (execution.reason === SUBJECT_CHANGED)
+    return execution.state === 'unknown'
+      ? 'Personen har inte längre det användarnamn som beslutet gällde, så åtgärden skickas inte igen. Utfallet behöver kontrolleras i källsystemet.'
+      : 'Personen har inte längre det användarnamn som beslutet gällde. Inget skickades. Fatta beslutet igen.';
   if (silent && !execution.reason && !execution.compensates && ['pending', 'running'].includes(execution.state))
     return 'Ditt beslut är sparat. Det du skickar köas och läses tillbaka när systemet svarar.';
   if (execution.reason === 'needs-session') return 'Källan kräver en aktiv inloggning. Åtgärden väntar.';

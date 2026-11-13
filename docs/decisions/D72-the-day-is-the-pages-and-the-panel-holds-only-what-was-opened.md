@@ -75,6 +75,7 @@ under 1024 px and on a phone the `VStack` as before. The three-track breakpoint 
 D74 put Hem on every surface's 32 px gutter, the same day): RAIL 256 + 64 + 1024 + 45 + PANEL 440 = 1829 px (1845 with
 40); `Grid columns={3}` draws equal tracks, so the side column's 320 px, not the work's 640, decides it. The rail Astryx
 draws is 260 px, not the 256 `RAIL` says, so at 1829 to 1832 px the side column is a pixel or two under 320; `RAIL` is left as it is because `panelBesideQuery` (D50's 1336 px) uses it too.
+(`RAIL` took the 260 px on 2026-11-13, and D50's line moved to 1340 px.)
 `tests/a11y/todo.spec.ts` covers the rest, the open panel, the fold and the last close as the Tests paragraph says;
 `tests/a11y/screens.hem.spec.ts` gains a screenshot at 1900 px with a card open (A3).
 

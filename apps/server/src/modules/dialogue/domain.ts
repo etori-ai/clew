@@ -1,5 +1,5 @@
 import type { DialogueActivity, DialogueArea, DialogueTone, StaffUnit } from '@clew/contracts';
-import type { ActivityRecord, AreaRecord, AssessmentRecord, FollowedUnit, QuestionRecord } from './model';
+import type { ActivityRecord, AreaRecord, AssessmentRecord, FollowedUnit, NoteRecord, QuestionRecord } from './model';
 
 /**
  * The follow-up dialogue's rules (D118), pure: the words a state is shown with, the worst of several states, which
@@ -81,6 +81,8 @@ export function areaFor(input: {
   questions: readonly QuestionRecord[];
   assessments: readonly AssessmentRecord[];
   activities: readonly ActivityRecord[];
+  /** The reader's own notes (D120); another person's note is never drawn, whatever is handed in. */
+  notes: readonly NoteRecord[];
   names: ReadonlyMap<string, string>;
   reader: string;
 }): DialogueArea {
@@ -135,6 +137,15 @@ export function areaFor(input: {
       ...(q.basedOn ? { basedOn: q.basedOn } : {}),
     })),
     activities,
+    notes: input.notes
+      .filter(n => n.unitId === unitId && n.areaKey === area.key && n.authorId === reader)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map(n => ({
+        id: n.id,
+        text: n.text,
+        createdAt: n.createdAt,
+        ...(n.updatedAt !== n.createdAt ? { editedAt: n.updatedAt } : {}),
+      })),
   };
 }
 /**

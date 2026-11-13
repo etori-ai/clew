@@ -17,12 +17,29 @@ import type {
 /** Clew's own user records; identity and unit are always taken from the authenticated actor. */
 export interface UserReads {
   capabilities(personId: string): Promise<string[]>;
+  /**
+   * The active people placed on the unit, each with the role they hold there, whatever unit they act in: one read over
+   * the provisioning store for either adapter (`directoryUsecases`).
+   */
   directory(unitId: string): Promise<Array<{ id: string; name: string; role: string }>>;
   /**
    * The person's provisioned user name (D96 item 8: what another system keys a row on); null for an unknown person or
    * one provisioned without one.
    */
   userName(personId: string): Promise<string | null>;
+  /**
+   * Who holds these user names now in the reader's organisation, active or not (D122: a source's key is resolved to the
+   * person's id when a row or an action arrives), compared without regard to case and in the composed form (NFC) on
+   * both sides; keyed by the name as asked. A name nobody of the reader's organisation holds is absent, and so is a name
+   * more than one of them holds in spellings that compare alike, and every name for a reader the people table does not
+   * hold.
+   */
+  holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>>;
+  /**
+   * Whether this person is active: false once the source has deactivated them, undefined for an id the people table
+   * does not hold. An erasure refuses an id it does not hold (D122) and a person who is still active (D123).
+   */
+  enabled(personId: string): Promise<boolean | undefined>;
 }
 /** A SCIM client (D68): the one thing that fills the provisioning tables, scoped to one organisation. */
 export interface Provisioner {
@@ -37,6 +54,13 @@ export interface Page {
 export interface Listed<T> {
   total: number;
   rows: T[];
+}
+/** A row of the audit table as an erasure reads it (D123): its id, what happened, about whom, and what it holds. */
+export interface AuditRecord {
+  id: number;
+  action: string;
+  subject: string;
+  details: Record<string, unknown>;
 }
 /**
  * A change of a person's `active` as the leavers port is told it: who made it (`provisioner:<id>`), whom, of which
@@ -81,6 +105,13 @@ export interface ProvisionTx {
    */
   lockPerson(id: string): Promise<{ id: string; organisationId: string } | undefined>;
   /**
+   * Holds these people for the rest of the transaction, as `lockPerson` holds one, in one pass in id order and a few
+   * thousand a statement; an id that names nobody is passed over. A group write holds everyone it touches or derives
+   * this way before it takes its time of change: a person's own write holds them before it takes its time, so one that
+   * came first has committed under an earlier time, and one that comes later waits and takes a later one.
+   */
+  lockPeople(ids: readonly string[]): Promise<void>;
+  /**
    * Holds the named units for the rest of the transaction, whether or not they have a row yet. A unit's `unit:` and
    * `unit-manager:` groups are two resources that write one unit, so a write of either takes this before it reads the
    * unit's managers or locks a person: the two then run one after the other, and the later reads what the earlier
@@ -94,6 +125,14 @@ export interface ProvisionTx {
    * before `lockUnits`, by every caller.
    */
   lockTree(organisationId: string): Promise<void>;
+  /**
+   * Holds the organisation's D85 rows for the rest of the transaction: `read` by a group write before it reads them,
+   * `change` by a change to them before it writes. A group write reads the rows once and derives everyone it moves from
+   * that read, so the rows may not change until it commits: a change waits for the writes that read them, and a write
+   * that comes after the change waits for it and reads what it committed. Reads do not wait for each other. Taken after
+   * the group's own row (`readGroup` with `lock`), the tree and the units, and before any person.
+   */
+  lockGroupCapabilities(organisationId: string, mode: 'read' | 'change'): Promise<void>;
   /** The groups with an external id the person is in; a group without one carries no meaning. */
   memberships(personId: string): Promise<Membership[]>;
   members(groupExternalId: string): Promise<string[]>;
@@ -192,12 +231,23 @@ export interface ProvisionTx {
     filter?: { attribute: 'userName' | 'externalId'; value: string },
   ): Promise<Listed<UserRecord>>;
   insertUser(record: UserRecord): Promise<void>;
+  /**
+   * Writes the fields named and the time of change. A name other than the one held is also recorded as changed at
+   * `updatedAt`, for the groups whose resource lists the person (`groupMembers`, `memberNamesChanged`); the record reads
+   * the same.
+   */
   updateUser(
     id: string,
     fields: Partial<Pick<UserRecord, keyof UserFields>> & {
       updatedAt: string;
     },
   ): Promise<void>;
+  /**
+   * Moves the time of change of these people to `updatedAt` and changes nothing else of them: a group write changes the
+   * groups their resource answers (RFC 7643 §3.1). The rows are held for the rest of the transaction, taken in id order
+   * as `lockPerson`'s callers take them, a few thousand a statement. An id that names nobody is passed over.
+   */
+  touchUsers(ids: readonly string[], updatedAt: string): Promise<void>;
   userGroups(personId: string): Promise<Array<{ id: string; externalId: string | null; label: string }>>;
   // SCIM: groups. A group belongs to the organisation of the provisioner that pushed it, as its members do, so a client
   // reads, lists and writes its own organisation's groups only; `externalId` is unique across the installation.
@@ -217,7 +267,18 @@ export interface ProvisionTx {
   ): Promise<void>;
   /** Removes the group and its memberships; its group-capability rows stay (D85). */
   deleteGroup(id: string): Promise<void>;
-  groupMembers(groupId: string): Promise<Array<{ id: string; name: string }>>;
+  /**
+   * The group's members by id, each with when their name last changed (`updateUser`), null if it has not since they
+   * were written: a Group resource lists each member's name, so that is a change of the group (RFC 7643 §3.1), read in
+   * the same statement as the names, so no name is newer than the time read with it.
+   */
+  groupMembers(groupId: string): Promise<Array<{ id: string; name: string; nameChangedAt: string | null }>>;
+  /**
+   * For each of these groups, when the name of one of its current members last changed (`updateUser`), by group id,
+   * for an answer that leaves the members out. A group none of whose members has had a new name since they were written
+   * is absent. One read for a page of groups, whatever their size.
+   */
+  memberNamesChanged(groupIds: readonly string[]): Promise<Map<string, string>>;
   setGroupMembers(groupId: string, personIds: readonly string[]): Promise<void>;
   // Administration › Användare (D85, D100).
   /**
@@ -259,6 +320,38 @@ export interface ProvisionTx {
   placements(organisationId: string): Promise<Placement[]>;
   /** Whether an identity binding exists for the person, with any issuer. */
   bound(personId: string): Promise<boolean>;
+  // An operator's erasure of a deactivated person (D123): the row and its id stay, what names the person goes.
+  /**
+   * Holds the rows of the groups the person is in, in id order, for the rest of the transaction. Taken before
+   * `lockPerson`, as a group write holds its group before it locks a person: an erasure that takes the person out of
+   * their groups and a write of one of those groups then run one after the other instead of waiting on each other.
+   */
+  lockGroupsOf(personId: string): Promise<void>;
+  /**
+   * Takes the person out of every group they are in and moves the time of change of those groups to `at`, as a group
+   * write that takes a member out does (S13); how many memberships there were.
+   */
+  removeMemberships(personId: string, at: string): Promise<number>;
+  /** Removes the person's identity bindings under every issuer; how many there were. */
+  removeBindings(personId: string): Promise<number>;
+  /** Removes the person's sessions, ended or not, with the tokens they hold; how many there were. */
+  removeSessions(personId: string): Promise<number>;
+  /**
+   * The audit rows with one of these actions about a subject, or whose details hold a value under a key, in the order
+   * they were written. No action is no row.
+   */
+  auditRows(
+    actions: readonly string[],
+    where: { subject: string } | { key: string; value: string },
+  ): Promise<AuditRecord[]>;
+  /** Sets the selected identifier keys to ERASED on each current audit row; returns how many rows changed. */
+  redactAudit(keysByRow: ReadonlyMap<number, readonly string[]>): Promise<number>;
+  /**
+   * Rewrites the actor `claim:<value>` of the authentication log's rows (a sign-in whose claim named nobody it could
+   * bind) to `claim:<marker>` where the value is one of `names`, compared as user names are, without regard to case
+   * and in the composed form (NFC) on both sides; how many rows changed. The rest of each row stays.
+   */
+  eraseClaims(names: readonly string[], marker: string): Promise<number>;
   /** Add or remove one group-capability row of an organisation; true when the row changed. */
   setGroupCapability(
     organisationId: string,
@@ -273,7 +366,28 @@ export interface ProvisionTx {
     relation: string,
     present: boolean,
   ): Promise<boolean>;
+  /**
+   * The names of the organisation's groups with these external ids, by external id: one read for any number of them,
+   * so every group-capability row is named by its own group. Another organisation's group is not known here (D101),
+   * and an id no group holds is absent.
+   */
+  groupLabels(organisationId: string, externalIds: readonly string[]): Promise<Map<string, string>>;
+  /**
+   * The organisation's groups with an external id whose name or external id holds every word, without regard to case,
+   * by name in Swedish order and then by external id compared character by character; at most `limit` of them. No
+   * words is every such group. A word is matched as written.
+   */
+  searchGroups(
+    organisationId: string,
+    words: readonly string[],
+    limit: number,
+  ): Promise<Array<{ externalId: string; label: string }>>;
 }
 export interface ProvisionStore {
-  transaction<T>(fn: (tx: ProvisionTx) => Promise<T>): Promise<T>;
+  /**
+   * One transaction. With `snapshot`, it only reads, and every read in it sees the store as it was at one moment, so
+   * what it answers held together: a resource and its time of change, a group and its members' names, a person and the
+   * groups they are in, a page and its total. Without it, each statement sees what had committed when it began.
+   */
+  transaction<T>(fn: (tx: ProvisionTx) => Promise<T>, options?: { snapshot?: boolean }): Promise<T>;
 }

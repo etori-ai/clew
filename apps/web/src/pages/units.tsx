@@ -27,12 +27,13 @@ import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { useRail } from '../components/nav';
 import { PageHeader } from '../components/page-header';
-import { ContentSkeleton } from '../components/loading';
+import { AttentionSkeleton, UnitsSkeleton } from '../components/loading';
 import { Summary, measureOf, summaryOf, toneWeight } from '../components/unit-figures';
 import { unitPageHref } from '../person-address';
 import { sourcePageHref } from '../talk-address';
 import { errorMessage } from '../query-policy';
 import { fieldText } from '../components/view';
+import { DOT } from '../dot';
 
 type Unit = EntityList['groups'][number]['entities'][number];
 type Answer = { data?: EntitySection; isPending: boolean; isError: boolean };
@@ -60,7 +61,7 @@ const cardLabel = (source: EntitySource) => {
   const measure = measureOf(source);
   return [source.title, measure === source.title ? null : measure, source.own ? 'Clew' : source.source]
     .filter(Boolean)
-    .join(' · ');
+    .join(DOT);
 };
 
 /** A column's heading: what the figure is ("Avvikelse mot budget") under the source's title, and where it comes from. */
@@ -70,7 +71,7 @@ function SourceHeader({ source }: { source: EntitySource }) {
     <VStack gap={0}>
       <Text weight="semibold">{source.title}</Text>
       <Text type="supporting" weight="normal">
-        {measure === source.title ? '' : `${measure} · `}
+        {measure === source.title ? '' : `${measure}${DOT}`}
         {source.own ? 'Clew' : source.source}
       </Text>
     </VStack>
@@ -163,9 +164,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
 
   // Until every source has answered, the line on top keeps its place, so the tables do not jump down when it arrives.
   const summaryLine = !settled ? (
-    <Card padding={4}>
-      <ContentSkeleton label="Hämtar det som ska tas upp …" rows={2} />
-    </Card>
+    <AttentionSkeleton />
   ) : attention.length ? (
     <Card padding={4}>
       <VStack gap={2} as="section" aria-labelledby="units-attention">
@@ -181,7 +180,9 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
                 label={a.tone === 'alert' ? TONE_WORDS.alert.word : TONE_WORDS.warn.word}
               />
               <Text>
-                {a.source.title} · {a.word} –{' '}
+                {a.source.title}
+                {DOT}
+                {a.word} –{' '}
                 {a.units.map((u, i) => (
                   <Fragment key={u.key}>
                     {i > 0 && ', '}
@@ -221,7 +222,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
       {errorMessage(list.error, 'Enheterna kunde inte hämtas just nu.')}
     </Text>
   ) : list.isPending || (first && detail.isPending) ? (
-    <ContentSkeleton heading={false} />
+    <UnitsSkeleton />
   ) : !units.length ? (
     <EmptyState headingLevel={2} title="Du följer inte upp någon enhet" description="Dialogstödet är för chefer." />
   ) : (

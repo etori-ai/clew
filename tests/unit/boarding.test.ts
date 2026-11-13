@@ -453,8 +453,8 @@ describe('starting a plan', () => {
       [5, 'HLR', 'anna', '2027-01-03', false, true],
     ]);
     expect(items[5]).toMatchObject({ kind: 'course', tiedTo: 'competence.holdings' });
-    // Each card was opened in its owner's stream, before its item, about Anna by her key; even Anna's, who cannot
-    // sign in yet: the card waits for her.
+    // Each card was opened in its owner's stream, before its item, about Anna by her id (D122), never her user name;
+    // even Anna's, who cannot sign in yet: the card waits for her.
     for (const item of items)
       expect(store.state.cards.get(item.threadId!)).toEqual({
         personId: item.ownerId!,
@@ -462,7 +462,7 @@ describe('starting a plan', () => {
         planId: id,
         title: item.title,
         dueOn: item.dueOn,
-        subject: { entity: 'person', key: 'anna.a' },
+        subject: { entity: 'person', key: 'anna' },
         state: 'open',
         timer: true,
       });

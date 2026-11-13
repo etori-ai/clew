@@ -299,7 +299,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   // a strip that scrolls sideways hides its last pile. How much needs the person stays on the rail's Att göra.
   const tabLabel = (t: TodoTab) => {
     if (mobile) return tabWord[t];
-    return t === 'done' || loading ? tabTitle[t] : `${tabTitle[t]} · ${count(t)}`;
+    return t === 'done' || loading ? tabTitle[t] : `${tabTitle[t]}\u00a0· ${count(t)}`;
   };
 
   const systemLabel = area ? marks.areaTitle(area) : 'Alla system';

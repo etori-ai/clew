@@ -232,7 +232,7 @@ test.describe('Kompetens › Medarbetare', () => {
       // A name leads to the person's page, with the matrix as the way back.
       await expect(anna.getByRole('link', { name: 'Anna Lindqvist' })).toHaveAttribute(
         'href',
-        '/people/anna.lindqvist?from=%2Fcompetence%2Fmatrix',
+        '/people/anna?from=%2Fcompetence%2Fmatrix',
       );
       // The name is each row's header (1.3.1), so a screen reader names the person with each status down a column, and
       // the pinned column of the template, so a row keeps its name while the competences scroll.
@@ -572,7 +572,7 @@ test.describe('Kompetens › Medarbetare', () => {
       const erik = list.getByRole('listitem').filter({ hasText: 'Socionomexamen' });
       await expect(erik.getByRole('link', { name: 'Erik Sandström', exact: true })).toHaveAttribute(
         'href',
-        '/people/erik.sandstrom?from=%2Fcompetence%2Fmatrix',
+        '/people/erik?from=%2Fcompetence%2Fmatrix',
       );
       const review = erik.getByRole('link', { name: 'Granska Socionomexamen för Erik Sandström' });
       await expect(review).toHaveAttribute('href', `${MATRIX}?approve=own-erik`);

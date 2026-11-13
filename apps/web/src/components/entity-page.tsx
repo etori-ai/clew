@@ -24,9 +24,9 @@ import { narrowItemQuery } from './work-item';
 
 /**
  * A person's or a unit's page (D112 item 5, board Person): the work item's page shape (`work-item-detail`,
- * `WorkItemPage`) drawn for an entity. The header holds the way back with where the entity stands, the avatar, the name
- * and its line, and the actions with "Fråga Clew" at the end of the name's line (on a phone "Åtgärder" under it, the
- * width of the column). The main column holds every section one under the other, each with its heading, the source's
+ * `WorkItemPage`) drawn for an entity. The header holds the way back with where the entity stands on the same line, on
+ * a phone as on a wide screen (D124 item 6), then the avatar, the name and its line, and the actions with "Fråga Clew"
+ * at the end of the name's line (on a phone "Åtgärder" under it, the width of the column). The main column holds every section one under the other, each with its heading, the source's
  * badge on the heading's line and a rule between them; nothing is chosen, so there is no tab strip. The details rail is
  * 340 px beside the column, a named complementary region; at 1024 px and below, and while the page's panel holds
  * something beside it, its content is behind "Visa detaljer" in a fullscreen dialog, as on the work item's page. On a
@@ -97,7 +97,7 @@ export function EntityPage({
     if (!narrow) setDetailsOpen(false);
   }, [narrow]);
   const trail =
-    back || crumbs || (place && !mobile) ? (
+    back || crumbs || place ? (
       <HStack gap={3} wrap="wrap" vAlign="center">
         {back && (
           <Link href={back.href} type="supporting" color="secondary">
@@ -107,9 +107,9 @@ export function EntityPage({
             </HStack>
           </Link>
         )}
-        {back && (crumbs || (place && !mobile)) && <Divider orientation="vertical" />}
+        {back && (crumbs || place) && <Divider orientation="vertical" />}
         {crumbs}
-        {place && !mobile && (
+        {place && (
           <Text type="supporting" color="secondary">
             {place}
           </Text>
@@ -138,11 +138,6 @@ export function EntityPage({
             <HStack gap={3} vAlign="center">
               {icon}
               <VStack gap={0}>
-                {mobile && place && (
-                  <Text type="supporting" color="secondary">
-                    {place}
-                  </Text>
-                )}
                 <Heading level={1} {...(headingRef ? { ref: headingRef, tabIndex: -1 } : {})}>
                   {title}
                 </Heading>

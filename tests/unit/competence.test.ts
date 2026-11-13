@@ -137,11 +137,12 @@ beforeEach(() => {
     ['other', { units: [{ unitId: 'u3', unitLabel: 'Enhet 3', people: [dan] }] }],
   ]);
   store = memoryCompetenceStore({
-    persons: [anna, bo, cia, dan, { id: 'boss', name: 'Karin Chef', userName: 'boss' }].map(p => ({
+    persons: [anna, bo, cia, dan, { id: 'boss', name: 'Karin Chef', userName: 'boss', enabled: true }].map(p => ({
       id: p.id,
       organisationId: ORG,
       name: p.name,
       userName: p.userName,
+      enabled: p.enabled !== false,
     })),
   });
   competence = competenceUsecases({
@@ -153,6 +154,8 @@ beforeEach(() => {
 });
 const audits = () => store.audit();
 const lastAudit = () => audits().at(-1)!;
+/** The source deactivates the person: only then does an operator erase them (D123 item 3). */
+const deactivate = (id: string) => store.addPerson({ ...store.state.persons.get(id)!, enabled: false });
 /** A catalogue of three types: one with the employer's rule, two without. */
 async function catalogue() {
   const hot = await competence.addType(admin, { name: 'Heta arbeten', area: 'Säkerhet', kind: 'certificate' });
@@ -656,29 +659,105 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.registerHolding(boss, 'bo', { typeId: hot, issuedOn: '2026-01-10' });
     // Erasure is for a person the directory has deactivated (D108 item 14).
-    store.deactivate('anna');
+    deactivate('anna');
     expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({
       holdings: 1,
       cleared: 0,
       requirements: 0,
       approvals: 0,
+      cards: 0,
     });
     expect(lastAudit()).toEqual({
       actor: 'operator:cli',
       action: 'competence.person_erased',
       subject: 'person:anna',
       at: now.toISOString(),
-      details: { cause: 'operator', holdings: 1, cleared: 0, requirements: 0, approvals: 0 },
+      details: { cause: 'operator', holdings: 1, cleared: 0, requirements: 0, approvals: 0, cards: 0 },
     });
     // The manager who registered is erased: the holdings stay, without her id.
-    store.deactivate('boss');
+    deactivate('boss');
     expect(await competence.erasePerson('operator:cli', 'boss')).toEqual({
       holdings: 0,
       cleared: 1,
       requirements: 0,
       approvals: 0,
+      cards: 0,
     });
     expect([...store.state.holdings.values()].map(h => [h.personId, h.registeredBy])).toEqual([['bo', null]]);
+  });
+  test("the cards the competence scan put in the person's own stream go with the holdings, and are counted (R1)", async () => {
+    const seeded = memoryCompetenceStore({
+      persons: [{ id: 'anna', organisationId: ORG, name: 'Anna', userName: 'anna.a', enabled: false }],
+      ownCards: {
+        'card-heta': { personId: 'anna', connector: 'competence' },
+        'card-hlr': { personId: 'anna', connector: 'competence' },
+        'card-hr': { personId: 'anna', connector: 'hr' },
+        'card-bo': { personId: 'bo', connector: 'competence' },
+      },
+    });
+    const erasing = competenceUsecases({
+      store: seeded,
+      staff: async () => ({ units: [] }),
+      clock: () => now,
+      ids: () => 'x',
+    });
+    expect(await erasing.erasePerson('operator:cli', 'anna')).toEqual({
+      holdings: 0,
+      cleared: 0,
+      requirements: 0,
+      approvals: 0,
+      cards: 2,
+    });
+    // Another connector's card of hers and a colleague's competence card stay.
+    expect([...seeded.state.ownCards.keys()].sort()).toEqual(['card-bo', 'card-hr']);
+    // A thread.removed row for each card, then the erasure's own, all at the erasure's time.
+    expect(seeded.audit()).toEqual([
+      ...['card-heta', 'card-hlr'].map(id => ({
+        actor: 'operator:cli',
+        action: 'thread.removed',
+        subject: `thread:${id}`,
+        at: now.toISOString(),
+        details: { reason: 'erasure' },
+      })),
+      {
+        actor: 'operator:cli',
+        action: 'competence.person_erased',
+        subject: 'person:anna',
+        at: now.toISOString(),
+        details: { cause: 'operator', holdings: 0, cleared: 0, requirements: 0, approvals: 0, cards: 2 },
+      },
+    ]);
+  });
+  test('an id the people table does not hold, a user name among them, erases nothing and writes no audit row (R1)', async () => {
+    const { hot } = await catalogue();
+    await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
+    const before = audits().length;
+    for (const id of ['nobody', 'Anna.A', 'anna.a'])
+      expect(await competence.erasePerson('operator:cli', id)).toEqual({ refused: 'unknown' });
+    expect(audits()).toHaveLength(before);
+    expect([...store.state.holdings.values()].map(h => h.personId)).toEqual(['anna']);
+  });
+  test('a person who is still active is refused: nothing is erased and no audit row is written (D123 item 3)', async () => {
+    const { hot } = await catalogue();
+    await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
+    store.addCard('card-anna', { personId: 'anna', connector: 'competence' });
+    const before = audits().length,
+      holdings = structuredClone(store.state.holdings);
+    // Neither Anna, whose holding it is, nor the manager who registered it.
+    for (const id of ['anna', 'boss'])
+      expect(await competence.erasePerson('operator:cli', id)).toEqual({ refused: 'active' });
+    expect(audits()).toHaveLength(before);
+    expect(store.state.holdings).toEqual(holdings);
+    expect([...store.state.ownCards.keys()]).toEqual(['card-anna']);
+    // Once the source has deactivated her, the same call erases her.
+    deactivate('anna');
+    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({
+      holdings: 1,
+      cleared: 0,
+      requirements: 0,
+      approvals: 0,
+      cards: 1,
+    });
   });
   test('the export is one versioned document of the organisation, audited with counts', async () => {
     const { hot } = await catalogue();
@@ -705,7 +784,7 @@ test('no audit row carries a name: of a person or of a type', async () => {
   await competence.updateType(admin, hlr, { name: 'Fallskydd', validityMonths: 36 });
   await competence.revokeHolding(boss, id);
   await competence.archiveType(admin, hot);
-  store.deactivate('bo');
+  deactivate('bo');
   await competence.erasePerson('operator:cli', 'bo');
   await competence.exportDomain('operator:cli', ORG);
   const written = JSON.stringify(audits());
@@ -1187,6 +1266,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         cleared: 2,
         requirements: 0,
         approvals: 0,
+        cards: 0,
       });
       expect(store.state.requirements.get(onPosition)?.createdBy).toBeNull();
       expect(store.state.shareTargets.get(target)?.createdBy).toBeNull();
@@ -1823,13 +1903,14 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       cleared: 0,
       requirements: 1,
       approvals: 0,
+      cards: 0,
     });
     expect(lastAudit()).toEqual({
       actor: 'operator:cli',
       action: 'competence.person_erased',
       subject: 'person:bo',
       at: now.toISOString(),
-      details: { cause: 'operator', holdings: 0, cleared: 0, requirements: 1, approvals: 0 },
+      details: { cause: 'operator', holdings: 0, cleared: 0, requirements: 1, approvals: 0, cards: 0 },
     });
     expect([...store.state.requirements.values()].map(r => r.personId)).toEqual([null, null]);
     const written = JSON.stringify(audits());
@@ -2086,7 +2167,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         person(`report-${String(i + 1).padStart(2, '0')}`, `Rapport ${String(i + 1).padStart(2, '0')}`, null),
       );
       for (const p of more) {
-        store.state.persons.set(p.id, { id: p.id, organisationId: ORG, name: p.name, userName: p.userName });
+        store.addPerson({ id: p.id, organisationId: ORG, name: p.name, userName: p.userName });
         store.assign(p.id, 'u1');
         store.holdPosition(p.id, 'pos-usk');
       }
@@ -2430,7 +2511,7 @@ describe('a person registers their own certificate and the manager they report t
       store,
       staff: async persona => staff.get(persona.id) ?? { units: [] },
       above: async persona => above.get(persona.id) ?? [],
-      personaOf: async id => (store.state.inactive.has(id) ? undefined : granted.get(id)),
+      personaOf: async id => (store.state.persons.get(id)?.enabled === false ? undefined : granted.get(id)),
       clock: () => now,
       ids: () => 'id-' + ++n,
     });
@@ -2488,7 +2569,7 @@ describe('a person registers their own certificate and the manager they report t
         holdingId: id,
         managers: ['boss', 'other'],
         at: now.toISOString(),
-        subject: { entity: 'person', key: 'anna.a' },
+        subject: { entity: 'person', key: 'anna' },
       },
     ]);
     expect([...store.state.cards.keys()].sort()).toEqual([threadId + ':boss', threadId + ':other']);
@@ -2507,10 +2588,11 @@ describe('a person registers their own certificate and the manager they report t
         },
       },
     ]);
-    // Bo has no user name: his card is about nobody it could name.
+    // Bo has no user name: his card is about him all the same, by Clew's id for him, as every card names a person (D122).
     await own.registerOwn(asBo, { typeId: hot, issuedOn: '2026-02-01', expiresOn: '2031-01-31' });
     expect(calls().at(-1)).toEqual({
       op: 'open',
+      subject: { entity: 'person', key: 'bo' },
       threadId: expect.any(String),
       holdingId: expect.any(String),
       managers: ['boss'],
@@ -3043,10 +3125,11 @@ describe('a person registers their own certificate and the manager they report t
       cleared: 0,
       requirements: 1,
       approvals: 2,
+      cards: 0,
     });
     expect(calls().slice(-3)).toEqual([
       { op: 'remove', threadIds: threads },
-      { op: 'removeAbout', subject: { entity: 'person', key: 'anna.a' } },
+      { op: 'removeAbout', subject: { entity: 'person', key: 'anna' } },
       { op: 'removeOwned', personId: 'anna' },
     ]);
     expect([...store.state.cards.values()].map(c => c.holdingId)).toEqual([bos]);
@@ -3055,7 +3138,7 @@ describe('a person registers their own certificate and the manager they report t
       action: 'competence.person_erased',
       subject: 'person:anna',
       at: now.toISOString(),
-      details: { cause: 'operator', holdings: 2, cleared: 0, requirements: 1, approvals: 2 },
+      details: { cause: 'operator', holdings: 2, cleared: 0, requirements: 1, approvals: 2, cards: 0 },
     });
     // Karin, erased as a manager: her card of Bo's registration goes, and her id leaves what she decided.
     await own.decideHolding(boss, bos, 'reject');
@@ -3065,6 +3148,7 @@ describe('a person registers their own certificate and the manager they report t
       cleared: 1,
       requirements: 0,
       approvals: 0,
+      cards: 0,
     });
     expect(calls().at(-1)).toEqual({ op: 'removeOwned', personId: 'boss' });
     expect(store.state.cards.size).toBe(0);

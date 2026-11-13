@@ -1,6 +1,15 @@
 import type { Actor, Related } from '@clew/connectors';
-import type { EntityKind, Relation } from '@clew/contracts';
-import { foldKey, isKey, personKey, personRelation, registrarFor, reportById, reportOf, unitRelation } from './domain';
+import { foldSourceKey, type EntityKind, type Relation } from '@clew/contracts';
+import {
+  isKey,
+  isSourceKey,
+  personKey,
+  personRelation,
+  registrarFor,
+  reportById,
+  reportOf,
+  unitRelation,
+} from './domain';
 import type { DirectoryPerson, RelationDeps } from './model';
 
 /**
@@ -13,14 +22,15 @@ import type { DirectoryPerson, RelationDeps } from './model';
 export function relationUsecases(deps: RelationDeps) {
   /**
    * How the actor stands to each of these keys, for the relations in `admits` only; a key of nobody, of a deactivated
-   * person, of a person without a user name, outside the actor's organisation or outside `admits` is absent. Every
-   * spelling asked is answered on its own, with the directory's spelling in `key`. A colleague is looked up in the
-   * directory only when `admits` lets one through, so a strict read costs one read of where the actor stands. A reader
-   * who holds the grant `registrar` (D121, from their current access record) stands so to such a person instead, but
-   * only for a read that admits it: to any other read they are the colleague they are, so the grant reaches nothing
-   * else and no source is told it unasked. With `ids` (a core capability of Clew's own domains), a person without a
-   * user name may also be named by Clew's id, as themself or as a report; never as a colleague or a registrar's, and
-   * never someone who has a user name.
+   * person, of a person without a user name, outside the actor's organisation or outside `admits` is absent. The keys
+   * are a source's keys (D122): a person's user name, compared as Clew compares one (`foldSourceKey`). Every spelling
+   * asked is answered on its own, with the directory's spelling in `key`. A colleague is looked up (who holds the name,
+   * then the directory) only when `admits` lets one through, so a strict read costs one read of where the actor stands.
+   * A reader who holds the grant `registrar` (D121, from their current access record) stands so to such a person
+   * instead, but only for a read that admits it: to any other read they are the colleague they are, so the grant reaches
+   * nothing else and no source is told it unasked. With `ids` (a core capability of Clew's own domains), a person
+   * without a user name may also be named by Clew's id, as themself or as a report; never as a colleague or a
+   * registrar's, and never someone who has a user name.
    */
   async function relate(
     actor: Actor,
@@ -35,28 +45,36 @@ export function relationUsecases(deps: RelationDeps) {
     const reach = await deps.directory.reach(reader);
     if (entity === 'unit')
       return keys.flatMap(asked => {
-        const relation = isKey(asked) ? unitRelation(reach, asked) : undefined;
+        const relation = isKey('unit', asked) ? unitRelation(reach, asked) : undefined;
         return relation && admits.includes(relation) ? [{ asked, key: asked, relation }] : [];
       });
-    const colleagues = new Map<string, DirectoryPerson | undefined>();
+    // Who holds the names that are neither the reader's own nor a report's, read once for every key, and only when a
+    // colleague, or a registrar's, may be asked about.
+    const own = (asked: string) =>
+      !!reader.userName && foldSourceKey('person', reader.userName) === foldSourceKey('person', asked);
     // D121: a registrar stands so to everyone else of their organisation, for a read that admits it alone.
     const registrar = registrarFor(reader, admits);
+    const others =
+      admits.includes('colleague') || registrar
+        ? keys.filter(asked => isSourceKey(asked) && !own(asked) && !reportOf(reach, asked))
+        : [];
+    const held = others.length ? await deps.holders(reader.id, [...new Set(others)]) : new Map<string, string>();
+    const colleagues = new Map<string, DirectoryPerson | undefined>();
     const out: Related[] = [];
     for (const asked of keys) {
-      if (!isKey(asked)) continue;
-      const folded = foldKey('person', asked);
-      let person: DirectoryPerson | undefined =
-        reader.userName && foldKey('person', reader.userName) === folded
-          ? { id: reader.id, name: reader.name, userName: reader.userName, enabled: true }
-          : reportOf(reach, asked)?.person;
-      if (!person && (admits.includes('colleague') || registrar)) {
-        if (!colleagues.has(folded)) colleagues.set(folded, await deps.directory.person(reader, asked, false));
-        person = colleagues.get(folded);
+      if (!isSourceKey(asked)) continue;
+      let person: DirectoryPerson | undefined = own(asked)
+        ? { id: reader.id, name: reader.name, userName: reader.userName!, enabled: true }
+        : reportOf(reach, asked)?.person;
+      const id = person ? undefined : held.get(asked);
+      if (id) {
+        if (!colleagues.has(id)) colleagues.set(id, await deps.directory.person(reader, id, false));
+        person = colleagues.get(id);
       }
       const key = person && personKey(person);
-      if (person && key) {
-        const relation = personRelation(reader, reach, { id: person.id, userName: key }, registrar);
-        if (relation && admits.includes(relation)) out.push({ asked, key, relation });
+      if (person && key && foldSourceKey('person', key) === foldSourceKey('person', asked)) {
+        const relation = personRelation(reader, reach, person, registrar);
+        if (admits.includes(relation)) out.push({ asked, key, relation });
         continue;
       }
       // Clew's own id, for a person without a user name, where a core capability takes one (D117).

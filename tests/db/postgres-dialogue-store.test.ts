@@ -15,6 +15,7 @@ const prefixes: string[] = [];
 afterAll(async () => {
   const db = database();
   for (const p of prefixes) {
+    await db.delete(schema.dialogueNotes).where(like(schema.dialogueNotes.id, p + '%'));
     await db.delete(schema.dialogueActivities).where(like(schema.dialogueActivities.id, p + '%'));
     await db.delete(schema.dialogueAssessments).where(like(schema.dialogueAssessments.id, p + '%'));
     await db.delete(schema.dialogueQuestions).where(like(schema.dialogueQuestions.organisationId, p + '%'));
@@ -89,6 +90,13 @@ dialogueStoreContract('postgres', async () => {
         .from(schema.dialogueAssessments)
         .where(eq(schema.dialogueAssessments.id, id));
       return row!.comment;
+    },
+    async storedNote(id) {
+      const [row] = await database()
+        .select({ text: schema.dialogueNotes.textSealed })
+        .from(schema.dialogueNotes)
+        .where(eq(schema.dialogueNotes.id, id));
+      return row!.text;
     },
   };
 });

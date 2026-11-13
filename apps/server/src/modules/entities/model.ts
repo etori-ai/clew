@@ -15,8 +15,9 @@ export interface DirectoryPerson {
   userName: string | null;
   enabled: boolean;
   /**
-   * Set for a person who reports to the unit from a unit below it (D99) rather than being placed on it: the units below
-   * that they lead or are placed on.
+   * Set on a unit the reader manages for someone who is not placed on it and reports to its manager from a unit below it
+   * (D99 item 4): the units below that they lead or are placed on, with their role there. Absent for someone placed on
+   * the unit.
    */
   below?: Array<DirectoryUnit & { role: 'manager' | 'employee' }>;
 }
@@ -44,14 +45,13 @@ export interface Reach {
 }
 /**
  * The directory (composition: the people module's `staffUsecases`). `person` finds an active person of the reader's
- * organisation by user name without regard to case, with the unit they act in; undefined when there is no such active
- * person.
+ * organisation by Clew's key, their id (D122), with the unit they act in; undefined when there is no such active person.
  */
 export interface Directory {
   reach(persona: AuthenticatedContext): Promise<Reach>;
   person(
     persona: AuthenticatedContext,
-    userName: string,
+    id: string,
     includeProfile: boolean,
   ): Promise<(DirectoryPerson & { unit: DirectoryUnit | null; profile?: PersonProfile }) | undefined>;
 }
@@ -60,10 +60,16 @@ export interface Directory {
  * handed (composition: `systemContext`); undefined for somebody Clew does not know. Throws when it cannot be read.
  */
 export type Reader = (actor: Actor) => Promise<AuthenticatedContext | undefined>;
+/**
+ * Who holds these user names now in the reader's organisation, active or not, keyed by the name as asked (composition:
+ * the people module's `holders`, D122). A name nobody holds, or two people hold, is absent.
+ */
+export type Holders = (readerId: string, userNames: readonly string[]) => Promise<Map<string, string>>;
 /** The ports of the rule of who may be asked about (`relations.ts`, D117). */
 export interface RelationDeps {
   directory: Pick<Directory, 'reach' | 'person'>;
   reader: Reader;
+  holders: Holders;
 }
 /** The reads and actions about an entity kind this person may call now (composition: `registry.aboutReads`/`aboutActions`). */
 export interface Sources {
@@ -80,13 +86,13 @@ export type SourceRead = (
   input: { keys: string[] },
   signal: AbortSignal,
 ) => Promise<unknown>;
-/** "Behöver dig" (D97 item 5): the reader's cards whose rows name this entity. */
+/** "Behöver dig" (D97 item 5): the reader's cards whose rows name this entity, by Clew's key (D122). */
 export type Cards = (persona: AuthenticatedContext, subject: Subject) => Promise<EntityCard[]>;
-/** A card of the reader's with the entities it names among those asked, in the asked spelling. */
+/** A card of the reader's with the entities it names among those asked, by Clew's key. */
 export type NamedCard = EntityCard & { subjects: Subject[] };
 /**
  * "Just nu" on the list (D97 item 5): the reader's cards still asking for them whose rows name any of these entities,
- * read once for the whole list (composition: the thread store's index from entity to cards).
+ * by Clew's key, read once for the whole list (composition: the thread store's index from entity to cards).
  */
 export type CardsNaming = (persona: AuthenticatedContext, subjects: Subject[]) => Promise<NamedCard[]>;
 export interface EntityBudget {

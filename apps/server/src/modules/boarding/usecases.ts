@@ -16,7 +16,7 @@ import type {
   BoardingSuggestion,
   Capability,
 } from '@clew/contracts';
-import { ENTITY_KEY_MAX, boardingImportRowProblem, boardingLayersOf, layerKey } from '@clew/contracts';
+import { boardingImportRowProblem, boardingLayersOf, layerKey } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
   PLAN_ITEMS_MAX,
@@ -84,8 +84,6 @@ const DUE_OUT_OF_RANGE = 'Uppgiften ska vara klar högst ett år före eller eft
 const BAD_TITLE = 'Skriv uppgiften på en rad, högst 200 tecken.';
 const BAD_BUDDY = 'Faddern ska vara någon annan som du är chef för.';
 const TOO_MANY_ITEMS = `En plan kan ha högst ${PLAN_ITEMS_MAX} uppgifter.`;
-/** The longest key a card may name a person by (D97, `SubjectSchema`): a longer user name names nobody. */
-const SUBJECT_KEY_MAX = ENTITY_KEY_MAX;
 /** The actor of a row written because a timer fired; the convention of the other timer-driven rows. */
 const TIMER_ACTOR = 'system:scheduler';
 /** The version of the export document; a breaking change is a new version. */
@@ -255,11 +253,8 @@ export function boardingUsecases(deps: BoardingDeps) {
     if (items.length > PLAN_ITEMS_MAX) throw new BoardingError(TOO_MANY_ITEMS);
     return { layers, items };
   }
-  /** The card's subject: the person the plan is about, by the key another system knows them by; nobody without one. */
-  const subjectOf = (userName: string | null) =>
-    userName && [...userName].length <= SUBJECT_KEY_MAX
-      ? { subject: { entity: 'person' as const, key: userName } }
-      : {};
+  /** The card's subject: the person the plan is about, by Clew's id (D122), which a rename or a reused name never moves. */
+  const subjectOf = (personId: string) => ({ subject: { entity: 'person' as const, key: personId } });
   /** Mark an item done or open again: for its owner, or the plan's manager, while the plan is open. */
   async function setDone(persona: AuthenticatedContext, id: string, done: boolean) {
     const { reports } = await staffing(persona);
@@ -569,7 +564,7 @@ export function boardingUsecases(deps: BoardingDeps) {
             title: item.title,
             dueOn: item.dueOn,
             at,
-            ...subjectOf(report.userName),
+            ...subjectOf(report.id),
           });
           await tx.insertItem({
             id: itemId,
@@ -857,7 +852,7 @@ export function boardingUsecases(deps: BoardingDeps) {
           title: null,
           dueOn: body.dueOn,
           at,
-          ...subjectOf(person?.userName ?? null),
+          ...subjectOf(plan.personId),
         });
         await tx.insertItem({
           id,

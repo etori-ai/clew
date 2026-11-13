@@ -1,4 +1,5 @@
-import { COMPETENCE_SEARCH_STATUSES, COMPETENCE_SEARCH_WINDOWS, foldEntityKey, type Subject } from '@clew/contracts';
+import { COMPETENCE_SEARCH_STATUSES, COMPETENCE_SEARCH_WINDOWS, type Subject } from '@clew/contracts';
+import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import { PendingTaken, RequirementTaken, ShareTargetTaken, SkillTaken, TypeNameTaken, TypeUriTaken } from '../model';
 import { erasureDue } from '../domain';
 import type {
@@ -27,12 +28,17 @@ import type {
 /**
  * The competence store in memory: the unit tests' adapter (D25), held to Postgres by
  * `tests/competence-store-contract.ts`. State is plain and seedable; a transaction is a snapshot that a throw restores,
- * the audit rows, the workflow starts and the approvals' cards included. Transactions run one at a time, as row locks
- * would make them.
+ * the audit rows, the workflow starts and the cards included. Transactions run one at a time, as row locks would make
+ * them. A person SCIM has deactivated (D68) stays in `persons` with `enabled` false, as in the people table.
  *
  * The approvals' cards (`ApprovalWorkItemTx`, D108 item 7) are recorded here instead of written to a stream: every call
  * in `state.calls`, each manager's card in `state.cards` by its id (`<threadId>:<manager id>`). A test makes the card
  * sink throw with `sink.throwOn`.
+ *
+ * The cards of the people's streams (`CompetenceCardsTx`) stand in `state.ownCards` instead of a thread store, as much of
+ * each as an erasure reads: whose stream it is in and which connector pushed it. An erasure removes the person's own
+ * competence cards there and writes their `thread.removed` rows among the audit rows, as composition does over the
+ * thread store's transaction.
  */
 export type ApprovalWorkItemCall =
   | ({ op: 'open' } & Omit<Parameters<ApprovalWorkItemTx['open']>[0], 'managers'> & { managers: string[] })
@@ -56,12 +62,14 @@ export interface MemoryApprovalSink {
   /** The card call that throws, as a failing thread store would. */
   throwOn?: ApprovalWorkItemCall['op'];
 }
+export interface MemoryCard {
+  personId: string;
+  connector: string;
+}
 export interface MemoryCompetenceState {
   types: Map<string, TypeRecord>;
   holdings: Map<string, HoldingRecord>;
   persons: Map<string, PersonRef>;
-  /** People SCIM has deactivated (D68): they stay, and the copy matches nobody to them. */
-  inactive: Set<string>;
   /** By `<connector>\n<organisation>\n<source type>`. */
   mappings: Map<string, SourceMapping>;
   sources: Map<string, SourceRecord>;
@@ -77,6 +85,8 @@ export interface MemoryCompetenceState {
   assigned: Map<string, Set<string>>;
   requirements: Map<string, RequirementRecord>;
   shareTargets: Map<string, ShareTargetRecord>;
+  /** The cards in the people's own streams (D108 item 12), by card id. */
+  ownCards: Map<string, MemoryCard>;
   audit: CompetenceAudit[];
   /** The workflow starts committed (D86), each id once. */
   enqueued: WorkflowStart[];
@@ -100,9 +110,9 @@ function assertReadLog(r: ReadLogEntry) {
     r.rows >= 0 &&
     (r.caller === 'person' || (r.caller === 'assistant' && r.kind === 'person' && r.relation === 'managed')) &&
     (r.minLevel === null || (r.minLevel >= 1 && r.minLevel <= 3)) &&
-    // Every type asked for, the first of them in `typeId` (migration 0068): none where `typeId` is none.
+    // Every type asked for, the first of them in `typeId` (migration 0074): none where `typeId` is none.
     (r.typeId === null ? r.typeIds.length === 0 : r.typeIds[0] === r.typeId) &&
-    // The filters (migration 0070): the statuses a subset of the closed list in its order, each once; the window one of
+    // The filters (migration 0076): the statuses a subset of the closed list in its order, each once; the window one of
     // its list or none; and either only on a registrar's search or file.
     Array.isArray(r.status) &&
     r.status.every((s, i) => {
@@ -130,12 +140,13 @@ const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
 const mappingKey = (connectorId: string, organisationId: string, sourceType: string) =>
   connectorId + '\n' + organisationId + '\n' + sourceType;
 
-export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
+/** A person as a test seeds one: active unless it says `enabled: false`, as SCIM writes a new person. */
+export type SeedPerson = Omit<PersonRef, 'enabled'> & { enabled?: boolean };
+export function memoryCompetenceStore(seed: { persons?: SeedPerson[]; ownCards?: Record<string, MemoryCard> } = {}) {
   let state: MemoryCompetenceState = {
     types: new Map(),
     holdings: new Map(),
-    persons: new Map((seed.persons ?? []).map(p => [p.id, { ...p }])),
-    inactive: new Set(),
+    persons: new Map((seed.persons ?? []).map(p => [p.id, { enabled: true, ...p }])),
     mappings: new Map(),
     sources: new Map(),
     positions: new Map(),
@@ -145,6 +156,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     assigned: new Map(),
     requirements: new Map(),
     shareTargets: new Map(),
+    ownCards: new Map(Object.entries(seed.ownCards ?? {}).map(([id, card]) => [id, { ...card }])),
     audit: [],
     enqueued: [],
     retention: new Map(),
@@ -167,6 +179,8 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.personId.localeCompare(b.personId));
   const sink: MemoryApprovalSink = {};
   const logSink = { fail: false };
+  /** Deactivated by SCIM (D68): the person stays, with `enabled` false. */
+  const isInactive = (personId: string) => state.persons.get(personId)?.enabled === false;
   let tail = Promise.resolve();
   const serialized = async <T>(fn: () => Promise<T>): Promise<T> => {
     const previous = tail;
@@ -339,11 +353,9 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async removeAbout(subject) {
       fail('removeAbout');
       state.calls.push({ op: 'removeAbout', subject: { ...subject } });
-      // The index from entity to cards compares a person's key without regard to case (D97 item 6).
-      const key = foldEntityKey(subject.entity, subject.key);
+      // The index from entity to cards holds a person by Clew's key, their id, compared exactly (D122).
       for (const [id, card] of [...state.cards])
-        if (card.subject?.entity === subject.entity && foldEntityKey(card.subject.entity, card.subject.key) === key)
-          state.cards.delete(id);
+        if (card.subject?.entity === subject.entity && card.subject.key === subject.key) state.cards.delete(id);
     },
     async removeOwned(personId) {
       fail('removeOwned');
@@ -541,7 +553,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       const counted = new Map<string, { connectorId: string; sourceType: string; label: string; holdings: number }>();
       const labelReadAt = new Map<string, string>();
       for (const h of copied()) {
-        if (h.state === 'revoked' || state.inactive.has(h.personId)) continue;
+        if (h.state === 'revoked' || state.persons.get(h.personId)?.enabled === false) continue;
         if (state.persons.get(h.personId)?.organisationId !== organisationId) continue;
         const key = h.copy!.connectorId + '\n' + h.copy!.sourceType;
         const row = counted.get(key) ?? {
@@ -667,7 +679,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async inactiveIn(organisationId) {
       return [...state.persons.values()]
-        .filter(p => p.organisationId === organisationId && state.inactive.has(p.id))
+        .filter(p => p.organisationId === organisationId && isInactive(p.id))
         .map(p => p.id)
         .sort();
     },
@@ -679,7 +691,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async unrecordedLeavers(limit) {
       return [...state.persons.values()]
-        .filter(p => state.inactive.has(p.id) && state.retention.has(p.organisationId))
+        .filter(p => isInactive(p.id) && state.retention.has(p.organisationId))
         .filter(p => {
           const e = state.erasures.get(p.id);
           return !e || e.state === 'cancelled';
@@ -690,7 +702,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async returnedLeavers(limit) {
       return [...state.erasures.values()]
-        .filter(e => e.state !== 'cancelled' && state.persons.has(e.personId) && !state.inactive.has(e.personId))
+        .filter(e => e.state !== 'cancelled' && state.persons.has(e.personId) && !isInactive(e.personId))
         .sort((a, b) => a.personId.localeCompare(b.personId))
         .slice(0, limit)
         .map(e => ({ ...e }));
@@ -701,11 +713,11 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async activeByUserName(userNames) {
       const wanted = new Set(userNames.map(n => n.toLowerCase()));
       return [...state.persons.values()]
-        .filter(p => p.userName !== null && wanted.has(p.userName.toLowerCase()) && !state.inactive.has(p.id))
+        .filter(p => p.userName !== null && wanted.has(p.userName.toLowerCase()) && p.enabled)
         .map(p => ({ ...p }));
     },
     async activeIds(personIds) {
-      return new Set(personIds.filter(id => state.persons.has(id) && !state.inactive.has(id)));
+      return new Set(personIds.filter(id => state.persons.get(id)?.enabled === true));
     },
     async positions(organisationId) {
       return [...state.positions.values()]
@@ -725,7 +737,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
         .filter(
           ([personId, units]) =>
             state.persons.get(personId)?.organisationId === organisationId &&
-            !state.inactive.has(personId) &&
+            !isInactive(personId) &&
             [...units].some(u => wanted.has(u)),
         )
         .map(([personId]) => personId)
@@ -743,7 +755,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async positionHolders(organisationId, codes) {
       const wanted = new Set(codes);
       return [...state.persons.values()]
-        .filter(p => p.organisationId === organisationId && !state.inactive.has(p.id))
+        .filter(p => p.organisationId === organisationId && !isInactive(p.id))
         .flatMap(p => codesOf(p.id).flatMap(code => (wanted.has(code) ? [{ personId: p.id, code }] : [])))
         .sort((a, b) => a.personId.localeCompare(b.personId) || a.code.localeCompare(b.code));
     },
@@ -906,6 +918,26 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
         shareTargets: byCreated([...state.shareTargets.values()].filter(t => t.organisationId === organisationId)),
       });
     },
+    cards: {
+      async removeOwn(personId, actor, at) {
+        // In card id order, as the thread store locks and removes them.
+        const own = [...state.ownCards]
+          .filter(([, card]) => card.personId === personId && card.connector === COMPETENCE_CONNECTOR)
+          .map(([id]) => id)
+          .sort();
+        for (const id of own) {
+          state.ownCards.delete(id);
+          state.audit.push({
+            actor,
+            action: 'thread.removed',
+            subject: `thread:${id}`,
+            at,
+            details: { reason: 'erasure' },
+          });
+        }
+        return own.length;
+      },
+    },
     async audit(entry) {
       state.audit.push(structuredClone(entry));
     },
@@ -960,8 +992,8 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       return state;
     },
     /** A person the domain can name, as provisioning would have written them. */
-    addPerson(person: PersonRef) {
-      state.persons.set(person.id, { ...person });
+    addPerson(person: SeedPerson) {
+      state.persons.set(person.id, { enabled: true, ...person });
     },
     /** A manager puts a card of an approval away themselves (handled or dismissed), as the stream lets them. */
     setOwn(cardId: string, next: 'handled' | 'dismissed') {
@@ -970,11 +1002,17 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     /** SCIM deactivates a person (D68): they stay, and leave every list. */
     deactivate(personId: string) {
-      state.inactive.add(personId);
+      const person = state.persons.get(personId);
+      if (person) person.enabled = false;
+    },
+    /** A card in a person's own stream, as a scan would have pushed it. */
+    addCard(id: string, card: MemoryCard) {
+      state.ownCards.set(id, { ...card });
     },
     /** SCIM activates a person again. */
     reactivate(personId: string) {
-      state.inactive.delete(personId);
+      const person = state.persons.get(personId);
+      if (person) person.enabled = true;
     },
     /** A position of an organisation, as a `position:` group would have written it (D108 item 5). */
     addPosition(position: PositionRecord) {

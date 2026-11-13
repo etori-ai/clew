@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { and, eq, inArray, like } from 'drizzle-orm';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { database, schema, closeDatabase } from '@clew/db';
-import { postgresCompetenceStore } from '../src/modules/competence/adapters/postgres';
+import { competenceStoreWithCards } from '../src/composition/competence';
 import { competenceUsecases } from '../src/modules/competence/usecases';
 import { dailyCopyStart, readNowStart } from '../src/modules/competence/domain';
 import type { SourceHoldingsPage } from '../src/modules/competence/model';
@@ -23,7 +23,7 @@ test(
   async () => {
     const tag = randomUUID().slice(0, 8),
       engine = testEngine('competence'),
-      store = postgresCompetenceStore(engine.durable);
+      store = competenceStoreWithCards({ durable: engine.durable });
     // A connector id is lower case; every row this test writes is named after it.
     const connectorId = 'test-copy-' + tag,
       personId = connectorId + '-anna',
@@ -258,7 +258,7 @@ test(
       DAY = 24 * 60 * 60_000;
     const org = 'test-erasure-' + tag,
       personId = org + '-anna';
-    const store = postgresCompetenceStore({ application: 'clew-test-erasure-' + tag, queue: 'unused' });
+    const store = competenceStoreWithCards({ durable: { application: 'clew-test-erasure-' + tag, queue: 'unused' } });
     const competence = competenceUsecases({
       store,
       staff: async () => ({ units: [] }),

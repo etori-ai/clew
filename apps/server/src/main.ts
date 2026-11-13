@@ -1,11 +1,13 @@
 // Telemetry first (D91): the undici instrumentation patches `fetch` at load, before any module that calls it.
-import { shutdownTelemetry, telemetry } from './telemetry';
+import { shutdownTelemetry } from './server-telemetry';
+import { telemetry } from './telemetry';
 import { logger, logPort } from './logging';
 import { resolve } from 'node:path';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
-import { httpInstrumentationMiddleware } from '@hono/otel';
+import { requestSpans } from './request-spans';
 import { authRoutes } from './routes/auth';
+import { healthRoutes } from './routes/health';
 import { checkDevLogin } from './auth';
 import { api } from './routes/api';
 import { adminRoutes } from './routes/admin';
@@ -29,7 +31,8 @@ import { startDurableRuntime } from './dbos/runtime';
 import { bindLiveActivities } from './dbos/activities';
 import { failure } from './context';
 import { signingAuthority } from './connectors/signing';
-import { startupReadiness } from './startup';
+import { STARTING, startupReadiness } from './startup';
+import { databaseAnswers } from '@clew/db';
 import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
 import { scimRoutes } from './routes/scim';
@@ -60,9 +63,9 @@ for (const file of ['.env.local']) {
 checkDevLogin();
 
 const app = new Hono();
-// One server span per request when export is on (D91). The URL on the span is the path alone: the sign-in callback's
-// query carries the authorization code, and a view's input may name a person.
-if (telemetry.enabled) app.use(httpInstrumentationMiddleware({ getUrlFull: c => new URL(c.req.url).pathname }));
+// One server span per request when export is on (D91). The URL on the span is the path alone, with an entity's key
+// as `:key`: the sign-in callback's query carries the authorization code, and a person's key may be their user name.
+if (telemetry.enabled) app.use(requestSpans());
 const startup = startupReadiness({
   initialize: async () => {
     await signingAuthority();
@@ -71,9 +74,9 @@ const startup = startupReadiness({
   },
   onReady: () => {
     bindLiveActivities();
-    startDurableRuntime();
+    const engine = startDurableRuntime({ tracingEnabled: telemetry.enabled });
     watchConnectors(connectorReconcile);
-    startJobs();
+    startJobs(engine);
     startCompetenceCopy();
     startAssistantProbe();
     startRefresh();
@@ -87,20 +90,22 @@ const startup = startupReadiness({
     setTimeout(run, 5000).unref();
   },
 });
-app.get('/api/health', c => c.json({ ok: true }));
-app.get('/api/ready', c => c.json({ ready: startup.ready() }, startup.ready() ? 200 : 503));
+// Ready once startup has finished and while the database answers within a second (routes/health.ts).
+app.route('/api', healthRoutes({ started: startup.ready, databaseAnswers }));
 // Signing in does not expose connector data and must not depend on connector startup.
 app.route('/api/auth', authRoutes);
 // The installation's theme and logo (D98): public and needed by the sign-in page, so it waits for nothing but the database.
 app.route('/api/appearance', appearanceRoutes(appearance));
 // The protocol is a contract, not data: public, and generated from code, so it needs nothing to have started (D60).
 app.route('/api/protocol', protocolRoutes);
+// What a connector reaches of Clew needs no session: the key set is public and the callback carries Clew's own grant,
+// so both are mounted before the session guard. A connector reads them in the protocol's shape, Clew starting included,
+// so they answer that themselves, ahead of the startup gate below, as SCIM answers it in its own shape.
+app.route('/api/connectors', connectorRoutes(startup.ready));
 app.use('/api/*', async (c, next) => {
-  if (!startup.ready()) return c.json({ error: 'Tjänsten startar. Försök igen om en stund.' }, 503);
+  if (!startup.ready()) return c.json({ error: STARTING }, 503);
   await next();
 });
-// Connector callbacks authenticate with Clew's own assertion, not a session, so they are mounted before the session guard.
-app.route('/api/connectors', connectorRoutes);
 // SCIM (D68) authenticates with a provisioner's token, not a session; a machine reads its answers, so they are English.
 app.use('/scim/*', async (c, next) => {
   if (!startup.ready())

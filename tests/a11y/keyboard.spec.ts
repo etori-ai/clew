@@ -58,6 +58,74 @@ test.describe('2.4.7 focus visible', () => {
       }),
     ).toBe(true);
   });
+
+  /**
+   * A field with an error keeps a focus indicator of its own. Astryx 0.7.13 drops the focus inset of a field that has
+   * a status, so Clew's theme draws an inset in the error colour on the focused field (`packages/ui/src/theme.ts`). The
+   * free-text field of the Inte nu picker is the invalid field: what it draws focused is compared with what it draws
+   * with the focus elsewhere, in both appearances, and under forced colours, where no shadow is painted, by its border.
+   */
+  for (const scheme of ['light', 'dark'] as const)
+    test(`a focused field with an error differs from the unfocused one, ${scheme}`, async ({ page, api: _ }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await open(page, '/todo?item=fakturor');
+      await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
+      await page.getByRole('menuitem', { name: /^Skriv själv/ }).click();
+      const field = page
+        .getByRole('dialog', { name: 'När ska jag ta upp det igen?' })
+        .getByRole('textbox', { name: 'När?' });
+      await field.fill('när grisarna flyger');
+      await expect(field).toHaveAttribute('aria-invalid', 'true');
+      const box = field.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " astryx-text-input ")][1]');
+      await expect(box).toHaveAttribute('data-status', 'error');
+      // The field's edge fades between its states (125 ms): what is read is what it settles on. A colour is read as
+      // the pixel it paints, whatever notation the browser reports it in.
+      const look = () =>
+        box.evaluate(async el => {
+          await Promise.all(el.getAnimations().map(a => a.finished.catch(() => undefined)));
+          const s = getComputedStyle(el);
+          const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
+          const luminance = (colour: string) => {
+            ctx.clearRect(0, 0, 1, 1);
+            ctx.fillStyle = colour;
+            ctx.fillRect(0, 0, 1, 1);
+            const [r, g, b] = [...ctx.getImageData(0, 0, 1, 1).data].map(v => {
+              const c = v / 255;
+              return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+            });
+            return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+          };
+          const shadow = s.boxShadow;
+          // The shadow's colour against the field it is drawn on; 1 when there is no shadow.
+          const colour = shadow === 'none' ? s.backgroundColor : shadow.replace(/(-?[\d.]+px\s*)+|inset/g, '').trim();
+          const [light, dark] = [luminance(colour), luminance(s.backgroundColor)].sort((x, y) => y - x);
+          // What the system's Highlight is painted as here, read from an element that is given it.
+          const probe = document.body.appendChild(document.createElement('span'));
+          probe.style.color = 'Highlight';
+          const highlight = getComputedStyle(probe).color;
+          probe.remove();
+          return { shadow, border: s.borderTopColor, highlight, contrast: (light! + 0.05) / (dark! + 0.05) };
+        });
+      await expect(field).toBeFocused();
+      const focusedLook = await look();
+      await field.evaluate(el => el.blur());
+      await expect(field).not.toBeFocused();
+      const restingLook = await look();
+      // Unfocused, the error is the 1 px border alone; focused, a 2 px inset in the error colour stands inside it, as
+      // wide as Astryx's own focus inset, and that edge is at least 3:1 against the field it is drawn on (1.4.11).
+      expect(restingLook.shadow).toBe('none');
+      expect(focusedLook.shadow).toMatch(/inset/);
+      expect(focusedLook.shadow).toMatch(/ 0px 0px 0px 2px/);
+      expect(focusedLook.contrast).toBeGreaterThanOrEqual(3);
+
+      // Forced colours paint no shadow: the focused field's border is the system's Highlight, as Astryx draws it.
+      await page.emulateMedia({ colorScheme: scheme, forcedColors: 'active' });
+      const forcedResting = await look();
+      await field.focus();
+      const forcedFocused = await look();
+      expect(forcedFocused.border).toBe(forcedFocused.highlight);
+      expect(forcedResting.border).not.toBe(forcedResting.highlight);
+    });
 });
 
 test.describe('2.4.3 focus order', () => {
@@ -236,7 +304,7 @@ test.describe('D97 a hit about a person', () => {
       'href',
       'https://intra.example/rutin-samtal',
     );
-    await expect(document.getByText(/^Intranätet · HR-avdelningen/)).toBeVisible();
+    await expect(document.getByText(/^Intranätet\s·\sHR-avdelningen/)).toBeVisible();
     await expectNoAxeViolations(page);
     await name.focus();
     await page.keyboard.press('Enter');

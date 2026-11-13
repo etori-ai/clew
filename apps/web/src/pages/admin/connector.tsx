@@ -61,6 +61,7 @@ import {
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
 import { DialogFrame } from '../../components/dialog-frame';
+import { DOT } from '../../dot';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */
 type TabId = 'oversikt' | 'formagor' | 'omraden' | 'publik' | 'historik';
@@ -75,7 +76,6 @@ interface CapRow extends Record<string, unknown> {
   name: string;
   c: ConnectorDetail['capabilities'][number];
 }
-const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 /** The choice "Ingen kolumn" in the column selector: never a field's key, which a view keeps to letters and digits. */
 const NO_COLUMN = '-';
 
@@ -127,8 +127,8 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   // The connector and the units from the admin cache (D33); a 400 is the one answer the page turns into "finns inte".
   const client = useQueryClient();
   const detail = useQuery(adminQueries.connector(id));
-  const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
-  const groups = useQuery(adminQueries.groups).data?.groups ?? EMPTY_UNITS;
+  const units = useQuery(adminQueries.units);
+  const groups = useQuery(adminQueries.groups);
   const c = detail.data ?? null;
   const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
   const readError =
@@ -315,13 +315,13 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                 c.protocol ? `protokoll ${c.protocol}` : null,
               ]
                 .filter(Boolean)
-                .join(' · ')}
+                .join('\u00a0· ')}
             </Text>
             <HStack gap={1} vAlign="center" wrap="wrap">
-              <StatusDot variant={s.tone} label={s.label} />
+              <StatusDot variant={s.tone} label={s.label} aria-hidden />
               <Text color="secondary">
                 {s.label}
-                {c.bundled ? ' · körs i Startsidan' : c.url ? ` · ${c.url}` : ''}
+                {c.bundled ? '\u00a0· körs i Startsidan' : c.url ? `\u00a0· ${c.url}` : ''}
               </Text>
             </HStack>
           </VStack>
@@ -397,7 +397,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                         ? 'Ingen vy vald'
                         : 'Ingen vy kan ligga i menyn'}
                   </MetadataListItem>
-                  <MetadataListItem label="Funktioner">{`${c.counts.capabilities} · ${c.counts.execute} utför · ${c.counts.tools} för assistenten`}</MetadataListItem>
+                  <MetadataListItem label="Funktioner">{`${c.counts.capabilities}\u00a0· ${c.counts.execute} utför\u00a0· ${c.counts.tools} för assistenten`}</MetadataListItem>
                 </MetadataList>
                 <Collapsible
                   defaultIsOpen={false}
@@ -408,11 +408,11 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                     <MetadataListItem label="Id">{c.id}</MetadataListItem>
                     <MetadataListItem label="Typ">
                       {c.kind ? kindLabel[c.kind] : '–'}
-                      {c.bundled ? ' · inbyggd' : ''}
+                      {c.bundled ? '\u00a0· inbyggd' : ''}
                     </MetadataListItem>
                     <MetadataListItem label="Hälsa">
                       {healthLabel[c.health.status]}
-                      {c.bundled ? '' : ' · '}
+                      {c.bundled ? '' : '\u00a0· '}
                       {!c.bundled && <Timestamp value={c.health.at} format="auto" />}
                     </MetadataListItem>
                     <MetadataListItem label="Protokoll">{c.protocol ? `Version ${c.protocol}` : '–'}</MetadataListItem>
@@ -427,7 +427,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                       </MetadataListItem>
                     )}
                     <MetadataListItem label="Tillagd">
-                      {actorLabel(c.createdBy)} · <Timestamp value={c.createdAt} format="date_time" />
+                      {actorLabel(c.createdBy)}
+                      {DOT}
+                      <Timestamp value={c.createdAt} format="date_time" />
                     </MetadataListItem>
                   </MetadataList>
                 </Collapsible>
@@ -571,7 +573,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                         description={
                           <Text type="supporting">
                             Öppnar {t.title}
-                            {t.enabled ? '' : ' · funktionen är avstängd'}
+                            {t.enabled ? '' : '\u00a0· funktionen är avstängd'}
                           </Text>
                         }
                         endContent={
@@ -620,7 +622,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                           <VStack gap={2}>
                             <Text type="supporting">
                               {l.about === 'unit' ? 'Om en enhet' : 'Om en person'}
-                              {l.enabled ? '' : ' · funktionen är avstängd'}
+                              {l.enabled ? '' : '\u00a0· funktionen är avstängd'}
                             </Text>
                             {l.column && (
                               <HStack>
@@ -689,11 +691,11 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                         description={
                           <Text type="supporting">
                             {a.roles.map(r => roleLabel[r]).join(', ')}
-                            {a.standing.length ? ` · Gör själv: ${a.standing.join(', ')}` : ''}
+                            {a.standing.length ? `\u00a0· Gör själv: ${a.standing.join(', ')}` : ''}
                             {a.figure
                               ? a.figureShown
-                                ? ' · nyckeltalet är en ruta på Hem'
-                                : ' · nyckeltalet visas inte'
+                                ? '\u00a0· nyckeltalet är en ruta på Hem'
+                                : '\u00a0· nyckeltalet visas inte'
                               : ''}
                           </Text>
                         }
@@ -763,7 +765,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                       description={
                         <Text type="supporting">
                           {actorLabel(h.actor)}
-                          {Object.keys(h.details).length ? ' · ' + JSON.stringify(h.details) : ''}
+                          {Object.keys(h.details).length ? '\u00a0· ' + JSON.stringify(h.details) : ''}
                         </Text>
                       }
                       endContent={<Timestamp value={h.at} format="date_time" />}
@@ -869,18 +871,19 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           }
         >
           {diff && (
+            // Each row begins with its dot's word ("Ny funktion: …"), so the dot is decoration and is heard once.
             <List density="compact" aria-label="Ändringar">
               {diff.added.map(n => (
                 <ListItem
                   key={'a' + n}
-                  startContent={<StatusDot variant="success" label="Ny" />}
+                  startContent={<StatusDot variant="success" label="Ny" aria-hidden />}
                   label={<Text>Ny funktion: {n}</Text>}
                 />
               ))}
               {diff.removed.map(n => (
                 <ListItem
                   key={'r' + n}
-                  startContent={<StatusDot variant="error" label="Borttagen" />}
+                  startContent={<StatusDot variant="error" label="Borttagen" aria-hidden />}
                   label={<Text>Borttagen funktion: {n}</Text>}
                   description={<Text type="supporting">Ärenden som pekar på den slutar fungera.</Text>}
                 />
@@ -888,21 +891,21 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
               {diff.changed.map(n => (
                 <ListItem
                   key={'c' + n}
-                  startContent={<StatusDot variant="warning" label="Ändrad" />}
+                  startContent={<StatusDot variant="warning" label="Ändrad" aria-hidden />}
                   label={<Text>Ändrad funktion: {n}</Text>}
                 />
               ))}
               {diff.areasAdded.map(n => (
                 <ListItem
                   key={'aa' + n}
-                  startContent={<StatusDot variant="success" label="Nytt" />}
+                  startContent={<StatusDot variant="success" label="Nytt" aria-hidden />}
                   label={<Text>Nytt område: {n}</Text>}
                 />
               ))}
               {diff.areasRemoved.map(n => (
                 <ListItem
                   key={'ar' + n}
-                  startContent={<StatusDot variant="error" label="Borttaget" />}
+                  startContent={<StatusDot variant="error" label="Borttaget" aria-hidden />}
                   label={<Text>Borttaget område: {n}</Text>}
                 />
               ))}

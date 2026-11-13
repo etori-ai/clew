@@ -1,6 +1,37 @@
 # D100 · The people list is read a page at a time and narrowed on the server
 
-**Status:** accepted (product owner, 2026-11-11: the list of Administration › Användare is paged and filtered, and where a person is placed is told apart from whether they are a manager or an employee), built 2026-11-11 and tried signed in on the development stack the same day; items 3, 5 and 6 are choices made in the build and stand until he says otherwise; no manual screen-reader pass yet · **Date:** 2026-11-11 · **Area:** ui, identity
+**Status:** provisional (product owner, 2026-11-11: the list of Administration › Användare is paged and filtered, and where a person is placed is told apart from whether they are a manager or an employee), built 2026-11-11 and tried signed in on the development stack the same day; items 3, 5 and 6 are choices made in the build and stand until the product owner says otherwise; recorded as accepted until 2026-11-12, when the fixes of the review of users and the organisation made it provisional, since nothing outside the repository has tested it (Q10): accepted once the list has been used against a real directory; item 2 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional): a word is also looked for in the person's title, and by [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) (2026-11-12, provisional): and in the titles of the person's employments; item 2's matching amended 2026-11-12 in the same fixes (L12, L13): a word and each column are put in the composed form (NFC) and folded to lower case under ICU's root collation, and the order stays Swedish; items 1 and 7 amended 2026-11-12 in the same fixes (W3): the capability filter offers the contract's closed list, and the unit filter says when the units could not be read; no manual screen-reader pass yet · **Date:** 2026-11-11 · **Area:** ui, identity
+
+**Amended 2026-11-12.** In the fixes of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
+which the product owner asked for on 2026-11-12. The items below stay as written; where they differ from this
+paragraph, this paragraph holds.
+
+- **Provisional (Q10, O6).**
+  [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) makes `provisional`
+  the standing of a choice that nothing outside the repository has tested. This record was chosen after D102 and
+  recorded as accepted, though the list had been tried only on the development stack's synthetic directory. Its
+  reasons stand. It becomes accepted once the list has been used against a real directory.
+- **Item 2, where a word is looked for (O4).** A word matches somewhere in the name, the user name, the e-mail, the
+  person's title ([D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md)) or the title
+  of one of the person's current employments
+  ([D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md)), and each word must match. The
+  search box says "Namn, titel, användarnamn, e-post".
+- **Item 2, how a word is matched (L12, L13).** On PostgreSQL a word is matched with
+  `lower(normalize(<column>, NFC) COLLATE "und-x-icu") LIKE lower(normalize(<pattern>, NFC) COLLATE "und-x-icu")`,
+  the same folding by ICU's root collation that compares user names, in place of a match under `sv-x-icu`, and with
+  both sides in the composed form (NFC). `searchWords` puts a word in NFC before it lowers its case, and the memory
+  adapter compares the same way. So a word pasted decomposed is the same letters as one typed composed, and so is a
+  value stored decomposed. Å and å, Ä and ä, Ö and ö still match each other in a database created with the locale C.
+  Only case and composition are folded: the letter a does not match å. The order of item 6 is still name in Swedish
+  order (`sv-x-icu`) and then id.
+- **Items 1 and 7, the filters when the overview cannot be read (W3).** The people and the overview are two reads, so
+  the list and its filters are drawn when only the overview could not be read. The capability filter offers the
+  closed list `CAPABILITIES` from the contract, which the address is read by too, and not the overview's copy of it,
+  so it offers every capability either way. The unit filter offers the units the overview holds. Without them it says
+  "Enheterna kunde inte läsas." whenever it is opened or searched: in place of options, or beside a unit the address
+  names, which still narrows the list and is offered and shown by its id (item 5). It never says that the catalogue
+  has pushed no units, and with the overview read it never says that the units could not be read.
 
 **Decision.** Administration › Användare reads its people a page at a time. The server narrows, orders and counts;
 the browser never holds the organisation.

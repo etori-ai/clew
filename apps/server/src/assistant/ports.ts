@@ -159,9 +159,9 @@ export interface ModelResolver {
   health: Pick<ModelHealth, 'available' | 'mark'>;
 }
 /**
- * A person the asker manages (D94, D99), as the people module lists them on Personal: the key a source knows them by
- * (their user name, D97), their name and the unit they are on. Only people who can be asked about (active, with a user
- * name) are listed, each once.
+ * A person the asker manages (D94, D99), as the people module lists them on Personal: Clew's key for them (their id,
+ * which card rows and the index from entity to cards name them by, D122), their name and the unit they are on. Only
+ * people who can be asked about (active, with a user name, D97) are listed, each once.
  */
 export interface ManagedPerson {
   key: string;

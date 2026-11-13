@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { rename, writeFile } from 'node:fs/promises';
 import { and, eq, isNull } from 'drizzle-orm';
 import { database, closeDatabase } from '@clew/db';
-import { ABSOLUTE_MS, IDLE_MS, people, provisioners, identityBindings, pruneAuthentication } from '@clew/db/auth';
+import { ABSOLUTE_MS, IDLE_MS, people, provisioners, identityBindings, removeExpiredSignIns } from '@clew/db/auth';
 import { insertConnector, readConnector } from '@clew/db/connectors';
 import { writeAudit } from '@clew/db/threads';
 import { randomToken, sealSecret, tokenDigest } from '../apps/server/src/auth-crypto';
@@ -287,10 +287,13 @@ try {
     developmentDirectory,
     developmentScope,
   );
-  if (pushed.refused.length)
+  if (pushed.refused.length || pushed.groupsRefused.length)
     throw new Error(
-      'Clew refused people of the development directory: ' +
-        pushed.refused.map(r => `${r.userName} (${r.detail})`).join('; '),
+      'The development directory was not written whole: ' +
+        [
+          ...pushed.refused.map(r => `${r.userName} (${r.detail})`),
+          ...pushed.groupsRefused.map(r => `${r.externalId} (${r.detail})`),
+        ].join('; '),
     );
   console.log(
     `Development directory pushed through SCIM: ${pushed.created} users created, ${pushed.replaced} replaced, ${pushed.deactivated} deactivated; ${pushed.groupsCreated} groups created, ${pushed.groupsReplaced} replaced, ${pushed.groupsRemoved} removed.`,
@@ -336,7 +339,8 @@ try {
     AUTH_DEV_ACCOUNTS: devAccounts.join(','),
   });
   await writeSettings(testFile, { ...settings, ...testPasswords });
-  await pruneAuthentication();
+  // The server's nightly clean-up (D123), run once now so a development database starts without expired sign-in data.
+  await removeExpiredSignIns(new Date());
   console.log(
     'Keycloak realm, client and accounts are ready; each account binds to its person at first login. Secrets written to ignored, owner-only files.',
   );

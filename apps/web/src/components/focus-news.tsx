@@ -39,7 +39,7 @@ export function FocusNews({
     answered ??
     (waiting && !(settling && pressed === action.id)
       ? waiting
-      : `${thread.trigger.source} · publicerad ${publishedDay(action.acknowledgement.publishedAt)} · läskvitto krävs`);
+      : `${thread.trigger.source}\u00a0· publicerad ${publishedDay(action.acknowledgement.publishedAt)}\u00a0· läskvitto krävs`);
   const open = thread.state === 'open' && !answered && !(waiting && !(settling && pressed === action.id));
   return (
     <VStack gap={2} as="section" aria-label="Viktigt">

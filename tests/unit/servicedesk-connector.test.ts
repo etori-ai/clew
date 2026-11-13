@@ -175,6 +175,12 @@ function cardsOf(w: Stack, who: () => Actor = () => hillevi) {
     sources: async () => [ID],
     system: () => 'IT-servicedesken',
     scan: (p, id) => w.registry.scanOne(p, id),
+    // Whose a user name is (D122): the people of this test, each by the id `person` gives them.
+    people: {
+      holders: async (_reader: string, names: readonly string[]) =>
+        new Map(names.filter(n => KNOWN.has(n)).map(n => [n, 'person-' + n])),
+      userName: async (id: string) => (id.startsWith('person-') ? id.slice('person-'.length) : null),
+    },
   });
   /** A visit a minute later: the page asks for her cards and the worker runs what is due. */
   const visit = async () => {
@@ -436,12 +442,12 @@ describe('the service-desk fixture connector', () => {
       ['servicedesk:req:SD-26110047', null],
       ['servicedesk:req:SD-26110052', 'IT-servicedesken'],
     ]);
-    // The computer for Anna names her by key on its row, never by name (D97).
+    // The computer for Anna names her on its row by Clew's id for the user name the desk sent, never by name (D97, D122).
     expect(card('SD-26110041')).toMatchObject({
       title: 'SD-26110041 · Dator, Beställning',
       area: 'it-service',
       deadline: '2026-11-16',
-      items: [{ label: 'SD-26110041 · Dator, Beställning', subject: { entity: 'person', key: 'anna' } }],
+      items: [{ label: 'SD-26110041 · Dator, Beställning', subject: { entity: 'person', key: anna.id } }],
     });
     expect(JSON.stringify(card('SD-26110041'))).not.toMatch(/Anna|Lindqvist/);
 

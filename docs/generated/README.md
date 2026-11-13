@@ -38,7 +38,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |
 | `delegation` | no | object | The connector acts as the person against its system with a token Clew obtains by token exchange. |
 | `documents` | no | boolean | Implements POST /clew/documents for authorised, versioned binary document reads (D79). |
-| `header` | no | object | The shared header (D88): this connector gives Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. When several enabled connectors declare one, the earliest registered answers. Clew keeps no header of its own beyond its default (the site's name and Start). |
+| `header` | no | object | The shared header (D88): this connector can give Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. Declaring it makes the connector a candidate, not the holder: only the one connector an administrator chose to give the header answers, whatever the order connectors were registered in. Clew keeps no header of its own beyond its default (the site's name and Start). |
 
 ## ManifestCapability
 
@@ -87,7 +87,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `unitLabel` | yes | string |  |
 | `role` | yes | "manager" / "employee" |  |
 | `userName` | no | string | The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one. |
-| `units` | no | array of object | The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone. |
+| `units` | no | array of object | The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone. |
 
 ## CallRequest
 

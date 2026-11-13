@@ -98,8 +98,7 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
     await expect(page).toHaveURL('/todo?item=fakturor');
     expect(api.acted.at(-1)?.body.refs).toEqual(['finance:inv:1', 'finance:inv:3']);
     const row = page.getByRole('list', { name: 'Behöver dig' }).locator('#work-fakturor');
-    await expect(row).toContainText('2 fakturor attesterade');
-    await expect(row.getByRole('img', { name: 'Klart' })).toBeVisible();
+    await expect(row).toContainText('Klart · 2 fakturor attesterade');
     await expect(pane(page).getByRole('button', { name: /^Ångra · \d+ min kvar$/ })).toBeVisible();
     await expect(pane(page).getByRole('list', { name: 'Kvitto, rad för rad' }).getByRole('listitem')).toHaveCount(2);
     const toasts = page.getByRole('region', { name: 'Aviseringar' });

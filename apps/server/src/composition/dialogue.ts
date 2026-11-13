@@ -36,3 +36,10 @@ const followed: Followed = async persona => {
   return followedFrom(persona.id, reach.managed);
 };
 export const dialogue = dialogueUsecases({ store: dialogueStore, followed, clock, ids });
+/** Erasing cards from the operator CLI leaves their sleeping workflows to observe the missing timers (D86). */
+export const dialogueForScripts = dialogueUsecases({
+  store: dialogueStoreWithCards({ durable: ledger }, { clock }),
+  followed,
+  clock,
+  ids,
+});

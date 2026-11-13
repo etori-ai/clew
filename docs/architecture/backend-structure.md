@@ -35,7 +35,7 @@ Connectors under `connectors/` import no Clew application or workspace package. 
 |---|---|
 | [main.ts](../../apps/server/src/main.ts), [startup.ts](../../apps/server/src/startup.ts) | HTTP app, readiness, registration initialization and launching the durable engine. |
 | [auth.ts](../../apps/server/src/auth.ts), [system-context.ts](../../apps/server/src/system-context.ts) | Session-backed identity and current-grant identity for background work. |
-| [routes/](../../apps/server/src/routes/) | Auth, business API, connector callbacks/public keys, administration and served protocol. |
+| [routes/](../../apps/server/src/routes/) | Auth, business API, the capability routes under `/api/cap`, connector callbacks/public keys, administration and served protocol. |
 | [composition/](../../apps/server/src/composition/) | Wires ports to live stores, calendar providers, model endpoints, clocks, ids and workflow delivery. |
 | [connectors/](../../apps/server/src/connectors/) | Live registry, signed authority, remote registration, reconciliation and administration. |
 | [threads/](../../apps/server/src/threads/) | Authorized card/history reads, occurrence refresh, decisions, reminders, timers and attention. |
@@ -86,13 +86,15 @@ Ports are interfaces describing what a use case needs, such as a store, clock or
 
 Modules do not import other modules or the routes, threads, assistant or workflow layer. When one capability needs another, use the registry's `clew.call` handle, or the signed callback route from a remote connector. Both preserve the actor and refuse executes. Platform composition can coordinate several modules through their ports.
 
+Inside the process the actor carries the person's provisioned groups, which an audience's `groups` match. A request and the execution ledger hand the registry `audiencedActorOf(persona)`, the published actor with the groups; the refresh and a connector's callback hand it the whole authenticated context, which carries them too; and a nested `clew.call` keeps the actor it was given. Only [remote.ts](../../packages/connectors/src/remote.ts) cuts it to `actorOf`, the published actor, in the bodies it posts to a connector. A unit test (`tests/unit/group-audiences.test.ts`) fails when a file under `apps/server/src` imports `actorOf` from the connectors package or the registry.
+
 The [dependency rules](../../.dependency-cruiser.cjs) enforce these boundaries. The [purity check](../../scripts/purity-check.ts) rejects clocks, environment reads and random identifiers in use cases/domain code. Change the rules only with the architectural decision that changes the boundary.
 
 ## Follow one path through the code
 
 | Behavior | Start here | Then follow |
 |---|---|---|
-| Read a declared view | [Capability routes](../../apps/server/src/routes/api.ts) | [Server registry](../../apps/server/src/connectors/registry.ts) → [capability registry](../../packages/connectors/src/index.ts) → [remote transport](../../packages/connectors/src/remote.ts) |
+| Read a declared view | [Capability routes](../../apps/server/src/routes/capabilities.ts) | [Server registry](../../apps/server/src/connectors/registry.ts) → [capability registry](../../packages/connectors/src/index.ts) → [remote transport](../../packages/connectors/src/remote.ts); the people a view's records name resolved to their ids by `viewWithPeople` in [keys.ts](../../apps/server/src/threads/usecases/keys.ts) (D122) |
 | Discover source work | [Refresh composition](../../apps/server/src/composition/refresh.ts) | [Refresh use cases](../../apps/server/src/threads/usecases/refresh.ts) → store/registry ports |
 | Approve a card action | [Card decisions](../../apps/server/src/threads/usecases/decisions.ts) | [Execution composition](../../apps/server/src/composition/executions.ts) → [execution use cases](../../apps/server/src/modules/executions/usecases.ts) → workflow start in the same transaction |
 | Configure a connector | [Administration routes](../../apps/server/src/routes/admin.ts) | [Connector use cases](../../apps/server/src/connectors/usecases/admin.ts) → store and [reconciliation](../../apps/server/src/connectors/reconcile.ts) |

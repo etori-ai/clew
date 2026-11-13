@@ -17,6 +17,7 @@ import { api } from '../api';
 import { errorMessage } from '../query-policy';
 import { documentQuery } from '../queries';
 import { keys } from '../query-keys';
+import { DOT } from '../dot';
 
 export function DocumentReader({
   bundle,
@@ -38,7 +39,9 @@ export function DocumentReader({
   if (compact)
     return (
       <Text>
-        {bundle.title} · {bundle.documents.length} dokument. Öppna vyn för att läsa underlagen.
+        {bundle.title}
+        {DOT}
+        {bundle.documents.length} dokument. Öppna vyn för att läsa underlagen.
       </Text>
     );
   return (
@@ -53,7 +56,7 @@ export function DocumentReader({
             width="100%"
             options={bundle.documents.map(d => ({
               value: d.id,
-              label: `${d.title}${d.required ? ' · krävs för beslut' : ''}`,
+              label: `${d.title}${d.required ? '\u00a0· krävs för beslut' : ''}`,
             }))}
           />
         </StackItem>

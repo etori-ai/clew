@@ -1,6 +1,28 @@
 # D97 · A source says what its rows are about, and Clew places them
 
-**Status:** accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see "As built"); the items under "Open" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source); item 7 refined for the assistant by [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md) (2026-11-12, provisional: a question that names one of the asker's people tells the model who they are and the asker's open work about them by title, last day and buttons; a read about the person still never reaches the model); item 8's rule of who may be asked about amended by [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) (2026-11-12, provisional: the registry applies it to every call, `managed` is D99's direct reports only, a capability says which relations it admits, and the source is told each key's relation in a request the assertion binds) · **Date:** 2026-11-10 · **Area:** integrations, ui
+**Status:** accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see "As built"); the items under "Open" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source); item 5 and its amendments of 2026-11-11 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional): a card opens beside the page it is on, a person is a page only, and a card's review and a person's talk lie over the page they were opened on; item 9 and the build's choice that employment facts are not shown amended by [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) (2026-11-12, provisional): Clew holds a person's phone numbers and current employments, pushed over SCIM, and the person's page shows them; the two open items on keys settled by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): the key on the wire is the user name, and a person's key on card rows is Clew's person id; item 7 refined for the assistant by [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md) (2026-11-12, provisional: a question that names one of the asker's people tells the model who they are and the asker's open work about them by title, last day and buttons; a read about the person still never reaches the model); item 8's rule of who may be asked about amended by [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) (2026-11-12, provisional: the registry applies it to every call, `managed` is D99's direct reports only, a capability says which relations it admits, and the source is told each key's relation in a request the assertion binds) · **Date:** 2026-11-10 · **Area:** integrations, ui
+
+**Amended 2026-11-12.** Three later records changed this one, and the status line now names each (O1 of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md)).
+The items, the open items and the open items as taken for the build stay as written; where they differ from this
+paragraph, this paragraph holds.
+
+- **Item 5** and its amendments of 2026-11-11 follow
+  [D111](D111-where-something-opens-is-decided-by-what-it-is.md), as those amendments say.
+- **Item 9 and the employment facts.**
+  [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) has a person's categorised phone
+  numbers and current employments pushed over SCIM and held by Clew, as display data that decides nothing. The
+  person's page shows them in "Anställningar" and "Kontaktuppgifter" to every active person of the organisation, each
+  section only when something was sent. "Phone and employment facts are still read from their source" in the status
+  line, item 9's "title, phone and employment facts are a section read from the system that holds them" and the
+  build's choice that employment facts are not shown no longer hold. A talk's summary text is still not shown.
+- **The two open items on keys**, settled by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)
+  (Q11 of the same review). The key on the wire is the SCIM `userName`, since that is what a source knows; a source
+  answers for the name's current holder, because a user name can be renamed and given to a newcomer. A person's key on
+  card rows, on started actions and in the index from entity to cards is Clew's person id, which a rename does not
+  change and nobody reuses. A source's key is resolved to the id when a row or an action arrives, and a key that names
+  no current person is attached to nobody. `scripts/subject-erase.ts person <person id> --confirm` erases a person by
+  that id from every card, whatever user names they have held.
 
 **Decision.** A feature that belongs on top of an entity (a person, a unit, later a room) is not written into the
 entity's page. Its source, a connector or a module Clew owns, declares what its rows are **about**, and Clew decides
@@ -202,8 +224,8 @@ source's `about.page` may be a query alone, which lies over the page its way in 
 **Amended 2026-11-11 (D111 amended): several cards lead to the person's page.** The list of a person's cards beside
 Personal is gone: "Just nu" counting several cards leads to the person's page at Behöver dig
 (`/people/<key>?section=needs-you&from=<the list>`), and an old `/staff?cards=<key>` address leads there in its place.
-Personal's panel stands beside the list from the one width every page has, 1336 px, and the list gives way, drawn as
-its rows where the table does not fit beside the panel.
+Personal's panel stands beside the list from the one width every page has, 1340 px (1336 until 2026-11-13), and the
+list gives way, drawn as its rows where the table does not fit beside the panel.
 
 **Amended 2026-11-11, later the same day: an action is drawn in its source's section.** On seeing the amendment
 "actions are drawn once, beside the name" built, the product owner reversed it: "Registrera frånvaro" beside the name

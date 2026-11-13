@@ -73,12 +73,48 @@ for (const colorScheme of ['light', 'dark'] as const) {
 test('session verification has a named loading state without protected content', async ({ page, api: _ }) => {
   const release = await hold(page, '**/api/auth/session');
   await page.goto('/');
-  // From Astryx 0.7.12 a spinner's label is also said in the live region: the words on the page are the ones looked for.
-  await expect(page.getByText('Hämtar sidan …', { exact: true }).and(page.locator(':not([aria-live])'))).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Hämtar sidan …' })).toBeAttached();
   await expect(composer(page)).toHaveCount(0);
   release();
   await expect(composer(page)).toBeVisible();
   await expect(page.getByText('Hämtar sidan …', { exact: true })).toHaveCount(0);
+});
+
+test('while the session is checked the shell stands in its final shape: the band as it will be, the rail and the page as placeholders', async ({
+  page,
+  api,
+}) => {
+  api.header = {
+    menu: {
+      version: 1,
+      site: { name: 'Intranätet', href: '/' },
+      items: [
+        { id: 'start', label: 'Start', href: '/' },
+        { id: 'organisation', label: 'Organisation', href: 'https://intranat.example.se/organisation' },
+      ],
+    },
+    logo: null,
+    source: { id: 'intranet', label: 'Intranätet' },
+  };
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const release = await hold(page, '**/api/auth/session');
+  await page.goto('/units');
+  // The header is public, so the band stands with its name and places; no spinner on an empty page.
+  const banner = page.getByRole('banner');
+  await expect(banner.getByRole('link', { name: 'Organisation' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toBeVisible();
+  // Dialogstöd's own placeholder, "Att ta upp" and a table, where the page will be.
+  await expect(page.getByRole('main').getByRole('status').filter({ hasText: 'Hämtar enheterna …' })).toBeAttached();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);
+  // Where the page will start and how tall the band is, before and after: nothing moves when the session arrives.
+  const place = async () => ({
+    band: Math.round((await banner.boundingBox())!.height),
+    main: Math.round((await page.getByRole('main').boundingBox())!.x),
+  });
+  const before = await place();
+  release();
+  await expect(page.getByRole('heading', { level: 1, name: 'Dialogstöd' })).toBeVisible();
+  expect(await place()).toEqual(before);
 });
 
 test('coming back to the window asks about the session without hiding a page confirmed moments ago', async ({
@@ -123,12 +159,15 @@ for (const [path, endpoint, label] of [
     api.admin = true;
     api.menu = menuRows;
     const release = await hold(page, endpoint);
-    await page.goto(path);
-    await expect(page.getByText(label, { exact: true })).toBeAttached();
-    expect(await page.getByRole('main').locator('.astryx-skeleton').count()).toBeGreaterThan(3);
+    // The session shell can show the same label before the page starts its own request.
+    await Promise.all([page.waitForRequest(endpoint), page.goto(path)]);
+    const main = page.getByRole('main');
+    const status = main.getByRole('status').filter({ hasText: label });
+    await expect(status).toBeAttached();
+    await expect(main.locator('.astryx-skeleton').nth(3)).toBeVisible();
     release();
-    await expect(page.getByText(label, { exact: true })).toHaveCount(0);
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(status).toHaveCount(0);
+    await expect(main.getByRole('heading', { level: 1 })).toBeVisible();
   });
 }
 

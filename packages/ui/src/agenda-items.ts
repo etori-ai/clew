@@ -30,7 +30,7 @@ export const PROPOSAL_MARK = '✦';
 /** The id of the time a person is choosing among a day's items (`agendaItems`' `chosen`). */
 export const CHOSEN_ID = 'chosen';
 /** What the longest free gap of the day says under its row: the assistant books nothing there without asking. */
-export const LONGEST_GAP = 'Längsta luckan · jag bokar inget här utan att fråga';
+export const LONGEST_GAP = 'Längsta luckan\u00a0· jag bokar inget här utan att fråga';
 
 const minutes = (span: { start: string; end: string }) =>
   Math.round((Date.parse(span.end) - Date.parse(span.start)) / 60000);
@@ -41,7 +41,7 @@ export const duration = (span: { start: string; end: string }) => {
 };
 /** A row's meta line (D71): the length, then the place, or who a samtal is with when it has no place. */
 const meta = (span: { start: string; end: string; allDay: boolean }, ...rest: (string | undefined)[]) =>
-  [span.allDay ? 'hela dagen' : duration(span), ...rest].filter(Boolean).join(' · ');
+  [span.allDay ? 'hela dagen' : duration(span), ...rest].filter(Boolean).join('\u00a0· ');
 
 /**
  * The one mapping from what the API returns to what every calendar surface draws (D32): a meeting is an `event`, a drawn
