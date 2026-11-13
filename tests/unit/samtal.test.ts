@@ -101,6 +101,18 @@ function world(options: { round?: PlanningRound | null; team?: UnitMember[] } = 
   const usecases = calendarUsecases(deps);
   return { calendar, store, clock, obligations, notified, deps, setting, ...usecases };
 }
+/** The human decision over the same store and team as the planner; approvals are recorded, never sent. */
+function deciding(w: ReturnType<typeof world>) {
+  const approved: CalendarApproval[] = [];
+  const decisions = calendarDecisions({
+    ...w.deps,
+    approve: async (_p, input) => {
+      approved.push(input);
+    },
+    previous: async () => undefined,
+  });
+  return { approved, confirm: decisions.confirm };
+}
 async function seedConfirmed(w: ReturnType<typeof world>, threadId: string, ids: string[]) {
   const current = (await w.store.readThread(hillevi.id, threadId))!;
   for (const p of current.proposals.filter(p => ids.includes(p.id))) {
@@ -625,18 +637,6 @@ describe('a person with two managers (M1, Q12)', () => {
     w.setting.personas.delete('hillevi');
     expect((await w.samtalBookings(gunnar, period))!.size).toBe(0);
   });
-  /** The human decision over the same store and team as the planner; approvals are recorded, never sent. */
-  function deciding(w: ReturnType<typeof twoManagers>) {
-    const approved: CalendarApproval[] = [];
-    const decisions = calendarDecisions({
-      ...w.deps,
-      approve: async (_p, input) => {
-        approved.push(input);
-      },
-      previous: async () => undefined,
-    });
-    return { approved, confirm: decisions.confirm };
-  }
   test('both cards drawn before one manager books: the other’s confirmation is refused by name with nothing approved or written, and the scan takes the time off his card', async () => {
     const w = twoManagers(),
       d = deciding(w);
@@ -1030,6 +1030,30 @@ describe('a work address that changes during a round (N3)', () => {
       m.personId === 'anna' ? { ...m, email: 'anna.lindqvist@clew.test', ref: 'memory:account:anna-new' } : m,
     );
   };
+  test('a drawn time with a stale address cannot be confirmed until it is redrawn for the same person', async () => {
+    const w = world(),
+      d = deciding(w);
+    const drawn = (await w.ensureProposalThread(hillevi))!;
+    const original = drawn.proposals.find(p => p.participant.name === 'Anna Lindqvist')!;
+    moved(w);
+    const renamed = w.setting.team;
+    const replacement = { ...members[0]!, personId: 'other', name: 'Annan Person' };
+    for (const team of [renamed, [...renamed, replacement], [replacement]]) {
+      w.setting.team = team;
+      await expect(d.confirm(hillevi, drawn.id, [original.id])).rejects.toThrow(
+        'Det går inte att bekräfta adressen för Anna Lindqvist i din enhet. Ta fram nya tider.',
+      );
+    }
+    expect(d.approved).toEqual([]);
+    w.setting.team = renamed;
+    const redrawn = await w.replan(hillevi, drawn.id, '2026-11-16');
+    const current = redrawn.proposals.find(p => p.participant.name === 'Anna Lindqvist')!;
+    await d.confirm(hillevi, drawn.id, [current.id]);
+    expect(d.approved).toHaveLength(1);
+    expect(d.approved[0]?.payload.items).toMatchObject([
+      { personId: 'anna', input: { participants: ['anna.lindqvist@clew.test'] } },
+    ]);
+  });
   test('a confirmed talk stays booked and counted, and a redraw does not plan a second one', async () => {
     const w = world();
     const t = (await w.ensureProposalThread(hillevi))!;

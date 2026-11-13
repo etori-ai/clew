@@ -18,8 +18,11 @@ user name, so a rename separated a person from the cards about them and a reuse 
    A user name there names nobody, and the read is answered 404 "Okänd adress.". So is the id of a person who is
    deactivated or has no user name, since no read about a person
    ([D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)) asks a source about them. A calendar
-   proposal keeps its participant's id beside the address the invitation goes to (`proposal.participant_id`, N3). A
-   unit's id is both of its keys, as before.
+   proposal keeps its participant's id beside the drawn address (`proposal.participant_id`, N3). Confirmation and
+   dispatch require that the person still uniquely holds that address on the manager's current team. If it changed,
+   Clew refuses the confirmation or leaves an approved invitation visibly unsent, and the manager draws a new proposal;
+   the approved payload is never rewritten. Already-sent invitations retain their address for reply matching. A unit's
+   id is both of its keys, as before.
 2. **A source's key is resolved when a row arrives.** A source names a person by their user name, and a talks source
    names a person without one by their id (item 6). When rows arrive (a scan's or a refresh's cards, a started
    propose's draft, a read's records and search hits), Clew resolves every user name in them with one read (`holders`
