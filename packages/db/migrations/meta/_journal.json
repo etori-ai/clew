@@ -393,6 +393,13 @@
       "when": 1794553425002,
       "tag": "0055_person_name_changed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1794560496135,
+      "tag": "0056_person_user_name_nfc",
+      "breakpoints": true
     }
   ]
 }

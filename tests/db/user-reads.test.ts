@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { inArray } from 'drizzle-orm';
-import { database, schema } from '../../packages/db/src/index';
+import { inArray, sql, type SQL } from 'drizzle-orm';
+import { database, schema, type Database } from '../../packages/db/src/index';
 import { postgresProvisionStore, postgresUserReads } from '../../apps/server/src/modules/people/adapters/postgres';
 import { directoryUsecases } from '../../apps/server/src/modules/people/usecases';
 import {
@@ -13,12 +13,15 @@ import {
   userReadsContract,
 } from '../user-reads-contract';
 import { cLocaleDatabase } from './c-locale';
+import { upgradeDatabase } from './upgrade';
 
 /**
  * The user reads on PostgreSQL: the contract on the suite's database, and, on a database created with the C locale,
  * where a plain lower() folds only A to Z, that the unique index folds under ICU and refuses Å and å as two people and
  * that who holds a user name matches across case and composition, a name held by a composed row and a decomposed (NFD)
- * one naming nobody (L13). Run with `bun run test:db` inside the devcontainer.
+ * one naming nobody (L13); and, on a database of a thousand people per organisation, that who holds a name is looked up
+ * name by name through an index, for a few names or many, never by reading every person (D116).
+ * Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -120,5 +123,64 @@ test('Å and å are one letter to the user name index and to who holds a name, o
     expect((await reads.holders('reader', ['åsa.öberg', decomposed, 'Åsa.Öberg'])).size).toBe(0);
   } finally {
     await drop();
+  }
+}, 30_000);
+
+/** A node of PostgreSQL's plan as `explain (format json)` gives it, with the fields read here. */
+interface PlanNode {
+  'Node Type': string;
+  'Relation Name'?: string;
+  'Index Name'?: string;
+  'Index Cond'?: string;
+  Plans?: PlanNode[];
+}
+const planNodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(planNodes)];
+
+test('who holds a user name is looked up name by name through an index, for a few names or many, never by reading every person in the installation (D116)', async () => {
+  // The statements `holders` sends for a few names and for many, taken as they are sent. A refresh asks at once for every
+  // name in the drafts of a manager's scan and a declared view for every subject in its output; a search, a started
+  // propose and the talks ask for a few.
+  const sent: SQL[] = [];
+  const recording = {
+    execute: async (query: SQL) => {
+      sent.push(query);
+      return [];
+    },
+  } as unknown as Database;
+  const asked = [
+    ['åsa.öberg', 'ÅSA.ÖBERG'.normalize('NFD'), 'bo.ek'],
+    Array.from({ length: 300 }, (_, n) => `person1.${n + 1}`),
+  ];
+  for (const names of asked) await postgresUserReads(() => recording).holders('reader', names);
+  expect(sent).toHaveLength(asked.length);
+  // The planner chooses by the table's statistics. The suite's people table holds a few rows, and its statistics are
+  // whatever autovacuum last took, those of an empty table included, by which reading every person costs least. The
+  // plans are therefore asked of a database of the test's own, with a thousand people in each of two organisations and
+  // its statistics taken, under the planner's default settings.
+  const own = await upgradeDatabase();
+  try {
+    await own.migrate();
+    await own.db.execute(sql`
+      insert into auth_person (id, organisation_id, name, user_name)
+      select 'person-' || o || '-' || n, 'organisation-' || o, 'Person ' || n, 'person' || o || '.' || n
+      from generate_series(1, 2) as o, generate_series(1, 1000) as n
+      union all select 'reader', 'organisation-1', 'Reader', 'reader'`);
+    await own.db.execute(sql`analyze auth_person`);
+    const plans = [];
+    for (const [i, statement] of sent.entries()) {
+      const [row] = await own.db.execute<{ 'QUERY PLAN': unknown }>(sql`explain (format json) ${statement}`);
+      const explained = row!['QUERY PLAN'];
+      const nodes = planNodes((typeof explained === 'string' ? JSON.parse(explained) : explained)[0].Plan as PlanNode);
+      plans.push({
+        names: asked[i]!.length,
+        // A node that reads the people of every organisation.
+        everyPerson: nodes.some(n => n['Node Type'] === 'Seq Scan' && n['Relation Name'] === 'auth_person'),
+        // The holders found through the index on the comparison, by a condition on the name asked.
+        byIndex: nodes.some(n => n['Index Name'] === 'auth_person_user_name_nfc' && n['Index Cond'] !== undefined),
+      });
+    }
+    expect(plans).toEqual(asked.map(names => ({ names: names.length, everyPerson: false, byIndex: true })));
+  } finally {
+    await own.drop();
   }
 }, 30_000);

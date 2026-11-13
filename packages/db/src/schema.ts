@@ -69,6 +69,12 @@ export const people = pgTable(
     // both sides, as the people store does (`caseless` in its adapter), so that it folds as the index does and the
     // index serves the lookup.
     uniqueIndex('auth_person_user_name').on(sql`lower(${t.userName} collate "und-x-icu")`),
+    // Who holds a user name a source sent (`holders` in the people store, D116 item 2) compares the composed form (NFC)
+    // on both sides too, so that a name held by a row stored decomposed beside a composed one names nobody; the unique
+    // index above does not fold composition and cannot serve that comparison. This index has its expression, so each
+    // lookup finds the holders of the names it asks without reading every person in the installation. It is not
+    // unique, since a row stored decomposed may stand beside a composed one.
+    index('auth_person_user_name_nfc').on(sql`lower(normalize(${t.userName}, NFC) collate "und-x-icu")`),
   ],
 );
 export const identityBindings = pgTable(
