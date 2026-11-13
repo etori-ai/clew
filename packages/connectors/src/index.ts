@@ -401,6 +401,14 @@ export const inAudience = (audience: ConnectorAudience, actor: AudiencedActor) =
   !!audience.groups?.some(g => actor.groups?.includes(g));
 /** Everything the person may not reach reads like "unknown", so a hidden connector cannot be probed (D23). */
 export const UNKNOWN = 'Okänd förmåga.';
+/**
+ * What `Registry.header` answers (D88): the holder's header; that the holder the person may have did not give one (it
+ * threw, did not answer in time or answered out of shape); or that no connector gives this person the header.
+ */
+export type HeaderAnswer =
+  | { status: 'answered'; connector: Connector; output: SiteHeaderOutput }
+  | { status: 'failed'; connector: Connector }
+  | { status: 'refused' };
 
 export interface RegistryOptions {
   /** Bounded figure fan-out. One total budget includes queued sources; order remains the manifest order. */
@@ -518,7 +526,7 @@ export class Registry {
   connector(id: string) {
     return this.connectors.get(id);
   }
-  /** Lookup by name without any check: for validation and routing. Use `allowed` before acting for a person. */
+  /** Lookup by name without any check, for validation and routing; `findFor` and `allowed` check it for a person. */
   find(name: string) {
     return this.capabilities.get(name);
   }
@@ -528,12 +536,21 @@ export class Registry {
     const g = this.governance(connectorId);
     return g.state === 'enabled' && inAudience(g.audience, actor);
   }
-  /** A capability the person may call: visible connector, capability not switched off, and the connector's own scope. */
-  allowed(actor: Actor, name: string) {
+  /**
+   * Lookup by name for one person: the capability when it exists for them, its connector visible to them and the
+   * capability not switched off. Anything else is undefined, as a name nobody registered is, so a hidden capability
+   * answers exactly as an unknown one does (D23). The scope is not asked: a person in a connector's audience may learn
+   * that its capabilities exist (`GET /api/connectors` lists them with `inScope`), and `run` answers the scope itself.
+   */
+  findFor(actor: AudiencedActor, name: string) {
     const found = this.capabilities.get(name);
     if (!found || !this.visible(actor, found.connector.id)) return undefined;
-    if (this.governance(found.connector.id).capabilities[name]?.enabled === false) return undefined;
-    return inScope(found.capability.scope, actor) ? found : undefined;
+    return this.governance(found.connector.id).capabilities[name]?.enabled === false ? undefined : found;
+  }
+  /** A capability the person may call: visible connector, capability not switched off, and the connector's own scope. */
+  allowed(actor: Actor, name: string) {
+    const found = this.findFor(actor, name);
+    return found && inScope(found.capability.scope, actor) ? found : undefined;
   }
   /**
    * A system's place in the registration order (D71), which gives its mark the hue; null for Clew's own: a core
@@ -589,13 +606,8 @@ export class Registry {
    */
   async run<O = unknown>(actor: Actor, name: string, input: unknown, context: RunContext = {}): Promise<O> {
     await this.refresh();
-    const found = this.capabilities.get(name);
-    if (
-      !found ||
-      !this.visible(actor, found.connector.id) ||
-      this.governance(found.connector.id).capabilities[name]?.enabled === false
-    )
-      throw new CapabilityError(UNKNOWN);
+    const found = this.findFor(actor, name);
+    if (!found) throw new CapabilityError(UNKNOWN);
     if (!inScope(found.capability.scope, actor)) throw new CapabilityError('Du saknar behörighet för åtgärden.');
     if (!this.validator(found.capability.input)(input))
       throw new CapabilityError('Ogiltig förfrågan till ' + name + '.');
@@ -1072,33 +1084,53 @@ export class Registry {
       ...(rows && found.connector.kind === 'core' ? { rowViews: true } : {}),
     } as PanelViewSpec;
   }
+  /** The connector that gives this person the shared header (D88), by the governance as it stands, without asking it. */
+  private holderFor(actor: AudiencedActor) {
+    const holder = this.list().find(c => c.header && this.governance(c.id).header === true);
+    return holder && this.visible(actor, holder.id) && this.allowed(actor, holder.header!) ? holder : undefined;
+  }
+  /**
+   * The connector that gives this person the shared header now (D88), with the governance read again first, and
+   * without asking the connector: undefined when no holder is chosen, when the holder is switched off or leaves the
+   * person out of its audience, and when its header capability is switched off or outside the person's scope. A caller
+   * that keeps a header asks this before it serves one, so a change of who may have the header takes effect at once.
+   */
+  async headerHolder(actor: AudiencedActor): Promise<Connector | undefined> {
+    await this.refresh();
+    return this.holderFor(actor);
+  }
   /**
    * The shared header a person gets (D88): the answer of the one connector an administrator chose to give it
    * (`Governance.header`), when it is enabled, the person is in its audience and may call its header capability, checked
-   * against the protocol's shape. Exclusive, never merged and never inferred: no holder, a person outside the holder's
-   * audience, an answer out of shape or a connector that does not answer all give null, and the page draws Clew's
-   * default; a refusal is reported through `onRefused`. The call is a read as the person: the content system lists what
-   * they may see.
+   * against the protocol's shape. Exclusive, never merged and never inferred. A refusal and a failure are told apart,
+   * since a caller keeps a last good header through the one and never past the other: no holder for this person
+   * (`headerHolder`), or a holder the person may no longer have once it was asked, is `refused`; a holder that throws,
+   * does not answer in time or answers out of shape is `failed`, and is reported through `onRefused`. The call is a
+   * read as the person: the content system lists what they may see.
    */
-  async header(
-    actor: Actor,
-    context: RunContext = {},
-  ): Promise<{ connector: Connector; output: SiteHeaderOutput } | null> {
-    const holder = this.list().find(c => c.header && this.governance(c.id).header === true);
-    if (!holder || !this.visible(actor, holder.id) || !this.allowed(actor, holder.header!)) return null;
+  async header(actor: AudiencedActor, context: RunContext = {}): Promise<HeaderAnswer> {
+    const holder = this.holderFor(actor);
+    if (!holder) return { status: 'refused' };
+    let output: SiteHeaderOutput | undefined;
     try {
-      const output = await this.run<unknown>(actor, holder.header!, {}, context);
-      if (Value.Check(SiteHeaderOutputSchema, output)) return { connector: holder, output };
-      const problem = contractProblems(SiteHeaderOutputSchema, output, 1)[0];
-      this.options.onRefused?.(
-        holder.id,
-        'header',
-        `answer is not a SiteHeaderOutput: ${problem?.path ?? '/'} ${problem?.message ?? ''}`.trim(),
-      );
+      const answer = await this.run<unknown>(actor, holder.header!, {}, context);
+      if (Value.Check(SiteHeaderOutputSchema, answer)) output = answer;
+      else {
+        const problem = contractProblems(SiteHeaderOutputSchema, answer, 1)[0];
+        this.options.onRefused?.(
+          holder.id,
+          'header',
+          `answer is not a SiteHeaderOutput: ${problem?.path ?? '/'} ${problem?.message ?? ''}`.trim(),
+        );
+      }
     } catch (error) {
       this.options.onRefused?.(holder.id, 'header', error instanceof Error ? error.message : String(error));
     }
-    return null;
+    // `run` read the governance again after the call. A holder this person may no longer have, switched off, narrowed
+    // or replaced by another while it answered, is a refusal whatever it answered; only the holder they still may have
+    // has answered or failed.
+    if (this.holderFor(actor)?.id !== holder.id) return { status: 'refused' };
+    return output ? { status: 'answered', connector: holder, output } : { status: 'failed', connector: holder };
   }
   /**
    * The menu rows a person gets (D40): every view an administrator put in the menu, of a capability the person may call

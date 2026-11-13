@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, PanelViewSpec } from '../../packages/contracts/src/index';
+import {
+  CapabilityError,
+  Registry,
+  audiencedActorOf,
+  openGovernance,
+  type Capability,
+  type Connector,
+} from '../../packages/connectors/src/index';
 import { capabilityRoutes } from '../../apps/server/src/routes/capabilities';
 import type { UserRecord } from '../../apps/server/src/modules/people/domain';
 import { InputError } from '../../apps/server/src/context';
@@ -84,7 +92,7 @@ function stack(options: { people?: boolean } = {}) {
   ];
   const routes = capabilityRoutes({
     registry: {
-      find: (name: string) => found[name],
+      findFor: (_actor: unknown, name: string) => found[name],
       viewFor: (actor: { id: string }, name: string) => (actor.id === persona.id ? views[name] : undefined),
     } as never,
     run: async (p, name, input) => {
@@ -168,5 +176,148 @@ describe('the capability routes', () => {
     expect(await refused.json()).toEqual({ error: 'Källan svarade inte.' });
     expect((await request('/talks.book', { method: 'POST', body: '{nope' })).status).toBe(400);
     expect(asked).toEqual([]);
+  });
+});
+
+/**
+ * What the person may know of a capability is the registry's to say (D23), so these run over a real one. A capability
+ * whose connector is switched off or leaves the person out of its audience, or that is switched off itself, answers
+ * exactly as a name nobody registered: the same status, body and headers, whatever the method and the input. A
+ * capability of a connector the person can see that its scope leaves out is the registry's own refusal, since the
+ * person may know that it exists (`GET /api/connectors` lists it with `inScope: false`).
+ */
+describe('a capability the person may not know of answers as one nobody registered (D23)', () => {
+  const hassan = {
+    id: 'hassan',
+    name: 'Hassan Ali',
+    unitId: 'unit-skola',
+    unitLabel: 'Bergsåkers skola',
+    role: 'employee',
+    groups: ['S-1-5-21-alla'],
+  } as AuthenticatedContext;
+  const capability = (name: string, kind: Capability['kind'], ran: string[], roles?: ['manager']): Capability => ({
+    name,
+    kind,
+    title: name,
+    description: name,
+    input: { type: 'object', properties: { day: { type: 'string' } }, additionalProperties: false } as never,
+    output: { type: 'object' } as never,
+    model: false,
+    scope: roles ? { roles } : {},
+    run: async () => {
+      ran.push(name);
+      return {};
+    },
+  });
+  const connector = (id: string, capabilities: Capability[]): Connector => ({
+    id,
+    kind: 'passthrough',
+    source: id,
+    areas: [],
+    capabilities,
+    uses: [],
+  });
+  function world() {
+    const ran: string[] = [];
+    const registry = new Registry();
+    const c = (name: string, kind: Capability['kind'], roles?: ['manager']) => capability(name, kind, ran, roles);
+    registry.register(
+      connector('open', [
+        c('open.read', 'read'),
+        c('open.offer', 'propose'),
+        c('open.flag', 'execute'),
+        c('open.switched', 'read'),
+        c('open.managers', 'read', ['manager']),
+      ]),
+    );
+    registry.register(connector('off', [c('off.read', 'read'), c('off.offer', 'propose')]));
+    registry.register(connector('crm', [c('crm.read', 'read'), c('crm.offer', 'propose')]));
+    registry.register(connector('chef', [c('chef.read', 'read', ['manager']), c('chef.offer', 'propose')]));
+    registry.govern('open', { ...openGovernance(), capabilities: { 'open.switched': { enabled: false } } });
+    registry.govern('off', { ...openGovernance(), state: 'disabled' });
+    // An audience of a group he is not in, and one of managers only.
+    registry.govern('crm', { ...openGovernance(), audience: { mode: 'selected', groups: ['S-1-5-21-crm'] } });
+    registry.govern('chef', { ...openGovernance(), audience: { mode: 'selected', roles: ['manager'] } });
+    const routes = capabilityRoutes({
+      registry,
+      // `runCapability` in the server: the registry's run as the person, its refusals in Swedish as a bad request.
+      run: async (persona, name, input) => {
+        try {
+          return await registry.run(audiencedActorOf(persona), name, input ?? {});
+        } catch (error) {
+          if (error instanceof CapabilityError) throw new InputError(error.message);
+          throw error;
+        }
+      },
+      guard: async (ctx, next) => {
+        ctx.set('session', { context: hassan } as never);
+        await next();
+      },
+    });
+    /** Everything a caller could compare: the status, every header and the body as sent. */
+    const answer = async (path: string, init?: RequestInit) => {
+      const response = await routes.request('http://clew.test' + path, init);
+      return { status: response.status, headers: [...response.headers].sort(), body: await response.text() };
+    };
+    return { registry, ran, answer };
+  }
+  const input = (value: string) => '?input=' + encodeURIComponent(value);
+  /** Every way to ask: no input, input that is empty, not JSON, refused by the schema, and a body over the limit. */
+  const asked: Array<[string, RequestInit | undefined]> = [
+    ['', undefined],
+    [input('{}'), undefined],
+    ['?input=%7Bnope', undefined],
+    [input('{"other":1}'), undefined],
+    ['', { method: 'POST', body: '' }],
+    ['', { method: 'POST', body: '{}' }],
+    ['', { method: 'POST', body: '{nope' }],
+    ['', { method: 'POST', body: '{"other":1}' }],
+    ['', { method: 'POST', body: JSON.stringify({ day: 'x'.repeat(8001) }) }],
+  ];
+  const UNKNOWN = {
+    status: 404,
+    headers: [
+      ['cache-control', 'no-store, private'],
+      ['content-type', 'application/json'],
+      ['x-content-type-options', 'nosniff'],
+    ] as Array<[string, string]>,
+    body: JSON.stringify({ error: 'Okänd förmåga.' }),
+  };
+
+  test('a hidden capability answers GET and POST with the status, body and headers of a name nobody registered, whatever the input', async () => {
+    const { ran, answer } = world();
+    const hidden = ['off.read', 'off.offer', 'crm.read', 'crm.offer', 'chef.offer', 'open.switched'];
+    for (const [i, [rest, init]] of asked.entries()) {
+      const unknown = await answer('/nobody.read' + rest, init);
+      for (const name of hidden) expect([name, i, await answer(`/${name}${rest}`, init)]).toEqual([name, i, unknown]);
+      expect(unknown).toEqual(UNKNOWN);
+    }
+    // Nothing of a hidden connector ran.
+    expect(ran).toEqual([]);
+  });
+  test('out of the scope of a connector he can see a read is refused as his to know, and out of the scope of a hidden one it is unknown', async () => {
+    const { ran, answer } = world();
+    for (const [i, [rest, init]] of asked.entries())
+      expect([i, await answer('/chef.read' + rest, init)]).toEqual([i, await answer('/nobody.read' + rest, init)]);
+    const denied = { error: 'Du saknar behörighet för åtgärden.' };
+    expect(await answer('/open.managers' + input('{}'))).toMatchObject({ status: 400, body: JSON.stringify(denied) });
+    expect(await answer('/open.managers', { method: 'POST', body: '{}' })).toMatchObject({
+      status: 400,
+      body: JSON.stringify(denied),
+    });
+    expect(ran).toEqual([]);
+  });
+  test('a capability hidden while it is asked, its connector switched off between the check and the call, answers as unknown too', async () => {
+    const { registry, ran, answer } = world();
+    // The registry reads the governance again as it runs, and finds the connector switched off.
+    registry.setRefresh(async () => {
+      registry.govern('open', { ...openGovernance(), state: 'disabled' });
+    });
+    expect(await answer('/open.read' + input('{}'))).toEqual(await answer('/nobody.read' + input('{}')));
+    registry.govern('open', openGovernance());
+    const post = { method: 'POST', body: '{}' };
+    expect(await answer('/open.offer', post)).toEqual(await answer('/nobody.offer', post));
+    expect(await answer('/nobody.offer', post)).toEqual(UNKNOWN);
+    expect(ran).toEqual([]);
   });
 });

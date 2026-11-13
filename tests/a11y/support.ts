@@ -779,7 +779,7 @@ export class MockApi {
     if (path === '/cap/clew.news')
       return this.news
         ? json({ output: this.news, source: 'Startsidan', view: newsSpec })
-        : route.fulfill({ status: 400, json: { error: 'Okänd förmåga.' } });
+        : route.fulfill({ status: 400, json: { error: 'Du saknar behörighet för åtgärden.' } });
     if (path === '/cap/communication.newsItem')
       return json({ output: newsItemOutput, source: 'Kommunikation', view: newsItemSpec });
     // Kompetens (D108): the catalogue and a manager's registration.

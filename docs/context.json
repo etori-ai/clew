@@ -1033,7 +1033,7 @@
       "number": 88,
       "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
       "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
-      "status": "accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too",
+      "status": "accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too; items 4 and 5 amended 2026-11-13 in the fixes of the gaps that review left: a holder that fails leaves the last good header in place for up to an hour, and who may have the header is decided at every read",
       "date": "2026-11-09",
       "area": "ui, product, integrations"
     },

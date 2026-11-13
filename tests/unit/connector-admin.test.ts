@@ -637,22 +637,20 @@ describe('the shared header is given by one chosen connector (D88)', () => {
         unitLabel: 'Skolan',
         role: 'employee',
       }),
-    ).toBeNull();
+    ).toEqual({ status: 'refused' });
     const chosen = await admin.update(mikael, 'intranet', { header: true });
     expect(chosen.header).toBe(true);
     expect(registry.governance('intranet').header).toBe(true);
     expect(actions(store, 'intranet')).toEqual(['connector.header']);
     expect(
-      (
-        await registry.header({
-          id: 'hassan',
-          name: 'Hassan',
-          unitId: 'unit-skola',
-          unitLabel: 'Skolan',
-          role: 'employee',
-        })
-      )?.connector.id,
-    ).toBe('intranet');
+      await registry.header({
+        id: 'hassan',
+        name: 'Hassan',
+        unitId: 'unit-skola',
+        unitLabel: 'Skolan',
+        role: 'employee',
+      }),
+    ).toMatchObject({ status: 'answered', connector: { id: 'intranet' } });
     // Choosing another takes it over in the same transaction, with the audit saying who took it.
     const taken = await admin.update(mikael, 'sharepoint', { header: true });
     expect(taken.header).toBe(true);

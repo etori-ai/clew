@@ -1,7 +1,7 @@
-import { Hono, type MiddlewareHandler } from 'hono';
-import { audiencedActorOf, type Registry } from '@clew/connectors';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { audiencedActorOf, UNKNOWN, type Registry } from '@clew/connectors';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { failure, InputError, type Env } from '../context';
+import { failure, InputError, privateHeaders, type Env } from '../context';
 import type { PersonKeys } from '../threads/model';
 import { viewWithPeople } from '../threads/usecases/keys';
 
@@ -11,9 +11,14 @@ import { viewWithPeople } from '../threads/usecases/keys';
  * name, to their ids (D116), so a record links to `/people/<id>`. POST runs anything but an execute, which only the human
  * decision endpoint reaches. Mounted under `/api/cap` inside the API, behind its session guard and its refresh of the
  * connectors; a test passes its own guard.
+ *
+ * A capability the person may not know of, its connector switched off or leaving them out of its audience, or the
+ * capability switched off, answers exactly as a name nobody registered does (D23): the one 404, settled before the input
+ * is read, and again when the registry refuses it while it runs. A capability of a connector the person can see that
+ * its scope leaves out is the registry's own refusal, a 400: the person may know that it exists.
  */
 export interface CapabilityRouteDeps {
-  registry: Pick<Registry, 'find' | 'viewFor'>;
+  registry: Pick<Registry, 'findFor' | 'viewFor'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run(persona: AuthenticatedContext, name: string, input: unknown): Promise<unknown>;
   /** Whose a source's key is (D116): a record that names a person by user name links to them by id. Absent: nobody. */
@@ -21,14 +26,17 @@ export interface CapabilityRouteDeps {
   /** The session guard of a test; inside the API its own guard stands in front. */
   guard?: MiddlewareHandler<Env>;
 }
+/** The answer for a capability the person does not know, whether nobody registered it or it is hidden from them. */
+const unknown = (c: Context) => c.json({ error: UNKNOWN }, 404, privateHeaders);
 export function capabilityRoutes(deps: CapabilityRouteDeps) {
   const { registry, run, people } = deps;
   const routes = new Hono<Env>();
   if (deps.guard) routes.use('*', deps.guard);
   routes.get('/:name', async c => {
     const name = c.req.param('name');
-    const found = registry.find(name);
-    if (!found || found.capability.kind !== 'read') return c.json({ error: 'Okänd förmåga.' }, 404);
+    const persona = c.get('session').context;
+    const found = registry.findFor(audiencedActorOf(persona), name);
+    if (!found || found.capability.kind !== 'read') return unknown(c);
     let input: unknown = {};
     const raw = c.req.query('input');
     if (raw) {
@@ -39,7 +47,6 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
       }
     }
     // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
-    const persona = c.get('session').context;
     const output = await run(persona, name, input);
     const view = registry.viewFor(audiencedActorOf(persona), name);
     // A record that names a person links to them by id (D116).
@@ -51,8 +58,9 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
   });
   routes.post('/:name', async c => {
     const name = c.req.param('name');
-    const found = registry.find(name);
-    if (!found || found.capability.kind === 'execute') return c.json({ error: 'Okänd förmåga.' }, 404);
+    const persona = c.get('session').context;
+    const found = registry.findFor(audiencedActorOf(persona), name);
+    if (!found || found.capability.kind === 'execute') return unknown(c);
     const text = await c.req.raw.text();
     if (text.length > 8000) throw new InputError('För stor förfrågan.');
     let input: unknown = {};
@@ -61,8 +69,12 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
     } catch {
       throw new InputError('Ogiltig förfrågan.');
     }
-    return c.json({ output: await run(c.get('session').context, name, input) });
+    return c.json({ output: await run(persona, name, input) });
   });
-  routes.onError((error, c) => failure(c, error));
+  // The registry refuses a capability hidden while it runs (its connector switched off between the check and the call)
+  // with the same sentence as an unknown one: it gets the same answer.
+  routes.onError((error, c) =>
+    error instanceof InputError && error.message === UNKNOWN ? unknown(c) : failure(c, error),
+  );
   return routes;
 }
