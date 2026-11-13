@@ -861,13 +861,25 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       expect(await directory(u3)).toEqual([{ id: leads, name: 'Ali Leder', role: 'manager' }]);
       expect(await directory(p + '-nowhere')).toEqual([]);
     });
-    test('a locked person and a locked group read as they do unlocked', async () => {
+    test('a locked person, people held at once and a locked group read as they do unlocked', async () => {
       const { store, prefix: p } = await make();
       await store.transaction(async tx => {
         await tx.insertUser(userRow(p + '-a', p + '-org'));
+        await tx.insertUser(userRow(p + '-z', p + '-org'));
         await tx.insertGroup(groupRow(p + '-g', p + '-org'));
       });
       await store.transaction(async tx => {
+        // More people than one statement takes, most of them nobody and one of them twice; the person who sorts last
+        // is in the second statement.
+        await tx.lockPeople([
+          p + '-z',
+          ...Array.from({ length: 5200 }, (_, i) => p + '-nobody-' + i),
+          p + '-a',
+          p + '-z',
+        ]);
+        await tx.lockPeople([]);
+        for (const id of [p + '-a', p + '-z'])
+          expect(await tx.readUser(p + '-org', id)).toEqual(userRow(id, p + '-org'));
         expect(await tx.lockPerson(p + '-a')).toEqual({ id: p + '-a', organisationId: p + '-org' });
         expect(await tx.lockPerson(p + '-nobody')).toBeUndefined();
         expect((await tx.readGroup(p + '-org', p + '-g', true))?.id).toBe(p + '-g');
@@ -931,13 +943,14 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       ).rejects.toThrow('rolled back');
       expect(await store.transaction(tx => tx.readUser(p + '-org', b))).toEqual(row(b));
     });
-    test("a write that changes a person's name records when, and the last such change among each group's current members is read for many groups at once (the mirror of S13)", async () => {
+    test("a write that changes a person's name records when, which the group's members are read with, and the last such change among each group's current members is read for many groups at once (the mirror of S13)", async () => {
       const { store, prefix: p } = await make();
       const org = p + '-org',
         [a, b, c] = [p + '-a', p + '-b', p + '-c'],
         [g1, g2, g3, empty] = [p + '-g1', p + '-g2', p + '-g3', p + '-g4'],
         [t1, t2, t3] = ['2026-11-09T07:00:00.000Z', '2026-11-09T08:00:00.000Z', '2026-11-09T09:00:00.000Z'],
-        changed = (ids: readonly string[]) => store.transaction(tx => tx.memberNamesChanged(ids));
+        changed = (ids: readonly string[]) => store.transaction(tx => tx.memberNamesChanged(ids)),
+        members = (id: string) => store.transaction(tx => tx.groupMembers(id));
       await store.transaction(async tx => {
         for (const id of [a, b, c]) await tx.insertUser(userRow(id, org));
         for (const g of [g1, g2, g3, empty]) await tx.insertGroup(groupRow(g, org));
@@ -947,6 +960,10 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       });
       // A name given when the person was created is no change: they were in no group then.
       expect(await changed([g1, g2, g3, empty])).toEqual(new Map());
+      expect(await members(g1)).toEqual([
+        { id: a, name: 'Name ' + a, nameChangedAt: null },
+        { id: b, name: 'Name ' + b, nameChangedAt: null },
+      ]);
       await store.transaction(async tx => {
         await tx.updateUser(a, { name: 'Anna', updatedAt: t1 });
         await tx.updateUser(b, { name: 'Bo', updatedAt: t2 });
@@ -964,6 +981,12 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         ]),
       );
       expect(await changed([])).toEqual(new Map());
+      // Each member's own, in the rows that carry the member's name.
+      expect(await members(g1)).toEqual([
+        { id: a, name: 'Anna', nameChangedAt: t1 },
+        { id: b, name: 'Bo', nameChangedAt: t2 },
+      ]);
+      expect(await members(g3)).toEqual([{ id: c, name: 'Name ' + c, nameChangedAt: null }]);
       // A member who has left counts no more.
       await store.transaction(tx => tx.setGroupMembers(g1, [a]));
       expect(await changed([g1, g2])).toEqual(
@@ -981,10 +1004,12 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         store.transaction(async tx => {
           await tx.updateUser(c, { name: 'Cecilia', updatedAt: t3 });
           expect(await tx.memberNamesChanged([g3])).toEqual(new Map([[g3, t3]]));
+          expect(await tx.groupMembers(g3)).toEqual([{ id: c, name: 'Cecilia', nameChangedAt: t3 }]);
           throw new Error('rolled back');
         }),
       ).rejects.toThrow('rolled back');
       expect(await changed([g3])).toEqual(new Map());
+      expect(await members(g3)).toEqual([{ id: c, name: 'Name ' + c, nameChangedAt: null }]);
     });
     test('an erasure takes the person out of their groups, ends their bindings and sessions, and rewrites the audit rows and the claims it is given, in the transaction (D117)', async () => {
       const h = await make(),
@@ -1079,7 +1104,7 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await h.store.transaction(async tx => {
           expect(await tx.userGroups(a)).toEqual([]);
           expect((await tx.userGroups(b)).map(g => g.id)).toEqual([g1, g3]);
-          expect(await tx.groupMembers(g1)).toEqual([{ id: b, name: 'Name ' + b }]);
+          expect(await tx.groupMembers(g1)).toEqual([{ id: b, name: 'Name ' + b, nameChangedAt: null }]);
           // The groups the person left changed (S13), and the other did not.
           expect((await tx.readGroup(org, g1))?.updatedAt).toBe(later);
           expect((await tx.readGroup(org, g2))?.updatedAt).toBe(later);

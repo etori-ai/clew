@@ -97,7 +97,7 @@ function paused(inner: ProvisionStore) {
 }
 /**
  * A store whose transactions stop before the first call of any of the named methods until `release` is called. Before
- * `lockPerson` or `touchUsers`, a group write has read the capability rows and holds nobody yet, and a mapping change
+ * `lockPeople`, a group write has read the capability rows and holds nobody yet; before `lockPerson`, a mapping change
  * has written its row; before `unitTree`, a mapping change has derived its group's members and not yet committed.
  */
 function pausedBefore(inner: ProvisionStore, ...names: Array<keyof ProvisionTx>) {
@@ -129,6 +129,35 @@ function pausedBefore(inner: ProvisionStore, ...names: Array<keyof ProvisionTx>)
       ),
   };
   return { store, atCall, release };
+}
+/**
+ * A store that calls `hook` before and after every call of a transaction's ports, with the port's name: a test runs
+ * another request there, which commits between two statements of the transaction or waits for what it holds. A
+ * transaction's options are handed on, a read's snapshot among them.
+ */
+function watched(inner: ProvisionStore, hook: (name: string, when: 'before' | 'after') => Promise<void>) {
+  const store: ProvisionStore = {
+    transaction: (fn, options) =>
+      inner.transaction(
+        tx =>
+          fn(
+            new Proxy(tx, {
+              get(target, name) {
+                const value: unknown = Reflect.get(target, name);
+                if (typeof value !== 'function' || typeof name !== 'string') return value;
+                return async (...args: unknown[]) => {
+                  await hook(name, 'before');
+                  const answer = await (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+                  await hook(name, 'after');
+                  return answer;
+                };
+              },
+            }),
+          ),
+        options,
+      ),
+  };
+  return store;
 }
 /** An administrator of the stack's organisation on Administration › Användare (D85), and the use cases they call. */
 function administration(prefix: string, store: ProvisionStore) {
@@ -393,6 +422,223 @@ test("members renamed while the groups that list them are written, at once, all 
   for (const id of groups) times.push((await scim.getGroup(p, id, BASE)).meta.lastModified);
   expect(times).toEqual([last.meta.lastModified, last.meta.lastModified]);
 });
+test('a GET and a list of groups read the group, its members and their names from one snapshot: a member renamed in the middle of the read is in none of it, and the next read answers the new name under its own time (the mirror of S13)', async () => {
+  const { deps, p, store, user, scim } = stack();
+  const [a, b] = [(await scim.createUser(p, user(1), BASE)).id, (await scim.createUser(p, user(2), BASE)).id];
+  const externalId = `${p.id}:plain`,
+    group = await scim.createGroup(
+      p,
+      { externalId, displayName: 'Plain', members: [{ value: a }, { value: b }] },
+      BASE,
+    );
+  type Read = (use: typeof scim) => ReturnType<typeof scim.getGroup>;
+  const get: Read = use => use.getGroup(p, group.id, BASE),
+    list: Read = async use =>
+      (await use.listGroups(p, { filter: `externalId eq "${externalId}"` }, BASE)).Resources[0]!;
+  // The rename commits right after the read took the group, or right before it reads the members: the time of the
+  // members' names was once read in a statement of its own before them, so the new name came under the old time.
+  const cases: Array<[Read, string, 'before' | 'after']> = [
+    [get, 'readGroup', 'after'],
+    [get, 'groupMembers', 'before'],
+    [list, 'listGroups', 'after'],
+    [list, 'groupMembers', 'before'],
+  ];
+  for (const [n, [read, port, when]] of cases.entries()) {
+    const before = await get(scim);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    let renamedAt = '';
+    const racing = await read(
+      scimUsecases({
+        store: watched(store, async (name, moment) => {
+          if (name !== port || moment !== when || renamedAt) return;
+          renamedAt = (
+            await scim.patchUser(
+              p,
+              a,
+              { schemas: [PATCH], Operations: [{ op: 'replace', path: 'displayName', value: `Renamed ${n}` }] },
+              BASE,
+            )
+          ).meta.lastModified;
+        }),
+        ...deps,
+      }),
+    );
+    const next = await get(scim);
+    expect(renamedAt > before.meta.lastModified).toBe(true);
+    // All of it as it was at one moment: the names, and the time with them.
+    expect([racing.members.map(m => m.display), racing.meta.lastModified]).toEqual([
+      before.members.map(m => m.display),
+      before.meta.lastModified,
+    ]);
+    expect([next.members.map(m => m.display), next.meta.lastModified]).toEqual([
+      [`Renamed ${n}`, 'Person 2'],
+      renamedAt,
+    ]);
+  }
+});
+test('a GET and a list of users read the person and the groups their resource lists from one snapshot: a group renamed in the middle of the read is in none of it (S13)', async () => {
+  const { deps, p, store, user, scim } = stack();
+  const a = (await scim.createUser(p, user(1), BASE)).id,
+    group = await scim.createGroup(
+      p,
+      { externalId: `${p.id}:plain`, displayName: 'Plain', members: [{ value: a }] },
+      BASE,
+    );
+  type Read = (use: typeof scim) => ReturnType<typeof scim.getUser>;
+  const get: Read = use => use.getUser(p, a, BASE),
+    list: Read = async use => (await use.listUsers(p, { filter: `externalId eq "${p.id}:1"` }, BASE)).Resources[0]!;
+  // The group write renames the group and moves the person's time (S13) between the read of the person and the read
+  // of their groups: the new name once came under the person's old time.
+  for (const [n, [read, port]] of (
+    [
+      [get, 'readUser'],
+      [list, 'listUsers'],
+    ] as const
+  ).entries()) {
+    const before = await get(scim);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    let renamedAt = '';
+    const racing = await read(
+      scimUsecases({
+        store: watched(store, async (name, moment) => {
+          if (name !== port || moment !== 'after' || renamedAt) return;
+          renamedAt = (
+            await scim.patchGroup(
+              p,
+              group.id,
+              { schemas: [PATCH], Operations: [{ op: 'replace', path: 'displayName', value: `Renamed ${n}` }] },
+              BASE,
+            )
+          ).meta.lastModified;
+        }),
+        ...deps,
+      }),
+    );
+    const next = await get(scim);
+    expect(renamedAt > before.meta.lastModified).toBe(true);
+    expect([racing.groups.map(g => g.display), racing.meta.lastModified]).toEqual([
+      before.groups.map(g => g.display),
+      before.meta.lastModified,
+    ]);
+    expect([next.groups.map(g => g.display), next.meta.lastModified]).toEqual([[`Renamed ${n}`], renamedAt]);
+  }
+});
+test("a group write answers each member's name under a time no earlier than the name, when a member it does not hold is renamed while it writes (the mirror of S13)", async () => {
+  const { deps, p, store, user, scim } = stack();
+  const ids: string[] = [];
+  for (let n = 1; n <= 3; n++) ids.push((await scim.createUser(p, user(n), BASE)).id);
+  const [a, b, c] = ids as [string, string, string],
+    group = await scim.createGroup(
+      p,
+      { externalId: `${p.id}:plain`, displayName: 'Plain', members: [{ value: a }, { value: b }] },
+      BASE,
+    );
+  await new Promise(resolve => setTimeout(resolve, 5));
+  // The write adds c and holds nobody else; b is renamed, and committed, once the group is written and before the
+  // answer reads the members. Their time was once read in a statement of its own before them.
+  let written = false,
+    renamedAt = '';
+  const answered = await scimUsecases({
+    store: watched(store, async (name, moment) => {
+      if (name === 'updateGroup' && moment === 'after') written = true;
+      if (!written || name !== 'groupMembers' || moment !== 'before' || renamedAt) return;
+      await new Promise(resolve => setTimeout(resolve, 5));
+      renamedAt = (
+        await scim.patchUser(
+          p,
+          b,
+          { schemas: [PATCH], Operations: [{ op: 'replace', path: 'displayName', value: 'Renamed' }] },
+          BASE,
+        )
+      ).meta.lastModified;
+    }),
+    ...deps,
+  }).patchGroup(
+    p,
+    group.id,
+    { schemas: [PATCH], Operations: [{ op: 'add', path: 'members', value: [{ value: c }] }] },
+    BASE,
+  );
+  expect(renamedAt > group.meta.lastModified).toBe(true);
+  expect([answered.members.map(m => m.display), answered.meta.lastModified]).toEqual([
+    ['Person 1', 'Renamed', 'Person 3'],
+    renamedAt,
+  ]);
+  expect((await scim.getGroup(p, group.id, BASE)).meta.lastModified).toBe(renamedAt);
+});
+test("a member renamed while a group write takes them out, puts them in a new group or removes their group waits for the write: neither the group's time nor the member's goes back (the mirror of S13)", async () => {
+  const { prefix, deps, p, store, user, scim } = stack();
+  let n = 0;
+  const pair = async () =>
+    [(await scim.createUser(p, user(++n), BASE)).id, (await scim.createUser(p, user(++n), BASE)).id] as const;
+  /**
+   * `write`, held at `port` once it has written the group and holds whom it holds, while `a` is renamed, and what
+   * `meanwhile` reads then. The write once took its time before it held `a`: a rename with a later time committed
+   * first, and the write then gave the group it took `a` out of, and `a`, its earlier time.
+   */
+  const renamedDuring = async <T>(
+    a: string,
+    port: string,
+    write: (use: typeof scim) => Promise<T>,
+    meanwhile?: () => Promise<string>,
+  ) => {
+    let renaming: ReturnType<typeof scim.patchUser> | undefined,
+      waited = false,
+      seen: string | undefined;
+    const written = await write(
+      scimUsecases({
+        store: watched(store, async (name, moment) => {
+          if (name !== port || moment !== 'after' || renaming) return;
+          await new Promise(resolve => setTimeout(resolve, 5));
+          renaming = scim.patchUser(
+            p,
+            a,
+            { schemas: [PATCH], Operations: [{ op: 'replace', path: 'displayName', value: `Renamed ${port}` }] },
+            BASE,
+          );
+          waited = await stillWaiting(settled(renaming), () => undefined);
+          seen = await meanwhile?.();
+        }),
+        ...deps,
+      }),
+    );
+    const renamed = (await renaming!).meta.lastModified;
+    // The rename came last, so a's time is its own.
+    expect((await scim.getUser(p, a, BASE)).meta.lastModified).toBe(renamed);
+    return { written, waited, renamed, seen };
+  };
+  // Taken out of a group: the group's time, as a client reads it before, during and after the write.
+  const [a, b] = await pair();
+  const group = await scim.createGroup(
+    p,
+    { externalId: `${prefix}:out`, displayName: 'Ut', members: [{ value: a }, { value: b }] },
+    BASE,
+  );
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const read = async () => (await scim.getGroup(p, group.id, BASE)).meta.lastModified;
+  const out = await renamedDuring(
+    a,
+    'setGroupMembers',
+    use =>
+      use.patchGroup(
+        p,
+        group.id,
+        { schemas: [PATCH], Operations: [{ op: 'remove', path: `members[value eq "${a}"]` }] },
+        BASE,
+      ),
+    read,
+  );
+  const times = [group.meta.lastModified, out.seen!, out.written.meta.lastModified, await read()];
+  expect([out.waited, times, out.renamed > out.written.meta.lastModified]).toEqual([true, [...times].sort(), true]);
+  // Put in a new group, and the group removed: the member's time.
+  const [c, d] = await pair();
+  const made = await renamedDuring(c, 'insertGroup', use =>
+    use.createGroup(p, { externalId: `${prefix}:in`, displayName: 'In', members: [{ value: c }, { value: d }] }, BASE),
+  );
+  expect([made.waited, made.renamed > made.written.meta.lastModified]).toEqual([true, true]);
+  const removed = await renamedDuring(c, 'deleteGroup', use => use.deleteGroup(p, made.written.id));
+  expect(removed.waited).toBe(true);
+});
 test('groups that share their members, renamed while members come and go, written at once in different orders, all finish (S13)', async () => {
   const { prefix, p, user, grant, scim } = stack();
   const ids: string[] = [];
@@ -620,7 +866,7 @@ test('a mapping taken away while a group write derives a member of its group, in
   // from the rows it leaves. Without the wait the write derived from the rows it had read, the row back in them.
   await admin().addGroupCapability(persona, mapping);
   expect(await grant(person)).toEqual({ role: 'employee', capabilities: ['admin.users'] });
-  const writing = pausedBefore(store, 'lockPerson', 'touchUsers'),
+  const writing = pausedBefore(store, 'lockPeople'),
     write = placed(scimUsecases({ store: writing.store, ...deps }), 'add');
   await writing.atCall;
   const removal = admin().removeGroupCapability(persona, mapping),
@@ -693,7 +939,7 @@ test('a row whose group is gone is taken away while the group is pushed again, i
   };
   // The push first: it has read the row and holds nobody yet. The removal waits, then finds the group's member.
   await orphan();
-  const pushing = pausedBefore(store, 'lockPerson', 'touchUsers'),
+  const pushing = pausedBefore(store, 'lockPeople'),
     pushed = push(scimUsecases({ store: pushing.store, ...deps }));
   await pushing.atCall;
   const removal = admin().removeGroupCapability(persona, mapping),

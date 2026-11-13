@@ -210,6 +210,13 @@ const NAMED_IN_AUDIT = 50;
  */
 const namedInAudit = (key: 'addedPeople' | 'removedPeople', people: readonly string[]) =>
   people.length && people.length <= NAMED_IN_AUDIT ? { [key]: [...people] } : {};
+/**
+ * A SCIM read (`GET` of one resource, or a list) is answered from one snapshot of the store: a resource with the time it
+ * last changed, a group with its members' names, a person with the groups they are in, a page with its total. Read in
+ * statements of their own as each was committed, a change that committed between two of them came under the time from
+ * before it, which a client takes to mean the resource has not changed (RFC 7643 §3.1).
+ */
+const SNAPSHOT = { snapshot: true } as const;
 /** How often a provisioner's last-seen time is written at most: a push is thousands of requests, the mark one a minute. */
 const SEEN_INTERVAL_MS = 60_000;
 /** A provisioner seen again after this long is a new run, and a run is what the audit records (`provisioner.seen`). */
@@ -352,12 +359,22 @@ export function scimUsecases(deps: {
       await tx.writeUnits(p.organisationId, [{ id, label: fields.label }]);
   };
   /**
-   * What a group write does to people once the group is written. A User resource lists its person's groups by name, so
-   * whoever came or went, and every member of a group that was renamed or removed, gets the write's time of change
-   * (`touched`, RFC 7643 §3.1); those whose grant it can move are derived (`derive`). Every row is taken in one pass in
-   * id order, as every writer takes people: a second pass could wait on a writer that waits on the first. When everyone
-   * derived is touched, the touch takes the rows, a few thousand a statement, and the derivation finds them held;
-   * otherwise the derivation takes them, with anyone touched it would not derive, and the touch finds them held.
+   * A group write holds everyone it touches or derives before it takes its time of change, in one pass in id order as
+   * every writer takes people (a second pass could wait on a writer that waits on the first), after the group, the
+   * tree, the units and the capability rows. A person's own write holds them before it takes its time, so one that came
+   * first has committed under an earlier time and one that comes later waits: no time this write gives a member, or a
+   * group it takes a member out of, is earlier than the member's last change. The time was once taken first, and a
+   * member renamed meanwhile, then taken out, left the group, and the member, with a time older than one already read.
+   */
+  const heldAt = async (tx: ProvisionTx, touched: readonly string[], derived: readonly string[] = []) => {
+    await tx.lockPeople([...touched, ...derived]);
+    return now();
+  };
+  /**
+   * What a group write does to people once the group is written, everyone of them held (`heldAt`). A User resource
+   * lists its person's groups by name, so whoever came or went, and every member of a group that was renamed or
+   * removed, gets the write's time of change (`touched`, RFC 7643 §3.1); those whose grant it can move are derived
+   * (`derive`).
    */
   const settle = async (
     tx: ProvisionTx,
@@ -366,15 +383,8 @@ export function scimUsecases(deps: {
     touched: readonly string[],
     derive?: { people: readonly string[]; known: OrganisationRules },
   ) => {
-    const touching = new Set(touched),
-      people = derive?.people ?? [];
-    if (people.every(id => touching.has(id))) {
-      if (touching.size) await tx.touchUsers([...touching], at);
-      if (people.length) await derivation.deriveAll(tx, actorOf(p), people, derive?.known);
-      return;
-    }
-    await derivation.deriveAll(tx, actorOf(p), [...people, ...touching], derive?.known);
-    if (touching.size) await tx.touchUsers([...touching], at);
+    if (touched.length) await tx.touchUsers(touched, at);
+    if (derive?.people.length) await derivation.deriveAll(tx, actorOf(p), derive.people, derive.known);
   };
   /**
    * A person's groups are not read when the client asked to have them left out. The daily comparison lists everybody
@@ -389,10 +399,11 @@ export function scimUsecases(deps: {
    * A Group resource lists each member's name, so a member's new name changes it as a write of the group does: its time
    * of change is the later of the group's own and the last new name among its current members (RFC 7643 §3.1, the
    * mirror of S13). A user write never writes the group for it, which would take the group after the person, against
-   * the order every group write takes them in. The time is read once for a page of groups and before their members, so
-   * an answer never carries a name newer than its time, and it is the same with the members left out. The members are
-   * not read when the client asked to have them left out (Entra does, for large groups), nor the time when it asked to
-   * have `meta` left out.
+   * the order every group write takes them in. The time is read from the rows that carry the names, in one statement,
+   * so an answer never shows a name newer than its time; a `GET` and a list read the group and its members from one
+   * snapshot besides, so the group's own time and its members hold together too. When the client asked to have the
+   * members left out (Entra does, for large groups), only their last new name is read, once for a page of groups, and
+   * not even that when it asked to have `meta` left out.
    */
   const groupViews = async (
     tx: ProvisionTx,
@@ -400,19 +411,19 @@ export function scimUsecases(deps: {
     base: string,
     projection?: Projection,
   ): Promise<ScimGroup[]> => {
-    const namesChanged = leavesOut(projection, 'meta')
-        ? new Map<string, string>()
-        : await tx.memberNamesChanged(records.map(record => record.id)),
+    const withMembers = !leavesOut(projection, 'members'),
+      namesChanged =
+        withMembers || leavesOut(projection, 'meta')
+          ? new Map<string, string>()
+          : await tx.memberNamesChanged(records.map(record => record.id)),
       views: ScimGroup[] = [];
     for (const record of records) {
-      const at = namesChanged.get(record.id),
-        shown = at !== undefined && at > record.updatedAt ? { ...record, updatedAt: at } : record;
-      views.push(
-        project(
-          groupResource(shown, leavesOut(projection, 'members') ? [] : await tx.groupMembers(record.id), base),
-          projection,
-        ),
-      );
+      const members = withMembers ? await tx.groupMembers(record.id) : [],
+        updatedAt = [namesChanged.get(record.id), ...members.map(member => member.nameChangedAt)].reduce<string>(
+          (latest, at) => (at && at > latest ? at : latest),
+          record.updatedAt,
+        );
+      views.push(project(groupResource({ ...record, updatedAt }, members, base), projection));
     }
     return views;
   };
@@ -523,11 +534,37 @@ export function scimUsecases(deps: {
       removed = before.filter(id => !wanted.has(id)),
       relabelled = current.label !== fields.label,
       rekeyed = current.externalId !== fields.externalId,
-      renamed = relabelled || rekeyed,
-      at = now();
+      renamed = relabelled || rekeyed;
     // Only who comes is asked about: who is already in the group was asked about when they came.
     await membersExist(tx, p, added);
     if (!renamed && !moved && !added.length && !removed.length) return groupView(tx, current, base);
+    // Who may hold another grant afterwards. Only a group that gives its members something, under the key it had or
+    // the key it gets, moves a grant; any other group moves none, whatever the write did to it. A new key changes what
+    // every member gets, and a `unit:` group's new name the label its members and the unit's managers carry. A new
+    // name of any other group, and a move in the tree, change nobody's grant. Otherwise only those who came or went.
+    const unitRenamed = relabelled && unitGroupOf(fields.externalId) !== undefined;
+    let derive: { people: string[]; known: OrganisationRules } | undefined,
+      assigned: string[] = [];
+    if (added.length || removed.length || rekeyed || unitRenamed) {
+      const authority = await authorityOf(tx, p, current.externalId, fields.externalId);
+      if (authority.gives) {
+        derive = { people: [...added, ...removed], known: authority.known };
+        if (rekeyed || unitRenamed) {
+          // Read before the group is written, to be held with everyone else. A group that gives up the unit's manager
+          // key for its unit key names no manager by it: once written, its members manage the unit no more.
+          const unit = unitGroupOf(fields.externalId),
+            managers =
+              unit !== undefined && current.externalId === MANAGER_KEY + unit
+                ? []
+                : await managersOfUnit(tx, fields.externalId);
+          assigned = [...fields.members, ...managers];
+          derive.people = [...before, ...assigned];
+        }
+      }
+    }
+    // A new key or a move in the tree is not on a member's resource; a new name is, as the display of the group.
+    const touched = [...added, ...removed, ...(relabelled ? fields.members : [])],
+      at = await heldAt(tx, touched, derive?.people);
     // The time of the change is the group's whoever caused it: a member who came or went changes the resource a
     // client reads, and `meta.lastModified` once went back to the old time on the next read (RFC 7643 §3.1).
     await tx.updateGroup(current.id, {
@@ -552,25 +589,8 @@ export function scimUsecases(deps: {
         ...namedInAudit('removedPeople', removed),
       },
     });
-    // Who may hold another grant afterwards. Only a group that gives its members something, under the key it had or
-    // the key it gets, moves a grant; any other group moves none, whatever the write did to it. A new key changes what
-    // every member gets, and a `unit:` group's new name the label its members and the unit's managers carry. A new
-    // name of any other group, and a move in the tree, change nobody's grant. Otherwise only those who came or went.
-    const unitRenamed = relabelled && unitGroupOf(fields.externalId) !== undefined;
-    let derive: { people: string[]; known: OrganisationRules } | undefined;
-    if (added.length || removed.length || rekeyed || unitRenamed) {
-      const authority = await authorityOf(tx, p, current.externalId, fields.externalId);
-      if (authority.gives) {
-        derive = { people: [...added, ...removed], known: authority.known };
-        if (rekeyed || unitRenamed) {
-          const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
-          await nameUnit(tx, p, fields, assigned);
-          derive.people = [...before, ...assigned];
-        }
-      }
-    }
-    // A new key or a move in the tree is not on a member's resource; a new name is, as the display of the group.
-    await settle(tx, p, at, [...added, ...removed, ...(relabelled ? fields.members : [])], derive);
+    await nameUnit(tx, p, fields, assigned);
+    await settle(tx, p, at, touched, derive);
     return groupView(
       tx,
       { ...current, externalId: fields.externalId, label: fields.label, parentUnitId: fields.parent, updatedAt: at },
@@ -627,7 +647,7 @@ export function scimUsecases(deps: {
         return userResource(record, [], base);
       }),
     getUser: (p: Provisioner, id: string, base: string, projection?: Projection) =>
-      deps.store.transaction(async tx => userView(tx, await userOr404(tx, p, id), base, projection)),
+      deps.store.transaction(async tx => userView(tx, await userOr404(tx, p, id), base, projection), SNAPSHOT),
     listUsers: (p: Provisioner, query: ScimQuery, base: string): Promise<ScimList<ScimUser>> =>
       deps.store.transaction(async tx => {
         const filter = userFilter(query.filter),
@@ -642,7 +662,7 @@ export function scimUsecases(deps: {
           itemsPerPage: Resources.length,
           Resources,
         };
-      }),
+      }, SNAPSHOT),
     replaceUser: (p: Provisioner, id: string, body: unknown, base: string) =>
       deps.store.transaction(async tx =>
         writeUser(
@@ -692,7 +712,11 @@ export function scimUsecases(deps: {
         await unitOfOwnOrganisation(tx, p, fields);
         await placeInTree(tx, p, fields);
         await membersExist(tx, p, fields.members);
-        const at = now(),
+        // Its members are touched; they and the managers of a unit it names are derived when it gives them something.
+        const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))],
+          authority = assigned.length ? await authorityOf(tx, p, fields.externalId) : undefined,
+          derive = authority?.gives ? { people: assigned, known: authority.known } : undefined,
+          at = await heldAt(tx, fields.members, derive?.people),
           record: GroupRecord = {
             id: deps.ids(),
             organisationId: p.organisationId,
@@ -716,21 +740,12 @@ export function scimUsecases(deps: {
             ...namedInAudit('addedPeople', fields.members),
           },
         });
-        // Its members are touched; they and the managers of a unit it names are derived when it gives them something.
-        const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))],
-          authority = assigned.length ? await authorityOf(tx, p, fields.externalId) : undefined;
-        if (authority?.gives) await nameUnit(tx, p, fields, assigned);
-        await settle(
-          tx,
-          p,
-          at,
-          fields.members,
-          authority?.gives ? { people: assigned, known: authority.known } : undefined,
-        );
+        if (derive) await nameUnit(tx, p, fields, assigned);
+        await settle(tx, p, at, fields.members, derive);
         return groupView(tx, record, base);
       }),
     getGroup: (p: Provisioner, id: string, base: string, projection?: Projection) =>
-      deps.store.transaction(async tx => groupView(tx, await groupOr404(tx, p, id), base, projection)),
+      deps.store.transaction(async tx => groupView(tx, await groupOr404(tx, p, id), base, projection), SNAPSHOT),
     listGroups: (p: Provisioner, query: ScimQuery, base: string): Promise<ScimList<ScimGroup>> =>
       deps.store.transaction(async tx => {
         // SCIM filters on displayName; the column is Clew's `label`.
@@ -749,7 +764,7 @@ export function scimUsecases(deps: {
           itemsPerPage: Resources.length,
           Resources,
         };
-      }),
+      }, SNAPSHOT),
     replaceGroup: (p: Provisioner, id: string, body: unknown, base: string) =>
       deps.store.transaction(async tx => {
         const current = await groupOr404(tx, p, id, true);
@@ -783,8 +798,11 @@ export function scimUsecases(deps: {
           if (below) throw new ScimError(409, `${below} The group was not removed.`);
         }
         await lockUnitsOf(tx, current.externalId);
+        // Its members' resources no longer list it; they are derived when it gave them something.
         const members = (await tx.groupMembers(id)).map(m => m.id),
-          at = now();
+          authority = members.length ? await authorityOf(tx, p, current.externalId) : undefined,
+          derive = authority?.gives ? { people: members, known: authority.known } : undefined,
+          at = await heldAt(tx, members, derive?.people);
         await tx.deleteGroup(id);
         await tx.audit({
           actor: actorOf(p),
@@ -797,9 +815,7 @@ export function scimUsecases(deps: {
             ...namedInAudit('removedPeople', members),
           },
         });
-        // Its members' resources no longer list it; they are derived when it gave them something.
-        const authority = members.length ? await authorityOf(tx, p, current.externalId) : undefined;
-        await settle(tx, p, at, members, authority?.gives ? { people: members, known: authority.known } : undefined);
+        await settle(tx, p, at, members, derive);
       }),
   };
 }

@@ -13,7 +13,8 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from '../ports';
 /**
  * The provisioning store in memory: the unit tests' adapter (D25), held to Postgres by
  * `tests/provisioning-store-contract.ts` and `tests/scim-store-contract.ts`. State is plain and seedable; a transaction
- * is a snapshot that a throw rolls back, the audit rows included.
+ * is a snapshot that a throw rolls back, the audit rows included. Nothing locks: a unit test runs one request at a time,
+ * so every transaction, a read's `snapshot` included, reads the state as one moment left it.
  */
 export interface MemoryProvisionState {
   users: Map<string, UserRecord>;
@@ -110,6 +111,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       const p = state.users.get(id);
       return p && { id: p.id, organisationId: p.organisationId };
     },
+    async lockPeople() {},
     async lockUnits() {},
     async lockTree() {},
     async lockGroupCapabilities() {},
@@ -300,7 +302,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
           .filter(([g]) => g === groupId)
           .map(([, p]) => state.users.get(p))
           .filter((u): u is UserRecord => !!u)
-          .map(u => ({ id: u.id, name: u.name })),
+          .map(u => ({ id: u.id, name: u.name, nameChangedAt: state.namesChanged.get(u.id) ?? null })),
       );
     },
     async memberNamesChanged(groupIds) {
