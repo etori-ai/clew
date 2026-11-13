@@ -1347,6 +1347,132 @@ describe('the synthetic provisioner', () => {
         expect(store.state.audit.length).toBe(audited);
       }
     });
+    test('a reused account name reaches its new holder even when another person signs in under the leaver’s source id', async () => {
+      for (const keepLeaver of [false, true]) {
+        const { store, client } = stack();
+        const units = [unit('a', 'A')],
+          leaver = someone('e-1', 'anna', 'a'),
+          remaining = someone('e-2', 'E-1', 'a');
+        await reconcile(client, source(units, [leaver, remaining]), scope);
+        const oldId = held(store, 'anna').id;
+        const next = source(units, [
+          ...(keepLeaver ? [{ ...leaver, active: false }] : []),
+          remaining,
+          someone('e-3', 'anna', 'a'),
+          someone('e-4', 'CLEW-PARKED-1', 'a'),
+        ]);
+        expect(await reconcile(client, next, scope)).toMatchObject({ created: 2, deactivated: 1, refused: [] });
+        expect(held(store, 'anna')).toMatchObject({ externalId: 'e-3', enabled: true });
+        expect(held(store, 'E-1')).toMatchObject({ externalId: 'e-2', enabled: true });
+        expect(held(store, 'CLEW-PARKED-1')).toMatchObject({ externalId: 'e-4', enabled: true });
+        const parked = store.state.users.get(oldId)!;
+        expect(parked).toMatchObject({ externalId: 'e-1', enabled: false });
+        const auditCount = store.state.audit.length;
+        expect(await reconcile(client, next, scope)).toMatchObject({ created: 0, deactivated: 0, refused: [] });
+        expect(store.state.users.get(oldId)?.userName).toBe(parked.userName);
+        expect(store.state.audit.length).toBe(auditCount);
+      }
+    });
+    test('a temporary name held in another organisation is retried, and only the confirmed name is kept', async () => {
+      for (const keepLeaver of [false, true]) {
+        const { store, client, app } = stack();
+        store.state.provisioners.set('digest:other-token', { id: 'other', organisationId: 'other', label: 'Other' });
+        const other = scimClient('http://clew.local', 'other-token', (url, init) => app.request(url, init));
+        const heldNames = ['e-2', 'CLEW-PARKED-1', 'claimed-account'];
+        await reconcile(
+          other,
+          source(
+            [unit('z', 'Z')],
+            heldNames.map((name, i) => someone('o-' + i, name, 'z')),
+          ),
+          {
+            ...scope,
+            userPrefix: 'o-',
+          },
+        );
+        expect((await client.request('GET', '/Users')).body.totalResults).toBe(0);
+        const units = [unit('a', 'A')],
+          first = someone('e-1', 'anna', 'a'),
+          second = someone('e-2', 'bo', 'a'),
+          stays = someone('e-3', 'cia', 'a');
+        await reconcile(client, source(units, [first, second, stays]), scope);
+        const next = source(units, [
+          ...(keepLeaver
+            ? [
+                { ...first, active: false },
+                { ...second, active: false },
+              ]
+            : []),
+          stays,
+          someone('e-4', 'anna', 'a'),
+          someone('e-5', 'bo', 'a'),
+          // e-1 is taken in the visible plan. The fallback numbered name is taken in the invisible organisation.
+          someone('e-6', 'E-1', 'a'),
+        ]);
+        expect(await reconcile(client, next, scope, { force: true })).toMatchObject({
+          created: 3,
+          deactivated: 2,
+          refused: [],
+        });
+        for (const [i, name] of heldNames.entries())
+          expect(held(store, name)).toMatchObject({ organisationId: 'other', externalId: 'o-' + i, enabled: true });
+        expect(held(store, 'anna')).toMatchObject({ externalId: 'e-4', enabled: true });
+        expect(held(store, 'bo')).toMatchObject({ externalId: 'e-5', enabled: true });
+        const users = [...store.state.users.values()];
+        for (const old of [first, second])
+          expect(users.find(u => u.externalId === old.externalId)).toMatchObject({ enabled: false });
+        const audited = store.state.audit.length;
+        expect(await reconcile(client, next, scope)).toMatchObject({ created: 0, deactivated: 0, refused: [] });
+        expect(store.state.audit.length).toBe(audited);
+        // The missing person really was given a name already held elsewhere. Their requested name cannot be changed.
+        const conflict = await reconcile(
+          client,
+          { ...next, people: [...next.people, someone('e-7', 'claimed-account', 'a')] },
+          scope,
+        );
+        expect(conflict.refused).toEqual([
+          { externalId: 'e-7', userName: 'claimed-account', detail: 'A user with this userName already exists.' },
+        ]);
+        expect([...store.state.users.values()].some(u => u.externalId === 'e-7')).toBe(false);
+      }
+    });
+    test('parking reports a persistent uniqueness conflict after four attempts and a different refusal immediately', async () => {
+      for (const [scimType, attempts] of [
+        ['uniqueness', 4],
+        ['mutability', 1],
+      ] as const) {
+        const { store, client } = stack();
+        const units = [unit('a', 'A')],
+          stays = someone('e-2', 'bo', 'a');
+        await reconcile(client, source(units, [someone('e-1', 'anna', 'a'), stays]), scope);
+        const path = '/Users/' + held(store, 'anna').id;
+        // This SCIM endpoint rejects each temporary rename. Deactivation and the rest of the run reach Clew.
+        const names: string[] = [];
+        const refuses: ScimClient = {
+          async request(method, url, body) {
+            if (
+              method === 'PATCH' &&
+              url === path &&
+              body &&
+              typeof body === 'object' &&
+              'Operations' in body &&
+              Array.isArray(body.Operations) &&
+              body.Operations[0]?.path === 'userName'
+            ) {
+              names.push(body.Operations[0].value);
+              throw new ScimClientError(409, scimType, 'Parking refused.', null);
+            }
+            return client.request(method, url, body);
+          },
+        };
+        const result = await reconcile(refuses, source(units, [stays, someone('e-3', 'anna', 'a')]), scope);
+        expect(names).toHaveLength(attempts);
+        expect(new Set(names).size).toBe(attempts);
+        expect(result.refused).toContainEqual({ externalId: 'e-1', userName: 'anna', detail: 'Parking refused.' });
+        expect(held(store, 'anna')).toMatchObject({ externalId: 'e-1', enabled: false });
+        expect([...store.state.users.values()].some(u => u.externalId === 'e-3')).toBe(false);
+      }
+    });
     test('two leavers the source renames to one name, while somebody new is given the name they held in turn: nothing is refused, and the newcomer has it', async () => {
       // The first leaver is renamed the run she leaves, or kept with the old name until both are.
       for (const first of ['renamed at once', 'renamed later'] as const) {

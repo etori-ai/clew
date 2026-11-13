@@ -593,50 +593,75 @@ async function reconcile(
   // 3. The people.
   // An account name that is given to somebody new is first moved off the row that holds it. A person who leaves is
   // deactivated, not erased, and keeps their `userName`, which is unique in the installation, so without this the
-  // newcomer is refused with a 409. The old row takes its own `externalId` as its name: it is unique, it is never
-  // reused, and nobody signs in with it. This also untangles two people who swap names.
+  // newcomer is refused with a 409. Moving the old name aside also untangles two people who swap names.
   const taker = new Map(people.filter(u => u.body.active).map(u => [nameKey(u.body.userName), u.externalId])),
     givenAway = (userName: string, externalId: string) => (taker.get(nameKey(userName)) ?? externalId) !== externalId,
     holderOf = new Map(held.map(u => [nameKey(u.userName), u])),
     rowOf = new Map(held.flatMap(u => (u.externalId ? [[u.externalId, u] as const] : [])));
-  // A leaver Clew holds is sent with a name nobody else has once the run is done: the source's, if it is free; else the
-  // one Clew holds the row under; else the row's own `externalId`. A name is taken when an active person is given it,
-  // when a leaver sent before this one has it, or when another row Clew holds has it. So the source may keep a leaver's
-  // row or drop it, rename leavers, give two of them one name, or give the name two leavers held in turn to somebody
-  // new: none of it is wrong, and nothing is refused.
-  const claimed = new Map(taker);
-  const taken = (userName: string, externalId: string) => {
-    const key = nameKey(userName),
-      by = claimed.get(key);
-    if (by !== undefined) return by !== externalId;
-    const holder = holderOf.get(key);
-    return holder !== undefined && holder !== rowOf.get(externalId);
-  };
-  const users = people.map(u => {
-    const row = rowOf.get(u.externalId);
-    if (u.body.active || !row) return u;
-    const userName = !taken(u.body.userName, u.externalId)
-      ? u.body.userName
-      : !taken(row.userName, u.externalId)
-        ? row.userName
-        : u.externalId;
-    claimed.set(nameKey(userName), u.externalId);
-    return userName === u.body.userName ? u : { ...u, body: { ...u.body, userName } };
-  });
-  const nameNow = new Map(users.map(u => [u.externalId, u.body.userName]));
+  // User names are unique installation-wide. The list only includes this organisation. Reserve every visible held
+  // name and every name this source requests, including those whose owners are written later.
+  const reserved = new Set(holderOf.keys());
+  for (const u of people) reserved.add(nameKey(u.body.userName));
+  let nextParkingNumber = 1;
+  function numberedName(prefix: string) {
+    let name: string;
+    do name = prefix + nextParkingNumber++;
+    while (reserved.has(name));
+    reserved.add(name);
+    return name;
+  }
+  async function park(userId: string, externalId: string): Promise<string> {
+    // A stored id fits SCIM's length limit unless normalization lengthens it. User names also restrict whitespace
+    // and control characters. Keep the old convention of using the source id where the name is available.
+    let name = externalId.normalize('NFC');
+    if (name.length > externalId.length || name !== name.trim() || /\p{Cc}/u.test(name) || reserved.has(nameKey(name)))
+      name = numberedName('clew-parked-');
+    reserved.add(nameKey(name));
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await patch(client, '/Users/' + userId, [{ op: 'replace', path: 'userName', value: name }]);
+        return name;
+      } catch (error) {
+        // Another organisation can hold this name, or a concurrent writer can take it after the list. Only this
+        // temporary name is ours to change. On a lasting conflict report the refusal and continue with other people.
+        if (
+          !(error instanceof ScimClientError && error.status === 409 && error.scimType === 'uniqueness') ||
+          attempt >= 4
+        )
+          throw error;
+        name = numberedName('clew-parked-' + crypto.randomUUID() + '-');
+      }
+    }
+  }
   for (const holder of held) {
-    const mine = holder.externalId?.startsWith(scope.userPrefix);
-    if (!mine || !givenAway(holder.userName, holder.externalId!)) continue;
-    if (nameKey(nameNow.get(holder.externalId!) ?? '') === nameKey(holder.userName)) continue;
+    const id = holder.externalId;
+    if (!id || !id.startsWith(scope.userPrefix) || !givenAway(holder.userName, id)) continue;
     try {
-      await patch(client, '/Users/' + holder.id, [{ op: 'replace', path: 'userName', value: holder.externalId }]);
-      options.log?.(`moved the account name ${holder.userName} off ${holder.externalId}`);
+      const before = holder.userName;
+      holder.userName = await park(holder.id, id);
+      holderOf.delete(nameKey(before));
+      holderOf.set(nameKey(holder.userName), holder);
+      options.log?.(`moved the account name ${before} off ${id}`);
     } catch (error) {
       if (!refusal(error)) throw error;
-      summary.refused.push({ externalId: holder.externalId!, userName: holder.userName, detail: error.message });
+      summary.refused.push({ externalId: id, userName: holder.userName, detail: error.message });
       options.log?.(`refused ${holder.userName}: ${error.message}`);
     }
   }
+  // A leaver takes the source's name if it is free, otherwise the name the row now holds. Read this after the
+  // temporary moves: a name confirmed by SCIM may differ from the one tried first.
+  const claimed = new Map(taker);
+  const users = people.map(u => {
+    const row = rowOf.get(u.externalId);
+    if (u.body.active || !row) return u;
+    const key = nameKey(u.body.userName),
+      claimant = claimed.get(key),
+      holder = holderOf.get(key);
+    const taken = (claimant !== undefined && claimant !== u.externalId) || (holder !== undefined && holder !== row);
+    const userName = taken ? row.userName : u.body.userName;
+    claimed.set(nameKey(userName), u.externalId);
+    return userName === u.body.userName ? u : { ...u, body: { ...u.body, userName } };
+  });
   const findUser = async (externalId: string) =>
     (await client.request('GET', `/Users${eq('externalId', externalId)}&attributes=externalId,userName,active`)).body
       .Resources?.[0];

@@ -59,8 +59,9 @@ Q4, Q10). The items below stay as written; where they differ from this paragraph
 - **Item 9, a reused name (N2).** A rename or a reuse no longer moves Clew's own records: Clew keys its records
   about a person by the person's id
   ([D119](D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)). A provisioner still frees a reused
-  name by renaming the leaver's row first, since a user name is unique in the installation; the example gives the old
-  row its own `externalId` as its name. Rows and actions that name a person by the user name are resolved to a person
+  name by renaming the leaver's row first, since a user name is unique in the installation. The example tries the
+  old row's `externalId` and otherwise allocates a temporary user name, checking both against held and planned names.
+  Rows and actions that name a person by the user name are resolved to a person
   when they arrive, so a reused name reaches only what arrives after the reuse. A connected system that keeps records
   under the name answers for the name's current holder and moves its records off a leaver as the provisioner moves
   the name. No leaver needs to be erased before their name is reused. "That nothing is ever erased stays an open item
