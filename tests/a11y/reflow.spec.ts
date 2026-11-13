@@ -90,9 +90,9 @@ test.describe('1.4.12 text spacing', () => {
 });
 
 test.describe('an area’s whole name on its figure tile', () => {
-  // The chip is Astryx's Badge, one line, and a name wider than its room would end in an ellipsis: at 320 px the tiles
-  // stand one per row, so every area name of the mock ("Utvecklingssamtal" the longest) is drawn whole, with or without
-  // the text-spacing overrides. At 350 px, just under where two tiles start, the spaced name still fits its one tile.
+  // The area's name stands in the tile's last line and its label in small capitals over the value (D115); both are
+  // text that wraps, so every name of the mock ("Utvecklingssamtal" the longest) is drawn whole at 320 px, with or
+  // without the text-spacing overrides, and at 350 px spaced. Nothing in a tile is cut or runs past the window.
   const spacing =
     '* { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important; } p { margin-bottom: 2em !important; }';
   test('every figure tile shows its whole area name at 320 px, 640 and 256 high, and spaced at 350 px', async ({
@@ -110,26 +110,22 @@ test.describe('an area’s whole name on its figure tile', () => {
       await page.setViewportSize(viewport);
       await open(page, '/');
       if (overrides) await page.addStyleTag({ content: overrides });
-      const chips = await lage.locator('.astryx-badge').evaluateAll(list =>
+      const texts = await lage.locator('.astryx-text').evaluateAll(list =>
         list.map(el => {
-          const label = el.lastElementChild as HTMLElement;
           const box = el.getBoundingClientRect();
           return {
-            name: label.textContent,
-            cut: label.scrollWidth > label.clientWidth + 1,
+            text: el.textContent ?? '',
+            cut: el.scrollWidth > el.clientWidth + 1,
             inside: box.left >= 0 && box.right <= document.documentElement.clientWidth,
           };
         }),
       );
-      for (const name of names)
-        expect(
-          chips.find(chip => chip.name === name),
-          `${name} at ${viewport.width}×${viewport.height}, ${overrides ? 'spaced' : 'plain'}`,
-        ).toEqual({
-          name,
-          cut: false,
-          inside: true,
-        });
+      for (const name of names) {
+        const where = `${name} at ${viewport.width}×${viewport.height}, ${overrides ? 'spaced' : 'plain'}`;
+        const holding = texts.filter(t => t.text === name || t.text.startsWith(name + ' · '));
+        expect(holding.length, where).toBeGreaterThan(0);
+        for (const t of holding) expect({ cut: t.cut, inside: t.inside }, where).toEqual({ cut: false, inside: true });
+      }
       expect(await reflowProblems(page, lage)).toEqual([]);
     }
   });

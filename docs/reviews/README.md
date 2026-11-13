@@ -65,6 +65,7 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Operations handover for SCIM, people and the organisation](2026-11-11-provisioning-operations-guide-and-source-lifecycle.md)
 - [Review: the SCIM flow end to end, people and the organisation tree · 2026-11-11](2026-11-11-scim-flow-people-and-organisation.md)
 - [Review: the SCIM server in full, and the guides a provisioner is written from · 2026-11-11](2026-11-11-scim-full-review.md)
+- [Review: the startsidan prototype's Version 1.0 against Clew · 2026-11-11](2026-11-11-startsidan-prototype-version-1-0-against-clew.md)
 - [Review: the panel beside the page against what Astryx ships · 2026-11-11](2026-11-11-the-panel-beside-the-page-against-what-astryx-ships.md)
 - [Review: `typebox` 1.x instead of `@sinclair/typebox` 0.34 · 2026-11-11](2026-11-11-typebox-1-instead-of-sinclair-typebox.md)
 - [Municipal employment, work placements and managerial responsibility](2026-11-12-municipal-employment-and-work-placements.md)

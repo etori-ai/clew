@@ -17,6 +17,34 @@ declare module '@astryxdesign/core/Card' {
     alert: true;
   }
 }
+// What the theme adds for the prototype's look (D115, `theme.ts`): a figure's label in small capitals (a text type), a value in its
+// tone's colour, and the pill a suggestion under the box is drawn as.
+declare module '@astryxdesign/core/theme' {
+  interface CustomTextTypes {
+    eyebrow: true;
+  }
+}
+declare module '@astryxdesign/core/Text' {
+  interface TextColorMap {
+    success: true;
+    warning: true;
+    error: true;
+  }
+}
+declare module '@astryxdesign/core/Divider' {
+  interface DividerVariantMap {
+    'status-error': true;
+    'status-warning': true;
+    'status-info': true;
+    'status-success': true;
+    'status-neutral': true;
+  }
+}
+declare module '@astryxdesign/core/Button' {
+  interface ButtonVariantMap {
+    suggestion: true;
+  }
+}
 
 /** The tone with its word (1.4.1): the dot is named by the word beside it, so a reader hears it once. */
 function Tone({ tone }: { tone: ToneWord }) {
@@ -31,34 +59,34 @@ function Tone({ tone }: { tone: ToneWord }) {
 }
 
 /**
- * A figure's tile on Hem (D54, artboard 3), drawn from `figureItems()`. The chip top left and the tone top right on a
- * line that wraps, so the tone goes under the chip when both do not fit; the label in supporting over the value in
- * display-3; the comparison or the bar; last the view it opens with a chevron, the whole tile then a link to it. Without
- * a link it is a plain card, no chevron and no shadow; without a value it is a sentence; a silent source is the warning.
+ * A figure's tile on Hem (D54, D115 item 4), drawn from `figureItems()` as the reference draws a key figure: the label
+ * in small capitals with an arrow when the tile leads somewhere; the value large, in its tone's colour; a line with the
+ * tone's word and the comparison, or the bar; and last the area the figure is from and the view it opens, the whole
+ * tile then a link to it. Without a link it is a plain card and no arrow; without a value it is a sentence under the
+ * area's name; a silent source is the warning. The tone is always said in words beside the colour (1.4.1).
  */
 export function FigureTile({ tile, href }: { tile: Tile; href?: string }) {
+  const linked = tile.kind === 'value' && !!tile.opens && !!href;
+  // A figure that needs the person is the error colour, as its word says; else the tone's own.
+  const color = tile.alert ? 'error' : tile.tone?.variant;
+  const word = tile.alert ? 'Behöver dig' : tile.tone?.word;
   const head = (
-    <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-      <AreaChip ordinal={tile.mark.ordinal} icon={tile.mark.icon} label={tile.mark.title} />
+    <HStack justify="between" vAlign="start" gap={2}>
+      <Text type="eyebrow">{tile.kind === 'value' ? tile.label : tile.mark.title}</Text>
       {tile.kind === 'silent' ? (
         <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Svarar inte" />
-      ) : tile.alert ? (
-        <Badge variant="error" label="Behöver dig" />
       ) : (
-        tile.tone && <Tone tone={tile.tone} />
+        linked && <Icon icon="chevronRight" size="sm" color="secondary" />
       )}
     </HStack>
   );
   const body =
     tile.kind === 'value' ? (
-      <VStack gap={2}>
-        <VStack gap={0}>
-          <Text type="supporting">{tile.label}</Text>
-          <Text type="display-3" hasTabularNumbers>
-            {tile.value}
-          </Text>
-        </VStack>
-        {tile.progress ? (
+      <VStack gap={1}>
+        <Text type="display-3" hasTabularNumbers {...(color ? { color } : {})}>
+          {tile.value}
+        </Text>
+        {tile.progress && (
           <ProgressBar
             label={tile.progress.label}
             isLabelHidden
@@ -66,28 +94,27 @@ export function FigureTile({ tile, href }: { tile: Tile; href?: string }) {
             max={tile.progress.max}
             variant="neutral"
           />
-        ) : (
-          tile.comparison && <Text type="supporting">{tile.comparison}</Text>
+        )}
+        {(word || (!tile.progress && tile.comparison)) && (
+          <Text type="supporting">{[word, tile.progress ? null : tile.comparison].filter(Boolean).join(' · ')}</Text>
         )}
       </VStack>
     ) : (
-      <Text weight="medium" as="p">
-        {tile.label}
-      </Text>
+      <VStack gap={1}>
+        <Text weight="medium" as="p">
+          {tile.label}
+        </Text>
+        {word && <Text type="supporting">{word}</Text>}
+      </VStack>
     );
   const foot =
     tile.kind === 'silent' ? (
       <Text type="supporting">{tile.comparison}</Text>
-    ) : tile.opens && href ? (
-      <HStack gap={1} vAlign="center">
-        <Text type="supporting" weight="medium">
-          {tile.opens.title}
-        </Text>
-        <Icon icon="chevronRight" size="sm" />
-      </HStack>
+    ) : tile.kind === 'value' ? (
+      <Text type="supporting">{[tile.mark.title, linked ? tile.opens!.title : null].filter(Boolean).join(' · ')}</Text>
     ) : null;
   const content = (
-    <VStack gap={3} justify="between" height="100%" minHeight={118}>
+    <VStack gap={2} justify="between" height="100%" minHeight={104}>
       <VStack gap={2}>
         {head}
         {body}
@@ -95,13 +122,14 @@ export function FigureTile({ tile, href }: { tile: Tile; href?: string }) {
       {foot}
     </VStack>
   );
-  const variant = tile.alert ? 'alert' : tile.kind === 'silent' ? 'muted' : 'default';
-  return tile.kind === 'value' && tile.opens && href ? (
-    <ClickableCard label={tile.name} href={href} variant={variant} elevation="low" padding={4} height="100%">
+  // A figure that needs the person says so with its word and its colour; the tile itself is not outlined or tinted (D115 item 4).
+  const variant = tile.kind === 'silent' ? 'muted' : 'default';
+  return linked ? (
+    <ClickableCard label={tile.name} href={href!} variant={variant} elevation="low" padding={5} height="100%">
       {content}
     </ClickableCard>
   ) : (
-    <Card variant={variant} padding={4} height="100%">
+    <Card variant={variant} padding={5} height="100%">
       <VStack role="group" aria-label={tile.name} height="100%">
         {content}
       </VStack>

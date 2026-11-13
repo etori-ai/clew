@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**109 in force**: 98 accepted and 11 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
+**110 in force**: 98 accepted and 12 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -141,6 +141,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D100 · The people list is read a page at a time and narrowed on the server](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) | 2026-11-11 | accepted |  |
 | [D111 · Where something opens is decided by what it is, never by the page it was clicked on](D111-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional | [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) |
 | [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional |  |
+| [D115 · Clew's look is the startsidan prototype's, drawn through the Astryx theme on D112's layout](D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme.md) | 2026-11-11 | provisional |  |
 
 ## Proposed, not decided
 

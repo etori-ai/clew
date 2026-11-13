@@ -446,13 +446,13 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
       'href',
       /^\/\?open=hr\.absenceOverview&open-title=Fr%C3%A5nvaro\+per\+person$/,
     );
-    // The tile as drawn (artboard 3): the chip, the tone with its word, the label over the value, the comparison, the view with a chevron.
+    // The tile as drawn (D115, after the prototype's key figure): the label in small capitals, the value, the tone's
+    // word with the comparison on one line, and last the area with the view it opens.
     const card = region.locator('.astryx-clickable-card').filter({ hasText: 'Sjukfrånvaro' });
-    await expect(card.getByText('Personal', { exact: true })).toBeVisible();
-    await expect(card.getByText('Bevaka', { exact: true })).toBeVisible();
+    await expect(card.getByText('Sjukfrånvaro', { exact: true })).toBeVisible();
     await expect(card.getByText('4,2 %', { exact: true })).toBeVisible();
-    await expect(card.getByText('mål ≤ 4,0 % · +0,3 sedan oktober')).toBeVisible();
-    await expect(card.getByText('Frånvaro per person', { exact: true })).toBeVisible();
+    await expect(card.getByText('Bevaka · mål ≤ 4,0 % · +0,3 sedan oktober', { exact: true })).toBeVisible();
+    await expect(card.getByText('Personal · Frånvaro per person', { exact: true })).toBeVisible();
     // Alert is a badge and no dot; a target is a bar; a figure with no tone has no word; a sentence leads nowhere.
     await expect(
       region.locator('.astryx-clickable-card').filter({ hasText: 'Öppna tillbud' }).getByText('Behöver dig'),

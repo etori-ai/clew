@@ -104,8 +104,10 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   // The band's theme (D88) is the installation's (D98), built once per saved theme.
   const branding = useBranding();
   const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
-  // The connector's logo when it gives one, else the installation's own (D98).
-  const logo = shared?.logo ?? branding.logo;
+  // The connector's logo when it gives one, else the installation's own (D98). A connector gives one image, and it is
+  // the header's own: drawn on the band as it is. Naming it as its own dark variant keeps the header from laying a
+  // light ground under it, which it does for an installation's logo with no variant for a dark bar (D115).
+  const logo = shared?.logo ? { ...shared.logo, darkSrc: shared.logo.src } : branding.logo;
   const ownLogo = branding.logo;
   const logoSrc = ownLogo ? (mode === 'dark' && ownLogo.darkSrc ? ownLogo.darkSrc : ownLogo.src) : undefined;
   const [failedLogo, setFailedLogo] = useState<string | null>(null);

@@ -1306,6 +1306,15 @@
       "status": "provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of D101 and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet",
       "date": "2026-11-12",
       "area": "identity, ui"
+    },
+    {
+      "key": "D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme",
+      "number": 115,
+      "path": "docs/decisions/D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme.md",
+      "title": "D115 · Clew's look is the startsidan prototype's, drawn through the Astryx theme on D112's layout",
+      "status": "provisional (Oliver Borgström, 2026-11-11 and 2026-11-12; built through the theme; accepted once a manager outside the team has used it)",
+      "date": "2026-11-11",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1884,6 +1893,12 @@
       "headings": [
         "Employment and work placement in a municipality"
       ]
+    },
+    {
+      "path": "docs/decisions/D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme.md",
+      "title": "D115 · Clew's look is the startsidan prototype's, drawn through the Astryx theme on D112's layout",
+      "category": "decision-history",
+      "headings": []
     },
     {
       "path": "docs/decisions/D12-objects-chips-proposals.md",
@@ -3872,6 +3887,22 @@
         "Assessment",
         "Findings and what was done",
         "Left as it is",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-11-startsidan-prototype-version-1-0-against-clew.md",
+      "title": "Review: the startsidan prototype's Version 1.0 against Clew · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "What was asked",
+        "What was looked at",
+        "What Clew's start page was",
+        "What the prototype's Version 1.0 is",
+        "What differs in kind, not in paint",
+        "What Astryx has for it",
+        "What Clew lacks for it",
+        "Two things found on the way",
         "Outcome"
       ]
     },
