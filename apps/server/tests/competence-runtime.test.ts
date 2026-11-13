@@ -3,15 +3,18 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { database, schema, closeDatabase } from '@clew/db';
-import { postgresCompetenceStore } from '../src/modules/competence/adapters/postgres';
-import { competenceUsecases } from '../src/modules/competence/usecases';
-import { dailyCopyStart, readNowStart } from '../src/modules/competence/domain';
+import { competenceTx, postgresCompetenceStore } from '../src/modules/competence/adapters/postgres';
+import { competenceLeavers, competenceUsecases } from '../src/modules/competence/usecases';
+import { dailyCopyStart, erasureStart, erasureWorkflowId, readNowStart } from '../src/modules/competence/domain';
 import type { SourceHoldingsPage } from '../src/modules/competence/model';
+import { postgresProvisionStore } from '../src/modules/people/adapters/postgres';
+import { SCIM } from '../src/modules/people/contracts';
+import { scimUsecases } from '../src/modules/people/usecases';
 import { bindActivities } from '../src/dbos/workflows';
-import { durableResult } from '../src/dbos/start';
+import { cancelDurable, durableResult } from '../src/dbos/start';
 import { adoptExecutors, beat, claimDead, ensureHeartbeatTable } from '../src/dbos/heartbeat';
 import { testEngine } from './durable';
 
@@ -245,3 +248,183 @@ test(
     }
   },
 );
+
+// The erasure a period after a person leaves (D108 item 14), on the same real PostgreSQL and engine. A day is the
+// shortest period, so the clock the SCIM use cases and the copy run on is set back by a day less a few seconds: the
+// deactivation commits a due time a few seconds ahead of the engine's own clock, and the workflow's sleep is short.
+test(
+  'the erasure starts in the deactivation’s transaction, waits until due and erases once; a reactivation cancels its wait; a killed instance’s erasure is adopted and erases once',
+  { timeout: 120_000 },
+  async () => {
+    const tag = randomUUID().slice(0, 8),
+      engine = testEngine('erasure'),
+      DAY = 24 * 60 * 60_000;
+    const org = 'test-erasure-' + tag,
+      [anna, bo, cia] = ['anna', 'bo', 'cia'].map(name => `${org}-${name}`) as [string, string, string],
+      people = [anna, bo, cia];
+    const provisioner = { id: 'mk-' + tag, organisationId: org, label: 'Synthetic provisioner' };
+    let lead = 3_000;
+    const behind = () => new Date(Date.now() - DAY + lead);
+    const cancelled: string[] = [];
+    const cancel = async (id: string) => {
+      cancelled.push(id);
+      await cancelDurable(id);
+    };
+    const scim = scimUsecases({
+      store: postgresProvisionStore({
+        leavers: (tx, ended) => competenceLeavers(competenceTx(tx, engine.durable, undefined, ended)),
+        cancel,
+      }),
+      clock: behind,
+      ids: () => randomUUID(),
+      digest: t => t,
+    });
+    const store = postgresCompetenceStore(engine.durable, cancel);
+    const competence = competenceUsecases({
+      store,
+      staff: async () => ({ units: [] }),
+      clock: () => new Date(),
+      ids: () => randomUUID(),
+    });
+    let erasures = 0;
+    bindActivities({
+      eraseLeaver: async (personId, generation) => {
+        erasures++;
+        return competence.eraseDue(personId, generation);
+      },
+    });
+    const active = (id: string, value: boolean) =>
+      scim.patchUser(
+        provisioner,
+        id,
+        { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'active', value }] },
+        'https://clew.test/scim/v2',
+      );
+    const holdings = async (personId: string) => (await store.transaction(tx => tx.holdingsOf([personId]))).length;
+    const erasedRows = (personId: string) =>
+      database()
+        .select()
+        .from(schema.audit)
+        .where(
+          and(eq(schema.audit.subject, 'person:' + personId), eq(schema.audit.action, 'competence.person_erased')),
+        );
+    let child: ReturnType<typeof spawn> | undefined, launched: Awaited<ReturnType<typeof engine.launch>> | undefined;
+    let typeId = '';
+    const seeded: string[] = [];
+    try {
+      for (const id of people)
+        await database()
+          .insert(schema.people)
+          .values({ id, organisationId: org, name: 'Synthetic erasure', userName: id.replaceAll('-', '.') });
+      typeId = await competence.seedType('operator:test', org, { name: 'HLR ' + tag, area: 'Akut', kind: 'course' });
+      for (const id of people)
+        seeded.push(await competence.seedHolding('operator:test', org, id, { typeId, issuedOn: '2026-01-10' }));
+      await competence.setRetention('operator:test', org, 1);
+
+      // Deactivated before any engine of this application runs: the start waits in the queue with the intent.
+      await active(anna, false);
+      assert.deepEqual(await engine.row(erasureWorkflowId(anna, 1)), {
+        status: 'ENQUEUED',
+        executor_id: null,
+        queue_name: engine.durable.queue,
+      });
+      launched = await engine.launch();
+      assert.equal(await durableResult(erasureWorkflowId(anna, 1)), 'erased');
+      assert.equal(await holdings(anna), 0);
+      assert.equal((await erasedRows(anna)).length, 1);
+      // A step retried after its commit (the acknowledgement lost) finds the intent erased and does nothing.
+      assert.equal(await competence.eraseDue(anna, 1), 'stale');
+      assert.equal((await erasedRows(anna)).length, 1);
+
+      // Due in an hour, and reactivated while it waits: the wait is cancelled after the commit, nothing is erased.
+      lead = 3_600_000;
+      await active(bo, false);
+      await durableWait(() => DBOS.getWorkflowStatus(erasureWorkflowId(bo, 1)), 'PENDING');
+      await active(bo, true);
+      assert.deepEqual(cancelled, [erasureWorkflowId(bo, 1)]);
+      assert.equal((await DBOS.getWorkflowStatus(erasureWorkflowId(bo, 1)))?.status, 'CANCELLED');
+      assert.equal(await competence.eraseDue(bo, 1), 'stale');
+      assert.equal(await holdings(bo), 1);
+
+      // Process death: a second instance starts Cia's erasure itself, due in ten seconds, and is SIGKILLed while it
+      // sleeps. Its heartbeat lapses, this instance adopts the workflow, and it erases her here, once.
+      lead = 10_000;
+      await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, cia));
+      const due = new Date(Date.now() + 10_000).toISOString();
+      await store.transaction(tx =>
+        tx.putErasure({
+          personId: cia,
+          organisationId: org,
+          state: 'waiting',
+          inactiveSince: new Date(Date.parse(due) - DAY).toISOString(),
+          dueAt: due,
+          generation: 1,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+      child = spawn(
+        process.execPath,
+        ['--import', 'tsx', fileURLToPath(new URL('./fixtures/erasure-child.ts', import.meta.url))],
+        {
+          env: {
+            ...process.env,
+            DURABLE_APP: engine.name,
+            DURABLE_EXECUTOR: 'erasure-child',
+            ERASURE_START: JSON.stringify(erasureStart({ personId: cia, generation: 1, dueAt: due })),
+          },
+          stdio: ['ignore', 'pipe', 'inherit'],
+        },
+      );
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('child instance did not start')), 30_000);
+        child!.once('exit', code => reject(new Error('child instance exited during startup: ' + code)));
+        child!.stdout!.on('data', chunk => {
+          if (String(chunk).includes('started ')) {
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+      });
+      await new Promise<void>(resolve => {
+        child!.once('exit', () => resolve());
+        child!.kill('SIGKILL');
+      });
+      const stranded = await DBOS.getWorkflowStatus(erasureWorkflowId(cia, 1));
+      assert.deepEqual([stranded?.status, stranded?.executorId], ['PENDING', 'erasure-child']);
+      assert.equal(await holdings(cia), 1);
+      await ensureHeartbeatTable();
+      await beat(engine.name, 'erasure-child', new Date(Date.now() - 120_000));
+      assert.deepEqual(await claimDead(engine.name, launched.executorID), ['erasure-child']);
+      assert.deepEqual(await adoptExecutors(['erasure-child']), [erasureWorkflowId(cia, 1)]);
+      const before = erasures;
+      assert.equal(await durableResult(erasureWorkflowId(cia, 1)), 'erased');
+      assert.equal(erasures - before, 1);
+      assert.equal(await holdings(cia), 0);
+      assert.equal((await erasedRows(cia)).length, 1);
+    } finally {
+      if (child && child.exitCode === null) child.kill('SIGKILL');
+      await launched?.shutdown();
+      await database()
+        .delete(schema.audit)
+        .where(inArray(schema.audit.subject, [...people.map(id => 'person:' + id), 'organisation:' + org]));
+      await database()
+        .delete(schema.audit)
+        .where(inArray(schema.audit.subject, ['competence-type:' + typeId, ...seeded.map(id => 'holding:' + id)]));
+      await database().delete(schema.competenceHoldings).where(inArray(schema.competenceHoldings.personId, people));
+      await database().delete(schema.competenceErasures).where(inArray(schema.competenceErasures.personId, people));
+      await database().delete(schema.competenceRetention).where(eq(schema.competenceRetention.organisationId, org));
+      await database().delete(schema.competenceTypes).where(eq(schema.competenceTypes.organisationId, org));
+      await database().delete(schema.people).where(inArray(schema.people.id, people));
+      await engine.forget();
+      await closeDatabase();
+    }
+  },
+);
+/** The queue runner polls about once a second: wait for the row to be dequeued into the asked-for status. */
+async function durableWait(read: () => Promise<{ status: string } | null>, status: string) {
+  for (let i = 0; i < 100; i++) {
+    if ((await read())?.status === status) return;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  throw new Error(`workflow did not reach ${status}`);
+}

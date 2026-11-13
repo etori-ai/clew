@@ -7,11 +7,13 @@ import type {
   CompetenceStore,
   CompetenceTx,
   Erased,
+  ErasureRecord,
   HoldingRecord,
   PersonRef,
   PositionRecord,
   ReadLogEntry,
   RequirementRecord,
+  RetentionRecord,
   ShareTargetRecord,
   SourceMapping,
   SourceRecord,
@@ -76,6 +78,12 @@ export interface MemoryCompetenceState {
   audit: CompetenceAudit[];
   /** The workflow starts committed (D86), each id once. */
   enqueued: WorkflowStart[];
+  /** The workflows whose wait a committed transaction ended, in order (D86): cancelled after the commit. */
+  cancelled: string[];
+  /** The retention period of each organisation that has one (D108 item 14). */
+  retention: Map<string, RetentionRecord>;
+  /** Each person's erasure intent, by person id (D108 item 14). */
+  erasures: Map<string, ErasureRecord>;
   /** The approvals' cards by card id, and every call to them in order (D108 item 7). */
   cards: Map<string, MemoryApprovalCard>;
   calls: ApprovalWorkItemCall[];
@@ -125,6 +133,9 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     shareTargets: new Map(),
     audit: [],
     enqueued: [],
+    cancelled: [],
+    retention: new Map(),
+    erasures: new Map(),
     cards: new Map(),
     calls: [],
     readLog: [],
@@ -591,6 +602,51 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async enqueue(start) {
       if (!state.enqueued.some(s => s.id === start.id)) state.enqueued.push(structuredClone(start));
+    },
+    async cancel(workflowId) {
+      // Recorded with the transaction's state, so a rollback takes it back: a cancel is made only after a commit.
+      state.cancelled.push(workflowId);
+    },
+    async lockRetention() {
+      // Transactions run one at a time here, as the advisory lock makes them for one organisation.
+    },
+    async retention(organisationId) {
+      const r = state.retention.get(organisationId);
+      return r && { ...r };
+    },
+    async putRetention(record) {
+      if (!Number.isInteger(record.days) || record.days < 1 || record.days > 3650)
+        throw new Error('competence_retention_days check violated');
+      state.retention.set(record.organisationId, { ...record });
+    },
+    async removeRetention(organisationId) {
+      return state.retention.delete(organisationId);
+    },
+    async erasure(personId) {
+      const e = state.erasures.get(personId);
+      return e && { ...e };
+    },
+    async erasures(organisationId) {
+      return [...state.erasures.values()]
+        .filter(e => e.organisationId === organisationId)
+        .sort((a, b) => a.personId.localeCompare(b.personId))
+        .map(e => ({ ...e }));
+    },
+    async putErasure(record) {
+      // The foreign key and the checks of `competence_erasure`.
+      if (!state.persons.has(record.personId)) throw new Error('erasure references an unknown person');
+      if ((record.state === 'waiting') !== (record.dueAt !== null)) throw new Error('competence_erasure_due');
+      if ((record.state === 'held' || record.state === 'waiting') && record.inactiveSince === null)
+        throw new Error('competence_erasure_since');
+      if (!Number.isInteger(record.generation) || record.generation < 0)
+        throw new Error('competence_erasure_generation');
+      state.erasures.set(record.personId, { ...record });
+    },
+    async inactiveIn(organisationId) {
+      return [...state.persons.values()]
+        .filter(p => p.organisationId === organisationId && state.inactive.has(p.id))
+        .map(p => p.id)
+        .sort();
     },
     async persons(ids) {
       return ids.flatMap(id => (state.persons.has(id) ? [{ ...state.persons.get(id)! }] : []));

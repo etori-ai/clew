@@ -12,6 +12,7 @@ import {
   type ApprovalWorkItemTx,
   type CompetenceStore,
   type CompetenceTx,
+  type ErasureRecord,
   type HoldingRecord,
   type Placed,
   type RequirementRecord,
@@ -30,6 +31,8 @@ const {
   competenceRequirements: requirements,
   competenceShareTargets: targets,
   competenceReadLog: reads,
+  competenceRetention: periods,
+  competenceErasures: intents,
   positions,
   personPositions,
   groups,
@@ -141,6 +144,12 @@ const rowOf = ({ copy, ...h }: HoldingRecord): typeof holdings.$inferInsert => (
   readAt: copy ? new Date(copy.readAt) : null,
 });
 const mappingOf = (r: MappingRow): SourceMapping => ({ ...r, mappedAt: r.mappedAt.toISOString() });
+const erasureOf = (r: typeof intents.$inferSelect): ErasureRecord => ({
+  ...r,
+  inactiveSince: iso(r.inactiveSince),
+  dueAt: iso(r.dueAt),
+  updatedAt: r.updatedAt.toISOString(),
+});
 const sourceOf = (r: SourceRow): SourceRecord => ({
   ...r,
   claimedAt: iso(r.claimedAt),
@@ -176,12 +185,14 @@ const noCards: ApprovalWorkItemTx = {
  * The competence tables (D108) on one Postgres transaction. Reads that a write follows take a row lock. The catalogue's
  * order is Swedish and is sorted here, since the database's collation is not Clew's to choose. `durable` names the
  * engine's application and queue, so a workflow start commits with the transaction that decides it (D86). `workItems` is
- * the approvals' cards over the same transaction (D108 item 7).
+ * the approvals' cards over the same transaction (D108 item 7). `ended` collects the workflows whose wait the transaction
+ * ends (`cancel`), for whoever runs the transaction to cancel once it has committed.
  */
 export function competenceTx(
   tx: Transaction,
   durable: DurableQueue,
   workItems: ApprovalWorkItemTx = noCards,
+  ended?: string[],
 ): CompetenceTx {
   return {
     async types(organisationId, options = {}) {
@@ -540,6 +551,68 @@ export function competenceTx(
       return { holdings: removed.length, mappings: unmapped.length };
     },
     enqueue: start => enqueueWorkflow(tx, durable, start),
+    async cancel(workflowId) {
+      // Collected for the caller to cancel after the commit; without a collector the generation fence alone covers it.
+      ended?.push(workflowId);
+    },
+    async lockRetention(organisationId) {
+      // A lock of the transaction on the organisation's period: there may be no row of it to lock.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${'competence-retention:' + organisationId}, 0))`,
+      );
+    },
+    async retention(organisationId) {
+      const [r] = await tx.select().from(periods).where(eq(periods.organisationId, organisationId));
+      return r && { ...r, setAt: r.setAt.toISOString() };
+    },
+    async putRetention(record) {
+      const set = { days: record.days, setBy: record.setBy, setAt: new Date(record.setAt) };
+      await tx
+        .insert(periods)
+        .values({ organisationId: record.organisationId, ...set })
+        .onConflictDoUpdate({ target: periods.organisationId, set });
+    },
+    async removeRetention(organisationId) {
+      const removed = await tx
+        .delete(periods)
+        .where(eq(periods.organisationId, organisationId))
+        .returning({ id: periods.organisationId });
+      return removed.length > 0;
+    },
+    async erasure(personId) {
+      const [r] = await tx.select().from(intents).where(eq(intents.personId, personId)).for('update');
+      return r && erasureOf(r);
+    },
+    async erasures(organisationId, options = {}) {
+      const query = tx
+        .select()
+        .from(intents)
+        .where(eq(intents.organisationId, organisationId))
+        .orderBy(asc(intents.personId));
+      return (await (options.lock ? query.for('update') : query)).map(erasureOf);
+    },
+    async putErasure(record) {
+      const set = {
+        organisationId: record.organisationId,
+        state: record.state,
+        inactiveSince: date(record.inactiveSince),
+        dueAt: date(record.dueAt),
+        generation: record.generation,
+        updatedAt: new Date(record.updatedAt),
+      };
+      await tx
+        .insert(intents)
+        .values({ personId: record.personId, ...set })
+        .onConflictDoUpdate({ target: intents.personId, set });
+    },
+    async inactiveIn(organisationId) {
+      const rows = await tx
+        .select({ id: people.id })
+        .from(people)
+        .where(and(eq(people.organisationId, organisationId), eq(people.enabled, false)))
+        .orderBy(asc(people.id));
+      return rows.map(r => r.id);
+    },
     async persons(ids) {
       // In slices, as `activeIds` and `placesOf` read: a search names every holder of a type (D121 item 4).
       const found = [];
@@ -865,7 +938,19 @@ export function competenceTx(
 /**
  * The competence store over its own `database().transaction`, with no approval cards: for a caller that registers nothing
  * of a person's own. The server's store shares the transaction with the thread store (`competenceStoreWithCards`).
+ * `cancel` ends the waits a committed transaction ended (D86), best effort: what it throws is the caller's to log, and
+ * the generation fence covers a cancel that fails.
  */
-export function postgresCompetenceStore(durable: DurableQueue): CompetenceStore {
-  return { transaction: fn => database().transaction(tx => fn(competenceTx(tx, durable))) };
+export function postgresCompetenceStore(
+  durable: DurableQueue,
+  cancel?: (workflowId: string) => Promise<void>,
+): CompetenceStore {
+  return {
+    async transaction(fn) {
+      const ended: string[] = [];
+      const result = await database().transaction(tx => fn(competenceTx(tx, durable, noCards, ended)));
+      for (const id of ended) await cancel?.(id).catch(() => undefined);
+      return result;
+    },
+  };
 }

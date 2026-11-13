@@ -6,10 +6,10 @@
  * A workflow function must be deterministic between checkpoints: the clock is `DBOS.now()`, waits are `DBOS.sleep`,
  * and a changed workflow body is a new application version (see `runtime.ts`).
  *
- * The five workflows the ledger starts from inside its transactions (D86: `scheduledJob`, `durableReminder`,
- * `approvedExecution`, `jobWatch`, and the competence copy `competenceCopy`) are registered with portable
- * serialization: `dbos.enqueue_workflow` writes their input as plain JSON, and their names are the contract between the
- * store adapters and this file.
+ * The six workflows the ledger starts from inside its transactions (D86: `scheduledJob`, `durableReminder`,
+ * `approvedExecution`, `jobWatch`, the competence copy `competenceCopy` and the competence erasure `competenceErasure`)
+ * are registered with portable serialization: `dbos.enqueue_workflow` writes their input as plain JSON, and their names
+ * are the contract between the store adapters and this file.
  */
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
@@ -38,6 +38,8 @@ export interface Activities {
   competenceSources(only: string | null): Promise<CopySourceRef[]>;
   copyHoldings(run: string, source: CopySourceRef, signal?: AbortSignal): Promise<string>;
   reconcileApprovals(): Promise<unknown>;
+  /** The competence erasure's step (D108 item 14): `early` when it is not yet due by the ledger's clock. */
+  eraseLeaver(personId: string, generation: number): Promise<string>;
 }
 let bound: Partial<Activities> = {};
 /** Composition binds the live use cases; a runtime test binds what it measures. Later bindings replace earlier ones by name. */
@@ -181,6 +183,28 @@ export const competenceCopy = DBOS.registerWorkflow(
       }
   },
   { name: 'competenceCopy', serialization: 'portable' },
+);
+
+/**
+ * The erasure of a person's competence a period after the directory deactivated them (D108 item 14), one workflow per
+ * person and generation (`competence-erasure:<person>:<generation>`): wait until the absolute due time, then let the
+ * ledger decide. The use case erases only while the intent is still this generation's and waiting, a period is set and
+ * the person is still deactivated, and marks it erased in the same transaction, so a late, repeated or adopted wake
+ * erases once or not at all. A reactivation, a changed or cleared period and an erasure by hand cancel the wait after
+ * their commit, and the generation fence covers a cancel that never arrives. The ledger's own clock decides that the
+ * time has come; a worker a little behind asks again shortly. Started from inside a transaction (D86) by the store, so
+ * it is registered with portable serialization and its name is the contract with the store.
+ */
+export const competenceErasure = DBOS.registerWorkflow(
+  async (input: { personId: string; generation: number; dueAt: string }): Promise<string> => {
+    await sleepUntil(input.dueAt);
+    for (;;) {
+      const outcome = await step('eraseLeaver', () => activity('eraseLeaver')(input.personId, input.generation), 10);
+      if (outcome !== 'early') return outcome;
+      await DBOS.sleep(10_000);
+    }
+  },
+  { name: 'competenceErasure', serialization: 'portable' },
 );
 
 /**

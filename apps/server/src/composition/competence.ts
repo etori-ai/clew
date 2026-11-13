@@ -4,7 +4,7 @@ import { competenceUsecases } from '../modules/competence/usecases';
 import { reportsByUnit } from '../modules/entities/domain';
 import type { Above, CompetenceStore, HoldingsPort, Staff } from '../modules/competence/model';
 import { createHash } from 'node:crypto';
-import { cancelDurable } from '../dbos/start';
+import { cancelWhereRunning } from '../dbos/start';
 import { systemContext } from '../system-context';
 import { logPort, logger } from '../logging';
 import { competenceWorkItems } from './competence-work-items';
@@ -21,17 +21,32 @@ import { ledger } from './durable';
  * One competence transaction is one thread-store transaction (D108 item 7): the competence tables and the approvals'
  * cards (`competenceWorkItems`) share the physical database transaction, so a person's own registration, its cards in
  * the managers' streams, their audit rows and anything enqueued commit or roll back as one, as talks' action points do.
- * `options` names the durable engine's queue: the server's ledger here, a test's own in `tests/db`.
+ * `options` names the durable engine's queue: the server's ledger here, a test's own in `tests/db`. A wait the
+ * competence transaction ends (an erasure intent cancelled or re-timed, D108 item 14) is cancelled after the commit
+ * with `options.cancel`, best effort, as the thread store cancels its timers: the generation fence covers one that
+ * fails or never arrives, so a failure is logged and never raised.
  */
 export function competenceStoreWithCards(options: ThreadStoreOptions, deps: { clock: () => Date }): CompetenceStore {
   return {
-    transaction: fn =>
-      withThreadTx(options, (tx, thread) =>
-        fn(competenceTx(tx, options.durable, competenceWorkItems(tx, thread, { clock: deps.clock }))),
-      ),
+    async transaction(fn) {
+      const ended: string[] = [];
+      const result = await withThreadTx(options, (tx, thread) =>
+        fn(competenceTx(tx, options.durable, competenceWorkItems(tx, thread, { clock: deps.clock }), ended)),
+      );
+      for (const id of ended)
+        await options
+          .cancel?.(id)
+          .catch(error => logger.error({ scope: 'competence', workflow: id, error }, 'durable cancel failed'));
+      return result;
+    },
   };
 }
-export const competenceStore = competenceStoreWithCards({ durable: ledger, cancel: cancelDurable }, { clock });
+/**
+ * The server's competence store. A wait ended by a script's transaction (a period changed with
+ * `scripts/competence-retention.ts`, an erasure by hand) is not cancelled from the script, which runs no engine: the
+ * generation fence refuses it when it wakes.
+ */
+export const competenceStore = competenceStoreWithCards({ durable: ledger, cancel: cancelWhereRunning }, { clock });
 /**
  * The reader's reports (D99 item 4) as the module's `Staff` port has them: the units they manage, each with exactly the
  * people the `managed` relation names (D117, `reportsByUnit`), read from the people module's directory on every call.

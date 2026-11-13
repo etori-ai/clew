@@ -608,7 +608,7 @@ describe('erasure and export', () => {
       action: 'competence.person_erased',
       subject: 'person:anna',
       at: now.toISOString(),
-      details: { holdings: 1, cleared: 0, requirements: 0, approvals: 0 },
+      details: { cause: 'operator', holdings: 1, cleared: 0, requirements: 0, approvals: 0 },
     });
     // The manager who registered is erased: the holdings stay, without her id.
     store.deactivate('boss');
@@ -1697,7 +1697,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       action: 'competence.person_erased',
       subject: 'person:bo',
       at: now.toISOString(),
-      details: { holdings: 0, cleared: 0, requirements: 1, approvals: 0 },
+      details: { cause: 'operator', holdings: 0, cleared: 0, requirements: 1, approvals: 0 },
     });
     expect([...store.state.requirements.values()].map(r => r.personId)).toEqual([null, null]);
     const written = JSON.stringify(audits());
@@ -2851,7 +2851,7 @@ describe('a person registers their own certificate and the manager they report t
       action: 'competence.person_erased',
       subject: 'person:anna',
       at: now.toISOString(),
-      details: { holdings: 2, cleared: 0, requirements: 1, approvals: 2 },
+      details: { cause: 'operator', holdings: 2, cleared: 0, requirements: 1, approvals: 2 },
     });
     // Karin, erased as a manager: her card of Bo's registration goes, and her id leaves what she decided.
     await own.decideHolding(boss, bos, 'reject');

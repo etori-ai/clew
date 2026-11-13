@@ -17,5 +17,13 @@ export async function cancelDurable(workflowID: string) {
   const status = await DBOS.getWorkflowStatus(workflowID);
   if (status && (status.status === 'PENDING' || status.status === 'ENQUEUED')) await DBOS.cancelWorkflow(workflowID);
 }
+/**
+ * Cancel where this process runs the engine; elsewhere (an operator's script, or a server whose engine has not launched
+ * yet) the wait is left to its generation fence, which refuses it when it wakes (D86), rather than failing a cancel the
+ * process cannot make.
+ */
+export async function cancelWhereRunning(workflowID: string) {
+  if (DBOS.isInitialized()) await cancelDurable(workflowID);
+}
 /** The result of a workflow started elsewhere; waits until it has one. */
 export const durableResult = <R>(workflowID: string) => DBOS.retrieveWorkflow<R>(workflowID).getResult();

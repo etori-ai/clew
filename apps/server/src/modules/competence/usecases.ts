@@ -113,6 +113,13 @@ import {
   uncounted,
   uncountedRow,
   usableHolding,
+  erasureDue,
+  erasureStart,
+  erasureWorkflowId,
+  isRetentionDays,
+  RETENTION_DAYS_MAX,
+  RETENTION_DAYS_MIN,
+  RETENTION_GRACE_MS,
   type PersonSummary,
   type ReadHolding,
   type CardIdentity,
@@ -129,9 +136,11 @@ import {
   type CompetenceDeps,
   type CompetenceExport,
   type CompetenceTx,
+  type ErasureRecord,
   type HoldingRecord,
   type HoldingsSourceRef,
   type PersonRef,
+  type RetentionRecord,
   type ReadLogEntry,
   type ReadLogQuery,
   type RequirementRecord,
@@ -308,6 +317,185 @@ export interface CopyResult {
   counts?: CompetenceReadCounts;
   unmatched?: number;
 }
+
+/** The actor of the erasure timer (D108 item 14) in its audit rows. */
+export const RETENTION_ACTOR = 'system:competence-retention';
+/** Why a person's competence was erased (D108 item 14): the timer after the period, or an operator's script. */
+export type ErasureCause = 'retention' | 'operator';
+/**
+ * What the erasure timer's step came to (D108 item 14): `erased`; `stale` when the intent is no longer the one the
+ * workflow was started for (another generation, cancelled, erased by hand); `early` when it is not yet due by the
+ * server's clock, and the workflow asks again shortly; `active` when the person is active again, though no
+ * reactivation reached the intent, which is then cancelled; `unset` when no period is set any more.
+ */
+export type ErasureOutcome = 'erased' | 'stale' | 'early' | 'active' | 'unset';
+/** What an erasure removed (D108 item 14), counts only. */
+export interface ErasedCounts {
+  holdings: number;
+  cleared: number;
+  requirements: number;
+  approvals: number;
+}
+/** The period an operator asked for is outside the bounds (D108 item 14); an operator's error, so in English. */
+export class RetentionOutOfRange extends Error {
+  constructor() {
+    super(
+      `A retention period is a whole number of days from ${RETENTION_DAYS_MIN} to ${RETENTION_DAYS_MAX}, so that a typo can neither erase at once nor keep for ever.`,
+    );
+    this.name = 'RetentionOutOfRange';
+  }
+}
+/**
+ * A change of a person's `active` as the people module's leavers port passes it (D108 item 14): who changed it (the
+ * provisioner, `provisioner:<id>`), whom, and when, as the SCIM use case's clock says.
+ */
+export interface LeaverChange {
+  actor: string;
+  personId: string;
+  at: string;
+}
+/** An intent that a period applies to: the person is deactivated and not yet erased. */
+const pending = (
+  intent: ErasureRecord | undefined,
+): intent is ErasureRecord & { state: 'held' | 'waiting'; inactiveSince: string } =>
+  intent !== undefined && (intent.state === 'held' || intent.state === 'waiting');
+/**
+ * Erase one person from the domain inside the caller's transaction (D108 item 14): their holdings, copied ones
+ * included, the requirements set on them alone (item 6), their id on what they registered, revoked, decided or confirmed
+ * for others and on the requirements and share targets they set, the cards of their own registrations' approvals from
+ * every manager's stream and the approval cards in their own (item 7). One audit row, `competence.person_erased`, with
+ * the cause and counts only. The caller has taken the retention lock and the person's intent first (the lock order).
+ */
+async function eraseWithin(
+  tx: CompetenceTx,
+  actor: string,
+  personId: string,
+  person: PersonRef | undefined,
+  at: string,
+  cause: ErasureCause,
+  extra: Record<string, unknown> = {},
+): Promise<ErasedCounts> {
+  const erased = await tx.erasePerson(personId);
+  // The cards of their registrations' approvals: by the approvals the rows name, and by the person the cards are
+  // about, which also finds those of a registration they took back, whose row is gone.
+  if (erased.threadIds.length) await tx.workItems.remove(erased.threadIds);
+  if (person?.userName) await tx.workItems.removeAbout({ entity: 'person', key: person.userName });
+  await tx.workItems.removeOwned(personId);
+  const counted = {
+    holdings: erased.holdings,
+    cleared: erased.cleared,
+    requirements: erased.requirements,
+    approvals: erased.threadIds.length,
+  };
+  await tx.audit({
+    actor,
+    action: 'competence.person_erased',
+    subject: 'person:' + personId,
+    at,
+    details: { cause, ...counted, ...extra },
+  });
+  return counted;
+}
+/**
+ * Schedule a person's erasure (D108 item 14): the next generation, due `days` after `since` and never sooner than the
+ * grace after `at`, its workflow started with this transaction (D86) and the one it replaces cancelled after the commit.
+ */
+async function schedule(
+  tx: CompetenceTx,
+  person: { personId: string; organisationId: string },
+  intent: ErasureRecord | undefined,
+  since: string,
+  days: number,
+  at: string,
+): Promise<ErasureRecord> {
+  if (intent?.state === 'waiting') await tx.cancel(erasureWorkflowId(intent.personId, intent.generation));
+  const next: ErasureRecord = {
+    personId: person.personId,
+    organisationId: person.organisationId,
+    state: 'waiting',
+    inactiveSince: since,
+    dueAt: erasureDue(since, days, at),
+    generation: (intent?.generation ?? 0) + 1,
+    updatedAt: at,
+  };
+  await tx.putErasure(next);
+  await tx.enqueue(erasureStart({ personId: next.personId, generation: next.generation, dueAt: next.dueAt! }));
+  return next;
+}
+
+/**
+ * What a deactivation and a reactivation mean to the competence module (D108 item 14), inside the SCIM transaction that
+ * makes them: the people module's leavers port, which composition binds to a `CompetenceTx` on that same transaction,
+ * so the intent, its audit row and its workflow's start commit or roll back with the change (D86), and a wait the
+ * change ends is cancelled after the commit. The people module imports nothing of this; it only says who and when.
+ *
+ * A deactivation records when the person left. With a period set it schedules their erasure that long after
+ * (`competence.erasure_scheduled`); without one it holds the time, so a period set later counts from it, and nothing is
+ * scheduled (D120 "Open": the timer starts only when an operator has set the period). A reactivation before the
+ * erasure cancels it (`competence.erasure_cancelled` when one was scheduled): nothing of the person was touched, so they
+ * come back as they left. A person already deactivated, or already erased, keeps what they have.
+ */
+export function competenceLeavers(tx: CompetenceTx) {
+  return {
+    async deactivated({ actor, personId, at }: LeaverChange): Promise<void> {
+      const [person] = await tx.persons([personId]);
+      if (!person) return;
+      await tx.lockRetention(person.organisationId);
+      const intent = await tx.erasure(personId);
+      // Already deactivated as far as the intent knows: the clock started then, and is not started again.
+      if (pending(intent)) return;
+      const period = await tx.retention(person.organisationId);
+      if (!period) {
+        await tx.putErasure({
+          personId,
+          organisationId: person.organisationId,
+          state: 'held',
+          inactiveSince: at,
+          dueAt: null,
+          generation: intent?.generation ?? 0,
+          updatedAt: at,
+        });
+        return;
+      }
+      const next = await schedule(tx, { personId, organisationId: person.organisationId }, intent, at, period.days, at);
+      await tx.audit({
+        actor,
+        action: 'competence.erasure_scheduled',
+        subject: 'person:' + personId,
+        at,
+        details: {
+          organisationId: person.organisationId,
+          days: period.days,
+          dueAt: next.dueAt,
+          generation: next.generation,
+        },
+      });
+    },
+    async reactivated({ actor, personId, at }: LeaverChange): Promise<void> {
+      const [person] = await tx.persons([personId]);
+      if (!person) return;
+      await tx.lockRetention(person.organisationId);
+      const intent = await tx.erasure(personId);
+      if (!pending(intent)) return;
+      if (intent.state === 'waiting') await tx.cancel(erasureWorkflowId(personId, intent.generation));
+      await tx.putErasure({ ...intent, state: 'cancelled', inactiveSince: null, dueAt: null, updatedAt: at });
+      if (intent.state === 'waiting')
+        await tx.audit({
+          actor,
+          action: 'competence.erasure_cancelled',
+          subject: 'person:' + personId,
+          at,
+          details: {
+            organisationId: intent.organisationId,
+            reason: 'reactivated',
+            dueAt: intent.dueAt,
+            generation: intent.generation,
+          },
+        });
+    },
+  };
+}
+export type CompetenceLeavers = ReturnType<typeof competenceLeavers>;
 
 /**
  * The competence module's use cases (D108): the catalogue, a manager's registration of a certificate, the copy of what
@@ -2970,42 +3158,175 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * Erase one person from the domain (D108 item 14): their holdings, copied ones included, the requirements set on them
-     * alone (item 6), and their id on the holdings they registered, revoked or decided for others. The cards of their own
-     * registrations' approvals go from every manager's stream, and the approval cards in their own stream go too (item
-     * 7). Only for a person the directory has deactivated: an active person is refused with `PersonStillActive`.
-     * `actor` is the operator's.
+     * Erase one person from the domain by hand (D108 item 14), as `scripts/competence-erase.ts` does: their holdings,
+     * copied ones included, the requirements set on them alone (item 6), and their id on the holdings they registered,
+     * revoked or decided for others. The cards of their own registrations' approvals go from every manager's stream,
+     * and the approval cards in their own stream go too (item 7). Only for a person the directory has deactivated: an
+     * active person is refused with `PersonStillActive`. Audited with the cause `operator`; `actor` is the operator's.
+     * Their erasure intent is marked erased, so a timer waiting for them finds nothing to do and its wait is cancelled
+     * after the commit, and a period set later schedules nothing for them.
      */
-    async erasePerson(
-      actor: string,
-      personId: string,
-    ): Promise<{ holdings: number; cleared: number; requirements: number; approvals: number }> {
+    async erasePerson(actor: string, personId: string): Promise<ErasedCounts> {
       const at = now().toISOString();
       return deps.store.transaction(async tx => {
-        // Erasure is for a person the directory has deactivated (item 14): an active person's copied rows would come
-        // back at the next read of their source, and their manager's attestations are still in use.
-        if ((await tx.activeIds([personId])).has(personId)) throw new PersonStillActive();
         const [person] = await tx.persons([personId]);
-        const erased = await tx.erasePerson(personId);
-        // The cards of their registrations' approvals: by the approvals the rows name, and by the person the cards are
-        // about, which also finds those of a registration they took back, whose row is gone.
-        if (erased.threadIds.length) await tx.workItems.remove(erased.threadIds);
-        if (person?.userName) await tx.workItems.removeAbout({ entity: 'person', key: person.userName });
-        await tx.workItems.removeOwned(personId);
-        const counted = {
-          holdings: erased.holdings,
-          cleared: erased.cleared,
-          requirements: erased.requirements,
-          approvals: erased.threadIds.length,
+        let intent: ErasureRecord | undefined;
+        if (person) {
+          await tx.lockRetention(person.organisationId);
+          intent = await tx.erasure(personId);
+        }
+        // Erasure is for a person the directory has deactivated (item 14): an active person's copied rows would come
+        // back at the next read of their source, and their manager's attestations are still in use. Asked under the
+        // retention lock, which a reactivation takes too.
+        if ((await tx.activeIds([personId])).has(personId)) throw new PersonStillActive();
+        const counted = await eraseWithin(tx, actor, personId, person, at, 'operator');
+        if (person) {
+          if (intent?.state === 'waiting') await tx.cancel(erasureWorkflowId(personId, intent.generation));
+          await tx.putErasure({
+            personId,
+            organisationId: person.organisationId,
+            state: 'erased',
+            inactiveSince: intent?.inactiveSince ?? null,
+            dueAt: null,
+            generation: intent?.generation ?? 0,
+            updatedAt: at,
+          });
+        }
+        return counted;
+      });
+    },
+
+    /**
+     * The erasure timer's step (D108 item 14): the workflow of `generation` has slept until its due time and asks for
+     * the person to be erased. Under the retention lock and the intent's own, it erases only when the intent is still
+     * the one the workflow was started for (`waiting`, the same generation), it is due by the server's clock, a period
+     * is still set and the person is still deactivated; then it erases as `eraseWithin` does, audited as
+     * `competence.person_erased` with the cause `retention`, and marks the intent erased in the same transaction. So a
+     * workflow that wakes late, twice, after a takeover or for a generation since replaced erases once or not at all.
+     * A person found active again (a reactivation that did not reach the intent) is not erased, and the intent is
+     * cancelled (`competence.erasure_cancelled`, reason `active`).
+     */
+    async eraseDue(personId: string, generation: number): Promise<ErasureOutcome> {
+      const at = now().toISOString();
+      return deps.store.transaction(async tx => {
+        const [person] = await tx.persons([personId]);
+        if (!person) return 'stale';
+        await tx.lockRetention(person.organisationId);
+        const intent = await tx.erasure(personId);
+        if (!intent || intent.state !== 'waiting' || intent.generation !== generation) return 'stale';
+        if (Date.parse(intent.dueAt!) > Date.parse(at)) return 'early';
+        if (!(await tx.retention(person.organisationId))) return 'unset';
+        if ((await tx.activeIds([personId])).has(personId)) {
+          await tx.putErasure({ ...intent, state: 'cancelled', inactiveSince: null, dueAt: null, updatedAt: at });
+          await tx.audit({
+            actor: RETENTION_ACTOR,
+            action: 'competence.erasure_cancelled',
+            subject: 'person:' + personId,
+            at,
+            details: { organisationId: person.organisationId, reason: 'active', dueAt: intent.dueAt, generation },
+          });
+          return 'active';
+        }
+        await eraseWithin(tx, RETENTION_ACTOR, personId, person, at, 'retention', { generation });
+        await tx.putErasure({ ...intent, state: 'erased', dueAt: null, updatedAt: at });
+        return 'erased';
+      });
+    },
+
+    /**
+     * Where an organisation's retention stands (D108 item 14), for the operator's script: the period, if one is set,
+     * how many deactivated people wait for erasure and when the first falls due, how many of them within a day, and
+     * how many are held because no period is set. Reads only; writes nothing.
+     */
+    async retentionOf(organisationId: string): Promise<{
+      period: RetentionRecord | null;
+      waiting: number;
+      held: number;
+      firstDue: string | null;
+      dueWithinDay: number;
+    }> {
+      const at = now();
+      return deps.store.transaction(async tx => {
+        const period = (await tx.retention(organisationId)) ?? null;
+        const intents = await tx.erasures(organisationId);
+        const waiting = intents.filter(e => e.state === 'waiting').map(e => e.dueAt!);
+        const day = at.getTime() + RETENTION_GRACE_MS;
+        return {
+          period,
+          waiting: waiting.length,
+          held: intents.filter(e => e.state === 'held').length,
+          firstDue: waiting.length ? waiting.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b)) : null,
+          dueWithinDay: waiting.filter(due => Date.parse(due) <= day).length,
         };
+      });
+    },
+
+    /**
+     * An operator sets the organisation's retention period in days, or clears it with `null` (D108 item 14; D120 "Open":
+     * the timer starts only when an operator has set the period). Setting it schedules the erasure of everyone of the
+     * organisation the directory has deactivated and who is not yet erased, counted from when they were deactivated
+     * where Clew recorded it, else from now; changing it re-times every erasure that waits, shorter or longer, each a
+     * new generation with the old workflow cancelled after the commit; clearing it cancels every one, and the people
+     * are held, their times kept, until a period is set again. No erasure set or changed here falls due sooner than a
+     * day after it (`RETENTION_GRACE_MS`), so a period set too short by mistake can be set again first. The same period
+     * again changes nothing and writes nothing. One audit row, `competence.retention_set` or
+     * `competence.retention_cleared`, with the period before and after and counts only.
+     */
+    async setRetention(
+      actor: string,
+      organisationId: string,
+      days: number | null,
+    ): Promise<{
+      changed: boolean;
+      previous: number | null;
+      days: number | null;
+      scheduled: number;
+      retimed: number;
+      cancelled: number;
+    }> {
+      if (days !== null && !isRetentionDays(days)) throw new RetentionOutOfRange();
+      const at = now().toISOString();
+      return deps.store.transaction(async tx => {
+        await tx.lockRetention(organisationId);
+        const previous = (await tx.retention(organisationId))?.days ?? null;
+        const counts = { scheduled: 0, retimed: 0, cancelled: 0 };
+        if (previous === days) return { changed: false, previous, days, ...counts };
+        if (days === null) await tx.removeRetention(organisationId);
+        else await tx.putRetention({ organisationId, days, setBy: actor, setAt: at });
+        const inactive = new Set(await tx.inactiveIn(organisationId));
+        const intents = new Map((await tx.erasures(organisationId, { lock: true })).map(e => [e.personId, e]));
+        for (const personId of [...new Set([...inactive, ...intents.keys()])].sort()) {
+          const intent = intents.get(personId);
+          if (!inactive.has(personId)) {
+            // Active again though no reactivation reached the intent: nothing is scheduled for them.
+            if (!pending(intent)) continue;
+            if (intent.state === 'waiting') await tx.cancel(erasureWorkflowId(personId, intent.generation));
+            await tx.putErasure({ ...intent, state: 'cancelled', inactiveSince: null, dueAt: null, updatedAt: at });
+            if (intent.state === 'waiting') counts.cancelled++;
+            continue;
+          }
+          if (intent?.state === 'erased') continue;
+          if (days === null) {
+            if (intent?.state !== 'waiting') continue;
+            await tx.cancel(erasureWorkflowId(personId, intent.generation));
+            await tx.putErasure({ ...intent, state: 'held', dueAt: null, updatedAt: at });
+            counts.cancelled++;
+            continue;
+          }
+          // Deactivated before Clew recorded it (no intent, or one a reactivation cancelled): counted from now.
+          const since = pending(intent) ? intent.inactiveSince : at;
+          await schedule(tx, { personId, organisationId }, intent, since, days, at);
+          if (intent?.state === 'waiting') counts.retimed++;
+          else counts.scheduled++;
+        }
         await tx.audit({
           actor,
-          action: 'competence.person_erased',
-          subject: 'person:' + personId,
+          action: days === null ? 'competence.retention_cleared' : 'competence.retention_set',
+          subject: 'organisation:' + organisationId,
           at,
-          details: counted,
+          details: { days, previous, ...counts },
         });
-        return counted;
+        return { changed: true, previous, days, ...counts };
       });
     },
 

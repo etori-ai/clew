@@ -3,7 +3,7 @@ import { database, schema, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
-import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
+import type { LeaversTx, ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
 /** Read the local user/grant tables; directory access is restricted to the actor's unit. */
 export const postgresUserReads = (): UserReads => ({
@@ -149,9 +149,31 @@ const provisionerRecord = (r: { id: string; organisationId: string; label: strin
   ...r,
   lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
 });
+/**
+ * What the provisioning store tells beyond its own tables (D108 item 14), bound in composition: `leavers` builds the
+ * leavers port on one transaction, the first time a change of `active` is told on it, and puts in `ended` the durable
+ * workflows whose wait the change ended; `cancel` ends those once the transaction has committed, never after a
+ * rollback, best effort (D86): the generation fence covers a cancel that fails, and composition logs it.
+ */
+export interface ProvisionStoreOptions {
+  leavers?: (tx: Transaction, ended: string[]) => LeaversTx;
+  cancel?: (workflowId: string) => Promise<void>;
+}
+/** Without a binding a change of `active` is told to nobody: a store for what never deactivates anyone. */
+const nobody: LeaversTx = { async deactivated() {}, async reactivated() {} };
 /** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. */
-export function postgresProvisionStore(): ProvisionStore {
-  const txOf = (tx: Transaction): ProvisionTx => ({
+export function postgresProvisionStore(options: ProvisionStoreOptions = {}): ProvisionStore {
+  /** The leavers port of one transaction, bound the first time it is told something. */
+  const leaversOf = (tx: Transaction, ended: string[]): LeaversTx => {
+    let bound: LeaversTx | undefined;
+    const leavers = () => (bound ??= options.leavers ? options.leavers(tx, ended) : nobody);
+    return {
+      deactivated: change => leavers().deactivated(change),
+      reactivated: change => leavers().reactivated(change),
+    };
+  };
+  const txOf = (tx: Transaction, ended: string[]): ProvisionTx => ({
+    leavers: leaversOf(tx, ended),
     async lockPerson(id) {
       const [row] = await tx
         .select({ id: schema.people.id, organisationId: schema.people.organisationId })
@@ -722,5 +744,12 @@ export function postgresProvisionStore(): ProvisionStore {
       return removed.length > 0;
     },
   });
-  return { transaction: fn => database().transaction(tx => fn(txOf(tx))) };
+  return {
+    async transaction(fn) {
+      const ended: string[] = [];
+      const result = await database().transaction(tx => fn(txOf(tx, ended)));
+      for (const id of ended) await options.cancel?.(id).catch(() => undefined);
+      return result;
+    },
+  };
 }

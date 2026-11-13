@@ -38,6 +38,26 @@ export interface Listed<T> {
   total: number;
   rows: T[];
 }
+/** A change of a person's `active` as the leavers port is told it: who made it (`provisioner:<id>`), whom, and when. */
+export interface LeaverChange {
+  actor: string;
+  personId: string;
+  at: string;
+}
+/**
+ * What a change of a person's `active` means to a domain that keeps data about them (D68: a person is deactivated,
+ * never erased; D108 item 14: the competence of one who left is erased a set time after). The SCIM use cases tell it,
+ * inside the transaction that deactivates or activates the person and after the person's row is written, so whatever
+ * the domain records there commits or rolls back with the change. The people module imports no such domain:
+ * composition binds the port (`composition/people.ts`, the competence module's erasure timer), and a store built
+ * without a binding tells nobody.
+ */
+export interface LeaversTx {
+  /** The person was deactivated, or created deactivated. */
+  deactivated(change: LeaverChange): Promise<void>;
+  /** The person was activated again. */
+  reactivated(change: LeaverChange): Promise<void>;
+}
 /**
  * The ports of provisioning (D68, D85, D25): what the SCIM use cases and the derivation read and write inside one
  * transaction. The grant is the projection `auth_access_grant`; the capabilities it carries are strings there and the
@@ -104,6 +124,8 @@ export interface ProvisionTx {
    */
   replacePositions(personId: string, organisationId: string, codes: readonly string[]): Promise<void>;
   audit(entry: { actor: string; action: string; subject: string; details: Record<string, unknown> }): Promise<void>;
+  /** The domains told of a deactivation or a reactivation on this transaction (D108 item 14). */
+  leavers: LeaversTx;
   // SCIM: who is calling.
   /**
    * The provisioner whose token has this digest and is not revoked, with the last time it was seen. A token that was

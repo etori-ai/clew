@@ -1552,3 +1552,42 @@ export function planCopy(input: {
       }
   return { write, touch, stored, unchanged, revoked, unmapped };
 }
+
+// Erasure a period after a person leaves (D108 item 14).
+
+/** The shortest period an operator may set, in days: a typo such as `--days 0` cannot erase at once. */
+export const RETENTION_DAYS_MIN = 1;
+/** The longest, ten years: a slipped digit is refused rather than kept for ever. */
+export const RETENTION_DAYS_MAX = 3650;
+/** A whole number of days within the bounds (the table's check says the same). */
+export const isRetentionDays = (days: unknown): days is number =>
+  typeof days === 'number' && Number.isInteger(days) && days >= RETENTION_DAYS_MIN && days <= RETENTION_DAYS_MAX;
+const DAY_MS = 24 * 60 * 60_000;
+/**
+ * No erasure that setting or changing the period schedules falls due sooner than this after the change: a period set
+ * too short by mistake gives the operator a day to see what it scheduled and set it again, before anyone deactivated
+ * long ago is erased. A deactivation's own erasure is at least a day away anyway, since the period is.
+ */
+export const RETENTION_GRACE_MS = DAY_MS;
+/**
+ * When a person's competence falls due for erasure: `days` whole days of 24 hours after `since` (when they were
+ * deactivated, or when a period first applied to them), and never sooner than the grace after `now`.
+ */
+export function erasureDue(since: string, days: number, now: string): string {
+  return new Date(Math.max(Date.parse(since) + days * DAY_MS, Date.parse(now) + RETENTION_GRACE_MS)).toISOString();
+}
+/** The erasure's workflow (`dbos/workflows.ts`): its name is the contract between the store's start and the engine. */
+export const ERASURE_WORKFLOW = 'competenceErasure';
+/** What the erasure's workflow takes: whom, the generation it was started for, and when it falls due. */
+export interface ErasureInput {
+  personId: string;
+  generation: number;
+  dueAt: string;
+}
+/** One workflow per person and generation, so a new generation never meets an old one's id. */
+export const erasureWorkflowId = (personId: string, generation: number) =>
+  `competence-erasure:${personId}:${generation}`;
+/** The erasure's start, committed with the intent it carries out (D86). */
+export function erasureStart(input: ErasureInput): WorkflowStart {
+  return { workflow: ERASURE_WORKFLOW, id: erasureWorkflowId(input.personId, input.generation), input };
+}

@@ -17,6 +17,8 @@ afterAll(async () => {
   const db = database();
   for (const p of prefixes) {
     await db.delete(schema.competenceReadLog).where(like(schema.competenceReadLog.id, p + '%'));
+    await db.delete(schema.competenceErasures).where(like(schema.competenceErasures.personId, p + '%'));
+    await db.delete(schema.competenceRetention).where(like(schema.competenceRetention.organisationId, p + '%'));
     await db.delete(schema.competenceRequirements).where(like(schema.competenceRequirements.id, p + '%'));
     await db.delete(schema.competenceShareTargets).where(like(schema.competenceShareTargets.id, p + '%'));
     await db.delete(schema.competenceHoldings).where(like(schema.competenceHoldings.id, p + '%'));
@@ -39,9 +41,13 @@ competenceStoreContract('postgres', async () => {
   // A connector's id is lower case (`connector_id` check), and every id this run writes starts with it.
   const prefix = 'test-comp-' + randomUUID().slice(0, 8);
   prefixes.push(prefix);
+  const cancelled: string[] = [];
   return {
-    store: postgresCompetenceStore(durable),
+    store: postgresCompetenceStore(durable, async id => void cancelled.push(id)),
     prefix,
+    async cancelled() {
+      return [...cancelled];
+    },
     async seedPerson(person) {
       await database().insert(schema.people).values(person);
     },

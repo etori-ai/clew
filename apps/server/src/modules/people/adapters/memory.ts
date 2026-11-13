@@ -10,7 +10,7 @@ import {
   type Placement,
   type UserRecord,
 } from '../domain';
-import type { Provisioner, ProvisionStore, ProvisionTx } from '../ports';
+import type { LeaverChange, LeaversTx, Provisioner, ProvisionStore, ProvisionTx } from '../ports';
 
 /**
  * The provisioning store in memory: the unit tests' adapter (D25), held to Postgres by
@@ -41,10 +41,23 @@ export interface MemoryProvisionState {
   /** Person ids with an identity binding. */
   bindings: Set<string>;
   audit: Array<{ actor: string; action: string; subject: string; details: Record<string, unknown> }>;
+  /** What the leavers port was told (D108 item 14), in order; a rollback takes it back with the rest. */
+  leavers: Array<LeaverChange & { change: 'deactivated' | 'reactivated' }>;
+}
+/**
+ * What the memory store tells beyond its own state, as `postgresProvisionStore`'s options do: `leavers` is the port a
+ * test binds (the competence module's, on its own memory store), handed the list of workflows a change ended, which
+ * `cancel` is given after the transaction commits. Every change is also recorded in `state.leavers`.
+ */
+export interface MemoryProvisionOptions {
+  leavers?: (ended: string[]) => LeaversTx;
+  cancel?: (workflowId: string) => Promise<void>;
 }
 export const memberKey = (groupId: string, personId: string) => groupId + '\u0000' + personId;
 const splitKey = (key: string) => key.split('\u0000') as [string, string];
-export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisionState } {
+export function memoryProvisionStore(
+  options: MemoryProvisionOptions = {},
+): ProvisionStore & { state: MemoryProvisionState } {
   const state: MemoryProvisionState = {
     users: new Map(),
     groups: new Map(),
@@ -59,7 +72,9 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     provisioners: new Map(),
     bindings: new Set(),
     audit: [],
+    leavers: [],
   };
+  let ended: string[] = [];
   const snapshot = () => structuredClone(state),
     restore = (s: MemoryProvisionState) => Object.assign(state, s);
   const byId = <T extends { id: string }>(rows: T[]) => rows.sort((a, b) => a.id.localeCompare(b.id));
@@ -100,7 +115,12 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     label: p.label,
     lastSeenAt: p.lastSeenAt ?? null,
   });
+  const tell = (change: 'deactivated' | 'reactivated') => async (told: LeaverChange) => {
+    state.leavers.push({ ...told, change });
+    await options.leavers?.(ended)[change](told);
+  };
   const tx: ProvisionTx = {
+    leavers: { deactivated: tell('deactivated'), reactivated: tell('reactivated') },
     async lockPerson(id) {
       const p = state.users.get(id);
       return p && { id: p.id, organisationId: p.organisationId };
@@ -443,12 +463,19 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     state,
     async transaction(fn) {
       const before = snapshot();
+      ended = [];
+      let result;
       try {
-        return await fn(tx);
+        result = await fn(tx);
       } catch (error) {
         restore(before);
         throw error;
       }
+      // After the commit, as the Postgres store does: a cancel never follows a rollback.
+      const done = ended;
+      ended = [];
+      for (const id of done) await options.cancel?.(id).catch(() => undefined);
+      return result;
     },
   };
 }

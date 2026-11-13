@@ -245,6 +245,8 @@ Removing a person's last placement before adding the new one leaves a gap. A pro
 
 A deactivation is never refused for what stands beside it ([D113](../decisions/D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md)): a request that says `active: false` deactivates the person even when the same request gets another attribute wrong, such as an address the source has already emptied. That attribute is left as it was.
 
+A deactivation starts a clock for the person's competence register (Kompetens, [D108](../decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) item 14): once a retention period is set for the organisation, their competences and certificates are erased that long after the deactivation, unless they are activated again first, in which case nothing of theirs was touched. The period has no default and nothing is erased while it is unset; the hosting team sets it with `bun scripts/competence-retention.ts --organisation <id> --days <n>` ([operations runbook](../maintainers/reliability-operations.md#erasure-after-a-person-leaves)). So a leaver deactivated by mistake, or a truncated export that deactivates many people, is put right by sending `active: true` again before the period runs out. Ask the organisation's HR how long the register should be kept after someone leaves, and write it down beside the other answers.
+
 ### What the daily comparison does
 
 The order matters; the reasons are in [Writing a provisioner](writing-a-provisioner.md#what-a-provisioner-does-on-every-reconciliation).

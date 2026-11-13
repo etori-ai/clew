@@ -449,6 +449,13 @@
       "when": 1794557745955,
       "tag": "0063_read_log_matrix_export",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1794560137266,
+      "tag": "0064_competence_retention",
+      "breakpoints": true
     }
   ]
 }

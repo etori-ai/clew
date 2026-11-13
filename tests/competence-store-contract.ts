@@ -4,6 +4,7 @@ import type {
   HoldingCopy,
   HoldingRecord,
   PersonRef,
+  ErasureRecord,
   PositionRecord,
   ReadLogEntry,
   ReadLogQuery,
@@ -34,6 +35,8 @@ export interface CompetenceStoreHarness {
   auditFor(subject: string): Promise<Array<{ actor: string; action: string }>>;
   /** The ids of the workflow starts committed by this suite's store, each once. */
   enqueued(): Promise<string[]>;
+  /** The workflows the store cancelled after a commit (D86), in order. */
+  cancelled(): Promise<string[]>;
   /** A position as a `position:` group writes it (D108 item 5). */
   seedPosition(position: PositionRecord): Promise<void>;
   /** The person holds the position, as their `position:` membership derives it. */
@@ -1519,6 +1522,117 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         // Each refusal took the transaction with it: nothing it wrote is there.
         expect(await w.store.transaction(tx => tx.type(w.p + '-t1'))).toBeUndefined();
         expect(await w.store.transaction(tx => tx.readLog({ organisationId: w.org, limit: 10 }))).toEqual([]);
+      });
+    });
+
+    describe('erasure after a person leaves (D108 item 14)', () => {
+      const intent = (personId: string, organisationId: string, extra: Partial<ErasureRecord> = {}): ErasureRecord => ({
+        personId,
+        organisationId,
+        state: 'waiting',
+        inactiveSince: T,
+        dueAt: '2026-12-10T08:00:00.000Z',
+        generation: 1,
+        updatedAt: T,
+        ...extra,
+      });
+
+      test('the retention period is one per organisation: written, replaced, read and removed, within 1 to 3650 days', async () => {
+        const w = await world();
+        expect(await w.store.transaction(tx => tx.retention(w.org))).toBeUndefined();
+        await w.store.transaction(async tx => {
+          await tx.lockRetention(w.org);
+          await tx.putRetention({ organisationId: w.org, days: 30, setBy: 'operator:test', setAt: T });
+          await tx.putRetention({ organisationId: w.p + '-org2', days: 7, setBy: 'operator:test', setAt: T });
+        });
+        await w.store.transaction(tx =>
+          tx.putRetention({ organisationId: w.org, days: 90, setBy: 'operator:other', setAt: T2 }),
+        );
+        expect(await w.store.transaction(tx => tx.retention(w.org))).toEqual({
+          organisationId: w.org,
+          days: 90,
+          setBy: 'operator:other',
+          setAt: T2,
+        });
+        for (const days of [0, 3651])
+          expect(
+            await refused(() =>
+              w.store.transaction(tx => tx.putRetention({ organisationId: w.org, days, setBy: 'x', setAt: T })),
+            ),
+          ).toBeDefined();
+        expect((await w.store.transaction(tx => tx.retention(w.org)))?.days).toBe(90);
+        expect(await w.store.transaction(tx => tx.removeRetention(w.org))).toBe(true);
+        expect(await w.store.transaction(tx => tx.removeRetention(w.org))).toBe(false);
+        expect(await w.store.transaction(tx => tx.retention(w.org))).toBeUndefined();
+        expect((await w.store.transaction(tx => tx.retention(w.p + '-org2')))?.days).toBe(7);
+        await w.store.transaction(tx => tx.removeRetention(w.p + '-org2'));
+      });
+
+      test('an erasure intent is one per person, replaced as a whole, read alone and by organisation in person order', async () => {
+        const w = await world();
+        const other = w.p + '-zed';
+        await w.seedPerson(person(other, w.p + '-org2'));
+        await w.store.transaction(async tx => {
+          await tx.putErasure(intent(w.bo, w.org));
+          await tx.putErasure(intent(w.anna, w.org, { state: 'held', dueAt: null, generation: 0 }));
+          await tx.putErasure(intent(other, w.p + '-org2'));
+        });
+        expect(await w.store.transaction(tx => tx.erasure(w.anna))).toEqual(
+          intent(w.anna, w.org, { state: 'held', dueAt: null, generation: 0 }),
+        );
+        expect(await w.store.transaction(tx => tx.erasure(w.boss))).toBeUndefined();
+        for (const lock of [false, true])
+          expect((await w.store.transaction(tx => tx.erasures(w.org, { lock }))).map(e => e.personId)).toEqual(
+            [w.anna, w.bo].sort(),
+          );
+        const erased = intent(w.bo, w.org, { state: 'erased', dueAt: null, generation: 1, updatedAt: T2 });
+        await w.store.transaction(tx => tx.putErasure(erased));
+        expect(await w.store.transaction(tx => tx.erasure(w.bo))).toEqual(erased);
+        // A cancelled or erased intent may forget when the person left; one that waits or holds may not.
+        await w.store.transaction(tx =>
+          tx.putErasure(intent(w.bo, w.org, { state: 'cancelled', dueAt: null, inactiveSince: null })),
+        );
+      });
+
+      test('an erasure intent holds its checks: a due time exactly while waiting, a start while waiting or held, a person', async () => {
+        const w = await world();
+        for (const wrong of [
+          intent(w.anna, w.org, { dueAt: null }),
+          intent(w.anna, w.org, { state: 'held' }),
+          intent(w.anna, w.org, { state: 'held', dueAt: null, inactiveSince: null }),
+          intent(w.anna, w.org, { inactiveSince: null }),
+          intent(w.anna, w.org, { generation: -1 }),
+          intent(w.p + '-nobody', w.org),
+        ])
+          expect(await refused(() => w.store.transaction(tx => tx.putErasure(wrong)))).toBeDefined();
+        expect(await w.store.transaction(tx => tx.erasure(w.anna))).toBeUndefined();
+      });
+
+      test('the people an organisation’s directory has deactivated are listed by id, and only theirs', async () => {
+        const w = await world();
+        const other = w.p + '-zed';
+        await w.seedPerson(person(other, w.p + '-org2'));
+        expect(await w.store.transaction(tx => tx.inactiveIn(w.org))).toEqual([]);
+        await w.deactivate(w.bo);
+        await w.deactivate(w.anna);
+        await w.deactivate(other);
+        expect(await w.store.transaction(tx => tx.inactiveIn(w.org))).toEqual([w.anna, w.bo].sort());
+      });
+
+      test('a wait the transaction ends is cancelled once it has committed, and never after a rollback', async () => {
+        const w = await world();
+        const id = (n: number) => `competence-erasure:${w.p}:${n}`;
+        await w.store.transaction(async tx => {
+          await tx.cancel(id(1));
+          await tx.cancel(id(2));
+        });
+        await refused(() =>
+          w.store.transaction(async tx => {
+            await tx.cancel(id(3));
+            throw new Error('stop');
+          }),
+        );
+        expect((await w.cancelled()).filter(c => c.includes(w.p))).toEqual([id(1), id(2)]);
       });
     });
   });

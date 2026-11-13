@@ -25,6 +25,9 @@ competenceStoreContract('memory', async () => {
     async enqueued() {
       return store.state.enqueued.map(s => s.id);
     },
+    async cancelled() {
+      return [...store.state.cancelled];
+    },
     async seedPosition(position) {
       store.addPosition(position);
     },

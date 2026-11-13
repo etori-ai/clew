@@ -1278,3 +1278,51 @@ export const competenceReadLog = pgTable(
     index('competence_read_log_reader').on(t.readerId),
   ],
 );
+/**
+ * How long the competence of a person the directory has deactivated is kept (D108 item 14; D120 "Open": the timer
+ * starts only when an operator has set the period): one row per organisation, written by an operator with
+ * `scripts/competence-retention.ts` and audited. No row, no period: nothing is scheduled and nothing is erased. At least
+ * one day, so a typo cannot erase at once, and at most ten years. `set_by` is an actor string.
+ */
+export const competenceRetention = pgTable(
+  'competence_retention',
+  {
+    organisationId: text('organisation_id').primaryKey(),
+    days: integer('days').notNull(),
+    setBy: text('set_by').notNull(),
+    setAt: timestamp('set_at', { withTimezone: true }).notNull(),
+  },
+  t => [check('competence_retention_days', sql`${t.days} BETWEEN 1 AND 3650`)],
+);
+/**
+ * The erasure of one person's competence after they left (D108 item 14): a row per person the directory has
+ * deactivated, written in the SCIM transaction that deactivates or activates them (the people module's leavers port,
+ * bound in composition), when the period is set or cleared, and by an erasure. `held` while they are deactivated and no
+ * period is set; `waiting` while a `competenceErasure` workflow of this `generation` sleeps until `due_at`; `cancelled`
+ * once they are active again; `erased` once the timer or an operator erased them. `inactive_since` is when the
+ * directory deactivated them or, for a person deactivated before Clew recorded it, when a period first applied to them:
+ * the period counts from it. The generation grows with every workflow started, so a workflow that wakes for an older
+ * one, or for a row no longer waiting, does nothing. Kept after the erasure (ids and times, no content), since a later
+ * deactivation of the same person takes the next generation.
+ */
+export const competenceErasures = pgTable(
+  'competence_erasure',
+  {
+    personId: text('person_id')
+      .primaryKey()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    organisationId: text('organisation_id').notNull(),
+    state: text('state').$type<'held' | 'waiting' | 'cancelled' | 'erased'>().notNull(),
+    inactiveSince: timestamp('inactive_since', { withTimezone: true }),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    generation: integer('generation').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  t => [
+    check('competence_erasure_state', sql`${t.state} IN ('held', 'waiting', 'cancelled', 'erased')`),
+    check('competence_erasure_due', sql`(${t.state} = 'waiting') = (${t.dueAt} IS NOT NULL)`),
+    check('competence_erasure_since', sql`${t.state} NOT IN ('held', 'waiting') OR ${t.inactiveSince} IS NOT NULL`),
+    check('competence_erasure_generation', sql`${t.generation} >= 0`),
+    index('competence_erasure_organisation').on(t.organisationId, t.state),
+  ],
+);

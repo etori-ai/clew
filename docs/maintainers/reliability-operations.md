@@ -65,7 +65,9 @@ docker exec -w /workspace clew-app-1 bun scripts/subject-erase.ts person <user n
 docker exec -w /workspace clew-app-1 bun scripts/subject-erase.ts unit <unit id> --confirm
 ```
 
-It removes the `subject` of every row that names the entity, the card's own `subjects` and the index rows in one transaction, and writes one `thread.subject_erased` audit row with the actor `operator:cli`, about `person:<person id>` or `unit:<id>`, holding counts only: the user name is never written to the audit trail. It cannot be undone, hence `--confirm`. The rows' text stays as the source wrote it, and a source that still names the person names them again on its next scan, so erase in the source too. Run `bun scripts/talks-erase.ts` as well to erase the person from the talks domain.
+It removes the `subject` of every row that names the entity, the card's own `subjects` and the index rows in one transaction, and writes one `thread.subject_erased` audit row with the actor `operator:cli`, about `person:<person id>` or `unit:<id>`, holding counts only: the user name is never written to the audit trail. It cannot be undone, hence `--confirm`. The rows' text stays as the source wrote it, and a source that still names the person names them again on its next scan, so erase in the source too. Run `bun scripts/talks-erase.ts` as well to erase the person from the talks domain; the
+competence domain erases a deactivated person by itself once a period is set (see "Erasure after a person leaves" under
+"The competence copy" below), or at once with `bun scripts/competence-erase.ts`.
 
 ## Changing the authorization fingerprint
 
@@ -94,6 +96,61 @@ read copies back what the source still holds, as new rows (new ids and creation 
 labels, so the statuses are as before); what the source no longer holds does not come back. Holdings registered in Clew
 are not affected. If such a fault is found before 04:00, switching Kompetens off under Anslutna system until the
 directory is right stops the read.
+
+### Erasure after a person leaves
+
+A person the directory deactivates keeps their competence until a period the operator sets has passed; then it is
+erased (D108 item 14). The period is per organisation and has no default: **while it is unset nothing is scheduled
+and nothing is erased**. Set, read and clear it inside the app container ([script](../../scripts/competence-retention.ts)):
+
+```sh
+docker exec -w /workspace clew-app-1 bun scripts/competence-retention.ts --organisation <id>             # the period, who waits, the first due
+docker exec -w /workspace clew-app-1 bun scripts/competence-retention.ts --organisation <id> --days 90   # 1 to 3650 days
+docker exec -w /workspace clew-app-1 bun scripts/competence-retention.ts --organisation <id> --off       # clear it
+```
+
+What happens:
+
+- **A deactivation** (SCIM `PATCH` or `PUT` with `active: false`, `DELETE`, or a user created inactive) writes the
+  person's row in `competence_erasure` in the same transaction as the change, through the people module's leavers port.
+  With a period set it is `waiting`, due the period after the deactivation, and the `competenceErasure` workflow
+  (`competence-erasure:<person id>:<generation>`) is started in that transaction (D86), audited as
+  `competence.erasure_scheduled` with the provisioner as the actor. Without a period it is `held`: the time is kept and
+  nothing waits.
+- **A reactivation** before the due time (`active: true`, or a full `PUT` without `active`) marks the row `cancelled` in
+  its transaction, audited as `competence.erasure_cancelled` when an erasure was waiting, and cancels the workflow after
+  the commit. Nothing of the
+  person was touched, so they come back as they left. Rows copied from a source are the exception, as before: the
+  daily read deletes them while the person is deactivated and copies them back once they are active again.
+- **Setting the period** schedules everyone of the organisation who is deactivated and not yet erased, counted from
+  their deactivation where Clew recorded it (from this change on), else from the moment the period is set. **Changing**
+  it re-times every waiting erasure, shorter or longer. **Clearing** it cancels them all; the people are `held` with their
+  times until a period is set again. No erasure a change schedules falls due within a day of it: a period set too short
+  by mistake can be set again first, and the script says how many fall due within a day. One audit row per change,
+  `competence.retention_set` or `competence.retention_cleared`, with the period before and after and counts.
+- **When it is due** the workflow asks the use case, which erases only if the row is still that generation's and
+  `waiting`, a period is still set and the person is still deactivated, all read under the organisation's lock. It
+  erases what `scripts/competence-erase.ts` erases (holdings, copied rows included, requirements set on the person,
+  their id on what they registered or decided for others, the approval cards of their registrations and in their own
+  stream), audits `competence.person_erased` with the actor `system:competence-retention`, the cause `retention`, the
+  generation and counts only, and marks the row `erased`, in one transaction. A workflow that wakes for an older
+  generation, twice, or after another instance took it over erases nothing more.
+- **By hand**, `scripts/competence-erase.ts --person <id> --confirm` erases at once (cause `operator`), marks the row
+  `erased` and cancels a waiting workflow.
+
+What stays after an erasure: the person's row in `auth_person` (D68), their memberships, positions and assignments as
+the provisioner left them, the audit rows and the read log rows that hold their id (D121), the `competence_erasure` row
+(ids and times), the cards in their own stream other than approval cards (the scan's competence cards among them),
+the subject of cards in other people's streams that name them (`scripts/subject-erase.ts` removes it), and the talks
+domain (`scripts/talks-erase.ts`). Whether Kompetens is switched on does not matter: an erasure set by the period runs either
+way.
+
+To check: `select state, count(*), min(due_at) from competence_erasure where organisation_id = '<id>' group by state`;
+the workflows are the `competenceErasure` rows of `dbos.workflow_status`. A change made by the script cannot cancel the
+old waits itself (it runs no engine): they sleep on and find their generation replaced when they wake, which does
+nothing. An erasure step that keeps failing ends its workflow in `ERROR` with the row still `waiting`; resume it with
+`DBOS.resumeWorkflow` once the cause is fixed, or clear the period and set it again, which starts every waiting
+erasure anew as a new generation from the same start.
 
 ## Reproduce the synthetic upgrade and restore rehearsal
 

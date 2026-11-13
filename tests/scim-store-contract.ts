@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { GroupRecord, UserRecord } from '../apps/server/src/modules/people/domain';
-import type { Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
+import type { LeaversTx, Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
 
 /**
  * The SCIM half of the provisioning store (D68): users within an organisation, groups and their members, the provisioner
@@ -19,6 +19,11 @@ export interface ScimStoreHarness {
   ): Promise<void>;
   /** An identity binding for the person, as a first login would write it. */
   bind(personId: string): Promise<void>;
+  /**
+   * The same adapter built with a leavers binding (D108 item 14), as composition builds the SCIM store: `leavers` is
+   * given the transaction's list of workflows to end, and `cancel` is called with each once it has committed.
+   */
+  withLeavers(leavers: (ended: string[]) => LeaversTx, cancel: (workflowId: string) => Promise<void>): ProvisionStore;
 }
 const T = '2026-11-09T06:00:00.000Z';
 export const userRow = (id: string, organisationId: string, extra: Partial<UserRecord> = {}): UserRecord => ({
@@ -617,6 +622,47 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         // A unit is held whether or not it has a row, and naming one twice is one lock.
         await tx.lockUnits([p + '-unit-without-a-row', p + '-u', p + '-u']);
       });
+    });
+    test('the leavers bound to the store are told on its transaction, and the waits they end are cancelled once it has committed, never after a rollback (D108 item 14)', async () => {
+      const h = await make();
+      const p = h.prefix,
+        told: string[] = [],
+        cancelled: string[] = [];
+      const store = h.withLeavers(
+        ended => ({
+          async deactivated(change) {
+            told.push('deactivated:' + change.personId + ':' + change.actor + ':' + change.at);
+            ended.push('wait:' + change.personId);
+          },
+          async reactivated(change) {
+            told.push('reactivated:' + change.personId);
+          },
+        }),
+        async id => void cancelled.push(id),
+      );
+      await store.transaction(async tx => {
+        await tx.leavers.deactivated({ actor: 'provisioner:x', personId: p + '-a', at: T });
+        expect(cancelled).toEqual([]);
+      });
+      expect(cancelled).toEqual(['wait:' + p + '-a']);
+      await expect(
+        store.transaction(async tx => {
+          await tx.leavers.deactivated({ actor: 'provisioner:x', personId: p + '-b', at: T });
+          throw new Error('after the port');
+        }),
+      ).rejects.toThrow('after the port');
+      expect(cancelled).toEqual(['wait:' + p + '-a']);
+      await store.transaction(tx => tx.leavers.reactivated({ actor: 'provisioner:x', personId: p + '-a', at: T }));
+      expect(told).toEqual([
+        `deactivated:${p}-a:provisioner:x:${T}`,
+        `deactivated:${p}-b:provisioner:x:${T}`,
+        'reactivated:' + p + '-a',
+      ]);
+      // A transaction that tells nothing builds no binding and cancels nothing.
+      await store.transaction(tx => tx.lockPerson(p + '-nobody'));
+      expect(cancelled).toHaveLength(1);
+      // A store built without a binding tells nobody, and is no error.
+      await h.store.transaction(tx => tx.leavers.deactivated({ actor: 'provisioner:x', personId: p + '-c', at: T }));
     });
   });
 }

@@ -450,6 +450,13 @@ export function scimUsecases(deps: {
           externalId: fields.externalId,
         },
       });
+      // D108 item 14: the domains that keep data about the person hear of it in this transaction, whatever verb it was.
+      if (flipped)
+        await tx.leavers[fields.enabled ? 'reactivated' : 'deactivated']({
+          actor: actorOf(p),
+          personId: current.id,
+          at,
+        });
     }
     // Always: silent when nothing moved, and it heals a projection written before provisioning existed.
     await derivation.deriveWithin(tx, actorOf(p), current.id);
@@ -579,6 +586,8 @@ export function scimUsecases(deps: {
           subject: 'person:' + record.id,
           details: { userName: fields.userName, externalId: fields.externalId },
         });
+        // A person pushed already deactivated is inactive from now on (D108 item 14), as one deactivated later is.
+        if (!record.enabled) await tx.leavers.deactivated({ actor: actorOf(p), personId: record.id, at });
         await derivation.deriveWithin(tx, actorOf(p), record.id);
         return userResource(record, [], base);
       }),
@@ -624,18 +633,23 @@ export function scimUsecases(deps: {
           base,
         );
       }),
-    /** D68: a deleted user is deactivated, never erased. Idempotent. */
+    /**
+     * D68: a deleted user is deactivated, never erased. Idempotent. The leavers port hears of it in the same transaction
+     * (D108 item 14), as it does of a deactivation by `PATCH` or `PUT`.
+     */
     deleteUser: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
         const current = await userOr404(tx, p, id, true);
         if (!current.enabled) return;
-        await tx.updateUser(id, { enabled: false, updatedAt: now() });
+        const at = now();
+        await tx.updateUser(id, { enabled: false, updatedAt: at });
         await tx.audit({
           actor: actorOf(p),
           action: 'scim.user.deactivated',
           subject: 'person:' + id,
           details: { userName: current.userName, externalId: current.externalId },
         });
+        await tx.leavers.deactivated({ actor: actorOf(p), personId: id, at });
         await derivation.deriveWithin(tx, actorOf(p), id);
       }),
     createGroup: (p: Provisioner, body: unknown, base: string): Promise<ScimGroup> =>
