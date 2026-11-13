@@ -6,6 +6,7 @@ import { HStack, VStack } from '@astryxdesign/core/Layout';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Text } from '@astryxdesign/core/Text';
 import { Table, proportional } from '@astryxdesign/core/Table';
+import { DOT } from './dot';
 
 const instant = (value: string) =>
   new Intl.DateTimeFormat('sv-SE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
@@ -33,7 +34,8 @@ export function MetricView({ metrics }: { metrics: Metric[] }) {
             {metric.target !== undefined && <Text type="supporting">Mål: {value(metric.target, metric.unit)}</Text>}
             {metric.comparison && <Text type="supporting">{metric.comparison}</Text>}
             <Text type="supporting">
-              {metric.period} · uppgifter från {instant(metric.dataAt)}
+              {metric.period}
+              {DOT}uppgifter från {instant(metric.dataAt)}
             </Text>
           </VStack>
         </Card>
@@ -66,7 +68,10 @@ export function SeriesView({ series: data, chart = 'line' }: { series: Series; c
     <VStack gap={2}>
       <Text weight="semibold">{data.title}</Text>
       <Text type="supporting">
-        {data.period} · {data.unit} · uppgifter från {instant(data.dataAt)}
+        {data.period}
+        {DOT}
+        {data.unit}
+        {DOT}uppgifter från {instant(data.dataAt)}
       </Text>
       <svg viewBox="0 0 600 240" width="100%" height="240" aria-hidden="true" focusable="false">
         <line x1="66" x2="546" y1={y(0)} y2={y(0)} stroke="currentColor" />
@@ -159,7 +164,7 @@ export function ActivityView({ activity }: { activity: Activity }) {
               <VStack gap={1}>
                 <Text type="supporting">
                   {instant(event.at)}
-                  {event.actor ? ` · ${event.actor}` : ''}
+                  {event.actor ? `\u00a0· ${event.actor}` : ''}
                 </Text>
                 {event.detail && <Text>{event.detail}</Text>}
               </VStack>

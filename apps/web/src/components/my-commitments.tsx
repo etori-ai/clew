@@ -9,6 +9,7 @@ import { commitmentsQuery } from '../queries';
 import { dueText, isOverdue, splitMine, type CommitmentEntry } from '../talks';
 import { personPageHref } from '../person-address';
 import { ContentArrival } from './loading';
+import { DOT } from '../dot';
 
 /** The area of the talks domain (D96 item 7): with it chosen, Hem still shows the person's action points. */
 export const TALKS_AREA = 'talks';
@@ -98,7 +99,8 @@ export function MyCommitments() {
   return (
     <VStack gap={2} as="section" aria-label="Mina åtgärdspunkter">
       <Heading ref={heading} id="mina-atgardspunkter" tabIndex={-1} level={3} accessibilityLevel={2}>
-        Mina åtgärdspunkter · {open.length}
+        Mina åtgärdspunkter{DOT}
+        {open.length}
       </Heading>
       <ContentArrival gap={2}>
         <Card>
@@ -148,7 +150,7 @@ function Meta({ row }: { row: CommitmentEntry }) {
   const { pathname, search } = useLocation();
   const words = [`Senast ${dueText(row)}`];
   if (row.carried) words.push('Från tidigare samtal');
-  const lead = words.join(' · ');
+  const lead = words.join('\u00a0· ');
   const name = (
     <Link href={personPageHref(row.personId, { from: pathname + search })} hasUnderline>
       {row.name}
@@ -157,16 +159,19 @@ function Meta({ row }: { row: CommitmentEntry }) {
   if (row.mine && row.owner === 'manager')
     return (
       <Text type="supporting">
-        {lead} · Samtal med {name}
+        {lead}
+        {DOT}Samtal med {name}
       </Text>
     );
   if (!row.mine && row.owner === 'employee')
     return (
       <Text type="supporting">
-        {lead} · {name} ansvarar
+        {lead}
+        {DOT}
+        {name} ansvarar
       </Text>
     );
-  return <Text type="supporting">{row.mine ? lead : `${lead} · Din chef ansvarar`}</Text>;
+  return <Text type="supporting">{row.mine ? lead : `${lead}\u00a0· Din chef ansvarar`}</Text>;
 }
 
 /**

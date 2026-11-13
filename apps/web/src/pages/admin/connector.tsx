@@ -61,6 +61,7 @@ import {
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
 import { DialogFrame } from '../../components/dialog-frame';
+import { DOT } from '../../dot';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */
 type TabId = 'oversikt' | 'formagor' | 'omraden' | 'publik' | 'historik';
@@ -314,13 +315,13 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                 c.protocol ? `protokoll ${c.protocol}` : null,
               ]
                 .filter(Boolean)
-                .join(' · ')}
+                .join('\u00a0· ')}
             </Text>
             <HStack gap={1} vAlign="center" wrap="wrap">
               <StatusDot variant={s.tone} label={s.label} />
               <Text color="secondary">
                 {s.label}
-                {c.bundled ? ' · körs i Startsidan' : c.url ? ` · ${c.url}` : ''}
+                {c.bundled ? '\u00a0· körs i Startsidan' : c.url ? `\u00a0· ${c.url}` : ''}
               </Text>
             </HStack>
           </VStack>
@@ -392,7 +393,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                         ? 'Ingen vy vald'
                         : 'Ingen vy kan ligga i menyn'}
                   </MetadataListItem>
-                  <MetadataListItem label="Funktioner">{`${c.counts.capabilities} · ${c.counts.execute} utför · ${c.counts.tools} för assistenten`}</MetadataListItem>
+                  <MetadataListItem label="Funktioner">{`${c.counts.capabilities}\u00a0· ${c.counts.execute} utför\u00a0· ${c.counts.tools} för assistenten`}</MetadataListItem>
                 </MetadataList>
                 <Collapsible
                   defaultIsOpen={false}
@@ -403,11 +404,11 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                     <MetadataListItem label="Id">{c.id}</MetadataListItem>
                     <MetadataListItem label="Typ">
                       {c.kind ? kindLabel[c.kind] : '–'}
-                      {c.bundled ? ' · inbyggd' : ''}
+                      {c.bundled ? '\u00a0· inbyggd' : ''}
                     </MetadataListItem>
                     <MetadataListItem label="Hälsa">
                       {healthLabel[c.health.status]}
-                      {c.bundled ? '' : ' · '}
+                      {c.bundled ? '' : '\u00a0· '}
                       {!c.bundled && <Timestamp value={c.health.at} format="auto" />}
                     </MetadataListItem>
                     <MetadataListItem label="Protokoll">{c.protocol ? `Version ${c.protocol}` : '–'}</MetadataListItem>
@@ -422,7 +423,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                       </MetadataListItem>
                     )}
                     <MetadataListItem label="Tillagd">
-                      {actorLabel(c.createdBy)} · <Timestamp value={c.createdAt} format="date_time" />
+                      {actorLabel(c.createdBy)}
+                      {DOT}
+                      <Timestamp value={c.createdAt} format="date_time" />
                     </MetadataListItem>
                   </MetadataList>
                 </Collapsible>
@@ -566,7 +569,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                         description={
                           <Text type="supporting">
                             Öppnar {t.title}
-                            {t.enabled ? '' : ' · funktionen är avstängd'}
+                            {t.enabled ? '' : '\u00a0· funktionen är avstängd'}
                           </Text>
                         }
                         endContent={
@@ -615,7 +618,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                           <VStack gap={2}>
                             <Text type="supporting">
                               {l.about === 'unit' ? 'Om en enhet' : 'Om en person'}
-                              {l.enabled ? '' : ' · funktionen är avstängd'}
+                              {l.enabled ? '' : '\u00a0· funktionen är avstängd'}
                             </Text>
                             {l.column && (
                               <HStack>
@@ -684,11 +687,11 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                         description={
                           <Text type="supporting">
                             {a.roles.map(r => roleLabel[r]).join(', ')}
-                            {a.standing.length ? ` · Gör själv: ${a.standing.join(', ')}` : ''}
+                            {a.standing.length ? `\u00a0· Gör själv: ${a.standing.join(', ')}` : ''}
                             {a.figure
                               ? a.figureShown
-                                ? ' · nyckeltalet är en ruta på Hem'
-                                : ' · nyckeltalet visas inte'
+                                ? '\u00a0· nyckeltalet är en ruta på Hem'
+                                : '\u00a0· nyckeltalet visas inte'
                               : ''}
                           </Text>
                         }
@@ -758,7 +761,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                       description={
                         <Text type="supporting">
                           {actorLabel(h.actor)}
-                          {Object.keys(h.details).length ? ' · ' + JSON.stringify(h.details) : ''}
+                          {Object.keys(h.details).length ? '\u00a0· ' + JSON.stringify(h.details) : ''}
                         </Text>
                       }
                       endContent={<Timestamp value={h.at} format="date_time" />}

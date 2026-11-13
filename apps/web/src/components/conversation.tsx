@@ -351,9 +351,9 @@ export function Transcript({
                     <Text type="supporting">
                       Assistenten
                       {m.meta?.view
-                        ? ` · läste ${m.meta.view.title}`
+                        ? `\u00a0· läste ${m.meta.view.title}`
                         : m.meta?.source && m.meta.source !== 'Assistenten'
-                          ? ` · läste ${m.meta.source}`
+                          ? `\u00a0· läste ${m.meta.source}`
                           : ''}
                     </Text>
                   </HStack>
@@ -554,7 +554,7 @@ export function Transcript({
         <Text
           type="supporting"
           justify="end"
-        >{`${mobile ? '' : 'Esc stänger · '}${latest?.draft || messages.some(m => m.meta?.draft) ? 'ärendet behåller utkastet' : 'samtalet sparas under Samtal'}`}</Text>
+        >{`${mobile ? '' : 'Esc stänger\u00a0· '}${latest?.draft || messages.some(m => m.meta?.draft) ? 'ärendet behåller utkastet' : 'samtalet sparas under Samtal'}`}</Text>
       )}
     </VStack>
   );

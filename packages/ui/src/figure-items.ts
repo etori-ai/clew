@@ -81,7 +81,7 @@ export function figureItems(
   if (figure.unavailable) {
     const retry = `försöker igen ${retryWhen(options.now)}`;
     const comparison = options.lastRead
-      ? `Senast läst ${stockholmClock(options.lastRead)} · ${retry}`
+      ? `Senast läst ${stockholmClock(options.lastRead)}\u00a0· ${retry}`
       : retry[0]!.toUpperCase() + retry.slice(1);
     return {
       tile: {
@@ -98,7 +98,7 @@ export function figureItems(
     };
   }
   const at = figure.observedAt ? ` ${stockholmClock(figure.observedAt)}` : '';
-  const rest = [figure.comparison, `${mark.source}${at}`].filter(s => s !== undefined).join(' · ');
+  const rest = [figure.comparison, `${mark.source}${at}`].filter(s => s !== undefined).join('\u00a0· ');
   const line: FigureLine = {
     icon: mark.icon,
     label: figure.label,

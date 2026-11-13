@@ -48,6 +48,7 @@ import {
 } from '../talks';
 import { AsyncContent, ContentSkeleton } from './loading';
 import { mobileQuery, shortQuery } from './shell';
+import { DOT } from '../dot';
 
 /** The drawer's desktop width budget: one person's talk, a list of short lines and a three-field form. */
 const TALK_WIDTH = 560;
@@ -269,7 +270,8 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
               description={
                 <HStack gap={2} vAlign="center" wrap="wrap">
                   <Text type="supporting">
-                    {responsible(c)} · senast {dueText(c)}
+                    {responsible(c)}
+                    {DOT}senast {dueText(c)}
                   </Text>
                   {isOverdue(c, day) && <Badge variant="error" label="Försenad" />}
                 </HStack>

@@ -268,7 +268,7 @@ export function Composer({
         <Text as="span" weight="semibold" color="primary">
           Det här samtalet
         </Text>
-        {mobile ? '' : ' · svaret kommer under frågan'}
+        {mobile ? '' : '\u00a0· svaret kommer under frågan'}
       </Text>
     ) : undefined;
   // While an answer is on its way the send button is Stoppa and the field stays open, so the person can write the next
@@ -407,7 +407,7 @@ export function Suggestions({
     ...cards.map(t => ({
       key: 'card:' + t.id,
       label: t.title,
-      detail: `${t.trigger.source} · öppnar ärendet`,
+      detail: `${t.trigger.source}\u00a0· öppnar ärendet`,
       go: () => navigate(cardHref(t.id)),
     })),
     ...completions.do
@@ -415,7 +415,7 @@ export function Suggestions({
       .map(d => ({
         key: 'do:' + d.capability,
         label: d.text,
-        detail: `${d.source} · ${d.kind === 'read' ? 'öppnar vyn' : 'öppnar ärendet'}`,
+        detail: `${d.source}\u00a0· ${d.kind === 'read' ? 'öppnar vyn' : 'öppnar ärendet'}`,
         go: () => (d.kind === 'read' ? navigate(viewHref(d.capability, d.text)) : talk.ask(d.text)),
       })),
     ...completions.ask
@@ -423,14 +423,14 @@ export function Suggestions({
       .map(a => ({
         key: 'ask:' + a.capability,
         label: a.text,
-        detail: `${a.source} · svarar utan modellen`,
+        detail: `${a.source}\u00a0· svarar utan modellen`,
         go: () => talk.ask(a.text),
       })),
     ...completions.recent
       .filter(r => hits(r.title))
       .map(r => ({
         key: 'recent:' + r.conversationId,
-        label: `Fortsätt samtalet · ${r.title}`,
+        label: `Fortsätt samtalet\u00a0· ${r.title}`,
         detail: when(r.at),
         go: () => navigate(`/conversations/${r.conversationId}`),
       })),

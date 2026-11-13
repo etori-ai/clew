@@ -41,6 +41,7 @@ import { DialogFrame } from '../../components/dialog-frame';
 import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
 import { AdminShell } from './shell';
+import { DOT } from '../../dot';
 
 /**
  * "Kompetens" (D108 items 2, 3 and 8): the catalogue of competence types, kept by whoever has `admin.competence`. A
@@ -421,7 +422,11 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
                   description={
                     <VStack gap={1} hAlign="start">
                       <Text type="supporting">
-                        {t.area} · {kindLabel[t.kind]} · {validityText(t.validityMonths)}
+                        {t.area}
+                        {DOT}
+                        {kindLabel[t.kind]}
+                        {DOT}
+                        {validityText(t.validityMonths)}
                       </Text>
                       {t.archived && <Badge variant="neutral" label="Arkiverad" />}
                     </VStack>

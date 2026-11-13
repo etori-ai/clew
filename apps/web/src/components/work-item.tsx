@@ -180,7 +180,7 @@ function StatusLine({ thread, item }: { thread: Thread; item: ItemState }) {
               : '',
           ]
             .filter(Boolean)
-            .join(' · ')
+            .join('\u00a0· ')
         : '';
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
@@ -243,7 +243,7 @@ function Receipt({ thread, actions, systems }: { thread: Thread; actions: Action
           <Button
             size="sm"
             variant="secondary"
-            label={`${pending ? 'Ångra bekräftade' : 'Ångra'} · ${minutes} min kvar`}
+            label={`${pending ? 'Ångra bekräftade' : 'Ångra'}\u00a0· ${minutes} min kvar`}
             clickAction={() => actions.run(() => api.undoReceipt(thread.id))}
           />
         ) : undefined
@@ -593,7 +593,7 @@ export function WorkItem({
     <>
       <VStack gap={1}>
         <Text type="supporting" color="secondary">
-          {[item.mark.source, item.mark.title].filter(Boolean).join(' · ')}
+          {[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}
         </Text>
         <HStack gap={3} vAlign="start" wrap="wrap">
           <StackItem size="fill">
@@ -674,7 +674,7 @@ function Details({ thread, item }: { thread: Thread; item: ItemState }) {
             </HStack>
           </MetadataListItem>
           <MetadataListItem label="Källa">
-            <Text>{[item.mark.source, item.mark.title].filter(Boolean).join(' · ')}</Text>
+            <Text>{[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}</Text>
           </MetadataListItem>
           {deadline && (
             <MetadataListItem label="Förfaller">
@@ -811,7 +811,7 @@ export function WorkItemPage({
       {!mobile && <Divider orientation="vertical" />}
       {!mobile && (
         <Text type="supporting" color="secondary">
-          {[item.mark.source, item.mark.title].filter(Boolean).join(' · ')}
+          {[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}
         </Text>
       )}
     </HStack>
@@ -834,7 +834,7 @@ export function WorkItemPage({
         <VStack gap={2}>
           {mobile && (
             <Text type="supporting" color="secondary">
-              {[item.mark.source, item.mark.title].filter(Boolean).join(' · ')}
+              {[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}
             </Text>
           )}
           <HStack gap={4} vAlign="start" wrap="wrap">

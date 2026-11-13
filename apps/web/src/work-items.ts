@@ -168,7 +168,7 @@ export function whyOf(thread: Thread, now: string): string {
     !thread.timers?.some(t => t.state === 'blocked') &&
     !!thread.timers?.some(t => t.state === 'queued') &&
     settlingUntil(thread.id) <= Date.parse(now);
-  return queued ? `${base} · påminnelsen väntar på schemaläggning` : base;
+  return queued ? `${base}\u00a0· påminnelsen väntar på schemaläggning` : base;
 }
 
 /**

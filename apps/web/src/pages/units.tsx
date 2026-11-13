@@ -28,6 +28,7 @@ import { Summary, measureOf, summaryOf, toneWeight } from '../components/unit-fi
 import { unitPageHref } from '../person-address';
 import { errorMessage } from '../query-policy';
 import { fieldText } from '../components/view';
+import { DOT } from '../dot';
 
 type Unit = EntityList['groups'][number]['entities'][number];
 type Answer = { data?: EntitySection; isPending: boolean; isError: boolean };
@@ -56,7 +57,7 @@ function SourceHeader({ source }: { source: EntitySource }) {
     <VStack gap={0}>
       <Text weight="semibold">{source.title}</Text>
       <Text type="supporting" weight="normal">
-        {measure === source.title ? '' : `${measure} · `}
+        {measure === source.title ? '' : `${measure}\u00a0· `}
         {source.own ? 'Clew' : source.source}
       </Text>
     </VStack>
@@ -142,7 +143,11 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
             <HStack key={`${a.source}:${a.word}`} gap={2} vAlign="center">
               <StatusDot variant={a.tone === 'alert' ? 'error' : 'warning'} label={a.word} />
               <Text>
-                {a.units} {a.units === 1 ? 'enhet' : 'enheter'} · {a.source} · {a.word}
+                {a.units} {a.units === 1 ? 'enhet' : 'enheter'}
+                {DOT}
+                {a.source}
+                {DOT}
+                {a.word}
               </Text>
             </HStack>
           ))}

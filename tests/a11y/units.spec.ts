@@ -33,7 +33,7 @@ test.describe('Dialogstöd, the units side by side', () => {
     await expect(attention).toContainText('1 enhet · Sjukfrånvaro · Åtgärd krävs');
     await expect(attention).toContainText('1 enhet · Sjukfrånvaro · Bevaka');
     await expect(attention).toContainText('1 enhet · Utvecklingssamtal · 1 saknas');
-    const lines = await attention.getByText(/^1 enhet · /).allTextContents();
+    const lines = await attention.getByText(/^1 enhet\s·\s/).allTextContents();
     expect(lines[0]).toContain('Åtgärd krävs');
     // Each heading says what the figure is and where it comes from; the round of talks has no column where no unit has one.
     const mine = tableOf(page, 'Mina enheter');
