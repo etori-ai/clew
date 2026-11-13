@@ -152,5 +152,5 @@ export function worstWord(
     const t: FigureTone = !f ? 'none' : f.unavailable ? 'warn' : f.tone;
     return rank[t] > rank[w] ? t : w;
   }, 'none');
-  return worst === 'none' ? null : { variant: TONE_WORDS[worst].variant, word: lower(TONE_WORDS[worst].word) };
+  return worst === 'none' ? null : { variant: TONE_WORDS[worst].variant, word: TONE_WORDS[worst].word };
 }

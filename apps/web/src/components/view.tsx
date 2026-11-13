@@ -24,7 +24,6 @@ import {
   ActivityView,
   Badge,
   Button,
-  EmptyState,
   Heading,
   HStack,
   Icon,
@@ -616,7 +615,21 @@ function Rows({
             }
             description={
               <VStack gap={1}>
-                {words.length > 0 && <Text type="supporting">{words.join(' · ')}</Text>}
+                {view.kind === 'table' && worded.length > 2 ? (
+                  // A table on a narrow surface (a month of statistics in the panel): each value under its column's
+                  // name, flowing in a grid, rather than one long line of "Label: value · …" that cannot be scanned.
+                  <MetadataList orientation="horizontal" label={{ position: 'top' }}>
+                    {worded.map(f => (
+                      <MetadataListItem key={f.key} label={f.label}>
+                        <Text type="supporting" hasTabularNumbers>
+                          {fieldText(f, row[f.key])}
+                        </Text>
+                      </MetadataListItem>
+                    ))}
+                  </MetadataList>
+                ) : (
+                  words.length > 0 && <Text type="supporting">{words.join(' · ')}</Text>
+                )}
                 {links.length > 0 && (
                   <HStack gap={3} wrap="wrap">
                     {links.map(f => (
@@ -824,11 +837,10 @@ export function DeclaredView({
     <VStack gap={3}>
       {header}
       {rows.length === 0 ? (
-        <EmptyState
-          isCompact
-          headingLevel={headingLevel}
-          title={missed.length > 0 ? 'Inget att visa från de system som svarade' : (view.empty ?? 'Inget att visa')}
-        />
+        // A sentence, not a heading: an empty list says so in the outline's flow (app critique, 2026-11-13).
+        <Text as="p" type="supporting">
+          {missed.length > 0 ? 'Inget att visa från de system som svarade' : (view.empty ?? 'Inget att visa')}
+        </Text>
       ) : (
         <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit} isOpen={isOpen} />
       )}

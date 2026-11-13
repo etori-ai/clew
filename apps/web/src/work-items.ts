@@ -143,8 +143,8 @@ export function stateOf(thread: Thread, now: string, today: string): RowFacts['s
   if (kind === 'forslag') return { variant: 'accent', label: 'Förslag' };
   if (kind === 'handelse') return { variant: 'neutral', label: 'Till kännedom' };
   return streamGroup(thread, today) === 'nu'
-    ? { variant: 'error', label: 'Att göra i dag' }
-    : { variant: 'warning', label: 'Att göra' };
+    ? { variant: 'error', label: 'Ska göras i dag' }
+    : { variant: 'warning', label: 'Ska göras' };
 }
 
 /**

@@ -572,6 +572,7 @@ export function WorkItem({
   headingLevel,
   onChange,
   folded = false,
+  onClose,
 }: {
   thread: Thread;
   place: ItemPlace;
@@ -583,6 +584,8 @@ export function WorkItem({
    * badges and the buttons, and the main column folds under "Visa allt".
    */
   folded?: boolean;
+  /** Let go of the item where it is open beside a list: its ✕, after "Öppna som sida" in the title's row. */
+  onClose?: () => void;
 }) {
   const idBase = place === 'answer' ? 'thread' : 'card';
   const item = useWorkItem(thread, onChange, idBase);
@@ -607,7 +610,18 @@ export function WorkItem({
               {thread.title}
             </Heading>
           </StackItem>
-          <Button size="sm" variant="secondary" label="Öppna som sida" href={itemPageHref(thread.id, item.from)} />
+          <HStack gap={1} vAlign="center">
+            <Button size="sm" variant="secondary" label="Öppna som sida" href={itemPageHref(thread.id, item.from)} />
+            {onClose && (
+              <IconButton
+                variant="ghost"
+                size="sm"
+                label="Stäng ärendet"
+                icon={<Icon icon="close" />}
+                onClick={onClose}
+              />
+            )}
+          </HStack>
         </HStack>
       </VStack>
       <StatusLine thread={thread} item={item} />

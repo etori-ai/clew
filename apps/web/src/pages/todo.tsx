@@ -361,7 +361,8 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
               key={t.id}
               thread={t}
               facts={rowFacts(t, now, todayDate)}
-              source={marks.ofThread(t).title}
+              // The system's name, as Hem names the same row (app critique, 2026-11-13); the area is the item's own.
+              source={marks.ofThread(t).source}
               href={href({ item: t.id })}
               isSelected={t.id === itemId}
             />
@@ -409,23 +410,33 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   );
   const reading = paneSubject ? (
     <VStack ref={paneRef} height={short ? undefined : '100%'} onKeyDown={escape}>
-      <VStack paddingInline={6} paddingBlockStart={6}>
-        {closeItem}
-      </VStack>
-      {/* What the close row leaves of the pane's height, so the box docked at the foot stays on screen (2.4.11). */}
+      {/* A calendar proposal keeps its own card and ✕ above it; a work item's ✕ is in its own header row. */}
+      {!!item?.proposals.length && (
+        <VStack paddingInline={6} paddingBlockStart={6}>
+          {closeItem}
+        </VStack>
+      )}
+      {/* The pane's height, so the box docked at the foot stays on screen (2.4.11). */}
       <StackItem size="fill">
         <ThingWithConversation
           talk={paneTalk}
           subject={paneSubject}
           short={short}
-          thing={cardBody(item!, { place: 'pane', level: 2, compact: true, onChange, folded: paneTalk.running })}
+          thing={cardBody(item!, {
+            place: 'pane',
+            level: 2,
+            compact: true,
+            onChange,
+            folded: paneTalk.running,
+            onClose: close,
+          })}
         />
       </StackItem>
     </VStack>
   ) : (
     <VStack ref={paneRef} gap={3} onKeyDown={escape}>
-      {closeItem}
-      {item ? cardBody(item, { place: 'pane', level: 2, compact: true, onChange }) : missing}
+      {(!item || !!item.proposals.length) && closeItem}
+      {item ? cardBody(item, { place: 'pane', level: 2, compact: true, onChange, onClose: close }) : missing}
     </VStack>
   );
   /**

@@ -14,11 +14,13 @@ import {
   Skeleton,
   StatusDot,
   Table,
+  type TableColumn,
   Text,
   VStack,
   proportional,
   useMediaQuery,
   useTableStickyColumns,
+  TONE_WORDS,
 } from '@clew/ui';
 import { entityDetailQuery, entityListQuery, entitySectionQuery } from '../queries';
 import { usePageTitle } from '../page-title';
@@ -35,6 +37,7 @@ import { fieldText } from '../components/view';
 type Unit = EntityList['groups'][number]['entities'][number];
 type Answer = { data?: EntitySection; isPending: boolean; isError: boolean };
 type TableRow = { id: string; unit: Unit };
+type UnitColumn = TableColumn<TableRow>;
 const UNITS = '/units';
 // Each column keeps the width its heading and a figure with its word need, so a narrow window scrolls the table sideways
 // within itself (1.4.10's exception for a data table) instead of clipping the headings.
@@ -75,6 +78,15 @@ function SourceHeader({ source }: { source: EntitySource }) {
 }
 
 /**
+ * One group's units as a table. The unit's name stays in view when a narrow window scrolls the figures sideways: a figure
+ * is never read without knowing which unit it is (the responsive-table pattern; Astryx's own pinned column).
+ */
+function UnitTable({ rows, columns }: { rows: TableRow[]; columns: UnitColumn[] }) {
+  const pinned = useTableStickyColumns<TableRow>({ startKeys: ['unit'] });
+  return <Table<TableRow> data={rows} idKey="id" density="balanced" plugins={{ pinned }} columns={columns} />;
+}
+
+/**
  * Dialogstöd (D117): the units the reader follows up side by side, their own and those of the managers who report to
  * them, in the groups the list of units gives ("Mina enheter", "Enheter under dig"). What needs a conversation comes
  * first: a line on top counts the units by the states that need action or watching, and within each group the units
@@ -88,9 +100,6 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   const short = useMediaQuery(shortQuery);
   const nav = useRail({ current: { surface: 'units' }, admin, manager: user.role === 'manager' });
   usePageTitle('Dialogstöd');
-  // The unit's name stays in view when a narrow window scrolls the figures sideways: a figure is never read without
-  // knowing which unit it is (the responsive-table pattern; Astryx's own pinned column).
-  const pinned = useTableStickyColumns<TableRow>({ startKeys: ['unit'] });
   const list = useQuery(entityListQuery('unit'));
   const groups = list.data?.groups.filter(g => g.entities.length) ?? [];
   const units = groups.flatMap(g => g.entities);
@@ -152,7 +161,12 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     </Link>
   );
 
-  const summaryLine = !settled ? null : attention.length ? (
+  // Until every source has answered, the line on top keeps its place, so the tables do not jump down when it arrives.
+  const summaryLine = !settled ? (
+    <Card padding={4}>
+      <ContentSkeleton label="Hämtar det som ska tas upp …" rows={2} />
+    </Card>
+  ) : attention.length ? (
     <Card padding={4}>
       <VStack gap={2} as="section" aria-labelledby="units-attention">
         <Heading level={2} id="units-attention">
@@ -161,10 +175,10 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
         <VStack gap={1}>
           {attention.map(a => (
             <HStack key={`${a.source.capability}:${a.word}`} gap={2} vAlign="start" wrap="wrap">
-              {/* The dot names the level, the line the state itself: a screen reader hears each once. */}
+              {/* The dot names the level in Clew's words (D54), the line the source's own word: a screen reader hears each once. */}
               <StatusDot
                 variant={a.tone === 'alert' ? 'error' : 'warning'}
-                label={a.tone === 'alert' ? 'Kräver åtgärd' : 'Att bevaka'}
+                label={a.tone === 'alert' ? TONE_WORDS.alert.word : TONE_WORDS.warn.word}
               />
               <Text>
                 {a.source.title} · {a.word} –{' '}
@@ -186,6 +200,22 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     </Text>
   );
 
+  // Every group's table has the same columns at the same widths, so a figure stands under the same figure in "Mina
+  // enheter" and "Enheter under dig" whatever each group has: a column is there when any unit has something in it, and
+  // a unit without is "–".
+  const columns: UnitColumn[] = [
+    { key: 'unit', header: 'Enhet', width: UNIT_WIDTH, renderCell: r => unitLink(r.unit) },
+    ...sources
+      .map((s, si) => ({ s, si }))
+      .filter(({ si }) => !settled || units.some(u => !!rowIn(answerOf(u.key, si)) || silent(answerOf(u.key, si))))
+      .map(({ s, si }) => ({
+        key: `source:${s.capability}`,
+        header: <SourceHeader source={s} />,
+        width: SOURCE_WIDTH,
+        renderCell: (r: TableRow) => <Cell answer={answerOf(r.unit.key, si)} source={s} />,
+      })),
+  ];
+
   const body = list.isError ? (
     <Text as="p" role="alert">
       {errorMessage(list.error, 'Enheterna kunde inte hämtas just nu.')}
@@ -198,13 +228,12 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     <>
       {summaryLine}
       {groups.map(g => {
-        // A source with nothing for any unit of the group (the round of talks for the units below) has no column there.
+        // A source with nothing for any unit of the group (the round of talks for the units below) has no row on its card.
         const shown = sources
           .map((s, si) => ({ s, si }))
           .filter(
             ({ si }) => !settled || g.entities.some(u => !!rowIn(answerOf(u.key, si)) || silent(answerOf(u.key, si))),
           );
-        const entities = ordered(g.entities);
         return (
           <VStack key={g.id} gap={3} as="section" aria-labelledby={`units-${g.id}`}>
             <Heading level={2} id={`units-${g.id}`}>
@@ -213,7 +242,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
             {mobile ? (
               // On a phone a card per unit, the figures one under the other: a table would put them off the screen.
               <VStack gap={3}>
-                {entities.map(unit => (
+                {ordered(g.entities).map(unit => (
                   <Card key={unit.key} padding={4}>
                     <VStack gap={3}>
                       {unitLink(unit)}
@@ -230,21 +259,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
                 ))}
               </VStack>
             ) : (
-              <Table<TableRow>
-                data={entities.map(unit => ({ id: unit.key, unit }))}
-                idKey="id"
-                density="balanced"
-                plugins={{ pinned }}
-                columns={[
-                  { key: 'unit', header: 'Enhet', width: UNIT_WIDTH, renderCell: (r: TableRow) => unitLink(r.unit) },
-                  ...shown.map(({ s, si }) => ({
-                    key: `source:${s.capability}`,
-                    header: <SourceHeader source={s} />,
-                    width: SOURCE_WIDTH,
-                    renderCell: (r: TableRow) => <Cell answer={answerOf(r.unit.key, si)} source={s} />,
-                  })),
-                ]}
-              />
+              <UnitTable rows={ordered(g.entities).map(unit => ({ id: unit.key, unit }))} columns={columns} />
             )}
           </VStack>
         );

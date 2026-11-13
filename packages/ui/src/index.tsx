@@ -102,6 +102,7 @@ export {
   resolveColumnWidths,
   useTableStickyColumns,
 } from '@astryxdesign/core/Table';
+export type { TableColumn } from '@astryxdesign/core/Table';
 export { Switch } from '@astryxdesign/core/Switch';
 export { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 export { AlertDialog } from '@astryxdesign/core/AlertDialog';

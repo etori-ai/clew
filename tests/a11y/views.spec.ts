@@ -65,7 +65,7 @@ test.describe('a declared view in the side panel', () => {
     await expect(panel.getByRole('row')).toHaveCount(6);
     await expect(page).toHaveURL(/scope/);
     await field.fill('xyzzy');
-    await expect(panel.getByRole('heading', { name: 'Inga träffar i telefonboken.' })).toBeVisible();
+    await expect(panel.getByRole('paragraph').filter({ hasText: 'Inga träffar i telefonboken.' })).toBeVisible();
     await expect
       .poll(() => announcements(page))
       .toContainEqual(expect.stringContaining('Inga träffar i telefonboken.'));

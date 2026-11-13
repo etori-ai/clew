@@ -48,7 +48,7 @@ test.describe('Att göra: the piles', () => {
     await expect(rows).toHaveCount(6);
     await expect(rows.first()).toContainText('Attestera 3 fakturor, 48 200 kr');
     await expect(rows.first()).toContainText('I dag');
-    await expect(rows.first().getByRole('img', { name: 'Att göra i dag' })).toBeVisible();
+    await expect(rows.first().getByRole('img', { name: 'Ska göras i dag' })).toBeVisible();
     await expectNoAxeViolations(page);
     // Väntar på andra holds what waits on others and what the person set aside, which says when it comes back.
     await tabs.getByRole('link', { name: 'Väntar på andra · 3' }).focus();
@@ -151,7 +151,8 @@ test.describe('Att göra: the reading pane', () => {
     await expect(fakturor.getByRole('link')).toHaveAccessibleName('Attestera 3 fakturor, 48 200 kr');
     // The badge and the source are read in the row, beside its link.
     await expect(fakturor).toContainText('I dag');
-    await expect(fakturor).toContainText('Budget');
+    // The row names its system, as the same row on Hem does.
+    await expect(fakturor).toContainText('Ekonomisystemet');
     expect((await fakturor.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     // One tab stop per row: from one row's link the next is the next row's.
     await fakturor.getByRole('link').focus();

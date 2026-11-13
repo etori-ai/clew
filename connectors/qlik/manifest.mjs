@@ -75,7 +75,8 @@ const unitRatesCapability = {
     kind: 'table',
     title: 'unit',
     ref: 'ref',
-    open: { capability: 'qlik.sickLeaveTrend', title: 'Utveckling', params: { unit: 'ref' } },
+    // The month by month as a line chart with its table (D79), as the economy and HME rows open theirs.
+    open: { capability: 'qlik.sickLeaveChart', title: 'Utveckling', params: { unit: 'ref' } },
     empty: 'Statistiken har ingen enhet som hör till dig.',
     fields: [
       { key: 'unit', label: 'Enhet' },
