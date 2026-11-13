@@ -3,15 +3,16 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
-import { MIGRATIONS, journal, position, upgradeDatabase, type UpgradeDatabase } from './upgrade';
+import { MIGRATIONS, journal, position, upgradeDatabase, type Entry, type UpgradeDatabase } from './upgrade';
 
 /**
  * An upgrade through the migration that moves a person's work and mobile numbers into `phone_numbers`
  * (`person_directory_profile`, D114) on a database whose people hold numbers. Its UPDATE of `auth_person` queues the
  * deferred change signals of 0019, and an ALTER of a table with signals still pending fails ("pending trigger events",
- * 55006), so the migration fires them as it writes, as 0030, 0032 and 0054 do. Drizzle runs every pending migration in
- * one transaction, so the upgrade goes from the migration before it to the latest in one call, as `bun run db:init`
- * does. A database that applied the migration before that fix is left alone, since Drizzle compares no file's hash.
+ * 55006), so the migration fires them as it writes, as 0032 and 0054 do. Drizzle runs every pending migration in one
+ * transaction, so the run here has one migration after it that alters `auth_person`, which must find no signal left
+ * pending, and stops there: a later migration of the repository may write a person too and change what this test
+ * counts. A database that applied the migration before that fix is left alone, since Drizzle compares no file's hash.
  * Run with `bun run test:db` inside the devcontainer: the databases are created beside the suite's and dropped
  * afterwards.
  */
@@ -20,11 +21,22 @@ if (!process.env.DATABASE_URL)
 
 const NAME = 'person_directory_profile';
 let installation: UpgradeDatabase;
+let upgrade: () => Promise<void>;
 beforeAll(async () => {
   installation = await upgradeDatabase();
-  const entries = await journal();
-  await installation.migrate(entries.slice(0, position(entries, NAME)));
+  const entries = await journal(),
+    at = position(entries, NAME);
+  const before = entries.slice(0, at),
+    target = entries[at]!;
+  await installation.migrate(before);
   await installation.db.execute(sql.raw(SEED));
+  // The migration and one after it that alters auth_person, in the one transaction Drizzle runs every pending migration
+  // in, and nothing later.
+  const alters: Entry = { ...target, idx: target.idx + 1, when: target.when + 1, tag: 'upgrade_probe_after' };
+  upgrade = () =>
+    installation.migrate([...before, target, alters], {
+      upgrade_probe_after: 'ALTER TABLE "auth_person" ADD COLUMN "upgrade_probe" text;',
+    });
 }, 60_000);
 afterAll(() => installation?.drop());
 
@@ -39,9 +51,9 @@ INSERT INTO auth_person (id, organisation_id, name, work_phone, mobile_phone) VA
 const rows = async <T>(query: string) => (await installation.db.execute(sql.raw(query))) as unknown as T[];
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
-test('an upgrade from the migration before it carries each number into phone_numbers, work first, and drops the old columns', async () => {
+test('an upgrade from the migration before it, with a migration after it that alters auth_person, carries each number into phone_numbers, work first, and drops the old columns', async () => {
   // Before the fix this failed: the DROP COLUMN after the UPDATE met the signals the UPDATE had queued (55006).
-  await installation.migrate();
+  await upgrade();
   expect(await rows(`select id, phone_numbers, employments from auth_person order by id`)).toEqual([
     {
       id: 'p-both',
@@ -55,12 +67,13 @@ test('an upgrade from the migration before it carries each number into phone_num
     { id: 'p-neither', phone_numbers: [], employments: [] },
     { id: 'p-work', phone_numbers: [{ type: 'work', value: '+46 8 123 45 67' }], employments: [] },
   ]);
+  // The old columns are gone, and the migration after it altered auth_person in the same transaction.
   expect(
     await rows(
-      `select column_name from information_schema.columns
-       where table_schema = 'public' and table_name = 'auth_person' and column_name in ('work_phone', 'mobile_phone')`,
+      `select column_name from information_schema.columns where table_schema = 'public' and table_name = 'auth_person'
+         and column_name in ('work_phone', 'mobile_phone', 'upgrade_probe')`,
     ),
-  ).toEqual([]);
+  ).toEqual([{ column_name: 'upgrade_probe' }]);
   // Every person was signalled once when the seed committed. The migration signals each person whose numbers it moved
   // once more, as it writes instead of at its commit, which loses nothing.
   expect(await rows(`select person_id, policy::int as policy from person_change order by person_id`)).toEqual([
