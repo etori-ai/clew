@@ -718,6 +718,7 @@ eleven lenses: 26 problems reported and 21 confirmed and fixed, each fix in the 
 the unfixed code. A second check of each fix found 34 more: 32 were fixed, and the other two were the migration that two lanes numbered
 0055, which the merge settled as 0055 and 0056. `person-erase` ran four times in half a second in the database test,
 so the ten-second wait before it exits, which one lane saw in its environment, did not recur. A review of the merge
-in three lenses confirmed 16 of 19 problems: fifteen are fixed, with `bun run check` run again and the person, unit
-and Dialogstöd specs (38 tests) passed after them, and the unbounded followed units are left above. No pass with a
-screen reader, and none signed in on the development stack.
+in three lenses confirmed 16 of 19 problems: fifteen are fixed, and the unbounded followed units are left above. After
+those fixes and a second merge of `main` (Dialogstöd's design critique and Ingrid's calendar, which touch no server
+or database code), `bun run check` passed again, as did the person, unit and Dialogstöd specs and the rebind
+script's database tests. No pass with a screen reader, and none signed in on the development stack.
