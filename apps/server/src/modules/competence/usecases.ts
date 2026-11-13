@@ -5,6 +5,7 @@ import {
   COMPETENCE_TYPE_SEARCH_MAX,
   ENTITY_KEY_MAX,
   type CompetenceReadRelation,
+  type Relation,
   type CompetenceSearchBody,
   type CompetenceSearchFileBody,
   type CompetenceSearchOptions,
@@ -87,6 +88,7 @@ import {
   orderTypes,
   ownCard,
   ownRow,
+  countingRows,
   pageOfRows,
   searchCsv,
   searchRows,
@@ -379,13 +381,16 @@ export function competenceUsecases(deps: CompetenceDeps) {
     const [type] = await tx.typesById([body.typeId]);
     if (!type || type.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
     if (body.minLevel !== undefined && !isSkill(type)) throw new CompetenceError(LEVEL_ON_SKILL_SEARCH);
+    // A unit is one of the organisation's tree, or the search is refused before anything is read or logged: what the
+    // body names reaches the read log and the audit only once it is known to be the organisation's own.
+    const units = await tx.units(organisationId);
+    if (body.unitId !== undefined && !units.some(u => u.id === body.unitId)) throw new CompetenceError(NO_UNIT);
     const holdings = await tx.holdingsOfType(type.id);
     const ids = [...new Set(holdings.map(h => h.personId))];
-    const [persons, active, places, units] = [
+    const [persons, active, places] = [
       await tx.persons(ids),
       await tx.activeIds(ids),
       await tx.placesOf(organisationId, ids),
-      await tx.units(organisationId),
     ];
     const rows = searchRows({
       type,
@@ -2219,20 +2224,27 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * `competence.holdings`. With `person` (a user name, or the id of a person provisioned without one): what that
-     * report holds, for the manager they report to; or, for a reader who holds the relation `registrar` (D121), what any
-     * active person of the reader's organisation holds, by user name. Without: the reader's own. Every read writes its
-     * row of the read log with the relation it was made under (D121 item 5). For each type the holding that decides,
-     * a copied one with its source and when it was read; a type required of the person that they hold nothing of as a
-     * `missing` row (D108 item 6); the person's own registrations that wait for a decision (`awaiting-approval`) and,
-     * to the person alone, those that were rejected (item 7); after them the copied rows whose type is not mapped, under
-     * the source's own label and marked as counting towards nothing (item 9).
+     * report holds, for the manager they report to; or, for a reader who holds the relation `registrar` (D121) and whom
+     * the registry resolved so (`told`, which it says only on the person's own direct read of this core read), what any
+     * active person of the reader's organisation holds, by user name. Without: the reader's own. For each type the
+     * holding that decides, a copied one with its source and when it was read; a type required of the person that they
+     * hold nothing of as a `missing` row (D108 item 6); the person's own registrations that wait for a decision
+     * (`awaiting-approval`) and, to the person alone, those that were rejected (item 7); after them the copied rows
+     * whose type is not mapped, under the source's own label and marked as counting towards nothing (item 9).
+     *
+     * A registrar reads less (the decision of 2026-11-13): only the holdings that count, with where each stands, and a
+     * skill's level with "Egen bedömning" where no manager has confirmed it (`countingRows`): no requirement the person
+     * lacks, no registration of their own that waits or was rejected, no copied row of a type not mapped, no "Vill
+     * utveckla". A manager's and a registrar's read writes its row of the read log (D121 item 5), in the transaction
+     * that reads it; the person's own read discloses nothing and writes none.
      */
     async holdings(
       persona: AuthenticatedContext,
       input: CompetenceHoldingsInput = {},
+      told?: Relation,
     ): Promise<CompetenceHoldingsOutput> {
       let personId = persona.id,
-        relation: CompetenceReadRelation = 'self';
+        relation: 'self' | CompetenceReadRelation = 'self';
       const self = await deps.store.transaction(tx => tx.persons([persona.id]));
       // The reader's own key is the reader: a row about them opens their own list.
       if (input.person !== undefined && !(self[0] && personKey(self[0]) === input.person)) {
@@ -2241,9 +2253,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
         if (found) {
           personId = found.id;
           relation = 'managed';
-        } else if (registrar(persona)) {
+        } else if (registrar(persona) && told === 'registrar') {
           // D121 items 1 and 4: anyone active of the reader's own organisation, by user name, for a registrar. The
-          // registry let the call through only as `registrar` (this read admits it); the grant is checked here again.
+          // registry said `registrar` (the person's own direct read of this core read); the grant is checked here again.
           const [other] = await deps.store.transaction(tx => tx.activeByUserName([input.person!]));
           if (!other || other.organisationId !== persona.organisationId) throw new ForbiddenError(NOT_YOURS);
           personId = other.id;
@@ -2255,27 +2267,36 @@ export function competenceUsecases(deps: CompetenceDeps) {
       return deps.store.transaction(async tx => {
         const [person] = await tx.persons([personId]);
         if (!person) return { rows: [] };
-        const {
-          standings: held,
-          waiting,
-          own,
-          types,
-        } = await standingsWith(tx, persona.organisationId, [personId], today);
         const names = await sourceNames(tx);
-        // A rejection is the person's to see, nobody else's (item 7).
-        const mine = personId === persona.id;
-        const registered = own.flatMap(h => {
-          const type = h.typeId ? types.get(h.typeId) : undefined;
-          return type && (h.state === 'pending' || mine) ? [ownRow(h, type, person)] : [];
-        });
-        const rows = orderHoldingRows([
-          ...held.map(s => holdingRow(s, person, names)),
-          ...registered,
-          ...waiting.map(h => uncountedRow(h, person, names)),
-        ]).slice(0, 500);
-        // D108 item 15, D121 item 5: one person's competence opened, whoever reads it and as which relation, in the
+        let rows: CompetenceHoldingsOutput['rows'];
+        if (relation === 'registrar') {
+          const holdings = await tx.holdingsOf([personId]);
+          const typeIds = [...new Set(holdings.flatMap(h => (h.typeId === null ? [] : [h.typeId])))];
+          const types = new Map((await tx.typesById(typeIds)).map(t => [t.id, t]));
+          rows = countingRows(holdings, types, person, today, names).slice(0, 500);
+        } else {
+          const {
+            standings: held,
+            waiting,
+            own,
+            types,
+          } = await standingsWith(tx, persona.organisationId, [personId], today);
+          // A rejection is the person's to see, nobody else's (item 7).
+          const mine = personId === persona.id;
+          const registered = own.flatMap(h => {
+            const type = h.typeId ? types.get(h.typeId) : undefined;
+            return type && (h.state === 'pending' || mine) ? [ownRow(h, type, person)] : [];
+          });
+          rows = orderHoldingRows([
+            ...held.map(s => holdingRow(s, person, names)),
+            ...registered,
+            ...waiting.map(h => uncountedRow(h, person, names)),
+          ]).slice(0, 500);
+        }
+        // D108 item 15, D121 item 5: another person's competence opened, by whom and as which relation, in the
         // transaction that read it, so the answer is not given unless the row is written.
-        await tx.logRead(readOf(persona, at, relation, { kind: 'person', personId, rows: rows.length }));
+        if (relation !== 'self')
+          await tx.logRead(readOf(persona, at, relation, { kind: 'person', personId, rows: rows.length }));
         return { rows };
       });
     },
@@ -2740,7 +2761,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
     /**
      * The matrix as shown, as a file to download (D108 item 11): the same read as `matrix` with the same set of columns,
      * written as CSV. It names the manager's own reports, which is what it is for; its audit row, in the same
-     * transaction, counts the people and the columns and names nobody.
+     * transaction, counts the people and the columns and names nobody, and so does its row of the read log (an export
+     * by a manager, D108 item 15).
      */
     async exportMatrix(
       persona: AuthenticatedContext,
@@ -2759,6 +2781,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
           at: at.toISOString(),
           details: { people: matrix.rows.length, types: matrix.columns.length },
         });
+        // An export of the reports' competence is a read of it (D108 item 15): logged beside its audit row, with the
+        // number of people in the file and no type, since the file holds several.
+        await tx.logRead(readOf(persona, at, 'managed', { kind: 'export', rows: matrix.rows.length }));
         return { filename: `kompetens-${today}.csv`, text: matrixCsv(matrix) };
       });
     },

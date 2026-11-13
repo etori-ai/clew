@@ -1,0 +1,6 @@
+-- D108 item 15 after the review of the registrar stage (2026-11-13): a manager's matrix downloaded as a file is a read
+-- of their reports' competence, logged as an export by `managed` that names no type (the file holds several). A search
+-- and its file stay a registrar's and name the type. A person's own reads are no longer logged; the relation `self`
+-- stays allowed so rows written before the change keep their place.
+ALTER TABLE "competence_read_log" DROP CONSTRAINT "competence_read_log_subject";--> statement-breakpoint
+ALTER TABLE "competence_read_log" ADD CONSTRAINT "competence_read_log_subject" CHECK (CASE WHEN "competence_read_log"."kind" = 'person' THEN "competence_read_log"."person_id" IS NOT NULL AND "competence_read_log"."type_id" IS NULL AND "competence_read_log"."min_level" IS NULL AND "competence_read_log"."unit_id" IS NULL WHEN "competence_read_log"."relation" = 'registrar' THEN "competence_read_log"."type_id" IS NOT NULL AND "competence_read_log"."person_id" IS NULL ELSE "competence_read_log"."kind" = 'export' AND "competence_read_log"."relation" = 'managed' AND "competence_read_log"."type_id" IS NULL AND "competence_read_log"."person_id" IS NULL AND "competence_read_log"."min_level" IS NULL AND "competence_read_log"."unit_id" IS NULL END);

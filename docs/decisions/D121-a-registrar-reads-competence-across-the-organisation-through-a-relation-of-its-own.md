@@ -42,13 +42,31 @@ closed on the day it was accepted. Counts that name nobody: turned down; it remo
 `admin.competence` reach holdings: D118 item 3 says it does not. Granting the relation per unit branch rather than
 per organisation: more exact, and nobody has asked for it; the list is closed so a narrower grant can be added.
 
-**As built (2026-11-13).** Only a core read can admit `registrar` (item 3): the published connector protocol keeps
-its three relations (`PROTOCOL_PERSON_RELATIONS`), a remote manifest that admits `registrar` is refused, and no
-connector is ever sent the word. Opening it to connectors is a protocol change with a decision of its own. The one
-read that admits it is `competence.holdings`; to every other read a registrar is a colleague. The log (item 5)
-covers a registrar's searches, exports and opened people and every read of one person's holdings as `self` or
-`managed`; summary reads (the matrix, coverage, attention) are not logged, so D108 item 15's row per unit for
-coverage is not built. Erasure of a person leaves the log's rows, which name nobody. The log is read with
+**As built (2026-11-13).** Narrower than the items above in four places, each found when it was built or reviewed.
+
+- *Only a core read can admit `registrar`, and only when the person's own session calls it* (item 3). The published
+  connector protocol keeps its three relations (`PROTOCOL_PERSON_RELATIONS`), a remote manifest that admits
+  `registrar` is refused, and no connector is sent the word. A call that reaches the read through a connector (a
+  callback, a scan, a job) is answered as for a colleague: otherwise any connector allowed to use the read could
+  ask about anybody while it served a registrar. Opening the relation to connectors is a protocol change with a
+  decision of its own. The one read that admits it is `competence.holdings`.
+- *An opened person shows a registrar the holdings that count* (item 4): certificates and the like that are
+  approved, registered by a manager or copied and mapped, and skills with their level and the mark "Egen
+  bedömning". Not a registration that waits or was rejected, not a copied row of an unmapped source type, not the
+  interest mark, not revoked rows.
+- *A person's own reads are not logged* (item 5, amended). They disclose nothing and a page that reads again wrote
+  so many rows that the others were hard to find. A manager's read of one report's holdings and everything a
+  registrar reads are logged, and so are both CSV exports (the search's and the matrix's). A logged read runs only
+  when the reader asks, never because the page refreshed. Not logged, though they name people: the matrix itself,
+  the attention list, and the reads behind an approval and a skill confirmation, all a manager's over their own
+  reports. D108 item 15's row per unit for coverage is not built. So the log is complete for reads across the
+  organisation and partial for a manager's.
+- *Who can grant it* (item 2). A holder of `admin.users` can map the grant to a group they are themselves in, with
+  nobody else involved. The mapping and the derived grant are audited and every read that follows is logged, but
+  D118 item 3 ("not one person's holdings") is then one mapping away, kept by the trail and not by a second
+  person.
+
+Erasure of a person leaves the log's rows, which hold an id and no name. The log is read with
 `scripts/competence-read-log.ts`; no page shows it.
 
 **Open.** Whether a person can see who has read their holdings. Whether a registrar should be limited to a branch of

@@ -1420,7 +1420,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         ]);
       });
 
-      test('the read log keeps a read as it is given and is read the newest first, narrowed by organisation, person, reader and time', async () => {
+      test('the read log keeps a read as it is given and is read the newest first, narrowed by organisation, person, reader, relation, kind and time', async () => {
         const w = await world();
         const entry = (id: string, extra: Partial<ReadLogEntry> = {}): ReadLogEntry => ({
           id: w.p + '-' + id,
@@ -1438,30 +1438,43 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         });
         const search = entry('l1', { minLevel: 2, unitId: 'unit-a' }),
           opened = entry('l2', { kind: 'person', typeId: null, personId: w.anna, rows: 4, readAt: T2 }),
+          // A manager's read of a report; a person's own reads are no longer logged, but a row from before stays.
           own = entry('l3', {
             kind: 'person',
-            relation: 'self',
+            relation: 'managed',
             readerId: w.anna,
             typeId: null,
-            personId: w.anna,
+            personId: w.bo,
             readAt: T2,
           }),
           file = entry('l4', { kind: 'export', rows: 120, readAt: '2026-11-10T07:00:00.000Z' }),
-          elsewhere = entry('l5', { organisationId: w.p + '-org2' });
+          elsewhere = entry('l5', { organisationId: w.p + '-org2' }),
+          // A manager's matrix as a file: an export by `managed` that names no type and nobody (D108 item 15).
+          matrix = entry('l6', {
+            kind: 'export',
+            relation: 'managed',
+            typeId: null,
+            rows: 8,
+            readAt: '2026-11-10T06:00:00.000Z',
+          });
         await w.store.transaction(async tx => {
-          for (const e of [search, opened, own, file, elsewhere]) await tx.logRead(e);
+          for (const e of [search, opened, own, file, elsewhere, matrix]) await tx.logRead(e);
         });
         const read = (query: Partial<ReadLogQuery> = {}) =>
           w.store.transaction(tx => tx.readLog({ organisationId: w.org, limit: 10, ...query }));
         // The newest first, then by id; another organisation's row is not this one's.
-        expect(await read()).toEqual([opened, own, search, file]);
-        expect(await read({ personId: w.anna })).toEqual([opened, own]);
+        expect(await read()).toEqual([opened, own, search, file, matrix]);
+        expect(await read({ personId: w.anna })).toEqual([opened]);
         expect(await read({ readerId: w.anna })).toEqual([own]);
+        expect(await read({ relation: 'managed' })).toEqual([own, matrix]);
+        expect(await read({ kind: 'export' })).toEqual([file, matrix]);
+        expect(await read({ relation: 'registrar', kind: 'export' })).toEqual([file]);
         expect(await read({ since: T })).toEqual([opened, own, search]);
         expect(await read({ limit: 1 })).toEqual([opened]);
         // Erasure of a person (D108 item 14) leaves the reads of them and by them: who read is no holding of theirs.
         await w.store.transaction(tx => tx.erasePerson(w.anna));
-        expect(await read({ personId: w.anna })).toEqual([opened, own]);
+        expect(await read({ personId: w.anna })).toEqual([opened]);
+        expect(await read({ readerId: w.anna })).toEqual([own]);
       });
 
       test('the read log refuses a row its checks do not hold, and the read it records with it', async () => {
@@ -1488,6 +1501,10 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           { ...base, personId: w.anna },
           { ...base, relation: 'managed' as const },
           { ...base, kind: 'export' as const, relation: 'self' as const },
+          // A manager's export names no type, and nobody.
+          { ...base, kind: 'export' as const, relation: 'managed' as const },
+          { ...base, kind: 'export' as const, relation: 'managed' as const, typeId: null, unitId: 'unit-a' },
+          { ...base, kind: 'search' as const, relation: 'managed' as const, typeId: null },
           { ...base, minLevel: 4 },
           { ...base, rows: -1 },
         ])

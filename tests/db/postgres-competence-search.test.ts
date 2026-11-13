@@ -100,7 +100,8 @@ describe('Kompetenssökning on Postgres (D121)', () => {
     ]);
     const file = await competence.exportSearch(registrar, { typeId });
     expect(file.text.split('\r\n')).toHaveLength(4);
-    expect((await competence.holdings(registrar, { person: `ANNA.${tag}` })).rows).toHaveLength(1);
+    // The registry tells the module `registrar` only on her own direct read of it (`RunContext.direct`).
+    expect((await competence.holdings(registrar, { person: `ANNA.${tag}` }, 'registrar')).rows).toHaveLength(1);
     expect(await logged()).toEqual([
       { kind: 'search', relation: 'registrar', typeId, personId: null, rows: 2 },
       { kind: 'export', relation: 'registrar', typeId, personId: null, rows: 2 },
@@ -114,7 +115,7 @@ describe('Kompetenssökning on Postgres (D121)', () => {
     for (const read of [
       () => failing.search(registrar, { typeId }),
       () => failing.exportSearch(registrar, { typeId }),
-      () => failing.holdings(registrar, { person: `bo.${tag}` }),
+      () => failing.holdings(registrar, { person: `bo.${tag}` }, 'registrar'),
     ])
       await expect(read()).rejects.toThrow();
     // Only the three rows of the reads that answered are there; the refused file left no audit row behind.
@@ -124,7 +125,7 @@ describe('Kompetenssökning on Postgres (D121)', () => {
 
   test('a deactivated person is no one a registrar opens, and the refusal is not logged', async () => {
     await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, bo));
-    await expect(competence.holdings(registrar, { person: `bo.${tag}` })).rejects.toThrow(
+    await expect(competence.holdings(registrar, { person: `bo.${tag}` }, 'registrar')).rejects.toThrow(
       'Personen finns inte bland dem du är chef för.',
     );
     expect((await competence.search(registrar, { typeId })).rows.map(r => r.name)).toEqual(['Synthetic Anna']);

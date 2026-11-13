@@ -668,6 +668,28 @@ export function holdingRow(
   };
 }
 /**
+ * One person's holdings as a registrar reads them (D121, the decision of 2026-11-13): only what counts, each holding
+ * that decides with where it stands, a copied one of a mapped type with its source, and a skill with its level and
+ * "Egen bedömning" where no manager has confirmed it. Nothing of what the person or their manager works with: no
+ * requirement the person lacks (no `missing` row), no registration of their own that waits or was rejected, no revoked
+ * holding, no copied row of a type not mapped, and no "Vill utveckla".
+ */
+export function countingRows(
+  holdings: readonly HoldingRecord[],
+  types: ReadonlyMap<string, TypeRecord>,
+  person: Pick<PersonRef, 'id' | 'name' | 'userName'>,
+  today: string,
+  sourceNames: ReadonlyMap<string, string> = new Map(),
+): CompetenceHoldingRow[] {
+  return orderHoldingRows(
+    deciding(holdings, types, today).flatMap(standing => {
+      if (standing.holding === null) return [];
+      const { interest: _interest, ...row } = holdingRow(standing, person, sourceNames);
+      return [row];
+    }),
+  );
+}
+/**
  * A copied holding whose source type is not mapped (D108 item 9), as a read lists it: under the source's own label,
  * with the issuer's end date if the source gave one, marked as counting towards nothing.
  */

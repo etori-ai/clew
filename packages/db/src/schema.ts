@@ -1265,10 +1265,11 @@ export const competenceReadLog = pgTable(
   t => [
     check('competence_read_log_relation', sql`${t.relation} IN ('self', 'managed', 'registrar')`),
     check('competence_read_log_kind', sql`${t.kind} IN ('search', 'person', 'export')`),
-    // A person opened names whom and no type; a search and an export name the type and nobody, and are a registrar's.
+    // A person opened names whom and no type. A search and its file are a registrar's and name the type and nobody; a
+    // manager's matrix as a file is the one other export, naming neither (it holds several types).
     check(
       'competence_read_log_subject',
-      sql`CASE WHEN ${t.kind} = 'person' THEN ${t.personId} IS NOT NULL AND ${t.typeId} IS NULL AND ${t.minLevel} IS NULL AND ${t.unitId} IS NULL ELSE ${t.typeId} IS NOT NULL AND ${t.personId} IS NULL AND ${t.relation} = 'registrar' END`,
+      sql`CASE WHEN ${t.kind} = 'person' THEN ${t.personId} IS NOT NULL AND ${t.typeId} IS NULL AND ${t.minLevel} IS NULL AND ${t.unitId} IS NULL WHEN ${t.relation} = 'registrar' THEN ${t.typeId} IS NOT NULL AND ${t.personId} IS NULL ELSE ${t.kind} = 'export' AND ${t.relation} = 'managed' AND ${t.typeId} IS NULL AND ${t.personId} IS NULL AND ${t.minLevel} IS NULL AND ${t.unitId} IS NULL END`,
     ),
     check('competence_read_log_level', sql`${t.minLevel} IS NULL OR ${t.minLevel} BETWEEN 1 AND 3`),
     check('competence_read_log_rows', sql`${t.rows} >= 0`),

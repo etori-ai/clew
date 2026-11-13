@@ -83,8 +83,8 @@ export interface MemoryCompetenceState {
   readLog: ReadLogEntry[];
 }
 /**
- * The checks of `competence_read_log`: a person opened names whom and nothing of a search; a search and an export name
- * the type and nobody, and are a registrar's.
+ * The checks of `competence_read_log`: a person opened names whom and nothing of a search; a search and its file are a
+ * registrar's and name the type and nobody; a manager's matrix as a file names neither.
  */
 function assertReadLog(r: ReadLogEntry) {
   const ok =
@@ -92,7 +92,14 @@ function assertReadLog(r: ReadLogEntry) {
     (r.minLevel === null || (r.minLevel >= 1 && r.minLevel <= 3)) &&
     (r.kind === 'person'
       ? r.personId !== null && r.typeId === null && r.minLevel === null && r.unitId === null
-      : r.typeId !== null && r.personId === null && r.relation === 'registrar');
+      : r.relation === 'registrar'
+        ? r.typeId !== null && r.personId === null
+        : r.kind === 'export' &&
+          r.relation === 'managed' &&
+          r.typeId === null &&
+          r.personId === null &&
+          r.minLevel === null &&
+          r.unitId === null);
   if (!ok) throw new Error('competence_read_log check violated');
 }
 const byCreated = <T extends { createdAt: string; id: string }>(rows: T[]) =>
@@ -812,6 +819,8 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
             (query.organisationId === undefined || r.organisationId === query.organisationId) &&
             (query.personId === undefined || r.personId === query.personId) &&
             (query.readerId === undefined || r.readerId === query.readerId) &&
+            (query.relation === undefined || r.relation === query.relation) &&
+            (query.kind === undefined || r.kind === query.kind) &&
             (query.since === undefined || r.readAt >= query.since),
         )
         .sort((a, b) => b.readAt.localeCompare(a.readAt) || a.id.localeCompare(b.id))

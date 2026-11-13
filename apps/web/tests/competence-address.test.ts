@@ -125,12 +125,12 @@ describe('Kompetenssökning keeps the page in the address and what is searched f
     expect(searchHref({ size: 25 }, '?page=4&size=50')).toBe(SEARCH_PATH);
     expect(firstSearchPage('?page=3&size=50')).toBe(`${SEARCH_PATH}?size=50`);
   });
-  test('a hit opens the person’s holdings on the read’s page, named for them, the search as the way back', () => {
-    const href = holdingsPageHref({ key: 'anna.lindqvist', name: 'Anna Lindqvist' }, `${SEARCH_PATH}?page=2`);
+  test('a hit opens the person’s holdings on the read’s page, the search as the way back, and no name in the address', () => {
+    const href = holdingsPageHref('anna.lindqvist', `${SEARCH_PATH}?page=2`);
     const url = new URL(href, 'https://clew.test');
     expect(url.pathname).toBe('/tools/competence.holdings');
     expect(JSON.parse(url.searchParams.get('input')!)).toEqual({ person: 'anna.lindqvist' });
-    expect(url.searchParams.get('title')).toBe('Kompetenser för Anna Lindqvist');
+    expect(url.searchParams.has('title')).toBe(false);
     expect(url.searchParams.get('from')).toBe(`${SEARCH_PATH}?page=2`);
   });
 });

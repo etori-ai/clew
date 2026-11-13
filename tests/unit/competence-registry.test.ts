@@ -581,9 +581,14 @@ describe('the competence wiring (D108 item 13)', () => {
         details: { people: 1, types: 1 },
       },
     ]);
+    // An export of the reports' competence is logged as one, beside its audit row (D108 item 15).
+    expect(w.store.readLog().map(r => [r.readerId, r.relation, r.kind, r.typeId, r.rows])).toEqual([
+      ['hillevi', 'managed', 'export', null, 1],
+    ]);
     expect((await w.call(anna, 'GET', '/matrix.csv')).status).toBe(403);
     expect((await w.call(hillevi, 'GET', '/matrix.csv?part=0')).status).toBe(400);
     expect(w.store.audit().length).toBe(before + 1);
+    expect(w.store.readLog()).toHaveLength(1);
   });
 
   test('Kompetenssökning (D121): the registrar alone searches, in a body, gets the file, and every read is logged', async () => {
@@ -648,8 +653,16 @@ describe('the competence wiring (D108 item 13)', () => {
       { typeId, pageSize: 30 },
       { typeId, minLevel: 4 },
       { typeId, name: 'x' },
+      // A unit or a type is an id: no control character, no more than 80 characters.
+      { typeId, unitId: 'u\n1' },
+      { typeId, unitId: 'u'.repeat(81) },
+      { typeId: typeId + '\u001b[2K' },
     ])
       expect((await w.call(hr, 'POST', '/search', wrong)).status).toBe(400);
+    // A unit that is no unit of the organisation's tree is refused by the use case, in Swedish, and nothing is logged.
+    const unknown = await w.call(hr, 'POST', '/search', { typeId, unitId: 'unit-borta' });
+    expect(unknown.status).toBe(400);
+    expect(await unknown.json()).toMatchObject({ error: 'Enheten finns inte.' });
     const file = await w.call(hr, 'POST', '/search.csv', { typeId });
     expect(file.status).toBe(200);
     expect(file.headers.get('content-type')).toBe('text/csv; charset=utf-8');
@@ -690,10 +703,17 @@ describe('the competence wiring (D108 item 13)', () => {
     registry
       .register({ ...competenceConnector(w.competence, async a => personas.get(a.id)!), uses: ['*'] })
       .govern(COMPETENCE_CONNECTOR, openGovernance());
-    expect(await registry.run(actorOf(hr), 'competence.holdings', { person: 'Anna.Lindqvist' })).toEqual({ rows: [] });
+    // Her own session's direct read (`GET /api/cap`) is the one call the relation is resolved on.
+    expect(
+      await registry.run(actorOf(hr), 'competence.holdings', { person: 'Anna.Lindqvist' }, { direct: true }),
+    ).toEqual({ rows: [] });
     expect(w.store.readLog().map(r => [r.readerId, r.relation, r.kind, r.personId])).toEqual([
       ['hr', 'registrar', 'person', 'p-anna'],
     ]);
+    // Any other call (a card, a tool, a job) is refused, and logs nothing.
+    await expect(registry.run(actorOf(hr), 'competence.holdings', { person: 'anna.lindqvist' })).rejects.toThrow(
+      'Okänd förmåga.',
+    );
     // The read about a person is a manager's, of their reports alone: it is not opened to a registrar.
     await expect(registry.run(actorOf(hr), 'competence.person', { keys: ['anna.lindqvist'] })).rejects.toThrow(
       'Du saknar behörighet för åtgärden.',

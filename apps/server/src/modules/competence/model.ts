@@ -263,7 +263,8 @@ export interface ReadLogEntry {
   organisationId: string;
   /** The person who read, by Clew's id. */
   readerId: string;
-  relation: CompetenceReadRelation;
+  /** `self` only on a row written before a person's own reads stopped being logged (2026-11-13); none is written now. */
+  relation: CompetenceReadRelation | 'self';
   kind: CompetenceReadKind;
   typeId: string | null;
   minLevel: number | null;
@@ -279,6 +280,10 @@ export interface ReadLogQuery {
   personId?: string;
   /** The reads this person made. */
   readerId?: string;
+  /** The reads made as this relation. */
+  relation?: CompetenceReadRelation;
+  /** The reads of this kind. */
+  kind?: CompetenceReadKind;
   /** From this instant on. */
   since?: string;
   /** At most this many rows, the newest first. */

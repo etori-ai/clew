@@ -541,11 +541,21 @@ export function competenceTx(
     },
     enqueue: start => enqueueWorkflow(tx, durable, start),
     async persons(ids) {
-      if (!ids.length) return [];
-      return tx
-        .select({ id: people.id, organisationId: people.organisationId, name: people.name, userName: people.userName })
-        .from(people)
-        .where(inArray(people.id, [...ids]));
+      // In slices, as `activeIds` and `placesOf` read: a search names every holder of a type (D121 item 4).
+      const found = [];
+      for (const slice of slices([...new Set(ids)]))
+        found.push(
+          ...(await tx
+            .select({
+              id: people.id,
+              organisationId: people.organisationId,
+              name: people.name,
+              userName: people.userName,
+            })
+            .from(people)
+            .where(inArray(people.id, slice))),
+        );
+      return found;
     },
     async activeByUserName(userNames) {
       const found = [];
@@ -840,6 +850,8 @@ export function competenceTx(
             q.organisationId === undefined ? undefined : eq(reads.organisationId, q.organisationId),
             q.personId === undefined ? undefined : eq(reads.personId, q.personId),
             q.readerId === undefined ? undefined : eq(reads.readerId, q.readerId),
+            q.relation === undefined ? undefined : eq(reads.relation, q.relation),
+            q.kind === undefined ? undefined : eq(reads.kind, q.kind),
             q.since === undefined ? undefined : gte(reads.readAt, new Date(q.since)),
           ),
         )

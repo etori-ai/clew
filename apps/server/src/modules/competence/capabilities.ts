@@ -401,7 +401,14 @@ export function competenceConnector(
     // registry tells no connector of it); without it the reader reads their own. Someone without a user name is named
     // by Clew's id, as the competence domain names them, as themself or a report only. Every read is logged (D121 item 5).
     person: { param: 'person', admits: ['self', 'managed', 'registrar'], ids: true },
-    run: async (actor, input) => competence.holdings(await persona(actor), input),
+    // What the registry resolved the person as (D117): the module reads someone as a registrar only when the registry
+    // said so, which it does only on the person's own direct read (D121).
+    run: async (actor, input, clew) =>
+      competence.holdings(
+        await persona(actor),
+        input,
+        input.person === undefined ? undefined : clew.about?.relations[input.person],
+      ),
   };
   const aboutPerson: Capability<Keys> = {
     name: COMPETENCE_CONNECTOR + '.person',

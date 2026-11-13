@@ -200,10 +200,8 @@ export function firstSearchPage(search: URLSearchParams | string = ''): string {
 }
 /**
  * One person's holdings opened from a hit (D121 item 4): the page of the read `competence.holdings` (D116) for that
- * person, by user name, named for them, with the search as the way back. The read admits the relation `registrar`.
+ * person, by user name, with the search as the way back. No name: the page names the person from the directory, as
+ * their own page does, so a name never rides in the address (the review of 2026-11-13).
  */
-export const holdingsPageHref = (person: { key: string; name: string }, from: string) =>
-  viewPageHref(
-    { capability: 'competence.holdings', input: { person: person.key }, title: `Kompetenser för ${person.name}` },
-    from,
-  );
+export const holdingsPageHref = (key: string, from: string) =>
+  viewPageHref({ capability: 'competence.holdings', input: { person: key } }, from);

@@ -15,7 +15,7 @@ import {
   VStack,
   useMediaQuery,
 } from '@clew/ui';
-import { areasQuery } from '../queries';
+import { areasQuery, entityDetailQuery } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
@@ -36,6 +36,20 @@ const tableQuery = '(min-width: 1280px)';
 const tableBesideQuery = panelBesideQuery(1280 - RAIL);
 /** The heading the page sends the focus to when the person arrives from a link on another page. */
 const TITLE_ID = 'vy-rubrik';
+/** The one person a view's input names by `person`, or null. */
+function personOf(inputJson: string | null): string | null {
+  try {
+    const person = (JSON.parse(inputJson ?? 'null') as { person?: unknown } | null)?.person;
+    return typeof person === 'string' && person ? person : null;
+  } catch {
+    return null;
+  }
+}
+/** What a list or a table holds, as a heading's first word: "Kompetenser". */
+function nounOf(spec: { kind: string; noun?: { other: string } } | undefined): string | undefined {
+  const other = spec?.noun?.other;
+  return other ? other.charAt(0).toLocaleUpperCase('sv') + other.slice(1) : undefined;
+}
 
 /**
  * Where the rail stands on a view's page that is not a tool of its own: on the place the view was opened from, as a
@@ -94,9 +108,26 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const known = views?.find(v => v.capability === capability) ?? null;
   const unlisted = areasQ.data !== undefined && !entry && !known && views !== undefined;
   const inputJson = search.get('input');
-  const title = entry?.label ?? search.get('title') ?? known?.title ?? '';
+  const named = entry?.label ?? search.get('title') ?? known?.title ?? '';
   // Read only once the person's reads are known, so a read that is not theirs is never asked for.
-  const main = useView(areasQ.data !== undefined && !unlisted ? capability : null, inputJson, { title, address });
+  const main = useView(areasQ.data !== undefined && !unlisted ? capability : null, inputJson, {
+    title: named,
+    address,
+  });
+  // A view of one person's (its input names `person`) opened without a name of its own is named for them from the
+  // directory, as their page names them (D121, the review of 2026-11-13): a person's name never rides in the address.
+  // Until both have answered the heading waits; a person the directory does not answer for keeps the read's own name.
+  const whose = !entry && search.get('title') === null ? personOf(inputJson) : null;
+  const person = useQuery({ ...entityDetailQuery('person', whose ?? ''), enabled: whose !== null });
+  const noun = main.shown?.capability === capability ? nounOf(main.shown.spec) : undefined;
+  const title =
+    whose === null
+      ? named
+      : person.data && noun
+        ? `${noun} för ${person.data.entity.name}`
+        : person.isError || (person.data && main.shown)
+          ? named
+          : '';
   const missing = unlisted || (!!main.failed && refused(main.failed));
   const ready = areasQ.data !== undefined && !missing;
   const from = insideClew(search.get('from'));

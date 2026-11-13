@@ -31,6 +31,10 @@ import { memoryExecutionStore } from '../../apps/server/src/modules/executions/a
 import type { AuthorizeOptions, ExecutionSource } from '../../apps/server/src/modules/executions/model';
 import { createVerifier } from '../../connectors/hello/verification.mjs';
 import { callbackRefusal } from '../../apps/server/src/connectors/callback-errors';
+import { memoryCompetenceStore } from '../../apps/server/src/modules/competence/adapters/memory';
+import { competenceConnector } from '../../apps/server/src/modules/competence/capabilities';
+import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
+import { reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { testAuthority, testJwks } from '../connector-authority';
 
 /**
@@ -298,6 +302,18 @@ function sources(seen: Seen[]) {
       personRead('core.points', { param: 'person', admits: ['managed'], ids: true }),
       // D121: Clew's own read of holdings admits the relation registrar beside the person and their manager.
       personRead('core.holdings', { param: 'person', admits: ['self', 'managed', 'registrar'], ids: true }),
+      // A core composite that reads holdings for whom its own input names, as the person.
+      {
+        name: 'core.peek',
+        kind: 'read',
+        title: 'Titta',
+        description: 'x',
+        model: false,
+        scope: {},
+        input: { type: 'object', properties: { who: { type: 'string' } }, required: ['who'] } as never,
+        output: anything,
+        run: (_actor, input, clew) => clew.call('core.holdings', { person: (input as { who: string }).who }),
+      },
       {
         name: 'core.file',
         kind: 'read',
@@ -349,10 +365,13 @@ function world() {
   const seen: Seen[] = [];
   const registry = new Registry({ relations: people.relations.relate });
   for (const c of sources(seen)) registry.register({ uses: ['*'], ...c }).govern(c.id, openGovernance());
-  /** `/api/cap` and every other caller of `runCapability`: the registry's call path as the person. */
+  /** Every caller of `runCapability`: the registry's call path as the person (a card, a tool, a job, a route). */
   const cap = (who: string, name: string, input: unknown) => registry.run(actorOf(people.persona(who)), name, input);
+  /** `GET /api/cap`: the person's own session asks for a read itself (`RunContext.direct`, D121). */
+  const read = (who: string, name: string, input: unknown) =>
+    registry.run(actorOf(people.persona(who)), name, input, { direct: true });
   const asked = (name: string) => seen.filter(s => s.name === name);
-  return { people, registry, seen, cap, asked };
+  return { people, registry, seen, cap, read, asked };
 }
 
 describe('the rule, resolved from the directory', () => {
@@ -833,8 +852,8 @@ describe('the relation registrar (D121): competence across the organisation, and
   });
   test('/api/cap: a registrar is told registrar only by the read that admits it; every other read hears what a colleague’s would', async () => {
     const w = world();
-    // Clew's own read of holdings admits her, and is told so.
-    expect(await w.cap('regina', 'core.holdings', { person: 'ANNA' })).toEqual({ person: 'anna' });
+    // Clew's own read of holdings admits her when she asks for it herself, and is told so.
+    expect(await w.read('regina', 'core.holdings', { person: 'ANNA' })).toEqual({ person: 'anna' });
     expect(w.asked('core.holdings')).toEqual([
       {
         name: 'core.holdings',
@@ -860,7 +879,12 @@ describe('the relation registrar (D121): competence across the organisation, and
       w.seen.filter(s => s.name !== 'core.holdings').some(s => JSON.stringify(s.about).includes('registrar')),
     ).toBe(false);
     // Without the grant the same read refuses the same key.
-    await expect(w.cap('hassan', 'core.holdings', { person: 'anna' })).rejects.toThrow('Okänd förmåga.');
+    await expect(w.read('hassan', 'core.holdings', { person: 'anna' })).rejects.toThrow('Okänd förmåga.');
+    // Asked by anything but her own session (a card, a tool, a job), the read sees her as the colleague she is.
+    await expect(w.cap('regina', 'core.holdings', { person: 'anna' })).rejects.toThrow('Okänd förmåga.');
+    // And so does a core read reached through a core composite she asked for herself: the grant is for her direct read.
+    await expect(w.read('regina', 'core.peek', { who: 'anna' })).rejects.toThrow('Okänd förmåga.');
+    expect(w.asked('core.holdings')).toHaveLength(1);
   });
   test('clew.call and a connector’s callback: a registrar reaches nothing through another read than she does directly', async () => {
     const w = world();
@@ -897,6 +921,94 @@ describe('the relation registrar (D121): competence across the organisation, and
     };
     expect(await page(regina)).toEqual(await page(hassan));
     expect((await page(regina)).relation).toBe('colleague');
+  });
+  test('a connector that serves a registrar reaches nobody’s holdings through her: refused as for a colleague, and nothing is logged', async () => {
+    const w = world();
+    const s = w.people.state;
+    // Clew's own competence module on the same directory, as composition binds it.
+    const store = memoryCompetenceStore({
+      persons: [...s.users.values()].map(u => ({
+        id: u.id,
+        organisationId: u.organisationId,
+        name: u.name,
+        userName: u.userName,
+      })),
+    });
+    for (const u of s.users.values()) if (!u.enabled) store.deactivate(u.id);
+    let n = 0;
+    const competence = competenceUsecases({
+      store,
+      staff: async persona => ({ units: reportsByUnit(await w.people.staff.reach(persona)) }),
+      clock: () => new Date(T),
+      ids: () => 'r-' + ++n,
+    });
+    w.registry
+      .register({ ...competenceConnector(competence, async a => w.people.persona(a.id)), uses: [] })
+      .govern('competence', openGovernance());
+    // A connector of the stack that may call anything, and calls the holdings of whom it is given.
+    w.registry
+      .register({
+        id: 'rogue',
+        kind: 'passthrough',
+        source: 'Något system',
+        areas: [],
+        uses: ['*'],
+        capabilities: [
+          {
+            name: 'rogue.peek',
+            kind: 'read',
+            title: 'Titta',
+            description: 'x',
+            model: false,
+            scope: {},
+            input: { type: 'object', properties: { who: { type: 'string' } }, required: ['who'] } as never,
+            output: anything,
+            run: (_actor, input, clew) => clew.call('competence.holdings', { person: (input as { who: string }).who }),
+          },
+        ],
+      })
+      .govern('rogue', openGovernance());
+    const typeId = await competence.seedType('operator:test', ORG, { name: 'HLR', area: 'Akut', kind: 'course' });
+    await competence.seedHolding('operator:test', ORG, 'anna', { typeId, issuedOn: '2026-01-10' });
+    const regina = w.people.persona('regina');
+    // Her own session's direct read: as registrar, and logged.
+    const own = await w.registry.run<{ rows: unknown[] }>(
+      actorOf(regina),
+      'competence.holdings',
+      { person: 'anna' },
+      { direct: true },
+    );
+    expect(own.rows).toHaveLength(1);
+    expect(store.readLog().map(r => [r.readerId, r.relation, r.kind, r.personId])).toEqual([
+      ['regina', 'registrar', 'person', 'anna'],
+    ]);
+    // `/api/connectors/call` from a connector that serves her, as the route makes it: refused exactly as it is for a
+    // colleague without the grant, `not-found`.
+    const unknown = { code: 'not-found', message: 'Okänd förmåga.', status: 404 } as const;
+    for (const who of ['regina', 'hassan']) {
+      const callback = w.registry
+        .clewFor(w.people.persona(who), { chain: ['rogue.peek'] }, 'rogue')
+        .call('competence.holdings', { person: 'anna' });
+      expect(callbackRefusal(await callback.catch(e => e))).toEqual(unknown);
+    }
+    // `clew.call` of an in-process connector she asked herself, a scan's handle (`clewFor` with the connector's id), and
+    // every other path that is not her direct read: a card, a tool, a job.
+    await expect(w.registry.run(actorOf(regina), 'rogue.peek', { who: 'anna' }, { direct: true })).rejects.toThrow(
+      'Okänd förmåga.',
+    );
+    await expect(
+      w.registry.clewFor(actorOf(regina), {}, 'rogue').call('competence.holdings', { person: 'anna' }),
+    ).rejects.toThrow('Okänd förmåga.');
+    await expect(w.registry.run(actorOf(regina), 'competence.holdings', { person: 'anna' })).rejects.toThrow(
+      'Okänd förmåga.',
+    );
+    // The module itself refuses a registrar whom the registry did not resolve so, whatever the input says.
+    await expect(competence.holdings(regina, { person: 'anna' })).rejects.toThrow(
+      'Intyg registreras av den som är chef för en enhet.',
+    );
+    await expect(competence.holdings(regina, { person: 'anna' }, 'colleague')).rejects.toThrow();
+    // Nothing of any of it was logged as hers.
+    expect(store.readLog()).toHaveLength(1);
   });
   test('only a core connector admits it: a manifest cannot name it, and neither can an in-process connector of another kind', () => {
     const notes = {

@@ -2332,13 +2332,14 @@ export interface CompetenceMatrixInput {
 export const COMPETENCE_SEARCH_PAGE_SIZES = [25, 50, 100] as const;
 /** The highest page a search may ask for: past the end the last page is answered. */
 export const COMPETENCE_SEARCH_PAGE_MAX = 100_000;
-const searchUnit = Type.String({
-  minLength: 1,
-  maxLength: 512,
-  description: "A unit of the organisation's tree; the people placed on it or on any unit below it.",
-});
+/** An id as a body names a type or a unit: 1 to 80 characters, none of them a control character. */
+const searchId = Type.String({ minLength: 1, maxLength: 80, pattern: '^[^\\u0000-\\u001F\\u007F]+$' });
+const searchUnit = {
+  ...searchId,
+  description: "A unit of the organisation's tree, by its id; the people placed on it or on any unit below it.",
+};
 export const CompetenceSearchFileBodySchema = object({
-  typeId: id,
+  typeId: searchId,
   minLevel: Type.Optional({
     ...CompetenceLevelSchema,
     description: 'On a skill: the least level held, confirmed or the person\'s own rating ("Egen bedömning").',
@@ -2347,7 +2348,7 @@ export const CompetenceSearchFileBodySchema = object({
 });
 export type CompetenceSearchFileBody = Static<typeof CompetenceSearchFileBodySchema>;
 export const CompetenceSearchBodySchema = object({
-  typeId: id,
+  typeId: searchId,
   minLevel: Type.Optional(CompetenceLevelSchema),
   unitId: Type.Optional(searchUnit),
   page: Type.Optional(Type.Integer({ minimum: 1, maximum: COMPETENCE_SEARCH_PAGE_MAX })),
@@ -2399,13 +2400,16 @@ export interface CompetenceTypeSearchOutput {
 }
 /**
  * One read of competence about other people (D108 item 15, D121 item 5): a search across the organisation, one person's
- * holdings opened, or an export of a search. The read log holds who read, as which relation, which type or whom, when
- * and how many rows; never a name and never content.
+ * holdings opened, or an export (a search's file, or a manager's matrix as a file). The read log holds who read, as which
+ * relation, which type or whom, when and how many rows; never a name and never content.
  */
 export const COMPETENCE_READ_KINDS = ['search', 'person', 'export'] as const;
 export type CompetenceReadKind = (typeof COMPETENCE_READ_KINDS)[number];
-/** The relations a read of competence is logged under: the person's own, a manager's report, or `registrar` (D121). */
-export const COMPETENCE_READ_RELATIONS = ['self', 'managed', 'registrar'] as const satisfies readonly PersonRelation[];
+/**
+ * The relations a read of competence is logged under: a manager's report, or `registrar` (D121). A person's own read
+ * discloses nothing and is not logged (the decision of 2026-11-13).
+ */
+export const COMPETENCE_READ_RELATIONS = ['managed', 'registrar'] as const satisfies readonly PersonRelation[];
 export type CompetenceReadRelation = (typeof COMPETENCE_READ_RELATIONS)[number];
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({

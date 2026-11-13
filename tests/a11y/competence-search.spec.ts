@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { competenceTypes, searchHolders, withSkills } from './competence';
+import { NOW } from './data';
 import {
   announcements,
   desktop,
@@ -36,6 +37,17 @@ const registrar = (api: MockApi, many = false) => {
   api.relations = ['registrar'];
   api.employee = true;
   api.competenceSearch = searchHolders(many);
+  // The person a hit opens, as the directory names them to a colleague: their page's own lookup.
+  api.entityDetailOf = key =>
+    key === 'anna.lindqvist'
+      ? {
+          entity: { kind: 'person', key, name: 'Anna Lindqvist' },
+          relation: 'colleague',
+          actions: [],
+          sections: [],
+          cards: [],
+        }
+      : undefined;
 };
 /**
  * Types words into the type field from the keyboard and takes the one result they find, once the server's answer for
@@ -102,6 +114,9 @@ test.describe('Kompetens › Kompetenssökning', () => {
         const address = new URL(page.url());
         expect(JSON.parse(address.searchParams.get('input')!)).toEqual({ person: 'anna.lindqvist' });
         expect(address.searchParams.get('from')).toBe(SEARCH);
+        // No name rides in the address: the page names her from the directory, as her own page does.
+        expect(address.searchParams.has('title')).toBe(false);
+        expect(page.url()).not.toContain('Lindqvist');
         await expect(page.getByRole('heading', { level: 1, name: 'Kompetenser för Anna Lindqvist' })).toBeVisible();
         // The way back names the search.
         await expect(page.getByRole('link', { name: 'Kompetenssökning' })).toBeVisible();
@@ -124,7 +139,7 @@ test.describe('Kompetens › Kompetenssökning', () => {
         await level.focus();
         await page.keyboard.press('Enter');
         await page.getByRole('option', { name: 'Expert', exact: true }).click();
-        await expect(readout(page)).toHaveText('1 person med Engelska');
+        await expect(readout(page)).toHaveText('1 person med Engelska, minst expert');
         expect(api.searchBodies.at(-1)).toEqual({ typeId: 't-eng', minLevel: 3, page: 1, pageSize: 25 });
         await expectNoAxeViolations(page);
       });
@@ -141,7 +156,7 @@ test.describe('Kompetens › Kompetenssökning', () => {
         expect(api.searchFiles).toEqual([{ typeId: 't-hlr' }]);
         await expect
           .poll(() => announcements(page))
-          .toContainEqual(expect.stringContaining('kompetenssokning-2026-11-04.csv är nedladdad'));
+          .toContainEqual(expect.stringContaining('kompetenssokning-2026-11-04.csv är hämtad'));
         await typeField(page).fill('');
         await chooseType(page, 'heta', 'Heta arbeten');
         await expect(page.getByRole('heading', { level: 2, name: 'Ingen har den kompetensen' })).toBeVisible();
@@ -210,9 +225,61 @@ test.describe('Kompetens › Kompetenssökning', () => {
       await unit.focus();
       await page.keyboard.press('Enter');
       await page.getByRole('option', { name: /Bergsåkers skola/ }).click();
-      await expect(readout(page)).toHaveText('2 personer med HLR');
+      await expect(readout(page)).toHaveText('2 personer med HLR på Bergsåkers skola');
       expect(api.searchBodies.at(-1)).toEqual({ typeId: 't-hlr', unitId: 'unit-skola', page: 1, pageSize: 25 });
       await expectNoAxeViolations(page);
+    });
+    test('a search is read when asked and no more: the tab shown again or focused asks nothing; a new one is said even with the same count', async ({
+      page,
+      api,
+    }) => {
+      registrar(api);
+      await open(page, SEARCH);
+      await chooseType(page, 'hlr', 'HLR');
+      await expect(readout(page)).toHaveText('3 personer med HLR');
+      expect(api.searchBodies).toHaveLength(1);
+      // Past the age at which an ordinary read is read again when the tab is shown (15 s; the suite's clock stands
+      // still), then the tab hidden and shown, the window focused and the network back, as a person coming back.
+      const optionsRead = api.searchOptionsReads;
+      await page.clock.setFixedTime(new Date(Date.parse(NOW) + 30_000));
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+        document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+        window.dispatchEvent(new Event('focus'));
+        window.dispatchEvent(new Event('online'));
+      });
+      // An ordinary read on the page is read again, so the tab was seen to come back; the search is not.
+      await expect.poll(() => api.searchOptionsReads).toBeGreaterThan(optionsRead);
+      expect(api.searchBodies).toHaveLength(1);
+      // Two units that each hold two: the second is said too, by its unit, after "Söker …".
+      const unit = form(page).getByRole('button', { name: /^Enhet/ });
+      await unit.focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('option', { name: /Hemtjänst Centrum/ }).click();
+      await expect(readout(page)).toHaveText('2 personer med HLR på Hemtjänst Centrum');
+      await unit.focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('option', { name: /Bergsåkers skola/ }).click();
+      await expect(readout(page)).toHaveText('2 personer med HLR på Bergsåkers skola');
+      await expect
+        .poll(() => announcements(page))
+        .toEqual(
+          expect.arrayContaining(['2 personer med HLR på Hemtjänst Centrum', '2 personer med HLR på Bergsåkers skola']),
+        );
+      expect(api.searchBodies).toHaveLength(3);
+    });
+    test('a file that cannot be made is said, and nothing is said to be fetched', async ({ page, api }) => {
+      registrar(api);
+      await open(page, SEARCH);
+      await chooseType(page, 'hlr', 'HLR');
+      api.searchFails = true;
+      await page.getByRole('button', { name: 'Ladda ner som CSV' }).click();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Något gick fel. Försök igen.'));
+      expect(await announcements(page)).not.toContainEqual(expect.stringContaining('är hämtad'));
     });
     test('a registrar who manages people too has the place’s three pages as tabs, this one current', async ({
       page,

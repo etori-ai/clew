@@ -42,6 +42,7 @@ import {
   HoldingsInputSchema,
   HoldingsOutputSchema,
   MAX_DOCUMENT_BYTES,
+  RELATION_GRANTS,
   SiteHeaderOutputSchema,
   contractProblems,
   foldEntityKey,
@@ -192,6 +193,13 @@ export interface RunContext {
    * registry, is ignored and the input resolved again. Never carried into a nested call.
    */
   resolution?: Resolution;
+  /**
+   * The person's own session asked for this read itself, directly (`/api/cap`): the one call on which a relation the
+   * person holds by grant (`RELATION_GRANTS`, D121's `registrar`) is resolved, and then only for a capability of a core
+   * connector. Never carried into a nested call, so a read reached through any connector (a callback, a `clew.call`, a
+   * scan), a card, a tool, a job or a figure sees the person as the colleague they are.
+   */
+  direct?: boolean;
 }
 /** What `Registry.validate` resolved about whom an input names (D117): opaque, issued and redeemed by one registry. */
 export class Resolution {
@@ -602,10 +610,22 @@ export class Registry implements HoldingsReader {
    * not a string, refuses the call as an unknown capability is refused, so the answer never tells whether that person
    * exists; it is checked whether or not the input schema lists it. `about` is what the connector is told: each key sent
    * and its relation. A directory that cannot be read throws `RelationsUnavailableError`, never an empty answer.
+   *
+   * A relation held by grant (`RELATION_GRANTS`, D121) is admitted only where `granted` says so: the person's own session
+   * asked a core connector's read directly (`RunContext.direct`). On any other call it is taken out of what the
+   * capability admits before the resolver is asked, so a reader who holds it stands as they would without it.
    */
-  private async narrow(actor: Actor, name: string, input: unknown): Promise<{ input: unknown; about?: AboutClaim }> {
-    const named = this.named.get(name);
-    if (!named) return { input };
+  private async narrow(
+    actor: Actor,
+    name: string,
+    input: unknown,
+    options: { granted?: boolean } = {},
+  ): Promise<{ input: unknown; about?: AboutClaim }> {
+    const declared = this.named.get(name);
+    if (!declared) return { input };
+    const named = options.granted
+      ? declared
+      : { ...declared, admits: declared.admits.filter(r => !(RELATION_GRANTS as readonly string[]).includes(r)) };
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new CapabilityError(UNKNOWN);
     const given = input as Record<string, unknown>;
     if (
@@ -868,8 +888,11 @@ export class Registry implements HoldingsReader {
     if (!inScope(found.capability.scope, actor)) throw new CapabilityError('Du saknar behörighet för åtgärden.');
     if (!this.validator(found.capability.input)(input))
       throw new CapabilityError('Ogiltig förfrågan till ' + name + '.');
-    const narrowed = this.redeem(actor, name, input, context.resolution) ?? (await this.narrow(actor, name, input));
-    const { resolution: _resolution, ...nested } = context;
+    // A relation held by grant (D121) only on the person's own direct read of a core connector's capability.
+    const granted = context.direct === true && found.connector.kind === 'core';
+    const narrowed =
+      this.redeem(actor, name, input, context.resolution) ?? (await this.narrow(actor, name, input, { granted }));
+    const { resolution: _resolution, direct: _direct, ...nested } = context;
     const clew = this.clewFor(actor, { ...nested, chain: [...(context.chain ?? []), name] }, found.connector.id);
     const output = await found.capability.run(
       actor,

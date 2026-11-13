@@ -9,6 +9,7 @@ import type {
   UsersAdminQueryType,
 } from '@clew/contracts';
 import { api } from './api';
+import { LOGGED_READ, isLoggedView } from './logged-reads';
 import { keys } from './query-keys';
 import { unlessRefused } from './query-policy';
 
@@ -143,6 +144,8 @@ export const viewQuery = (capability: string, inputJson: string | null) =>
   queryOptions({
     queryKey: keys.view(capability, inputJson),
     queryFn: () => api.capability(capability, parseInput(inputJson)),
+    // One person's holdings opened by someone else is logged on the server (D121 item 5): read when asked, no more.
+    ...(isLoggedView(capability, inputJson) ? LOGGED_READ : {}),
   });
 /**
  * A card action opened as a view (`open-card` and `open-action` in the address). The call is a POST, so it is de-duplicated, never retried
@@ -265,10 +268,7 @@ export const competenceSearchQuery = (body: CompetenceSearchBody) =>
   queryOptions({
     queryKey: keys.competenceSearch(body),
     queryFn: () => api.competence.search(body),
-    retry: false,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    ...LOGGED_READ,
     placeholderData: keepPreviousData,
   });
 /**

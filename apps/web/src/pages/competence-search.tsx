@@ -104,12 +104,32 @@ const until = (row: CompetenceSearchRow) => (row.expiresOn ? cellDay(row.expires
 const unitsOf = (row: CompetenceSearchRow) => (row.units.length ? row.units.join(', ') : 'Ingen enhet');
 
 /**
+ * A file the server made, saved as a link to it would be saved: an anchor in the document for the moment of the press,
+ * since a browser may ignore a press on one outside it, and the object's address let go of a minute later, once the
+ * browser has begun to read it, never at once.
+ */
+function saveFile(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.hidden = true;
+  document.body.append(anchor);
+  try {
+    anchor.click();
+  } finally {
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+}
+
+/**
  * The person's name, a link to their holdings (D121 item 4: the read `competence.holdings`, its page with the search as
  * the way back). Someone provisioned without a user name has no page, so their name is text.
  */
 function PersonName({ row, from }: { row: CompetenceSearchRow; from: string }) {
   return row.key ? (
-    <Link href={holdingsPageHref({ key: row.key, name: row.name }, from)} weight="semibold" hasUnderline>
+    <Link href={holdingsPageHref(row.key, from)} weight="semibold" hasUnderline>
       {row.name}
     </Link>
   ) : (
@@ -206,14 +226,10 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
     if (!asked || downloading) return;
     setDownloading(true);
     try {
+      // Said once the file is here, never before; a failure is said instead.
       const file = await api.competence.searchFile(asked);
-      const url = URL.createObjectURL(file.blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = file.filename;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      toast({ body: `${file.filename} är nedladdad.`, uniqueID: 'competence:search-file' });
+      saveFile(file.blob, file.filename);
+      toast({ body: `${file.filename} är hämtad.`, uniqueID: 'competence:search-file' });
     } catch (e) {
       toast({
         body: errorMessage(e, 'Filen kunde inte skapas.'),
@@ -229,6 +245,13 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
   const rows = data?.rows ?? [];
   const units = options.data?.units ?? [];
   const typeName = data?.type.name ?? draft.type?.label ?? '';
+  // What the result is of, said with its count: the type, and the least level and the unit where one narrows it, so a
+  // new search is read out also when it finds as many as the one before.
+  const narrowing =
+    (skill && draft.minLevel ? `, minst ${levelLabel(draft.minLevel).toLocaleLowerCase('sv')}` : '') +
+    (draft.unitId ? ` på ${units.find(u => u.id === draft.unitId)?.label ?? draft.unitId}` : '');
+  const searching = !!body && result.isFetching && (result.isPlaceholderData || !result.data);
+  const said = !body ? '' : searching ? 'Söker …' : data ? `${people(data.total)} med ${typeName}${narrowing}` : '';
   const listError =
     body && result.isError && !result.data ? errorMessage(result.error, 'Sökningen kunde inte göras.') : null;
   const columns = [
@@ -321,11 +344,7 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
                       startContent={
                         // The one line that says what the search found, read out when it changes (4.1.3).
                         <Text weight="semibold" role="status" ref={head}>
-                          {!data
-                            ? body && result.isFetching
-                              ? 'Söker …'
-                              : ''
-                            : `${people(data.total)} med ${typeName}`}
+                          {said}
                         </Text>
                       }
                       endContent={
@@ -451,7 +470,7 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
                           </HStack>
                         </VStack>
                       </Section>
-                    ) : !data ? (
+                    ) : !data || (searching && !result.isPlaceholderData) ? (
                       <Section variant="transparent" padding={3}>
                         <Text type="supporting">Söker …</Text>
                       </Section>

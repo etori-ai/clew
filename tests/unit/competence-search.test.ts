@@ -5,7 +5,7 @@ import {
   memoryCompetenceStore,
   type MemoryCompetenceStore,
 } from '../../apps/server/src/modules/competence/adapters/memory';
-import { pageOfRows, searchCsv, typeSearchWords } from '../../apps/server/src/modules/competence/domain';
+import { holdingRef, pageOfRows, searchCsv, typeSearchWords } from '../../apps/server/src/modules/competence/domain';
 import {
   COMPETENCE_EXPORT_FORMAT,
   CompetenceError,
@@ -245,14 +245,25 @@ describe('a search (D121 item 4)', () => {
       [types.english, null, null, 3],
     ]);
   });
-  test('a level is for a skill alone, and a type of another organisation is no type', async () => {
+  test('a level is for a skill alone, a type of another organisation is no type, and a unit is one of the tree', async () => {
     await expect(competence.search(hr, { typeId: types.hlr, minLevel: 2 })).rejects.toThrow(
       'Bara en färdighet söks på en viss nivå.',
     );
     const elsewhere = await competence.search(hr, { typeId: types.elsewhere }).catch(e => e);
     expect(elsewhere).toBeInstanceOf(CompetenceError);
     expect(elsewhere.message).toBe('Kompetensen finns inte i katalogen.');
+    // What the body names reaches the log, the audit and an operator's terminal only once it is the organisation's own.
+    for (const unitId of ['no-such-unit', 'u1\n2026-11-10\tforged', 'u-other'])
+      for (const read of [
+        () => competence.search(hr, { typeId: types.hlr, unitId }),
+        () => competence.exportSearch(hr, { typeId: types.hlr, unitId }),
+      ]) {
+        const refused = await read().catch(e => e);
+        expect(refused).toBeInstanceOf(CompetenceError);
+        expect(refused.message).toBe('Enheten finns inte.');
+      }
     expect(reads()).toEqual([]);
+    expect(audits().some(a => a.action === 'competence.search_exported')).toBe(false);
   });
   test('a page past the end answers with the last; pages are cut in one order', async () => {
     expect((await competence.search(hr, { typeId: types.hlr, page: 9 })).page).toBe(1);
@@ -317,7 +328,7 @@ describe('the file of a search (D121 item 4)', () => {
 
 describe('one person’s holdings opened (D121 items 4 and 5)', () => {
   test('a registrar opens anyone active of the organisation by user name, and the read is logged as registrar', async () => {
-    const opened = await competence.holdings(hr, { person: 'dan.d' });
+    const opened = await competence.holdings(hr, { person: 'dan.d' }, 'registrar');
     expect(opened.rows.map(r => [r.competence, r.status])).toEqual([
       ['HLR', 'expiring'],
       ['Engelska', 'valid'],
@@ -347,23 +358,224 @@ describe('one person’s holdings opened (D121 items 4 and 5)', () => {
       [admin, 'anna.a'],
       [asAnna, 'dan.d'],
     ] as const)
-      await expect(competence.holdings(persona, { person: key })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(competence.holdings(persona, { person: key }, 'registrar')).rejects.toBeInstanceOf(ForbiddenError);
+    // The grant alone is not enough: the registry must have resolved the read as the registrar's own direct one.
+    for (const told of [undefined, 'colleague', 'managed'] as const)
+      await expect(competence.holdings(hr, { person: 'dan.d' }, told)).rejects.toBeInstanceOf(ForbiddenError);
     expect(reads()).toEqual([]);
   });
-  test('a manager’s and a person’s own reads are logged the same way, so the log singles nobody out (D121 item 5)', async () => {
+  test('a manager’s reads are logged as a registrar’s are; a person’s own read discloses nothing and writes no row', async () => {
     await competence.holdings(plain, { person: 'dan.d' });
     await competence.holdings(asAnna);
     await competence.holdings(asAnna, { person: 'anna.a' });
     // Self and managed come first: a manager who is a registrar reads their own report as their manager.
-    await competence.holdings(boss, { person: 'anna.a' });
-    await competence.holdings(boss, { person: 'dan.d' });
+    await competence.holdings(boss, { person: 'anna.a' }, 'managed');
+    await competence.holdings(boss, { person: 'dan.d' }, 'registrar');
     expect(reads().map(r => [r.readerId, r.relation, r.kind, r.personId])).toEqual([
       ['plain', 'managed', 'person', 'dan'],
-      ['anna', 'self', 'person', 'anna'],
-      ['anna', 'self', 'person', 'anna'],
       ['boss', 'managed', 'person', 'anna'],
       ['boss', 'registrar', 'person', 'dan'],
     ]);
+  });
+});
+
+describe('a registrar sees only what counts (D121, the decision of 2026-11-13)', () => {
+  // Dan, besides what counts (HLR about to run out, Engelska confirmed at Grundläggande): a requirement he lacks, his own
+  // registration that waits and one his manager rejected, a revoked holding, a copied row of an unmapped type, and his
+  // skill marked as one he wants to develop. Each is something the person or their manager works with; none counts.
+  const asDan = personaOf('dan', 'employee');
+  beforeEach(async () => {
+    const op = 'operator:test';
+    const fall = await competence.seedType(op, ORG, { name: 'Fallskydd', area: 'Säkerhet', kind: 'certificate' });
+    const heta = await competence.seedType(op, ORG, { name: 'Heta arbeten', area: 'Säkerhet', kind: 'certificate' });
+    await competence.seedRequirement(op, ORG, { typeId: fall, unitId: 'u3' });
+    const base = {
+      personId: 'dan',
+      expiresOn: null,
+      registeredBy: null,
+      createdAt: T,
+      revokedAt: null,
+      revokedBy: null,
+      copy: null,
+      decidedBy: null,
+      decidedAt: null,
+      threadId: null,
+      level: null,
+      interest: false,
+      validatedBy: null,
+      validatedAt: null,
+      ratedAt: null,
+    };
+    await store.transaction(async tx => {
+      await tx.insertHolding({
+        ...base,
+        id: 'h-wait',
+        typeId: heta,
+        issuedOn: '2026-10-01',
+        evidence: 'self',
+        state: 'pending',
+        registeredBy: 'dan',
+        threadId: 'th-1',
+      });
+      await tx.insertHolding({
+        ...base,
+        id: 'h-rej',
+        typeId: fall,
+        issuedOn: '2026-09-01',
+        evidence: 'self',
+        state: 'rejected',
+        registeredBy: 'dan',
+        decidedBy: 'plain',
+        decidedAt: T,
+      });
+      await tx.insertHolding({
+        ...base,
+        id: 'h-rev',
+        typeId: heta,
+        issuedOn: '2025-01-01',
+        evidence: 'manager',
+        state: 'revoked',
+        revokedAt: T,
+        revokedBy: 'plain',
+      });
+      await tx.putSource({
+        connectorId: 'lms',
+        source: 'Lärplattformen',
+        run: null,
+        claimedAt: null,
+        leaseUntil: null,
+        startedAt: null,
+        finishedAt: null,
+        outcome: null,
+        counts: null,
+      });
+      await tx.putCopied([
+        {
+          ...base,
+          id: 'h-copy',
+          typeId: null,
+          issuedOn: '2026-03-01',
+          evidence: 'system',
+          state: 'valid',
+          copy: { connectorId: 'lms', sourceId: 'c-1', sourceType: 'badge:1', sourceLabel: 'Okopplad kurs', readAt: T },
+        },
+      ]);
+    });
+    const [english] = (await store.transaction(tx => tx.holdingsOf(['dan']))).filter(h => h.typeId === types.english);
+    await store.transaction(tx => tx.updateHolding(english!.id, { interest: true }));
+  });
+  const registered = async () => (await competence.holdings(hr, { person: 'dan.d' }, 'registrar')).rows;
+  const refs = (rows: Array<{ ref: string }>) => rows.map(r => r.ref);
+
+  test('what counts is there, with where it stands and a skill’s level, and the read is logged with its count', async () => {
+    expect((await registered()).map(r => [r.competence, r.status, r.level ?? null, r.assessment ?? null])).toEqual([
+      ['HLR', 'expiring', null, null],
+      ['Engelska', 'valid', 'Grundläggande', null],
+    ]);
+    expect(reads().map(r => [r.readerId, r.relation, r.kind, r.personId, r.rows])).toEqual([
+      ['hr', 'registrar', 'person', 'dan', 2],
+    ]);
+  });
+  test('not his own registration that waits for his manager', async () => {
+    const rows = await registered();
+    expect(rows.some(r => r.status === 'awaiting-approval')).toBe(false);
+    expect(refs(rows)).not.toContain(holdingRef('h-wait'));
+  });
+  test('not his registration that his manager rejected', async () => {
+    const rows = await registered();
+    expect(rows.some(r => r.status === 'rejected')).toBe(false);
+    expect(refs(rows)).not.toContain(holdingRef('h-rej'));
+  });
+  test('not a requirement he lacks: no missing row and no required level', async () => {
+    const rows = await registered();
+    expect(rows.some(r => r.status === 'missing' || 'required' in r)).toBe(false);
+    expect(rows.map(r => r.competence)).not.toContain('Fallskydd');
+  });
+  test('not a holding that was revoked', async () => {
+    const rows = await registered();
+    expect(refs(rows)).not.toContain(holdingRef('h-rev'));
+    expect(rows.map(r => r.competence)).not.toContain('Heta arbeten');
+  });
+  test('not a copied row of a type the catalogue has not mapped', async () => {
+    const rows = await registered();
+    expect(rows.some(r => r.status === 'uncounted')).toBe(false);
+    expect(rows.map(r => r.competence)).not.toContain('Okopplad kurs');
+  });
+  test('not the mark that he wants to develop a skill; a rating of his own is still said as his', async () => {
+    expect((await registered()).some(r => 'interest' in r)).toBe(false);
+    // A skill only the person has rated is said as their own ("Egen bedömning"), without "Vill utveckla".
+    await competence.seedSkill('operator:test', ORG, 'eva', { typeId: types.english, level: 2, interest: true });
+    const eva = (await competence.holdings(hr, { person: 'eva.e' }, 'registrar')).rows;
+    expect(eva.find(r => r.competence === 'Engelska')).toMatchObject({
+      level: 'Självständig',
+      assessment: 'Egen bedömning',
+    });
+    expect(eva.some(r => 'interest' in r)).toBe(false);
+  });
+  test('no decision history: a row says what is held and how it is attested, never who decided, revoked or registered it, or when', async () => {
+    // The fields a row may carry to a registrar; the contract's row has no field for a decision, its maker or its time.
+    const said = [
+      ...['ref', 'userName', 'name', 'competence', 'area', 'kind', 'issuedOn', 'expiresOn', 'status'],
+      ...['evidence', 'source', 'readAt', 'level', 'assessment'],
+    ];
+    for (const row of await registered()) for (const key of Object.keys(row)) expect(said).toContain(key);
+  });
+  test('the manager’s view and the person’s own are as before, and only the manager’s read is logged', async () => {
+    // The manager sees all of it but the rejection, which is the person's alone (D108 item 7).
+    const managed = (await competence.holdings(plain, { person: 'dan.d' })).rows;
+    expect(managed.map(r => [r.competence, r.status]).sort()).toEqual(
+      [
+        ['Engelska', 'valid'],
+        ['Fallskydd', 'missing'],
+        ['HLR', 'expiring'],
+        ['Heta arbeten', 'awaiting-approval'],
+        ['Okopplad kurs', 'uncounted'],
+      ].sort(),
+    );
+    expect(managed.find(r => r.competence === 'Engelska')?.interest).toBe('Vill utveckla');
+    const own = (await competence.holdings(asDan)).rows;
+    expect(new Set(own.map(r => r.status))).toEqual(
+      new Set(['valid', 'missing', 'expiring', 'awaiting-approval', 'rejected', 'uncounted']),
+    );
+    expect(own.find(r => r.competence === 'Engelska')?.interest).toBe('Vill utveckla');
+    expect(own.find(r => r.status === 'missing')?.competence).toBe('Fallskydd');
+    expect(reads().map(r => [r.readerId, r.relation, r.personId, r.rows])).toEqual([['plain', 'managed', 'dan', 5]]);
+  });
+});
+
+describe('a manager’s matrix as a file is an export of their reports’ competence (D108 item 15)', () => {
+  test('it writes its row of the read log beside its audit row, naming no type and counting the people; or neither', async () => {
+    const file = await competence.exportMatrix(plain);
+    expect(file.filename).toBe('kompetens-2026-11-10.csv');
+    expect(audits().filter(a => a.action === 'competence.matrix_exported')).toEqual([
+      {
+        actor: 'person:plain',
+        action: 'competence.matrix_exported',
+        subject: 'organisation:' + ORG,
+        at: T,
+        details: { people: 1, types: 0 },
+      },
+    ]);
+    expect(reads()).toEqual([
+      {
+        id: expect.any(String),
+        organisationId: ORG,
+        readerId: 'plain',
+        relation: 'managed',
+        kind: 'export',
+        typeId: null,
+        minLevel: null,
+        unitId: null,
+        personId: null,
+        rows: 1,
+        readAt: T,
+      },
+    ]);
+    // A row the log cannot take takes the file and its audit row with it.
+    store.readLogSink.fail = true;
+    await expect(competence.exportMatrix(plain)).rejects.toThrow('the read log cannot be written');
+    expect(audits().filter(a => a.action === 'competence.matrix_exported')).toHaveLength(1);
+    store.readLogSink.fail = false;
   });
 });
 
@@ -373,8 +585,12 @@ describe('a read whose row cannot be written answers nothing (D121 item 5)', () 
     const before = audits().length;
     await expect(competence.search(hr, { typeId: types.hlr })).rejects.toThrow('the read log cannot be written');
     await expect(competence.exportSearch(hr, { typeId: types.hlr })).rejects.toThrow('the read log cannot be written');
-    await expect(competence.holdings(hr, { person: 'anna.a' })).rejects.toThrow('the read log cannot be written');
-    await expect(competence.holdings(asAnna)).rejects.toThrow('the read log cannot be written');
+    await expect(competence.holdings(hr, { person: 'anna.a' }, 'registrar')).rejects.toThrow(
+      'the read log cannot be written',
+    );
+    await expect(competence.holdings(plain, { person: 'dan.d' })).rejects.toThrow('the read log cannot be written');
+    // A person's own read writes no row, so it answers.
+    expect((await competence.holdings(asAnna)).rows.length).toBeGreaterThan(0);
     expect(audits()).toHaveLength(before);
     expect(reads()).toEqual([]);
     store.readLogSink.fail = false;
@@ -384,7 +600,7 @@ describe('a read whose row cannot be written answers nothing (D121 item 5)', () 
 
 describe('the read log beside erasure and export (D108 items 14 and 15)', () => {
   test('erasing a person leaves the reads of them and by them; the export of the domain does not carry the log', async () => {
-    await competence.holdings(hr, { person: 'anna.a' });
+    await competence.holdings(hr, { person: 'anna.a' }, 'registrar');
     await competence.search(hr, { typeId: types.hlr });
     store.deactivate('anna');
     await competence.erasePerson('operator:cli', 'anna');

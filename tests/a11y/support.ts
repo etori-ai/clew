@@ -219,6 +219,8 @@ export class MockApi {
    */
   competenceSearch: Record<string, CompetenceSearchRow[]> = {};
   searchBodies: CompetenceSearchBody[] = [];
+  /** How often the search page's options were read: an ordinary read, which a shown tab reads again once it has aged. */
+  searchOptionsReads = 0;
   searchFiles: CompetenceSearchFileBody[] = [];
   searchFails = false;
   /**
@@ -1113,13 +1115,15 @@ export class MockApi {
             code: 'denied',
           },
         });
-      if (route.request().method() === 'GET')
+      if (route.request().method() === 'GET') {
+        this.searchOptionsReads++;
         return json({
           units: [
             { id: 'unit-skola', label: 'Bergsåkers skola', parentLabel: 'Grundskola' },
             { id: 'unit-omsorg', label: 'Hemtjänst Centrum', parentLabel: null },
           ],
         });
+      }
       if (this.searchFails) return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
       const body = route.request().postDataJSON() as CompetenceSearchBody;
       const type = this.competenceTypes?.find(t => t.id === body.typeId);

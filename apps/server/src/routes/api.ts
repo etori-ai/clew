@@ -314,8 +314,9 @@ api.get('/cap/:name', async c => {
     }
   }
   // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
+  // The person's own session asks for the read itself, so a relation they hold by grant may be resolved (D121).
   const persona = c.get('session').context;
-  const output = await runCapability(persona, name, input);
+  const output = await runCapability(persona, name, input, { direct: true });
   const view = registry.viewFor(actorOf(persona), name);
   return c.json({ output, source: found.connector.source, ...(view ? { view } : {}) });
 });

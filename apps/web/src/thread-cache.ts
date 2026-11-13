@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Thread } from '@clew/contracts';
+import { isLoggedQuery } from './logged-reads';
 import { keys } from './query-keys';
 
 type ThreadList = { threads: Thread[] };
@@ -66,7 +67,8 @@ export async function previewThread(client: QueryClient, thread: Thread): Promis
  * person's has a new committed revision; while one of this client's mutations is in flight that is usually the
  * request itself, and a refetch now would draw the committed intermediate state over the preview or the answer. The
  * notice waits until the mutation cache is idle. Versioned documents and review snapshots stay fixed while open;
- * a changed work-item revision opens a new preview key. Policy changes still clear the entire protected tree.
+ * a changed work-item revision opens a new preview key, and a read the server logs (D121 item 5) stays what it was
+ * read as. Policy changes still clear the entire protected tree.
  *
  * The stream reconnects every time the tab becomes visible, and a new connection always starts by saying the current
  * revision. A revision this tab has already seen is therefore no notice: the first one is what the page's own first
@@ -75,8 +77,11 @@ export async function previewThread(client: QueryClient, thread: Thread): Promis
 export function changeNotices(client: QueryClient): { arrived(revision?: string): void; stop(): void } {
   let held = false,
     seen: string | undefined;
+  // A read the server logs (`logged-reads.ts`) is read again only when the reader asks, never because of a notice.
   const refresh = () =>
-    client.invalidateQueries({ predicate: q => q.queryKey[0] !== 'document' && q.queryKey[0] !== 'preview' });
+    client.invalidateQueries({
+      predicate: q => q.queryKey[0] !== 'document' && q.queryKey[0] !== 'preview' && !isLoggedQuery(q),
+    });
   const flush = () => {
     if (!held || client.isMutating()) return;
     held = false;

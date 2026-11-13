@@ -102,22 +102,25 @@ export const acceptsEmptyInput = (schema: object) => {
     return true;
   }
 };
-/** Run a capability through the registry with input validation. The single path for REST, cards, tools and connector callbacks. */
+/**
+ * Run a capability through the registry with input validation. The single path for REST, cards, tools and connector
+ * callbacks. `direct` is for the one caller that is the person's own session asking for a read itself (`GET /api/cap`):
+ * only there is a relation the person holds by grant resolved (D121, `RunContext.direct`).
+ */
 export async function runCapability<O = unknown>(
   persona: AuthenticatedContext,
   name: string,
   input: unknown,
+  options: { direct?: boolean } = {},
 ): Promise<O> {
   const found = registry.find(name);
   if (!found) throw new InputError('Okänd förmåga.');
   await persona.authorize();
   try {
-    const result = await registry.run<O>(
-      actorOf(persona),
-      name,
-      input ?? {},
-      persona.delegate ? { delegate: persona.delegate } : {},
-    );
+    const result = await registry.run<O>(actorOf(persona), name, input ?? {}, {
+      ...(persona.delegate ? { delegate: persona.delegate } : {}),
+      ...(options.direct ? { direct: true } : {}),
+    });
     await persona.authorize();
     return result;
   } catch (error) {
