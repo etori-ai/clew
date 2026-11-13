@@ -498,7 +498,7 @@ describe('the synthetic provisioner', () => {
         {
           externalId: first!.externalId,
           userName: first!.userName,
-          detail: "Attribute 'emails.value' needs a non-empty string of at most 512 characters.",
+          detail: "Attribute 'emails' is required.",
         },
       ],
     });
@@ -682,7 +682,7 @@ describe('the synthetic provisioner', () => {
         {
           externalId: 'e-3',
           userName: 'cia.ny',
-          detail: "Attribute 'emails.value' needs a non-empty string of at most 512 characters.",
+          detail: "Attribute 'emails' is required.",
         },
       ]);
       expect(wrong.replaced).toBe(2);

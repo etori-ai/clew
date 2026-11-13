@@ -187,6 +187,30 @@ describe('/scim/v2', () => {
     expect((await call('POST', '/Users/.search', [])).status).toBe(400);
     expect((await call('PATCH', '/Users/id-1/anything')).status).toBe(404);
   });
+  test('discovery is read only: another method on any of its five addresses answers 405 with Allow: GET, where it once answered 404 (G9)', async () => {
+    const { call } = app();
+    for (const path of [
+      '/ServiceProviderConfig',
+      '/ResourceTypes',
+      '/ResourceTypes/User',
+      '/Schemas',
+      '/Schemas/urn:ietf:params:scim:schemas:core:2.0:User',
+    ])
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+        const response = await call(method, path, method === 'DELETE' ? undefined : {});
+        expect([method, path, response.status, response.headers.get('allow')]).toEqual([method, path, 405, 'GET']);
+        expect(response.headers.get('content-type')).toBe('application/scim+json; charset=utf-8');
+        expect(await response.json()).toEqual({
+          schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
+          status: '405',
+          detail: 'This address takes GET.',
+        });
+      }
+    // GET is answered as before, an id discovery does not know is still 404, and the token gate still comes first.
+    expect((await call('GET', '/ResourceTypes/User')).status).toBe(200);
+    expect((await call('GET', '/Schemas/urn:example:unknown')).status).toBe(404);
+    expect((await call('POST', '/Schemas', {}, '')).status).toBe(401);
+  });
   test('a unique index that fires in a race answers the same 409 as the check, naming the attribute when Postgres names the index', async () => {
     const violation = (constraint?: string, wrapped = false) => {
       const raw = Object.assign(new Error('duplicate key value violates unique constraint'), {

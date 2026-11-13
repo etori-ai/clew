@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { GroupRecord, UserRecord } from '../apps/server/src/modules/people/domain';
+import type { Assignment, GroupRecord, UserRecord } from '../apps/server/src/modules/people/domain';
 import type { Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
+import { directoryUsecases } from '../apps/server/src/modules/people/usecases';
 
 /**
  * The SCIM half of the provisioning store (D68): users within an organisation, groups and their members, the provisioner
@@ -46,6 +47,22 @@ export const groupRow = (id: string, organisationId: string, extra: Partial<Grou
   updatedAt: T,
   ...extra,
 });
+/**
+ * The unique index a write ran into, read as the SCIM route reads it to answer 409 with the attribute: Postgres names
+ * the constraint, and the driver may wrap the error once. Undefined when the write went through.
+ */
+const violated = (write: Promise<unknown>) =>
+  write.then(
+    () => undefined,
+    (error: unknown) => {
+      const e = error as {
+        code?: string;
+        constraint_name?: string;
+        cause?: { code?: string; constraint_name?: string };
+      };
+      return { code: e.code ?? e.cause?.code, constraint: e.constraint_name ?? e.cause?.constraint_name };
+    },
+  );
 export function scimStoreContract(name: string, make: () => Promise<ScimStoreHarness>) {
   describe(`${name} SCIM store`, () => {
     test('users are found, filtered and paged within their organisation only, and updated by field', async () => {
@@ -184,6 +201,105 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await tx.userGroups(b)).toEqual([]);
         expect(await tx.userGroups(a)).toEqual([{ id: g2, externalId: null, label: 'No external id' }]);
       });
+    });
+    test("a group's key is held by one group across the installation, inserted or updated, and any number hold none (B2)", async () => {
+      const { store, prefix: p } = await make();
+      const [g1, g2] = [p + '-g1', p + '-g2'],
+        duplicate = { code: '23505', constraint: 'auth_group_external_id' };
+      await store.transaction(async tx => {
+        await tx.insertGroup(groupRow(g1, p + '-org'));
+        await tx.insertGroup(groupRow(g2, p + '-org'));
+        await tx.insertGroup(groupRow(p + '-n1', p + '-org', { externalId: null }));
+        await tx.insertGroup(groupRow(p + '-n2', p + '-org', { externalId: null }));
+      });
+      // A key is shared vocabulary (D68): another organisation's group with it is the same key.
+      expect(
+        await violated(
+          store.transaction(tx => tx.insertGroup(groupRow(p + '-g3', p + '-elsewhere', { externalId: 'g:' + g1 }))),
+        ),
+      ).toEqual(duplicate);
+      expect(
+        await violated(store.transaction(tx => tx.updateGroup(g2, { externalId: 'g:' + g1, updatedAt: T }))),
+      ).toEqual(duplicate);
+      // Neither write left anything; a group written again under its own key, and one without a key given a new name,
+      // are not duplicates.
+      await store.transaction(async tx => {
+        expect(await tx.readGroup(p + '-elsewhere', p + '-g3')).toBeUndefined();
+        expect((await tx.readGroup(p + '-org', g2))?.externalId).toBe('g:' + g2);
+        await tx.updateGroup(g1, { externalId: 'g:' + g1, label: 'Same key', updatedAt: T });
+        await tx.updateGroup(p + '-n1', { label: 'Still without a key', updatedAt: T });
+        expect((await tx.readGroup(p + '-org', g1))?.label).toBe('Same key');
+        expect((await tx.findGroup('externalId', 'g:' + g1))?.id).toBe(g1);
+      });
+      // A key let go is free for another group.
+      await store.transaction(async tx => {
+        await tx.updateGroup(g1, { externalId: null, updatedAt: T });
+        await tx.updateGroup(g2, { externalId: 'g:' + g1, updatedAt: T });
+        expect((await tx.findGroup('externalId', 'g:' + g1))?.id).toBe(g2);
+      });
+    });
+    test("a person's source key is one person's across the installation, inserted or updated, any number hold none, and the index refuses by its name (S4)", async () => {
+      const { store, prefix: p } = await make();
+      const [a, b] = [p + '-a', p + '-b'],
+        duplicate = { code: '23505', constraint: 'auth_person_external_id' };
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(a, p + '-org'));
+        await tx.insertUser(userRow(b, p + '-org'));
+        await tx.insertUser(userRow(p + '-n1', p + '-org', { externalId: null }));
+        await tx.insertUser(userRow(p + '-n2', p + '-org', { externalId: null }));
+      });
+      // The index is partial (S4), and under the name the SCIM route reads to answer 409 naming externalId.
+      expect(
+        await violated(
+          store.transaction(tx => tx.insertUser(userRow(p + '-c', p + '-elsewhere', { externalId: 'ext:' + a }))),
+        ),
+      ).toEqual(duplicate);
+      expect(
+        await violated(store.transaction(tx => tx.updateUser(b, { externalId: 'ext:' + a, updatedAt: T }))),
+      ).toEqual(duplicate);
+      await store.transaction(async tx => {
+        await tx.updateUser(p + '-n1', { name: 'Still without a key', updatedAt: T });
+        expect((await tx.findUser('externalId', 'ext:' + a))?.id).toBe(a);
+        expect((await tx.readUser(p + '-org', b))?.externalId).toBe('ext:' + b);
+      });
+    });
+    test('a user name and a group name are one name without regard to case, å, ä and ö included, to the lookup, the filter and the index (L13)', async () => {
+      const { store, prefix: p } = await make();
+      const org = p + '-org',
+        [a, b, g] = [p + '-a', p + '-b', p + '-g'],
+        // The two spellings differ only in the case of å, ä and ö, which a plain `lower` does not fold on a database
+        // created with the locale C.
+        name = p + '.Åsa.Öberg.Ärla',
+        folded = p + '.åsa.öberg.ärla',
+        duplicate = { code: '23505', constraint: 'auth_person_user_name' },
+        every = { startIndex: 1, count: 10 };
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(a, org, { userName: name }));
+        await tx.insertUser(userRow(b, org));
+        await tx.insertGroup(groupRow(g, org, { label: 'Åsa Öbergs Ängar' }));
+      });
+      await store.transaction(async tx => {
+        // As the first sign-in, the uniqueness check and the D97 lookup ask, across the installation, and as a filter.
+        // In lower case and in capitals, so that each side's folding is shown: a value in capitals that is not folded
+        // as the stored name is misses it on a database created with the locale C.
+        for (const value of [folded, name.toUpperCase()]) {
+          expect((await tx.findUser('userName', value))?.id).toBe(a);
+          expect((await tx.listUsers(org, every, { attribute: 'userName', value })).rows.map(r => r.id)).toEqual([a]);
+        }
+        for (const value of ['åsa öbergs ängar', 'ÅSA ÖBERGS ÄNGAR'])
+          expect((await tx.listGroups(org, every, { attribute: 'label', value })).rows.map(r => r.id)).toEqual([g]);
+      });
+      // The index holds the two spellings as one name, inserted or updated: a second person past the use case's
+      // check is refused, and the route answers 409 naming userName.
+      expect(
+        await violated(store.transaction(tx => tx.insertUser(userRow(p + '-c', org, { userName: folded })))),
+      ).toEqual(duplicate);
+      expect(await violated(store.transaction(tx => tx.updateUser(b, { userName: folded, updatedAt: T })))).toEqual(
+        duplicate,
+      );
+      // The person's own name in another case is no other person's.
+      await store.transaction(tx => tx.updateUser(a, { userName: folded, updatedAt: T }));
+      expect((await store.transaction(tx => tx.findUser('userName', name)))?.userName).toBe(folded);
     });
     test('assignments carry their unit label, a binding is seen, and a group-capability row is added and removed once', async () => {
       const h = await make(),
@@ -419,6 +535,16 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           { id: mid, label: 'Unit ' + mid, parentId: root },
           { id: root, label: 'Unit ' + root, parentId: null },
         ]);
+        // Narrowed to the ids named (D114: the units a person's employments name), in unit id order whatever order they
+        // were named in; an id no unit of the organisation has, another organisation's unit among them, is absent.
+        expect(await tx.unitTree(org, [lone, p + '-nowhere', leaf, p + '-x', leaf])).toEqual([
+          { id: leaf, label: 'Unit ' + leaf, parentId: mid },
+          { id: lone, label: 'Unit ' + lone, parentId: null },
+        ]);
+        expect(await tx.unitTree(org, [p + '-nowhere'])).toEqual([]);
+        expect(await tx.unitTree(p + '-elsewhere', [p + '-x', leaf])).toEqual([
+          { id: p + '-x', label: 'Elsewhere', parentId: null },
+        ]);
         expect(await tx.childUnits(root)).toEqual([{ id: mid, label: 'Unit ' + mid }]);
         expect(await tx.childUnits(leaf)).toEqual([]);
         // Several units in one read (D99): each under its own id, by person id, a deactivated person included.
@@ -501,7 +627,8 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           total: 1,
           rows: [],
         });
-        // Words: each one somewhere in the name, the title, the user name or the e-mail, without regard to case, å included.
+        // Words: each one somewhere in the name, the title, the user name, the e-mail or an employment's title, without
+        // regard to case, å included.
         expect(await found({ words: ['BERG'] })).toEqual([anna]);
         expect(await found({ words: ['åke'] })).toEqual([ake]);
         expect(await found({ words: ['ÖST'] })).toEqual([zara]);
@@ -539,6 +666,74 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await found({ words: ['zara'], role: 'manager' })).toEqual([]);
       });
     });
+    test('the directory of a unit is everyone active placed on it, with the role held there, whichever unit they act in (A4)', async () => {
+      const { store, prefix: p } = await make();
+      const org = p + '-org',
+        [u1, u2, u3] = [p + '-u1', p + '-u2', p + '-u3'],
+        [two, both, leads, here, gone] = [p + '-two', p + '-both', p + '-leads', p + '-here', p + '-gone'];
+      // Each grant names the unit the person acts in (manager first, then the lowest unit id): only `here` acts in the
+      // second unit, and the directory once listed by the grant.
+      const people: Array<[id: string, name: string, placed: Assignment[], enabled: boolean]> = [
+        [
+          two,
+          'Örjan Två',
+          [
+            { unitId: u1, role: 'employee' },
+            { unitId: u2, role: 'employee' },
+          ],
+          true,
+        ],
+        [
+          both,
+          'Bodil Båda',
+          [
+            { unitId: u1, role: 'manager' },
+            { unitId: u2, role: 'manager' },
+          ],
+          true,
+        ],
+        [
+          leads,
+          'Ali Leder',
+          [
+            { unitId: u2, role: 'employee' },
+            { unitId: u3, role: 'manager' },
+          ],
+          true,
+        ],
+        [here, 'Cecilia Här', [{ unitId: u2, role: 'employee' }], true],
+        [gone, 'Gun Slutat', [{ unitId: u2, role: 'employee' }], false],
+      ];
+      const units = [
+        { id: u1, label: 'Enhet 1' },
+        { id: u2, label: 'Enhet 2' },
+        { id: u3, label: 'Enhet 3' },
+      ];
+      await store.transaction(async tx => {
+        await tx.writeUnits(org, units);
+        for (const [id, name, placed, enabled] of people) {
+          await tx.insertUser(userRow(id, org, { name, enabled }));
+          await tx.replaceAssignments(id, placed);
+          const active = id === leads ? placed[1]! : placed[0]!,
+            unitLabel = units.find(unit => unit.id === active.unitId)!.label;
+          await tx.writeGrant(id, { unitId: active.unitId, unitLabel, role: active.role, capabilities: [] });
+        }
+      });
+      const { directory } = directoryUsecases({ store });
+      // By name in Swedish order, Ö after the rest; the deactivated person is left out.
+      expect(await directory(u2)).toEqual([
+        { id: leads, name: 'Ali Leder', role: 'employee' },
+        { id: both, name: 'Bodil Båda', role: 'manager' },
+        { id: here, name: 'Cecilia Här', role: 'employee' },
+        { id: two, name: 'Örjan Två', role: 'employee' },
+      ]);
+      expect(await directory(u1)).toEqual([
+        { id: both, name: 'Bodil Båda', role: 'manager' },
+        { id: two, name: 'Örjan Två', role: 'employee' },
+      ]);
+      expect(await directory(u3)).toEqual([{ id: leads, name: 'Ali Leder', role: 'manager' }]);
+      expect(await directory(p + '-nowhere')).toEqual([]);
+    });
     test('a locked person and a locked group read as they do unlocked', async () => {
       const { store, prefix: p } = await make();
       await store.transaction(async tx => {
@@ -553,6 +748,61 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         // A unit is held whether or not it has a row, and naming one twice is one lock.
         await tx.lockUnits([p + '-unit-without-a-row', p + '-u', p + '-u']);
       });
+    });
+    test("an organisation's capability rows are held for a read or for a change until the transaction ends, and holding them changes nothing (B1)", async () => {
+      const { store, prefix: p } = await make();
+      const [org, elsewhere] = [p + '-org', p + '-elsewhere'],
+        row = { groupExternalId: p + ':g', capability: 'admin.users' };
+      await store.transaction(tx => tx.setGroupCapability(org, row.groupExternalId, row.capability, true));
+      // Reads share the hold, a second one in the same transaction included, and another organisation's rows are held
+      // apart: a change of those is taken beside them.
+      await store.transaction(async tx => {
+        await tx.lockGroupCapabilities(org, 'read');
+        await tx.lockGroupCapabilities(org, 'read');
+        await tx.lockGroupCapabilities(elsewhere, 'change');
+        expect(await tx.groupCapabilities(org)).toEqual([row]);
+      });
+      await store.transaction(async tx => {
+        await tx.lockGroupCapabilities(org, 'change');
+        expect(await tx.setGroupCapability(org, row.groupExternalId, row.capability, false)).toBe(true);
+      });
+      // The hold ended with each transaction, so the next one takes it again at once.
+      expect(
+        await store.transaction(async tx => {
+          await tx.lockGroupCapabilities(org, 'change');
+          return tx.groupCapabilities(org);
+        }),
+      ).toEqual([]);
+    });
+    test("many people's time of change moves at once, in the transaction, and nothing else of them does (S13)", async () => {
+      const { store, prefix: p } = await make();
+      const [a, b, c, z] = [p + '-a', p + '-b', p + '-c', p + '-z'],
+        later = '2026-11-09T07:00:00.000Z',
+        row = (id: string, updatedAt = T) =>
+          userRow(id, p + '-org', { title: 'Lärare', phoneNumbers: [{ type: 'work', value: '1' }], updatedAt });
+      await store.transaction(async tx => {
+        for (const id of [a, b, c, z]) await tx.insertUser(row(id));
+      });
+      // More ids than one statement takes, most of them nobody's and one of them twice; the person who sorts last is in
+      // the second statement.
+      const nobody = Array.from({ length: 5200 }, (_, i) => p + '-nobody-' + i);
+      await store.transaction(async tx => {
+        await tx.touchUsers([z, ...nobody, c, a, c], later);
+        await tx.touchUsers([], later);
+      });
+      await store.transaction(async tx => {
+        for (const id of [a, c, z]) expect(await tx.readUser(p + '-org', id)).toEqual(row(id, later));
+        expect(await tx.readUser(p + '-org', b)).toEqual(row(b));
+      });
+      // Gone with the transaction that made it.
+      await expect(
+        store.transaction(async tx => {
+          await tx.touchUsers([b], later);
+          expect((await tx.readUser(p + '-org', b))?.updatedAt).toBe(later);
+          throw new Error('rolled back');
+        }),
+      ).rejects.toThrow('rolled back');
+      expect(await store.transaction(tx => tx.readUser(p + '-org', b))).toEqual(row(b));
     });
   });
 }

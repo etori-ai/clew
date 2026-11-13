@@ -1,7 +1,7 @@
-import { afterAll } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray, like } from 'drizzle-orm';
-import { database, schema } from '../../packages/db/src/index';
+import { eq, inArray, like, sql } from 'drizzle-orm';
+import { database, schema, type Database } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
 
@@ -137,29 +137,62 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
     },
   };
 });
-import { scimStoreContract } from '../scim-store-contract';
+import { scimStoreContract, type ScimStoreHarness } from '../scim-store-contract';
+import { cLocaleDatabase, type CLocaleDatabase } from './c-locale';
+/** The SCIM half's harness on the suite's database, or on `db` when a test names another. */
+const scimHarness = (prefix: string, db: () => Database = database): ScimStoreHarness => ({
+  store: postgresProvisionStore(db),
+  prefix,
+  async seedProvisioner(p, digest, revoked, previous) {
+    await db()
+      .insert(schema.provisioners)
+      .values({
+        ...p,
+        tokenDigest: digest,
+        createdBy: 'test',
+        revokedAt: revoked ? new Date() : null,
+        previousTokenDigest: previous?.digest ?? null,
+        previousValidUntil: previous ? new Date(previous.until) : null,
+      });
+  },
+  async bind(personId) {
+    await db()
+      .insert(schema.identityBindings)
+      .values({ issuer: 'https://idp.test/' + prefix, subject: personId, personId });
+  },
+});
 scimStoreContract('postgres', async () => {
   const prefix = 'test-scim-' + randomUUID().slice(0, 8);
   prefixes.push(prefix);
-  return {
-    store: postgresProvisionStore(),
-    prefix,
-    async seedProvisioner(p, digest, revoked, previous) {
-      await database()
-        .insert(schema.provisioners)
-        .values({
-          ...p,
-          tokenDigest: digest,
-          createdBy: 'test',
-          revokedAt: revoked ? new Date() : null,
-          previousTokenDigest: previous?.digest ?? null,
-          previousValidUntil: previous ? new Date(previous.until) : null,
-        });
-    },
-    async bind(personId) {
-      await database()
-        .insert(schema.identityBindings)
-        .values({ issuer: 'https://idp.test/' + prefix, subject: personId, personId });
-    },
-  };
+  return scimHarness(prefix);
+});
+/**
+ * The same contract on a database created with the locale C, which D100 supports and where only ICU folds å, ä and ö:
+ * a comparison of a user name, a group's name or a word of the people list's search that leaves the folding to the
+ * database's collation passes on the suite's database and fails here (L13). The first case creates the database, and
+ * it is dropped when the file ends.
+ */
+let cLocale: Promise<CLocaleDatabase> | undefined;
+afterAll(async () => {
+  await (await cLocale?.catch(() => undefined))?.drop();
+});
+scimStoreContract('postgres created with the locale C', async () => {
+  const { db } = await (cLocale ??= cLocaleDatabase());
+  return scimHarness('test-scim-c-' + randomUUID().slice(0, 8), () => db);
+});
+/**
+ * What the store's comparisons and locks rely on, pinned as the migrations define it: the user names' index folds as
+ * the store compares, which the contract shows by behaviour only on the database created with the locale C, and the
+ * source keys' index is partial, which only the interleaving in `postgres-scim-concurrency.test.ts` shows otherwise.
+ */
+test('auth_person holds a source key unique where one is set, and a user name unique as ICU folds it whatever the database collates (S4, L13)', async () => {
+  const rows = await database().execute<{ indexname: string; indexdef: string }>(
+    sql`select indexname, indexdef from pg_indexes where tablename = 'auth_person' and indexname in ('auth_person_external_id', 'auth_person_user_name')`,
+  );
+  const defined = Object.fromEntries([...rows].map(row => [row.indexname, row.indexdef]));
+  // Partial, so that the column is no key to PostgreSQL's row locks: a new key is written beside a membership insert.
+  expect(defined.auth_person_external_id).toContain('UNIQUE INDEX auth_person_external_id');
+  expect(defined.auth_person_external_id).toEndWith('(external_id) WHERE (external_id IS NOT NULL)');
+  expect(defined.auth_person_user_name).toContain('UNIQUE INDEX auth_person_user_name');
+  expect(defined.auth_person_user_name).toEndWith('(lower((user_name COLLATE "und-x-icu")))');
 });

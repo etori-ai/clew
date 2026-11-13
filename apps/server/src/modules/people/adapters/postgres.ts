@@ -1,28 +1,21 @@
-import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL } from 'drizzle-orm';
-import { database, schema, type Transaction } from '@clew/db';
+import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
-/** Read the local user/grant tables; directory access is restricted to the actor's unit. */
-export const postgresUserReads = (): UserReads => ({
+/**
+ * Read the local user and grant tables. The directory is not read here: it is `directoryUsecases` over the provisioning
+ * store, one read for either adapter.
+ */
+export const postgresUserReads = (): Omit<UserReads, 'directory'> => ({
   async capabilities(personId) {
     const [row] = await database()
       .select({ capabilities: schema.accessGrants.capabilities })
       .from(schema.accessGrants)
       .where(eq(schema.accessGrants.personId, personId));
     return row?.capabilities ?? [];
-  },
-  async directory(unitId) {
-    return (
-      database()
-        .select({ id: schema.people.id, name: schema.people.name, role: schema.accessGrants.role })
-        .from(schema.people)
-        .innerJoin(schema.accessGrants, eq(schema.accessGrants.personId, schema.people.id))
-        // A deactivated person keeps their grant row and is nobody's colleague to ask about.
-        .where(and(eq(schema.accessGrants.unitId, unitId), eq(schema.people.enabled, true)))
-    );
   },
   async userName(personId) {
     const [row] = await database()
@@ -69,9 +62,19 @@ const groupRecord = (r: GroupRow): GroupRecord => ({
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
-/** `userName` is compared without regard to case (RFC 7643: `caseExact: false`), `externalId` exactly; as the unique indexes do. */
+/**
+ * A user name or a group's name as it is compared without regard to case (RFC 7643: `caseExact: false`): folded by
+ * ICU's root locale, whatever collation the database was created with, which is the expression of the unique index on
+ * user names. A plain `lower` folds only A to Z under the locale C, where `Åsa` and `åsa` were two people (L13). Every
+ * comparison in this store that folds case uses it on both sides, the people list's search included, so the two sides
+ * fold alike and the index serves a lookup by user name.
+ */
+const caseless = (value: SQLWrapper | string) => sql`lower(${value} collate "und-x-icu")`;
+/** `userName` is compared without regard to case, `externalId` exactly; as the unique indexes do. */
 const userMatch = (by: 'userName' | 'externalId', value: string) =>
-  by === 'userName' ? sql`lower(${schema.people.userName}) = lower(${value})` : eq(schema.people.externalId, value);
+  by === 'userName'
+    ? sql`${caseless(schema.people.userName)} = ${caseless(value)}`
+    : eq(schema.people.externalId, value);
 /**
  * The lock a derivation takes on a person and a write takes on a group. `NO KEY UPDATE`, not `UPDATE`: a membership or
  * assignment row inserted by another transaction holds a key-share lock on the person through its foreign key, and
@@ -84,11 +87,11 @@ const groupColumn = { externalId: schema.groups.externalId, label: schema.groups
 const MEMBER_BATCH = 5000;
 /**
  * D100: the people list's search as conditions on `auth_person`. A word is matched as written, so `%` and `_` in it
- * are escaped. `ilike` folds case by the collation of what it reads, and a database created with the locale C folds
- * only a to z there, so each column is read under the ICU collation the order already asks for: å, ä and ö fold the
- * same in every installation, however its database was created.
+ * are escaped, and without regard to case as a user name is compared (`caseless`, on both sides): a database created
+ * with the locale C folds only a to z by itself, so å, ä and ö fold the same in every installation, however its
+ * database was created.
  */
-const folded = (column: SQL, pattern: string) => sql`${column} collate "sv-x-icu" ilike ${pattern}`;
+const folded = (column: SQL, pattern: string) => sql`${caseless(column)} like ${caseless(pattern)}`;
 const personHas = (table: SQL, ...conditions: Array<SQL | undefined>) =>
   sql`exists (select 1 from ${table} where ${and(...conditions)})`;
 function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
@@ -149,8 +152,11 @@ const provisionerRecord = (r: { id: string; organisationId: string; label: strin
   ...r,
   lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
 });
-/** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. */
-export function postgresProvisionStore(): ProvisionStore {
+/**
+ * The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. `db` is the server's
+ * pool unless a test names another database, as the store contract does with one created with the locale C (L13).
+ */
+export function postgresProvisionStore(db: () => Database = database): ProvisionStore {
   const txOf = (tx: Transaction): ProvisionTx => ({
     async lockPerson(id) {
       const [row] = await tx
@@ -167,6 +173,15 @@ export function postgresProvisionStore(): ProvisionStore {
     },
     async lockTree(organisationId) {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'clew.unit-tree:' + organisationId}, 0))`);
+    },
+    async lockGroupCapabilities(organisationId, mode) {
+      // An advisory lock, as the tree's: shared by the writes that read the rows, exclusive for one that changes them.
+      const key = sql`hashtextextended(${'clew.group-capabilities:' + organisationId}, 0)`;
+      await tx.execute(
+        mode === 'change'
+          ? sql`select pg_advisory_xact_lock(${key})`
+          : sql`select pg_advisory_xact_lock_shared(${key})`,
+      );
     },
     async memberships(personId) {
       const rows = await tx
@@ -419,6 +434,24 @@ export function postgresProvisionStore(): ProvisionStore {
         .set({ ...fields, updatedAt: new Date(updatedAt) })
         .where(eq(schema.people.id, id));
     },
+    async touchUsers(ids, updatedAt) {
+      // Held in id order before they are written, the order in which a derivation locks people one at a time: two
+      // writes that share people queue behind each other instead of waiting on each other. Byte by byte (`collate
+      // "C"`), the order JavaScript's sort gives the ids Clew makes, whatever the database collates.
+      const sorted = [...new Set(ids)].sort();
+      for (let at = 0; at < sorted.length; at += MEMBER_BATCH) {
+        const held = tx
+          .select({ id: schema.people.id })
+          .from(schema.people)
+          .where(inArray(schema.people.id, sorted.slice(at, at + MEMBER_BATCH)))
+          .orderBy(sql`${schema.people.id} collate "C"`)
+          .for(ROW_LOCK);
+        await tx
+          .update(schema.people)
+          .set({ updatedAt: new Date(updatedAt) })
+          .where(inArray(schema.people.id, held));
+      }
+    },
     async userGroups(personId) {
       return tx
         .select({ id: schema.groups.id, externalId: schema.groups.externalId, label: schema.groups.label })
@@ -445,7 +478,7 @@ export function postgresProvisionStore(): ProvisionStore {
         ? and(
             eq(schema.groups.organisationId, organisationId),
             filter.attribute === 'label'
-              ? sql`lower(${schema.groups.label}) = lower(${filter.value})`
+              ? sql`${caseless(schema.groups.label)} = ${caseless(filter.value)}`
               : eq(groupColumn[filter.attribute], filter.value),
           )
         : eq(schema.groups.organisationId, organisationId);
@@ -641,5 +674,5 @@ export function postgresProvisionStore(): ProvisionStore {
       return removed.length > 0;
     },
   });
-  return { transaction: fn => database().transaction(tx => fn(txOf(tx))) };
+  return { transaction: fn => db().transaction(tx => fn(txOf(tx))) };
 }

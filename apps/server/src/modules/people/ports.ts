@@ -15,6 +15,10 @@ import type {
 /** Clew's own user records; identity and unit are always taken from the authenticated actor. */
 export interface UserReads {
   capabilities(personId: string): Promise<string[]>;
+  /**
+   * The active people placed on the unit, each with the role they hold there, whatever unit they act in: one read over
+   * the provisioning store for either adapter (`directoryUsecases`).
+   */
   directory(unitId: string): Promise<Array<{ id: string; name: string; role: string }>>;
   /**
    * The person's provisioned user name (D96 item 8: what another system keys a row on); null for an unknown person or
@@ -66,6 +70,14 @@ export interface ProvisionTx {
    * before `lockUnits`, by every caller.
    */
   lockTree(organisationId: string): Promise<void>;
+  /**
+   * Holds the organisation's D85 rows for the rest of the transaction: `read` by a group write before it reads them,
+   * `change` by a change to them before it writes. A group write reads the rows once and derives everyone it moves from
+   * that read, so the rows may not change until it commits: a change waits for the writes that read them, and a write
+   * that comes after the change waits for it and reads what it committed. Reads do not wait for each other. Taken after
+   * the group's own row (`readGroup` with `lock`), the tree and the units, and before any person.
+   */
+  lockGroupCapabilities(organisationId: string, mode: 'read' | 'change'): Promise<void>;
   /** The groups with an external id the person is in; a group without one carries no meaning. */
   memberships(personId: string): Promise<Membership[]>;
   members(groupExternalId: string): Promise<string[]>;
@@ -146,6 +158,12 @@ export interface ProvisionTx {
       updatedAt: string;
     },
   ): Promise<void>;
+  /**
+   * Moves the time of change of these people to `updatedAt` and changes nothing else of them: a group write changes the
+   * groups their resource answers (RFC 7643 §3.1). The rows are held for the rest of the transaction, taken in id order
+   * as `lockPerson`'s callers take them, a few thousand a statement. An id that names nobody is passed over.
+   */
+  touchUsers(ids: readonly string[], updatedAt: string): Promise<void>;
   userGroups(personId: string): Promise<Array<{ id: string; externalId: string | null; label: string }>>;
   // SCIM: groups. A group belongs to the organisation of the provisioner that pushed it, as its members do, so a client
   // reads, lists and writes its own organisation's groups only; `externalId` is unique across the installation.

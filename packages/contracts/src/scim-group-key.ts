@@ -1,4 +1,7 @@
-/** The SCIM group keys whose meaning Clew defines (D68, D93, D96). */
+/**
+ * The SCIM group keys Clew reserves: the three that carry meaning (D68), and `protected`, which is refused at the SCIM
+ * boundary (D93), as a reserved key written wrong is (D96).
+ */
 export const UNIT_KEY = 'unit:',
   MANAGER_KEY = 'unit-manager:',
   CAPABILITY_KEY = 'capability:',

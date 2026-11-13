@@ -172,7 +172,7 @@ describe('SCIM users', () => {
         ?.attributes.map(a => a.name),
     ).toContain('title');
   });
-  test('a title never refuses a request: one that is not text is read as none, a long one is cut, and the changes beside it go through (D110)', async () => {
+  test("a title's value never refuses a request: one that is not text is read as none, a long one is cut, and the changes beside it go through; an operation on it without a value is refused as on every path, except beside a deactivation (D110, Q1)", async () => {
     const { scim, p, store } = harness();
     const patch = (id: string, Operations: unknown[]) =>
       scim.patchUser(p, id, { schemas: [SCIM.patch], Operations }, BASE);
@@ -204,6 +204,30 @@ describe('SCIM users', () => {
       action: 'scim.user.deactivated',
       details: { changed: ['title', 'enabled'], via: 'scim.user.patched' },
     });
+    // An `add` or `replace` on the title without a value is malformed, and refuses the rename beside it as it would on
+    // any path; beside a deactivation it waits, and the title stays as it was.
+    await patch(created.id, [
+      { op: 'replace', path: 'active', value: true },
+      { op: 'add', path: 'title', value: 'Rektor' },
+    ]);
+    for (const op of ['add', 'replace'])
+      await expect(
+        patch(created.id, [
+          { op: 'replace', path: 'displayName', value: 'Anna Ny' },
+          { op, path: 'title' },
+        ]),
+      ).rejects.toMatchObject({
+        status: 400,
+        scimType: 'invalidValue',
+        detail: `Operation '${op}' on 'title' requires a value.`,
+      });
+    expect(store.state.users.get(created.id)).toMatchObject({ name: 'Anna Berg', title: 'Rektor', enabled: true });
+    expect(
+      await patch(created.id, [
+        { op: 'replace', path: 'title' },
+        { op: 'replace', path: 'active', value: false },
+      ]),
+    ).toMatchObject({ active: false, title: 'Rektor' });
   });
   test('attribute names are read without regard to case in a full representation, as in a patch (RFC 7643 §2.1)', async () => {
     const { scim, p, store } = harness();
@@ -297,9 +321,9 @@ describe('SCIM users', () => {
         BASE,
       ),
     ).rejects.toMatchObject(refused('displayName'));
-    await expect(scim.createGroup(p, { displayName: 'Enhet\u0000' }, BASE)).rejects.toMatchObject(
-      refused('displayName'),
-    );
+    await expect(
+      scim.createGroup(p, { externalId: 'unit:enhet', displayName: 'Enhet\u0000' }, BASE),
+    ).rejects.toMatchObject(refused('displayName'));
     // Nothing stored holds one, so a filter that asks for one is refused and an address with one names nothing.
     await expect(scim.listUsers(p, { filter: 'userName eq "a\u0000"' }, BASE)).rejects.toMatchObject({
       status: 400,
@@ -683,8 +707,7 @@ describe('SCIM groups and derivation', () => {
     const a = (await scim.createUser(p, anna, BASE)).id;
     const unit = await scim.createGroup(p, group('unit:it', 'IT', [a]), BASE);
     await scim.createGroup(p, group('capability:admin.connectors', 'Clew-admin', [a]), BASE);
-    const ad = await scim.createGroup(p, { displayName: 'Any AD group', members: [{ value: a }] }, BASE);
-    expect(ad.externalId).toBeUndefined();
+    const ad = await scim.createGroup(p, group('ad:any', 'Any AD group', [a]), BASE);
     expect(store.state.grants.get(a)?.capabilities).toEqual(['admin.connectors']);
     store.state.groupCapabilities.push({
       organisationId: 'sundsvall',
@@ -710,7 +733,7 @@ describe('SCIM groups and derivation', () => {
       scimType: 'invalidValue',
       detail: expect.stringContaining("The key 'protected' is not accepted"),
     });
-    const plain = await scim.createGroup(p, { displayName: 'Plain', members: [{ value: a }] }, BASE);
+    const plain = await scim.createGroup(p, group('ad:plain', 'Plain', [a]), BASE);
     await expect(
       scim.patchGroup(
         p,
@@ -723,7 +746,7 @@ describe('SCIM groups and derivation', () => {
       status: 400,
     });
     expect([...store.state.groups.values()].some(g => g.externalId === 'protected')).toBe(false);
-    expect(store.state.groups.get(plain.id)?.externalId).toBeNull();
+    expect(store.state.groups.get(plain.id)?.externalId).toBe('ad:plain');
   });
   test('a key that is written wrong is refused where it is made, on create, replace and patch (D96)', async () => {
     const { scim, p, store } = harness();
@@ -768,9 +791,13 @@ describe('SCIM groups and derivation', () => {
   });
   test('a group as a member is refused with the reason: nested groups are not supported', async () => {
     const { scim, p } = harness();
-    const inner = await scim.createGroup(p, { displayName: 'Inner' }, BASE);
+    const inner = await scim.createGroup(p, { externalId: 'ad:inner', displayName: 'Inner' }, BASE);
     await expect(
-      scim.createGroup(p, { displayName: 'Outer', members: [{ value: inner.id, type: 'Group' }] }, BASE),
+      scim.createGroup(
+        p,
+        { externalId: 'ad:outer', displayName: 'Outer', members: [{ value: inner.id, type: 'Group' }] },
+        BASE,
+      ),
     ).rejects.toMatchObject({
       status: 400,
       scimType: 'invalidValue',

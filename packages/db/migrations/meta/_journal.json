@@ -379,6 +379,13 @@
       "when": 1794478229566,
       "tag": "0053_person_directory_profile",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794522532550,
+      "tag": "0054_person_key_and_user_name_indexes",
+      "breakpoints": true
     }
   ]
 }
