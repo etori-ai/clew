@@ -977,6 +977,9 @@ export function competenceTx(
             q.personId === undefined ? undefined : eq(reads.personId, q.personId),
             // A search or a file that asked for the type, alone or among others (migration 0068).
             q.typeId === undefined ? undefined : sql`${q.typeId} = ANY(${reads.typeIds})`,
+            // A search or a file that narrowed by the status, alone or among others, or by the window (migration 0070).
+            q.status === undefined ? undefined : sql`${q.status} = ANY(${reads.status})`,
+            q.until === undefined ? undefined : eq(reads.until, q.until),
             q.readerId === undefined ? undefined : eq(reads.readerId, q.readerId),
             q.relation === undefined ? undefined : eq(reads.relation, q.relation),
             q.caller === undefined ? undefined : eq(reads.caller, q.caller),

@@ -1,6 +1,7 @@
 import {
   COMPETENCE_CATALOGUE_MAX,
   COMPETENCE_SEARCH_PAGE_SIZES,
+  COMPETENCE_SEARCH_STATUSES,
   COMPETENCE_STATUSES,
   competenceMatrixNeeding,
   COMPETENCE_TYPE_SEARCH_MAX,
@@ -520,7 +521,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     at: Date,
     relation: CompetenceReadRelation,
     read: Pick<ReadLogEntry, 'kind' | 'rows'> &
-      Partial<Pick<ReadLogEntry, 'typeIds' | 'minLevel' | 'unitId' | 'personId' | 'caller'>>,
+      Partial<Pick<ReadLogEntry, 'typeIds' | 'minLevel' | 'unitId' | 'personId' | 'caller' | 'status' | 'until'>>,
   ): ReadLogEntry => ({
     id: deps.ids(),
     organisationId: persona.organisationId,
@@ -533,18 +534,26 @@ export function competenceUsecases(deps: CompetenceDeps) {
     minLevel: read.minLevel ?? null,
     unitId: read.unitId ?? null,
     personId: read.personId ?? null,
+    status: read.status ?? [],
+    until: read.until ?? null,
     rows: read.rows,
     readAt: at.toISOString(),
   });
   /**
-   * What a search asked for, as its read-log row carries it: the types' ids in the order chosen, a level and a unit's
-   * id. The status, the window and the order have no column of the log; the file's audit row carries them.
+   * What a search asked for, as its read-log row and its file's audit row carry it: the types' ids in the order chosen,
+   * a level, a unit's id, the statuses in the contract's order, each once (as the log's check holds them), and the
+   * validity window (migration 0070). Not the order, which discloses nothing.
    */
-  const searched = (body: CompetenceSearchFileBody) => ({
-    typeIds: [...new Set(body.typeIds)],
-    ...(body.minLevel !== undefined ? { minLevel: body.minLevel } : {}),
-    ...(body.unitId !== undefined ? { unitId: body.unitId } : {}),
-  });
+  const searched = (body: CompetenceSearchFileBody) => {
+    const status = COMPETENCE_SEARCH_STATUSES.filter(s => body.status?.includes(s));
+    return {
+      typeIds: [...new Set(body.typeIds)],
+      ...(body.minLevel !== undefined ? { minLevel: body.minLevel } : {}),
+      ...(body.unitId !== undefined ? { unitId: body.unitId } : {}),
+      ...(status.length ? { status } : {}),
+      ...(body.until !== undefined ? { until: body.until } : {}),
+    };
+  };
   /**
    * Every person of the organisation who holds every chosen type (D121 item 4), as narrowed, filtered and sorted, read in
    * the transaction it is given; `unfiltered` is how many there were before the status and the validity window. A type
@@ -2687,12 +2696,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
           action: 'competence.search_exported',
           subject: 'organisation:' + persona.organisationId,
           at: at.toISOString(),
-          details: {
-            ...searched(body),
-            ...(body.status !== undefined ? { status: body.status } : {}),
-            ...(body.until !== undefined ? { until: body.until } : {}),
-            people: rows.length,
-          },
+          details: { ...searched(body), people: rows.length },
         });
         return { filename: `kompetenssokning-${today}.csv`, text: searchCsv(types, rows) };
       });
@@ -2706,9 +2710,11 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * What `competence.person` answers (D97): for each asked person who reports to the reader, by their user name
-     * without regard to case, how many of their holdings have run out, how many required types they lack, how many soon
-     * run out and how many count. A person with no holding has a row too, since it is where a first certificate is
-     * registered from. A key that is nobody the reader manages has no row, and is never a refusal.
+     * without regard to case, how many requirements on them are not met now or soon, by where they stand (run out,
+     * missing, about to run out: `requirementUnmet`, what the figure on Hem, the manager's card and the matrix count),
+     * and how many holdings count. A certificate nothing requires of them adds to the holdings and to nothing else. A
+     * person with no holding has a row too, since it is where a first certificate is registered from. A key that is
+     * nobody the reader manages has no row, and is never a refusal.
      */
     async aboutPeople(
       persona: AuthenticatedContext,
@@ -2724,8 +2730,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
       });
       if (!asked.length) return { rows: [] };
       const today = swedishDay(now());
-      const all = await deps.store.transaction(tx =>
-        standings(
+      const { standings: all, required } = await deps.store.transaction(tx =>
+        standingsWith(
           tx,
           persona.organisationId,
           asked.map(a => a.id),
@@ -2733,7 +2739,13 @@ export function competenceUsecases(deps: CompetenceDeps) {
         ),
       );
       return {
-        rows: asked.map(a => ({ key: a.key, ...summarise(all.filter(s => s.personId === a.id)) })),
+        rows: asked.map(a => ({
+          key: a.key,
+          ...summarise(
+            all.filter(s => s.personId === a.id),
+            required,
+          ),
+        })),
       };
     },
 

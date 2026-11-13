@@ -17,6 +17,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type {
+  CompetenceSearchStatus,
+  CompetenceSearchWindow,
   ConnectorAudience,
   DirectoryPhone,
   Employment,
@@ -1357,6 +1359,15 @@ export const competenceReadLog = pgTable(
     minLevel: integer('min_level'),
     unitId: text('unit_id'),
     personId: text('person_id'),
+    // The filters a search or its file narrowed by (migration 0070): the statuses asked for, in the contract's order
+    // (`COMPETENCE_SEARCH_STATUSES`), empty for every status; and the validity window in days, null for none. Rows from
+    // before narrowed by neither. The order is not kept: it discloses nothing.
+    status: text('status')
+      .array()
+      .$type<CompetenceSearchStatus[]>()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    until: integer('until').$type<CompetenceSearchWindow>(),
     rows: integer('rows').notNull(),
     readAt: timestamp('read_at', { withTimezone: true }).notNull(),
   },
@@ -1383,6 +1394,19 @@ export const competenceReadLog = pgTable(
       sql`CASE WHEN ${t.kind} = 'person' THEN ${t.personId} IS NOT NULL AND ${t.typeId} IS NULL AND ${t.minLevel} IS NULL AND ${t.unitId} IS NULL WHEN ${t.relation} = 'registrar' THEN ${t.typeId} IS NOT NULL AND ${t.personId} IS NULL ELSE ${t.kind} = 'export' AND ${t.relation} = 'managed' AND ${t.typeId} IS NULL AND ${t.personId} IS NULL AND ${t.minLevel} IS NULL AND ${t.unitId} IS NULL END`,
     ),
     check('competence_read_log_level', sql`${t.minLevel} IS NULL OR ${t.minLevel} BETWEEN 1 AND 3`),
+    // The statuses are one of the closed list's subsets, each once and in its order, so a list can neither carry an
+    // unknown code, a NULL element nor a repeat; the window is one of the closed list's or none. Compared as whole
+    // values with no NULL on the way (the lesson of 0069: a check that comes to NULL holds).
+    check(
+      'competence_read_log_status',
+      sql`${t.status} IN ('{}'::text[], '{valid}'::text[], '{expiring}'::text[], '{expired}'::text[], '{valid,expiring}'::text[], '{valid,expired}'::text[], '{expiring,expired}'::text[], '{valid,expiring,expired}'::text[])`,
+    ),
+    check('competence_read_log_until', sql`${t.until} IS NULL OR ${t.until} IN (30, 90, 180)`),
+    // Only a registrar's search or file narrows by them: one person opened and a manager's matrix as a file never do.
+    check(
+      'competence_read_log_filters',
+      sql`(cardinality(${t.status}) = 0 AND ${t.until} IS NULL) OR (${t.relation} = 'registrar' AND ${t.kind} IN ('search', 'export'))`,
+    ),
     check('competence_read_log_rows', sql`${t.rows} >= 0`),
     index('competence_read_log_organisation').on(t.organisationId, t.readAt),
     index('competence_read_log_person').on(t.personId),

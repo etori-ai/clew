@@ -612,14 +612,22 @@ describe('the reads', () => {
     expect((await competence.summary(boss))?.missing).toBe(501);
   });
   test('about people: one row per report asked by user name, the counts, and a row for someone who holds nothing', async () => {
-    await world();
+    const types = await world();
     staff.get('boss')!.units[0]!.people.push(person('eve', 'Eve Ek', 'eve.e'));
     // Asked without regard to case; Bo has no user name, Cia is deactivated, Dan reports to another manager.
     const out = await competence.aboutPeople(boss, ['Anna.A', 'eve.e', 'bo', 'cia.c', 'dan.d', 'nobody', 'Anna.A']);
     expect(out.rows).toEqual([
-      { key: 'Anna.A', expired: 1, missing: 0, expiring: 1, holdings: 3 },
+      // Nothing is required of Anna: her run-out and soon-ending certificates are registered and count as nothing
+      // else (`requirementUnmet`, the product owner's definition of 2026-11-13).
+      { key: 'Anna.A', expired: 0, missing: 0, expiring: 0, holdings: 3 },
       // Nothing registered yet: the row is where a first certificate is registered from.
       { key: 'eve.e', expired: 0, missing: 0, expiring: 0, holdings: 0 },
+    ]);
+    // Required of her, they are what her row counts.
+    await competence.addRequirement(boss, { typeId: types.hot, personId: 'anna' });
+    await competence.addRequirement(boss, { typeId: types.hlr, personId: 'anna' });
+    expect((await competence.aboutPeople(boss, ['anna.a'])).rows).toEqual([
+      { key: 'anna.a', expired: 1, missing: 0, expiring: 1, holdings: 3 },
     ]);
     // Someone who manages nobody, and another manager, reach none of them.
     expect((await competence.aboutPeople(asAnna, ['anna.a', 'eve.e'])).rows).toEqual([]);
@@ -1444,17 +1452,41 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         }),
       );
 
-    test('the read about a person says Saknas after Utgånget and before Går ut snart, and nothing beside it', async () => {
+    test('the read about a person says what a requirement on them needs, Utgånget before Saknas before Går ut snart, and nothing beside it', async () => {
       directory();
       const { hot, hlr, degree } = await catalogue();
-      await competence.addRequirement(admin, { typeId: degree, positionCode: USK });
-      await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-01-10' }); // expires in 61 days
       const r = registry();
       const read = async () =>
         (await r.run<{ rows: unknown[] }>(actor(boss), 'competence.person', { keys: ['anna.a'] })).rows;
-      expect(await read()).toEqual([{ key: 'anna.a', status: 'Saknas' }]);
+      // Nothing required and nothing held: no mark, and the row is where a first certificate is registered from.
+      expect(await read()).toEqual([{ key: 'anna.a', status: 'Inget registrerat' }]);
+      // A certificate that has run out and that nothing requires of her is no mark (`requirementUnmet`): not
+      // "Giltigt" either, since it is not; her holdings say it has run out, and her own card reminds her.
       await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
+      expect(await read()).toEqual([{ key: 'anna.a', status: 'Inget att åtgärda' }]);
+      // Required of her position and ending within 90 days.
+      await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-01-10' }); // expires in 61 days
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
+      expect(await read()).toEqual([{ key: 'anna.a', status: 'Går ut snart' }]);
+      // Required and missing comes before it.
+      await competence.addRequirement(admin, { typeId: degree, positionCode: USK });
+      expect(await read()).toEqual([{ key: 'anna.a', status: 'Saknas' }]);
+      // Required and run out comes first.
+      await competence.addRequirement(admin, { typeId: hot, positionCode: USK });
       expect(await read()).toEqual([{ key: 'anna.a', status: 'Utgånget' }]);
+      // Only those three are marks; her holdings still say every holding with its own status.
+      expect(personView.kind === 'list' && Object.keys(personView.fields[0]!.tones ?? {})).toEqual([
+        'Utgånget',
+        'Saknas',
+        'Går ut snart',
+      ]);
+      expect(
+        (await competence.holdings(boss, { person: 'anna.a' })).rows.map(row => [row.competence, row.status]).sort(),
+      ).toEqual([
+        ['HLR', 'expiring'],
+        ['Heta arbeten', 'expired'],
+        ['Socionomexamen', 'missing'],
+      ]);
     });
 
     test('the figure and the manager’s card count what is missing and name nobody; the person gets a card per missing type', async () => {

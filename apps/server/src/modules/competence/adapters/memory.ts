@@ -1,4 +1,4 @@
-import { foldEntityKey, type Subject } from '@clew/contracts';
+import { COMPETENCE_SEARCH_STATUSES, COMPETENCE_SEARCH_WINDOWS, foldEntityKey, type Subject } from '@clew/contracts';
 import { PendingTaken, RequirementTaken, ShareTargetTaken, SkillTaken, TypeNameTaken, TypeUriTaken } from '../model';
 import { erasureDue } from '../domain';
 import type {
@@ -102,6 +102,16 @@ function assertReadLog(r: ReadLogEntry) {
     (r.minLevel === null || (r.minLevel >= 1 && r.minLevel <= 3)) &&
     // Every type asked for, the first of them in `typeId` (migration 0068): none where `typeId` is none.
     (r.typeId === null ? r.typeIds.length === 0 : r.typeIds[0] === r.typeId) &&
+    // The filters (migration 0070): the statuses a subset of the closed list in its order, each once; the window one of
+    // its list or none; and either only on a registrar's search or file.
+    Array.isArray(r.status) &&
+    r.status.every((s, i) => {
+      const at = (COMPETENCE_SEARCH_STATUSES as readonly string[]).indexOf(s);
+      return at >= 0 && (i === 0 || at > (COMPETENCE_SEARCH_STATUSES as readonly string[]).indexOf(r.status[i - 1]!));
+    }) &&
+    (r.until === null || (COMPETENCE_SEARCH_WINDOWS as readonly number[]).includes(r.until)) &&
+    ((r.status.length === 0 && r.until === null) ||
+      (r.relation === 'registrar' && (r.kind === 'search' || r.kind === 'export'))) &&
     (r.kind === 'person'
       ? r.personId !== null && r.typeId === null && r.minLevel === null && r.unitId === null
       : r.relation === 'registrar'
@@ -912,6 +922,8 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
             (query.organisationId === undefined || r.organisationId === query.organisationId) &&
             (query.personId === undefined || r.personId === query.personId) &&
             (query.typeId === undefined || r.typeIds.includes(query.typeId)) &&
+            (query.status === undefined || r.status.includes(query.status)) &&
+            (query.until === undefined || r.until === query.until) &&
             (query.readerId === undefined || r.readerId === query.readerId) &&
             (query.relation === undefined || r.relation === query.relation) &&
             (query.caller === undefined || r.caller === query.caller) &&

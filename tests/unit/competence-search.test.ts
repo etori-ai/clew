@@ -216,6 +216,8 @@ describe('a search (D121 item 4)', () => {
         minLevel: null,
         unitId: null,
         personId: null,
+        status: [],
+        until: null,
         rows: 4,
         readAt: T,
       },
@@ -318,8 +320,18 @@ describe('several types, the status, the validity window and the order (the sear
     const valid = await competence.search(hr, { typeIds: [types.hlr, types.english], status: ['valid'] });
     expect(valid.rows.map(r => r.name)).toEqual(['Anna Andersson']);
     expect([valid.total, valid.unfiltered]).toEqual([1, 3]);
-    // The log keeps the types, the level and the unit; the status and the window have no column of it.
-    expect(reads().every(r => r.kind === 'search' && r.typeId === types.hlr)).toBe(true);
+    // Each search's one row of the log keeps the filters it narrowed by (migration 0070): the statuses in the
+    // contract's order, the window in days; the count is what the page named.
+    expect(reads().map(r => [r.kind, r.typeIds, r.status, r.until, r.rows])).toEqual([
+      ['search', [types.hlr], ['expiring', 'expired'], null, 2],
+      ['search', [types.hlr], [], 30, 1],
+      ['search', [types.hlr], ['valid'], 180, 0],
+      ['search', [types.hlr, types.english], ['valid'], null, 1],
+    ]);
+    // Asked in another order, the statuses are kept in the contract's, so one choice is one value of the log.
+    await competence.search(hr, { typeIds: [types.hlr], status: ['expired', 'valid'] });
+    expect(reads().at(-1)?.status).toEqual(['valid', 'expired']);
+    expect(audits().some(a => a.actor === 'person:hr')).toBe(false);
   });
   test('the result is sorted on the server before it is paged, ties by name and then by id, the same on every page', async () => {
     const ordered = async (sort: 'name' | 'unit' | 'status' | 'until', order: 'asc' | 'desc' = 'asc') =>
@@ -377,7 +389,9 @@ describe('several types, the status, the validity window and the order (the sear
         details: { typeIds: [types.hlr, types.english], status: ['expiring', 'expired'], people: 2 },
       },
     ]);
-    expect(reads().map(r => [r.kind, r.typeIds, r.rows])).toEqual([['export', [types.hlr, types.english], 2]]);
+    expect(reads().map(r => [r.kind, r.typeIds, r.status, r.until, r.rows])).toEqual([
+      ['export', [types.hlr, types.english], ['expiring', 'expired'], null, 2],
+    ]);
   });
   test('the catalogue asked by id answers the organisation’s own types in the order asked, and logs nothing', async () => {
     const named = await competence.findTypes(hr, { ids: [types.english, types.elsewhere, 'no-such-type', types.hlr] });
@@ -392,6 +406,22 @@ describe('several types, the status, the validity window and the order (the sear
       [types.hlr, types.english],
     ]);
     expect(await competence.readLog({ typeId: types.english, limit: 10 })).toHaveLength(2);
+  });
+  test('the read log is read by a status or a window the search narrowed by', async () => {
+    await competence.search(hr, { typeIds: [types.hlr], status: ['expired'], until: 90 });
+    await competence.exportSearch(hr, { typeIds: [types.hlr], status: ['expiring', 'expired'] });
+    await competence.search(hr, { typeIds: [types.hlr] });
+    const kinds = async (query: { status?: 'valid' | 'expiring' | 'expired'; until?: 30 | 90 | 180 }) =>
+      (await competence.readLog({ ...query, limit: 10 })).map(r => [r.kind, r.status, r.until]).sort();
+    expect(await kinds({ status: 'expired' })).toEqual([
+      ['export', ['expiring', 'expired'], null],
+      ['search', ['expired'], 90],
+    ]);
+    expect(await kinds({ status: 'valid' })).toEqual([]);
+    expect(await kinds({ until: 90 })).toEqual([['search', ['expired'], 90]]);
+    // A row of one person opened carries no filter.
+    await competence.holdings(hr, { person: 'anna.a' }, 'registrar');
+    expect(reads().at(-1)).toMatchObject({ kind: 'person', status: [], until: null });
   });
 });
 
@@ -467,6 +497,8 @@ describe('one person’s holdings opened (D121 items 4 and 5)', () => {
         minLevel: null,
         unitId: null,
         personId: 'dan',
+        status: [],
+        until: null,
         rows: 2,
         readAt: T,
       },
@@ -692,6 +724,8 @@ describe('a manager’s matrix as a file is an export of their reports’ compet
         minLevel: null,
         unitId: null,
         personId: null,
+        status: [],
+        until: null,
         rows: 1,
         readAt: T,
       },

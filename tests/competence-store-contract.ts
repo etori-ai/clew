@@ -1450,13 +1450,22 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           minLevel: null,
           unitId: null,
           personId: null,
+          status: [],
+          until: null,
           rows: 3,
           readAt: T,
           ...extra,
         });
         const none = { typeId: null, typeIds: [] };
         // A search of two types that a person must both hold: one row, every type asked for, in the order chosen.
-        const search = entry('l1', { minLevel: 2, unitId: 'unit-a', typeIds: [w.p + '-t1', w.p + '-t2'] }),
+        // It narrowed by two statuses and a window (migration 0070), kept as they are given.
+        const search = entry('l1', {
+            minLevel: 2,
+            unitId: 'unit-a',
+            typeIds: [w.p + '-t1', w.p + '-t2'],
+            status: ['expiring', 'expired'],
+            until: 90,
+          }),
           opened = entry('l2', { kind: 'person', ...none, personId: w.anna, rows: 4, readAt: T2 }),
           // A manager's read of a report; a person's own reads are no longer logged, but a row from before stays.
           own = entry('l3', {
@@ -1467,7 +1476,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
             personId: w.bo,
             readAt: T2,
           }),
-          file = entry('l4', { kind: 'export', rows: 120, readAt: '2026-11-10T07:00:00.000Z' }),
+          file = entry('l4', { kind: 'export', status: ['valid'], rows: 120, readAt: '2026-11-10T07:00:00.000Z' }),
           elsewhere = entry('l5', { organisationId: w.p + '-org2' }),
           // A manager's matrix as a file: an export by `managed` that names no type and nobody (D108 item 15).
           matrix = entry('l6', {
@@ -1499,6 +1508,11 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         expect(await read({ typeId: w.p + '-t1' })).toEqual([search, file]);
         expect(await read({ typeId: w.p + '-t2' })).toEqual([search]);
         expect(await read({ typeId: w.p + '-t3' })).toEqual([]);
+        // By a status the search or file narrowed by, alone or among others, or by its window.
+        expect(await read({ status: 'expired' })).toEqual([search]);
+        expect(await read({ status: 'valid' })).toEqual([file]);
+        expect(await read({ until: 90 })).toEqual([search]);
+        expect(await read({ until: 30 })).toEqual([]);
         expect(await read({ readerId: w.anna })).toEqual([own]);
         expect(await read({ relation: 'managed' })).toEqual([own, matrix, assisted]);
         expect(await read({ caller: 'assistant' })).toEqual([assisted]);
@@ -1527,11 +1541,25 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           minLevel: null,
           unitId: null,
           personId: null,
+          status: [],
+          until: null,
           rows: 1,
           readAt: T,
         };
         const none = { typeId: null, typeIds: [] };
         for (const wrong of [
+          // The statuses are a subset of the closed list in its order, each once; the window one of its list (0070).
+          { ...base, status: ['expired', 'valid'] as never },
+          { ...base, status: ['valid', 'valid'] as never },
+          { ...base, status: ['gone'] as never },
+          { ...base, status: [null] as never },
+          { ...base, until: 60 as never },
+          { ...base, until: 0 as never },
+          // Only a registrar's search or file narrows by them: not one person opened, not a manager's matrix as a file.
+          { ...base, kind: 'person' as const, ...none, personId: w.anna, status: ['expired' as const] },
+          { ...base, kind: 'person' as const, ...none, personId: w.anna, until: 90 as const },
+          { ...base, kind: 'export' as const, relation: 'managed' as const, ...none, status: ['valid' as const] },
+          { ...base, kind: 'export' as const, relation: 'managed' as const, ...none, until: 30 as const },
           // The types asked for begin with `typeId`, and there are none where it is none (migration 0068).
           { ...base, typeIds: [] },
           { ...base, typeIds: [w.p + '-t2', w.p + '-t1'] },

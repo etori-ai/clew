@@ -7,6 +7,8 @@ import type {
   CompetenceReadRelation,
   CompetenceReadCounts,
   CompetenceReadOutcome,
+  CompetenceSearchStatus,
+  CompetenceSearchWindow,
   Holding,
   HoldingsOutput,
   HoldingsRow,
@@ -255,9 +257,10 @@ export interface PersonRef {
 }
 /**
  * One row of the read log (D108 item 15, D121 item 5): who read competence about people, as which relation, what and
- * when. A search and its export name the types asked for (with the least level and the unit narrowed to, where given;
- * not the status, the validity window or the order) and are a registrar's; one person's holdings opened names whom. `rows` is how many rows the read returned. Ids, a level and a
- * count: never a name and never content. Written in the transaction that reads what it records.
+ * when. A search and its export name the types asked for, with the least level, the unit, the statuses and the
+ * validity window they were narrowed by (not the order, which discloses nothing), and are a registrar's; one person's
+ * holdings opened names whom. `rows` is how many rows the read returned. Ids, codes and counts: never a name and never
+ * content. Written in the transaction that reads what it records.
  */
 export interface ReadLogEntry {
   id: string;
@@ -282,6 +285,13 @@ export interface ReadLogEntry {
   minLevel: number | null;
   unitId: string | null;
   personId: string | null;
+  /**
+   * The statuses a search or its file narrowed by, in the contract's order (`COMPETENCE_SEARCH_STATUSES`), each once;
+   * empty for every status, and on every other read (migration 0070; a row from before is empty).
+   */
+  status: CompetenceSearchStatus[];
+  /** The validity window in days a search or its file narrowed by; null for none, and on every other read. */
+  until: CompetenceSearchWindow | null;
   rows: number;
   readAt: string;
 }
@@ -292,6 +302,10 @@ export interface ReadLogQuery {
   personId?: string;
   /** The searches and files that asked for this type, alone or among others. */
   typeId?: string;
+  /** The searches and files that narrowed by this status, alone or among others. */
+  status?: CompetenceSearchStatus;
+  /** The searches and files that narrowed by this validity window. */
+  until?: CompetenceSearchWindow;
   /** The reads this person made. */
   readerId?: string;
   /** The reads made as this relation. */

@@ -11,7 +11,8 @@ import { testDurable } from './durable';
  * Kompetenssökning on Postgres (D121 items 4 and 5, D108 item 15): a search, its file and a person opened each write
  * their row of the read log in the transaction that reads what it records, so a row the database refuses takes the read
  * with it, the file's audit row included, and nothing is answered. A search of several types is one row naming every
- * type (`type_ids`, migration 0068), found again by any of them. The sorting and the filters are the use case's, over
+ * type (`type_ids`, migration 0068), found again by any of them, and keeps the statuses and the window it narrowed by
+ * (`status`, `until`, migration 0070). The sorting and the filters are the use case's, over
  * what the store reads (`domain.ts`), so they are the same on both adapters and held by the unit suite. Run with
  * `bun run test:db` inside the devcontainer.
  */
@@ -225,5 +226,13 @@ describe('Kompetenssökning on Postgres (D121)', () => {
     const byEnglish = await competence.readLog({ organisationId: ORG, typeId: english, limit: 10 });
     expect(byEnglish.map(r => r.typeIds)).toEqual([[typeId, english]]);
     expect(await competence.readLog({ organisationId: ORG, typeId, limit: 10 })).toHaveLength(4);
+    // The filters it narrowed by are in its row (0070), and the log is read by them.
+    expect(
+      (await competence.readLog({ organisationId: ORG, status: 'valid', limit: 10 })).map(r => [r.status, r.until]),
+    ).toEqual([[['valid'], null]]);
+    await competence.exportSearch(registrar, { typeIds: [typeId], status: ['expired', 'valid'], until: 180 });
+    expect(await competence.readLog({ organisationId: ORG, until: 180, limit: 10 })).toMatchObject([
+      { kind: 'export', status: ['valid', 'expired'], until: 180 },
+    ]);
   });
 });

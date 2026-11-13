@@ -766,9 +766,12 @@ export function ownRow(
 export const uncounted = (holding: HoldingRecord) =>
   holding.copy !== null && holding.typeId === null && counts(holding);
 /**
- * What a person's standings add up to: how many have run out, how many required types they lack, how many soon run
- * out, and how many are registered (a missing type is no holding; a skill held below what is required, or not yet
- * confirmed, is registered and missing both, D120).
+ * What a person's standings add up to for their manager (`competence.person`, D97): how many requirements on them are
+ * not met now or soon (`requirementUnmet`, the one definition of what needs a manager, 2026-11-13), by where they
+ * stand: run out, missing, about to run out; and how many holdings are registered (a missing type is no holding; a
+ * skill held below what is required, or not yet confirmed, is registered and missing both, D120). A holding nothing
+ * requires of the person is registered and never counted as needing anything, whatever its status: their holdings say
+ * it, and their own card reminds them of it (`dueForHolder`).
  */
 export interface PersonSummary {
   expired: number;
@@ -776,8 +779,12 @@ export interface PersonSummary {
   expiring: number;
   holdings: number;
 }
-export function summarise(standings: readonly Standing[]): PersonSummary {
-  const count = (status: CompetenceStatus) => standings.filter(s => s.status === status).length;
+export function summarise(
+  standings: readonly Standing[],
+  required: ReadonlyMap<string, readonly string[]>,
+): PersonSummary {
+  const unmet = standings.filter(s => requirementUnmet(s, required));
+  const count = (status: CompetenceStatus) => unmet.filter(s => s.status === status).length;
   return {
     expired: count('expired'),
     missing: count('missing'),
@@ -786,8 +793,9 @@ export function summarise(standings: readonly Standing[]): PersonSummary {
   };
 }
 /**
- * The one status that stands for a person (D108 items 4 and 6), in the precedence of `COMPETENCE_STATUSES`: expired,
- * then missing, then expiring, then valid; `none` when they hold nothing and lack nothing.
+ * The one status that stands for a person (D108 items 4 and 6), in the precedence of `COMPETENCE_STATUSES`: a
+ * requirement run out, then one missing, then one about to run out; `valid` when no requirement needs anything and
+ * something is registered; `none` when they hold nothing and lack nothing.
  */
 export function personStatus(summary: PersonSummary): CompetenceStatus | 'none' {
   if (summary.expired) return 'expired';

@@ -122,15 +122,18 @@ const KeysSchema = Type.Object(
 );
 type Keys = Static<typeof KeysSchema>;
 /**
- * Where a person stands, in the word a person reads, in order of precedence (`personStatus`): something has run out,
- * something required is missing, something runs out soon, all is valid, nothing is registered. Only the first three have
- * a tone, so only they can be a mark. The statuses are the words every face of the register uses (`statusLabel`).
+ * Where a person stands for their manager, in the word a person reads, in order of precedence (`personStatus`): a
+ * requirement on them has run out, is missing, or runs out soon (`requirementUnmet`, the one definition of what needs
+ * a manager, 2026-11-13); else nothing needs doing; else nothing is registered. Only the first three have a tone, so
+ * only they can be a mark, and they are the words every face of the register uses (`statusLabel`). The fourth is not
+ * "Giltigt": a person whose only certificate has run out, and which nothing requires of them, is not marked, and their
+ * holdings say what has run out.
  */
 export const STANDING_WORDS = {
   expired: statusLabel('expired'),
   missing: statusLabel('missing'),
   expiring: statusLabel('expiring'),
-  valid: statusLabel('valid'),
+  valid: 'Inget att åtgärda',
   none: 'Inget registrerat',
 };
 export const PersonCompetenceRowSchema = Type.Object(
@@ -434,7 +437,7 @@ export function competenceConnector(
     // What it counts, the model reads row by row from `competence.attention` and `competence.holdings`.
     model: false,
     description:
-      'Var varje person du är chef för står: om något har gått ut, saknas eller går ut inom 90 dagar, och hur många kompetenser som är registrerade.',
+      'Om ett kompetenskrav på en person du är chef för inte är uppfyllt: om det som krävs har gått ut, saknas eller går ut inom 90 dagar.',
     input: KeysSchema,
     output: PersonCompetenceOutputSchema,
     view: personView,
