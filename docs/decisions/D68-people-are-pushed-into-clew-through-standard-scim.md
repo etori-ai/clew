@@ -45,7 +45,7 @@ written; where they differ from this paragraph, this paragraph holds.
   people (release the wrong holder). Before a name moves to another active person in Clew, the identity provider
   confirms the former account can no longer sign in with that claim. It gives the name to the new account once the
   provisioner verifies the intended person's SCIM id and user name. A swap uses a temporary name on both sides.
-  [Account-name handover](../guides/provisioning-for-operations.md#handing-an-account-name-to-another-person).
+  [Account-name handover](../guides/scim-sign-in-and-hosting.md#handing-an-account-name-to-another-person).
 
 **Why these choices.** They were taken in the work, as the product owner asked.
 

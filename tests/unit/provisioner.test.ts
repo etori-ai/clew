@@ -2621,15 +2621,28 @@ test('the profile guide changes one of two work numbers and one of two employmen
   ]);
 });
 
+test('the published SCIM object examples create an employee placement', async () => {
+  const { client, grantOf } = stack();
+  const guide = await Bun.file(new URL('../../docs/guides/provisioning-for-operations.md', import.meta.url)).text();
+  const examples = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)].map(match => match[1]!);
+  expect(examples).toHaveLength(3);
+  await client.request('POST', '/Groups', {
+    schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+    externalId: 'unit:100',
+    displayName: 'Kommunen',
+  });
+  const unit = await client.request('POST', '/Groups', JSON.parse(examples[0]!));
+  const anna = await client.request('POST', '/Users', JSON.parse(examples[1]!));
+  const membership = examples[2]!.replace("<Anna's Clew user ID>", anna.body.id);
+  await client.request('PATCH', '/Groups/' + unit.body.id, JSON.parse(membership));
+  expect(grantOf('anna.berg')).toMatchObject({ unitId: '110', role: 'employee' });
+});
+
 test('the published school walkthrough produces the printed output and the promised organisation', async () => {
   const { store, app, grantOf } = stack();
-  const guide = await Bun.file(new URL('../../docs/guides/provisioning-for-operations.md', import.meta.url)).text();
-  const excerpt = guide.slice(
-    guide.indexOf('### Try it by hand first'),
-    guide.indexOf('### What the daily comparison does'),
-  );
+  const guide = await Bun.file(new URL('../../docs/guides/scim-school-walkthrough.md', import.meta.url)).text();
   const blocks = (lang: string) =>
-    [...excerpt.matchAll(new RegExp('```' + lang + '\\n([\\s\\S]*?)\\n```', 'g'))].map(match => match[1]!);
+    [...guide.matchAll(new RegExp('```' + lang + '\\n([\\s\\S]*?)\\n```', 'g'))].map(match => match[1]!);
   const commands = blocks('bash'),
     output = blocks('text');
   expect(commands).toHaveLength(4);

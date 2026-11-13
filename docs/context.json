@@ -2670,7 +2670,8 @@
       "category": "integrator-guide",
       "headings": [
         "Your first integration",
-        "Extend it when needed"
+        "Extend it when needed",
+        "Provision a directory with SCIM"
       ]
     },
     {
@@ -2757,17 +2758,58 @@
     },
     {
       "path": "docs/guides/provisioning-for-operations.md",
-      "title": "Provisioning: what operations deliver",
+      "title": "SCIM objects and delivery order",
+      "category": "integrator-guide",
+      "headings": [
+        "1. Send units from root to leaf",
+        "2. Send people",
+        "3. Send placements, managers and permissions",
+        "Test the delivery"
+      ]
+    },
+    {
+      "path": "docs/guides/scim-directory-operations.md",
+      "title": "SCIM directory operations",
+      "category": "integrator-guide",
+      "headings": [
+        "The directory team: a provisioner",
+        "What Clew gives back"
+      ]
+    },
+    {
+      "path": "docs/guides/scim-rollout-questions.md",
+      "title": "SCIM rollout questions",
+      "category": "integrator-guide",
+      "headings": [
+        "Which source fields identify a person and a unit?",
+        "Who is responsible for each employee?",
+        "Who should be active in Clew?",
+        "Which profile data may colleagues see?",
+        "How will changes reach Clew?",
+        "Which account claim matches the SCIM userName?",
+        "Who provides the test address and credentials?",
+        "For a later municipal mapping",
+        "Not decided yet"
+      ]
+    },
+    {
+      "path": "docs/guides/scim-school-walkthrough.md",
+      "title": "SCIM school walkthrough",
+      "category": "integrator-guide",
+      "headings": [
+        "The school directory",
+        "Try it by hand first",
+        "Move an employee and deactivate a leaver"
+      ]
+    },
+    {
+      "path": "docs/guides/scim-sign-in-and-hosting.md",
+      "title": "SCIM sign-in and hosting",
       "category": "integrator-guide",
       "headings": [
         "Who delivers what",
-        "The example on this page",
-        "Answer these before anything is built",
-        "The directory team: a provisioner",
         "The identity provider team: sign-in",
-        "The hosting team: address, token and environments",
-        "What Clew gives back",
-        "Not decided yet"
+        "The hosting team: address, token and environments"
       ]
     },
     {
