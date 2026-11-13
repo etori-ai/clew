@@ -54,9 +54,15 @@
      `active: false`, and Administration › Användare shows the id where the user name stood. A filter on `userName` or
      `externalId` no longer finds it, and the source can push the same name and key again as a new person.
    - No key resolves to the erased person: neither the id nor any name they held (`userName` and `holders`, D116). A
-     card started about them can no longer be decided: the decision and its preview answer "Personen finns inte
-     längre i katalogen. Inget har skickats." and nothing reaches the ledger. An execution approved before the erasure
-     sends nothing: dispatch settles it with the reason `subject-changed` (D116 item 5).
+     card started from their menu with an `execute` keeps them by id, and its one action, the decision, can no longer
+     be taken: the decision and its preview answer "Personen finns inte längre i katalogen. Inget har skickats." and
+     nothing reaches the ledger. An execution approved from such a card before the erasure keeps its person
+     (`execution.subject`), and dispatch settles it with the reason `subject-changed` and sends nothing (D116 item 5).
+   - Every other card about the person keeps the actions its source wrote: a card a source pushed, and one started
+     from their menu with a `propose`, whose actions are the source's own (D116 item 4). Neither `subject-erase` nor
+     this script closes a card. Such an action can still be decided afterwards and is sent with the input the source
+     wrote, and an execution approved from one, before the erasure or after, keeps no person and is dispatched as
+     approved (see Limits).
    - It replaces the person's identifiers in the audit trail and the authentication log with `[erased]` and keeps every
      event: `userName` and `externalId` in the details of `scim.user.created`, `scim.user.replaced`,
      `scim.user.patched`, `scim.user.deactivated` and `scim.user.reactivated`; `value` and `subject` in the
@@ -110,10 +116,11 @@ retention means nothing without one.
 - Deleting the person's row: cards, audit rows, talks and executions point at the id, so the row is minimised in place
   and every reference stays valid.
 - The person's id as the erased record's user name. A stored id would be a user name like any other. It would resolve
-  to the erased person, so a card started about them could still be decided and sent with Clew's id where the source
-  expects a user name. A person whose id is their user name, as the development stack's sign-in personas written by
-  `scripts/auth-setup.ts` are, would keep the name, and the source's next push of it would be refused with 409. And the
-  id could equal another person's user name in another case, which the unique index refuses, so the erasure would fail.
+  to the erased person, so a card started from their menu with an `execute` could still be decided, and sent with
+  Clew's id where the source expects a user name. A person whose id is their user name, as the development stack's
+  sign-in personas written by `scripts/auth-setup.ts` are, would keep the name, and the source's next push of it would
+  be refused with 409. And the id could equal another person's user name in another case, which the unique index
+  refuses, so the erasure would fail.
 - Reading a user name that equals the person's id as none: it would take the user name from active people whose id is
   their user name, such as those personas.
 
@@ -128,12 +135,13 @@ longer leads to a name. For an organisation of several thousand employees, leave
 come back. Keeping the record until the organisation decides lets a returner be reactivated with their history, and the
 erase lets the organisation keep its own rules for each person who does not come back.
 
-The erased record stores no user name, so no key leads to the person any more: nothing started or approved about them
-before the erasure can reach a source under a name, and the name is free for the source to give again. Where a user
-name is shown, Clew reads the record as its id, as it reads any record without one. The identifiers in the audit trail
-become `[erased]` rather than `null`: the trail still shows that a value was there, a `null` keeps its own meaning (no
-binding before a first one, none after a release), and in the authentication log a row without an actor already means
-one that names nobody.
+The erased record stores no user name, so no key leads to the person any more: an action started from their menu with
+an `execute`, which Clew resolves to a user name when it is decided and checks again before it is sent, cannot reach a
+source under a name once they are erased, and the name is free for the source to give again. Where a user name is
+shown, Clew reads the record as its id, as it reads any record without one. The identifiers in the audit trail become
+`[erased]` rather than `null`: the trail still shows that a value was there, a `null` keeps its own meaning (no binding
+before a first one, none after a release), and in the authentication log a row without an actor already means one that
+names nobody.
 
 **Limits.**
 
@@ -149,6 +157,11 @@ one that names nobody.
   which can name the person; the operator's name typed into `identity.rebound` rows when the erased person ran
   rebinds; the source systems and the identity provider's account; and backups, server logs and traces. An operator
   removes these by hand, or the organisation's retention does.
+- No script closes a card whose actions a source wrote about an erased person: a card the source pushed, or one
+  started from their menu with a `propose`. It keeps the source's own actions with the input the source wrote, which
+  can name the person by the source's own key or by the user name the source was sent. Those actions can still be
+  decided after the erasure and are sent as written, and an execution approved from one is dispatched as approved.
+  Only a card started with an `execute`, and what was approved from it, is refused (item 3).
 
 **As built.** `removeExpiredSignIns` in `packages/db/src/auth.ts`; the job kind `sign-in-cleanup` and `scheduleCleanup`
 in `apps/server/src/scheduler/usecases.ts`; `startJobs` in `apps/server/src/composition/jobs.ts` and the binding in

@@ -98,9 +98,11 @@ creates its own; `tests/db/person-keys-upgrade.test.ts` creates a database of it
 A race between two writes is tested twice. In the unit suite the other write runs at the moment the use case takes its
 lock, through a store wrapped to run it there, as the K4 cases in `tests/unit/users-admin.test.ts` do for a mapping
 change and a SCIM write of its group. On PostgreSQL one transaction is held open while the other runs
-(`tests/db/postgres-scim-concurrency.test.ts`). A change to how a card's rows are keyed is tested on both paths that
-write them: the refresh worker in `tests/unit/refresh.test.ts` and the in-process scan in
-`tests/unit/entities-cards.test.ts`, as the cases for a change in the directory alone are.
+(`tests/db/postgres-scim-concurrency.test.ts`). A change to how a card's rows are keyed is tested on every path that
+writes them: the refresh worker in `tests/unit/refresh.test.ts`, the in-process scan in
+`tests/unit/entities-cards.test.ts` and a propose started from an entity's menu in
+`tests/unit/entities-actions.test.ts`. The cases for a change in the directory alone run on the first two, the paths
+that write a card's rows again.
 
 **Adapter fixtures.** `tests/unit/nextcloud.test.ts` parses recorded CalDAV responses. The same for any adapter:
 record the real answer once, test the translation to the port. Live runs against the system stay in the smoke

@@ -37,12 +37,13 @@ user name, so a rename separated a person from the cards about them and a reuse 
    gives the old name to someone else. After a reuse, only rows that arrive later reach the new holder. The cards about
    the leaver stay with the leaver's id. A change in the directory alone is no change of the work. A card's rows are
    resolved again when the source next sends them, but a draft without occurrences of its own is revised by Clew's
-   digest of what the source wrote, user names included, and not of the rows as resolved. A rename, a leaver or a
-   reused name therefore rewrites the rows without reopening the card, waking or cancelling its snooze or delivering it
-   again, and a card that was dismissed or has a receipt stays as it is. A source that changes the user name a row
-   carries has changed the work, and the card comes back. A draft with occurrences carries the source's own revision.
-   The scan that the unit suites run in process (`scanInto`) rewrites such rows too, and wakes a snoozed card only when
-   something other than the people its rows name has moved.
+   digest of what the source wrote, user names included, and not of the rows as resolved. A rename, a reused name or
+   an erasure in Clew's directory therefore rewrites the rows without reopening the card, waking or cancelling its
+   snooze or delivering it again, and a card that was dismissed or has a receipt stays as it is. A deactivation alone
+   rewrites nothing, since a deactivated person still holds their name (item 2). A source that changes the user name a
+   row carries has changed the work, and the card comes back. A draft with occurrences carries the source's own
+   revision. The scan that the unit suites run in process (`scanInto`) rewrites such rows too, and wakes a snoozed card
+   only when something other than the people its rows name has moved.
 4. **An action started about a person.** A card started from a person's menu keeps the person's id in the input property
    the capability names (`about.param`). Its topic, `started:<capability>:<digest>`, is made from that input, with the
    id in it and never the user name, so a reused name gives another card. Starting is refused with
@@ -62,9 +63,11 @@ user name, so a rename separated a person from the cards about them and a reuse 
      digest of what was approved ([D45](D45-approved-intent-precedes-source-dispatch.md),
      [D47](D47-occurrences-timers-and-attention-have-durable-identities.md)).
 5. **Dispatch checks the name.** A write that was already dispatched is read back first, as every write is. Before an
-   approved write is sent, dispatch compares the payload's user name with the user name the person holds now, both
-   folded (`stillNamed` in `apps/server/src/modules/executions/usecases.ts`). When the name is no longer the person's,
-   or the person holds none, as after an erasure
+   approved write that keeps its person (`execution.subject`, item 4) is sent, dispatch compares the payload's user name
+   with the user name the person holds now, both folded (`stillNamed` in
+   `apps/server/src/modules/executions/usecases.ts`). A write approved from an action its source wrote on a card, a
+   started propose's included, keeps no person and is not compared. When the name is no longer the person's, or the
+   person holds none, as after an erasure
    ([D117](D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
    item 3), nothing is sent. An execution never dispatched is settled `failed` with the reason `subject-changed`. One
    that was dispatched, and whose read-back found nothing, is settled `unknown` with that reason, since a replay would
@@ -72,7 +75,7 @@ user name, so a rename separated a person from the cards about them and a reuse 
    längre det användarnamn som beslutet gällde. Inget skickades. Fatta beslutet igen." or "Personen har inte längre det
    användarnamn som beslutet gällde, så åtgärden skickas inte igen. Utfallet behöver kontrolleras i källsystemet.". A
    failed one is decided again from its card, as a new decision, on the user name the person has then. Without the
-   people port, nothing about a person is ever dispatched.
+   people port, no write that keeps its person is ever dispatched.
 6. **The user name stays on the wire.** A source is asked about a person, and sent the person of an action, by the user
    name, compared without regard to case and in NFC, as
    [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 8 keys the talks. A
@@ -121,11 +124,11 @@ person, a request's span and its failure line carried it too, often a person's s
 The chosen rule does not depend on the order in which a provisioner pushes a rename and a reuse: Clew's records never
 move, and a row is placed by whoever holds its name when it arrives. Nobody is better than the wrong person: a row whose
 name has no single holder links nowhere, where a guess could put a leaver's case on a newcomer's page. Dispatch checks
-the name rather than resolving the id again, because an approved write carries what the person approved: a write is
-never sent about someone the person did not decide about. The cost is one more decision in the rare case that a name
-moves between the decision and the dispatch. A change in the directory alone is not counted as the source changing the
-work, since nothing about the work has moved: reopening a card, breaking its snooze or delivering it again would
-interrupt a person for a change that asks nothing of them.
+the name rather than resolving the id again, because an approved write carries what the person approved: a write that
+keeps its person is never sent about someone the person did not decide about. The cost is one more decision in the
+rare case that a name moves between the decision and the dispatch. A change in the directory alone is not counted as
+the source changing the work, since nothing about the work has moved: reopening a card, breaking its snooze or
+delivering it again would interrupt a person for a change that asks nothing of them.
 
 In an organisation of several thousand employees, renames are routine: a marriage, a corrected spelling, a new naming
 standard after a merger of administrations. Leavers' names come back with new staff, the common ones above all, and
