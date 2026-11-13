@@ -6,7 +6,7 @@ import {
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import type { UnitMember } from '../../apps/server/src/modules/calendar/model';
-import type { BookedElsewhere } from '../../apps/server/src/modules/calendar/usecases/booked';
+import { mayStillBeSent, type BookedElsewhere } from '../../apps/server/src/modules/calendar/usecases/booked';
 import { talksRound } from '../../apps/server/src/modules/calendar/adapters/talks-round';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
@@ -41,6 +41,17 @@ const command = (): CalendarCommand => ({
 const guest: UnitMember = { ref: 'guest', personId: 'guest', email: 'guest@clew.test', name: 'Guest' };
 /** The round a confirmation of drawn times was approved in, as `confirm` writes it into the command (M1). */
 const round = { opensOn: '2026-11-01', dueOn: '2026-11-30' };
+test('a retryable invitation holds its invitee through a blocked attempt until its approval expires', () => {
+  const expiresAt = '2026-11-06T12:00:00.000Z';
+  const invitation = { state: 'pending', reason: null, expiresAt, start: input.start };
+  for (const reason of [null, 'authority-revoked', 'source-unavailable', 'needs-session', 'source-contract-changed']) {
+    const blocked = { ...invitation, reason };
+    expect(mayStillBeSent(blocked, at, round)).toBe(true);
+    expect(mayStillBeSent(blocked, expiresAt, round)).toBe(false);
+  }
+  expect(mayStillBeSent({ ...invitation, state: 'failed' }, at, round)).toBe(false);
+  expect(mayStillBeSent({ ...invitation, state: 'unknown', reason: 'source-reset' }, at, round)).toBe(false);
+});
 function world(team: UnitMember[] = [guest], booked: BookedElsewhere = async () => new Set()) {
   let n = 0,
     now = Date.parse(at);

@@ -39,15 +39,16 @@ this paragraph, this paragraph holds.
   On PostgreSQL the approval projection adds a check of its own, which does not ask the rule
   (`apps/server/src/composition/execution-projection.ts`). Under a lock per invitee, it refuses a confirmation while
   another manager's approved invitation to the same person may still be sent: a proposal of that manager's that is
-  still `proposed`, with an execution that is running, pending without a reason or unknown, inside the approval's 24
-  hours ([D45](D45-approved-intent-precedes-source-dispatch.md)) and the period of this confirmation's round, whose
-  manager still has the person in their team. Whom that manager has is read from Clew's directory through the
-  approval's own transaction, one manager at a time, so that no approval holding a connection of the pool waits for a
-  second one (L1 of the review). Its refusal, after the person's name, is "bjuds redan in till ett
+  still `proposed`, with an execution that is running, pending or unknown, inside the approval's 24
+  hours ([D45](D45-approved-intent-precedes-source-dispatch.md)) and the period of this confirmation's round.
+  This reservation outlasts a team change: the former manager may regain the person and retry the same approval
+  before expiry. No directory lookup is needed to establish who owns the reservation. Its refusal, after the person's
+  name, is "bjuds redan in till ett
   utvecklingssamtal av en annan chef.". An invitation that Clew's own check refused right before sending, because the
   time or the room was not free or could not be read, was never sent: its row begins "Inget skickades:", the
-  execution settles `failed` and it holds nobody, and neither does a pending execution settled with a reason, such as
-  `authority-revoked`.
+  execution settles `failed` and it holds nobody. A pending execution with a reason still holds its reservation:
+  `authority-revoked` can describe a temporary team-read failure, and reconciliation can queue that same approval
+  again. A `source-reset` execution cannot retry and holds nobody. Expiry releases the reservation as well.
 - **The held mark (item 2).** Any current manager of the person marks the talk held, moves its day or undoes it, as
   the code did before. The audit rows `talks.held` and `talks.held_undone` name who acted. This is how a co-manager
   corrects a wrong mark.
@@ -81,9 +82,12 @@ this paragraph, this paragraph holds.
   another model and would hold the same conversation twice with the same person.
 - *A booking counts without its time.* A manager may not read another manager's calendar. Counting the booking
   without its time keeps a second planner from proposing a second talk and shows nobody the other manager's day.
-- *An invitation on its way holds its person only while it may still be sent.* Otherwise one refused before it was
-  sent, or stopped for good, would keep every other manager of the person refused until someone reconciled it by hand,
-  also after a reorganisation had given the person a new manager. The approval's 24 hours bound it (D45); a talk an
+- *An invitation on its way holds its person only while it may still be sent.* A terminal refusal or a source reset
+  releases it. A pending approval can retry even with a reason, so retaining its reservation avoids two live
+  invitations after reconciliation. Team loss alone cannot release it safely: the former manager may regain the
+  person and retry while the new manager's invitation is pending. A new manager may therefore wait until the old
+  approval's original 24-hour expiry (D45). This bounded delay avoids a second reservation owner or another dispatch
+  acquisition path. Confirmed bookings still count only for current managers. A talk an
   unknown invitation did send counts as booked once a check reads it back, as every booking does.
 - *The held mark stays open to every current manager.* It is one fact about the person, and a co-manager must be
   able to correct a wrong mark. The audit row says who changed it.

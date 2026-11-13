@@ -5,28 +5,21 @@ import { jobStart } from '@clew/db/jobs';
 import { receipt } from '@clew/connectors';
 import { ExecutionError, type Execution } from '../modules/executions/model';
 import type { CalendarCommand } from '../modules/calendar/usecases/decisions';
-import { invitingSentence, mayStillBeSent, type TeamsOf } from '../modules/calendar/usecases/booked';
+import { invitingSentence, mayStillBeSent } from '../modules/calendar/usecases/booked';
 import { timerTx } from '../threads/adapters/timer-postgres';
 import { reminderStart } from '../threads/domain';
 import { nextCheck } from '../modules/calendar/usecases/obligation';
 
 type Stage = 'approval' | 'update';
 /**
- * Whom another manager with an invitation on its way manages now (M1), read from Clew's own directory through this
- * transaction: it holds one of the pool's connections and the invitees' locks, so nothing in it may wait for a second
- * connection (L1). `composition/calendar.ts` binds it.
- */
-export type TeamsIn = (tx: Transaction) => TeamsOf;
-/**
  * The execution, visible card and audit commit through this same physical transaction. Never source I/O here, and no
  * read through another connection. The obligation timer and the receipt jobs it writes start their workflows in the
  * same transaction (D86), in the engine's application and queue named by `durable`; the composition root binds it, a
  * Postgres test binds its own.
  */
-export const projectExecution =
-  (durable: DurableQueue, teams: TeamsIn) => (tx: Transaction, e: Execution, stage: Stage) =>
-    project(tx, e, stage, durable, teams);
-async function project(tx: Transaction, e: Execution, stage: Stage, durable: DurableQueue, teams: TeamsIn) {
+export const projectExecution = (durable: DurableQueue) => (tx: Transaction, e: Execution, stage: Stage) =>
+  project(tx, e, stage, durable);
+async function project(tx: Transaction, e: Execution, stage: Stage, durable: DurableQueue) {
   if (!e.presentation) return;
   if (stage === 'approval' && e.presentation.newTitle && e.connector === 'calendar' && !e.compensates) {
     await tx.insert(schema.threads).values({
@@ -101,7 +94,7 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
       )
         throw new ExecutionError('Förslaget har ändrats. Läs om sidan.');
     }
-    await refuseInvitedElsewhere(tx, e, command, teams);
+    await refuseInvitedElsewhere(tx, e, command);
     if (!command.followup || command.followup.maxReminders !== 2 || command.followup.afterWorkdays !== 2)
       throw new ExecutionError('Ogiltig uppföljningsplan.');
     const [previousPolicy] = await tx
@@ -225,12 +218,11 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
  * the check in `confirm`, which sees only settled bookings. Here, under a transaction lock per invitee taken in one
  * order, a confirmation is refused while another manager's approved invitation to the same person may still be sent
  * (`mayStillBeSent`: being sent, waiting to be sent, or sent with its result unknown, inside its approval's 24 hours and
- * the period of this confirmation's round) by a manager who has the person in their team now, and the proposals it
- * takes are marked with its execution, so that the confirmation after it sees it. A booking that settled in the meantime
- * is caught when the invitation is sent. The directory is read only when such an invitation is found, and through this
- * transaction.
+ * the period of this confirmation's round). Team membership can change again before retry, so a temporary loss of
+ * membership cannot release a live approval. The proposals are marked with the execution in this transaction. A
+ * booking that settled in the meantime is checked again at dispatch.
  */
-async function refuseInvitedElsewhere(tx: Transaction, e: Execution, command: CalendarCommand, teams: TeamsIn) {
+async function refuseInvitedElsewhere(tx: Transaction, e: Execution, command: CalendarCommand) {
   const selected = command.items.filter(i => i.action === 'create');
   const invitees = [...new Set(selected.flatMap(i => (i.personId === undefined ? [] : [i.personId])))].sort();
   for (const id of invitees)
@@ -238,7 +230,6 @@ async function refuseInvitedElsewhere(tx: Transaction, e: Execution, command: Ca
   const found = invitees.length
     ? await tx
         .select({
-          owner: schema.proposals.personId,
           personId: schema.proposals.participantId,
           start: schema.proposals.start,
           state: schema.executions.state,
@@ -263,8 +254,7 @@ async function refuseInvitedElsewhere(tx: Transaction, e: Execution, command: Ca
       command.round,
     ),
   );
-  const managed = onItsWay.length ? await teams(tx)(onItsWay.map(r => r.owner)) : undefined;
-  const taken = new Set(onItsWay.filter(r => managed?.get(r.owner)?.has(r.personId)).map(r => r.personId));
+  const taken = new Set(onItsWay.map(r => r.personId));
   if (taken.size)
     throw new ExecutionError(
       invitingSentence(selected.filter(i => i.personId !== undefined && taken.has(i.personId)).map(i => i.label)),

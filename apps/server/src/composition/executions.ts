@@ -20,7 +20,7 @@ import { ledger } from './durable';
 import { reviewDocuments } from './documents';
 import { projectExecution } from './execution-projection';
 import { watchCardSink } from './watch-card';
-import { calendarApproval, calendarSource, invitationTeams } from './calendar';
+import { calendarApproval, calendarSource } from './calendar';
 import { personKeys } from './person-keys';
 import { calendarOperations, type CalendarCommand } from '../modules/calendar/usecases/decisions';
 
@@ -42,7 +42,7 @@ const place = (connector: string) => {
 };
 // Every approval starts its workflow inside the ledger's transaction (D86); there is no outbox loop behind it.
 export const executionStore = postgresExecutionStore({ seal: sealSecret, open: openSecret }, ledger, {
-  project: projectExecution(ledger, invitationTeams),
+  project: projectExecution(ledger),
   pushCard: watchCardSink(place, ledger),
 });
 const source: ExecutionSource = {

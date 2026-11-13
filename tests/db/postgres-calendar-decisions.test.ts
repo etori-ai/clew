@@ -12,10 +12,9 @@ import {
   calendarExecutionSource,
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
-import { bookedElsewhere, teamsOf } from '../../apps/server/src/modules/calendar/usecases/booked';
+import { bookedElsewhere } from '../../apps/server/src/modules/calendar/usecases/booked';
 import type { PlanningRound, UnitMember } from '../../apps/server/src/modules/calendar/model';
 import { projectExecution } from '../../apps/server/src/composition/execution-projection';
-import { invitationTeams } from '../../apps/server/src/composition/calendar';
 import { forgetTestWorkflows, testDurable } from './durable';
 import { sealSecret, openSecret } from '../../apps/server/src/auth-crypto';
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
@@ -33,17 +32,7 @@ const people: string[] = [],
   at = '2098-11-05T09:00:00.000Z';
 /** The directory: whom each manager of this file has in their team now, by the manager's id. */
 const teams = new Map<string, UnitMember[]>();
-/** The rows a test wrote to Clew's own directory, as Personal reads it: units, and the people placed on them. */
-const directory = { units: [] as string[], people: [] as string[] };
 afterAll(async () => {
-  const placed = [...people, ...directory.people];
-  if (placed.length) {
-    await database().delete(schema.assignments).where(inArray(schema.assignments.personId, placed));
-    await database().delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, placed));
-  }
-  if (directory.units.length) await database().delete(schema.units).where(inArray(schema.units.id, directory.units));
-  if (directory.people.length)
-    await database().delete(schema.people).where(inArray(schema.people.id, directory.people));
   if (people.length) {
     const executions = await database()
       .select()
@@ -71,11 +60,7 @@ afterAll(async () => {
   await forgetTestWorkflows();
   await closeDatabase();
 });
-/**
- * One manager's world. `teams` binds whom the approval's projection asks another manager manages: by default this
- * file's directory in memory, or the binding composition uses, over Clew's own directory tables.
- */
-async function world(options: { teams?: Parameters<typeof projectExecution>[1] } = {}) {
+async function world() {
   const id = 'calendar-test-' + randomUUID();
   people.push(id);
   await database().insert(schema.people).values({ id, name: 'Synthetic calendar test', organisationId: 'test' });
@@ -103,7 +88,6 @@ async function world(options: { teams?: Parameters<typeof projectExecution>[1] }
     name: 'Guest ' + n,
   }));
   teams.set(id, members);
-  const team = async (p: AuthenticatedContext) => teams.get(p.id) ?? [];
   // The open round, the other managers' identities for a person with two managers (M1), none by default; the time; and
   // the identity the ledger finds for this manager when it sends.
   const setting = {
@@ -111,13 +95,18 @@ async function world(options: { teams?: Parameters<typeof projectExecution>[1] }
     personas: new Map<string, AuthenticatedContext>(),
     now: at,
     current: actor,
+    teamUnavailable: false,
+  };
+  const team = async (p: AuthenticatedContext) => {
+    if (setting.teamUnavailable) throw new Error('directory unavailable');
+    return teams.get(p.id) ?? [];
   };
   const clock = () => new Date(setting.now);
   const round = async () => setting.round;
   const owners = { personaFor: async (id: string) => setting.personas.get(id) };
   const proposals = postgresProposalStore(testDurable);
   let failCommit = false;
-  const project = projectExecution(testDurable, options.teams ?? (() => teamsOf({ team, people: owners })));
+  const project = projectExecution(testDurable);
   const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, testDurable, async (tx, e, stage) => {
     await project(tx, e, stage);
     if (failCommit && e.state === 'succeeded') {
@@ -362,9 +351,9 @@ async function cardFor(w: Awaited<ReturnType<typeof world>>, member: UnitMember,
  * Two managers, A and B, of one person in the open round, each with a card drawn before either booked: each holds a time
  * for the shared person, A's on 11 November and B's on 12 November.
  */
-async function sharedPair(options: Parameters<typeof world>[0] = {}) {
-  const a = await world(options),
-    b = await world(options);
+async function sharedPair() {
+  const a = await world(),
+    b = await world();
   const key = 'shared-' + randomUUID();
   const shared: UnitMember = { personId: key, ref: key, email: key + '@example.test', name: 'Delad Medarbetare' };
   const round: PlanningRound = { label: 'Synthetic round', opensOn: '2098-11-01', dueOn: '2098-11-30', held: [] };
@@ -453,20 +442,50 @@ test('an invitation the dispatch refused because the time is no longer free was 
     'Delad Medarbetare har redan ett utvecklingssamtal bokat med en annan chef.',
   );
 });
-test('an approval whose manager lost the authority to send it before it was sent holds nobody (M1)', async () => {
-  const pair = await sharedPair(),
-    { a, b, shared } = pair;
-  const first = await pair.confirmA();
-  // A's grants change before the invitation is sent: the ledger settles it unsent, and nothing will send it.
-  a.setting.current = { ...a.actor, authorizationVersion: 'v2' };
-  await a.uc.progress(first.execution!.id);
-  expect(await a.store.read(first.execution!.id)).toMatchObject({ state: 'pending', reason: 'authority-revoked' });
-  const second = await pair.confirmB();
+test('a blocked approval keeps the invitee until its manager reconciles it and sends exactly one invitation', async () => {
+  const { a, b, shared, confirmA, confirmB } = await sharedPair();
+  const id = (await confirmA()).execution!.id;
+  // The execution's team check fails once. B still finds both managers in the directory.
+  a.setting.teamUnavailable = true;
+  await a.uc.progress(id);
+  a.setting.teamUnavailable = false;
+  expect(await a.store.read(id)).toMatchObject({ state: 'pending', reason: 'authority-revoked', dispatchedAt: null });
+  await expect(confirmB()).rejects.toThrow('Delad Medarbetare bjuds redan in');
+  await a.uc.reconcile(a.actor, id);
+  await a.uc.progress(id);
+  expect(await a.store.read(id)).toMatchObject({ state: 'succeeded' });
+  await expect(confirmB()).rejects.toThrow('Delad Medarbetare har redan ett utvecklingssamtal bokat');
+  expect(sentTo(a)).toEqual([[shared.email]]);
+  expect(sentTo(b)).toEqual([]);
+  const audit = await database()
+    .select()
+    .from(schema.audit)
+    .where(eq(schema.audit.subject, 'execution:' + id));
+  expect(audit.filter(row => row.action === 'execution.reconciliation_requested')).toHaveLength(1);
+  expect(audit.filter(row => row.action === 'execution.dispatched')).toHaveLength(1);
+});
+test('losing and regaining a team member cannot release a retryable invitation before expiry', async () => {
+  const { a, b, shared, confirmA, confirmB } = await sharedPair();
+  const id = (await confirmA()).execution!.id;
+  teams.set(
+    a.id,
+    a.members.filter(m => m.personId !== shared.personId),
+  );
+  await a.uc.progress(id);
+  expect(await a.store.read(id)).toMatchObject({ state: 'pending', reason: 'authority-revoked' });
+  await expect(confirmB()).rejects.toThrow('Delad Medarbetare bjuds redan in');
+  teams.set(a.id, a.members);
+  await expect(confirmB()).rejects.toThrow('Delad Medarbetare bjuds redan in');
+  a.setting.now = b.setting.now = new Date(Date.parse(at) + 24 * 3_600_000).toISOString();
+  const second = await confirmB();
+  await a.uc.reconcile(a.actor, id);
+  await a.uc.progress(id);
+  expect(await a.store.read(id)).toMatchObject({ state: 'failed', reason: 'approval-expired' });
   await b.uc.progress(second.execution!.id);
   expect(sentTo(a)).toEqual([]);
   expect(sentTo(b)).toEqual([[shared.email]]);
 });
-test('an invitation whose result is unknown holds the person for its approval’s 24 hours, inside its round, and while its manager manages them (M1)', async () => {
+test('an invitation whose result is unknown holds the person for its approval’s 24 hours, inside its round (M1)', async () => {
   /** A's invitation goes to the calendar, which loses the answer and has nothing to read back: it may have been sent. */
   async function uncertain() {
     const pair = await sharedPair();
@@ -484,42 +503,23 @@ test('an invitation whose result is unknown holds the person for its approval’
   await expect(held.confirmB()).rejects.toThrow(refusal);
   held.b.setting.now = new Date(Date.parse(at) + 24 * 3_600_000 + 60_000).toISOString();
   expect((await held.confirmB()).execution?.state).toBe('pending');
-  // A manager who no longer manages the person holds nothing for them.
+  // A team change cannot release an invitation whose outcome remains uncertain.
   const moved = await uncertain();
   teams.set(
     moved.a.id,
     moved.a.members.filter(m => m.personId !== moved.shared.personId),
   );
-  expect((await moved.confirmB()).execution?.state).toBe('pending');
-  // Nor does an invitation in another round than the one the confirmation is in.
+  await expect(moved.confirmB()).rejects.toThrow(refusal);
+  // A different round has its own reservation.
   const later = await uncertain();
   later.b.setting.round = { label: 'Next round', opensOn: '2098-12-01', dueOn: '2098-12-31', held: [] };
   const next = await cardFor(later.b, later.shared, '2098-12-10T09:00:00.000Z');
   expect((await later.b.decisions.confirm(later.b.actor, next, [next + ':shared'])).execution?.state).toBe('pending');
 });
-test('more approvals at once that find another manager’s invitation on its way than the pool has connections all finish: the directory is read through the approval’s own transaction (M1, L1)', async () => {
+test('concurrent approvals sharing invitee locks finish even when they outnumber the database connections', async () => {
   const refusal = 'Delad Medarbetare bjuds redan in till ett utvecklingssamtal av en annan chef.';
-  /**
-   * A pair whose manager A has the shared person on a unit in Clew's own directory, as Personal reads it, and whose
-   * approved invitation to them is unknown: it may still be sent, so B's confirmation must ask whom A manages.
-   */
   async function onItsWay() {
-    const pair = await sharedPair({ teams: invitationTeams });
-    const unit = 'unit-calendar-test-' + randomUUID();
-    directory.units.push(unit);
-    directory.people.push(pair.shared.personId);
-    const db = database();
-    await db
-      .insert(schema.people)
-      .values({ id: pair.shared.personId, organisationId: 'test', name: pair.shared.name, email: pair.shared.email });
-    await db.insert(schema.units).values({ id: unit, organisationId: 'test', label: 'Synthetic unit' });
-    await db.insert(schema.assignments).values([
-      { personId: pair.a.id, unitId: unit, role: 'manager' },
-      { personId: pair.shared.personId, unitId: unit, role: 'employee' },
-    ]);
-    await db
-      .insert(schema.accessGrants)
-      .values({ personId: pair.a.id, unitId: unit, unitLabel: 'Synthetic unit', role: 'manager', capabilities: [] });
+    const pair = await sharedPair();
     pair.a.provider.create = async () => {
       throw new Error('offline');
     };
@@ -533,17 +533,14 @@ test('more approvals at once that find another manager’s invitation on its way
     Promise.race([work, new Promise<'stuck'>(resolve => setTimeout(() => resolve('stuck'), 10_000))]);
   const reasons = (results: PromiseSettledResult<unknown>[]) =>
     results.map(r => (r.status === 'rejected' ? (r.reason as Error).message : 'approved'));
-  // Twice the pool's five connections, each B confirming while its A's invitation is on its way. Each approval holds a
-  // connection and its invitee's lock while it asks whom A manages: an ask that waited for a connection of its own would
-  // wait for good once five of them held every one.
+  // Twice the pool's five connections, each B confirming while its A's invitation is on its way.
   const pairs: Awaited<ReturnType<typeof onItsWay>>[] = [];
   for (let i = 0; i < 10; i++) pairs.push(await onItsWay());
   const all = await settled(Promise.allSettled(pairs.map(pair => pair.confirmB())));
   expect(all).not.toBe('stuck');
   if (all === 'stuck') return;
   expect(reasons(all)).toEqual(pairs.map(() => refusal));
-  // One card confirmed six times at once: the first approval asks while the other five wait for its lock, each holding a
-  // connection.
+  // Six confirmations of the same card also contend for the same invitee lock.
   const one = await onItsWay();
   const same = await settled(Promise.allSettled(Array.from({ length: 6 }, () => one.confirmB())));
   expect(same).not.toBe('stuck');
@@ -553,8 +550,4 @@ test('more approvals at once that find another manager’s invitation on its way
   for (const { b } of [...pairs, one])
     expect(await database().select().from(schema.executions).where(eq(schema.executions.personId, b.id))).toEqual([]);
   expect(await databaseAnswers(1000)).toBe(true);
-  // A leaves the unit and manages none: Personal's overview refuses inside the approval's transaction, A manages nobody,
-  // and B's confirmation is approved in the same transaction.
-  await database().delete(schema.assignments).where(eq(schema.assignments.personId, one.a.id));
-  expect((await one.confirmB()).execution?.state).toBe('pending');
 }, 60_000);

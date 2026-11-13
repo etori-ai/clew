@@ -22,23 +22,6 @@ export const within = (start: string, period: Period) => {
   return day >= period.opensOn && day <= period.dueOn;
 };
 /**
- * Whom each of these managers (person ids) has in their team now, by person id, read through the identity each has
- * now: a manager gone from the directory has nobody. A booking, or an invitation on its way, of a manager who has left
- * the person counts for nobody else (M1). One manager at a time, since the reads may share one connection: the
- * approval's projection asks through its own transaction (L1).
- */
-export type TeamsOf = (managerIds: readonly string[]) => Promise<ReadonlyMap<string, ReadonlySet<string>>>;
-export function teamsOf(deps: { team: Team; people: People }): TeamsOf {
-  return async managerIds => {
-    const teams = new Map<string, ReadonlySet<string>>();
-    for (const id of new Set(managerIds)) {
-      const manager = await deps.people.personaFor(id);
-      teams.set(id, new Set(manager ? (await deps.team(manager)).map(m => m.personId) : []));
-    }
-    return teams;
-  };
-}
-/**
  * Who among these people (person ids) another of their current managers booked through Clew inside the period: a
  * proposal in a booked status that someone other than the reader owns, starting on a day of the period, whose owner has
  * the person in their team now. A booking whose manager has left the person, or is gone from the directory, books
@@ -46,13 +29,16 @@ export function teamsOf(deps: { team: Team; people: People }): TeamsOf {
  */
 export type BookedElsewhere = (readerId: string, personIds: readonly string[], period: Period) => Promise<Set<string>>;
 export function bookedElsewhere(deps: { store: ProposalStore; team: Team; people: People }): BookedElsewhere {
-  const teams = teamsOf(deps);
   return async (readerId, personIds, period) => {
     if (!personIds.length) return new Set();
     const theirs = (await deps.store.bookedProposals(personIds)).filter(
       p => p.personId !== readerId && BOOKED.includes(p.status) && within(p.start, period),
     );
-    const owners = await teams(theirs.map(p => p.personId));
+    const owners = new Map<string, Set<string>>();
+    for (const id of new Set(theirs.map(p => p.personId))) {
+      const manager = await deps.people.personaFor(id);
+      if (manager) owners.set(id, new Set((await deps.team(manager)).map(m => m.personId)));
+    }
     return new Set(
       theirs.filter(p => owners.get(p.personId)?.has(p.participant.personId)).map(p => p.participant.personId),
     );
@@ -70,17 +56,14 @@ export interface InvitationOnItsWay {
   expiresAt: string;
 }
 /**
- * Whether an invitation on its way may still be sent, and so holds its invitee against a second one (M1, Q12): it is
- * being sent; it waits to be sent with nothing to stop it, which a pending execution settled with a reason does not; or
- * it was sent and its result is unknown. Each only inside the approval's 24 hours (D45), and inside the period of the
- * round the asking confirmation is in. A refused or expired approval holds nobody, and neither does one still unknown
- * after its 24 hours: a talk it did send counts as booked once a check reads it back.
+ * A pending invitation can be reconciled even when its last attempt was blocked. In particular, a temporary team
+ * read failure and withdrawn authority both record `authority-revoked`. Keep the invitee reserved for that approval
+ * while it is pending, running or unknown, inside its 24 hours (D45) and the round. A source reset fences every retry.
  */
 export const mayStillBeSent = (invitation: InvitationOnItsWay, at: string, period?: Period) =>
   Date.parse(at) < Date.parse(invitation.expiresAt) &&
-  (invitation.state === 'running' ||
-    invitation.state === 'unknown' ||
-    (invitation.state === 'pending' && invitation.reason === null)) &&
+  invitation.reason !== 'source-reset' &&
+  (invitation.state === 'pending' || invitation.state === 'running' || invitation.state === 'unknown') &&
   (!period || within(invitation.start, period));
 /** Why a drawn time left an open card (D30's judgement calls): a row's reason, never the other manager or the time. */
 export const BOOKED_ELSEWHERE = 'bokad av en annan chef';

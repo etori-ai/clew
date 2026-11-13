@@ -110,11 +110,7 @@ test('approval, card state and outcome are atomic; an uncertain undo preserves t
       updatedAt: new Date(at),
     });
   // A reference card has no invitation on its way to anyone (M1): nobody is asked whom they manage.
-  const store = postgresExecutionStore(
-    sealer,
-    testDurable,
-    projectExecution(testDurable, () => async () => new Map()),
-  );
+  const store = postgresExecutionStore(sealer, testDurable, projectExecution(testDurable));
   const persona: AuthenticatedContext = {
     id: w.personId,
     name: 'Test',

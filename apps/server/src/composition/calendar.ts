@@ -1,5 +1,4 @@
-import type { AuthenticatedContext, StaffOverview } from '@clew/contracts';
-import type { Transaction } from '@clew/db';
+import type { AuthenticatedContext } from '@clew/contracts';
 import { bindCalendar, type CalendarBinding } from '@clew/calendar/accounts';
 import { postgresProposalStore } from '../modules/calendar/adapters/postgres';
 import { durableObligations } from '../dbos/obligations';
@@ -7,8 +6,6 @@ import type { Notifier, People, RoundReader, Team } from '../modules/calendar/mo
 import { teamFromStaff } from '../modules/calendar/domain';
 import { ForbiddenError } from '../context';
 import { staff } from './people';
-import { staffUsecases } from '../modules/people/usecases';
-import { postgresProvisionStore } from '../modules/people/adapters/postgres';
 import { systemContext } from '../system-context';
 import { calendarUsecases } from '../modules/calendar/usecases/samtal';
 import { eventUsecases } from '../modules/calendar/usecases/events';
@@ -19,7 +16,7 @@ import {
   calendarExecutionSource,
   type CalendarDecisionDeps,
 } from '../modules/calendar/usecases/decisions';
-import { bookedElsewhere, teamsOf, type TeamsOf } from '../modules/calendar/usecases/booked';
+import { bookedElsewhere } from '../modules/calendar/usecases/booked';
 import { followupUsecases } from '../modules/calendar/usecases/followups';
 import { postgresFollowupStore } from './followup-store';
 import { ledger } from './durable';
@@ -45,17 +42,14 @@ const bind: CalendarBinder = (persona: AuthenticatedContext) => {
  * authorization version as the binding is: a colleague joining the unit does not change the manager's version. A person
  * who manages no unit has no team.
  */
-const teamOver =
-  (overview: (persona: AuthenticatedContext) => Promise<StaffOverview>): Team =>
-  async persona => {
-    try {
-      return teamFromStaff(await overview(persona), persona.id);
-    } catch (error) {
-      if (error instanceof ForbiddenError) return [];
-      throw error;
-    }
-  };
-const team = teamOver(staff.overview);
+const team: Team = async persona => {
+  try {
+    return teamFromStaff(await staff.overview(persona), persona.id);
+  } catch (error) {
+    if (error instanceof ForbiddenError) return [];
+    throw error;
+  }
+};
 /**
  * The open round, a slot like `notifier`: `index.ts` sets `planningRound.read` to read `clew.talks` through the registry
  * (D96 items 1-3), and a read that fails rejects. Until it does, there is no round, and the planner plans nothing.
@@ -90,18 +84,6 @@ const decisions = calendarDecisions({
  * talk.
  */
 export const calendarSource = calendarExecutionSource(bind, team, bookedElsewhere({ store, team, people }));
-/**
- * Whom another manager with an invitation on its way to a person manages now, for the approval's projection (M1): an
- * invitation of a manager who has left the person holds nothing for them. Read as `team` and `people` read it, from
- * Clew's own directory, but through the approval's own transaction: it holds a connection of the pool and the
- * invitees' locks, so a read that waited for a second connection could wait for good once every connection was held by
- * such an approval (L1).
- */
-export const invitationTeams = (tx: Transaction): TeamsOf =>
-  teamsOf({
-    team: teamOver(staffUsecases({ store: postgresProvisionStore(() => tx) }).overview),
-    people: { personaFor: id => systemContext(id, 'system:obligation', tx) },
-  });
 const core = calendarUsecases({
   store,
   bind,
