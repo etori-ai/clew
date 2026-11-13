@@ -1367,12 +1367,14 @@ export type OrganisationUsecases = ReturnType<typeof organisationUsecases>;
  * same id. Refused, writing nothing and no audit row, for an id the people table does not hold and for a person who is
  * still active: only a person the source has deactivated is erased (D68 item 1). In one transaction it takes the person
  * out of their groups, removes their placements, grant, sign-in bindings under every issuer and sessions, clears the
- * personal fields, replaces the user name with the id and drops the source key, so that a later push of the same name or
- * key creates a new person. It replaces the person's identifiers in the audit trail with `ERASED` and keeps every event:
- * the user names, source keys, claims and sign-in subjects the rows about them hold (`IDENTIFIERS_ABOUT`), the subject a
- * refused sign-in brought when the person held it (`IDENTIFIERS_AS_HOLDER`), and the claims of the authentication log
- * that named one of their user names or their e-mail address. The row, its id and every reference to it stay, so the
- * person's id keeps naming them in the records that point at it. One `person.erased` row, counts only, says what went.
+ * personal fields and takes the user name and the source key away (`erasedProfile`: the record then reads as its id),
+ * so that a later push of the same name or key creates a new person and no key resolves to this one, which refuses a
+ * started action about them (D116). It replaces the person's identifiers in the audit trail with `ERASED` and keeps
+ * every event: the user names, source keys, claims and sign-in subjects the rows about them hold (`IDENTIFIERS_ABOUT`),
+ * the subject a refused sign-in brought when the person held it (`IDENTIFIERS_AS_HOLDER`), and the claims of the
+ * authentication log that named one of their user names or their e-mail address. The row, its id and every reference to
+ * it stay, so the person's id keeps naming them in the records that point at it. One `person.erased` row, counts only,
+ * says what went.
  */
 export const PERSON_ERASED = 'person.erased';
 export interface PersonErased {
@@ -1425,8 +1427,9 @@ export function personErasureUsecases(deps: { store: ProvisionStore; clock: () =
           sessions = await tx.removeSessions(personId);
         await tx.rewriteAudit([...rewritten].map(([id, details]) => ({ id, details })));
         const signInRows = await tx.eraseClaims(namesHeld(person, about), ERASED);
-        // The resource a provisioner reads changes when a field is cleared or a group is no longer listed (S13).
-        if (fields || memberships) await tx.updateUser(personId, { ...erasedProfile(personId), updatedAt: at });
+        // The resource a provisioner reads changes when a field is cleared or a group is no longer listed (S13): a
+        // stale push that put the erased person back in a group is undone by a second erasure, which moves it too.
+        if (fields || memberships) await tx.updateUser(personId, { ...erasedProfile(), updatedAt: at });
         const erased: PersonErased = {
           fields,
           memberships,

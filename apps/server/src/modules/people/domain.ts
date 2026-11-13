@@ -405,31 +405,35 @@ export function namesHeld(
 }
 /**
  * A person's record as an erasure leaves it: no name, e-mail address, phone numbers, employments or title (the fields
- * D110 and D114 added among them), the user name replaced by the person's id and no source key, so that the name and
- * the key are free for someone else while the row, its id and every reference to it stay. The name column holds text,
- * so an erased name is the empty one.
+ * D110 and D114 added among them), no user name and no source key, so that the name and the key are free for someone
+ * else while the row, its id and every reference to it stay. The name column holds text, so an erased name is the empty
+ * one. A record without a user name reads as its id wherever a user name is shown or written back (the SCIM resource,
+ * `fieldsOf`, Administration › Användare): that is how the erasure replaces the user name with the id (D117). Stored as
+ * none, it is no key: neither the id nor a name the person held resolves to them (`UserReads.userName` and `holders`),
+ * so a started action about them is refused (D116), and it cannot collide with a name someone else holds. Storing the
+ * id instead made the id resolve as their user name, and kept the name of a person whose id is their user name.
  */
-export const erasedProfile = (id: string) => ({
+export const erasedProfile = () => ({
   name: '',
   email: null,
   phoneNumbers: [] as DirectoryPhone[],
   employments: [] as Employment[],
   title: null,
-  userName: id,
+  userName: null,
   externalId: null,
 });
 /** How many of the person's fields hold something their erasure clears: none once they have been erased. */
 export function heldFields(person: UserRecord): number {
   const held = (value: unknown) => (Array.isArray(value) ? value.length > 0 : value !== null && value !== '');
-  const personal = [
+  return [
     person.name,
     person.email,
     person.phoneNumbers,
     person.employments,
     person.title,
+    person.userName,
     person.externalId,
-  ];
-  return personal.filter(held).length + (person.userName !== null && person.userName !== person.id ? 1 : 0);
+  ].filter(held).length;
 }
 
 const need = (attribute: string): never => {

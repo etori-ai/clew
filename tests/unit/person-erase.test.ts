@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { SCIM } from '../../apps/server/src/modules/people/contracts';
 import { ERASED, IDENTIFIERS_ABOUT } from '../../apps/server/src/modules/people/domain';
+import type { ProvisionStore, ProvisionTx } from '../../apps/server/src/modules/people/ports';
 import { PERSON_ERASED, personErasureUsecases, scimUsecases } from '../../apps/server/src/modules/people/usecases';
+import { memoryPersonKeys } from '../person-keys';
 
 /**
  * An operator's erasure of a deactivated person (D117, Q7 of the 2026-11-12 users review) on the memory adapter: the
@@ -14,7 +16,8 @@ import { PERSON_ERASED, personErasureUsecases, scimUsecases } from '../../apps/s
 const BASE = 'https://clew.test/scim/v2';
 const OPERATOR = 'operator:cli';
 const ISSUER = 'https://idp.sundsvall.test',
-  OTHER_ISSUER = 'https://idp2.sundsvall.test';
+  OTHER_ISSUER = 'https://idp2.sundsvall.test',
+  THIRD_ISSUER = 'https://idp3.sundsvall.test';
 const user = (externalId: string, userName: string, displayName: string, email: string) => ({
   schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
   externalId,
@@ -41,13 +44,13 @@ function harness() {
   const scim = scimUsecases({ store, clock, ids: () => 'id-' + ++seq, digest: token => 'digest:' + token });
   const p = { id: 'metakatalogen', organisationId: 'sundsvall', label: 'Metakatalogen' };
   store.state.provisioners.set('digest:secret', p);
-  return { store, scim, p, erasure: personErasureUsecases({ store, clock }) };
+  return { store, scim, p, clock, erasure: personErasureUsecases({ store, clock }) };
 }
 /**
  * Anna as a source leaves her: pushed, renamed and given a new source key, given a title, phone numbers and an
- * employment, placed on a unit and in a plain group; bound under two issuers with two sessions, refused twice and
- * rebound once, and claimed by sign-ins that bound nobody. Bo is a colleague on the same unit, whose sign-in was refused
- * because it brought the subject Anna held.
+ * employment, placed on a unit and in a plain group; bound under two issuers with two sessions, refused twice, rebound
+ * once, bound first and released under a third issuer, and claimed by sign-ins that bound nobody. Bo is a colleague on
+ * the same unit, whose sign-in was refused because it brought the subject Anna held.
  */
 async function anna() {
   const h = harness(),
@@ -120,6 +123,26 @@ async function anna() {
       subject: 'person:' + id,
       details: { issuer: ISSUER, oldSubject: 'sub-anna', newSubject: 'sub-anna-3', operator: 'Synthetic Operator' },
     },
+    // A first binding has no subject before it, and a release none after it.
+    {
+      actor: OPERATOR,
+      action: 'identity.rebound',
+      subject: 'person:' + id,
+      details: { issuer: THIRD_ISSUER, oldSubject: null, newSubject: 'sub-anna-c', operator: 'Synthetic Operator' },
+    },
+    {
+      actor: OPERATOR,
+      action: 'identity.rebound',
+      subject: 'person:' + id,
+      details: { issuer: THIRD_ISSUER, oldSubject: 'sub-anna-c', newSubject: null, operator: 'Synthetic Operator' },
+    },
+    // A write to a row from before provisioning names its missing source key as the empty one (`fieldsOf`).
+    {
+      actor: 'provisioner:' + p.id,
+      action: 'scim.user.patched',
+      subject: 'person:' + id,
+      details: { changed: ['title'], userName: 'anna.berg', externalId: '' },
+    },
   );
   return { ...h, id, bo, unit, choir };
 }
@@ -133,6 +156,7 @@ const HER_VALUES = [
   '060-19 10 00',
   '070-123 45 67',
   'Lärare',
+  // Every subject of hers begins with it.
   'sub-anna',
 ];
 
@@ -163,13 +187,13 @@ describe('erasing a person (D117)', () => {
       grants: 1,
       bindings: 2,
       sessions: 2,
-      auditRows: 7,
+      auditRows: 10,
       signInRows: 3,
     };
     expect(erased).toEqual({ erased: counts });
     const at = store.state.users.get(id)!.updatedAt;
     expect(at > held.updatedAt).toBe(true);
-    // The row keeps its id, organisation, deactivation and creation; the user name is the id, and the source key gone.
+    // The row keeps its id, organisation, deactivation and creation; the user name and the source key are gone.
     expect(store.state.users.get(id)).toEqual({
       ...held,
       name: '',
@@ -177,10 +201,27 @@ describe('erasing a person (D117)', () => {
       phoneNumbers: [],
       employments: [],
       title: null,
-      userName: id,
+      userName: null,
       externalId: null,
       updatedAt: at,
     });
+    // A provisioner reads the id where the user name was, as for any record without one, and nothing else of hers.
+    expect(await scim.getUser(p, id, BASE)).toEqual({
+      schemas: [SCIM.user],
+      id,
+      userName: id,
+      displayName: '',
+      name: { formatted: '' },
+      emails: [],
+      active: false,
+      groups: [],
+      meta: { resourceType: 'User', created: held.createdAt, lastModified: at, location: `${BASE}/Users/${id}` },
+    });
+    // No key names her now: neither her id nor a name she held resolves to her (D116), so that nothing started about
+    // her can be decided or sent with her id in a user name's place.
+    const keys = memoryPersonKeys(store.state);
+    expect(await keys.userName(id)).toBeNull();
+    expect(await keys.holders(bo, [id, 'annber', 'anna.berg'])).toEqual(new Map());
     expect([...store.state.members].filter(key => key.endsWith('\u0000' + id))).toEqual([]);
     expect([...store.state.members].filter(key => key.endsWith('\u0000' + bo))).toHaveLength(1);
     expect([store.state.groups.get(unit.id)!.updatedAt, store.state.groups.get(choir.id)!.updatedAt]).toEqual([at, at]);
@@ -204,16 +245,21 @@ describe('erasing a person (D117)', () => {
     const rows = (action: string, subject = 'person:' + id) =>
       store.state.audit.filter(row => row.action === action && row.subject === subject).map(row => row.details);
     expect(rows('scim.user.created')).toEqual([{ userName: ERASED, externalId: ERASED }]);
+    // An empty source key held nothing, and stays as it was.
     expect(rows('scim.user.patched')).toEqual([
       { changed: ['externalId', 'userName'], userName: ERASED, externalId: ERASED },
+      { changed: ['title'], userName: ERASED, externalId: '' },
     ]);
     expect(rows('scim.user.deactivated')).toEqual([{ userName: ERASED, externalId: ERASED }]);
     expect(rows('identity.bound')).toEqual([{ issuer: ISSUER, claim: 'preferred_username' }]);
     expect(rows('identity.conflict')).toEqual([
       { issuer: ISSUER, claim: 'preferred_username', value: ERASED, subject: ERASED },
     ]);
+    // A rebind from no binding and a release to none still say so: a null held nothing.
     expect(rows('identity.rebound')).toEqual([
       { issuer: ISSUER, oldSubject: ERASED, newSubject: ERASED, operator: 'Synthetic Operator' },
+      { issuer: THIRD_ISSUER, oldSubject: null, newSubject: ERASED, operator: 'Synthetic Operator' },
+      { issuer: THIRD_ISSUER, oldSubject: ERASED, newSubject: null, operator: 'Synthetic Operator' },
     ]);
     // Bo's refused sign-in keeps his name and who held the subject, by id; the subject was Anna's account.
     expect(rows('identity.conflict', 'person:' + bo)).toEqual([
@@ -250,20 +296,100 @@ describe('erasing a person (D117)', () => {
     });
     expect(store.state.users.get(id)!.updatedAt).toBe(at);
 
-    // The name and the key are free: the source pushes them again as a new person, and the old one stays erased.
+    // The name and the key are free: the source pushes them again as a new person, whom the name now names, and the
+    // old one stays erased.
     const again = await scim.createUser(p, user('hr-anna', 'Anna.Berg', 'Anna Berg', 'anna.berg@sundsvall.se'), BASE);
     expect(again.id).not.toBe(id);
     expect((await scim.createUser(p, user('mk-anna', 'annber', 'Anna Berg', 'a@sundsvall.se'), BASE)).id).not.toBe(id);
-    expect(store.state.users.get(id)).toMatchObject({ userName: id, externalId: null, enabled: false });
+    expect(await keys.holders(bo, ['anna.berg'])).toEqual(new Map([['anna.berg', again.id]]));
+    expect(store.state.users.get(id)).toMatchObject({ userName: null, externalId: null, enabled: false });
   });
 
-  test('writes all of it or nothing: a write that fails late leaves everything as it was', async () => {
+  test('a second erasure takes the person out of a group a stale push put them back in, and moves their time of change (S13)', async () => {
+    const { store, scim, p, erasure, id, choir } = await anna();
+    await scim.deleteUser(p, id);
+    await erasure.erasePerson(OPERATOR, id);
+    const first = store.state.users.get(id)!.updatedAt;
+    // A push the source sent before it stopped sending her lists her in the choir again.
+    await scim.patchGroup(p, choir.id, patch({ op: 'add', path: 'members', value: [{ value: id }] }), BASE);
+    expect((await scim.getUser(p, id, BASE)).groups.map(g => g.value)).toEqual([choir.id]);
+    expect(await erasure.erasePerson(OPERATOR, id)).toEqual({
+      erased: {
+        fields: 0,
+        memberships: 1,
+        assignments: 0,
+        grants: 0,
+        bindings: 0,
+        sessions: 0,
+        auditRows: 0,
+        signInRows: 0,
+      },
+    });
+    // Her resource no longer lists the group, so its time of change is the erasure's, as the group's is.
+    const at = store.state.groups.get(choir.id)!.updatedAt;
+    expect(at > first).toBe(true);
+    expect([...store.state.members].filter(key => key.endsWith('\u0000' + id))).toEqual([]);
+    expect(store.state.users.get(id)!.updatedAt).toBe(at);
+    expect(await scim.getUser(p, id, BASE)).toMatchObject({ groups: [], meta: { lastModified: at } });
+  });
+
+  test("someone else holding the person's id as a user name, in any case, does not stop the erasure", async () => {
     const { store, scim, p, erasure, id } = await anna();
     await scim.deleteUser(p, id);
-    // Someone else holding the person's id as a user name is what the unique index refuses when the id takes its place.
-    await scim.createUser(p, user('mk-x', id, 'X', 'x@sundsvall.se'), BASE);
+    // A user name is the source's to choose. The erased record holds none, so nothing it holds can collide.
+    const other = (await scim.createUser(p, user('mk-x', id.toUpperCase(), 'X', 'x@sundsvall.se'), BASE)).id;
+    expect(await erasure.erasePerson(OPERATOR, id)).toMatchObject({ erased: { fields: 7 } });
+    expect(store.state.users.get(id)!.userName).toBeNull();
+    expect(store.state.users.get(other)!.userName).toBe(id.toUpperCase());
+  });
+
+  test('a person whose id is their user name, as the development stack writes its sign-in personas, gives it up too', async () => {
+    const { store, scim, p, erasure } = harness();
+    // `scripts/auth-setup.ts` writes such a row; the provisioner then writes to it by that id.
+    const T = '2026-11-01T00:00:00.000Z';
+    store.state.users.set('hillevi', {
+      id: 'hillevi',
+      organisationId: p.organisationId,
+      externalId: 'dev:hillevi',
+      userName: 'hillevi',
+      name: 'Hillevi Berg',
+      email: 'hillevi@clew.test',
+      phoneNumbers: [],
+      employments: [],
+      title: null,
+      enabled: false,
+      createdAt: T,
+      updatedAt: T,
+    });
+    // Name, e-mail, user name and source key.
+    expect(await erasure.erasePerson(OPERATOR, 'hillevi')).toMatchObject({ erased: { fields: 4 } });
+    expect(store.state.users.get('hillevi')).toMatchObject({ userName: null, externalId: null });
+    expect(await memoryPersonKeys(store.state).userName('hillevi')).toBeNull();
+    expect((await scim.getUser(p, 'hillevi', BASE)).userName).toBe('hillevi');
+    const again = await scim.createUser(p, user('dev:hillevi', 'hillevi', 'Hillevi Berg', 'hillevi@clew.test'), BASE);
+    expect(again.id).not.toBe('hillevi');
+  });
+
+  test('writes all of it or nothing: a write that fails last leaves everything as it was', async () => {
+    const { store, scim, p, clock, id } = await anna();
+    await scim.deleteUser(p, id);
     const before = structuredClone(store.state);
-    await expect(erasure.erasePerson(OPERATOR, id)).rejects.toThrow('duplicate key');
+    // The erasure's own audit row is its last write: when it fails, every write before it goes with it.
+    const failing: ProvisionStore = {
+      ...store,
+      transaction: <T>(work: (tx: ProvisionTx) => Promise<T>) =>
+        store.transaction(tx =>
+          work({
+            ...tx,
+            audit: async () => {
+              throw new Error('the audit row could not be written');
+            },
+          }),
+        ),
+    };
+    await expect(personErasureUsecases({ store: failing, clock }).erasePerson(OPERATOR, id)).rejects.toThrow(
+      'the audit row could not be written',
+    );
     expect(store.state).toEqual(before);
   });
 

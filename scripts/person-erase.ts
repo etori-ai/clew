@@ -8,15 +8,20 @@
  *
  *   bun scripts/person-erase.ts --person <person id> --confirm
  *
- * A person is named by their id, never by a user name. Refused, writing nothing and no audit row, for an id the people
- * table does not hold and for a person who is still active: the source deactivates a person first (D68 item 1). An
- * option given twice is refused too. In one transaction it takes the person out of their groups, removes their
- * placements, grant, sign-in bindings under every issuer and sessions, clears the name, e-mail address, phone numbers,
- * employments and title, replaces the user name with the person id and drops the source key, so that the source can
- * push the same name and key again as a new person. In the audit trail it replaces the user names, source keys, claims
- * and sign-in subjects that name the person with "[erased]" and keeps every event, and it writes one `person.erased`
- * row (actor `operator:cli`, about `person:<person id>`, counts only). The row, its id, its organisation and its
- * deactivation stay, so every record that points at the id stays valid. Run again, it finds nothing more to erase.
+ * A person is named by their id, never by a user name. A deactivated person has no page, and Administration › Användare
+ * shows their user name, so the id comes from the provisioner, which addresses the person by it (`/Users/<id>`), from
+ * a SCIM `GET /scim/v2/Users?filter=externalId eq "<source key>"` with its key, which answers a deactivated person
+ * too, or from `auth_person` by the source key. Refused, writing nothing and no audit row, for an id the people table
+ * does not hold and for a person who is still active: the source deactivates a person first (D68 item 1). An option
+ * given twice is refused too. In one transaction it takes the person out of their groups, removes their placements,
+ * grant, sign-in bindings under every issuer and sessions, clears the name, e-mail address, phone numbers, employments
+ * and title, and takes the user name and the source key away: the record then reads as its id, as one without a user
+ * name does, the source can push the same name and key again as a new person, and no name resolves to the erased
+ * person, so a card started about them can no longer be decided. In the audit trail it replaces the user names, source
+ * keys, claims and sign-in subjects that name the person with "[erased]" and keeps every event, and it writes one
+ * `person.erased` row (actor `operator:cli`, about `person:<person id>`, counts only). The row, its id, its
+ * organisation and its deactivation stay, so every record that points at the id stays valid. Run again, it finds
+ * nothing more to erase.
  */
 import { resolve } from 'node:path';
 import { closeDatabase } from '@clew/db';

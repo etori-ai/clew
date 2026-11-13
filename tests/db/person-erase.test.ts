@@ -30,7 +30,11 @@ process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
 const prefix = 'test-erase-' + randomUUID().slice(0, 8),
   org = prefix + '-org',
   provisioner = { id: prefix + '-mk', organisationId: org, label: 'Metakatalogen' },
-  [issuerA, issuerB] = ['https://idp-a.test/' + prefix, 'https://idp-b.test/' + prefix],
+  [issuerA, issuerB, issuerC] = [
+    'https://idp-a.test/' + prefix,
+    'https://idp-b.test/' + prefix,
+    'https://idp-c.test/' + prefix,
+  ],
   claim = 'preferred_username',
   OPERATOR = 'operator:cli',
   BASE = 'https://clew.test/scim/v2',
@@ -40,7 +44,7 @@ const prefix = 'test-erase-' + randomUUID().slice(0, 8),
   email = 'asa.berg.' + prefix + '@sundsvall.test',
   phones = ['060-' + prefix, '070-' + prefix],
   title = 'Lärare ' + prefix,
-  subjects = ['sub-asa-' + prefix, 'sub-asa-2-' + prefix, 'sub-asa-3-' + prefix, 'sub-asa-b-' + prefix],
+  subjects = ['sub-asa-', 'sub-asa-2-', 'sub-asa-3-', 'sub-asa-b-', 'sub-asa-c-'].map(name => name + prefix),
   boName = 'bo.ek.' + prefix;
 // The source pushes at one instant and the operator erases at a later one, so a time of change shows which moved it.
 const at = new Date('2026-11-13T08:00:00.000Z'),
@@ -228,9 +232,10 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
   const choir = await scim.createGroup(p, group('kor-' + prefix, 'Kören', [asa]), BASE);
 
   // As the sign-in writes it: Åsa binds under two issuers and Bo under one; Bo's claim arrives with Åsa's subject and
-  // is refused naming her as the holder; a new account of Åsa's is refused; an operator rebinds her; her old name,
-  // after the rename, binds nobody; and after the deactivation her new name, in capitals, binds nobody either.
-  const [subject, subject2, subject3, subjectB] = subjects as [string, string, string, string];
+  // is refused naming her as the holder; a new account of Åsa's is refused; an operator rebinds her, and binds her
+  // first and releases her under a third issuer; her old name, after the rename, binds nobody; and after the
+  // deactivation her new name, in capitals, binds nobody either.
+  const [subject, subject2, subject3, subjectB, subjectC] = subjects as [string, string, string, string, string];
   expect((await signIn(issuerA, subject, claim, renamed.userName)).personId).toBe(asa);
   expect((await signIn(issuerB, subjectB, claim, renamed.userName)).personId).toBe(asa);
   expect((await signIn(issuerA, 'sub-bo-' + prefix, claim, boName)).personId).toBe(bo);
@@ -244,6 +249,10 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
       operator: 'Synthetic Operator',
     }),
   ).toEqual({ changed: true, oldSubject: subject });
+  const rebind = (next: string | null) =>
+    rebindIdentity(OPERATOR, { issuer: issuerC, personId: asa, subject: next, operator: 'Synthetic Operator' });
+  expect(await rebind(subjectC)).toEqual({ changed: true, oldSubject: null });
+  expect(await rebind(null)).toEqual({ changed: true, oldSubject: subjectC });
   expect(await signIn(issuerA, 'sub-x-' + prefix, claim, first.userName)).toEqual({});
   await openSession(asa, 's1');
   await openSession(asa, 's2');
@@ -255,6 +264,12 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
   expect(await snapshot()).toEqual(active);
 
   await scim.deleteUser(p, asa);
+  // A deactivated person has no page, so the operator takes her id from the provisioner: a filter on the source key or
+  // the user name answers her as inactive, with the id the script is given.
+  for (const filter of [`externalId eq "${renamed.externalId}"`, `userName eq "${renamed.userName.toUpperCase()}"`])
+    expect((await scim.listUsers(p, { filter }, BASE)).Resources).toEqual([
+      expect.objectContaining({ id: asa, userName: renamed.userName, externalId: renamed.externalId, active: false }),
+    ]);
   expect(await signIn(issuerA, 'sub-y-' + prefix, claim, renamed.userName.toUpperCase())).toEqual({ personId: asa });
   // A user name in any case, and an id nobody holds, are nobody: refused, and nothing is written.
   const before = await snapshot();
@@ -275,8 +290,8 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     grants: 1,
     bindings: 2,
     sessions: 2,
-    // created, patched, replaced and deactivated; the refusal about her and the rebind; Bo's refusal she held.
-    auditRows: 7,
+    // Created, patched, replaced and deactivated; the refusal about her and the three rebinds; Bo's refusal she held.
+    auditRows: 9,
     signInRows: 2,
   };
   expect(await erasure.erasePerson(OPERATOR, asa)).toEqual({ erased: counts });
@@ -290,10 +305,18 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     phoneNumbers: [],
     employments: [],
     title: null,
-    userName: asa,
+    userName: null,
     externalId: null,
     updatedAt: erasedAt,
   });
+  // A provisioner reads her id where the user name was, as for any record without one.
+  const resource = await scim.getUser(p, asa, BASE);
+  expect(resource).toMatchObject({ id: asa, userName: asa, displayName: '', emails: [], active: false, groups: [] });
+  expect(resource).not.toHaveProperty('externalId');
+  // No key names her now: neither her id nor a name she held resolves to her, so nothing started about her is sent on.
+  const reads = postgresUserReads();
+  expect(await reads.userName(asa)).toBeNull();
+  expect(await reads.holders(bo, [asa, renamed.userName, first.userName])).toEqual(new Map());
   expect(after.people.find(row => row.id === bo)).toEqual(before.people.find(row => row.id === bo));
   expect(after.members).toEqual([{ groupId: unit.id, personId: bo }]);
   // The groups she left changed, as their members do (S13).
@@ -326,8 +349,11 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     { issuer: issuerB, claim },
   ]);
   expect(about('identity.conflict')).toEqual([{ issuer: issuerA, claim, value: '[erased]', subject: '[erased]' }]);
+  // A first binding still has no subject before it, and a release none after it.
   expect(about('identity.rebound')).toEqual([
     { issuer: issuerA, oldSubject: '[erased]', newSubject: '[erased]', operator: 'Synthetic Operator' },
+    { issuer: issuerC, oldSubject: null, newSubject: '[erased]', operator: 'Synthetic Operator' },
+    { issuer: issuerC, oldSubject: '[erased]', newSubject: null, operator: 'Synthetic Operator' },
   ]);
   // Bo's refused sign-in keeps his name and, by id, who held the subject; the subject was her account.
   expect(about('identity.conflict', bo)).toEqual([
@@ -373,15 +399,47 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     },
   });
 
-  // The source pushes the freed name and key again: a new person, in either spelling of the name.
+  // A push the source sent before it stopped sending her lists her in the choir again. A second erasure takes her out,
+  // and her resource no longer lists the group, so its time of change is that erasure's, as the choir's is (S13).
+  const pushedAt = new Date('2026-11-13T10:00:00.000Z'),
+    erasedAgainAt = new Date('2026-11-13T11:00:00.000Z');
+  await scimUsecases({ store, clock: () => pushedAt, ids, digest: token => 'digest:' + token }).patchGroup(
+    p,
+    choir.id,
+    patch({ op: 'add', path: 'members', value: [{ value: asa }] }),
+    BASE,
+  );
+  expect((await snapshot()).members.filter(m => m.personId === asa)).toEqual([{ groupId: choir.id, personId: asa }]);
+  expect(await personErasureUsecases({ store, clock: () => erasedAgainAt }).erasePerson(OPERATOR, asa)).toEqual({
+    erased: {
+      fields: 0,
+      memberships: 1,
+      assignments: 0,
+      grants: 0,
+      bindings: 0,
+      sessions: 0,
+      auditRows: 0,
+      signInRows: 0,
+    },
+  });
+  const erasedAgain = await snapshot();
+  expect(erasedAgain.members.filter(m => m.personId === asa)).toEqual([]);
+  expect(erasedAgain.people.find(row => row.id === asa)?.updatedAt).toEqual(erasedAgainAt);
+  expect(erasedAgain.groups.find(g => g.id === choir.id)?.updatedAt).toEqual(erasedAgainAt);
+
+  // The source pushes the freed name and key again: a new person, in either spelling of the name, whom it now names.
   const again = await scim.createUser(p, user(renamed, 'Åsa Lind', email), BASE);
   expect(again.id).not.toBe(asa);
   expect(
     (await scim.createUser(p, user({ ...first, userName: first.userName.toLowerCase() }, 'Åsa Berg', email), BASE)).id,
   ).not.toBe(asa);
+  expect(await reads.holders(bo, [renamed.userName])).toEqual(new Map([[renamed.userName, again.id]]));
   expect(
-    await db.select({ userName: schema.people.userName }).from(schema.people).where(eq(schema.people.id, asa)),
-  ).toEqual([{ userName: asa }]);
+    await db
+      .select({ userName: schema.people.userName, externalId: schema.people.externalId })
+      .from(schema.people)
+      .where(eq(schema.people.id, asa)),
+  ).toEqual([{ userName: null, externalId: null }]);
 
   // The erasures of cards, talks and competence, run first by the runbook, still find her by her id.
   const options = { durable: testDurable, cancel: async () => {} };
@@ -452,10 +510,27 @@ test('the script refuses an unknown id and an active person, erases a deactivate
       .where(eq(schema.audit.subject, 'person:' + id)),
   ).toEqual([{ action: 'scim.user.created' }]);
   await scim.deleteUser(p, id);
+  // Someone else's user name that is her id in another case: the index folds it as it would the id, but the erased
+  // record holds no user name, so nothing collides.
+  const other = (
+    await scim.createUser(
+      p,
+      user({ userName: id.toUpperCase(), externalId: 'mk-x-' + prefix }, 'X', 'x.' + prefix + '@sundsvall.test'),
+      BASE,
+    )
+  ).id;
   expect(run(id)).toEqual({
     code: 0,
     out: `Erased person "${id}": 4 personal fields cleared; 0 memberships, 0 placements, 0 grants, 0 sign-in bindings and 0 sessions removed; 2 audit rows and 0 sign-in log rows cleared of their identifiers. Audited as person:${id}.`,
     err: '',
+  });
+  const names = await db
+    .select({ id: schema.people.id, userName: schema.people.userName })
+    .from(schema.people)
+    .where(inArray(schema.people.id, [id, other]));
+  expect(Object.fromEntries(names.map(row => [row.id, row.userName]))).toEqual({
+    [id]: null,
+    [other]: id.toUpperCase(),
   });
   expect(run(id)).toEqual({
     code: 0,
