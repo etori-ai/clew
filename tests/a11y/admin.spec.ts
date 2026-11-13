@@ -481,6 +481,63 @@ test.describe('administration', () => {
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Sparat'));
       await expectNoAxeViolations(page);
     });
+    test('the audience editor says that units and groups are on their way or could not be read, never that there are none', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      const release = api.holdAudienceLists();
+      // The reads are held, so the page is opened without waiting for the network to settle.
+      await page.goto('/admin/connectors/finance');
+      await page.getByRole('tab', { name: 'Vem ser det' }).click();
+      const panel = page.getByRole('tabpanel', { name: 'Vem ser det' });
+      const units = panel.getByRole('combobox', { name: 'Enheter' });
+      const groups = panel.getByRole('combobox', { name: 'Grupper' });
+      // On their way: both fields are busy, and neither says anything about what it has not read.
+      await expect(units).toHaveAttribute('aria-busy', 'true');
+      await expect(groups).toHaveAttribute('aria-busy', 'true');
+      await expect(groups).toBeEnabled();
+      await expect(panel).not.toContainText(/Inga enheter|Inga grupper|Grupper visas när|kunde inte läsas/);
+      // Both reads fail, the second time too: each field says that its list could not be read, the unit field aloud
+      // when it is opened, and the group field, which has nothing to offer, in its place and as its reason.
+      api.audienceListsFail = true;
+      release();
+      await expect(groups).toBeDisabled();
+      await expect(groups).toContainText('Grupperna kunde inte läsas.');
+      await expect(groups).toHaveAccessibleDescription('Grupperna kunde inte läsas.');
+      await units.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('listbox')).toHaveText('Enheterna kunde inte läsas.');
+      await expect.poll(() => announcements(page)).toContainEqual('Enheterna kunde inte läsas.');
+      await page.keyboard.press('Escape');
+      await expect(panel).not.toContainText(/Inga enheter|Inga grupper|Grupper visas när/);
+      expect(await announcements(page)).not.toContainEqual('Inga enheter');
+      // The unit the saved audience names is still in it, by its id.
+      await expect(units).toContainText('unit-skola');
+      await expectNoAxeViolations(page);
+    });
+    test('the audience editor says that there are no units or groups when its reads hold none, never that they could not be read', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.audienceUnits = [];
+      api.audienceGroups = [];
+      await open(page, '/admin/connectors/finance');
+      await page.getByRole('tab', { name: 'Vem ser det' }).click();
+      const panel = page.getByRole('tabpanel', { name: 'Vem ser det' });
+      const groups = panel.getByRole('combobox', { name: 'Grupper' });
+      await expect(groups).toBeDisabled();
+      await expect(groups).toContainText('Inga grupper provisionerade');
+      await expect(groups).toHaveAccessibleDescription('Grupper visas när katalogen har provisionerat dem genom SCIM.');
+      await panel.getByRole('combobox', { name: 'Enheter' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('listbox')).toHaveText('Inga enheter');
+      await expect.poll(() => announcements(page)).toContainEqual('Inga enheter');
+      await page.keyboard.press('Escape');
+      await expect(panel).not.toContainText('kunde inte läsas');
+      expect(await announcements(page)).not.toContainEqual(expect.stringContaining('kunde inte läsas'));
+    });
   });
 
   test.describe('1.4.10 reflow', () => {

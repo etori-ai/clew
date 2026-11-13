@@ -49,7 +49,6 @@ const tabs: Array<{ id: TabId; label: string }> = [
   { id: 'publik', label: 'Vem kan välja den' },
   { id: 'historik', label: 'Historik' },
 ];
-const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 type Draft = Pick<ModelDetail, 'title' | 'description' | 'model'>;
 
 export function AdminModelPage({ user }: { user: SessionUser }) {
@@ -58,8 +57,8 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery('(max-width: 720px)');
   const client = useQueryClient();
   const detail = useQuery(adminQueries.model(id));
-  const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
-  const groups = useQuery(adminQueries.groups).data?.groups ?? EMPTY_UNITS;
+  const units = useQuery(adminQueries.units);
+  const groups = useQuery(adminQueries.groups);
   const m = detail.data ?? null;
   const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
   const readError =
