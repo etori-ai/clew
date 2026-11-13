@@ -99,6 +99,7 @@ import type {
   CompetenceDecision,
   CompetenceOwnOutput,
   CompetenceSkillBody,
+  CompetenceSkillChangeBody,
   CompetenceSkillRatingBody,
   CompetenceSkillValidation,
   CompetenceValidationBody,
@@ -290,8 +291,11 @@ export const api = {
     withdrawOwn: (id: string) => del<void>(`/api/competence/own/holdings/${encodeURIComponent(id)}`),
     /** The reader removes their own registration that their manager rejected. */
     removeRejected: (id: string) => del<void>(`/api/competence/own/rejected/${encodeURIComponent(id)}`),
-    /** The reader rates a skill of their own (D120): stored at once; rating one they hold again changes it. */
+    /** The reader adds a skill of their own (D120): stored at once as their own rating; one they hold is refused. */
     rateOwnSkill: (body: CompetenceSkillRatingBody) => post<{ id: string }>('/api/competence/own/skills', body),
+    /** The reader changes a skill of their own: its level and the interest mark. */
+    changeOwnSkill: (id: string, body: CompetenceSkillChangeBody) =>
+      put<void>(`/api/competence/own/skills/${encodeURIComponent(id)}`, body),
     /** The reader removes a skill of their own. */
     removeOwnSkill: (id: string) => del<void>(`/api/competence/own/skills/${encodeURIComponent(id)}`),
     /** A manager registers a skill for a person who reports to them, confirmed at once. */

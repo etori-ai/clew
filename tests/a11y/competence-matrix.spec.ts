@@ -589,7 +589,8 @@ test.describe('Kompetens › Medarbetare', () => {
       const control = cell(page, 'Journalsystem', 'Anna Lindqvist');
       await tabTo(page, control);
       await page.keyboard.press('Enter');
-      await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Bekräfta nivå', 'Återkalla färdigheten']);
+      // Her own rating is hers to remove: the manager confirms it, and has no revocation to offer.
+      await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Bekräfta nivå']);
       await expect(page.getByRole('menuitem', { name: 'Bekräfta nivå' })).toBeFocused();
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL(`${MATRIX}?validate=h-anna-journal`);
@@ -617,10 +618,15 @@ test.describe('Kompetens › Medarbetare', () => {
       await expect(at('Anna Lindqvist')).toContainText('Självständig');
       await expect(at('Anna Lindqvist')).not.toContainText('Saknas');
       await expect(control).toBeFocused();
-      // Confirmed, the cell offers to change the level.
+      // Confirmed, the cell offers to change the level, in a dialog titled as the row that opens it.
       await page.keyboard.press('Enter');
       await expect(page.getByRole('menuitem', { name: 'Ändra nivå' })).toBeFocused();
+      await page.keyboard.press('Enter');
+      const change = page.getByRole('dialog', { name: 'Ändra nivå' });
+      await expect(change.getByRole('button', { name: 'Ändra nivå' })).toBeVisible();
       await page.keyboard.press('Escape');
+      await expect(change).toBeHidden();
+      await expect(control).toBeFocused();
     });
 
     test('from a cold address the confirmation opens over the matrix and Esc closes it to the heading; one the reader may not confirm opens nothing', async ({
@@ -655,6 +661,7 @@ test.describe('Kompetens › Medarbetare', () => {
       await tabTo(page, control);
       await page.keyboard.press('Enter');
       await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Registrera färdighet']);
+      await expect(page.getByRole('menuitem', { name: 'Registrera färdighet' })).toBeFocused();
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL(`${MATRIX}?register=lena&competence=t-journal`);
       const dialog = page.getByRole('dialog', { name: 'Registrera färdighet' });

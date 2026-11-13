@@ -67,6 +67,7 @@ import type {
   CompetenceHoldingBody,
   CompetenceOwnOutput,
   CompetenceSkillBody,
+  CompetenceSkillChangeBody,
   CompetenceSkillRatingBody,
   CompetenceSkillValidation,
   CompetenceValidationBody,
@@ -1080,32 +1081,52 @@ export class MockApi {
         return route.fulfill({ status: 204, body: '' });
       }
     }
-    // Skills (D120): the reader's own rating, changed by rating again, and removed; a manager's registration and
-    // confirmation from the matrix, which change the cell as the server's would.
+    // Skills (D120): the reader's own rating, added once, changed by its holding and removed; a manager's registration
+    // and confirmation from the matrix, which change the cell as the server's would.
     if (path === '/competence/own/skills' && route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as CompetenceSkillRatingBody;
+      if (this.competenceOwn.skills.some(k => k.typeId === body.typeId))
+        return route.fulfill({
+          status: 400,
+          json: { error: 'Du har redan den färdigheten. Ändra nivån under Färdigheter i stället.' },
+        });
       this.skillWrites.push({ method: 'POST', path, body });
-      const held = this.competenceOwn.skills.find(k => k.typeId === body.typeId);
       const type = this.competenceTypes?.find(t => t.id === body.typeId);
-      const id = held?.holdingId ?? 'skill-' + this.skillWrites.length;
-      const next = {
-        holdingId: id,
-        typeId: body.typeId,
-        competence: type?.name ?? body.typeId,
-        area: type?.area ?? '',
-        level: body.level,
-        validated: !!held?.validated && held.level === body.level,
-        interest: body.interest,
-      };
+      const id = 'skill-' + this.skillWrites.length;
       this.competenceOwn = {
         ...this.competenceOwn,
-        skills: held
-          ? this.competenceOwn.skills.map(k => (k.holdingId === id ? next : k))
-          : [...this.competenceOwn.skills, next],
+        skills: [
+          ...this.competenceOwn.skills,
+          {
+            holdingId: id,
+            typeId: body.typeId,
+            competence: type?.name ?? body.typeId,
+            area: type?.area ?? '',
+            level: body.level,
+            validated: false,
+            interest: body.interest,
+          },
+        ],
       };
-      return json({ id });
+      return route.fulfill({ status: 201, json: { id } });
     }
     const ownSkill = /^\/competence\/own\/skills\/([^/]+)$/.exec(path);
+    if (ownSkill && route.request().method() === 'PUT') {
+      const id = decodeURIComponent(ownSkill[1]!);
+      const body = route.request().postDataJSON() as CompetenceSkillChangeBody;
+      const held = this.competenceOwn.skills.find(k => k.holdingId === id);
+      if (!held) return route.fulfill({ status: 403, json: { error: 'Du har ingen sådan färdighet.' } });
+      this.skillWrites.push({ method: 'PUT', path, body });
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        skills: this.competenceOwn.skills.map(k =>
+          k.holdingId === id
+            ? { ...k, level: body.level, interest: body.interest, validated: k.validated && k.level === body.level }
+            : k,
+        ),
+      };
+      return route.fulfill({ status: 204, body: '' });
+    }
     if (ownSkill && route.request().method() === 'DELETE') {
       const id = decodeURIComponent(ownSkill[1]!);
       this.skillWrites.push({ method: 'DELETE', path });

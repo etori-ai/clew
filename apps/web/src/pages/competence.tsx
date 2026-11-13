@@ -178,7 +178,7 @@ function Skills({
                     id: 'skill',
                     title: row.competence,
                     items: [
-                      { id: 'change', label: 'Ändra', href: skillHref(row.holdingId, search) },
+                      { id: 'change', label: 'Ändra nivå', href: skillHref(row.holdingId, search) },
                       { id: 'remove', label: 'Ta bort', onClick: () => onRemove(row) },
                     ],
                   },
@@ -263,6 +263,17 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   const open = adding(search) && !off;
   const changing = skillOf(search);
   const changed = off ? undefined : skills.find(s => s.holdingId === changing);
+  // An address for a skill the reader does not hold now (another's, one removed, one that never was) opens nothing:
+  // the page says why where it says a refusal, and lets go of the address (D83 rule 7).
+  const [refusal, setRefusal] = useState<string | null>(null);
+  useEffect(() => {
+    if (!changing || !own.isSuccess || changed || off) return;
+    setRefusal('Du har ingen sådan färdighet att ändra.');
+    navigate(withoutSkill(search), { replace: true });
+  }, [changing, own.isSuccess, changed, off]);
+  useEffect(() => {
+    if (changed || adding(search)) setRefusal(null);
+  }, [changed, search]);
   const [removing, setRemoving] = useState<CompetenceOwnSkill | null>(null);
   const [focusAfter, setFocusAfter] = useState<'add' | 'pending' | 'rejected' | { skill: string } | null>(null);
   useEffect(() => {
@@ -349,9 +360,9 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
                   hasTabs={manages && !off}
                   {...(actions ? { end: actions } : {})}
                 />
-                {(withdraw.error ?? remove.error) && (
+                {(withdraw.error ?? remove.error ?? refusal) && (
                   <Text as="p" role="alert" color="accent">
-                    {withdraw.error ?? remove.error}
+                    {withdraw.error ?? remove.error ?? refusal}
                   </Text>
                 )}
                 {off ? (
@@ -433,6 +444,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
       <AddOwnHolding
         isOpen={open}
         approver={own.data?.approver}
+        held={skills.map(k => k.typeId)}
         onClose={() => {
           navigate(withoutAdd(search));
           setFocusAfter('add');

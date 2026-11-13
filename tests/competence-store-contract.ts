@@ -80,6 +80,7 @@ export const holdingRow = (
   interest: false,
   validatedBy: null,
   validatedAt: null,
+  ratedAt: null,
   ...extra,
 });
 /** A row copied from a source (D108 item 9): evidence `system`, nobody who registered it, the source's ids and label. */
@@ -420,6 +421,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         evidence: 'self',
         registeredBy: w.anna,
         level: 2,
+        ratedAt: T,
         ...extra,
       });
 
@@ -447,12 +449,13 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           evidence: 'self',
           registeredBy: w.anna,
           issuedOn: '2026-11-11',
+          ratedAt: T2,
           validatedBy: null,
           validatedAt: null,
         }),
       );
       expect(await w.store.transaction(tx => tx.holding(w.p + '-h1'))).toEqual(
-        skill(w, 'h1', 's1', { level: 1, issuedOn: '2026-11-11' }),
+        skill(w, 'h1', 's1', { level: 1, issuedOn: '2026-11-11', ratedAt: T2 }),
       );
       // A manager's registration: evidence `manager`, confirmed by them.
       await w.store.transaction(tx =>
@@ -520,6 +523,9 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         skill(w, 'x7', 's1', { validatedBy: w.boss }),
         holdingRow(w.p + '-x8', w.anna, w.p + '-t1', { validatedAt: T2 }),
         holdingRow(w.p + '-x9', w.anna, w.p + '-t1', { interest: true }),
+        // A skill has when it was rated, and nothing else has one.
+        skill(w, 'x10', 's1', { ratedAt: null }),
+        holdingRow(w.p + '-x11', w.anna, w.p + '-t1', { ratedAt: T2 }),
       ])
         expect(await refused(() => w.store.transaction(tx => tx.insertHolding(row)))).toBeDefined();
       expect(await w.store.transaction(tx => tx.holdingsOf([w.anna]))).toEqual([]);

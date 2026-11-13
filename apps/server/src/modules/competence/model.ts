@@ -105,6 +105,12 @@ export interface HoldingRecord {
    */
   validatedBy: string | null;
   validatedAt: string | null;
+  /**
+   * When a skill's level was last set by a rating, the person's own or a manager's registration (not by a confirmation,
+   * which is `validatedAt`): set on every skill, null on every other kind. A required skill that stops meeting its
+   * requirement begins a new spell at this moment or at its confirmation, so its card is issued again (D108 item 12).
+   */
+  ratedAt: string | null;
 }
 export type HoldingPatch = Partial<
   Pick<
@@ -118,6 +124,7 @@ export type HoldingPatch = Partial<
     | 'interest'
     | 'validatedBy'
     | 'validatedAt'
+    | 'ratedAt'
     | 'evidence'
     | 'registeredBy'
     | 'issuedOn'
@@ -258,7 +265,7 @@ export interface Erased {
 }
 /**
  * The whole domain for one organisation (D108 item 14), copied rows, the mappings of sources, the requirements and the
- * share targets included; the use case turns it into `clew.competence/6`.
+ * share targets included; the use case turns it into `clew.competence/7`.
  */
 export interface CompetenceExport {
   types: TypeRecord[];

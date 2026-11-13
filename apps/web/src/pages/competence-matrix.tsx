@@ -547,7 +547,8 @@ function ApprovalDialog({
 /**
  * The confirmation of a report's skill (D120 item 2), a dialog over the matrix named in the address
  * (`validate=<holding id>`): who holds it, which skill, the level they or a manager set and whether it is their own
- * rating, and the level to confirm, preset to the one held. "Bekräfta nivå" confirms it at the level chosen. The
+ * rating, and the level to confirm, preset to the one held. "Bekräfta nivå" confirms it at the level chosen; for a
+ * skill already confirmed the dialog and its button are "Ändra nivå", as the cell's menu row that opens it. The
  * server's refusal is said beside the buttons. Open while `skill` is given.
  */
 function SkillDialog({
@@ -580,7 +581,7 @@ function SkillDialog({
       <DialogFrame
         header={
           <DialogHeader
-            title="Bekräfta nivå"
+            title={skill?.validated ? 'Ändra nivå' : 'Bekräfta nivå'}
             subtitle={skill ? `${skill.competence} för ${skill.name}` : undefined}
             onOpenChange={onOpenChange}
           />
@@ -592,7 +593,7 @@ function SkillDialog({
             <Button
               size="sm"
               variant="primary"
-              label="Bekräfta nivå"
+              label={skill?.validated ? 'Ändra nivå' : 'Bekräfta nivå'}
               isLoading={busy}
               onClick={() => level !== null && void onConfirm(level)}
             />

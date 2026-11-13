@@ -391,12 +391,13 @@ export const ownEnglish = (): CompetenceOwnSkill => ({
 export const withJournal = (m: CompetenceMatrixOutput): CompetenceMatrixOutput => {
   const asked = { required: true, through: [onPosition], least: 2 as const };
   const cells: Record<string, CompetenceMatrixCell> = {
+    // Her own rating: hers to remove, never the manager's to revoke.
     anna: cell('t-journal', {
       status: 'missing',
       ...asked,
       holdingId: 'h-anna-journal',
       evidence: 'self',
-      revocable: true,
+      revocable: false,
       level: 3,
       validated: false,
       interest: true,
@@ -406,7 +407,7 @@ export const withJournal = (m: CompetenceMatrixOutput): CompetenceMatrixOutput =
       ...asked,
       holdingId: 'h-erik-journal',
       evidence: 'self',
-      revocable: true,
+      revocable: false,
       level: 2,
       validated: true,
     }),

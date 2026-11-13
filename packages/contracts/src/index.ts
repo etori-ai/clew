@@ -1789,9 +1789,9 @@ export const CompetenceHoldingBodySchema = object({
 });
 export type CompetenceHoldingBody = Static<typeof CompetenceHoldingBodySchema>;
 /**
- * A person rates a skill of their own (D120 items 2 and 3): the type, the level and whether they want to develop it.
- * Stored at once as their own rating; rating a skill they hold again changes it. It names no person: it is always the
- * reader's own.
+ * A person adds a skill of their own (D120 items 2 and 3): the type, the level and whether they want to develop it.
+ * Stored at once as their own rating; a skill they hold already is refused, and changed instead
+ * (`CompetenceSkillChangeBody`). It names no person: it is always the reader's own.
  */
 export const CompetenceSkillRatingBodySchema = object({
   typeId: id,
@@ -1799,6 +1799,9 @@ export const CompetenceSkillRatingBodySchema = object({
   interest: Type.Boolean(),
 });
 export type CompetenceSkillRatingBody = Static<typeof CompetenceSkillRatingBodySchema>;
+/** A person changes a skill of their own, by its holding (D120 items 2 and 3): the level and the interest mark. */
+export const CompetenceSkillChangeBodySchema = object({ level: CompetenceLevelSchema, interest: Type.Boolean() });
+export type CompetenceSkillChangeBody = Static<typeof CompetenceSkillChangeBodySchema>;
 /** The manager a person reports to registers a skill for them at a level, confirmed at once (D120 item 2). */
 export const CompetenceSkillBodySchema = object({ typeId: id, level: CompetenceLevelSchema });
 export type CompetenceSkillBody = Static<typeof CompetenceSkillBodySchema>;
@@ -2129,7 +2132,8 @@ export const CompetenceMatrixCellSchema = object({
   }),
   evidence: Type.Optional(literals(COMPETENCE_EVIDENCE)),
   revocable: Type.Boolean({
-    description: 'Whether the reader may revoke that holding: one registered in Clew, never one copied from a source.',
+    description:
+      "Whether the reader may revoke that holding: one registered in Clew, never one copied from a source; of a skill only one a manager registered, never the person's own rating (D120).",
   }),
   pending: Type.Optional({
     ...id,

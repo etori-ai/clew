@@ -149,8 +149,8 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     assertDecision(holding);
   };
   /**
-   * The checks `competence_holding_own`, `competence_holding_decided` (D108 item 7), `competence_holding_skill` and
-   * `competence_holding_validated` (D120).
+   * The checks `competence_holding_own`, `competence_holding_decided` (D108 item 7), `competence_holding_skill`,
+   * `competence_holding_rated` and `competence_holding_validated` (D120).
    */
   const assertDecision = (h: HoldingRecord) => {
     if ((h.state === 'pending' || h.state === 'rejected') && h.evidence !== 'self')
@@ -177,6 +177,8 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
         (h.state !== 'valid' && h.state !== 'revoked'))
     )
       throw new Error('a skill has a level from 1 to 3, no end date, no source and no approval');
+    if ((h.level === null) !== (h.ratedAt === null))
+      throw new Error('a skill, and nothing else, has when it was rated');
     if (h.validatedBy !== null && h.validatedAt === null) throw new Error('a confirmation has its time');
     if ((h.validatedAt !== null || h.interest) && h.level === null)
       throw new Error('only a skill is confirmed or carries an interest mark');

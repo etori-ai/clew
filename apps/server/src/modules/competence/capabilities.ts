@@ -19,7 +19,6 @@ import { systemContext } from '../../system-context';
 import {
   APPROVAL_READ,
   confirmed,
-  levelWord,
   personStatus,
   swedishDayAndMonth,
   type CardIdentity,
@@ -49,17 +48,22 @@ const copiedFields: ViewField[] = [
 ];
 /**
  * What has run out, is missing or runs out soon among the manager's reports: the figure and the manager's card open it.
- * A missing row is a type required of the person that they hold nothing of (D108 item 6), with no dates.
+ * A missing row is a type required of the person that they hold nothing of that counts (D108 item 6), with no dates. A
+ * skill's row (D120) says the level held, "Egen bedömning" beside it while no manager has confirmed it, and the least
+ * level asked; the rows are kompetenser, since a skill is no certificate.
  */
 export const attentionView: View = {
   kind: 'table',
   title: 'name',
-  noun: { one: 'intyg', other: 'intyg' },
+  noun: { one: 'kompetens', other: 'kompetenser' },
   empty: 'Inget saknas, inget har gått ut och inget går ut inom 90 dagar.',
   fields: [
     { key: 'name', label: 'Namn' },
     { key: 'competence', label: 'Kompetens' },
     { key: 'status', label: 'Status', format: 'status', tones: statusTones },
+    { key: 'level', label: 'Nivå' },
+    { key: 'assessment', label: 'Bedömning', format: 'status', tones: { [SELF_RATED_WORD]: 'none' }, beside: true },
+    { key: 'required', label: 'Krävd nivå' },
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     ...copiedFields,
   ],
@@ -350,17 +354,18 @@ async function systemPersona(actor: Actor): Promise<AuthenticatedContext> {
 const plural = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
 /**
  * What a person's card says of a required type they lack (D108 item 6). A skill (D120 item 4) says what would meet it:
- * a level of their own rated and waiting for their manager to confirm it, a confirmed level below the one asked, or none.
+ * their own rating, which waits for their manager to confirm it; a confirmed level that is not the one asked; or none
+ * yet. A card names no particulars beyond the type in its title, as the certificate cards do, so no level is said: the
+ * person's list says which is asked and which is held.
  */
 export function missingSummary(s: MissingStanding): string {
   if (s.least === undefined)
     return 'Det här krävs i ditt arbete men finns inte registrerat för dig. Prata med din chef om hur du får det.';
-  const asked = levelWord(s.least);
   if (!s.held || s.held.level === null)
-    return `Det här krävs i ditt arbete på minst nivån ${asked}. Lägg till färdigheten med din nivå, så kan din chef bekräfta den.`;
+    return 'Det här krävs i ditt arbete. Lägg till färdigheten med din nivå, så kan din chef bekräfta den.';
   if (!confirmed(s.held))
-    return `Det här krävs i ditt arbete på minst nivån ${asked}. Din egen bedömning räknas när din chef har bekräftat nivån.`;
-  return `Det här krävs i ditt arbete på minst nivån ${asked}, och din bekräftade nivå är ${levelWord(s.held.level)}. Prata med din chef om hur du kommer dit.`;
+    return 'Det här krävs i ditt arbete. Din egen bedömning räknas när din chef har bekräftat nivån.';
+  return 'Det här krävs i ditt arbete på en högre nivå än den din chef har bekräftat. Prata med din chef om hur du kommer dit.';
 }
 
 /** `persona` turns the registry's actor into a use-case persona; the unit tests hand in their own. */
@@ -371,9 +376,9 @@ export function competenceConnector(
   const attention: Capability<CompetenceAttentionInput> = {
     name: COMPETENCE_CONNECTOR + '.attention',
     kind: 'read',
-    title: 'Intyg att åtgärda',
+    title: 'Kompetenser att åtgärda',
     model: false,
-    description: 'Intyg och kompetenser som har gått ut, saknas eller går ut inom 90 dagar bland dem du är chef för.',
+    description: 'Kompetenser som har gått ut, saknas eller går ut inom 90 dagar bland dem du är chef för.',
     input: CompetenceAttentionInputSchema,
     output: CompetenceAttentionOutputSchema,
     view: attentionView,
@@ -385,7 +390,7 @@ export function competenceConnector(
     kind: 'read',
     title: 'Mina kompetenser',
     model: false,
-    description: 'Registrerade intyg och kompetenser: dina egna, eller en persons du är chef för.',
+    description: 'Registrerade intyg, kompetenser och färdigheter: dina egna, eller en persons du är chef för.',
     input: CompetenceHoldingsInputSchema,
     output: CompetenceHoldingsOutputSchema,
     view: holdingsView,
@@ -401,7 +406,7 @@ export function competenceConnector(
     title: 'Kompetens',
     model: false,
     description:
-      'Var varje person du är chef för står: om något intyg har gått ut, saknas eller går ut inom 90 dagar, och hur många som är registrerade.',
+      'Var varje person du är chef för står: om något har gått ut, saknas eller går ut inom 90 dagar, och hur många kompetenser som är registrerade.',
     input: KeysSchema,
     output: PersonCompetenceOutputSchema,
     view: personView,
@@ -505,16 +510,16 @@ export function competenceConnector(
           const s = await competence.summary(await persona(actor));
           if (!s || !s.reports) return null;
           if (!s.expired && !s.missing && !s.expiring)
-            return { label: 'Inga intyg saknas eller går ut inom 90 dagar.', tone: 'ok' };
+            return { label: 'Inga kompetenser saknas eller går ut inom 90 dagar.', tone: 'ok' };
           const lacking = s.expired + s.missing;
           return {
             label: s.expired
               ? s.missing
-                ? 'Intyg som har gått ut eller saknas'
-                : 'Intyg som har gått ut'
+                ? 'Kompetenser som har gått ut eller saknas'
+                : 'Kompetenser som har gått ut'
               : s.missing
-                ? 'Intyg som saknas'
-                : 'Intyg som går ut inom 90 dagar',
+                ? 'Kompetenser som saknas'
+                : 'Kompetenser som går ut inom 90 dagar',
             value: String(lacking || s.expiring),
             ...(lacking && s.expiring ? { comparison: `${s.expiring} till går ut inom 90 dagar` } : {}),
             tone: lacking ? 'alert' : 'warn',
@@ -584,17 +589,23 @@ export function competenceConnector(
       }
       if (team && (team.expired || team.missing || team.expiring)) {
         const parts = [
-          ...(team.expired ? [`${plural(team.expired, 'intyg har', 'intyg har')} gått ut`] : []),
-          ...(team.missing ? [`${plural(team.missing, 'intyg saknas', 'intyg saknas')}`] : []),
-          ...(team.expiring ? [`${plural(team.expiring, 'intyg går', 'intyg går')} ut inom 90 dagar`] : []),
+          ...(team.expired ? [`${plural(team.expired, 'kompetens har', 'kompetenser har')} gått ut`] : []),
+          ...(team.missing ? [`${plural(team.missing, 'kompetens saknas', 'kompetenser saknas')}`] : []),
+          ...(team.expiring ? [`${plural(team.expiring, 'kompetens går', 'kompetenser går')} ut inom 90 dagar`] : []),
         ];
         drafts.push({
           topic: team.card.topic,
           area: COMPETENCE_AREA,
-          title: 'Intyg att åtgärda bland dina medarbetare',
+          title: 'Kompetenser att åtgärda bland dina medarbetare',
           summary: `${listWords(parts)}, hos ${plural(team.people, 'person', 'personer')}.`,
-          reason: team.expired ? 'Intyg har gått ut' : team.missing ? 'Intyg saknas' : 'Intyg går ut inom 90 dagar',
-          actions: [{ id: 'open', label: 'Visa intygen', capability: attention.name, kind: 'read', role: 'primary' }],
+          reason: team.expired
+            ? 'Kompetenser har gått ut'
+            : team.missing
+              ? 'Kompetenser saknas'
+              : 'Kompetenser går ut inom 90 dagar',
+          actions: [
+            { id: 'open', label: 'Visa kompetenserna', capability: attention.name, kind: 'read', role: 'primary' },
+          ],
           occurrences: occurrence(team.card),
         });
       }

@@ -1009,6 +1009,9 @@ export const competenceHoldings = pgTable(
     interest: boolean('interest').notNull().default(false),
     validatedBy: text('validated_by').references(() => people.id, { onDelete: 'set null' }),
     validatedAt: timestamp('validated_at', { withTimezone: true }),
+    // When a skill's level was last set by a rating, the person's own or a manager's registration: the moment its
+    // current rating began, which tells one spell of a required skill not met from the next (D108 item 12).
+    ratedAt: timestamp('rated_at', { withTimezone: true }),
   },
   t => [
     check('competence_holding_evidence', sql`${t.evidence} IN ('system', 'manager', 'self')`),
@@ -1032,6 +1035,8 @@ export const competenceHoldings = pgTable(
     ),
     // Only a skill is confirmed or carries an interest mark. A confirmation keeps its time when its manager is erased,
     // as a decision does, so a confirmed level never turns back into the person's own rating.
+    // A skill always has the moment its level was rated; nothing else has one.
+    check('competence_holding_rated', sql`(${t.level} IS NULL) = (${t.ratedAt} IS NULL)`),
     check(
       'competence_holding_validated',
       sql`(${t.validatedBy} IS NULL OR ${t.validatedAt} IS NOT NULL) AND (${t.validatedAt} IS NULL OR ${t.level} IS NOT NULL) AND (NOT ${t.interest} OR ${t.level} IS NOT NULL)`,

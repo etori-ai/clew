@@ -126,8 +126,11 @@ export function InterestField({ value, onChange }: { value: boolean; onChange: (
   );
 }
 
-/** Who fills the form in: the manager for a report, or the person for themselves. */
-export type HoldingFormMode = 'manager' | 'own';
+/**
+ * Who fills the form in: the manager for a report, the person for themselves, or (`own-alone`) a person whom nobody
+ * would approve a certificate for, who adds skills alone (D108 item 7, D120 item 2).
+ */
+export type HoldingFormMode = 'manager' | 'own' | 'own-alone';
 /** What the form answers when it is right: a certificate's body with its dates, or a skill's with its level. */
 export type ReadyHolding =
   | { kind: 'dated'; body: CompetenceHoldingBody; type: CompetenceType }
@@ -141,6 +144,13 @@ const NOTICE: Record<HoldingFormMode, Record<'dated' | 'skill', string>> = {
   own: {
     dated: 'Din chef behöver godkänna intyget innan det räknas.',
     skill: 'Färdigheten visas direkt som din egen bedömning. Den räknas mot ett krav när din chef har bekräftat nivån.',
+  },
+  // Nobody would approve a certificate, so only skills are offered: before one is chosen the sentence says why.
+  'own-alone': {
+    dated:
+      'Ingen chef är registrerad för dig, så ett intyg kan inte skickas för godkännande. En färdighet kan du lägga till: den visas direkt som din egen bedömning.',
+    skill:
+      'Färdigheten visas direkt som din egen bedömning. Den räknas mot ett krav först när en chef har bekräftat nivån.',
   },
   manager: {
     dated: 'Ett intyg registreras med dagen det utfärdades och, om det har ett, slutdatumet.',
@@ -198,7 +208,7 @@ export function useHoldingFields(types: CompetenceType[], preset: string | null,
       return null;
     }
     if (skill && level !== null)
-      return { kind: 'skill', body: { typeId: type.id, level, interest: mode === 'own' && interest }, type };
+      return { kind: 'skill', body: { typeId: type.id, level, interest: mode !== 'manager' && interest }, type };
     if (!issuedOn) return null;
     return { kind: 'dated', body: { typeId: type.id, issuedOn, ...(expiresOn ? { expiresOn } : {}) }, type };
   };
@@ -228,7 +238,7 @@ export function useHoldingFields(types: CompetenceType[], preset: string | null,
       {skill ? (
         <>
           <LevelField groupRef={levelField} value={level} onChange={setLevel} problem={tried ? levelProblem : null} />
-          {mode === 'own' && <InterestField value={interest} onChange={setInterest} />}
+          {mode !== 'manager' && <InterestField value={interest} onChange={setInterest} />}
         </>
       ) : (
         <>
@@ -401,24 +411,28 @@ export const NO_APPROVER = 'Registreringen kan inte skickas: ingen chef är regi
  * address (`?add=new`). A certificate asks what the manager's registration asks and is sent for the manager they report
  * to to approve, which the dialog says before it is sent. A skill asks the level and whether they want to develop it,
  * and is saved at once as their own rating, which the dialog says instead; the sentence is a status region, so the change
- * of kind is announced. Someone who reports to nobody (`approver` false) is told, in the server's words, that a
- * certificate cannot be sent, and offered the skills alone, which need no approval; with no skill in the catalogue they
- * are offered nothing to fill in. On success the dialog closes, the page's own lists are read again and a toast says it
- * was sent or saved; the page gives the focus back (`onClose`).
+ * of kind is announced. A skill they hold already (`held`) is not offered: it is changed from its own row. Someone who
+ * reports to nobody (`approver` false) is offered the skills alone, which need no approval, and the sentence says why
+ * before one is chosen and what a skill is once it is; with no skill to add they are told, in the server's words, that a
+ * certificate cannot be sent, and offered nothing to fill in. On success the dialog closes, the page's own lists are read
+ * again and a toast says it was sent or saved; the page gives the focus back (`onClose`).
  */
 export function AddOwnHolding({
   isOpen,
   approver,
+  held = [],
   onClose,
 }: {
   isOpen: boolean;
   /** Whether anyone would decide it; undefined until the server has answered, when the form is offered. */
   approver: boolean | undefined;
+  /** The skills the person holds now, by type: not offered again, since one is changed, not added twice. */
+  held?: readonly string[];
   onClose: () => void;
 }) {
   const mobile = useMediaQuery(mobileQuery);
   const typesQ = useQuery({ ...competenceOwnTypesQuery, enabled: isOpen });
-  const open = (typesQ.data?.rows ?? []).filter(t => !t.archived);
+  const open = (typesQ.data?.rows ?? []).filter(t => !t.archived && !(isSkillType(t) && held.includes(t.id)));
   const noApprover = approver === false;
   // Without anyone to approve a certificate, the skills alone: they need no approval (D120 item 2).
   const types = noApprover ? open.filter(t => isSkillType(t)) : open;
@@ -426,7 +440,7 @@ export function AddOwnHolding({
     invalidate: [keys.competenceAll, keys.viewAll, keys.entities.all],
     toastId: 'competence:own',
   });
-  const form = useHoldingFields(types, null, 'own');
+  const form = useHoldingFields(types, null, noApprover ? 'own-alone' : 'own');
   useEffect(() => {
     form.reset();
     action.reset();
@@ -485,11 +499,6 @@ export function AddOwnHolding({
           <Text as="p">{NO_APPROVER} Den som administrerar Startsidan kan rätta det.</Text>
         ) : (
           <VStack gap={3}>
-            {noApprover && (
-              <Text as="p">
-                {NO_APPROVER} Du kan lägga till en färdighet med din egen bedömning, som inte behöver godkännas.
-              </Text>
-            )}
             {form.notice}
             {form.fields}
           </VStack>
@@ -501,7 +510,8 @@ export function AddOwnHolding({
 
 /**
  * A person changes a skill of their own (D120 items 2 and 3), on Mina kompetenser in a dialog named in the address
- * (`?skill=<holding id>`): its level, chosen afresh among the three, and whether they want to develop it. The skill
+ * (`?skill=<holding id>`) and titled as the menu's row that opens it, "Ändra nivå": its level, chosen afresh among the
+ * three, and whether they want to develop it. The skill
  * itself is shown and cannot be changed here. A new level is their own rating again until the manager they report to
  * confirms it, which the dialog says where a manager has confirmed the one it has; the interest mark alone changes
  * nothing else. On success the dialog closes, the page's lists are read again and a toast says it is saved; the page
@@ -524,7 +534,7 @@ export function ChangeOwnSkill({ skill, onClose }: { skill: CompetenceOwnSkill |
   const submit = async () => {
     if (action.busy || !skill || level === null) return;
     await action.run(async () => {
-      await api.competence.rateOwnSkill({ typeId: skill.typeId, level, interest });
+      await api.competence.changeOwnSkill(skill.holdingId, { level, interest });
       onClose();
       return `${skill.competence} är sparad.`;
     });
@@ -542,7 +552,7 @@ export function ChangeOwnSkill({ skill, onClose }: { skill: CompetenceOwnSkill |
       variant={mobile ? 'fullscreen' : 'standard'}
     >
       <DialogFrame
-        header={<DialogHeader title="Ändra färdighet" subtitle={skill?.competence} onOpenChange={onOpenChange} />}
+        header={<DialogHeader title="Ändra nivå" subtitle={skill?.competence} onOpenChange={onOpenChange} />}
         error={action.error}
         primary={
           <>

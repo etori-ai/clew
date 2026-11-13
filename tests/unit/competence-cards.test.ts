@@ -249,6 +249,7 @@ describe('a person’s cards close, stay and come back (D108 item 12, D47)', () 
       interest: false,
       validatedBy: null,
       validatedAt: null,
+      ratedAt: null,
       copy: {
         connectorId: 'lms',
         sourceId: 'row-' + id,
@@ -305,7 +306,7 @@ describe('the manager’s card (D108 item 12)', () => {
   test('one occurrence that names nobody: its period a digest of what is due, so nothing of a person or a type is stored', async () => {
     await requiredOfAnna();
     await scan(boss);
-    expect(states('boss')).toEqual([['Intyg att åtgärda bland dina medarbetare', 'open']]);
+    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'open']]);
     const [card] = cards('boss');
     const [occurrence] = occurrencesOf('boss');
     expect(occurrence).toEqual(['competence:attention', expect.stringMatching(/^[0-9a-f]{64}$/), '1|0', 'open']);
@@ -326,7 +327,7 @@ describe('the manager’s card (D108 item 12)', () => {
     await handle(card!.id, 'handled');
     await scan(boss);
     await scan(boss);
-    expect(states('boss')).toEqual([['Intyg att åtgärda bland dina medarbetare', 'handled']]);
+    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'handled']]);
     expect(occurrencesOf('boss')).toHaveLength(1);
   });
 
@@ -335,14 +336,14 @@ describe('the manager’s card (D108 item 12)', () => {
     await scan(boss);
     const holding = await competence.registerHolding(boss, 'anna', { typeId, issuedOn: '2015-06-05' });
     await scan(boss);
-    expect(states('boss')).toEqual([['Intyg att åtgärda bland dina medarbetare', 'handled']]);
+    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'handled']]);
     now += 60_000;
     await competence.revokeHolding(boss, holding);
     await scan(boss);
     // The same counts as before (1|0), and a new card: the old one stays handled with its occurrence resolved.
     expect(states('boss')).toEqual([
-      ['Intyg att åtgärda bland dina medarbetare', 'handled'],
-      ['Intyg att åtgärda bland dina medarbetare', 'open'],
+      ['Kompetenser att åtgärda bland dina medarbetare', 'handled'],
+      ['Kompetenser att åtgärda bland dina medarbetare', 'open'],
     ]);
     expect(occurrencesOf('boss').map(([, , revision, state]) => [revision, state])).toEqual([
       ['1|0', 'resolved'],
@@ -356,8 +357,8 @@ describe('the manager’s card (D108 item 12)', () => {
     await requiredOfAnna('Fallskydd');
     await scan(boss);
     expect(states('boss')).toEqual([
-      ['Intyg att åtgärda bland dina medarbetare', 'handled'],
-      ['Intyg att åtgärda bland dina medarbetare', 'open'],
+      ['Kompetenser att åtgärda bland dina medarbetare', 'handled'],
+      ['Kompetenser att åtgärda bland dina medarbetare', 'open'],
     ]);
     expect(occurrencesOf('boss').map(([, , revision, state]) => [revision, state])).toEqual([
       ['1|0', 'resolved'],
@@ -370,7 +371,7 @@ describe('the manager’s card (D108 item 12)', () => {
     await scan(boss);
     await competence.registerHolding(boss, 'anna', { typeId, issuedOn: '2015-06-05' });
     await scan(boss);
-    expect(states('boss')).toEqual([['Intyg att åtgärda bland dina medarbetare', 'handled']]);
+    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'handled']]);
   });
 });
 
@@ -430,6 +431,7 @@ describe('a person’s card comes back only for a new cause (D108 item 12)', () 
       interest: false,
       validatedBy: null,
       validatedAt: null,
+      ratedAt: null,
       copy: {
         connectorId: 'lms',
         sourceId: 'row-' + id,
@@ -467,6 +469,103 @@ describe('a person’s card comes back only for a new cause (D108 item 12)', () 
   });
 });
 
+/** Journalsystem, a skill required of everyone in the undersköterska position at least at Självständig (D120 item 4). */
+async function skillRequiredOfAnna() {
+  const typeId = await competence.addType(admin, { name: 'Journalsystem', area: 'Digital kompetens', kind: 'skill' });
+  await competence.addRequirement(admin, { typeId, positionCode: 'usk', minLevel: 2 });
+  return typeId;
+}
+const JOURNAL = 'Journalsystem saknas';
+
+describe('a skill that stops meeting its requirement brings its card back (D120 item 4, D108 item 12)', () => {
+  test('her own rating waits as a card; confirmed it closes; rated again lower it is a new card', async () => {
+    const typeId = await skillRequiredOfAnna();
+    const id = await competence.rateOwnSkill(anna, { typeId, level: 2, interest: false });
+    await scan(anna);
+    expect(states('anna')).toEqual([[JOURNAL, 'open']]);
+    // A scan with nothing changed keeps the same card.
+    await scan(anna);
+    expect(cards('anna')).toHaveLength(1);
+    await competence.validateSkill(boss, id);
+    await scan(anna);
+    expect(states('anna')).toEqual([[JOURNAL, 'handled']]);
+    await competence.changeOwnSkill(anna, id, { level: 1, interest: false });
+    await scan(anna);
+    expect(states('anna')).toEqual([
+      [JOURNAL, 'handled'],
+      [JOURNAL, 'open'],
+    ]);
+    // Changing the interest mark alone is the same cause: no new card.
+    await competence.changeOwnSkill(anna, id, { level: 1, interest: true });
+    await scan(anna);
+    expect(cards('anna')).toHaveLength(2);
+  });
+
+  test('a confirmation lost to a new rating, even a higher one, is a new card; confirmed lower is one too', async () => {
+    const typeId = await skillRequiredOfAnna();
+    const id = await competence.rateOwnSkill(anna, { typeId, level: 2, interest: false });
+    await competence.validateSkill(boss, id);
+    await scan(anna);
+    expect(cards('anna')).toEqual([]);
+    await competence.changeOwnSkill(anna, id, { level: 3, interest: false });
+    await scan(anna);
+    expect(states('anna')).toEqual([[JOURNAL, 'open']]);
+    await competence.validateSkill(boss, id);
+    await scan(anna);
+    expect(states('anna')).toEqual([[JOURNAL, 'handled']]);
+    // Her manager sets it lower than what is asked: it stops meeting the requirement, a new card.
+    await competence.validateSkill(boss, id, { level: 1 });
+    await scan(anna);
+    expect(states('anna')).toEqual([
+      [JOURNAL, 'handled'],
+      [JOURNAL, 'open'],
+    ]);
+  });
+
+  test('a skill that met it and is removed by her, or revoked by her manager, is a new card each time', async () => {
+    const typeId = await skillRequiredOfAnna();
+    const id = await competence.rateOwnSkill(anna, { typeId, level: 2, interest: false });
+    await competence.validateSkill(boss, id);
+    await scan(anna);
+    expect(cards('anna')).toEqual([]);
+    await competence.removeOwnSkill(anna, id);
+    await scan(anna);
+    expect(states('anna')).toEqual([[JOURNAL, 'open']]);
+    // Her manager registers it, which meets the requirement and closes the card; revoked, the cause is back anew.
+    const registered = await competence.registerSkill(boss, 'anna', { typeId, level: 2 });
+    await scan(anna);
+    expect(states('anna')).toEqual([[JOURNAL, 'handled']]);
+    await competence.revokeHolding(boss, registered);
+    await scan(anna);
+    expect(states('anna')).toEqual([
+      [JOURNAL, 'handled'],
+      [JOURNAL, 'open'],
+    ]);
+    expect(audited('thread.pushed')).toHaveLength(2);
+  });
+
+  test('the manager’s card counts it again as a new set of things due', async () => {
+    const typeId = await skillRequiredOfAnna();
+    const id = await competence.rateOwnSkill(anna, { typeId, level: 2, interest: false });
+    await competence.validateSkill(boss, id);
+    await scan(boss);
+    expect(cards('boss')).toEqual([]);
+    await competence.changeOwnSkill(anna, id, { level: 1, interest: false });
+    await scan(boss);
+    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'open']]);
+    await competence.validateSkill(boss, id, { level: 2 });
+    await scan(boss);
+    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'handled']]);
+    // The same count again, a new spell: a new card, not the handled one left as it was.
+    await competence.changeOwnSkill(anna, id, { level: 1, interest: false });
+    await scan(boss);
+    expect(states('boss')).toEqual([
+      ['Kompetenser att åtgärda bland dina medarbetare', 'handled'],
+      ['Kompetenser att åtgärda bland dina medarbetare', 'open'],
+    ]);
+  });
+});
+
 describe('a scan that cannot read says nothing', () => {
   test('a directory or a store that fails is a failed scan: open cards stay open, nothing is resolved', async () => {
     await requiredOfAnna();
@@ -476,7 +575,7 @@ describe('a scan that cannot read says nothing', () => {
     await scan(boss);
     storeFails = true;
     await scan(anna);
-    expect(states('boss')).toEqual([['Intyg att åtgärda bland dina medarbetare', 'open']]);
+    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'open']]);
     expect(states('anna')).toEqual([['Socionomexamen saknas', 'open']]);
     expect(audited('thread.source_resolved')).toEqual([]);
     expect(threads.dump().every(o => o.sourceState === 'open')).toBe(true);

@@ -200,6 +200,30 @@ test.describe('Administration › Kompetens', () => {
       await expect(listed).toContainText('Färdighet');
       await expect(listed).toContainText('Går inte ut');
     });
+    test('a type a source’s type is mapped to does not become a skill: the server’s refusal is said in the dialog', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.competenceTypes = competenceCatalogue();
+      api.catalogueFail = 'Kompetensen är kopplad till en källa och kan inte göras om till eller från en färdighet.';
+      await open(page, '/admin/competence?type=t-heta');
+      const dialog = dialogOf(page, 'Ändra kompetens');
+      const kind = dialog.getByRole('combobox', { name: /Typ/ });
+      await kind.focus();
+      await page.keyboard.type('F');
+      await expect(kind).toContainText('Färdighet');
+      await dialog.getByRole('button', { name: 'Spara', exact: true }).click();
+      await expect(
+        dialog.getByRole('alert').filter({
+          hasText: 'Kompetensen är kopplad till en källa och kan inte göras om till eller från en färdighet.',
+        }),
+      ).toBeVisible();
+      await expect(kind).toContainText('Färdighet');
+      expect(api.catalogueWrites).toEqual([]);
+      await settled(page);
+      await expectNoAxeViolations(page);
+    });
     test('a new validity says what it does to the holdings before it is saved, and the second press saves', async ({
       page,
       api,

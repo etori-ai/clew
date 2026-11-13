@@ -114,6 +114,12 @@ export function statusOn(end: string | null, today: string): HeldStatus {
 }
 /** A holding counts when it is `valid` as stored: not pending, rejected or revoked. */
 export const counts = (holding: Pick<HoldingRecord, 'state'>) => holding.state === 'valid';
+/**
+ * Whether a manager may revoke a holding (D108 items 7 and 9, D120 item 2): one registered in Clew, never one copied from
+ * a source; of a skill only one a manager registered, since one the person rated is theirs to remove, confirmed or not.
+ */
+export const revocable = (holding: Pick<HoldingRecord, 'evidence' | 'level'>) =>
+  holding.evidence !== 'system' && !(holding.level !== null && holding.evidence === 'self');
 /** Whether a type is a skill (D120 item 1): its holdings carry a level, have no dates of their own and never end. */
 export const isSkill = (type: Pick<TypeRecord, 'kind'>) => type.kind === SKILL_KIND;
 /** Whether a skill's level is confirmed by a manager (D120 item 2): the person's own rating alone is not. */
@@ -298,6 +304,14 @@ export function requiredSince(applying: readonly RequirementRecord[], typeId: st
   for (const r of applying) if (r.typeId === typeId && (!first || r.createdAt < first)) first = r.createdAt;
   return first;
 }
+/**
+ * A skill held that does not meet what is required, as a card's period names it (D120 item 4): its level, whether a
+ * manager confirmed it, and since when it has stood so, the confirmation's moment or the rating's.
+ */
+export const shortSkill = (held: Pick<HoldingRecord, 'level' | 'validatedAt' | 'ratedAt'>) =>
+  held.validatedAt !== null
+    ? `${held.level}:confirmed:${held.validatedAt}`
+    : `${held.level}:rated:${held.ratedAt ?? 'none'}`;
 /** A card's work as the refresh keys it (D47): the draft's topic, and its one occurrence's key, period and revision. */
 export interface CardIdentity {
   topic: string;
@@ -320,6 +334,12 @@ export interface CardIdentity {
  * again unchanged (a position or a unit gone and back under the same key) brings back the same identity, so that card
  * does not open again; and moving from one requirement to another of the same type (a new position, or the earliest of
  * two removed) is a new moment, so the card comes again.
+ *
+ * A required skill that is held but does not meet the requirement (D120 item 4) adds the skill held to the period
+ * (`shortSkill`): its level, and since when it has stood as it is, its confirmation or, while it is the person's own
+ * rating, the moment it was rated. A skill that met the requirement and stops meeting it (rated again lower, its
+ * confirmation gone with a new rating, confirmed lower) is so a new card; one removed or revoked is one through the
+ * revocation. A certificate's period is as it was.
  */
 export function ownCard(
   standing: Standing,
@@ -328,7 +348,8 @@ export function ownCard(
   const revoked = cause.revoked ?? 'none';
   if (standing.holding === null) {
     const topic = `${COMPETENCE_CONNECTOR}:missing:${standing.type.id}`;
-    return { topic, key: topic, period: `${cause.requiredSince ?? 'none'}|${revoked}`, revision: 'missing' };
+    const held = standing.held ? `|${shortSkill(standing.held)}` : '';
+    return { topic, key: topic, period: `${cause.requiredSince ?? 'none'}|${revoked}${held}`, revision: 'missing' };
   }
   const topic = `${COMPETENCE_CONNECTOR}:due:${standing.type.id}`;
   return { topic, key: topic, period: `${standing.status}|${standing.end}|${revoked}`, revision: standing.status };
@@ -750,8 +771,9 @@ const REASON_ORDER = ['position', 'unit', 'person'] as const;
  * first area). Each cell says where the person stands (the holding that decides, as `deciding` works it out, or
  * `missing` where the type is required of them and nothing counts, or `none` where it is neither held nor required),
  * what requires it of them, and whether the reader may revoke the holding: one registered in Clew may be, one copied
- * from a source never (D108 item 9). Where the person's own registration of the type waits for a decision (item 7), the
- * cell names it (`pending`) beside the status it has without it. A skill's cell (D120) carries the level held, whether
+ * from a source never (D108 item 9), and of a skill only one a manager registered (`revocable`). Where the person's own
+ * registration of the type waits for a decision (item 7), the cell names it (`pending`) beside the status it has
+ * without it. A skill's cell (D120) carries the level held, whether
  * a manager confirmed it and the interest mark, and, where it is required, the least level asked; a skill held that
  * does not reach it is `missing` and still names the holding, so its level can be confirmed from the cell. A skill
  * column lists the least levels asked of the people shown.
@@ -887,7 +909,7 @@ export function matrixOf(input: {
         required,
         through,
         ...(held
-          ? { holdingId: held.id, evidence: held.evidence, revocable: held.evidence !== 'system', ...skillOf(held) }
+          ? { holdingId: held.id, evidence: held.evidence, revocable: revocable(held), ...skillOf(held) }
           : { revocable: false }),
         ...pending,
         ...asked,
@@ -901,7 +923,7 @@ export function matrixOf(input: {
       through,
       holdingId: standing.holding.id,
       evidence: standing.holding.evidence,
-      revocable: standing.holding.evidence !== 'system',
+      revocable: revocable(standing.holding),
       ...pending,
       ...skillOf(standing.holding),
       ...asked,
@@ -1206,6 +1228,7 @@ export function planCopy(input: {
       interest: false,
       validatedBy: null,
       validatedAt: null,
+      ratedAt: null,
     };
     if (old && sameCopy(old, next)) {
       touch.push(holding.id);

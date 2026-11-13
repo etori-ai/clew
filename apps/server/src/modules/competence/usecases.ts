@@ -11,6 +11,7 @@ import {
   type CompetenceOwnOutput,
   type CompetenceOwnSkill,
   type CompetenceSkillBody,
+  type CompetenceSkillChangeBody,
   type CompetenceSkillRatingBody,
   type CompetenceSkillValidation,
   type CompetenceValidationBody,
@@ -46,6 +47,7 @@ import {
   leastLevels,
   levelOf,
   reachesLevel,
+  revocable,
   dailyCopyStart,
   deciding,
   endOf,
@@ -140,9 +142,10 @@ export const COMPETENCE_ADMIN: Capability = 'admin.competence';
  * person's own registration (evidence `self`, `pending` or `rejected`), and carries the decision on one (`decidedBy`,
  * `decidedAt`) and its approval's key (`threadId`). Version 6 (D120): a type may be of kind `skill`; a holding carries
  * its `level` (null on every kind but a skill), `interest`, and the confirmation of a skill's level (`validatedBy`,
- * `validatedAt`); a requirement of a skill carries its least level (`minLevel`).
+ * `validatedAt`); a requirement of a skill carries its least level (`minLevel`). Version 7: a skill carries when its
+ * level was last rated (`ratedAt`, null on every other kind).
  */
-export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/6';
+export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/7';
 /** The actor of the scheduled copy (D108 item 9) in its audit rows. */
 export const COPY_ACTOR = 'system:competence-copy';
 /** The actor of the reconciliation of approvals' cards (D108 item 7) in its audit rows. */
@@ -186,10 +189,12 @@ const BAD_LEVEL = 'Välj en nivå: Grundläggande, Självständig eller Expert.'
 const SKILL_NO_VALIDITY = 'En färdighet har ingen giltighetstid.';
 const KIND_LOCKED =
   'Kompetensen har registrerade innehav eller krav och kan inte göras om till eller från en färdighet.';
+const KIND_MAPPED = 'Kompetensen är kopplad till en källa och kan inte göras om till eller från en färdighet.';
 const NOT_YOUR_SKILL = 'Du har ingen sådan färdighet.';
 const NOT_YOURS_TO_VALIDATE = 'Färdigheten finns inte bland dem du kan bekräfta.';
 const SKILL_HELD = 'Personen har redan den färdigheten. Bekräfta nivån i stället.';
-const SKILL_TAKEN = 'Färdigheten är redan registrerad. Försök igen.';
+const SKILL_TAKEN = 'Du har redan den färdigheten. Ändra nivån under Färdigheter i stället.';
+const NOT_REVOCABLE_SKILL = 'Färdigheten är medarbetarens egen bedömning, som bara medarbetaren kan ta bort.';
 const LEVEL_ON_SKILL_ONLY = 'Bara en färdighet kan krävas på en viss nivå.';
 const SKILL_UNMAPPABLE = 'En färdighet kan inte kopplas till en källa: det som läses in har ingen nivå.';
 /**
@@ -222,6 +227,7 @@ const registered = {
   interest: false,
   validatedBy: null,
   validatedAt: null,
+  ratedAt: null,
 } satisfies Partial<HoldingRecord>;
 /** The person's own skills (D120) in the order the page lists them: by area, then name, in Swedish order. */
 const bySkillName = (a: CompetenceOwnSkill, b: CompetenceOwnSkill) =>
@@ -804,6 +810,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
           interest: body.interest ?? false,
           validatedBy: own ? null : by,
           validatedAt: own ? null : iso,
+          ratedAt: iso,
         });
         await tx.audit({
           actor,
@@ -1283,9 +1290,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
     /**
      * An administrator changes a type: its name, area, kind or the employer's validity. A new validity applies at once
      * to every holding counted from the rule (D108 item 3); `validityImpact` says what that does before this is called.
-     * A skill has no validity rule, and a type becomes a skill, or stops being one, only while nothing is held of it and
-     * nothing requires it (D120 item 1): a holding's dates and level, and a requirement's least level, belong to one
-     * kind or the other.
+     * A skill has no validity rule, and a type becomes a skill, or stops being one, only while nothing is held of it,
+     * nothing requires it and no source's type is mapped to it (D120 item 1): a holding's dates and level, a
+     * requirement's least level and a copied row's lack of one belong to one kind or the other.
      */
     async updateType(persona: AuthenticatedContext, typeId: string, body: CompetenceTypePatch): Promise<void> {
       await admin(persona);
@@ -1305,6 +1312,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
             const held = (await tx.holdingsOfType(typeId)).length > 0;
             const required = (await tx.requirements(type.organisationId)).some(r => r.typeId === typeId);
             if (held || required) throw new CompetenceError(KIND_LOCKED);
+            // A source's type mapped to it brings copied rows, which have no level (D108 item 9).
+            if ((await tx.mappings(type.organisationId)).some(m => m.typeId === typeId))
+              throw new CompetenceError(KIND_MAPPED);
           }
           await tx.updateType(typeId, patch);
           await tx.audit({
@@ -1382,60 +1392,71 @@ export function competenceUsecases(deps: CompetenceDeps) {
     ) => insertSkill(actor, organisationId, personId, body, body.confirmed ? null : undefined),
 
     /**
-     * A person rates a skill of their own (D120 items 2 and 3): a skill type of the catalogue, the level and whether they
+     * A person adds a skill of their own (D120 items 2 and 3): a skill type of the catalogue, the level and whether they
      * want to develop it. It is stored at once with evidence `self` and listed at once to whoever may read their holdings,
      * marked as their own rating; it opens no work item and waits for nothing, since a self-rating meets no requirement
-     * until the manager they report to confirms it. Rating a skill they hold again changes that holding: a new level
-     * makes it their own rating again (the confirmation goes, and so does a manager's registration), while the interest
-     * mark alone changes nothing else. The same rating again writes nothing. Audited `competence.skill_rated` with the
-     * ids and the levels. Returns the holding's id.
+     * until the manager they report to confirms it. A skill they hold already is refused: it is changed instead
+     * (`changeOwnSkill`), and two adds of one skill at once are kept apart by the store (`SkillTaken`). Audited
+     * `competence.skill_rated` with the ids and the level. Returns the holding's id.
      */
     async rateOwnSkill(persona: AuthenticatedContext, body: CompetenceSkillRatingBody): Promise<string> {
       if (!isCompetenceLevel(body.level)) throw new CompetenceError(BAD_LEVEL);
-      const at = now(),
-        iso = at.toISOString();
-      try {
-        const updated = await deps.store.transaction(async tx => {
-          const type = await skillType(tx, persona.organisationId, body.typeId);
-          const held = await liveSkill(tx, persona.id, type.id);
-          if (!held) return null;
-          const interest = body.interest === true;
-          const relevelled = held.level !== body.level;
-          if (!relevelled && held.interest === interest) return held.id;
-          await tx.updateHolding(held.id, {
-            interest,
-            ...(relevelled
-              ? {
-                  level: body.level,
-                  evidence: 'self' as const,
-                  registeredBy: persona.id,
-                  issuedOn: swedishDay(at),
-                  validatedBy: null,
-                  validatedAt: null,
-                }
-              : {}),
-          });
-          await tx.audit({
-            actor: persona.principal.id,
-            action: 'competence.skill_rated',
-            subject: 'holding:' + held.id,
-            at: iso,
-            details: { personId: persona.id, typeId: type.id, level: body.level, levelBefore: held.level },
-          });
-          return held.id;
-        });
-        if (updated) return updated;
-      } catch (error) {
-        if (error instanceof SkillTaken) throw new CompetenceError(SKILL_TAKEN);
-        throw error;
-      }
       return insertSkill(persona.principal.id, persona.organisationId, persona.id, body, undefined);
     },
 
     /**
-     * A person removes a skill of their own (D120 item 2), whoever rated or confirmed it: the row goes, since a skill is
-     * what the person says they can do, and the audit row `competence.skill_removed` keeps that it was, with the ids and
-     * the level. Anything else is refused in the same words.
+     * A person changes a skill of their own (D120 items 2 and 3), by its holding: its level and whether they want to
+     * develop it. A new level makes it their own rating again from now (`ratedAt`): the confirmation goes, and so does a
+     * manager's registration; the interest mark alone changes nothing else, and the same again writes nothing. The row is
+     * read locked, so two changes at once follow each other and each one's audit row says the level it changed from.
+     * One that is not the person's skill that counts is refused in the same words; one of an archived type is refused as
+     * a registration is. Audited `competence.skill_rated` with the ids and the levels.
+     */
+    async changeOwnSkill(
+      persona: AuthenticatedContext,
+      holdingId: string,
+      body: CompetenceSkillChangeBody,
+    ): Promise<void> {
+      if (!isCompetenceLevel(body.level)) throw new CompetenceError(BAD_LEVEL);
+      const at = now(),
+        iso = at.toISOString();
+      await deps.store.transaction(async tx => {
+        const held = await tx.holding(holdingId);
+        if (!held || held.personId !== persona.id || held.level === null || !counts(held) || held.typeId === null)
+          throw new ForbiddenError(NOT_YOUR_SKILL);
+        const type = await skillType(tx, persona.organisationId, held.typeId);
+        const interest = body.interest === true;
+        const relevelled = held.level !== body.level;
+        if (!relevelled && held.interest === interest) return;
+        await tx.updateHolding(held.id, {
+          interest,
+          ...(relevelled
+            ? {
+                level: body.level,
+                evidence: 'self' as const,
+                registeredBy: persona.id,
+                issuedOn: swedishDay(at),
+                ratedAt: iso,
+                validatedBy: null,
+                validatedAt: null,
+              }
+            : {}),
+        });
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'competence.skill_rated',
+          subject: 'holding:' + held.id,
+          at: iso,
+          details: { personId: persona.id, typeId: type.id, level: body.level, levelBefore: held.level },
+        });
+      });
+    },
+
+    /**
+     * A person removes a skill of their own (D120 item 2), whoever rated or confirmed it, since a skill is what the person
+     * says they can do: it is revoked as any holding is, by them, so it stays as a row, counts towards nothing and leaves
+     * their lists, and they may add it again. Audited `competence.skill_removed` with the ids and the level. One that is
+     * not theirs, or is no skill that counts, is refused in the same words.
      */
     async removeOwnSkill(persona: AuthenticatedContext, holdingId: string): Promise<void> {
       const at = now().toISOString();
@@ -1443,7 +1464,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
         const holding = await tx.holding(holdingId);
         if (!holding || holding.personId !== persona.id || holding.level === null || !counts(holding) || holding.copy)
           throw new ForbiddenError(NOT_YOUR_SKILL);
-        await tx.deleteHolding(holdingId);
+        await tx.updateHolding(holdingId, { state: 'revoked', revokedAt: at, revokedBy: persona.id });
         await tx.audit({
           actor: persona.principal.id,
           action: 'competence.skill_removed',
@@ -1516,7 +1537,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
     /**
      * The manager a person reports to now takes back a holding registered in Clew, an approved one of the person's own
      * included: it stays as a row, marked revoked, and counts towards nothing. Revoking twice is one. A registration that
-     * waits or was rejected is no holding to revoke (D108 item 7).
+     * waits or was rejected is no holding to revoke (D108 item 7). Of a skill (D120 item 2) only one a manager registered
+     * is: one the person rated, confirmed or not, is theirs to remove (`removeOwnSkill`).
      */
     async revokeHolding(persona: AuthenticatedContext, holdingId: string): Promise<void> {
       const { people } = await reports(persona);
@@ -1532,6 +1554,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
           holding.state === 'rejected'
         )
           throw new ForbiddenError(NOT_ALLOWED);
+        if (!revocable(holding)) throw new ForbiddenError(NOT_REVOCABLE_SKILL);
         if (holding.state === 'revoked') return;
         await tx.updateHolding(holdingId, { state: 'revoked', revokedAt: at, revokedBy: persona.id });
         await tx.audit({

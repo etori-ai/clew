@@ -421,6 +421,13 @@
       "when": 1794527563011,
       "tag": "0059_competence_skills",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794548740394,
+      "tag": "0060_competence_skill_rated_at",
+      "breakpoints": true
     }
   ]
 }

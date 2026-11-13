@@ -114,6 +114,7 @@ const holdingOf = ({ connectorId, sourceId, sourceType, sourceLabel, readAt, ...
   revokedAt: iso(r.revokedAt),
   decidedAt: iso(r.decidedAt),
   validatedAt: iso(r.validatedAt),
+  ratedAt: iso(r.ratedAt),
   copy:
     connectorId && sourceId && sourceType && sourceLabel && readAt
       ? { connectorId, sourceId, sourceType, sourceLabel, readAt: readAt.toISOString() }
@@ -126,6 +127,7 @@ const rowOf = ({ copy, ...h }: HoldingRecord): typeof holdings.$inferInsert => (
   revokedAt: date(h.revokedAt),
   decidedAt: date(h.decidedAt),
   validatedAt: date(h.validatedAt),
+  ratedAt: date(h.ratedAt),
   connectorId: copy?.connectorId ?? null,
   sourceId: copy?.sourceId ?? null,
   sourceType: copy?.sourceType ?? null,
@@ -253,6 +255,7 @@ export function competenceTx(
       if ('interest' in patch && patch.interest !== undefined) set.interest = patch.interest;
       if ('validatedAt' in patch) set.validatedAt = date(patch.validatedAt ?? null);
       if ('validatedBy' in patch) set.validatedBy = patch.validatedBy ?? null;
+      if ('ratedAt' in patch) set.ratedAt = date(patch.ratedAt ?? null);
       if ('evidence' in patch && patch.evidence !== undefined) set.evidence = patch.evidence;
       if ('registeredBy' in patch) set.registeredBy = patch.registeredBy ?? null;
       if ('issuedOn' in patch && patch.issuedOn !== undefined) set.issuedOn = patch.issuedOn;

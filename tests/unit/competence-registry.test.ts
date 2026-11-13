@@ -336,9 +336,9 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(ruled.status).toBe(400);
     expect(await ruled.json()).toMatchObject({ error: 'En färdighet har ingen giltighetstid.' });
 
-    // Her own rating is stored at once and needs nobody; rating it again answers the same holding.
+    // Her own rating is stored at once and needs nobody; added again it is refused, and changed by its holding.
     const rated = await w.call(anna, 'POST', '/own/skills', { typeId: english, level: 2, interest: true });
-    expect(rated.status).toBe(200);
+    expect(rated.status).toBe(201);
     const { id: holdingId } = (await rated.json()) as { id: string };
     expect(await (await w.call(anna, 'GET', '/own')).json()).toEqual({
       approver: true,
@@ -357,7 +357,17 @@ describe('the competence wiring (D108 item 13)', () => {
       ],
     });
     const again = await w.call(anna, 'POST', '/own/skills', { typeId: english, level: 3, interest: true });
-    expect(await again.json()).toEqual({ id: holdingId });
+    expect(again.status).toBe(400);
+    expect(await again.json()).toMatchObject({
+      error: 'Du har redan den färdigheten. Ändra nivån under Färdigheter i stället.',
+    });
+    expect((await w.call(anna, 'PUT', `/own/skills/${holdingId}`, { level: 3, interest: true })).status).toBe(204);
+    expect(w.store.state.holdings.get(holdingId)).toMatchObject({ level: 3, interest: true });
+    // A change names no type, and is hers alone.
+    expect(
+      (await w.call(anna, 'PUT', `/own/skills/${holdingId}`, { level: 3, interest: true, typeId: english })).status,
+    ).toBe(400);
+    expect((await w.call(hillevi, 'PUT', `/own/skills/${holdingId}`, { level: 1, interest: false })).status).toBe(403);
     // A level outside the three, a person named in the body, and a type that is no skill each have their answer.
     expect((await w.call(anna, 'POST', '/own/skills', { typeId: english, level: 4, interest: false })).status).toBe(
       400,
@@ -408,7 +418,7 @@ describe('the competence wiring (D108 item 13)', () => {
     // She removes her own; nobody else can, and an unknown one is refused alike.
     expect((await w.call(hillevi, 'DELETE', `/own/skills/${holdingId}`)).status).toBe(403);
     expect((await w.call(anna, 'DELETE', `/own/skills/${holdingId}`)).status).toBe(204);
-    expect(w.store.state.holdings.has(holdingId)).toBe(false);
+    expect(w.store.state.holdings.get(holdingId)).toMatchObject({ state: 'revoked', revokedBy: 'p-anna' });
     expect((await w.call(anna, 'DELETE', `/own/skills/${holdingId}`)).status).toBe(403);
   });
 

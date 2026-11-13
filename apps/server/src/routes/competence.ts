@@ -8,6 +8,7 @@ import {
   CompetenceRequirementBodySchema,
   CompetenceShareTargetBodySchema,
   CompetenceSkillBodySchema,
+  CompetenceSkillChangeBodySchema,
   CompetenceSkillRatingBodySchema,
   CompetenceTypeBodySchema,
   CompetenceTypePatchSchema,
@@ -20,6 +21,7 @@ import {
   type CompetenceRequirementBody,
   type CompetenceShareTargetBody,
   type CompetenceSkillBody,
+  type CompetenceSkillChangeBody,
   type CompetenceSkillRatingBody,
   type CompetenceTypeBody,
   type CompetenceTypePatch,
@@ -69,6 +71,7 @@ export interface CompetenceRouteDeps {
     | 'approval'
     | 'decideHolding'
     | 'rateOwnSkill'
+    | 'changeOwnSkill'
     | 'removeOwnSkill'
     | 'registerSkill'
     | 'skillValidation'
@@ -90,6 +93,7 @@ const validators = {
   target: ajv.compile<CompetenceShareTargetBody>(CompetenceShareTargetBodySchema),
   decision: ajv.compile<CompetenceDecisionBody>(CompetenceDecisionBodySchema),
   rating: ajv.compile<CompetenceSkillRatingBody>(CompetenceSkillRatingBodySchema),
+  change: ajv.compile<CompetenceSkillChangeBody>(CompetenceSkillChangeBodySchema),
   skill: ajv.compile<CompetenceSkillBody>(CompetenceSkillBodySchema),
   validation: ajv.compile<CompetenceValidationBody>(CompetenceValidationBodySchema),
 };
@@ -199,10 +203,16 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
     await competence.removeRejected(c.get('session').context, param(c.req.param('id')));
     return c.body(null, 204);
   });
-  // A skill (D120): the person's own rating, stored at once and changed by rating again, and removed by them.
+  // A skill (D120): the person's own rating, stored at once, changed by its holding and removed by them.
   routes.post('/own/skills', async c => {
     const input = await body(c.req.raw, validators.rating);
-    return c.json({ id: await competence.rateOwnSkill(c.get('session').context, input) }, 200);
+    return c.json({ id: await competence.rateOwnSkill(c.get('session').context, input) }, 201);
+  });
+  routes.put('/own/skills/:id', async c => {
+    const id = param(c.req.param('id')),
+      input = await body(c.req.raw, validators.change);
+    await competence.changeOwnSkill(c.get('session').context, id, input);
+    return c.body(null, 204);
   });
   routes.delete('/own/skills/:id', async c => {
     await competence.removeOwnSkill(c.get('session').context, param(c.req.param('id')));

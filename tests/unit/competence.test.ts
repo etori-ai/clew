@@ -211,6 +211,7 @@ describe('the dates', () => {
       interest: false,
       validatedBy: null,
       validatedAt: null,
+      ratedAt: null,
       ...extra,
     });
     const types = new Map([[t.id, t]]);
@@ -395,6 +396,7 @@ describe('a manager registers a certificate', () => {
       interest: false,
       validatedBy: null,
       validatedAt: null,
+      ratedAt: null,
     });
     expect(lastAudit()).toEqual({
       actor: 'person:boss',
@@ -621,7 +623,7 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.seedType('operator:test', 'org-2', { name: 'Annan', area: 'X', kind: 'course' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc).toMatchObject({ format: 'clew.competence/6', exportedAt: now.toISOString(), organisationId: ORG });
+    expect(doc).toMatchObject({ format: 'clew.competence/7', exportedAt: now.toISOString(), organisationId: ORG });
     expect(doc.types.map(t => t.name).sort()).toEqual(['HLR', 'Heta arbeten', 'Socionomexamen']);
     expect(doc.holdings).toHaveLength(1);
     expect(lastAudit()).toEqual({
@@ -745,21 +747,28 @@ describe('the built-in connector', () => {
     const r = registry();
     const figureOf = async (p: AuthenticatedContext) =>
       (await r.areas(actor(p))).find(a => a.id === 'competence')?.figure ?? null;
-    expect(await figureOf(boss)).toMatchObject({ label: 'Inga intyg saknas eller går ut inom 90 dagar.', tone: 'ok' });
+    expect(await figureOf(boss)).toMatchObject({
+      label: 'Inga kompetenser saknas eller går ut inom 90 dagar.',
+      tone: 'ok',
+    });
     const types = await world();
     expect(await figureOf(boss)).toMatchObject({
-      label: 'Intyg som har gått ut',
+      label: 'Kompetenser som har gått ut',
       value: '1',
       comparison: '1 till går ut inom 90 dagar',
       tone: 'alert',
-      opens: { capability: 'competence.attention', title: 'Intyg att åtgärda' },
+      opens: { capability: 'competence.attention', title: 'Kompetenser att åtgärda' },
     });
     await competence.registerHolding(boss, 'anna', {
       typeId: types.hot,
       issuedOn: '2026-11-01',
       expiresOn: '2031-10-31',
     });
-    expect(await figureOf(boss)).toMatchObject({ label: 'Intyg som går ut inom 90 dagar', value: '1', tone: 'warn' });
+    expect(await figureOf(boss)).toMatchObject({
+      label: 'Kompetenser som går ut inom 90 dagar',
+      value: '1',
+      tone: 'warn',
+    });
     expect(await figureOf(asAnna)).toBeNull();
   });
 
@@ -785,9 +794,9 @@ describe('the built-in connector', () => {
     const [card] = await registry().scan(actor(boss));
     expect(card).toMatchObject({
       topic: 'competence:attention',
-      title: 'Intyg att åtgärda bland dina medarbetare',
-      summary: '1 intyg har gått ut och 1 intyg går ut inom 90 dagar, hos 1 person.',
-      reason: 'Intyg har gått ut',
+      title: 'Kompetenser att åtgärda bland dina medarbetare',
+      summary: '1 kompetens har gått ut och 1 kompetens går ut inom 90 dagar, hos 1 person.',
+      reason: 'Kompetenser har gått ut',
     });
     expect(card!.actions.map(a => a.capability)).toEqual(['competence.attention']);
     const text = JSON.stringify(card);
@@ -1230,6 +1239,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         interest: false,
         validatedBy: null,
         validatedAt: null,
+        ratedAt: null,
         ...extra,
       });
       const standings = deciding(
@@ -1351,13 +1361,13 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       const r = registry();
       const figureOf = async (p: AuthenticatedContext) =>
         (await r.areas(actor(p))).find(a => a.id === 'competence')?.figure ?? null;
-      expect(await figureOf(boss)).toMatchObject({ label: 'Intyg som saknas', value: '2', tone: 'alert' });
+      expect(await figureOf(boss)).toMatchObject({ label: 'Kompetenser som saknas', value: '2', tone: 'alert' });
       const [card] = await r.scan(actor(boss));
       expect(card).toMatchObject({
         topic: 'competence:attention',
-        title: 'Intyg att åtgärda bland dina medarbetare',
-        summary: '2 intyg saknas, hos 2 personer.',
-        reason: 'Intyg saknas',
+        title: 'Kompetenser att åtgärda bland dina medarbetare',
+        summary: '2 kompetenser saknas, hos 2 personer.',
+        reason: 'Kompetenser saknas',
       });
       const text = JSON.stringify(card);
       for (const name of [...NAMES, ...TYPE_NAMES]) expect(text).not.toContain(name);
@@ -1382,13 +1392,13 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       // An expired holding beside it: both in the figure, the expired first in the card.
       await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
       expect(await figureOf(boss)).toMatchObject({
-        label: 'Intyg som har gått ut eller saknas',
+        label: 'Kompetenser som har gått ut eller saknas',
         value: '3',
         tone: 'alert',
       });
       expect((await r.scan(actor(boss)))[0]).toMatchObject({
-        summary: '1 intyg har gått ut och 2 intyg saknas, hos 2 personer.',
-        reason: 'Intyg har gått ut',
+        summary: '1 kompetens har gått ut och 2 kompetenser saknas, hos 2 personer.',
+        reason: 'Kompetenser har gått ut',
       });
       expect((await r.scan(actor(asAnna))).map(d => d.title)).toEqual([
         'Heta arbeten gick ut 31 maj',
@@ -1661,7 +1671,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     await competence.removeRequirement(boss, onBo);
     await competence.addRequirement(boss, { typeId: hot, personId: 'bo' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc.format).toBe('clew.competence/6');
+    expect(doc.format).toBe('clew.competence/7');
     expect(doc.requirements.map(r => [r.typeId, r.positionCode, r.unitId, r.personId])).toEqual([
       [hlr, USK, null, null],
       [hlr, null, 'u1', null],
@@ -1749,6 +1759,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
             interest: false,
             validatedBy: null,
             validatedAt: null,
+            ratedAt: null,
             copy: { connectorId: 'lms', sourceId: 'row-' + id, sourceType: 'c1', sourceLabel: 'Kurs', readAt: '' },
           },
         ]);
@@ -2257,6 +2268,7 @@ describe('a person registers their own certificate and the manager they report t
       interest: false,
       validatedBy: null,
       validatedAt: null,
+      ratedAt: null,
     });
     // Both managers get a card, in one call, about her by her user name and naming nothing else.
     expect(calls()).toEqual([
@@ -2806,7 +2818,7 @@ describe('a person registers their own certificate and the manager they report t
     const threads = [waiting, approved].map(id => store.state.holdings.get(id)!.threadId!).sort();
 
     const doc = await own.exportDomain('operator:cli', ORG);
-    expect(doc.format).toBe('clew.competence/6');
+    expect(doc.format).toBe('clew.competence/7');
     expect(doc.holdings.find(h => h.id === approved)).toMatchObject({
       evidence: 'self',
       state: 'valid',
@@ -2947,6 +2959,33 @@ describe('skills with levels and interest (D120)', () => {
       expect(store.state.types.get(english)).toMatchObject({ kind: 'skill', name: 'Engelska i tal och skrift' });
     });
 
+    test('a type a source’s type is mapped to does not become a skill: copied rows have no level', async () => {
+      const { hlr } = await skills();
+      store.state.sources.set('lms', {
+        connectorId: 'lms',
+        source: 'Lärplattformen',
+        run: null,
+        claimedAt: null,
+        leaseUntil: null,
+        startedAt: null,
+        finishedAt: null,
+        outcome: null,
+        counts: null,
+      });
+      await competence.seedMapping('operator:test', ORG, 'lms', { sourceType: 'course:1', typeId: hlr });
+      const before = audits().length;
+      // Its validity is taken away first, as the catalogue's dialog does for a skill, and still refused.
+      await expect(competence.updateType(admin, hlr, { kind: 'skill', validityMonths: null })).rejects.toThrow(
+        new CompetenceError('Kompetensen är kopplad till en källa och kan inte göras om till eller från en färdighet.'),
+      );
+      expect(audits().length).toBe(before);
+      expect(store.state.types.get(hlr)).toMatchObject({ kind: 'course', validityMonths: 24 });
+      // Unmapped, it may.
+      await competence.seedMapping('operator:test', ORG, 'lms', { sourceType: 'course:1', typeId: null });
+      await competence.updateType(admin, hlr, { kind: 'skill', validityMonths: null });
+      expect(store.state.types.get(hlr)).toMatchObject({ kind: 'skill', validityMonths: null });
+    });
+
     test('a source type is never mapped to a skill: a copied row has no level', async () => {
       const { english, hlr } = await skills();
       store.state.sources.set('lms', {
@@ -2997,6 +3036,7 @@ describe('skills with levels and interest (D120)', () => {
         interest: true,
         validatedBy: null,
         validatedAt: null,
+        ratedAt: now.toISOString(),
       });
       expect(lastAudit()).toEqual({
         actor: 'person:anna',
@@ -3083,15 +3123,34 @@ describe('skills with levels and interest (D120)', () => {
       expect(checkContract(CompetenceSkillRatingBodySchema, { typeId: english, level: 1, interest: false })).toBe(true);
     });
 
-    test('rating again changes the one holding: a new level clears the confirmation, the interest mark alone does not', async () => {
+    test('a skill she holds is not added twice: refused in Swedish, nothing written', async () => {
       const { english } = await skills();
       const id = await competence.rateOwnSkill(asAnna, { typeId: english, level: 1, interest: false });
+      const before = audits().length;
+      await expect(competence.rateOwnSkill(asAnna, { typeId: english, level: 3, interest: true })).rejects.toThrow(
+        new CompetenceError('Du har redan den färdigheten. Ändra nivån under Färdigheter i stället.'),
+      );
+      expect(audits().length).toBe(before);
+      expect(holding(id)).toMatchObject({ level: 1, interest: false });
+      expect([...store.state.holdings.values()].filter(h => h.personId === 'anna')).toHaveLength(1);
+    });
+
+    test('a change of her skill: a new level clears the confirmation from now, the interest mark alone does not', async () => {
+      const { english, hot } = await skills();
+      const id = await competence.rateOwnSkill(asAnna, { typeId: english, level: 1, interest: false });
+      const rated = now.toISOString();
       await competence.validateSkill(boss, id);
       expect(holding(id)).toMatchObject({ level: 1, validatedBy: 'boss', validatedAt: now.toISOString() });
       now = new Date('2026-11-12T09:00:00.000Z');
-      // The interest mark alone: still confirmed, still level 1.
-      expect(await competence.rateOwnSkill(asAnna, { typeId: english, level: 1, interest: true })).toBe(id);
-      expect(holding(id)).toMatchObject({ level: 1, interest: true, validatedBy: 'boss', issuedOn: '2026-11-10' });
+      // The interest mark alone: still confirmed, still level 1, rated when it was.
+      await competence.changeOwnSkill(asAnna, id, { level: 1, interest: true });
+      expect(holding(id)).toMatchObject({
+        level: 1,
+        interest: true,
+        validatedBy: 'boss',
+        issuedOn: '2026-11-10',
+        ratedAt: rated,
+      });
       expect(lastAudit()).toEqual({
         actor: 'person:anna',
         action: 'competence.skill_rated',
@@ -3101,24 +3160,46 @@ describe('skills with levels and interest (D120)', () => {
       });
       // The same again writes nothing.
       const before = audits().length;
-      expect(await competence.rateOwnSkill(asAnna, { typeId: english, level: 1, interest: true })).toBe(id);
+      await competence.changeOwnSkill(asAnna, id, { level: 1, interest: true });
       expect(audits().length).toBe(before);
-      // A new level: her own rating again, from today.
-      expect(await competence.rateOwnSkill(asAnna, { typeId: english, level: 3, interest: true })).toBe(id);
+      // A new level: her own rating again, from now.
+      await competence.changeOwnSkill(asAnna, id, { level: 3, interest: true });
       expect(holding(id)).toMatchObject({
         level: 3,
         interest: true,
         evidence: 'self',
         registeredBy: 'anna',
         issuedOn: '2026-11-12',
+        ratedAt: now.toISOString(),
         validatedBy: null,
         validatedAt: null,
       });
-      expect(lastAudit()).toMatchObject({ details: { personId: 'anna', typeId: english, level: 3, levelBefore: 1 } });
+      expect(lastAudit()).toEqual({
+        actor: 'person:anna',
+        action: 'competence.skill_rated',
+        subject: 'holding:' + id,
+        at: now.toISOString(),
+        details: { personId: 'anna', typeId: english, level: 3, levelBefore: 1 },
+      });
       expect([...store.state.holdings.values()].filter(h => h.personId === 'anna')).toHaveLength(1);
+      // Only her own skill that counts: not another's, not a certificate, not a level outside the three.
+      const cert = await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2025-01-10' });
+      const refused = new ForbiddenError('Du har ingen sådan färdighet.');
+      const after = audits().length;
+      for (const [who, target] of [
+        [boss, id],
+        [asBo, id],
+        [asAnna, cert],
+        [asAnna, 'nope'],
+      ] as const)
+        await expect(competence.changeOwnSkill(who, target, { level: 2, interest: false })).rejects.toThrow(refused);
+      await expect(competence.changeOwnSkill(asAnna, id, { level: 4 as 1, interest: false })).rejects.toThrow(
+        new CompetenceError('Välj en nivå: Grundläggande, Självständig eller Expert.'),
+      );
+      expect(audits().length).toBe(after);
     });
 
-    test('she removes her own, whoever confirmed it; nobody else can, and a certificate or an unknown id is refused alike', async () => {
+    test('she removes her own, whoever confirmed it, as a revocation; nobody else can, and a certificate or an unknown id is refused alike', async () => {
       const { english, hot } = await skills();
       const id = await competence.rateOwnSkill(asAnna, { typeId: english, level: 2, interest: false });
       await competence.validateSkill(boss, id);
@@ -3134,7 +3215,13 @@ describe('skills with levels and interest (D120)', () => {
         await expect(competence.removeOwnSkill(who, target)).rejects.toThrow(refused);
       expect(audits().length).toBe(before);
       await competence.removeOwnSkill(asAnna, id);
-      expect(store.state.holdings.has(id)).toBe(false);
+      // The row stays, revoked by her, and counts towards nothing; it leaves her lists.
+      expect(holding(id)).toMatchObject({
+        state: 'revoked',
+        revokedAt: now.toISOString(),
+        revokedBy: 'anna',
+        level: 2,
+      });
       expect(lastAudit()).toEqual({
         actor: 'person:anna',
         action: 'competence.skill_removed',
@@ -3142,7 +3229,11 @@ describe('skills with levels and interest (D120)', () => {
         at: now.toISOString(),
         details: { personId: 'anna', typeId: english, level: 2 },
       });
-      // Removed, it can be rated again from nothing.
+      expect((await competence.ownRegistrations(asAnna)).skills).toEqual([]);
+      expect((await competence.holdings(asAnna)).rows.map(r => r.competence)).toEqual(['Heta arbeten']);
+      // Removed twice is refused as unknown.
+      await expect(competence.removeOwnSkill(asAnna, id)).rejects.toThrow(refused);
+      // Removed, it can be added again from nothing.
       const again = await competence.rateOwnSkill(asAnna, { typeId: english, level: 1, interest: false });
       expect(again).not.toBe(id);
     });
@@ -3264,13 +3355,47 @@ describe('skills with levels and interest (D120)', () => {
         new CompetenceError('Välj en nivå: Grundläggande, Självständig eller Expert.'),
       );
       expect(audits().length).toBe(before);
-      // She changes its level: her own rating now, no longer the manager's.
-      await competence.rateOwnSkill(asAnna, { typeId: english, level: 2, interest: false });
+      // The manager may revoke one a manager registered: it no longer counts, and she may add it again.
+      const revoked = await competence.registerSkill(boss, 'anna', { typeId: records, level: 2 });
+      await competence.revokeHolding(boss, revoked);
+      expect(holding(revoked)).toMatchObject({ state: 'revoked', revokedBy: 'boss' });
+      expect(lastAudit()).toEqual({
+        actor: 'person:boss',
+        action: 'competence.holding_revoked',
+        subject: 'holding:' + revoked,
+        at: now.toISOString(),
+        details: { personId: 'anna', typeId: records },
+      });
+      const again = await competence.rateOwnSkill(asAnna, { typeId: records, level: 1, interest: false });
+      expect(again).not.toBe(revoked);
+      // She changes the level of the one he registered: her own rating now, no longer the manager's.
+      await competence.changeOwnSkill(asAnna, id, { level: 2, interest: false });
       expect(holding(id)).toMatchObject({ evidence: 'self', registeredBy: 'anna', level: 2, validatedAt: null });
-      // A revoked skill no longer counts, and she may rate it again.
-      await competence.revokeHolding(boss, id);
-      const again = await competence.rateOwnSkill(asAnna, { typeId: english, level: 1, interest: false });
-      expect(again).not.toBe(id);
+    });
+
+    test('a manager never revokes a skill the person rated, confirmed or not: hers to remove; the cell offers no revocation', async () => {
+      directory();
+      const { records } = await skills();
+      await competence.addRequirement(admin, { typeId: records, positionCode: USK, minLevel: 1 });
+      const id = await competence.rateOwnSkill(asAnna, { typeId: records, level: 2, interest: false });
+      const refused = new ForbiddenError(
+        'Färdigheten är medarbetarens egen bedömning, som bara medarbetaren kan ta bort.',
+      );
+      const before = audits().length;
+      await expect(competence.revokeHolding(boss, id)).rejects.toThrow(refused);
+      const cell = async () => (await competence.matrix(boss)).rows.find(r => r.personId === 'anna')!.cells[0]!;
+      expect(await cell()).toMatchObject({ holdingId: id, evidence: 'self', revocable: false });
+      await competence.validateSkill(boss, id);
+      await expect(competence.revokeHolding(boss, id)).rejects.toThrow(refused);
+      expect(await cell()).toMatchObject({ status: 'valid', holdingId: id, revocable: false });
+      expect(audits().length).toBe(before + 1);
+      expect(holding(id).state).toBe('valid');
+      // One the manager registered is his to revoke.
+      const bos = await competence.registerSkill(boss, 'bo', { typeId: records, level: 1 });
+      expect((await competence.matrix(boss)).rows.find(r => r.personId === 'bo')!.cells[0]).toMatchObject({
+        holdingId: bos,
+        revocable: true,
+      });
     });
   });
 
@@ -3361,7 +3486,8 @@ describe('skills with levels and interest (D120)', () => {
         status: 'missing',
         holdingId: id,
         evidence: 'self',
-        revocable: true,
+        // Her own rating is hers to remove, not the manager's to revoke.
+        revocable: false,
         level: 3,
         validated: false,
         least: 2,
@@ -3381,7 +3507,7 @@ describe('skills with levels and interest (D120)', () => {
       // Above it: met too. Her own new rating is unconfirmed again and so missing.
       await competence.validateSkill(boss, id, { level: 3 });
       expect((await status())?.status).toBe('valid');
-      await competence.rateOwnSkill(asAnna, { typeId: records, level: 2, interest: true });
+      await competence.changeOwnSkill(asAnna, id, { level: 2, interest: true });
       expect(await status()).toMatchObject({
         status: 'missing',
         assessment: 'Egen bedömning',
@@ -3428,12 +3554,27 @@ describe('skills with levels and interest (D120)', () => {
       };
       // Anna's own rating meets nothing; Bo's confirmed level 1 is below what is asked, but meets the share target.
       expect(await coverage()).toEqual({ meeting: [['Journalsystem', 2, 0]], targets: [['Engelska', 2, 1]] });
+      const attention = await competence.attention(boss);
+      expect(checkContract(CompetenceAttentionOutputSchema, attention)).toBe(true);
       expect(
-        (await competence.attention(boss)).rows.map(r => [r.name, r.competence, r.status, r.level ?? null]),
+        attention.rows.map(r => [r.name, r.competence, r.status, r.level ?? null, r.assessment ?? null, r.required]),
       ).toEqual([
-        ['Anna Andersson', 'Journalsystem', 'missing', 'Expert'],
-        ['Bo Berg', 'Journalsystem', 'missing', 'Grundläggande'],
+        ['Anna Andersson', 'Journalsystem', 'missing', 'Expert', 'Egen bedömning', 'Självständig'],
+        ['Bo Berg', 'Journalsystem', 'missing', 'Grundläggande', null, 'Självständig'],
       ]);
+      // The table says the level held, its mark and the level asked, and counts its rows as kompetenser.
+      expect(attentionView.kind === 'table' && attentionView.fields.map(f => f.key)).toEqual([
+        'name',
+        'competence',
+        'status',
+        'level',
+        'assessment',
+        'required',
+        'expiresOn',
+        'source',
+        'readAt',
+      ]);
+      expect(attentionView.kind === 'table' && attentionView.noun).toEqual({ one: 'kompetens', other: 'kompetenser' });
       expect(await competence.summary(boss)).toMatchObject({ missing: 2, expired: 0, expiring: 0, people: 2 });
       const registry = new Registry().register(competenceConnector(competence, async a => personaOf(a.id, a.role)));
       const actor = (p: AuthenticatedContext): Actor => ({
@@ -3448,7 +3589,7 @@ describe('skills with levels and interest (D120)', () => {
         (await registry.run<{ rows: unknown[] }>(actor(boss), 'competence.person', { keys: ['anna.a'] })).rows,
       ).toEqual([{ key: 'anna.a', status: 'Saknas', due: '1 saknas', held: '2 registrerade' }]);
       expect((await registry.areas(actor(boss))).find(a => a.id === 'competence')?.figure).toMatchObject({
-        label: 'Intyg som saknas',
+        label: 'Kompetenser som saknas',
         value: '2',
       });
       // Her card says what would meet it: her rating waits for her manager.
@@ -3456,13 +3597,15 @@ describe('skills with levels and interest (D120)', () => {
       expect(card).toMatchObject({
         topic: 'competence:missing:' + records,
         title: 'Journalsystem saknas',
-        summary:
-          'Det här krävs i ditt arbete på minst nivån Självständig. Din egen bedömning räknas när din chef har bekräftat nivån.',
+        summary: 'Det här krävs i ditt arbete. Din egen bedömning räknas när din chef har bekräftat nivån.',
       });
       const [bos] = await registry.scan(actor(asBo));
       expect(bos?.summary).toBe(
-        'Det här krävs i ditt arbete på minst nivån Självständig, och din bekräftade nivå är Grundläggande. Prata med din chef om hur du kommer dit.',
+        'Det här krävs i ditt arbete på en högre nivå än den din chef har bekräftat. Prata med din chef om hur du kommer dit.',
       );
+      // A card names no level, as a certificate's card names no particulars (D108 item 12).
+      for (const level of ['Grundläggande', 'Självständig', 'Expert'])
+        expect(JSON.stringify([card, bos])).not.toContain(level);
       // Confirmed at the level: met everywhere, and her card goes.
       await competence.validateSkill(boss, annas);
       expect(await coverage()).toEqual({ meeting: [['Journalsystem', 2, 1]], targets: [['Engelska', 2, 1]] });
@@ -3473,7 +3616,7 @@ describe('skills with levels and interest (D120)', () => {
       await competence.removeOwnSkill(asAnna, annas);
       const [fresh] = await registry.scan(actor(asAnna));
       expect(fresh?.summary).toBe(
-        'Det här krävs i ditt arbete på minst nivån Självständig. Lägg till färdigheten med din nivå, så kan din chef bekräfta den.',
+        'Det här krävs i ditt arbete. Lägg till färdigheten med din nivå, så kan din chef bekräfta den.',
       );
     });
 
@@ -3510,6 +3653,7 @@ describe('skills with levels and interest (D120)', () => {
         interest: false,
         validatedBy: null,
         validatedAt: null,
+        ratedAt: now.toISOString(),
         ...extra,
       });
       const required = new Map([['anna', ['lang']]]);
@@ -3554,20 +3698,21 @@ describe('skills with levels and interest (D120)', () => {
       expect(store.state.holdings.has(id)).toBe(false);
     });
 
-    test('the export is version 6: a holding carries its level, interest and confirmation, a requirement its least level', async () => {
+    test('the export is version 7: a holding carries its level, interest, confirmation and rating, a requirement its least level', async () => {
       directory();
       const { records } = await skills();
       await competence.addRequirement(admin, { typeId: records, positionCode: USK, minLevel: 2 });
       const id = await competence.rateOwnSkill(asAnna, { typeId: records, level: 3, interest: true });
       await competence.validateSkill(boss, id, { level: 2 });
       const doc = await competence.exportDomain('operator:test', ORG);
-      expect(doc.format).toBe('clew.competence/6');
+      expect(doc.format).toBe('clew.competence/7');
       expect(doc.types.find(t => t.id === records)).toMatchObject({ kind: 'skill', validityMonths: null });
       expect(doc.holdings.find(h => h.id === id)).toMatchObject({
         level: 2,
         interest: true,
         validatedBy: 'boss',
         validatedAt: now.toISOString(),
+        ratedAt: now.toISOString(),
         evidence: 'self',
       });
       expect(doc.requirements.find(r => r.typeId === records)).toMatchObject({ minLevel: 2 });
@@ -3580,7 +3725,7 @@ describe('skills with levels and interest (D120)', () => {
       const id = await competence.rateOwnSkill(asAnna, { typeId: english, level: 3, interest: true });
       await competence.validateSkill(boss, id, { level: 2 });
       await competence.registerSkill(boss, 'bo', { typeId: records, level: 1 });
-      await competence.rateOwnSkill(asAnna, { typeId: english, level: 1, interest: false });
+      await competence.changeOwnSkill(asAnna, id, { level: 1, interest: false });
       await competence.removeOwnSkill(asAnna, id);
       expect(actions().filter(a => a.startsWith('competence.skill_'))).toEqual([
         'competence.skill_rated',

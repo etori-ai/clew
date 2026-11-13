@@ -34,6 +34,6 @@ export const fixtureViews = (): ViewEntry[] => [
   { capability: 'talks.commitments', title: 'Åtgärdspunkter', kind: 'list' },
   { capability: 'clew.talks', title: 'Utvecklingssamtal', kind: 'table' },
   { capability: 'clew.commitments', title: 'Åtgärdspunkter', kind: 'list' },
-  { capability: 'competence.attention', title: 'Intyg att åtgärda', kind: 'table' },
+  { capability: 'competence.attention', title: 'Kompetenser att åtgärda', kind: 'table' },
   { capability: 'competence.holdings', title: 'Mina kompetenser', kind: 'list' },
 ];
