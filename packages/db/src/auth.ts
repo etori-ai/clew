@@ -44,8 +44,11 @@ export async function readSession(digest: string) {
   const [row] = await database().select().from(sessions).where(activeSession(digest));
   return row;
 }
-/** What reads a person's access: the pool, or the transaction a sign-in already holds (L1). */
-type Reader = Pick<Transaction, 'select'>;
+/**
+ * What reads a person's access and groups: the pool, or the transaction a caller already holds (L1), such as a sign-in
+ * or the approval of a talk invitation, which may not wait for a second connection.
+ */
+export type Reader = Pick<Transaction, 'select'>;
 export async function readAccess(personId: string, db: Reader = database()) {
   const [row] = await db
     .select({ person: people, grant: accessGrants })
@@ -56,8 +59,8 @@ export async function readAccess(personId: string, db: Reader = database()) {
 }
 export type Access = NonNullable<Awaited<ReturnType<typeof readAccess>>>;
 /** The external ids of the provisioned groups a person is in, for connector audiences (D23, D68). */
-export async function readGroups(personId: string): Promise<string[]> {
-  const rows = await database()
+export async function readGroups(personId: string, db: Reader = database()): Promise<string[]> {
+  const rows = await db
     .select({ externalId: groups.externalId })
     .from(groupMembers)
     .innerJoin(groups, eq(groups.id, groupMembers.groupId))

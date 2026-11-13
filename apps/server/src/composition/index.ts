@@ -34,6 +34,7 @@ import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
 import { calendar, events, notifier, calendarAuthority, followups, planningRound } from './calendar';
+import { talksRound } from '../modules/calendar/adapters/talks-round';
 import { talks } from './talks';
 import { TALKS_CAPABILITY } from '../modules/talk-seam/capabilities';
 import type { AuthenticatedContext, DayView, TalksResult } from '@clew/contracts';
@@ -184,26 +185,16 @@ export async function fireTimer(id: string, generation: number) {
   if (timer?.kind === 'due') return talks.commitmentDue(timer.threadId, generation);
   return reminders.fire(id, generation);
 }
-const roundFailed = logPort('talks', 'error');
 /**
- * The round the planner works towards (D96 items 1-3) is the one `clew.talks` answers for the person, from whichever
- * system answers the talks profile, read as the person through the registry: its dates, and the people whose talk the
- * source records as held. No round, no system that answers for this person, or a read that fails: no round, and the
- * planner plans nothing rather than fail the stream. The built-in round asks the calendar who is booked
- * (`samtalBookings`), which takes the period as input and never reads the round, so the two do not call each other.
+ * The round (`talksRound`, D96 items 1-3), read as the person through the registry. The built-in round asks the
+ * calendar who is booked (`samtalBookings`), which takes the period as input and never reads the round, so the two do
+ * not call each other.
  */
-planningRound.read = async persona => {
-  if (!registry.allowed(audiencedActorOf(persona), TALKS_CAPABILITY)) return null;
-  try {
-    const result = await runCapability<TalksResult>(persona, TALKS_CAPABILITY, {});
-    if (!result.round) return null;
-    const { label, opensOn, dueOn } = result.round;
-    return { label, opensOn, dueOn, held: result.rows.filter(r => r.state === 'held').map(r => r.personId) };
-  } catch (error) {
-    roundFailed('talks: the planning round could not be read', error);
-    return null;
-  }
-};
+planningRound.read = talksRound({
+  answers: persona => !!registry.allowed(audiencedActorOf(persona), TALKS_CAPABILITY),
+  read: persona => runCapability<TalksResult>(persona, TALKS_CAPABILITY, {}),
+  failed: logPort('talks', 'error'),
+});
 /**
  * Clew writes its own talk records only while the built-in module answers the talks profile for this person (D96 item
  * 9): not when an administrator has switched it off, nor for someone outside its audience. The rows are read first, as
