@@ -41,6 +41,7 @@ export const capabilityLabel: Record<Capability, string> = {
   'admin.users': 'Administrera användare',
   'admin.appearance': 'Administrera utseende',
   'admin.competence': 'Administrera kompetenskatalogen',
+  'admin.boarding': 'Introduktion och avslut',
 };
 /**
  * The relations to people a group may give by grant (D121), in the administrator's words: what the grant lets a person

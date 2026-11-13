@@ -7,6 +7,7 @@ import { scimRoutes } from '../../apps/server/src/routes/scim';
 import { checkProvisioning } from '../../scripts/provisioner/check';
 import { scimClient, ScimClientError, type ScimClient } from '../../scripts/provisioner/client';
 import {
+  DEVELOPMENT_NEW_HIRE,
   developmentDirectory,
   developmentScope,
   fullName,
@@ -89,18 +90,19 @@ describe('the synthetic provisioner', () => {
     await push(client, { ...directory, people: [{ ...person, phoneNumbers: [secondWork, onCall] }] });
     expect(store.state.users.get(id)).toMatchObject({ employments, phoneNumbers: [secondWork, onCall] });
   });
-  test('plans D68 groups from units, manager flags, plain groups, capabilities and positions, two hundred and fifty people in forty-eight units', () => {
+  test('plans D68 groups from units, manager flags, plain groups, capabilities and positions, two hundred and fifty-one people in forty-eight units', () => {
     const p = plan(developmentDirectory),
       by = (externalId: string) => p.groups.find(g => g.externalId === externalId)!,
       keyed = (key: string) => p.groups.filter(g => g.externalId.startsWith(key));
-    expect(p.users).toHaveLength(250);
+    expect(p.users).toHaveLength(251);
     expect(p.users.slice(0, 3).map(u => u.body.userName)).toEqual(['hillevi', 'hassan', 'mikael']);
-    expect(new Set(p.users.map(u => u.body.userName)).size).toBe(250);
+    expect(new Set(p.users.map(u => u.body.userName)).size).toBe(251);
     expect(keyed('unit:')).toHaveLength(48);
     // Two units have no manager group: the department nobody leads, and the fritidshem that is led from the school above it.
     expect(keyed('unit-manager:')).toHaveLength(46);
     expect(keyed('capability:').map(g => g.externalId)).toEqual([
       'capability:admin.appearance',
+      'capability:admin.boarding',
       'capability:admin.competence',
       'capability:admin.connectors',
       'capability:admin.users',
@@ -114,7 +116,7 @@ describe('the synthetic provisioner', () => {
       'ad:forvaltning-ledning': 27,
       'ad:forvaltning-omsorg': 84,
       'ad:forvaltning-stadsbyggnad': 34,
-      'ad:forvaltning-utbildning': 87,
+      'ad:forvaltning-utbildning': 88,
       'ad:intranat-redaktorer': 13,
       // D121: the development stack's registrar group, Hillevi alone; the seed maps it to Kompetenssökning.
       'ad:kompetenssamordnare': 1,
@@ -126,7 +128,9 @@ describe('the synthetic provisioner', () => {
       'ad:systemforvaltare': 9,
     });
     expect(by('unit:unit-skola')).toMatchObject({ displayName: 'Bergsåkers skola' });
-    expect(by('unit:unit-skola').members).toHaveLength(12);
+    // Eleven at the school and the new teacher whose employment starts in three weeks (D124), added last.
+    expect(by('unit:unit-skola').members).toHaveLength(13);
+    expect(by('unit:unit-skola').members.at(-1)).toBe('dev:' + DEVELOPMENT_NEW_HIRE);
     expect(by('unit:unit-skola').members[0]).toBe('dev:hillevi');
     expect(by('unit-manager:unit-skola').members).toEqual(['dev:hillevi']);
     // Hillevi's school starts with the calendar fixture's people with their calendar addresses (D96 item 3); the rest
@@ -158,7 +162,7 @@ describe('the synthetic provisioner', () => {
     expect(Object.fromEntries(keyed('position:').map(g => [g.externalId, g.members.length]))).toEqual({
       'position:enhetschef': 10,
       'position:handlaggare': 5,
-      'position:larare': 35,
+      'position:larare': 36,
       'position:maskinforare': 2,
       'position:sjukskoterska': 9,
       'position:stodassistent': 7,
@@ -257,10 +261,10 @@ describe('the synthetic provisioner', () => {
     const { store, client, grantOf } = stack();
     const first = await reconcile(client, developmentDirectory, developmentScope);
     expect(first).toEqual({
-      created: 250,
+      created: 251,
       replaced: 0,
       deactivated: 0,
-      groupsCreated: 123,
+      groupsCreated: 124,
       groupsReplaced: 0,
       groupsRemoved: 0,
       refused: [],
@@ -275,7 +279,7 @@ describe('the synthetic provisioner', () => {
     expect(grantOf('mikael')).toMatchObject({
       unitId: 'unit-it',
       role: 'employee',
-      capabilities: ['admin.appearance', 'admin.competence', 'admin.connectors', 'admin.users'],
+      capabilities: ['admin.appearance', 'admin.boarding', 'admin.competence', 'admin.connectors', 'admin.users'],
     });
     // The manager of two units acts as the lowest unit id; the person in two units as the lowest too.
     const ekonomi = plan(developmentDirectory).groups.find(g => g.externalId === 'unit-manager:unit-ekonomi')!,
@@ -297,10 +301,10 @@ describe('the synthetic provisioner', () => {
       'unit-grundskola',
     );
     expect(store.state.units.get('unit-hr')).toEqual({ organisationId: 'poc', label: 'HR-avdelningen' });
-    // D108 item 5: the source's positions are the organisation's, one nobody holds included, and a hundred people
-    // hold theirs; a position moves no grant.
+    // D108 item 5: the source's positions are the organisation's, one nobody holds included, and a hundred and one
+    // people hold theirs; a position moves no grant.
     expect([...store.state.positions.values()].filter(row => row.organisationId === 'poc')).toHaveLength(9);
-    expect([...store.state.personPositions.values()].filter(ids => ids.length)).toHaveLength(100);
+    expect([...store.state.personPositions.values()].filter(ids => ids.length)).toHaveLength(101);
     const hassan = [...store.state.users.values()].find(u => u.userName === 'hassan')!.id;
     expect(await store.transaction(tx => tx.positionsOf(hassan))).toEqual([
       { code: 'underskoterska', label: 'Undersköterska' },
@@ -314,10 +318,10 @@ describe('the synthetic provisioner', () => {
     const second = await push(client, developmentDirectory);
     expect(second).toEqual({
       created: 0,
-      replaced: 250,
+      replaced: 251,
       deactivated: 0,
       groupsCreated: 0,
-      groupsReplaced: 123,
+      groupsReplaced: 124,
       groupsRemoved: 0,
       refused: [],
     });
@@ -376,8 +380,9 @@ describe('the synthetic provisioner', () => {
         .map(p => (p.userName === 'hillevi' ? { ...p, manager: false } : { ...p, capabilities: ['admin.connectors'] })),
     };
     const summary = await push(client, changed);
-    // The users, appearance and competence key groups lose their only holder; Hillevi's manager group its only manager.
-    expect(summary).toMatchObject({ created: 0, replaced: 249, deactivated: 1, groupsRemoved: 4 });
+    // The users, appearance, competence and boarding key groups lose their only holder; Hillevi's manager group its
+    // only manager.
+    expect(summary).toMatchObject({ created: 0, replaced: 250, deactivated: 1, groupsRemoved: 5 });
     expect(grantOf('hillevi')?.role).toBe('employee');
     expect(grantOf('mikael')?.capabilities).toEqual(['admin.connectors']);
     const hassan = [...store.state.users.values()].find(u => u.userName === 'hassan')!;
@@ -499,17 +504,17 @@ describe('the synthetic provisioner', () => {
     await push(client, developmentDirectory);
     const audited = store.state.audit.length;
     await expect(push(client, { complete: true, units: [], groups: [], people: [] })).rejects.toThrow(
-      'The source lists 0 people and Clew holds 250 active ones from it, so this push would deactivate 250. Nothing was written.',
+      'The source lists 0 people and Clew holds 251 active ones from it, so this push would deactivate 251. Nothing was written.',
     );
     // Truncated: more than a fifth of the people are missing from the export.
     const truncated: Directory = { ...developmentDirectory, people: developmentDirectory.people.slice(0, 190) };
-    await expect(push(client, truncated)).rejects.toThrow('would deactivate 60. Nothing was written.');
+    await expect(push(client, truncated)).rejects.toThrow('would deactivate 61. Nothing was written.');
     expect(store.state.audit.length).toBe(audited);
     expect([...store.state.users.values()].every(u => u.enabled)).toBe(true);
-    expect(store.state.grants.size).toBe(250);
+    expect(store.state.grants.size).toBe(251);
     // A person may decide that the source is right.
-    expect(await push(client, truncated, { force: true })).toMatchObject({ deactivated: 60 });
-    expect([...store.state.users.values()].filter(u => !u.enabled)).toHaveLength(60);
+    expect(await push(client, truncated, { force: true })).toMatchObject({ deactivated: 61 });
+    expect([...store.state.users.values()].filter(u => !u.enabled)).toHaveLength(61);
   });
   test('a group with a foreign key is left alone, and a person Clew refuses is reported while everybody else is sent', async () => {
     const { store, client } = stack();
@@ -1031,17 +1036,17 @@ describe('the synthetic provisioner', () => {
       'Without a token the endpoint answers 401 with the SCIM error resource.',
       'The token is accepted. PATCH yes, filter yes (at most 200 rows a page), bulk no, sort no, ETags no.',
       // More than the two hundred a page carries, so the check reads a full page of users and one more.
-      '250 users: 250 active, 0 deactivated.',
+      '251 users: 251 active, 0 deactivated.',
       expect.stringMatching(
         /^\d+ groups: 48 unit, \d+ unit-manager, \d+ capability, 9 position, \d+ plain \(0 without an externalId\)\.$/,
       ),
       'Every active user is in a unit.',
       // D110: a title Clew cannot read is left out and never refused, so the check is where a broken mapping shows.
-      '249 of 250 active users have a title.',
+      '250 of 251 active users have a title.',
       // D114: what Clew cannot read of a number or an employment is left out, so the counts are where that shows.
-      'Phone numbers on 3 of 250 active users, employments on 250.',
+      'Phone numbers on 3 of 251 active users, employments on 251.',
       // D108 item 5: a position gives no access, so a mapping that sends none shows here.
-      'Positions on 100 of 250 active users, from 9 positions.',
+      'Positions on 101 of 251 active users, from 9 positions.',
       // The area nobody is placed on has units below it, so it is a heading and not an emptied unit (D99).
       'The units form a tree: 1 root, 6 levels deep.',
     ]);

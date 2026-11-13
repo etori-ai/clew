@@ -57,10 +57,11 @@ export interface JobInput {
  * What a timer is for. `reminder` and `snooze` are the person's own (D17, D29): the only kinds a thread lists in
  * `Thread.timers`, the only kinds the reminder path fires, and the person may cancel them. `obligation` keeps a calendar
  * follow-up's time (D30), `due` brings an action point's card back the morning after its due date (D96 item 5) and
- * `dialogue-due` does the same for a dated activity of the follow-up dialogue (D118); they are the system's, never shown
- * as the person's timers, and each is fired by its own module.
+ * `dialogue-due` does the same for a dated activity of the follow-up dialogue (D118), and `boarding` for an item of an
+ * introduction or leaving plan (D124); they are the system's, never shown as the person's timers, and each is fired by
+ * its own module.
  */
-export type TimerKind = 'reminder' | 'snooze' | 'obligation' | 'due' | 'dialogue-due';
+export type TimerKind = 'reminder' | 'snooze' | 'obligation' | 'due' | 'dialogue-due' | 'boarding';
 /** One current desired timer per purpose and thread. Generation fences every old workflow. The delivery columns (`deliveredGeneration`, `deliveredState`, `attempt`, `nextAt`, `leaseUntil`) are the retired outbox's and stay as evidence (D86). */
 export interface TimerIntent {
   id: string;

@@ -498,6 +498,13 @@
       "when": 1794591332777,
       "tag": "0070_read_log_filters",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1794594500780,
+      "tag": "0071_boarding",
+      "breakpoints": true
     }
   ]
 }

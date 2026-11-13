@@ -37,13 +37,14 @@ import { createScheduler } from '../scheduler/usecases';
 import { postgresThreadStore } from '../threads/adapters/postgres';
 import { cancelDurable } from '../dbos/start';
 import { ledger } from './durable';
-import { actorOf, COMPETENCE_CONNECTOR, DIALOGUE_CONNECTOR, inAudience } from '@clew/connectors';
+import { actorOf, BOARDING_CONNECTOR, COMPETENCE_CONNECTOR, DIALOGUE_CONNECTOR, inAudience } from '@clew/connectors';
 import { organisationInAudiences, readAudienceFacts } from '@clew/db/auth';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
 import { calendar, events, notifier, calendarAuthority, followups, planningRound } from './calendar';
 import { talks } from './talks';
+import { boarding } from './boarding';
 import { holdingsPort } from './competence';
 import { dialogue } from './dialogue';
 import { TALKS_CAPABILITY } from '../modules/talk-seam/capabilities';
@@ -182,13 +183,15 @@ calendarAuthority.current = async id => {
  * A fired timer goes to the module that owns its kind (D47, D85): the obligation to the calendar's follow-ups (D30), an
  * action point's `due` to the talks module, which brings the card back while the action point is open and checks no
  * authority on the owner's version (D96: the card stays with its owner), a dated activity's `dialogue-due` to the
- * follow-up dialogue on the same terms (D118), and the person's own reminder and snooze to the reminders, which do.
+ * follow-up dialogue on the same terms (D118), a plan's item's `boarding` to the boarding module, which does the same
+ * while the item and its plan are open (D124), and the person's own reminder and snooze to the reminders, which do.
  */
 export async function fireTimer(id: string, generation: number) {
   const timer = await store.readTimer(id);
   if (timer?.kind === 'obligation') return followups.fire(timer.threadId, generation);
   if (timer?.kind === 'due') return talks.commitmentDue(timer.threadId, generation);
   if (timer?.kind === 'dialogue-due') return dialogue.activityDue(timer.threadId, generation);
+  if (timer?.kind === 'boarding') return boarding.itemDue(timer.threadId, generation);
   return reminders.fire(id, generation);
 }
 const roundFailed = logPort('talks', 'error');
@@ -235,6 +238,14 @@ export async function competenceWritable(persona: AuthenticatedContext) {
 export async function dialogueWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
   return registry.visible(actorOf(persona), DIALOGUE_CONNECTOR);
+}
+/**
+ * Clew reads and writes introduction and leaving plans only while the built-in module is switched on and visible to
+ * this person (D124), read fresh as above.
+ */
+export async function boardingWritable(persona: AuthenticatedContext) {
+  await refreshConnectors();
+  return registry.visible(actorOf(persona), BOARDING_CONNECTOR);
 }
 /**
  * The copy of what sources hold (D108 item 9) reads only while the module is switched on for the installation, the

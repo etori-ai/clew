@@ -12,7 +12,13 @@ import { adminRoutes } from './routes/admin';
 import { headerRoutes } from './routes/header';
 import { appearanceRoutes } from './routes/appearance';
 import { appearance } from './composition/appearance';
-import { competenceWritable, connectorReconcile, dialogueWritable, talksWritable } from './composition';
+import {
+  boardingWritable,
+  competenceWritable,
+  connectorReconcile,
+  dialogueWritable,
+  talksWritable,
+} from './composition';
 import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/reconcile';
 import { connectorRoutes } from './routes/connectors';
 import { protocolRoutes } from './routes/protocol';
@@ -38,6 +44,8 @@ import { dialogueRoutes } from './routes/dialogue';
 import { dialogue } from './composition/dialogue';
 import { competenceRoutes } from './routes/competence';
 import { competence, startCompetenceCopy } from './composition/competence';
+import { boardingRoutes } from './routes/boarding';
+import { boarding } from './composition/boarding';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
 for (const file of ['.env.local']) {
@@ -115,6 +123,8 @@ app.route('/api/talks', talkRoutes({ talks, writable: talksWritable }));
 app.route('/api/dialogue', dialogueRoutes({ dialogue, writable: dialogueWritable }));
 // The competence module's catalogue and registrations (D108), only while the built-in module is switched on for the person.
 app.route('/api/competence', competenceRoutes({ competence, writable: competenceWritable }));
+// Introduction and leaving plans (D124), only while the built-in module is switched on for the person.
+app.route('/api/boarding', boardingRoutes({ boarding, writable: boardingWritable }));
 // The shared header (D88): what the person's header connector lists for them.
 app.route('/api/header', headerRoutes);
 app.route('/api', api);

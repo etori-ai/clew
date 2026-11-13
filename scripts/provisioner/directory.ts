@@ -442,7 +442,7 @@ const personas: DirectoryPerson[] = [
     department: 'unit-it',
     manager: false,
     groups: ['ad:intranat-redaktorer'],
-    capabilities: ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'],
+    capabilities: ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence', 'admin.boarding'],
     login: true,
   },
   {
@@ -680,8 +680,33 @@ export const developmentScope = {
     'capability:admin.connectors',
     'capability:admin.appearance',
     'capability:admin.competence',
+    'capability:admin.boarding',
   ],
 };
+/**
+ * A teacher at Hillevi's school whose employment starts three weeks from the day the directory is built (D124): the
+ * person the development stack's manager is suggested an introduction for. A real directory sends a start date it
+ * already knows; Clew keeps it as the directory's and only prefills the suggestion with it. Computed when the
+ * provisioner runs, so the suggestion never falls behind today; added after the generated people, so nobody's
+ * generated name moves.
+ */
+export const DEVELOPMENT_NEW_HIRE = 'vilma.strand';
+const NEW_HIRE_STARTS_IN_DAYS = 21;
+function newHire(today = new Date()): DirectoryPerson {
+  const start = new Date(today.getTime() + NEW_HIRE_STARTS_IN_DAYS * 86_400_000).toISOString().slice(0, 10);
+  return {
+    active: true,
+    externalId: 'dev:' + DEVELOPMENT_NEW_HIRE,
+    userName: DEVELOPMENT_NEW_HIRE,
+    givenName: 'Vilma',
+    familyName: 'Strand',
+    email: DEVELOPMENT_NEW_HIRE + '@clew.test',
+    employments: [{ unitId: 'unit-skola', title: 'Lärare', employmentType: 'Tillsvidare', startDate: start }],
+    department: 'unit-skola',
+    manager: false,
+    capabilities: [],
+  };
+}
 export const developmentDirectory: Directory = {
   complete: true,
   units: UNITS.map(unit => {
@@ -690,6 +715,6 @@ export const developmentDirectory: Directory = {
   }),
   groups: GROUPS,
   positions: POSITIONS,
-  people: [...handwritten, ...generated()].map(inArea).map(withPositions),
+  people: [...handwritten, ...generated(), newHire()].map(inArea).map(withPositions),
 };
 export const fullName = (p: DirectoryPerson) => `${p.givenName} ${p.familyName}`;

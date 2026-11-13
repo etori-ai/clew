@@ -3,6 +3,7 @@ import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
 import {
   actorOf,
+  BOARDING_CONNECTOR,
   CapabilityError,
   COMPETENCE_CONNECTOR,
   Registry,
@@ -31,6 +32,8 @@ import { competenceConnector } from '../modules/competence/capabilities';
 import { competence } from '../composition/competence';
 import { dialogueConnector } from '../modules/dialogue/capabilities';
 import { dialogue } from '../composition/dialogue';
+import { boardingConnector } from '../modules/boarding/capabilities';
+import { boarding } from '../composition/boarding';
 import { logger } from '../logging';
 import { relations } from '../composition/relations';
 
@@ -91,19 +94,21 @@ const clewConnector = {
 // The competence module (D108 item 13) is bundled too, and is the one bundled connector an installation switches on
 // itself: its row is created disabled (`offAtFirstBoot`), so nothing of the domain shows until an administrator enables it.
 // The follow-up dialogue (D118) is bundled and enabled by default, as talks is: an administrator can switch it off.
+// Introduction and leaving (D124) start switched off the same way.
 const bundled = [
   calendarConnector(calendar, events),
   clewConnector,
   talksConnector(talks),
   competenceConnector(competence),
   dialogueConnector(dialogue),
+  boardingConnector(boarding),
 ];
 for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*'] });
 export const internalIds = internal.map(m => m.id);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);
-/** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13). */
-export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR];
+/** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13, D124). */
+export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR, BOARDING_CONNECTOR];
 export { actorOf };
 /**
  * The holdings port (D108 item 9, D119) over the live registry: the sources that answer the holdings profile for the

@@ -11,6 +11,22 @@ import {
   COMPETENCE_URI_MAX,
   type CompetenceImportKind,
 } from './competence-import';
+import {
+  BOARDING_CONDITIONS,
+  BOARDING_EVENTS,
+  BOARDING_IMPORT_ROWS_MAX,
+  BOARDING_ITEM_KINDS,
+  BOARDING_LAYER_NAME_MAX,
+  BOARDING_OFFSET_MAX,
+  BOARDING_OWNER_ROLES,
+  BOARDING_TIED_TO_MAX,
+  BOARDING_TITLE_MAX,
+  BOARDING_VALUE_MAX,
+  type BoardingCondition,
+  type BoardingEvent,
+  type BoardingItemKind,
+  type BoardingOwnerRole,
+} from './boarding-import';
 // Explicit exports keep these names visible to the Node ESM server through this package's CommonJS boundary.
 export {
   MAX_DOCUMENT_BYTES,
@@ -1451,6 +1467,251 @@ export const DialogueConfigSchema = object({
   ),
 });
 export type DialogueConfig = Static<typeof DialogueConfigSchema>;
+/**
+ * Introduction and leaving (D124): Clew's own domain. A plan is a checklist about one person for one event, anchored on
+ * a day the manager enters (the first day, the last day), assembled from an administrator's layers; every open item is
+ * a work item in its owner's stream. The phase of an item is its distance from that day.
+ */
+export const BOARDING_PHASES = [
+  'beforeStart',
+  'firstDay',
+  'firstWeek',
+  'first90Days',
+  'later',
+  'earlier',
+  'last90Days',
+  'lastWeek',
+  'lastDay',
+  'afterLeaving',
+] as const;
+export type BoardingPhase = (typeof BOARDING_PHASES)[number];
+/** Swedish. Each phase as a plan's page heads it. */
+export const BOARDING_PHASE_WORDS: Record<BoardingPhase, string> = {
+  beforeStart: 'Före första dagen',
+  firstDay: 'Första dagen',
+  firstWeek: 'Första veckan',
+  first90Days: 'De första 90 dagarna',
+  later: 'Senare',
+  earlier: 'Tidigare',
+  last90Days: 'De sista 90 dagarna',
+  lastWeek: 'Sista veckan',
+  lastDay: 'Sista dagen',
+  afterLeaving: 'Efter sista dagen',
+};
+/** How the reader stands to a plan (D124): its manager, the person it is about, or the owner of some of its items. */
+export const BOARDING_ACCESS = ['manager', 'person', 'owner'] as const;
+export type BoardingAccess = (typeof BOARDING_ACCESS)[number];
+/** Swedish. An item's state as a list says it: done, past its due day, or still to do. */
+export const BOARDING_ITEM_STATUS_WORDS = ['Klar', 'Försenad', 'Att göra'] as const;
+export type BoardingItemStatus = (typeof BOARDING_ITEM_STATUS_WORDS)[number];
+/** A plan's state: open, open with an item past its due day, open with every item done, or closed by its manager. */
+export const BOARDING_PLAN_STATES = ['open', 'overdue', 'complete', 'closed'] as const;
+export type BoardingPlanState = (typeof BOARDING_PLAN_STATES)[number];
+/** An item's title as a manager may type one for one plan: one short line (free text about a person's plan, sealed). */
+export const BOARDING_ITEM_TEXT_MAX = 200;
+const boardingEvent = literals(BOARDING_EVENTS);
+const boardingKind = literals(BOARDING_ITEM_KINDS);
+const boardingOwnerRole = literals(BOARDING_OWNER_ROLES);
+const personName = Type.String({ minLength: 1, maxLength: 512 });
+const named = object({ id, name: personName });
+/**
+ * `POST /api/boarding/plans` and `POST /api/boarding/preview` (D124): the person, the event, the day the plan is anchored
+ * on (the first day of an introduction, the last day of a leaving; entered or confirmed by the manager, never taken
+ * from the directory) and, optionally, a buddy among the manager's reports.
+ */
+export const BoardingStartBodySchema = object({
+  personId: id,
+  event: boardingEvent,
+  anchorOn: calendarDay,
+  buddyId: Type.Optional(id),
+});
+export type BoardingStartBody = Static<typeof BoardingStartBodySchema>;
+/** `POST /api/boarding/plans/:id/items`: an item the manager adds to one plan. Its title is free text, sealed at rest. */
+export const BoardingItemAddBodySchema = object({
+  title: Type.String({ minLength: 1, maxLength: BOARDING_ITEM_TEXT_MAX * 2 }),
+  kind: boardingKind,
+  ownerRole: boardingOwnerRole,
+  dueOn: calendarDay,
+  tiedTo: Type.Optional(Type.String({ minLength: 1, maxLength: BOARDING_TIED_TO_MAX * 2 })),
+});
+export type BoardingItemAddBody = Static<typeof BoardingItemAddBodySchema>;
+/**
+ * `POST /api/boarding/layers/import`: a whole file of layers as the page read it (`parseBoardingImport`), each row
+ * checked again on the server with the same rule. Lengths here are bounds; the characters are counted there.
+ */
+export const BoardingImportBodySchema = object({
+  rows: Type.Array(
+    object({
+      row: Type.Integer({ minimum: 2, maximum: BOARDING_IMPORT_ROWS_MAX + 1 }),
+      layer: Type.String({ minLength: 1, maxLength: BOARDING_LAYER_NAME_MAX * 2 }),
+      event: boardingEvent,
+      condition: literals(BOARDING_CONDITIONS),
+      value: Type.Union([Type.String({ minLength: 1, maxLength: BOARDING_VALUE_MAX * 2 }), Type.Null()]),
+      title: Type.String({ minLength: 1, maxLength: BOARDING_TITLE_MAX * 2 }),
+      kind: boardingKind,
+      owner: boardingOwnerRole,
+      offsetDays: Type.Integer({ minimum: -BOARDING_OFFSET_MAX, maximum: BOARDING_OFFSET_MAX }),
+      tiedTo: Type.Union([Type.String({ minLength: 1, maxLength: BOARDING_TIED_TO_MAX * 2 }), Type.Null()]),
+    }),
+    { minItems: 1, maxItems: BOARDING_IMPORT_ROWS_MAX },
+  ),
+});
+export type BoardingImportBody = Static<typeof BoardingImportBodySchema>;
+/** One item of a plan as its page and the read `boarding.plan` list it. */
+export const BoardingItemRowSchema = object({
+  id,
+  title: Type.String({ minLength: 1, maxLength: BOARDING_ITEM_TEXT_MAX * 2 }),
+  kind: boardingKind,
+  kindLabel: Type.String({ maxLength: 40 }),
+  ownerRole: boardingOwnerRole,
+  /** Swedish: "Chef", "Medarbetaren", "Fadder". */
+  ownerLabel: Type.String({ maxLength: 40 }),
+  /** The owner's name; absent once the owner was erased. */
+  owner: Type.Optional(personName),
+  ownerId: Type.Optional(id),
+  mine: Type.Boolean({ description: 'The reader owns it.' }),
+  dueOn: calendarDay,
+  phase: literals(BOARDING_PHASES),
+  phaseLabel: Type.String({ maxLength: 40 }),
+  done: Type.Boolean(),
+  doneAt: Type.Optional(instant),
+  status: literals(BOARDING_ITEM_STATUS_WORDS),
+  tiedTo: Type.Optional(Type.String({ maxLength: BOARDING_TIED_TO_MAX * 2 })),
+  /** A manager typed it for this plan: free text, never on a card. False for an item from a layer. */
+  added: Type.Boolean(),
+  /** The reader may tick it off or open it again: its owner, or the plan's manager, while the plan is open. */
+  canTick: Type.Boolean(),
+});
+export type BoardingItemRow = Static<typeof BoardingItemRowSchema>;
+/**
+ * One plan (D124), what `boarding.plan` and `GET /api/boarding/plans/:id` answer: the plan, its items grouped by phase
+ * for the page, and the same items as `rows` for the declared view. An owner who is neither the plan's manager nor its
+ * person (a buddy) is given the items they own and no others.
+ */
+export const BoardingPlanOutputSchema = object({
+  heading: Type.Optional(Type.String({ maxLength: 120 })),
+  note: Type.Optional(Type.String({ maxLength: 200 })),
+  plan: object({
+    id,
+    personId: id,
+    name: personName,
+    userName: Type.Union([Type.String({ maxLength: 512 }), Type.Null()]),
+    event: boardingEvent,
+    anchorOn: calendarDay,
+    buddy: Type.Union([named, Type.Null()]),
+    startedBy: Type.Union([named, Type.Null()]),
+    startedAt: instant,
+    closedAt: Type.Union([instant, Type.Null()]),
+    done: Type.Integer({ minimum: 0 }),
+    total: Type.Integer({ minimum: 0 }),
+    access: literals(BOARDING_ACCESS),
+  }),
+  phases: Type.Array(
+    object({
+      phase: literals(BOARDING_PHASES),
+      label: Type.String({ maxLength: 40 }),
+      items: Type.Array(BoardingItemRowSchema),
+    }),
+  ),
+  rows: Type.Array(BoardingItemRowSchema, { maxItems: 1000 }),
+});
+export type BoardingPlanOutput = Static<typeof BoardingPlanOutputSchema>;
+/** `boarding.plan`: one plan, by its id. Who may read it is the use case's check (D117: a plan id names no person). */
+export const BoardingPlanInputSchema = object({ plan: id });
+export type BoardingPlanInput = Static<typeof BoardingPlanInputSchema>;
+/** One plan in a list (`GET /api/boarding/plans`, a person's plans): status and counts, no item. */
+export interface BoardingPlanSummary {
+  id: string;
+  personId: string;
+  name: string;
+  userName: string | null;
+  event: BoardingEvent;
+  anchorOn: string;
+  startedAt: string;
+  closedAt: string | null;
+  done: number;
+  total: number;
+  /** Open items the reader owns. */
+  waiting: number;
+  /** Open items past their due day. */
+  overdue: number;
+  state: BoardingPlanState;
+}
+/** `GET /api/boarding/plans`: the open plans of the reader's reports, and those the reader started for someone since deactivated. */
+export interface BoardingPlansOutput {
+  rows: BoardingPlanSummary[];
+}
+/** `GET /api/boarding/people/:personId`: one person's plans, as the plan page opens on them. */
+export interface BoardingPersonOutput {
+  person: { id: string; name: string; userName: string | null; enabled: boolean };
+  /** The reader manages the person now, so may start a plan; the person cannot start their own. */
+  canStart: boolean;
+  /** Open plans first, newest first, then closed ones. */
+  plans: BoardingPlanSummary[];
+  /** Whom the reader may choose as a buddy: their other reports, by name. Empty unless `canStart`. */
+  buddies: Array<{ id: string; name: string }>;
+  /**
+   * The start date of an employment the directory sent, ahead within the suggestion window and with no introduction:
+   * only a suggestion for the first day, which the manager confirms or changes (D124; Clew holds no directory dates).
+   */
+  suggestedFirstDay?: string;
+}
+/** `POST /api/boarding/preview`: what starting the plan would make, the start dialog's last step. Nothing is written. */
+export interface BoardingPreview {
+  person: { id: string; name: string };
+  event: BoardingEvent;
+  anchorOn: string;
+  buddy: { id: string; name: string } | null;
+  /** The layers that apply, in the order their items are assembled: everyone, unit, position, employment type. */
+  layers: Array<{ id: string; name: string; condition: BoardingCondition; value: string | null }>;
+  /** The items in due order, each with its owner, its phase and the layer it comes from. */
+  items: Array<{
+    title: string;
+    kind: BoardingItemKind;
+    ownerRole: BoardingOwnerRole;
+    owner: { id: string; name: string };
+    dueOn: string;
+    phase: BoardingPhase;
+    layerId: string;
+  }>;
+}
+/** One report whose employment starts within the suggestion window and who has no introduction (D124). */
+export interface BoardingSuggestion {
+  personId: string;
+  name: string;
+  userName: string | null;
+  startOn: string;
+}
+export interface BoardingSuggestionsOutput {
+  rows: BoardingSuggestion[];
+}
+/** `GET /api/boarding/layers`: the organisation's layers, by event and name, each with its items in order. */
+export interface BoardingLayersOutput {
+  layers: Array<{
+    id: string;
+    event: BoardingEvent;
+    name: string;
+    condition: BoardingCondition;
+    value: string | null;
+    updatedAt: string;
+    items: Array<{
+      id: string;
+      title: string;
+      kind: BoardingItemKind;
+      ownerRole: BoardingOwnerRole;
+      offsetDays: number;
+      tiedTo: string | null;
+      phase: BoardingPhase;
+    }>;
+  }>;
+}
+/** What an import did: layers in the file, added, replaced (their condition or items changed) and left as they were. */
+export interface BoardingImportOutcome {
+  layers: number;
+  added: number;
+  replaced: number;
+  unchanged: number;
+}
 
 /**
  * One piece of news as a news source's connector lists it (D112, amended 2026-11-11): what Hem's "Nyheter" and the
@@ -3512,9 +3773,16 @@ export type Role = Static<typeof RoleSchema>;
  * The grant capabilities Clew enforces (D85): a closed list. A group mapping, a `capability:` group key or the development
  * seed may name nothing else; a new name is a contract change. `admin.connectors` administers connected systems (D23),
  * `admin.users` the users page and the group-to-capability mapping (D85), `admin.appearance` the installation's theme
- * and logo (D98), `admin.competence` the catalogue of competence types (D108 item 8).
+ * and logo (D98), `admin.competence` the catalogue of competence types (D108 item 8), `admin.boarding` the layers that
+ * introduction and leaving plans are assembled from (D124).
  */
-export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'] as const;
+export const CAPABILITIES = [
+  'admin.connectors',
+  'admin.users',
+  'admin.appearance',
+  'admin.competence',
+  'admin.boarding',
+] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 export const CapabilitySchema = literals(CAPABILITIES);
 export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);
@@ -4482,6 +4750,45 @@ export {
   type CompetenceImportResult,
   type CompetenceImportRow,
 } from './competence-import';
+// The boarding layers' file and the closed lists it names (D124), one by one for the same reason.
+export {
+  BOARDING_CONDITIONS,
+  BOARDING_CONDITION_WORDS,
+  BOARDING_EVENTS,
+  BOARDING_EVENT_WORDS,
+  BOARDING_IMPORT_COLUMNS,
+  BOARDING_IMPORT_MAX_CHARS,
+  BOARDING_IMPORT_PROBLEMS_MAX,
+  BOARDING_IMPORT_ROWS_MAX,
+  BOARDING_ITEM_KINDS,
+  BOARDING_KIND_WORDS,
+  BOARDING_LAYER_ITEMS_MAX,
+  BOARDING_LAYER_NAME_MAX,
+  BOARDING_OFFSET_MAX,
+  BOARDING_OWNER_ROLES,
+  BOARDING_OWNER_WORDS,
+  BOARDING_TIED_TO_MAX,
+  BOARDING_TITLE_MAX,
+  BOARDING_VALUE_MAX,
+  boardingConditionOf,
+  boardingEventOf,
+  boardingImportRowProblem,
+  boardingKindOf,
+  boardingLayersOf,
+  boardingOwnerOf,
+  boardingText,
+  layerKey,
+  parseBoardingImport,
+  type BoardingCondition,
+  type BoardingEvent,
+  type BoardingImportCandidate,
+  type BoardingImportLayer,
+  type BoardingImportProblem,
+  type BoardingImportResult,
+  type BoardingImportRow,
+  type BoardingItemKind,
+  type BoardingOwnerRole,
+} from './boarding-import';
 /** The import file keeps its own copy of the kinds (it imports nothing of ours); the compiler holds it to this list. */
 type SameKinds = [CompetenceImportKind] extends [CompetenceKind]
   ? [CompetenceKind] extends [CompetenceImportKind]
