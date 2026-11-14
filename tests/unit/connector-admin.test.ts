@@ -191,7 +191,7 @@ describe('adding and governing a remote connector', () => {
       registered: false,
       health: { status: 'ok', at: T0 },
       url: 'http://hello',
-      counts: { capabilities: 5, execute: 2, tools: 3 },
+      counts: { capabilities: 6, execute: 2, tools: 3 },
     });
     expect(connector.capabilities.map(c => c.name)).toContain('hello.greeting');
     expect((await store.read('hello'))!.secret).toBe(`sealed(hello):${SECRET}`);

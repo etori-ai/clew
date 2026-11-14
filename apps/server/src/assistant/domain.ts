@@ -38,3 +38,37 @@ export function choicesFor(
 /** The person's pick when they may still use it, else the default, else the first they may use; nothing when they have none. */
 export const pickModel = (choices: readonly ModelRecord[], saved: string | undefined): ModelRecord | undefined =>
   choices.find(m => m.id === saved) ?? choices[0];
+
+/** The person stopped the turn before its answer was written; nothing was saved and the model is not marked down. */
+export class TurnStopped extends Error {
+  constructor() {
+    super('Frågan avbröts.');
+    this.name = 'TurnStopped';
+  }
+}
+
+/**
+ * Clew's own assistant suggests handing the question to another system's assistant (D125 item 11). Nothing has left
+ * Clew and nothing was saved: the person is asked first. Carries only what the box needs to ask them.
+ */
+export class HandoverOffered extends Error {
+  constructor(readonly assistant: { id: string; name: string; description?: string; source: string }) {
+    super('Frågan kan lämnas till en assistent i ett annat system.');
+    this.name = 'HandoverOffered';
+  }
+}
+
+/**
+ * A question on its way to another system's assistant is held (D125 item 13): it names someone the person manages or
+ * one of their open cards. Nothing has left Clew and nothing was saved: the person is asked first. It says which kind
+ * of thing the question names, never which person or card.
+ */
+export class HandoverHeld extends Error {
+  constructor(
+    readonly assistant: { id: string; name: string; description?: string; source: string },
+    readonly about: 'person' | 'card',
+  ) {
+    super('Frågan nämner något som hör hemma i Clew.');
+    this.name = 'HandoverHeld';
+  }
+}

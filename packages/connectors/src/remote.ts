@@ -1,5 +1,11 @@
 import { Value } from 'typebox/value';
-import { MAX_DOCUMENT_BYTES, contractProblems, type DocumentContent } from '@clew/contracts';
+import {
+  MAX_DOCUMENT_BYTES,
+  contractProblems,
+  type AssistantAsk,
+  type AssistantAskEvent,
+  type DocumentContent,
+} from '@clew/contracts';
 import {
   CapabilityError,
   InstallationReadError,
@@ -14,6 +20,7 @@ import {
 } from './index';
 import { connectorProblems } from './validation';
 import {
+  ASK_ROUTE,
   CallResponseSchema,
   FigureResponseSchema,
   ConnectorManifestSchema,
@@ -51,6 +58,9 @@ export interface RemoteTransport {
   fetch?: FetchLike;
   /** Milliseconds before a call counts as unavailable. */
   timeoutMs?: number;
+  /** For a question to a source's assistant: the longest silence and the longest whole answer; `ASK_IDLE_MS` and `ASK_TOTAL_MS` unless a test says otherwise. */
+  askIdleMs?: number;
+  askTotalMs?: number;
 }
 /**
  * What an assertion is bound to (D117): `body`, the exact request body it is sent with, which the signer digests
@@ -132,6 +142,59 @@ async function delegated(
   }
 }
 const CAPABILITY_ROUTE = '/clew/capabilities/';
+/** How long a source's assistant may be silent, and how long one answer may take in all, before it counts as unavailable. */
+export const ASK_IDLE_MS = 30_000;
+export const ASK_TOTAL_MS = 180_000;
+/** The most bytes of one answer's event stream Clew reads. */
+const ASK_STREAM_MAX = 2_000_000;
+/**
+ * The answer of `POST /clew/ask` as its events: server-sent events, one JSON value per `data:` line, read as they
+ * arrive. Anything that is not JSON, a silence longer than `ASK_IDLE_MS` or a stream longer than `ASK_STREAM_MAX` is
+ * the source failing. The shape of each event is the registry's to check.
+ */
+async function* askEvents(body: ReadableStream<Uint8Array>, source: string, idleMs: number): AsyncGenerator<unknown> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let size = 0;
+  try {
+    for (;;) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(unavailable(source)), idleMs);
+        }),
+      ]).finally(() => clearTimeout(timer));
+      if (chunk.done) break;
+      size += chunk.value.length;
+      if (size > ASK_STREAM_MAX) throw unavailable(source);
+      buffer += decoder.decode(chunk.value, { stream: true });
+      for (;;) {
+        const end = buffer.search(/\r?\n\r?\n/);
+        if (end < 0) break;
+        const block = buffer.slice(0, end);
+        buffer = buffer.slice(end).replace(/^\r?\n\r?\n/, '');
+        const data = block
+          .split(/\r?\n/)
+          .filter(line => line.startsWith('data:'))
+          .map(line => line.slice(5).replace(/^ /, ''))
+          .join('\n');
+        // A comment line (a keep-alive) or an event without data is not an event of the profile.
+        if (!data) continue;
+        let event: unknown;
+        try {
+          event = JSON.parse(data);
+        } catch {
+          throw unavailable(source);
+        }
+        yield event;
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
 async function post(
   transport: RemoteTransport,
   source: string,
@@ -375,6 +438,66 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
               mediaType: response.headers.get('content-type') as DocumentContent['mediaType'],
               revision: response.headers.get('x-clew-document-revision') ?? '',
             };
+          },
+        }
+      : {}),
+    ...(manifest.assistants
+      ? {
+          assistants: {
+            list: manifest.assistants.list,
+            ask: async function* (actor: Actor, ask: AssistantAsk, clew: Clew): AsyncGenerator<AssistantAskEvent> {
+              // The body is serialised once: the assertion is bound to exactly these bytes (D117).
+              const text = JSON.stringify({ actor: actorOf(actor), ask });
+              const signal = AbortSignal.any([
+                AbortSignal.timeout(transport.askTotalMs ?? ASK_TOTAL_MS),
+                ...(clew.signal ? [clew.signal] : []),
+              ]);
+              let response: Response;
+              try {
+                response = await (transport.fetch ?? fetch)(transport.url + ASK_ROUTE, {
+                  redirect: 'error',
+                  method: 'POST',
+                  headers: {
+                    'content-type': 'application/json',
+                    accept: 'text/event-stream',
+                    authorization: 'Bearer ' + (await transport.assert(actor, clew.chain, { body: text })),
+                    ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
+                    ...(manifest.delegation
+                      ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }
+                      : {}),
+                  },
+                  body: text,
+                  signal,
+                });
+              } catch (error) {
+                if (error instanceof CapabilityError) throw error;
+                throw unavailable(source);
+              }
+              if (!response.ok || !response.body) {
+                // A refusal before the answer starts: the protocol's error body with its status, as a capability's.
+                let json: unknown;
+                try {
+                  json = await response.json();
+                } catch {
+                  throw unavailable(source);
+                }
+                const code = (json as { error?: { code?: ProtocolErrorCode } } | null)?.error?.code;
+                if (response.status === 403 && code === 'denied') yield { type: 'error', code: 'denied' };
+                else if (response.status === 404 && code === 'not-found') yield { type: 'error', code: 'not-found' };
+                else throw unavailable(source);
+                return;
+              }
+              try {
+                yield* askEvents(
+                  response.body,
+                  source,
+                  transport.askIdleMs ?? ASK_IDLE_MS,
+                ) as AsyncGenerator<AssistantAskEvent>;
+              } catch (error) {
+                if (error instanceof CapabilityError) throw error;
+                throw unavailable(source);
+              }
+            },
           },
         }
       : {}),

@@ -30,7 +30,7 @@ import type {
 } from '@clew/contracts';
 import type { ConversationEvent, ConversationInput as ConversationInputType } from '@clew/contracts';
 import { CalendarError } from '@clew/calendar/model';
-import { TurnStopped } from '../assistant';
+import { HandoverHeld, HandoverOffered, TurnStopped } from '../assistant';
 import type { ActInput as ActInputType, EffectInput as EffectInputType } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
 import { verbsFor } from '../assistant/verbs';
@@ -77,7 +77,7 @@ const {
 } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
-const { ask, converse, listObjects, reply } = assistant;
+const { ask, converse, listAssistants, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const approval = ajv.compile(
   Type.Object(
@@ -472,10 +472,23 @@ api.post('/conversation/stream', async c => {
     stream.onAbort(() => stop.abort());
     const send = (event: ConversationEvent) => stream.writeSSE({ data: JSON.stringify(event) }).catch(() => undefined);
     try {
-      const response = await converse(persona, input, { emit: event => void send(event), signal: stop.signal });
+      const response = await converse(persona, input, {
+        emit: event => void send(event),
+        signal: stop.signal,
+        // This caller can ask the person: Clew's assistant may suggest another system's assistant (D125 item 11).
+        offers: true,
+      });
       await send({ type: 'done', response });
     } catch (error) {
       if (error instanceof TurnStopped || stop.signal.aborted) return;
+      if (error instanceof HandoverOffered) {
+        await send({ type: 'offer', assistant: error.assistant });
+        return;
+      }
+      if (error instanceof HandoverHeld) {
+        await send({ type: 'hold', assistant: error.assistant, about: error.about });
+        return;
+      }
       if (!(error instanceof InputError || error instanceof CalendarError))
         logger.error({ scope: 'assistant', error }, 'conversation turn failed');
       await send({
@@ -501,6 +514,8 @@ api.get('/threads/:id/verbs', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
   return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Ärendet finns inte.' }, 404);
 });
+/** The assistants of other systems the person may hand a conversation to (the assistants profile); empty when no source has any for them. */
+api.get('/assistant/handover', async c => c.json({ assistants: await listAssistants(c.get('session').context) }));
 /** The person's models (D24): the ones they may pick, the one in use and whether it answers; choosing one is their own preference. */
 api.get('/assistant/status', async c => c.json(await models.statusFor(c.get('session').context)));
 api.patch('/assistant/model', async c =>

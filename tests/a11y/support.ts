@@ -13,6 +13,7 @@ import {
   connectorPreview,
   connectors,
   conversation,
+  handedConversation,
   events,
   searchOutput,
   snoozePresets,
@@ -188,7 +189,15 @@ export class MockApi {
   answerDelay = 0;
   private answerHeld?: Promise<void>;
   /** Every question the box sent, as it was sent: the text, the conversation it continues, and what went along as chips. */
-  asked: { text: string; conversationId?: string; chips?: { ref: string }[] }[] = [];
+  asked: {
+    text: string;
+    conversationId?: string;
+    chips?: { ref: string }[];
+    assistant?: string;
+    suggested?: boolean;
+    own?: boolean;
+    confirmed?: boolean;
+  }[] = [];
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   /** How long the areas take, so a test can see Läget's tiles in their shape (D54). */
@@ -449,6 +458,16 @@ export class MockApi {
   providers: ProviderSummary[] = modelProviders();
   models: ModelSummary[] = models();
   modelChoices = 1;
+  /** The assistants of other systems the person may hand a conversation to; none unless a spec lists one. */
+  handoverAssistants: import('@clew/contracts').HandoverAssistant[] = [];
+  /** The other system does not answer a handed-over question. */
+  handoverFails = false;
+  /** The assistant returns the conversation: it hands the question back, or answers and is done (D125 item 12). */
+  handoverReturns: 'declined' | 'completed' | undefined = undefined;
+  /** Clew's own assistant hands a question that matches to the listed assistant, as its model would (D125 item 11). */
+  routes: RegExp | undefined = undefined;
+  /** A question to the assistant that matches is held for naming the person's staff (D125 item 13). */
+  holds: RegExp | undefined = undefined;
   currentModel = 'gpt-oss-120b';
   output: unknown = {
     date: '2026-11-04',
@@ -951,6 +970,7 @@ export class MockApi {
     }
     if (path === '/attention') return json(attention);
     if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
+    if (path === '/assistant/handover') return json({ assistants: this.handoverAssistants });
     if (path === '/assistant/model' && request.method() === 'PATCH') {
       this.currentModel = (request.postDataJSON() as { modelId: string }).modelId;
       return json(assistantStatus(this.modelChoices, this.currentModel));
@@ -1634,14 +1654,52 @@ export class MockApi {
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
     // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
-      const body = request.postDataJSON() as { text: string; conversationId?: string; chips?: { ref: string }[] };
+      const body = request.postDataJSON() as {
+        text: string;
+        conversationId?: string;
+        chips?: { ref: string }[];
+        assistant?: string;
+        suggested?: boolean;
+        own?: boolean;
+        confirmed?: boolean;
+      };
       this.asked.push(body);
       await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
-      const response = conversation(this.threads, body.text, body.conversationId);
-      const step = { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };
+      // Clew's assistant suggests the listed assistant for a question that matches, and the person is asked first
+      // (D125 item 11): nothing is saved, and the turn ends as an offer.
+      if (!body.assistant && !body.own && this.routes?.test(body.text) && this.handoverAssistants[0]) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'offer', assistant: this.handoverAssistants[0] })}\n\n`,
+        });
+        return;
+      }
+      // A question on its way to the assistant that names the person's staff is held, and they are asked (D125 item 13).
+      if (body.assistant && !body.confirmed && this.holds?.test(body.text) && this.handoverAssistants[0]) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'hold', assistant: this.handoverAssistants[0], about: 'person' })}\n\n`,
+        });
+        return;
+      }
+      const handed = !!body.assistant;
+      const response = handed
+        ? handedConversation(this.threads, body.text, body.conversationId, this.handoverFails, {
+            routed: !!body.suggested,
+            ...(this.handoverReturns ? { returns: this.handoverReturns } : {}),
+          })
+        : conversation(this.threads, body.text, body.conversationId);
+      const step = handed
+        ? { id: 'steg-1', capability: 'clew.handover', title: 'Frågar HR-assistenten', source: 'Kunskapsbanken' }
+        : { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };
       const half = Math.ceil(response.answer.body.length / 2);
       const events = [
+        ...(handed
+          ? [{ type: 'handed', assistant: { id: 'kunskap:hr', name: 'HR-assistenten', source: 'Kunskapsbanken' } }]
+          : []),
         { type: 'step', step: { ...step, status: 'running' } },
         { type: 'step', step: { ...step, status: 'complete', ms: 800 } },
         { type: 'text', delta: response.answer.body.slice(0, half) },

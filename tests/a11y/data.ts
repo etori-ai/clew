@@ -14,6 +14,7 @@ import type {
   ProviderSummary,
   ProviderTestReport,
   SiteHeaderView,
+  HandoverAssistant,
 } from '@clew/contracts';
 import type {
   EntityAction,
@@ -715,6 +716,84 @@ const citations: SourceCitation[] = searchOutput.rows.slice(0, 2).map((r, i) => 
   owner: r.owner!,
   reviewedAt: r.reviewedAt!,
 }));
+/** The assistant of another system the harness lists when a spec asks for one (the assistants profile). */
+export const hrAssistant: HandoverAssistant = {
+  id: 'kunskap:hr',
+  name: 'HR-assistenten',
+  description: 'Svarar på frågor om anställning och ledighet.',
+  source: 'Kunskapsbanken',
+};
+/**
+ * One turn handed to another system's assistant, as the server writes it: the question marked with whom it went to, the
+ * answer as that assistant's own with a source and the way to the same conversation there; `fails` is a source that did
+ * not answer, said in Clew's words.
+ */
+export const handedConversation = (
+  source: Thread[],
+  text: string,
+  conversationId = 'overlamnad',
+  fails = false,
+  /** How the turn went otherwise: Clew's own assistant chose it, it handed the question back, or it answered and is done. */
+  how: { routed?: boolean; returns?: 'declined' | 'completed' } = {},
+): ConversationResponse => {
+  const previous = source.find(t => t.id === conversationId)?.messages ?? [];
+  const who = { assistant: hrAssistant.id, name: hrAssistant.name, source: hrAssistant.source };
+  const link = 'https://kunskap.example/samtal/1';
+  const declined = how.returns === 'declined';
+  const body = declined
+    ? 'Du har APT 10:00 i morgon.'
+    : fails
+      ? 'Kunskapsbanken svarar inte just nu.'
+      : `Enligt kollektivavtalet har du **25 semesterdagar** per år. Det är svar ${previous.length / 2 + 1} i det här samtalet.`;
+  const answerMeta: NonNullable<Thread['messages'][number]['meta']> = declined
+    ? { shape: 'svar', assistant: 'model', source: 'Kalendern', handedBack: who }
+    : {
+        shape: 'svar',
+        assistant: 'handover',
+        source: hrAssistant.name,
+        handover: fails
+          ? { ...who, failed: true }
+          : {
+              ...who,
+              link,
+              cites: [
+                { label: 'Semesterregler', link: 'https://intra.example/semester' },
+                { label: 'Kollektivavtalet' },
+              ],
+              ...(how.returns === 'completed' ? { returned: true } : {}),
+            },
+      };
+  const reply = thread({
+    id: conversationId,
+    title: text.slice(0, 80),
+    kind: 'question',
+    connector: 'clew',
+    area: 'fragor',
+    handover: { ...who, session: 's-1', link },
+    messages: [
+      ...previous,
+      {
+        id: `u${previous.length}`,
+        role: 'user',
+        body: text,
+        createdAt: NOW,
+        meta: {
+          handed: { ...who, ...(how.routed ? { routed: true } : {}), ...(declined ? { declined: true } : {}) },
+        },
+      },
+      { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: answerMeta },
+    ],
+  });
+  return {
+    conversationId,
+    thread: reply,
+    shape: 'svar',
+    assistant: declined ? 'model' : 'handover',
+    answer: { body, source: declined ? 'Kalendern' : hrAssistant.name, at: NOW },
+    clewActions: [],
+    followUps: [],
+  };
+};
 export const conversation = (source: Thread[], text: string, conversationId = 'konversation'): ConversationResponse => {
   const previous = source.find(t => t.id === conversationId)?.messages ?? [];
   // A question about a routine is answered from documents (D26): numbered steps, citations, the sources as a view.

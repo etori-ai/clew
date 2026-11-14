@@ -24,13 +24,13 @@ The project review of 2026-11-10 found that none of these had met its system. Ea
 |---|---|---|---|---|---|
 | [supportmanagement](supportmanagement/README.md) | `sm` | Ärendesystemet | A person's errands, shown under "Mina ärenden". Acts as the person; the case system decides access (D35, D89). | 2 reads | Its own `compose.yaml`. Not in the development stack. |
 | [qlik](qlik/README.md) | `qlik` | Qlik | Sick leave, economy and HME per unit for managers, aggregates only (D82). Economy and HME are made up by its fixture until their source is settled. | 10 reads | Its own `compose.yaml`, and the development stack's service `qlik` on the fixture, registered by `bun run dev:connectors`. |
-| [eneo](eneo/README.md) | `eneo` | Eneo | Eneo's retrieval over the person's knowledge bases as a search source (D14, D26). | 3 reads | Its own `compose.yaml`. Not in the development stack. |
+| [eneo](eneo/README.md) | `eneo` | Eneo | Eneo's retrieval over the person's knowledge bases as a search source (D14, D26), and the assistants an owner in Eneo made available to other clients, which a person can hand a conversation to (D125). An adapter, to be retired when Eneo serves the protocol itself (D125 item 9). | 4 reads, assistants | Its own `compose.yaml`. Not in the development stack. |
 
 ## Examples for people who write connectors
 
 | Folder | Id | Source | What it shows | Capabilities | Where it runs |
 |---|---|---|---|---|---|
-| [hello](hello/README.md) | `hello` | Hello | The smallest complete connector: a manifest, reads, a scan, a figure, a callback and toy receipts. State in memory. | 3 reads, 2 writes, scan | Its own `compose.yaml`. The guides are written against it. |
+| [hello](hello/README.md) | `hello` | Hello | The smallest complete connector: a manifest, reads, a scan, a figure, a callback, toy receipts and an example assistant (D125). State in memory. | 4 reads, 2 writes, scan, assistants | Its own `compose.yaml`. The guides are written against it. |
 | [phonebook](phonebook/README.md) | `phonebook` | Telefonboken | A search source for people and declared views (D26, D38). The worked example of the [directory walkthrough](../docs/guides/example-custom-directory.md). | 5 reads | Its own `compose.yaml`. `bun run docs:check` runs a signed exchange against it. |
 | [reference](reference/README.md) | `reference` | Testkälla | Durable writes done properly: operation keys, replay, stale revisions and lookup, on SQLite. A test fixture for the durability suite. | 2 reads, 2 writes, scan | Started by `bun run test:durability`. |
 

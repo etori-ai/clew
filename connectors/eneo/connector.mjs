@@ -2,12 +2,22 @@
 // file, no dependencies beyond Node, built the way a third party builds a connector (connectors/hello is the reference).
 // It acts as the person: Clew sends an IdP token bound to the audience "eneo" beside its assertion, and every call to
 // Eneo carries that token and nothing else. Nothing of Eneo's text is kept here; a source read checks the person's current access.
+// It also carries the assistants profile: the assistants an owner in Eneo made available to other systems are listed
+// for the person, and a question goes to one of them through Eneo's own conversation API, so the whole assistant
+// answers (its instructions, knowledge and tools) and Eneo keeps the conversation as the person's own.
 import { createVerifier, callbackFor, b64 } from './verification.mjs';
 
 const CONNECTOR = 'eneo';
 const Empty = { type: 'object', properties: {}, additionalProperties: false };
 const SNIPPET_LIMIT = 1200;
 const FETCH_LIMIT = 1500;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// What an answer may not do in Clew's conversation yet: produce files. Eneo leaves these functions out of the turn.
+const NO_FILES = ['image_generation', 'file_creation', 'file_analysis', 'compute', 'charts'];
+/** The start of one of Eneo's citation tags, `<inref id="1a2b3c4d"/>`, cut anywhere before its end. */
+const PARTIAL_TAG = /^<(?:i(?:n(?:r(?:e(?:f(?: (?:i(?:d(?:=(?:"(?:[0-9a-f]*(?:"(?:\s*\/?)?)?)?)?)?)?)?)?)?)?)?)?)?$/;
+/** The longest one answer may take, a little under what Clew waits for. */
+const ASK_TOTAL_MS = 170_000;
 
 export const manifest = {
   protocol: 3,
@@ -52,6 +62,31 @@ export const manifest = {
       scope: {},
     },
     {
+      name: 'eneo.assistants',
+      kind: 'read',
+      title: 'Assistenter i Eneo',
+      description: 'De assistenter i Eneo som personen får fråga från andra system.',
+      input: Empty,
+      output: {
+        type: 'object',
+        properties: {
+          assistants: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { ref: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' } },
+              required: ['ref', 'name'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['assistants'],
+        additionalProperties: false,
+      },
+      model: false,
+      scope: {},
+    },
+    {
       name: 'eneo.whoami',
       kind: 'read',
       title: 'Vem är jag i Eneo',
@@ -64,6 +99,7 @@ export const manifest = {
   ],
   scan: false,
   delegation: { audience: 'eneo' },
+  assistants: { list: 'eneo.assistants' },
 };
 
 // The verifier checks the installation-signed RS256 assertion; Eneo checks the delegated token independently.
@@ -91,8 +127,11 @@ export function createConnector({
   jwks,
   secret,
   eneoUrl = process.env.ENEO_URL ?? '',
+  // Where a person opens Eneo in a browser, for the link that continues a conversation there; https only, else no link.
+  eneoPublicUrl = process.env.ENEO_PUBLIC_URL ?? '',
   fetch: fetchImpl = globalThis.fetch,
   perCallMs = 2000,
+  askTotalMs = ASK_TOTAL_MS,
 } = {}) {
   const verify = createVerifier({ secret, jwks, clewUrl: process.env.CLEW_URL ?? '' }, CONNECTOR);
   const base = eneoUrl.replace(/\/+$/, '') + '/api/v1';
@@ -163,7 +202,142 @@ export function createConnector({
     ...(b.updated_at ? { updatedAt: b.updated_at } : {}),
     ...extra,
   });
+  const publicBase = /^https:\/\//.test(eneoPublicUrl) ? eneoPublicUrl.replace(/\/+$/, '') : '';
+  const sse = event => `data: ${JSON.stringify(event)}\n\n`;
+  /**
+   * One question to one of Eneo's assistants, as the person: Eneo's conversation API (the UI message stream) read as it
+   * is written and answered as the profile's events. The question and what the person attached go as they are. Eneo's
+   * citation tags are taken out of the text, and the sources they point at are listed once, in the order cited.
+   */
+  function ask(token, { assistant, session, question, context }, signal) {
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+      async start(controller) {
+        const send = event => controller.enqueue(encoder.encode(sse(event)));
+        const end = event => {
+          send(event);
+          controller.close();
+        };
+        let upstream;
+        try {
+          upstream = await fetchImpl(base + '/conversations/?version=3', {
+            method: 'POST',
+            headers: {
+              authorization: 'Bearer ' + token,
+              accept: 'text/event-stream',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+              ...(session ? { session_id: session } : { assistant_id: assistant }),
+              question,
+              stream: true,
+              ...(context?.length ? { context } : {}),
+              disabled_capabilities: NO_FILES,
+            }),
+            signal: AbortSignal.any([AbortSignal.timeout(askTotalMs), ...(signal ? [signal] : [])]),
+          });
+        } catch {
+          return end({ type: 'error', code: 'unavailable' });
+        }
+        if (upstream.status === 401 || upstream.status === 403) return end({ type: 'error', code: 'denied' });
+        if (upstream.status === 404) return end({ type: 'error', code: 'not-found' });
+        if (!upstream.ok || !upstream.body) return end({ type: 'error', code: 'unavailable' });
+        const sources = new Map(); // Eneo's id -> { label, link? }
+        const cited = [];
+        let sessionId = session;
+        let held = ''; // text that may be the start of a citation tag, kept until it is known
+        let finished = false;
+        const cite = id => {
+          const full = [...sources.keys()].find(k => k.startsWith(id));
+          if (full && !cited.includes(full)) cited.push(full);
+        };
+        const text = delta => {
+          held += delta;
+          held = held.replace(/<inref id="([0-9a-f]+)"\s*\/>/g, (_, id) => (cite(id), ''));
+          // Keep back only a tail that could still become a tag.
+          const at = held.lastIndexOf('<');
+          const tail = at >= 0 && PARTIAL_TAG.test(held.slice(at)) ? at : -1;
+          const out = tail >= 0 ? held.slice(0, tail) : held;
+          held = tail >= 0 ? held.slice(tail) : '';
+          for (let i = 0; i < out.length; i += 4000) send({ type: 'text', delta: out.slice(i, i + 4000) });
+        };
+        const part = p => {
+          if (p.type === 'data-session' && UUID.test(String(p.data?.session_id ?? ''))) sessionId = p.data.session_id;
+          else if (p.type === 'text-delta' && typeof p.delta === 'string') text(p.delta);
+          else if (p.type === 'source-document' && p.sourceId) {
+            const url = p.providerMetadata?.eneo?.metadata?.url;
+            sources.set(String(p.sourceId), {
+              label: clip(p.title || 'Dokument utan titel', 300),
+              ...(typeof url === 'string' && /^https:\/\/\S+$/.test(url) && url.length <= 2000 ? { link: url } : {}),
+            });
+          } else if (p.type === 'data-mcp-tool-references') {
+            for (const ref of p.data?.mcp_tool_references ?? []) {
+              const url = ref.meta?.url;
+              if (!ref.id) continue;
+              sources.set(String(ref.id), {
+                label: clip(ref.meta?.title || 'Dokument utan titel', 300),
+                ...(typeof url === 'string' && /^https:\/\/\S+$/.test(url) && url.length <= 2000 ? { link: url } : {}),
+              });
+            }
+          } else if (p.type === 'error') throw new EneoError('unavailable', 'Eneo svarar inte just nu.');
+          else if (p.type === 'finish') finished = true;
+        };
+        const reader = upstream.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            for (;;) {
+              const cut = buffer.search(/\r?\n\r?\n/);
+              if (cut < 0) break;
+              const block = buffer.slice(0, cut);
+              buffer = buffer.slice(cut).replace(/^\r?\n\r?\n/, '');
+              const data = block
+                .split(/\r?\n/)
+                .filter(line => line.startsWith('data:'))
+                .map(line => line.slice(5).replace(/^ /, ''))
+                .join('\n');
+              if (!data || data === '[DONE]') continue;
+              part(JSON.parse(data));
+            }
+          }
+        } catch {
+          await reader.cancel().catch(() => undefined);
+          return end({ type: 'error', code: 'unavailable' });
+        }
+        if (!finished || !sessionId) return end({ type: 'error', code: 'unavailable' });
+        // A tail that never became a tag was text after all.
+        if (held) send({ type: 'text', delta: held });
+        for (const id of cited.slice(0, 10)) send({ type: 'source', source: sources.get(id) });
+        end({
+          type: 'done',
+          session: sessionId,
+          ...(publicBase
+            ? { link: `${publicBase}/dashboard/${encodeURIComponent(assistant)}/${encodeURIComponent(sessionId)}` }
+            : {}),
+        });
+      },
+    });
+  }
   const capabilities = {
+    /** The assistants an owner in Eneo made available to other systems, among those the person may use there. */
+    'eneo.assistants': async (actor, input, token) => {
+      const page = await eneo(token, '/assistants/external/');
+      const listed = Array.isArray(page) ? page : items(page);
+      return {
+        assistants: listed
+          .filter(a => UUID.test(String(a?.id ?? '')) && a.name)
+          .slice(0, 50)
+          .map(a => ({
+            ref: String(a.id),
+            name: clip(a.name, 120),
+            ...(a.description ? { description: clip(a.description, 400) } : {}),
+          })),
+      };
+    },
     /** Eneo searches one collection at a time; every collection the person may see is asked at once and the best chunks win. */
     'eneo.search': async (actor, input, token) => {
       const limit = input.limit ?? 10;
@@ -229,6 +403,25 @@ export function createConnector({
     }
     if (url.pathname === '/clew/scan') return json({ drafts: [] });
     if (url.pathname === '/clew/figure') return json({ figure: null });
+    if (url.pathname === '/clew/ask') {
+      const a = body.ask ?? {};
+      // Eneo's own keys are UUIDs: anything else is not an assistant or a conversation of Eneo's.
+      if (
+        !UUID.test(String(a.assistant ?? '')) ||
+        (a.session !== undefined && !UUID.test(String(a.session))) ||
+        typeof a.question !== 'string' ||
+        !a.question
+      )
+        return fail('invalid', 'Ogiltig förfrågan.', 400);
+      const delegatedToken = request.headers.get('x-clew-delegated-token');
+      if (!delegatedToken) return fail('denied', 'Din inloggning kan inte styrkas mot Eneo i den här sessionen.', 403);
+      // Whether the person may ask this assistant is Eneo's to say, with their own token: Clew listed it for them just
+      // before, and nobody without that token reaches Eneo through here.
+      return new Response(ask(delegatedToken, a, request.signal), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' },
+      });
+    }
     const name = decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length));
     const capability = capabilities[name];
     if (!capability) return fail('not-found', 'Okänd förmåga.', 404);

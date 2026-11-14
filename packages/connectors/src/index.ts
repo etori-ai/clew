@@ -45,9 +45,15 @@ import {
   RELATION_GRANTS,
   STRICT_RELATIONS,
   SiteHeaderOutputSchema,
+  AssistantAskEventSchema,
+  SourceAssistantsOutputSchema,
   contractProblems,
   foldSourceKey,
   isEntityKind,
+  type AssistantAsk,
+  type AssistantAskEvent,
+  type HandoverAssistant,
+  type SourceAssistant,
   type DocumentRequest,
   type DocumentContent,
   type HoldingsOutput,
@@ -475,6 +481,15 @@ export interface Connector {
   scan?: (actor: Actor, clew: Clew) => Promise<ThreadDraft[] | ScanObservation>;
   /** The read capability that answers the shared header (D88), when this connector gives Clew one. */
   header?: string;
+  /**
+   * The assistants profile: `list` names the read that answers the assistants the person may ask, and `ask` sends one
+   * question to one of them and yields its answer as it is written, ending with one `done` or `error`. Not a
+   * capability: only `Registry.ask` calls it, so it is never a tool, a view, a card's action or a callback's target.
+   */
+  assistants?: {
+    list: string;
+    ask: (actor: Actor, ask: AssistantAsk, clew: Clew) => AsyncIterable<AssistantAskEvent>;
+  };
   /** The protocol a remote connector's manifest is written to (D60); absent for Clew's own, which follow the current one. */
   protocol?: number;
   /**
@@ -513,6 +528,12 @@ export class CapabilityError extends Error {
     super(message);
     this.name = 'CapabilityError';
   }
+}
+/** What the person is told when a source's assistant did not answer: Clew's words, never the source's (D91). */
+export function askRefusal(code: 'denied' | 'not-found' | 'unavailable' | 'unknown', source: string): string {
+  if (code === 'denied') return `Du får inte fråga den här assistenten i ${source}.`;
+  if (code === 'not-found') return `Assistenten eller samtalet finns inte längre i ${source}.`;
+  return `${source} svarar inte just nu.`;
 }
 /** The protocol's error kinds (`ProtocolError.code`). */
 export type SourceErrorCode = 'invalid' | 'denied' | 'not-found' | 'unavailable' | 'unknown';
@@ -1583,6 +1604,115 @@ export class Registry implements HoldingsReader {
       // Who owns the data (D3): anything but Clew's own domain lives in the system it was read from.
       ...(found.connector.kind !== 'core' ? { external: true } : {}),
     } as PanelViewSpec;
+  }
+  /** A connector whose assistants this person may list and ask, by the governance as it stands. */
+  private assistantsHolder(actor: AudiencedActor, connectorId: string) {
+    const connector = this.connectors.get(connectorId);
+    return connector?.assistants && this.visible(actor, connectorId) && this.allowed(actor, connector.assistants.list)
+      ? connector
+      : undefined;
+  }
+  /** What one holder lists for the person now, read as the person; out of shape is the source's failure. */
+  private async listedAssistants(actor: AudiencedActor, holder: Connector, context: RunContext) {
+    const answer = await this.run<unknown>(actor, holder.assistants!.list, {}, context);
+    if (!Value.Check(SourceAssistantsOutputSchema, answer)) {
+      const problem = contractProblems(SourceAssistantsOutputSchema, answer, 1)[0];
+      this.options.onRefused?.(
+        holder.id,
+        'assistants',
+        `answer is not a SourceAssistantsOutput: ${problem?.path ?? '/'} ${problem?.message ?? ''}`.trim(),
+      );
+      throw new CapabilityError('Källans svar kunde inte verifieras.', 'unavailable');
+    }
+    return answer.assistants;
+  }
+  /**
+   * The assistants of other systems a person may hand a conversation to: every connector with the assistants profile
+   * that is visible to them and whose listing read they may call, asked as the person, each within `budgetMs`. A source
+   * that refuses, fails or does not answer in time contributes nothing, as a news source does; a failed live authority
+   * check is the caller's and is thrown. `id` is `<connector id>:<the source's ref>`.
+   */
+  async assistantsFor(actor: AudiencedActor, context: RunContext = {}, budgetMs = 4000): Promise<HandoverAssistant[]> {
+    await this.refresh();
+    let authorityFailed = false;
+    const authorize = context.authorize;
+    const guarded: RunContext = {
+      ...context,
+      signal: AbortSignal.any([AbortSignal.timeout(budgetMs), ...(context.signal ? [context.signal] : [])]),
+      authorize:
+        authorize &&
+        (async () => {
+          try {
+            return await authorize();
+          } catch (error) {
+            authorityFailed = true;
+            throw error;
+          }
+        }),
+    };
+    const holders = this.list().filter(c => this.assistantsHolder(actor, c.id));
+    const lists = await Promise.all(
+      holders.map(async holder => {
+        try {
+          const listed = await this.listedAssistants(actor, holder, guarded);
+          return listed.map((a: SourceAssistant): HandoverAssistant => ({
+            id: `${holder.id}:${a.ref}`,
+            name: a.name,
+            ...(a.description ? { description: a.description } : {}),
+            source: holder.source,
+          }));
+        } catch (error) {
+          if (authorityFailed) throw error;
+          return [];
+        }
+      }),
+    );
+    return lists.flat();
+  }
+  /**
+   * Send a person's question to one assistant of another system and yield its answer as it is written. Everything a
+   * capability's run checks is checked here, since this is no capability: the connector is visible to the person and
+   * its listing read switched on and in their scope; the person's live authority holds; and the assistant is one the
+   * source lists for them now, read again for this question, so an assistant withdrawn in the source cannot be asked
+   * by its old key. Events out of the profile's shape are the source's failure. The governance and the authority are
+   * read again before the final event is released, so a turn whose permission ended while it was answered is refused
+   * and its caller stores nothing. Yields `text` and `source` events and ends with exactly one `done` or `handback`
+   * (the assistant returning the conversation, D125 item 12); an `error` event, or a stream that ends without one, is
+   * thrown as a `CapabilityError` with the protocol's code.
+   */
+  async *ask(
+    actor: AudiencedActor,
+    assistant: string,
+    ask: Omit<AssistantAsk, 'assistant'>,
+    context: RunContext = {},
+  ): AsyncGenerator<AssistantAskEvent, void, void> {
+    await this.refresh();
+    if (context.authorize) await context.authorize();
+    const cut = assistant.indexOf(':');
+    const ref = assistant.slice(cut + 1);
+    const holder = cut > 0 ? this.assistantsHolder(actor, assistant.slice(0, cut)) : undefined;
+    if (!holder) throw unknownCapability();
+    const { resolution: _resolution, direct: _direct, caller: _caller, ...carried } = context;
+    const listed = await this.listedAssistants(actor, holder, carried);
+    if (!listed.some(a => a.ref === ref)) throw new CapabilityError('Assistenten finns inte längre.', 'not-found');
+    const clew = this.clewFor(actor, carried, holder.id);
+    let ended = false;
+    for await (const event of holder.assistants!.ask(actor, { ...ask, assistant: ref }, clew)) {
+      if (!Value.Check(AssistantAskEventSchema, event)) {
+        this.options.onRefused?.(holder.id, 'ask', 'event is not an AssistantAskEvent');
+        throw new CapabilityError('Källans svar kunde inte verifieras.', 'unavailable');
+      }
+      if (event.type === 'error') throw new CapabilityError(askRefusal(event.code, holder.source), event.code);
+      if (event.type === 'done' || event.type === 'handback') {
+        await this.refresh();
+        if (context.authorize) await context.authorize();
+        if (this.assistantsHolder(actor, holder.id) !== holder) throw unknownCapability();
+        ended = true;
+      }
+      yield event;
+      if (ended) return;
+    }
+    throw new CapabilityError(`${holder.source} svarade inte färdigt.`, 'unavailable');
   }
   /** The connector that gives this person the shared header (D88), by the governance as it stands, without asking it. */
   private holderFor(actor: AudiencedActor) {

@@ -11,6 +11,7 @@ export const keys = {
   today: ['today'] as const,
   attention: ['attention'] as const,
   assistant: ['assistant'] as const,
+  handoverAssistants: ['assistant', 'handover'] as const,
   /** The prefix of every loaded week; invalidated when a thread with proposals changes. */
   calendarAll: ['calendar'] as const,
   calendar: (week: string) => ['calendar', week] as const,

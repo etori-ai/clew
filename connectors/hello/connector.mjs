@@ -63,6 +63,31 @@ export const manifest = {
       scope: {},
     },
     {
+      name: 'hello.assistants',
+      kind: 'read',
+      title: 'Assistenter',
+      description: 'De assistenter i hello-anslutningen som den inloggade får fråga.',
+      input: Empty,
+      output: {
+        type: 'object',
+        properties: {
+          assistants: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { ref: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' } },
+              required: ['ref', 'name'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['assistants'],
+        additionalProperties: false,
+      },
+      model: false,
+      scope: {},
+    },
+    {
       name: 'hello.markDone',
       kind: 'execute',
       title: 'Markera klar',
@@ -85,6 +110,8 @@ export const manifest = {
   ],
   scan: true,
   uses: ['calendar.today'],
+  // The assistants profile: the read that lists whom the person may ask; the answers come from POST /clew/ask below.
+  assistants: { list: 'hello.assistants' },
 };
 
 // Protocol 2: Clew signs an RS256 actor assertion; the shared key authenticates transport only.
@@ -118,7 +145,33 @@ export function createConnector({
     if (!r.ok || body.error) throw new Error(body.error?.message ?? 'Clew svarade ' + r.status);
     return body.output;
   }
+  // The example assistant: it only repeats what it was asked and counts the turns, to show the profile's shape. A real
+  // connector hands the question to the system's own assistant as the person and relays what that assistant writes.
+  const assistants = [{ ref: 'guide', name: 'Hello-guiden', description: 'Exempelassistenten i hello-anslutningen.' }];
+  const sessions = new Map(); // session -> { person, turns }; a real connector leaves this to the source system
+  const sse = events =>
+    new Response(events.map(e => `data: ${JSON.stringify(e)}\n\n`).join(''), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' },
+    });
+  function ask(actor, { assistant, session, question, context = [] }) {
+    if (!assistants.some(a => a.ref === assistant)) return sse([{ type: 'error', code: 'not-found' }]);
+    // A session belongs to the person who started it: anyone else's key is a conversation that does not exist.
+    const kept = session ? sessions.get(session) : undefined;
+    if (session && kept?.person !== actor.id) return sse([{ type: 'error', code: 'not-found' }]);
+    const id = session ?? `hello-${sessions.size + 1}`;
+    const turns = (kept?.turns ?? 0) + 1;
+    sessions.set(id, { person: actor.id, turns });
+    const attached = context.length ? ` Du skickade med ${context.map(c => c.label).join(', ')}.` : '';
+    return sse([
+      { type: 'text', delta: `Hej ${actor.name}! ` },
+      { type: 'text', delta: `Du frågade: ”${question}”. Det är fråga ${turns} i det här samtalet.${attached}` },
+      { type: 'source', source: { label: 'Hello-anslutningens exempel' } },
+      { type: 'done', session: id },
+    ]);
+  }
   const capabilities = {
+    'hello.assistants': async () => ({ assistants }),
     'hello.greeting': async actor => ({
       text: `Hej ${actor.name}! Hälsningar från hello-anslutningen till ${actor.unitLabel}.`,
     }),
@@ -223,6 +276,12 @@ export function createConnector({
             ? { label: `${open().length} saker väntar`, tone: open().length ? 'warn' : 'ok' }
             : null,
       });
+    if (url.pathname === '/clew/ask') {
+      const question = body.ask?.question;
+      if (typeof body.ask?.assistant !== 'string' || typeof question !== 'string' || !question)
+        return fail('invalid', 'Ogiltig förfrågan.', 400);
+      return ask(actor, body.ask);
+    }
     const name = decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length));
     const capability = capabilities[name],
       declared = manifest.capabilities.find(c => c.name === name);

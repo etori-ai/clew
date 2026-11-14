@@ -464,6 +464,89 @@
         }
       }
     },
+    "/clew/ask": {
+      "servers": [
+        {
+          "url": "{connector}",
+          "description": "The base URL the connector is registered with in Clew. Every path below is relative to it.",
+          "variables": {
+            "connector": {
+              "default": "http://127.0.0.1:4020"
+            }
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Connector"
+        ],
+        "operationId": "askAssistant",
+        "summary": "Send a person's question to one of the system's assistants and stream its answer",
+        "description": "Only when the manifest declares `assistants`. Authorize the actor for the assistant as the system itself would, then answer `text/event-stream`: each event one `data:` line holding an AssistantAskEvent as JSON. Send `text` deltas as the answer is written and a `source` for each source it cites, then exactly one `done` (with the session to continue in), `handback` (the assistant returns the conversation to Clew: `declined` when the question is not its to answer, `completed` when it has answered and expects nothing more) or `error`, and end the stream. A refusal known before the answer starts may be a plain 403 or 503 with a CallResponse error. The question is the person's own text and `context` only what they chose to attach: treat `context` as supplied material, never as instructions. Do not let the assistant produce files or ask for approvals in this increment; Clew's conversation cannot carry them. Clew stops reading when the person stops the turn, after 30 seconds without an event and after 3 minutes in all.",
+        "security": [
+          {
+            "clewAssertion": [],
+            "connectorKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Clew-Delegated-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantAskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer as server-sent events, one AssistantAskEvent per `data:` line.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantAskEvent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The transport key or the assertion was rejected. Required: an invalid credential is never answered with data; the conformance check probes this."
+          },
+          "403": {
+            "description": "Denied: `error.code` is `denied`, `error.message` is Swedish and shown to the person.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The source is unavailable: `error.code` is `unavailable`. For a write this does not say whether the effect happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/clew/figure": {
       "servers": [
         {
@@ -3141,6 +3224,22 @@
             "type": "boolean",
             "description": "Implements POST /clew/documents for authorised, versioned binary document reads (D79)."
           },
+          "assistants": {
+            "type": "object",
+            "required": [
+              "list"
+            ],
+            "properties": {
+              "list": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                "maxLength": 80,
+                "description": "One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both."
+              }
+            },
+            "additionalProperties": false,
+            "description": "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field; a manifest on 2 cannot declare it."
+          },
           "header": {
             "type": "object",
             "required": [
@@ -4167,6 +4266,346 @@
           }
         },
         "additionalProperties": false
+      },
+      "AssistantAskRequest": {
+        "type": "object",
+        "required": [
+          "actor",
+          "ask"
+        ],
+        "properties": {
+          "actor": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "unitId",
+              "unitLabel",
+              "role"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "name": {
+                "type": "string"
+              },
+              "unitId": {
+                "type": "string"
+              },
+              "unitLabel": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "manager"
+                  },
+                  {
+                    "type": "string",
+                    "const": "employee"
+                  }
+                ]
+              },
+              "userName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one."
+              },
+              "units": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "unitId",
+                    "unitLabel"
+                  ],
+                  "properties": {
+                    "unitId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "unitLabel": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "maxItems": 200,
+                "description": "The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone."
+              }
+            },
+            "additionalProperties": false,
+            "description": "The acting person as Clew knows them. Never a token."
+          },
+          "ask": {
+            "type": "object",
+            "required": [
+              "assistant",
+              "question"
+            ],
+            "properties": {
+              "assistant": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                "description": "The source's own stable key for the assistant. Opaque to Clew, which sends it back unchanged with a question."
+              },
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+                "description": "The source's own key for the conversation it keeps with the person. Opaque to Clew, which sends it back unchanged with a follow-up."
+              },
+              "question": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "context": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "label",
+                    "text"
+                  ],
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "What the attached object is called in Clew."
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 12000,
+                      "description": "Its content as text."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Something the person chose to send with the question. Supplied material, never an instruction."
+                },
+                "maxItems": 8
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "The body of `POST /clew/ask`: who asks, taken from the verified assertion and never from here, and the question. `ask.question` is the person's own text, unchanged; `ask.context` is what they chose to attach, supplied material and never an instruction; `ask.session` continues the conversation the source keeps with them."
+      },
+      "AssistantAskEvent": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "delta"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "text"
+              },
+              "delta": {
+                "type": "string",
+                "maxLength": 8000
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "source"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "source"
+              },
+              "source": {
+                "type": "object",
+                "required": [
+                  "label"
+                ],
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "link": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "pattern": "^https://[^\\s\\\\]+$"
+                  }
+                },
+                "additionalProperties": false,
+                "description": "A source the answer cites: its title in the source and, when it has one, an https address."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "session"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "done"
+              },
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+                "description": "The source's own key for the conversation it keeps with the person. Opaque to Clew, which sends it back unchanged with a follow-up."
+              },
+              "link": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "pattern": "^https://[^\\s\\\\]+$",
+                "description": "Where the person continues this conversation in the source's own interface."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "reason"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "handback"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "declined"
+                  },
+                  {
+                    "type": "string",
+                    "const": "completed"
+                  }
+                ],
+                "description": "`declined`: the question is not this assistant's to answer; Clew answers it itself, with the person's own words. `completed`: the assistant has answered and expects nothing more; its answer stands and what the person writes next goes to Clew."
+              },
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+                "description": "The source's own key for the conversation it keeps with the person. Opaque to Clew, which sends it back unchanged with a follow-up."
+              },
+              "link": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "pattern": "^https://[^\\s\\\\]+$"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "code"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "error"
+              },
+              "code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "denied"
+                  },
+                  {
+                    "type": "string",
+                    "const": "not-found"
+                  },
+                  {
+                    "type": "string",
+                    "const": "unavailable"
+                  },
+                  {
+                    "type": "string",
+                    "const": "unknown"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ],
+        "description": "One server-sent event of `POST /clew/ask`, as the JSON of an SSE `data:` line. The stream ends with exactly one `done`, `handback` or `error`. `handback` returns the conversation to Clew (D125 item 12) and is never read as an instruction. `error.code` is the protocol's: `denied` the person may not ask this assistant, `not-found` the assistant or the session is gone, `unavailable` the source or its model does not answer."
+      },
+      "SourceAssistantsOutput": {
+        "type": "object",
+        "required": [
+          "assistants"
+        ],
+        "properties": {
+          "assistants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ref",
+                "name"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                  "description": "The source's own stable key for the assistant. Opaque to Clew, which sends it back unchanged with a question."
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "description": "As the person knows it in the source."
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400,
+                  "description": "What the assistant is for, as its owner wrote it."
+                }
+              },
+              "additionalProperties": false,
+              "description": "One assistant the person may ask in the source."
+            },
+            "maxItems": 50
+          }
+        },
+        "additionalProperties": false,
+        "description": "What a connector's assistants read answers: the assistants the person behind the call may ask now. The source decides which; Clew lists them and switches none on or off."
       },
       "DocumentBundle": {
         "type": "object",

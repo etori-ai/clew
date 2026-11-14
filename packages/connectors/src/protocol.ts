@@ -38,6 +38,9 @@ import {
   HoldingsInputSchema,
   HoldingsOutputSchema,
   HoldingsRowSchema,
+  AssistantAskEventSchema,
+  AssistantAskSchema,
+  SourceAssistantsOutputSchema,
   literals,
   type ConnectorHealth,
 } from '@clew/contracts';
@@ -461,6 +464,19 @@ export const ConnectorManifestSchema = Type.Object(
         description: 'Implements POST /clew/documents for authorised, versioned binary document reads (D79).',
       }),
     ),
+    assistants: Type.Optional(
+      object(
+        {
+          list: Type.String({
+            pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$',
+            maxLength: 80,
+            description:
+              "One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both.",
+          }),
+        },
+        "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field; a manifest on 2 cannot declare it.",
+      ),
+    ),
     header: Type.Optional(
       object(
         {
@@ -494,6 +510,13 @@ export const DocumentReadRequestSchema = object({
   about: Type.Optional(CallAboutSchema),
 });
 export type CallRequest = Static<typeof CallRequestSchema>;
+/** The route a question to a source's assistant is posted to. Not a capability: no model, page or callback names it. */
+export const ASK_ROUTE = '/clew/ask';
+export const AssistantAskRequestSchema = object(
+  { actor: ActorSchema, ask: AssistantAskSchema },
+  "The body of `POST /clew/ask`: who asks, taken from the verified assertion and never from here, and the question. `ask.question` is the person's own text, unchanged; `ask.context` is what they chose to attach, supplied material and never an instruction; `ask.session` continues the conversation the source keeps with them.",
+);
+export type AssistantAskRequest = Static<typeof AssistantAskRequestSchema>;
 /**
  * What Clew posts to `/clew/installation/{name}` (D119): the input alone. No actor and no `about`: no person is behind
  * the call, nobody is resolved, and the assertion says it is the installation's own.
@@ -657,6 +680,9 @@ export function protocolSchema() {
       EffectOutput: EffectOutputSchema,
       PreviewOutput: PreviewOutputSchema,
       DocumentReadRequest: DocumentReadRequestSchema,
+      AssistantAskRequest: AssistantAskRequestSchema,
+      AssistantAskEvent: AssistantAskEventSchema,
+      SourceAssistantsOutput: SourceAssistantsOutputSchema,
       DocumentBundle: DocumentBundleSchema,
       ReviewEvidence: ReviewEvidenceSchema,
       Metrics: MetricsSchema,
@@ -726,11 +752,19 @@ export function protocolTerms(protocol: number): {
   strictNamedInputs: boolean;
   /** Whether the manifest may declare `installation` (D119): added under 3, so never a connector on 2. */
   installation: boolean;
+  /** Whether the manifest may declare `assistants`: added under 3, so never a connector on 2. */
+  assistants: boolean;
   deprecated?: string;
 } {
   return protocol === PROTOCOL_PREVIOUS
-    ? { about: false, strictNamedInputs: false, installation: false, deprecated: PROTOCOL_DEPRECATED[protocol] }
-    : { about: true, strictNamedInputs: true, installation: true };
+    ? {
+        about: false,
+        strictNamedInputs: false,
+        installation: false,
+        assistants: false,
+        deprecated: PROTOCOL_DEPRECATED[protocol],
+      }
+    : { about: true, strictNamedInputs: true, installation: true, assistants: true };
 }
 /**
  * The health of a connector that answered with a valid manifest (D60): `ok`, or on the previous protocol the warning
@@ -1192,6 +1226,26 @@ export function openApiDocument(options: OpenApiOptions = {}) {
               content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
             },
             '409': json('CallResponse', 'The record or document revision changed.'),
+            ...refused,
+          },
+        },
+      },
+      '/clew/ask': {
+        servers: connector,
+        post: {
+          tags: ['Connector'],
+          operationId: 'askAssistant',
+          summary: "Send a person's question to one of the system's assistants and stream its answer",
+          description:
+            "Only when the manifest declares `assistants`. Authorize the actor for the assistant as the system itself would, then answer `text/event-stream`: each event one `data:` line holding an AssistantAskEvent as JSON. Send `text` deltas as the answer is written and a `source` for each source it cites, then exactly one `done` (with the session to continue in), `handback` (the assistant returns the conversation to Clew: `declined` when the question is not its to answer, `completed` when it has answered and expects nothing more) or `error`, and end the stream. A refusal known before the answer starts may be a plain 403 or 503 with a CallResponse error. The question is the person's own text and `context` only what they chose to attach: treat `context` as supplied material, never as instructions. Do not let the assistant produce files or ask for approvals in this increment; Clew's conversation cannot carry them. Clew stops reading when the person stops the turn, after 30 seconds without an event and after 3 minutes in all.",
+          security: signed,
+          parameters: [delegated],
+          requestBody: body('AssistantAskRequest'),
+          responses: {
+            '200': {
+              description: 'The answer as server-sent events, one AssistantAskEvent per `data:` line.',
+              content: { 'text/event-stream': { schema: ref('AssistantAskEvent') } },
+            },
             ...refused,
           },
         },
