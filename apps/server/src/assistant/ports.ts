@@ -1,6 +1,9 @@
 import type {
+  AssistantAsk,
+  AssistantAskEvent,
   AuditEntryView,
   AuthenticatedContext,
+  HandoverAssistant,
   ConnectorAudience,
   ModelReasoning,
   ModelState,
@@ -197,4 +200,19 @@ export interface AssistantDeps {
    * else. Absent, or empty for someone who manages nobody, and no name is resolved.
    */
   people?: (persona: AuthenticatedContext) => Promise<ManagedPerson[]>;
+  /**
+   * The assistants of other systems (the assistants profile), reached through the registry as the person: `list` the
+   * ones they may ask now, and `ask` one of them, which yields its answer as it is written and ends with one `done`, or
+   * throws a `CapabilityError` when the source refuses or does not answer. The registry checks who may ask whom on every
+   * call. Absent, and no conversation can be handed over.
+   */
+  handover?: {
+    list: (persona: AuthenticatedContext) => Promise<HandoverAssistant[]>;
+    ask: (
+      persona: AuthenticatedContext,
+      assistant: string,
+      ask: Omit<AssistantAsk, 'assistant'>,
+      signal?: AbortSignal,
+    ) => AsyncIterable<AssistantAskEvent>;
+  };
 }

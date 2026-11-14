@@ -49,6 +49,7 @@
         "hello.greeting",
         "hello.openItems",
         "hello.dayWithMeetings",
+        "hello.assistants",
         "hello.markDone",
         "hello.undo"
       ]
@@ -1512,6 +1513,15 @@
       "status": "provisional (two statements by the product owner on 2026-11-13, paraphrased below, and their request the same day for a row in the rail, item 12; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data, and amended the same day after an independent review; nothing outside the repository has tested it)",
       "date": "2026-11-13",
       "area": "product, people"
+    },
+    {
+      "key": "D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question",
+      "number": 125,
+      "path": "docs/decisions/D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md",
+      "title": "D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question",
+      "status": "provisional (the product owner's statements of 2026-11-13 and 2026-11-14, in substance: an assistant in another system is indivisible, so Clew asks it and never reaches into its knowledge; only the person's own message and what they choose goes there, and Clew adds and rewrites nothing; the handover is the person's own choice, sticky and visible; what may leave the Clew chat is closed by default and opened by a mark from the source; a person may send data about themselves and never about another person. They approved the plan this record follows on 2026-11-14. Items 1 to 9 are built on the hello connector's example assistant and against recorded answers of Eneo's API; item 10 is not built, and of item 11 the source's own finding read is not; item 13's hold knows names and card titles only; Eneo serves the protocol itself (item 9) and a real Eneo assistant has answered through it, by the person's pick and by the model's choice, on one development machine. Nothing outside the repository has tested it: no real Eneo has been asked)",
+      "date": "2026-11-14",
+      "area": "assistant, integrations"
     }
   ],
   "documents": [
@@ -1573,6 +1583,7 @@
       "headings": [
         "What it declares",
         "Acting as the person",
+        "Assistants",
         "What Eneo needs",
         "Running it"
       ]
@@ -2253,6 +2264,12 @@
     {
       "path": "docs/decisions/D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md",
       "title": "D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md",
+      "title": "D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question",
       "category": "decision-history",
       "headings": []
     },
@@ -3168,6 +3185,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Waiting for the product owner",
+        "Handing a conversation to another system's assistant (D125)",
         "Records whose status needs a look",
         "Accessibility"
       ]
@@ -3399,6 +3417,7 @@
         "Cross-connector dependencies",
         "Change notifications",
         "Search",
+        "The assistants profile",
         "External agent MCP"
       ]
     },

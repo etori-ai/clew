@@ -92,6 +92,11 @@ export interface PromptContext {
    * answered. Never what they held: the model reads again for a question about facts.
    */
   earlier?: string[];
+  /**
+   * The assistants of other systems the question may be handed to (D125 item 11), one line each: the id the handover
+   * tool takes, the name, the system and what it is for. Absent when there is none or the turn may not be handed over.
+   */
+  assistants?: string[];
 }
 /** The Swedish system prompt: who is asking, what day it is, the rules, and the chipped objects as "Du tittar på". */
 export function systemPrompt(ctx: PromptContext): string {
@@ -137,6 +142,20 @@ export function systemPrompt(ctx: PromptContext): string {
       '- Uppgifter om medarbetarnas hälsa och frånvaro lämnas inte till dig. Utgå från det personen själv skrev, gissa aldrig och fråga aldrig om diagnos.',
       '- Frågar personen vad hen ska göra: läs rutinen med det verktyg som har den och säg kort vad den säger att chefen gör nu. Finns ett öppet ärende om medarbetaren, peka på det och på dess knapp; ärendet visas för personen i samtalet.',
     );
+  // Where another system's assistant covers the question it comes before searching or answering: the rules stand with
+  // the others, ahead of the search rules, so a question about rules and routines is not searched for first. The person
+  // is asked before anything is sent, so the model is told to suggest when in doubt (D125 item 11).
+  if (ctx.assistants?.length)
+    lines.splice(
+      lines.indexOf('När svaret bygger på sökverktyget (rutiner och dokument):'),
+      0,
+      'Assistenter i andra system:',
+      '- Det finns assistenter i andra system som kan mer än du inom sitt område. De står under "Assistenter du kan lämna frågan till", var och en med vad den svarar på.',
+      '- Gäller frågan regler, avtal, villkor, rutiner eller annan allmän kunskap som en av dem täcker enligt sin beskrivning: anropa verktyget clew__handOver med assistentens id, i stället för att söka eller svara själv. Personen får själv välja om frågan ska skickas dit, så föreslå hellre assistenten än att gissa ett svar.',
+      '- Gäller frågan personens egna uppgifter här, svarar du själv med dina verktyg och lämnar aldrig över: kalendern, ärendena under Behöver dig, medarbetare, och siffror eller listor som verktygen läser.',
+      '- Exempel: "Hur många semesterdagar har man rätt till?" lämnas till en assistent för personalfrågor. "Hur många semesterdagar har jag kvar?" svarar du på själv.',
+      '- När du anropar clew__handOver skriver du inget eget svar.',
+    );
   if (ctx.drafts)
     lines.push(
       'När personen vill att en av ärendets åtgärder görs:',
@@ -149,6 +168,8 @@ export function systemPrompt(ctx: PromptContext): string {
       'Lästes för tidigare svar i samtalet (det som lästes lämnas inte till dig igen):',
       ...ctx.earlier.map(o => `- ${o}`),
     );
+  if (ctx.assistants?.length)
+    lines.push('', 'Assistenter du kan lämna frågan till:', ...ctx.assistants.map(o => `- ${o}`));
   if (ctx.objects.length)
     lines.push('', 'Du tittar på (det personen lagt till i samtalet):', ...ctx.objects.map(o => `- ${o}`));
   if (ctx.people?.lines.length)

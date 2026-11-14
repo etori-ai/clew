@@ -37,6 +37,8 @@ interface Descriptor {
   documents?: unknown;
   /** The manifest names the capability in an object; a Connector carries its name. */
   header?: string | { capability: string };
+  /** The assistants profile: the manifest names the listing read in an object; a Connector carries it beside `ask`. */
+  assistants?: { list: string };
   /** The protocol a remote connector's manifest is written to (D60); absent for Clew's own, which follow the current one. */
   protocol?: number;
 }
@@ -59,11 +61,16 @@ const PROFILES = ['search', 'fetch', 'errands', 'requests', 'talks', 'commitment
  * from the entity's menu without a question. A follower, a profile read and the header have shapes of their own and are
  * about nothing.
  */
-function aboutProblem(c: Descriptor['capabilities'][number], connector: Descriptor, header?: string) {
+function aboutProblem(
+  c: Descriptor['capabilities'][number],
+  connector: Descriptor,
+  header?: string,
+  assistants?: string,
+) {
   const about = c.about!;
   if (c.follows)
     return `Capability ${c.name}: follows and about exclude each other; a follower answers for a fact (D97).`;
-  if (c.kinds || PROFILES.some(p => c.name === `${connector.id}.${p}`) || c.name === header)
+  if (c.kinds || PROFILES.some(p => c.name === `${connector.id}.${p}`) || c.name === header || c.name === assistants)
     return `Capability ${c.name}: a profile read or the header has a shape of its own and cannot declare about (D97).`;
   if (about.page !== undefined && connector.kind !== 'core')
     return `Capability ${c.name}: only Clew's own connectors name a page in about (D97).`;
@@ -331,7 +338,7 @@ export function connectorProblems(
     if (c.creates && !connector.facts?.some(f => f.kind === c.creates))
       problems.push(`Capability ${c.name} creates ${c.creates}, which ${connector.id} does not declare (D55).`);
     if (c.about) {
-      const about = aboutProblem(c, connector, header);
+      const about = aboutProblem(c, connector, header, connector.assistants?.list);
       if (about) problems.push(about);
     }
     const access = accessProblem(c, connector);
@@ -398,6 +405,23 @@ export function connectorProblems(
     else if (c.kind !== 'read') problems.push(`Header capability ${c.name} must be a read (D88).`);
     else if (menuProblem({ ...c, menu: { label: 'x', icon: 'link' }, view: c.view ?? { kind: 'text', body: 'x' } }))
       problems.push(`Header capability ${c.name} must take no input (D88).`);
+  }
+  // The assistants profile: the read it names lists whom the person may ask, as the person, without a question, and is
+  // never a model tool: Clew's model neither picks an assistant of another system nor speaks to one.
+  if (connector.assistants) {
+    const list = connector.assistants.list;
+    const c = connector.capabilities.find(x => x.name === list);
+    if (!protocolTerms(connector.protocol ?? PROTOCOL_VERSION).assistants)
+      problems.push(
+        `The assistants profile was added under protocol 3; a manifest on protocol ${connector.protocol} cannot declare assistants.`,
+      );
+    if (!c) problems.push(`Assistants names unknown capability ${list}.`);
+    else if (c.kind !== 'read') problems.push(`Assistants capability ${c.name} must be a read.`);
+    else {
+      if (c.model) problems.push(`Assistants capability ${c.name} is never a tool; declare model: false.`);
+      if (menuProblem({ ...c, menu: { label: 'x', icon: 'link' }, view: c.view ?? { kind: 'text', body: 'x' } }))
+        problems.push(`Assistants capability ${c.name} must take no input.`);
+    }
   }
   return problems;
 }

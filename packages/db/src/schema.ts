@@ -30,6 +30,7 @@ import type {
   ProviderHealth,
   Receipt,
   Subject,
+  Handover,
   ThreadAction,
   ThreadItem,
 } from '@clew/contracts';
@@ -326,6 +327,8 @@ export const threads = pgTable(
     items: jsonb('items').$type<ThreadItem[]>().notNull().default([]),
     // The entities a card of Clew's own is about while no row may name them (D97 item 6): never drawn, never read by the assistant.
     subjects: jsonb('subjects').$type<Subject[]>().notNull().default([]),
+    // The source's assistant a question conversation was handed to, with the source's own key for it: null for every other thread.
+    handover: jsonb('handover').$type<Handover>(),
     actions: jsonb('actions').$type<ThreadAction[]>().notNull().default([]),
     waitingOn: text('waiting_on'),
     deadline: text('deadline'),

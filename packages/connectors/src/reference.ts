@@ -995,7 +995,8 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
     id: 'document',
     title: 'The document',
     holds: p =>
-      !p.includes('.') && !['areas', 'capabilities', 'installation', 'facts', 'delegation', 'header'].includes(p),
+      !p.includes('.') &&
+      !['areas', 'capabilities', 'installation', 'facts', 'delegation', 'assistants', 'header'].includes(p),
   },
   { id: 'areas', title: 'areas[]', holds: p => p.startsWith('areas') },
   {
@@ -1007,6 +1008,7 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
   { id: 'installation', title: 'installation[]', holds: p => p.startsWith('installation') },
   { id: 'facts', title: 'facts[]', holds: p => p.startsWith('facts') },
   { id: 'delegation', title: 'delegation', holds: p => p.startsWith('delegation') },
+  { id: 'assistants', title: 'assistants', holds: p => p.startsWith('assistants') },
   { id: 'header', title: 'header', holds: p => p.startsWith('header') },
 ];
 export const anchorOf = (path: string) =>

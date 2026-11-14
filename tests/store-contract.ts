@@ -229,6 +229,30 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await store.readThread(b, t.id)).toBeUndefined();
       expect(await store.readThreadById(t.id)).toEqual(read);
     });
+    test('the assistant a conversation was handed to is kept with it, patched whole, and absent on every other thread', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const handover = { assistant: 'kunskap:hr', name: 'HR-assistenten', source: 'Kunskapsbanken' };
+      const plain = draft(a);
+      const handed = draft(a, { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor', handover });
+      await store.transaction(async tx => {
+        await tx.insertThread(plain);
+        await tx.insertThread(handed);
+      });
+      expect((await store.readThread(a, plain.id))!.handover).toBeUndefined();
+      expect('handover' in (await store.readThread(a, plain.id))!).toBe(false);
+      expect((await store.readThread(a, handed.id))!.handover).toEqual(handover);
+      // The source's key for the conversation and where it continues arrive with the first answer.
+      const continued = { ...handover, session: 's-1', link: 'https://kunskap.example/samtal/1' };
+      await store.transaction(tx => tx.updateThread(handed.id, { handover: continued, updatedAt: plus(T0, 1000) }));
+      expect((await store.readThread(a, handed.id))!.handover).toEqual(continued);
+      expect((await store.readThreadById(handed.id))!.handover).toEqual(continued);
+      // A patch that does not name it leaves it.
+      await store.transaction(tx => tx.updateThread(handed.id, { summary: 'Svar', updatedAt: plus(T0, 2000) }));
+      expect((await store.readThread(a, handed.id))!.handover).toEqual(continued);
+    });
     test("an action's read-receipt mark is kept with the action and read back as stored (D112)", async () => {
       const {
         store,

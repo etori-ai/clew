@@ -333,6 +333,21 @@ export const assistant = assistantUsecases({
   ids,
   log: logPort('assistant', 'error'),
   trace: currentTraceId,
+  // The assistants of other systems (the assistants profile): listed and asked through the registry as the person, with
+  // their live authority and their own token for the source, so the registry's checks hold on every question.
+  handover: {
+    list: persona =>
+      registry.assistantsFor(audiencedActorOf(persona), {
+        authorize: () => persona.authorize(),
+        delegate: persona.delegate,
+      }),
+    ask: (persona, assistant, ask, signal) =>
+      registry.ask(audiencedActorOf(persona), assistant, ask, {
+        authorize: () => persona.authorize(),
+        delegate: persona.delegate,
+        ...(signal ? { signal } : {}),
+      }),
+  },
   // The people the asker manages (D115): Personal's list, read on every turn; only people who can be asked about (D97).
   people: async persona =>
     (await staff.reach(persona)).managed.flatMap(unit =>

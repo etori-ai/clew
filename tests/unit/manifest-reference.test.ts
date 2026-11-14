@@ -688,6 +688,7 @@ describe('the renderings', () => {
       'installation[]',
       'facts[]',
       'delegation',
+      'assistants',
       'header',
     ]);
     for (const f of reference.fields) expect(f.id).toBe(anchorOf(f.path));
@@ -707,7 +708,7 @@ describe('the renderings', () => {
     expect(data.headers.get('access-control-allow-origin')).toBe('*');
     const body = await data.json();
     expect(body.fields.map((f: { path: string }) => f.path)).toEqual(paths);
-    expect(body.sections.length).toBe(8);
+    expect(body.sections.length).toBe(9);
     const redirect = await protocolRoutes.request('http://clew.local/manifest-reference', { redirect: 'manual' });
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get('location')).toBe('/protocol/manifest');

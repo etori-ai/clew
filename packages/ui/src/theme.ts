@@ -99,6 +99,14 @@ const clewBaseTheme = defineTheme({
       base: { ':focus-within': { outline: '2px solid transparent', outlineOffset: '-2px' } },
     },
     'chat-layout': { base: { scrollPaddingBottom: '240px' } },
+    // A conversation is read, not scanned: what is said in it is one step up the type scale from the interface around
+    // it (product owner, 2026-11-14: "the chat text is a bit small"). Astryx's own scale token, on its own bubble.
+    'chat-message-bubble': { base: { fontSize: 'var(--font-size-lg)' } },
+    // An answer is Markdown, whose paragraphs and lists set the interface's size themselves: they follow what they
+    // stand in instead, which is the same size everywhere but in a bubble. Headings keep their own steps.
+    markdown: { base: { fontSize: 'inherit' } },
+    'markdown-paragraph': { base: { fontSize: 'inherit' } },
+    'markdown-list': { base: { fontSize: 'inherit' } },
     // The area mark (D71, `mark.tsx`): gray, the sixth system hue, on Astryx's own gray tokens, which its Badge has no
     // variant for; and the house, Clew's own systems, outlined with no hue. New `variant:value` keys are Astryx's
     // documented way to extend a component's variants from the theme.

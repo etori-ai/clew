@@ -180,7 +180,18 @@ describe('the manifest dry run', () => {
       ),
     ).toEqual(['/protocol: 4 is not accepted by this Clew, which loads 3 and 2']);
     // 2 is still loaded for its window (D60, D117).
-    expect(manifestProblems(edited(hello, m => void (m.protocol = 2)))).toEqual([]);
+    // The assistants profile came with 3, so a manifest on 2 is hello's without it.
+    expect(
+      manifestProblems(
+        edited(hello, m => {
+          m.protocol = 2;
+          delete m.assistants;
+        }),
+      ),
+    ).toEqual([]);
+    expect(manifestProblems(edited(hello, m => void (m.protocol = 2)))).toEqual([
+      'The assistants profile was added under protocol 3; a manifest on protocol 2 cannot declare assistants.',
+    ]);
     expect(manifestProblems({ protocol: '2' })).toEqual(
       expect.arrayContaining([expect.stringMatching(/^\/protocol: /), expect.stringMatching(/^\/id: /)]),
     );

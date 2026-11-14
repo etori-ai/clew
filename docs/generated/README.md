@@ -8,7 +8,7 @@ The manifest field by field, with examples and the rules between fields, is [man
 
 ## Complete runnable examples
 
-- [hello manifest](hello.manifest.json), from [connector.mjs](../../connectors/hello/connector.mjs): 5 capabilities; scan enabled.
+- [hello manifest](hello.manifest.json), from [connector.mjs](../../connectors/hello/connector.mjs): 6 capabilities; scan enabled.
 - [phonebook manifest](phonebook.manifest.json), from [connector.mjs](../../connectors/phonebook/connector.mjs): 5 capabilities; no scan.
 - [hr manifest](hr.manifest.json), from [connector.mjs](../../connectors/hr/connector.mjs): 19 capabilities; scan enabled.
 - [finance manifest](finance.manifest.json), from [connector.mjs](../../connectors/finance/connector.mjs): 14 capabilities; scan enabled.
@@ -38,6 +38,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |
 | `delegation` | no | object | The connector acts as the person against its system with a token Clew obtains by token exchange. |
 | `documents` | no | boolean | Implements POST /clew/documents for authorised, versioned binary document reads (D79). |
+| `assistants` | no | object | The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field; a manifest on 2 cannot declare it. |
 | `header` | no | object | The shared header (D88): this connector can give Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. Declaring it makes the connector a candidate, not the holder: only the one connector an administrator chose to give the header answers, whatever the order connectors were registered in. Clew keeps no header of its own beyond its default (the site's name and Start). |
 
 ## ManifestCapability
