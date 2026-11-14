@@ -31,6 +31,7 @@ import { usePageTitle } from '../page-title';
 import { NEEDS_YOU, insideClew, originOf, overlayRedirect, sourceTab, toolOf, unitPageHref } from '../person-address';
 import { TALK_PARAM } from '../talk-address';
 import { DIALOGUE_PARAM } from '../dialogue-address';
+import { entitySubject } from '../conversation-about';
 import { declaredPage, viewPageHref } from '../view-address';
 import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
@@ -441,13 +442,11 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     );
   else {
     const { name } = detail.entity;
-    // "Fråga Clew" (D126 rule 5): a new conversation about the unit. A source's read about a unit never reaches the
-    // model (D97 item 7): the question goes without a chip.
-    const ask = (
-      <AskClew
-        subject={{ key: `unit:${id}`, label: 'enheten', chips: [], search: `?unit=${encodeURIComponent(id)}` }}
-      />
-    );
+    // "Fråga Clew" (D126 rule 5): a new conversation about the unit, the same subject from every tab; the tab it was
+    // pressed on is only what the pane beside the transcript shows first. A source's read about a unit never reaches
+    // the model (D97 item 7): the question goes without a chip.
+    const shownFirst = drawn.some(a => a.source.capability === tab) || tab === NEEDS_YOU ? tab : null;
+    const ask = <AskClew subject={entitySubject('unit', id, shownFirst)} />;
     const answer = drawn.find(a => a.source.capability === tab);
     let sections: PageSectionEntry[];
     if (tab === NEEDS_YOU)

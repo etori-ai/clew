@@ -23,7 +23,7 @@ import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { groupThreads } from '../stream';
 import { conversationState } from '../work-items';
-import { talkingTo, withWords, type Recipient } from '../conversation-about';
+import { aboutWords, storedAbout, talkingTo, withWords, type Recipient } from '../conversation-about';
 import { DOT } from '../dot';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { useRail } from '../components/nav';
@@ -38,6 +38,8 @@ type Row = {
   state: ReturnType<typeof conversationState>;
   /** Another system's assistant the conversation is with now (D125), or null for Clew. */
   with: Recipient | null;
+  /** What it is about, as the conversation keeps it: what its first question went with ("om Attestera 3 fakturor"). */
+  about: string | null;
 };
 const EMPTY: Thread[] = [];
 
@@ -73,11 +75,13 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
         thread,
         state: conversationState(thread, threads, answering),
         with: talkingTo(thread),
+        about: storedAbout(thread).join(', ') || null,
       })),
     [threads, day, answering],
   );
   const anyState = rows.some(r => r.state);
   const anyHanded = rows.some(r => r.with);
+  const anyAbout = rows.some(r => r.about);
   const all: TableColumn<Row>[] = [
     {
       key: 'title',
@@ -88,6 +92,14 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
           {titled(r.thread.title)}
         </Link>
       ),
+    },
+    // What a conversation is about (the product owner, 2026-11-14), drawn only while some conversation keeps it: the
+    // work item or the view its first question went with. A person or a unit is kept by nothing in the conversation.
+    {
+      key: 'about',
+      header: 'Om',
+      width: proportional(2, { minWidth: 180 }),
+      renderCell: r => (r.about ? <Text>{r.about}</Text> : null),
     },
     // Drawn only while some conversation is with another system's assistant: a column of "Clew" says nothing.
     {
@@ -117,7 +129,9 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
         ) : null,
     },
   ];
-  const columns = all.filter(c => (c.key !== 'state' || anyState) && (c.key !== 'with' || anyHanded));
+  const columns = all.filter(
+    c => (c.key !== 'state' || anyState) && (c.key !== 'with' || anyHanded) && (c.key !== 'about' || anyAbout),
+  );
   const failed = read.isError && !read.data;
   const list = failed ? (
     <VStack gap={2}>
@@ -152,6 +166,7 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
             href={`/conversations/${r.id}`}
             title={titled(r.thread.title)}
             description={[
+              r.about ? aboutWords(r.about) : null,
               r.with ? `Med ${withWords(r.with)}` : null,
               lastChanged(r.thread.updatedAt, day),
               r.state?.label,

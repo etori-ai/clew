@@ -63,6 +63,7 @@ import { valueText, type ActionStep } from '../action-path';
 import { executionStatus } from '../execution-status';
 import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../answer-card';
 import { sentWords, suggestedWords } from '../conversation-about';
+import { DOT } from '../dot';
 
 /** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
 export type ActionDraftRef = Draft & { kind: 'action'; actionId: string };
@@ -672,6 +673,7 @@ export function Transcript({
   renderCard,
   viewHref,
   about,
+  firstLine,
   onDraft,
 }: {
   onOpenView: (view: ViewRef) => void;
@@ -682,6 +684,11 @@ export function Transcript({
    * question, and sent with a follow-up as with any question here.
    */
   about?: ChipRef[] | undefined;
+  /**
+   * Under the first question, in its metadata line: whom the conversation is about ("om Johan Byström"), for a person or
+   * a unit, which no chip above the question names, so the transcript reads alone when it is read later.
+   */
+  firstLine?: string | undefined;
   /** A draft's button was pressed: the host makes sure the work item is drawn, so its dialog can open (D112 item 8). */
   onDraft?: (draft: ActionDraftRef) => void;
 }) {
@@ -734,29 +741,35 @@ export function Transcript({
         ))}
       </HStack>
     );
-  /** The person's question: its tokens, the words, when, and where it went when it did not go to Clew. */
+  // The first question of the conversation says whom it is about; every later one is under it.
+  const firstAsked = messages.findIndex(m => m.role === 'user');
+  const isFirst = (key: string) => key === `turn-${firstAsked === -1 ? n : firstAsked}`;
+  /** The person's question: its tokens, the words, when, whom it is about, and where it went when not to Clew. */
   const question = (
     key: string,
     body: string,
     at: string,
     chips: { ref: string; label: string }[] | undefined,
     sent?: string,
-  ) => (
-    <ChatMessage key={key} sender="user" name={<VisuallyHidden>Du</VisuallyHidden>}>
-      {chipRow(chips)}
-      <ChatMessageBubble
-        variant="filled"
-        metadata={
-          <ChatMessageMetadata
-            timestamp={<Timestamp value={at} format="time" hasTooltip={false} />}
-            {...(sent ? { footer: sent } : {})}
-          />
-        }
-      >
-        {body}
-      </ChatMessageBubble>
-    </ChatMessage>
-  );
+  ) => {
+    const footer = [isFirst(key) ? firstLine : undefined, sent].filter(Boolean).join(DOT);
+    return (
+      <ChatMessage key={key} sender="user" name={<VisuallyHidden>Du</VisuallyHidden>}>
+        {chipRow(chips)}
+        <ChatMessageBubble
+          variant="filled"
+          metadata={
+            <ChatMessageMetadata
+              timestamp={<Timestamp value={at} format="time" hasTooltip={false} />}
+              {...(footer ? { footer } : {})}
+            />
+          }
+        >
+          {body}
+        </ChatMessageBubble>
+      </ChatMessage>
+    );
+  };
   /** Clew's name over its own turn; the other system's failure to answer is said in Clew's words, never under its name. */
   const clewName = (m?: ThreadMessage) =>
     m?.meta?.handover?.failed ? (

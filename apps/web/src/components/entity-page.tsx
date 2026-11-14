@@ -29,6 +29,10 @@ export interface ThingTab {
  * the current one marked. On a phone the first tab stands and the others are under Astryx's `TabMenu` ("Fler"), which
  * names the current one when it is among them, so the strip fits 320 px without scrolling sideways (1.4.10); choosing
  * one there navigates to its address. `onPress` hears a tab pressed, for a page that keeps the focus on it across routes.
+ *
+ * `compact` is the same strip in the pane beside a conversation (D126 rule 2: the pane draws the page's parts): small
+ * tabs on a rule of their own inside the pane's padding, and, with more tabs than the pane's width holds, the first
+ * few standing and the rest under the same "Fler".
  */
 export function ThingTabs({
   label,
@@ -36,6 +40,7 @@ export function ThingTabs({
   tabs,
   onPress,
   tabRef,
+  compact = false,
 }: {
   label: string;
   value: string;
@@ -43,10 +48,16 @@ export function ThingTabs({
   onPress?: (value: string) => void;
   /** The current tab's element, for a page that gives it the focus. */
   tabRef?: (el: HTMLElement | null) => void;
+  compact?: boolean;
 }) {
   const mobile = useMediaQuery(mobileQuery);
   const navigate = useNavigate();
-  const [first, ...rest] = tabs;
+  // How many tabs stand before "Fler": one on a phone, the pane's few beside a conversation, else every one.
+  const standing = mobile ? 1 : compact && tabs.length > PANE_TABS ? PANE_TABS - 1 : tabs.length;
+  const shown = tabs.slice(0, standing);
+  const rest = tabs.slice(standing);
+  // One tab left over stands with the others: a menu of one says less than the tab itself.
+  const menu = rest.length > 1;
   const tab = (t: ThingTab) => (
     <Tab
       key={t.value}
@@ -59,22 +70,23 @@ export function ThingTabs({
   );
   return (
     <TabList
-      // The rule under the strip is the page frame's header's, as on every page (D126); the strip meets the header's edges
-      // and its labels start on the title's line.
-      hasDivider={false}
-      isFullBleed
+      // On a page the rule under the strip is the page frame's header's, as on every page (D126); the strip meets the
+      // header's edges and its labels start on the title's line. In the pane the strip draws its own rule.
+      hasDivider={compact}
+      isFullBleed={!compact}
+      size={compact ? 'sm' : 'md'}
       value={value}
       onChange={next => {
         onPress?.(next);
-        // A tab is a link and navigates itself; an option of the phone's menu is not.
-        const option = mobile ? rest.find(t => t.value === next) : undefined;
+        // A tab is a link and navigates itself; an option of the menu is not.
+        const option = menu ? rest.find(t => t.value === next) : undefined;
         if (option && next !== value) navigate(option.href);
       }}
       aria-label={label}
     >
-      {mobile && first && rest.length > 1 ? (
+      {menu ? (
         <>
-          {tab(first)}
+          {shown.map(tab)}
           <TabMenu
             label="Fler"
             options={rest.map(t => ({ value: t.value, label: t.count ? `${t.label} (${t.count})` : t.label }))}
@@ -86,6 +98,11 @@ export function ThingTabs({
     </TabList>
   );
 }
+/**
+ * The pane beside a conversation is 440 px: this many small tabs stand in it, "Fler" counted as one (a source's name
+ * such as "Utvecklingssamtal" is long). Should they still not fit, the strip scrolls, as Astryx's TabList does.
+ */
+const PANE_TABS = 3;
 
 /** One section of the main column, keyed so a section that leaves (a source with nothing) does not remount the others. */
 export interface PageSectionEntry {
@@ -186,12 +203,15 @@ export function EntityPage({
  */
 export function PageSection({
   title,
+  level = 2,
   badge,
   end,
   headingRef,
   children,
 }: {
   title: string;
+  /** The heading's level: 2 on the page, 3 in the pane beside a conversation, under the thing's name (D126 rule 2). */
+  level?: 2 | 3 | undefined;
   /** Whose the section is: the source's name as a badge. */
   badge?: ReactNode;
   /** The source's own way in ("Öppna samtalet"), at the end of the heading's line. */
@@ -204,7 +224,7 @@ export function PageSection({
     <VStack as="section" gap={2} aria-labelledby={id}>
       <HStack gap={2} vAlign="center" wrap="wrap">
         <StackItem size="fill">
-          <Heading id={id} ref={headingRef} tabIndex={-1} level={2}>
+          <Heading id={id} ref={headingRef} tabIndex={-1} level={level}>
             {title}
           </Heading>
         </StackItem>

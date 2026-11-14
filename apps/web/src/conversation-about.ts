@@ -48,3 +48,77 @@ export function addressChipRefs(search: URLSearchParams | string): string[] {
     open = q.get('open');
   return [...(card ? ['thread:' + card] : []), ...(open ? ['capability:' + open] : [])];
 }
+
+/** A person or a unit, the two things with tabs of their own that a conversation can be about. */
+export type EntitySubjectKind = 'person' | 'unit';
+/**
+ * What "Fråga Clew" on a person's or a unit's page asks about (D126 rule 5; the product owner, 2026-11-14: one
+ * conversation per person, not one per tab): the person or the unit, the same subject whichever of their tabs it was
+ * pressed on. The tab only says what the pane beside the transcript shows first (`section`, the page's own name for a
+ * tab), never what the conversation is about. Nothing about them goes with the question as a chip: what a source says
+ * about a person never reaches the model (D97 item 7, D115).
+ */
+export function entitySubject(kind: EntitySubjectKind, key: string, tab?: string | null) {
+  return {
+    key: `${kind}:${key}`,
+    label: kind === 'person' ? 'personen' : 'enheten',
+    chips: [],
+    search: `?${kind}=${encodeURIComponent(key)}${tab ? `&section=${encodeURIComponent(tab)}` : ''}`,
+  };
+}
+/**
+ * The person or the unit a conversation's address names, and the tab its pane shows (`section`, absent for Översikt).
+ * An address from before one subject per person (`?person=&section=`) reads the same way: the section is the pane's
+ * first tab. Null for a conversation about anything else.
+ */
+export function addressEntity(
+  search: URLSearchParams | string,
+): { kind: EntitySubjectKind; key: string; tab: string | null } | null {
+  const q = new URLSearchParams(search);
+  // A work item or a view in the same address is what the page draws beside the transcript, as `useAbout` reads it.
+  if (q.get('card') || q.get('open')) return null;
+  const person = q.get('person'),
+    unit = q.get('unit');
+  const tab = q.get('section') || null;
+  if (person) return { kind: 'person', key: person, tab };
+  if (unit) return { kind: 'unit', key: unit, tab };
+  return null;
+}
+/** The pane's tab at this address (D126 rule 9: every tab is a URL): the conversation and its subject stay as they are. */
+export function paneTabHref(pathname: string, search: URLSearchParams | string, tab: string | null): string {
+  const q = new URLSearchParams(search);
+  if (tab) q.set('section', tab);
+  else q.delete('section');
+  const s = q.toString();
+  return s ? `${pathname}?${s}` : pathname;
+}
+/** Every name a conversation's address gives a person, a unit or a lens of Personal, and the pane's tab. */
+const SUBJECT_KEYS = ['person', 'unit', 'section', 'lens'];
+/**
+ * ✕ or Esc in the pane beside a conversation about a person or a unit (D126 rule 2): the conversation lets go of them,
+ * and stays. Its address keeps nothing of them, so the header, the box and a reload agree that it is about nothing in
+ * particular. A work item or a view beside the transcript is let go of by `withoutPanel`, one at a time.
+ */
+export function withoutSubject(pathname: string, search: URLSearchParams | string): string {
+  const q = new URLSearchParams(search);
+  SUBJECT_KEYS.forEach(k => q.delete(k));
+  const s = q.toString();
+  return s ? `${pathname}?${s}` : pathname;
+}
+
+/** The title of a conversation nothing has been asked in yet, when it is about something: "Fråga om Johan Byström". */
+export const askAboutWords = (name: string): string => `Fråga om ${name}`;
+/** What the box in a conversation about a person says before the first word (the person's first name). */
+export const askPersonPlaceholder = (name: string): string => `Fråga om ${name.trim().split(/\s+/)[0] ?? name}`;
+/** Under the first question of a conversation about a person or a unit: whom it is about, so it reads alone later. */
+export const aboutWords = (name: string): string => `om ${name}`;
+
+/**
+ * What a stored conversation was about, as far as the conversation itself keeps it: the labels of the chips its first
+ * question went with (a work item, a view, an entry), each once. A person or a unit is kept by nothing in the thread
+ * (their reference never goes with a question, D97 item 7), so a conversation about one says nothing here.
+ */
+export function storedAbout(thread: Pick<Thread, 'messages'>): string[] {
+  const first = thread.messages.find(m => m.role === 'user');
+  return [...new Set((first?.meta?.chips ?? []).map(c => c.label).filter(Boolean))];
+}

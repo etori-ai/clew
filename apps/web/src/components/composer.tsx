@@ -282,10 +282,13 @@ export function Composer({
   place,
   near = [],
   about,
+  placeholder: aboutPlaceholder,
 }: {
   place: ComposerPlace;
   near?: string[];
   about?: ChipRef[] | undefined;
+  /** What the empty box says in a conversation about someone ("Fråga om Johan"); else whom it writes to. */
+  placeholder?: string | undefined;
 }) {
   const talk = useConversation();
   // While a conversation's own box is on the page, "Lägg till i samtalet" is offered: no other page has a box.
@@ -347,7 +350,7 @@ export function Composer({
   const placeholder = handed
     ? `Skriv till ${handed.name}`
     : place === 'conversation'
-      ? 'Skriv till Clew'
+      ? (aboutPlaceholder ?? 'Skriv till Clew')
       : 'Fråga något eller be Clew göra det åt dig';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
   const announced = useAddedAnnouncement(talk.chips);

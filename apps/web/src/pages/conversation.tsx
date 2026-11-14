@@ -31,7 +31,17 @@ import { lensTabHref, openedAsPage, opensAsPage, viewOpenHref, viewPageHref } fr
 import { itemPageHref } from '../work-items';
 import { personPageHref, unitPageHref } from '../person-address';
 import { useMarks } from '../marks';
-import { withWords } from '../conversation-about';
+import { usePageTitle } from '../page-title';
+import { DOT } from '../dot';
+import {
+  aboutWords,
+  addressEntity,
+  askAboutWords,
+  askPersonPlaceholder,
+  withWords,
+  withoutSubject,
+  type EntitySubjectKind,
+} from '../conversation-about';
 import { mobileQuery, shortQuery } from '../components/shell';
 import { Composer } from '../components/composer';
 import { Transcript } from '../components/conversation';
@@ -41,9 +51,9 @@ import { cardBody } from '../components/card-panel';
 import { PanelBody, answersWithRowsOf } from '../components/panel';
 import { useView } from '../components/view-read';
 import { BriefSkeleton } from '../components/brief';
-import { PersonSourceBody, useSectionAnswers } from '../components/entity-sections';
 import { EventDialog } from '../components/calendar/event-dialog';
 import { PageFrame, type EntryStyle } from '../components/page-frame';
+import { EntityPane } from './entity-pane';
 
 /**
  * From this window width the thing a conversation is about stands beside the transcript (D126 rule 2, board Samtal):
@@ -55,24 +65,39 @@ const paneQuery = `(min-width: ${260 + 500 + PANE}px)`;
 /** Esc inside a menu, a list or a dialog is theirs. */
 const OWN_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
 
-/** The conversation's title in the header and the browser tab: the question as typed, or "Nytt samtal" before one. */
-export function conversationTitle(talk: ReturnType<typeof useConversation>): string {
+/**
+ * The conversation's title in the header and the browser tab: the question as typed; before one, what it is about
+ * ("Fråga om Johan Byström", the product owner 2026-11-14: the page says what it is before anything is written), and
+ * "Nytt samtal" only for a conversation about nothing in particular. While the subject's name is read, the words of the
+ * button that led here.
+ */
+export function conversationTitle(
+  talk: Pick<ReturnType<typeof useConversation>, 'conversation' | 'pending'>,
+  about: Pick<About, 'name' | 'subject'> = { name: null, subject: false },
+): string {
   const asked = talk.conversation?.title ?? talk.pending?.text.slice(0, 80);
-  return asked ? titled(asked) : 'Nytt samtal';
+  if (asked) return titled(asked);
+  if (about.name) return askAboutWords(about.name);
+  return about.subject ? 'Fråga Clew' : 'Nytt samtal';
 }
 
 /**
  * What the conversation is about, by its address (D126 rule 2): the work item beside it (`card`), a view that is one
- * thing (`open`, a record, a document, a day), or a person or a unit (`person`, `unit`), which have their own page and
- * are named with a link. Its chips go with every question there; a person or a unit goes with none, since what a source
- * says about them never reaches the model (D97 item 7).
+ * thing (`open`, a record, a document, a day), a person or a unit (`person`, `unit`, one subject whichever of their tabs
+ * "Fråga Clew" was pressed on; `section` is only the pane's tab), or the people under a lens of Personal (`lens`). Its
+ * chips go with every question there; a person or a unit goes with none, since what a source says about them never
+ * reaches the model (D97 item 7, D115).
  */
-interface About {
-  /** Its name, after "om" in the header's line. */
+export interface About {
+  /** Whether the address names anything at all, named yet or not. */
+  subject: boolean;
+  /** Its name, in the title before the first question and after "om" in the header's line once there is one. */
   name: string | null;
   /** Its own page, the link in the header's line where no pane stands beside the transcript. */
   href: string | null;
   chips: ChipRef[];
+  /** A person or a unit: said under the first question, and a person's first name in the empty box. */
+  entity?: { kind: EntitySubjectKind; name: string | null };
   /** The pane beside the transcript, and its landmark's name; absent for what has no pane. */
   pane?: { label: string; body: ReactNode; scrolls: boolean };
 }
@@ -103,7 +128,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
   /** ✕, or Esc in the pane: the thing leaves the address, the conversation stays, and the box has the focus. */
   const closePane = useCallback(() => {
-    navigate(withoutPanel(pathname, search));
+    navigate(addressEntity(search) ? withoutSubject(pathname, search) : withoutPanel(pathname, search));
     requestAnimationFrame(() => talk.focus());
   }, [navigate, pathname, search, talk]);
   const escape = (e: KeyboardEvent) => {
@@ -117,9 +142,12 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   // beside the transcript.
   const viewHref = (v: ViewRef) => viewOpenHref(views, pathname, search, v);
   const besideCard = new URLSearchParams(search).get('card');
+  // A person or a unit is said under the first question, so the transcript reads alone later.
+  const firstLine = about.entity?.name ? aboutWords(about.entity.name) : undefined;
   const transcript = (
     <Transcript
       about={about.chips}
+      firstLine={firstLine}
       onOpenView={v => navigate(viewHref(v))}
       // The item beside the transcript is not drawn again in the turn that is about it: one item, one place.
       renderCard={t =>
@@ -140,23 +168,37 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   const loading = !!routeId && routeId !== 'new' && talk.conversation?.id !== routeId && !talk.pending && !talk.error;
   const handed = talk.handed;
   const handedOrdinal = handed ? (marks.system(handed.id.slice(0, handed.id.indexOf(':')))?.ordinal ?? null) : null;
-  // The line under the title: whom the conversation is with and, when it is about a thing, which (a link where the thing
-  // is not beside the transcript).
+  // The line under the title: whom the conversation is with and, once something is asked and the title is the question,
+  // which thing it is about. Before that the title says it ("Fråga om …"); where nothing stands beside the transcript
+  // the line still holds the thing's name as the link to its page.
+  const asked = !!talk.conversation || !!talk.pending;
+  const paneShown = !!about.pane && beside;
   const meta = (
     <Text type="supporting" color="secondary">
       {`Samtal med ${withWords(handed)}`}
-      {about.name && (
+      {about.name && (asked || !paneShown) && (
         <>
-          {' · om '}
-          {about.pane && beside ? about.name : about.href ? <Link href={about.href}>{about.name}</Link> : about.name}
+          {asked ? `${DOT}om ` : DOT}
+          {paneShown ? about.name : about.href ? <Link href={about.href}>{about.name}</Link> : about.name}
         </>
       )}
     </Text>
   );
-  const heading = loading ? 'Samtal' : conversationTitle(talk);
+  const heading = loading ? 'Samtal' : conversationTitle(talk, about);
+  // The page names itself in the browser tab (2.4.2). The log speaks its answers and the box keeps the focus, so the
+  // change of title is not spoken.
+  usePageTitle(heading, false);
   // Whose box this is now, by the mark of the system it lives in (D71, board SamtalEneo).
   const handedChip = handed ? <AreaChip ordinal={handedOrdinal} label={handed.source} /> : undefined;
-  const composer = <Composer place="conversation" about={about.chips} />;
+  const composer = (
+    <Composer
+      place="conversation"
+      about={about.chips}
+      placeholder={
+        about.entity?.kind === 'person' && about.entity.name ? askPersonPlaceholder(about.entity.name) : undefined
+      }
+    />
+  );
   const body = loading ? (
     <VStack gap={2}>
       <VisuallyHidden role="status">Hämtar samtalet …</VisuallyHidden>
@@ -251,11 +293,7 @@ function useAbout({
   const q = new URLSearchParams(search);
   const cardId = q.get('card');
   const open = q.get('open');
-  const person = q.get('person');
-  const unit = q.get('unit');
-  // A tab of the person's page (`section`, a source's capability) or a lens of Personal (`lens`): what the conversation
-  // is about is the person with that section, or the people under that lens (D126 rule 5).
-  const section = q.get('section');
+  // A lens of Personal (`lens`): the conversation is about the people under that lens (D126 rule 5).
   const lens = q.get('lens');
   const views = useQuery(areasQuery).data?.views;
   // The work item: from the stream, else read on its own (handled long ago, past the stream's history).
@@ -274,11 +312,10 @@ function useAbout({
   useLayoutEffect(() => {
     if (page) navigate(page, { replace: true });
   }, [page]);
-  const personQ = useQuery({ ...entityDetailQuery('person', person ?? ''), enabled: !!person && !cardId && !open });
-  const unitQ = useQuery({ ...entityDetailQuery('unit', unit ?? ''), enabled: !!unit && !cardId && !open && !person });
-  const source = section ? personQ.data?.sections.find(s => s.capability === section) : undefined;
-  const [answer] = useSectionAnswers(personQ.data?.entity.key, source ? [source] : []);
-  const lensQ = useQuery({ ...entityListQuery('person'), enabled: !!lens && !cardId && !open && !person });
+  // A person or a unit: the subject, whichever tab it came from (`section` is only the pane's tab).
+  const entity = addressEntity(search);
+  const entityQ = useQuery({ ...entityDetailQuery(entity?.kind ?? 'person', entity?.key ?? ''), enabled: !!entity });
+  const lensQ = useQuery({ ...entityListQuery('person'), enabled: !!lens && !cardId && !open && !entity });
   const lensSource = lens ? lensQ.data?.lenses.find(l => l.capability === lens) : undefined;
 
   if (cardId) {
@@ -320,6 +357,7 @@ function useAbout({
         </VStack>
       );
     return {
+      subject: true,
       name: thread?.title ?? null,
       href: thread ? itemPageHref(thread.id, here) : null,
       chips: [{ ref: 'thread:' + cardId, kind: 'thread', label: thread?.title ?? 'Ärendet', threadId: cardId }],
@@ -372,58 +410,45 @@ function useAbout({
       </VStack>
     );
     return {
+      subject: true,
       name: title,
       href,
       chips: [{ ref: 'capability:' + open, kind: 'capability', label: title }],
       ...(rows ? {} : { pane: { label: title, body, scrolls: true } }),
     };
   }
-  if (person && section && source && answer) {
-    // The person with the tab the question was asked on: named as the person and the tab, never as the source's read
-    // ("Mönster"), with that section drawn beside the transcript as the person's page draws it.
-    const who = personQ.data?.entity.name ?? '';
-    const name = `${who}, ${source.title}`;
-    const href = personPageHref(person, { section, from: here });
-    const body = (
-      <VStack gap={6} padding={6} onKeyDown={escape}>
-        <HStack justify="between" vAlign="start" gap={3}>
-          <StackItem size="fill">
-            <VStack gap={1}>
-              <Text type="supporting" color="secondary">
-                {source.title}
-              </Text>
-              <Heading level={2}>
-                <Link href={href} color="primary" type="inherit" weight="semibold">
-                  {who}
-                </Link>
-              </Heading>
-            </VStack>
-          </StackItem>
-          <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={closePane} />
-        </HStack>
-        <Divider />
-        <PersonSourceBody answer={answer} tableQuery="(min-width: 99999px)" about={who} />
-      </VStack>
-    );
-    return { name, href, chips: [], pane: { label: name, body, scrolls: true } };
-  }
-  if (person)
+  if (entity) {
+    // The person or the unit itself beside the transcript, drawn with their page's parts and tabs (D126 rule 2); the
+    // tab the reader came from is the pane's first, and changing it changes nothing of the conversation.
+    const name = entityQ.data?.entity.name ?? null;
+    const page = entity.kind === 'person' ? personPageHref : unitPageHref;
     return {
-      name: personQ.data?.entity.name ?? null,
-      href: personPageHref(person, { from: here }),
+      subject: true,
+      name,
+      href: page(entity.key, { ...(entity.tab ? { section: entity.tab } : {}), from: here }),
       chips: [],
+      entity: { kind: entity.kind, name },
+      pane: {
+        label: name ?? (entity.kind === 'person' ? 'Personen' : 'Enheten'),
+        body: (
+          <EntityPane
+            kind={entity.kind}
+            entityKey={entity.key}
+            tab={entity.tab}
+            onClose={closePane}
+            onKeyDown={escape}
+          />
+        ),
+        scrolls: true,
+      },
     };
+  }
   if (lens)
     return {
+      subject: true,
       name: lensSource?.title ?? null,
       href: lensTabHref(lens),
       chips: [],
     };
-  if (unit)
-    return {
-      name: unitQ.data?.entity.name ?? null,
-      href: unitPageHref(unit, { from: here }),
-      chips: [],
-    };
-  return { name: null, href: null, chips: [] };
+  return { subject: false, name: null, href: null, chips: [] };
 }

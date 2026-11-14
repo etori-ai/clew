@@ -30,7 +30,7 @@ import { itemPageHref, needsYouOf, rowFacts, sourcesNotice, todoHref } from '../
 import { DOT } from '../dot';
 import { Composer } from '../components/composer';
 import { useConversation } from '../components/conversation-context';
-import { ConversationPage, conversationTitle } from './conversation';
+import { ConversationPage } from './conversation';
 
 /**
  * The column fades in when it changes hands (D92): the conversation taking Hem's place when a question is sent, and Hem
@@ -178,10 +178,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const failed = [threadsQ, areasQ].find(q => q.isError && q.data === undefined);
   const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.') : null;
   const railCurrent: RailCurrent = { surface: 'start', conversationId, conversation: talk.open };
-  // A conversation is named by its question; the log speaks its answers and the box keeps the focus, so the change of
-  // title is not spoken as Hem's is.
-  const pageTitle = talk.open ? conversationTitle(talk) : 'Hem';
-  usePageTitle(pageTitle, talk.open ? false : pageTitle);
+  // A conversation names itself in the tab (`ConversationPage`: its question, or before one what it is about); Hem is
+  // named and spoken here.
+  usePageTitle(talk.open ? null : 'Hem');
   const manager = user.role === 'manager';
   const nav = useRail({ current: railCurrent, admin, manager });
 

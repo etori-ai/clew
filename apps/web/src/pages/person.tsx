@@ -35,6 +35,7 @@ import {
   unitPageHref,
 } from '../person-address';
 import { TALK_PARAM } from '../talk-address';
+import { entitySubject } from '../conversation-about';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
@@ -72,7 +73,7 @@ const SIDE_NAV = 260,
  */
 const TABLE_QUERY = `(min-width: ${SIDE_NAV + 1020 + FACTS}px)`;
 /** The tab the page opens on, which has no `section` in the address. */
-const OVERVIEW = 'overview';
+export const OVERVIEW = 'overview';
 /** The bar under an employment's share of full time is as wide as the board draws it. */
 const SHARE_WIDTH = 160;
 /**
@@ -90,9 +91,10 @@ const phoneLabel = new Map([
 ]);
 /**
  * The line under the name (board Person: "Lärare, åk 4–6 · Bergsåkers skola"): the titles of the person's employments
- * (D124 item 6), else the directory's own title for them (D110), and their unit.
+ * (D124 item 6), else the directory's own title for them (D110), and their unit. The pane beside a conversation about
+ * the person draws the same line (D126 rule 2).
  */
-function nameLine(detail: EntityDetail): string | undefined {
+export function nameLine(detail: EntityDetail): string | undefined {
   const title =
     (detail.profile ? employmentTitles(detail.profile.employments) : null) ??
     detail.profile?.title ??
@@ -207,21 +209,50 @@ function PersonFacts({ detail, from }: { detail: EntityDetail; from: string | nu
 }
 
 /** One of the page's tabs: its value in the address (`section`), its name, and what it carries beside the name. */
-interface PersonTab {
+export interface PersonTab {
   value: string;
   label: string;
   badge?: ReactNode;
 }
 
 /**
- * A source's section on the overview (board Person: "Frånvaro i år" with "Visa allt"): its heading, its system, the row
- * the source answered for the person, and the link to its own tab, where its fuller read is.
+ * A person's or a unit's tabs as their page and the pane beside a conversation about them both draw them (D126 rules 2
+ * and 9): Översikt, one per source that has something about them (`drawn`), what the page adds of its own (`own`: the
+ * reader's own Kompetens and Introduktion), and Ärenden with its count while the reader has work items about them.
  */
-function OverviewSection({ answer, href }: { answer: SectionAnswer; href: string }) {
+export function entityTabs(detail: EntityDetail, drawn: SectionAnswer[], own: PersonTab[] = []): PersonTab[] {
+  return [
+    { value: OVERVIEW, label: 'Översikt' },
+    ...drawn.map(a => ({ value: a.source.capability, label: a.source.title })),
+    ...own,
+    ...(detail.cards.length > 0
+      ? [
+          {
+            value: NEEDS_YOU,
+            label: 'Ärenden',
+            badge: (
+              <HStack gap={0} vAlign="center">
+                <Badge variant="error" label={String(detail.cards.length)} />
+                <VisuallyHidden> behöver dig</VisuallyHidden>
+              </HStack>
+            ),
+          },
+        ]
+      : []),
+  ];
+}
+
+/**
+ * A source's section on the overview (board Person: "Frånvaro i år" with "Visa allt"): its heading, its system, the row
+ * the source answered for the person, and the link to its own tab, where its fuller read is. The pane beside a
+ * conversation draws it a level down, under the person's name (`level`).
+ */
+export function OverviewSection({ answer, href, level }: { answer: SectionAnswer; href: string; level?: 2 | 3 }) {
   const row = rowOf(answer);
   return (
     <PageSection
       title={answer.source.title}
+      level={level}
       badge={<SourceBadge source={answer.source} />}
       end={
         <Link href={href} isStandalone>
@@ -315,29 +346,13 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const drawn = drawnSections(answers);
   const sees = (connector: string) => !areas?.systems || areas.systems.some(s => s.connector === connector);
   const tabs: PersonTab[] = detail
-    ? [
-        { value: OVERVIEW, label: 'Översikt' },
-        ...drawn.map(a => ({ value: a.source.capability, label: a.source.title })),
+    ? entityTabs(detail, drawn, [
         // The address that names it keeps the tab, so a module switched off says so in its place.
         ...(own && (sees('competence') || section === OWN_COMPETENCE)
           ? [{ value: OWN_COMPETENCE, label: 'Kompetens' }]
           : []),
         ...(own && (plans?.own.length ?? 0) > 0 ? [{ value: OWN_PLAN, label: 'Introduktion' }] : []),
-        ...(detail.cards.length > 0
-          ? [
-              {
-                value: NEEDS_YOU,
-                label: 'Ärenden',
-                badge: (
-                  <HStack gap={0} vAlign="center">
-                    <Badge variant="error" label={String(detail.cards.length)} />
-                    <VisuallyHidden> behöver dig</VisuallyHidden>
-                  </HStack>
-                ),
-              },
-            ]
-          : []),
-      ]
+      ])
     : [];
   // A section the address names that the page does not have (a source with nothing, an address from before) is the
   // overview; one still on its way is kept, so the tab is there when it answers.
@@ -390,20 +405,13 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     const { name } = detail.entity;
     // The way back (board Person): the page in `from` when Clew can name it, else Personal for the reader's own people.
     const back = origin ?? (!from && detail.relation === 'managed' ? { label: 'Personal', href: '/staff' } : null);
-    // "Fråga Clew" (D126 rule 5): a new conversation about the person, and on a source's tab about that section of
-    // them (`?person=&section=`), which the conversation names as the person and the tab and draws beside it. What a
-    // source says about a person never reaches the model (D97 item 7), so the question goes without a chip.
-    const asked = drawn.some(a => a.source.capability === tab) ? tab : null;
-    const ask = (
-      <AskClew
-        subject={{
-          key: `person:${key}${asked ? `:${asked}` : ''}`,
-          label: 'personen',
-          chips: [],
-          search: `?person=${encodeURIComponent(key)}${asked ? `&section=${encodeURIComponent(asked)}` : ''}`,
-        }}
-      />
-    );
+    // "Fråga Clew" (D126 rule 5): a new conversation about the person, the same subject from every tab (the product
+    // owner, 2026-11-14: one conversation per person, not one per tab). The tab it was pressed on only says what the
+    // pane beside the transcript shows first, where the pane has that tab (a source's or Ärenden; the reader's own
+    // Kompetens and Introduktion write, and stay on this page). What a source says about a person never reaches the
+    // model (D97 item 7), so the question goes without a chip.
+    const shownFirst = drawn.some(a => a.source.capability === tab) || tab === NEEDS_YOU ? tab : null;
+    const ask = <AskClew subject={entitySubject('person', key, shownFirst)} />;
     const answer = drawn.find(a => a.source.capability === tab);
     let sections: PageSectionEntry[];
     if (tab === NEEDS_YOU)
