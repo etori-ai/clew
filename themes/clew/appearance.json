@@ -1,0 +1,4 @@
+{
+  "theme": "theme.tokens.json",
+  "logo": { "alt": "Clew", "light": "logo.svg", "dark": "logo-dark.svg" }
+}

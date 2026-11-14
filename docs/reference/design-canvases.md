@@ -28,3 +28,4 @@ Add a row here in the change that first refers to a new canvas.
 
 The descriptions are taken from the decisions, reviews and session notes that cite each canvas, not from the canvases
 themselves. Where they disagree with the artboard, the artboard is right.
+| Clew · one pattern, on Astryx | https://claude.ai/artifact/V3PABcJjKtntgButisL4mo | Twenty-six artboards rendered from the real Astryx components: the theme with three alternative palettes and four logo marks, a conversation while tools run and one handed to another system's assistant (D125), Hem, Att göra as a queue with a reading pane, a thing's page, a conversation with the thing beside it, Personal, a person, Administration, the action dialog, three phone frames and two dark ones | None yet; a proposal | [One pattern on Astryx](../reviews/2026-11-14-one-pattern-on-astryx-and-the-library-question.md) |
