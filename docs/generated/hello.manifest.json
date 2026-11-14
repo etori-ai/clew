@@ -106,6 +106,50 @@
       "scope": {}
     },
     {
+      "name": "hello.assistants",
+      "kind": "read",
+      "title": "Assistenter",
+      "description": "De assistenter i hello-anslutningen som den inloggade får fråga.",
+      "input": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "assistants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "assistants"
+        ],
+        "additionalProperties": false
+      },
+      "model": false,
+      "scope": {}
+    },
+    {
       "name": "hello.markDone",
       "kind": "execute",
       "title": "Markera klar",
@@ -173,5 +217,8 @@
   "scan": true,
   "uses": [
     "calendar.today"
-  ]
+  ],
+  "assistants": {
+    "list": "hello.assistants"
+  }
 }

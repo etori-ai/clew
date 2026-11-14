@@ -72,6 +72,16 @@ file as they stood there and have not been checked against the code since.
 | Is the rail's row Introduktion och avslut (D124 item 12) drawn for the right people, and does it lead where they expect? The product owner asked for a row on 2026-11-13; whom it is for (a manager, and someone with an open plan about themself), where it leads (the list `/boarding`, or straight to the reader's own plan when they have nothing to manage) and what the list holds (their own plan apart, the suggested starts, the open plans they manage; no closed plans) are this build's choices and wait for the product owner's look. | 2026-11-13 | Same |
 | Should an `order` item of a plan close by itself when the service desk closes the request it was ordered through ([D123](../decisions/D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md))? Today every item kind is a plain to-do that a person ticks off. | 2026-11-13 | Same |
 
+## Handing a conversation to another system's assistant (D125)
+
+| Question | Last stated | Where it comes from |
+|---|---|---|
+| May Clew's copy of an answer another system's assistant wrote outlive the retention that system sets for the assistant's conversations? Clew keeps it as any turn today. | 2026-11-14 | [D125](../decisions/D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) |
+| May a question to another system's assistant be longer than a question to Clew (400 characters on one line)? | 2026-11-14 | Same |
+| May Clew's own assistant suggest handing a question over, or is it only ever the person's own pick? | 2026-11-14 | Same |
+| What may follow a question (D125 item 10) is decided but not built: the `forward` mark on a read, the administrator's narrowing, and the core's refusal of anything about another person. Until it is, nothing can be attached. | 2026-11-14 | Same |
+| Eneo's side (a flag on an assistant, the listing, `context` on a question) is a change in Eneo that is not released, and no real Eneo has been asked through the connector. | 2026-11-14 | Same, [connectors/eneo](../../connectors/eneo/README.md#assistants) |
+
 ## Records whose status needs a look
 
 The [digest](../decisions/in-force.md) lists eleven records as `proposed`. D6, D108 and D119 (key figures) have their own questions above. Of

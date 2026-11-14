@@ -530,6 +530,8 @@ describe('a user-delegated connector (D26)', () => {
       'hello.openItems as manager: Ogiltigt behörighetsbevis.',
       'hello.dayWithMeetings as manager: Ogiltigt behörighetsbevis.',
       'hello.dayWithMeetings as employee: Ogiltigt behörighetsbevis.',
+      'hello.assistants as manager: Ogiltigt behörighetsbevis.',
+      'hello.assistants as employee: Ogiltigt behörighetsbevis.',
     ]);
     expect(rejected.items.find(i => i.capability === 'hello.greeting')).toMatchObject({
       level: 'fail',

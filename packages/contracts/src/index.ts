@@ -3,6 +3,7 @@ import { Format } from 'typebox/format';
 import { Settings } from 'typebox/system';
 import { Value } from 'typebox/value';
 import { DocumentReviewSchema, ReviewEvidenceSchema } from './presentation';
+import { ASK_SOURCES_MAX, AssistantAskSourceSchema, HandoverAssistantSchema, HandoverSchema } from './handover';
 import {
   COMPETENCE_CATALOGUE_MAX,
   COMPETENCE_IMPORT_FORMATS,
@@ -397,7 +398,16 @@ export const SourceCitationSchema = object({
 });
 export type SourceCitation = Static<typeof SourceCitationSchema>;
 /** How the answer was produced: the model with read tools, the deterministic router, or the router because the configured model failed (D8). */
-export const AssistantMode = Type.Union([Type.Literal('model'), Type.Literal('router'), Type.Literal('unavailable')]);
+/**
+ * How an answer was produced: Clew's model, Clew's router, the router because the model did not answer, or `handover`:
+ * an assistant of another system the person handed the conversation to, whose answer is shown as its own.
+ */
+export const AssistantMode = Type.Union([
+  Type.Literal('model'),
+  Type.Literal('router'),
+  Type.Literal('unavailable'),
+  Type.Literal('handover'),
+]);
 export type AssistantMode = Static<typeof AssistantMode>;
 /** Which administered model produced an answer (D24): Clew's own id and the Swedish name the person chose it by. */
 export const ModelRefSchema = object({ id: Type.String({ maxLength: 60 }), title: Type.String({ maxLength: 80 }) });
@@ -3351,6 +3361,34 @@ export const MessageMetaSchema = object({
   modelCall: Type.Optional(ModelCallSchema),
   /** Why the router answered although a model is configured (D8): the failure in the wire's own words, cut short. */
   fallbackReason: Type.Optional(Type.String({ maxLength: 200 })),
+  /**
+   * On a question the person sent to a source's assistant: which one, by the name it had then, and the labels of what
+   * they chose to send with it. Nothing else of the conversation went along.
+   */
+  handed: Type.Optional(
+    object({
+      assistant: HandoverAssistantSchema.properties.id,
+      name: HandoverAssistantSchema.properties.name,
+      source: HandoverAssistantSchema.properties.source,
+      with: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 8 })),
+    }),
+  ),
+  /**
+   * On an answer a source's assistant wrote (`assistant: 'handover'`): which assistant, the sources it cites as the
+   * source named them, where the conversation continues there, and `failed` when it did not answer, in which case the
+   * body is Clew's own words about that and never an answer in the assistant's name.
+   */
+  handover: Type.Optional(
+    object({
+      assistant: HandoverAssistantSchema.properties.id,
+      name: HandoverAssistantSchema.properties.name,
+      source: HandoverAssistantSchema.properties.source,
+      link: Type.Optional(HandoverSchema.properties.link),
+      cites: Type.Optional(Type.Array(AssistantAskSourceSchema, { maxItems: ASK_SOURCES_MAX })),
+      failed: Type.Optional(Type.Literal(true)),
+      cut: Type.Optional(Type.Literal(true)),
+    }),
+  ),
 });
 export type MessageMeta = Static<typeof MessageMetaSchema>;
 export const ThreadMessageSchema = object({
@@ -3523,6 +3561,8 @@ export const ThreadSchema = object({
   area: Type.String(),
   /** One sentence the card leads with. */
   summary: Type.String(),
+  /** The source's assistant a question conversation was handed to, if it was: one per conversation. */
+  handover: Type.Optional(HandoverSchema),
   items: Type.Array(ThreadItemSchema),
   /**
    * The entities a card of Clew's own is about while none of its rows may name them (D97 item 6, D96 item 6): an action
@@ -4601,6 +4641,11 @@ export const ConversationInput = object({
   text: Type.String({ minLength: 1, maxLength: 400, pattern: '^[^\\r\\n]+$' }),
   chips: Type.Optional(Type.Array(ChipSchema, { maxItems: 8 })),
   conversationId: Type.Optional(id),
+  /**
+   * Send this turn to a source's assistant (`HandoverAssistant.id`) and not to Clew's own. The text goes unchanged, and
+   * `chips` are then what the person chose to send with it, each checked on the server before anything leaves.
+   */
+  assistant: Type.Optional(HandoverAssistantSchema.properties.id),
 });
 export type ConversationInput = Static<typeof ConversationInput>;
 /** One turn's answer: its shape, where it came from, and what it produced for the page. */
@@ -4850,6 +4895,31 @@ export interface SiteHeaderView {
   /** The connector the header came from, or null for the default. */
   source: { id: string; label: string } | null;
 }
+
+// The assistants profile and the handover of a conversation, in a file of its own. Named one by one, as below.
+export {
+  ASK_ANSWER_MAX,
+  ASK_CONTEXT_MAX,
+  ASK_CONTEXT_TEXT_MAX,
+  ASK_SOURCES_MAX,
+  SOURCE_ASSISTANTS_MAX,
+  AssistantAskContextItemSchema,
+  AssistantAskEventSchema,
+  AssistantAskSchema,
+  AssistantAskSourceSchema,
+  HandoverAssistantSchema,
+  HandoverSchema,
+  SourceAssistantSchema,
+  SourceAssistantsOutputSchema,
+  type AssistantAsk,
+  type AssistantAskContextItem,
+  type AssistantAskEvent,
+  type AssistantAskSource,
+  type Handover,
+  type HandoverAssistant,
+  type SourceAssistant,
+  type SourceAssistantsOutput,
+} from './handover';
 
 // The holdings profile (D108 item 9, D119), in a file of its own. Named one by one, as below.
 export {

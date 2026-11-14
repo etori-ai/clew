@@ -13,6 +13,7 @@ import {
   connectorPreview,
   connectors,
   conversation,
+  handedConversation,
   events,
   searchOutput,
   snoozePresets,
@@ -188,7 +189,7 @@ export class MockApi {
   answerDelay = 0;
   private answerHeld?: Promise<void>;
   /** Every question the box sent, as it was sent: the text, the conversation it continues, and what went along as chips. */
-  asked: { text: string; conversationId?: string; chips?: { ref: string }[] }[] = [];
+  asked: { text: string; conversationId?: string; chips?: { ref: string }[]; assistant?: string }[] = [];
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   /** How long the areas take, so a test can see Läget's tiles in their shape (D54). */
@@ -449,6 +450,10 @@ export class MockApi {
   providers: ProviderSummary[] = modelProviders();
   models: ModelSummary[] = models();
   modelChoices = 1;
+  /** The assistants of other systems the person may hand a conversation to; none unless a spec lists one. */
+  handoverAssistants: import('@clew/contracts').HandoverAssistant[] = [];
+  /** The other system does not answer a handed-over question. */
+  handoverFails = false;
   currentModel = 'gpt-oss-120b';
   output: unknown = {
     date: '2026-11-04',
@@ -951,6 +956,7 @@ export class MockApi {
     }
     if (path === '/attention') return json(attention);
     if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
+    if (path === '/assistant/handover') return json({ assistants: this.handoverAssistants });
     if (path === '/assistant/model' && request.method() === 'PATCH') {
       this.currentModel = (request.postDataJSON() as { modelId: string }).modelId;
       return json(assistantStatus(this.modelChoices, this.currentModel));
@@ -1634,12 +1640,21 @@ export class MockApi {
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
     // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
-      const body = request.postDataJSON() as { text: string; conversationId?: string; chips?: { ref: string }[] };
+      const body = request.postDataJSON() as {
+        text: string;
+        conversationId?: string;
+        chips?: { ref: string }[];
+        assistant?: string;
+      };
       this.asked.push(body);
       await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
-      const response = conversation(this.threads, body.text, body.conversationId);
-      const step = { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };
+      const response = body.assistant
+        ? handedConversation(this.threads, body.text, body.conversationId, this.handoverFails)
+        : conversation(this.threads, body.text, body.conversationId);
+      const step = body.assistant
+        ? { id: 'steg-1', capability: 'clew.handover', title: 'Frågar HR-assistenten', source: 'Kunskapsbanken' }
+        : { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };
       const half = Math.ceil(response.answer.body.length / 2);
       const events = [
         { type: 'step', step: { ...step, status: 'running' } },

@@ -77,7 +77,7 @@ const {
 } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
-const { ask, converse, listObjects, reply } = assistant;
+const { ask, converse, listAssistants, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const approval = ajv.compile(
   Type.Object(
@@ -501,6 +501,8 @@ api.get('/threads/:id/verbs', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
   return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Ärendet finns inte.' }, 404);
 });
+/** The assistants of other systems the person may hand a conversation to (the assistants profile); empty when no source has any for them. */
+api.get('/assistant/handover', async c => c.json({ assistants: await listAssistants(c.get('session').context) }));
 /** The person's models (D24): the ones they may pick, the one in use and whether it answers; choosing one is their own preference. */
 api.get('/assistant/status', async c => c.json(await models.statusFor(c.get('session').context)));
 api.patch('/assistant/model', async c =>

@@ -8,4 +8,8 @@ export declare function createConnector(options?: {
   ttlSeconds?: number;
   now?: () => number;
   perCallMs?: number;
+  /** Where a person opens Eneo in a browser (https), for the link that continues a conversation there. */
+  eneoPublicUrl?: string;
+  /** The longest one assistant answer may take. */
+  askTotalMs?: number;
 }): { manifest: unknown; handle(request: Request): Promise<Response> };

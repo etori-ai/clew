@@ -52,7 +52,10 @@ import {
 import type { AssistantDeps, ResolvedModel } from './ports';
 import { draftSelection, parseVerb, verbsFor } from './verbs';
 import { threadAccess } from '../threads/access';
+import { TurnStopped } from './domain';
+import { handoverPath } from './handover';
 
+export { TurnStopped } from './domain';
 export type { AssistantDeps, ModelResolver } from './ports';
 export { verbsFor } from './verbs';
 
@@ -84,13 +87,6 @@ const SEARCH_TOOL = SEARCH_CONNECTOR + '.search';
 export interface TurnObserver {
   emit?: (event: TurnEvent) => void;
   signal?: AbortSignal;
-}
-/** The person stopped the turn before its answer was written; nothing was saved and the model is not marked down. */
-export class TurnStopped extends Error {
-  constructor() {
-    super('Frågan avbröts.');
-    this.name = 'TurnStopped';
-  }
 }
 /**
  * One read a turn made (D122 item 8): which capability, and how many rows it answered where it answers rows, or that it
@@ -131,6 +127,7 @@ export function assistantUsecases(deps: AssistantDeps) {
   const access = threadAccess(store, registry);
   const todayDate = () => displayDate(clock().toISOString());
   const thread = async (persona: AuthenticatedContext, id: string) => (await access.read(persona, id))!;
+  const handOver = handoverPath(deps);
   /**
    * The prompt's lines about what earlier answers read (D122): when, which reads by title and how many rows each
    * answered, or that it failed. What a read held is never carried into a later turn, so a question about facts reads
@@ -545,6 +542,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     input: ConversationInput,
     observer: TurnObserver = {},
   ): Promise<ConversationResponse> {
+    // Handed to an assistant of another system: the person's words go there unchanged and Clew's own model is not asked.
+    if (input.assistant) return handOver(persona, input, observer);
     const turn = turnFor(persona, observer);
     const chips: Chip[] = input.chips ?? [];
     const resolved = await resolveChips(deps, persona, chips);
@@ -768,6 +767,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     ask,
     reply,
     listObjects: (persona: AuthenticatedContext, q: string, near: string[] = []) => listObjects(deps, persona, q, near),
+    /** The assistants of other systems the person may hand a conversation to; none when no source has any for them. */
+    listAssistants: async (persona: AuthenticatedContext) => (await deps.handover?.list(persona)) ?? [],
   };
 }
 export type AssistantUsecases = ReturnType<typeof assistantUsecases>;

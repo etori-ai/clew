@@ -38,3 +38,11 @@ export function choicesFor(
 /** The person's pick when they may still use it, else the default, else the first they may use; nothing when they have none. */
 export const pickModel = (choices: readonly ModelRecord[], saved: string | undefined): ModelRecord | undefined =>
   choices.find(m => m.id === saved) ?? choices[0];
+
+/** The person stopped the turn before its answer was written; nothing was saved and the model is not marked down. */
+export class TurnStopped extends Error {
+  constructor() {
+    super('Frågan avbröts.');
+    this.name = 'TurnStopped';
+  }
+}

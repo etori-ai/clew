@@ -12,7 +12,17 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react';
-import type { Chip, ClewObject, ConversationResponse, ThreadMessage, TurnStep, Verb, Thread } from '@clew/contracts';
+import type {
+  Chip,
+  ClewObject,
+  ConversationResponse,
+  Handover,
+  HandoverAssistant,
+  ThreadMessage,
+  TurnStep,
+  Verb,
+  Thread,
+} from '@clew/contracts';
 import { useLocation, useMatch, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAnnounce, type ChatComposerInputHandle } from '@clew/ui';
@@ -35,7 +45,17 @@ export interface Conversation {
   id: string;
   title: string;
   messages: ThreadMessage[];
+  /** The assistant of another system this conversation was handed to, if it was. */
+  handover?: Handover;
 }
+/** The assistant of another system the box is talking to: its key, its name and the system it lives in. */
+export type Handed = Pick<HandoverAssistant, 'id' | 'name' | 'source'>;
+const conversationOf = (t: Pick<Thread, 'id' | 'title' | 'messages' | 'handover'>): Conversation => ({
+  id: t.id,
+  title: t.title,
+  messages: t.messages,
+  ...(t.handover ? { handover: t.handover } : {}),
+});
 /**
  * Where a question was asked when it was not asked in a conversation (D50): what the page asks about as chips for the
  * question, and the panel's part of the address the conversation opens at, so what the person was looking at is beside
@@ -55,6 +75,8 @@ export interface PendingTurn {
   at: string;
   steps: TurnStep[];
   answer: string;
+  /** The assistant of another system the question went to, when it did: the answer on its way is that assistant's. */
+  handed?: Handed;
 }
 /** The conversation's state and verbs, owned here (D31) and read by the row, the transcript, the page and every card. */
 export interface ConversationState {
@@ -100,6 +122,15 @@ export interface ConversationState {
   focus(): void;
   /** The page that shows cards hears of a thread the conversation changed before the cache is written, to hand the focus on (2.4.3). */
   setThreadListener(listener: ((thread: Thread) => void) | null): void;
+  /**
+   * The assistant of another system the box talks to, or null for Clew's own. Sticky: once the person picks one, every
+   * question goes to it, unchanged and alone, until they leave it or start a new conversation.
+   */
+  handed: Handed | null;
+  /** The person picked an assistant of another system in the box's menu. */
+  handTo(assistant: Handed): void;
+  /** Back to Clew's own assistant; the conversation and what the other assistant said stay. */
+  leaveHandover(): void;
 }
 const noop = () => undefined;
 const never = async () => undefined;
@@ -136,6 +167,9 @@ export const ConversationContext = createContext<ConversationState>({
   close: noop,
   focus: noop,
   setThreadListener: noop,
+  handed: null,
+  handTo: noop,
+  leaveHandover: noop,
 });
 export const useConversation = () => useContext(ConversationContext);
 /**
@@ -169,6 +203,8 @@ interface Send {
   chips: Chip[];
   /** The conversation the question continues; null starts a new one. */
   current: Conversation | null;
+  /** The assistant of another system the question goes to; absent, Clew's own answers. */
+  handed?: Handed | undefined;
   /** The question is drawn: the host puts the transcript where it belongs. */
   onStart?: () => void;
   /** The written turn has come back, before the cache is written. */
@@ -231,7 +267,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   // Leaving the page stops the turn too: an answer must not pull the person back to a conversation they left.
   useEffect(() => () => inflight.current?.abort(), []);
   const send = useCallback(
-    async ({ raw, text, chips, current, onStart, onAnswered, refocus }: Send) => {
+    async ({ raw, text, chips, current, handed, onStart, onAnswered, refocus }: Send) => {
       if (!text || busyRef.current) return;
       if (!current) {
         setConversation(null);
@@ -244,13 +280,18 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
       setBusy(true);
       setError(null);
       setDone(null);
-      setPending({ text, chips, at: new Date().toISOString(), steps: [], answer: '' });
+      setPending({ text, chips, at: new Date().toISOString(), steps: [], answer: '', ...(handed ? { handed } : {}) });
       setValue('');
       onStart?.();
-      announce('Söker svar …');
+      announce(handed ? `Frågar ${handed.name} …` : 'Söker svar …');
       try {
         const response = await api.converseStream(
-          { text, chips, ...(current ? { conversationId: current.id } : {}) },
+          {
+            text,
+            chips,
+            ...(current ? { conversationId: current.id } : {}),
+            ...(handed ? { assistant: handed.id } : {}),
+          },
           event => {
             if (event.type === 'step')
               setPending(
@@ -267,11 +308,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
           controller.signal,
         );
         // The message list was on the page while the answer was written, so the log speaks it once it is done (4.1.3).
-        setConversation({
-          id: response.conversationId,
-          title: response.thread.title,
-          messages: response.thread.messages,
-        });
+        setConversation(conversationOf(response.thread));
         setLatest(response);
         setPending(null);
         onAnswered?.(response);
@@ -447,6 +484,21 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const hasBox = boxes > 0;
   const known = useRef(new Map<string, ChipRef>());
   const [chips, setChips] = useState<ChipRef[]>([]);
+  const [handed, setHanded] = useState<Handed | null>(null);
+  const announce = useAnnounce();
+  const handTo = useCallback(
+    (assistant: Handed) => {
+      setHanded({ id: assistant.id, name: assistant.name, source: assistant.source });
+      announce(`Du pratar nu med ${assistant.name} i ${assistant.source}. Det du skriver skickas dit.`);
+      input.current?.focus();
+    },
+    [announce, input],
+  );
+  const leaveHandover = useCallback(() => {
+    setHanded(null);
+    announce('Du pratar med Clew igen.');
+    input.current?.focus();
+  }, [announce, input]);
   const [shown, setShown] = useState(false);
   const inline = useMemo(() => refsIn(value), [value]);
   const chipped = useMemo(() => [...new Set([...chips.map(c => c.ref), ...inline])], [chips, inline]);
@@ -505,6 +557,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   );
   const newConversation = useCallback(() => {
     abortTurn('leave');
+    // A new conversation is with Clew's own assistant until the person picks another.
+    setHanded(null);
     setConversation(null);
     setLatest(null);
     setDone(null);
@@ -520,7 +574,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       abortTurn('leave');
       try {
         const t = await client.query(threadQuery(threadId));
-        setConversation({ id: t.id, title: t.title, messages: t.messages });
+        setConversation(conversationOf(t));
+        // A conversation that was handed to another system's assistant opens still talking to it, and says so.
+        setHanded(t.handover ? { id: t.handover.assistant, name: t.handover.name, source: t.handover.source } : null);
         setLatest(null);
         setDone(null);
         setShown(true);
@@ -590,8 +646,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       await send({
         raw,
         text,
-        chips: used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip),
+        // To another system's assistant the person's words go alone: nothing of the conversation follows them.
+        chips: handed ? [] : used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip),
         current,
+        handed: handed ?? undefined,
         onStart: () => {
           setShown(true);
           // Asked on Hem (D50): the transcript takes the column in place, and the address it gets once answered keeps
@@ -607,7 +665,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         },
       });
     },
-    [chips, conversation, send, onConversation, navigate],
+    [chips, conversation, handed, send, onConversation, navigate],
   );
   const ask = useCallback((text: string, from?: AskFrom) => void submit(text, from), [submit]);
   const stop = useCallback(() => abortTurn('stop'), [abortTurn]);
@@ -643,6 +701,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       close,
       focus,
       setThreadListener,
+      handed,
+      handTo,
+      leaveHandover,
     }),
     [
       chips,
@@ -674,6 +735,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       close,
       focus,
       setThreadListener,
+      handed,
+      handTo,
+      leaveHandover,
     ],
   );
   return <ConversationContext.Provider value={state}>{children}</ConversationContext.Provider>;
@@ -805,6 +869,10 @@ export function useThingConversation(subject: ThingSubject | null): ThingConvers
       close: noop,
       focus: () => turns?.input.current?.focus(),
       setThreadListener: noop,
+      // The box beside a thing asks Clew about that thing; it is never handed to another system's assistant.
+      handed: null,
+      handTo: noop,
+      leaveHandover: noop,
       running: !!conversation || !!pending,
     }),
     [conversation, active, turns, pending, submit],

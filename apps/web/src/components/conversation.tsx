@@ -25,6 +25,7 @@ import {
   EventList,
   HStack,
   Icon,
+  Link,
   List,
   ListItem,
   Markdown,
@@ -148,6 +149,51 @@ function ActionDraftCard({
         </VStack>
       </Card>
     </ChatMessageBubble>
+  );
+}
+
+/**
+ * Under an answer another system's assistant wrote: the sources it cites, as that system named them, each a link when
+ * it has an address; that the answer was longer than Clew keeps, when it was; and the way to the same conversation in
+ * the system itself, where it continues with everything that assistant can do.
+ */
+function HandoverFoot({ handover }: { handover: NonNullable<MessageMeta['handover']> }) {
+  const cites = handover.cites ?? [];
+  if (!cites.length && !handover.cut && !handover.link) return null;
+  return (
+    <VStack gap={2}>
+      {cites.length > 0 && (
+        <MetadataList orientation="horizontal" title={<VisuallyHidden>Om källorna</VisuallyHidden>}>
+          <MetadataListItem label={cites.length === 1 ? 'Källa' : 'Källor'}>
+            <HStack gap={2} wrap="wrap">
+              {cites.map((c, i) =>
+                c.link ? (
+                  <Link key={i} href={c.link} target="_blank" rel="noreferrer">
+                    {c.label}
+                  </Link>
+                ) : (
+                  <Text key={i} type="supporting">
+                    {c.label}
+                  </Text>
+                ),
+              )}
+            </HStack>
+          </MetadataListItem>
+        </MetadataList>
+      )}
+      {handover.cut && <Text type="supporting">Svaret var längre än Clew visar.</Text>}
+      {handover.link && (
+        <HStack gap={2} wrap="wrap">
+          <Button
+            size="sm"
+            label={`Fortsätt i ${handover.source}`}
+            href={handover.link}
+            target="_blank"
+            rel="noreferrer"
+          />
+        </HStack>
+      )}
+    </VStack>
   );
 }
 
@@ -447,12 +493,18 @@ export function Transcript({
                   <HStack gap={1} vAlign="center">
                     <Icon icon={SparklesIcon} size="sm" color="accent" />
                     <Text type="supporting">
-                      Assistenten
-                      {m.meta?.view
-                        ? `\u00a0· läste ${m.meta.view.title}`
-                        : m.meta?.source && m.meta.source !== 'Assistenten'
-                          ? `\u00a0· läste ${m.meta.source}`
-                          : ''}
+                      {m.meta?.handover
+                        ? // Another system's assistant wrote this, or did not answer: its name and its system, never "Assistenten".
+                          m.meta.handover.failed
+                          ? `Clew\u00a0· ${m.meta.handover.name} svarade inte`
+                          : `${m.meta.handover.name}\u00a0· ${m.meta.handover.source}`
+                        : `Assistenten${
+                            m.meta?.view
+                              ? `\u00a0· läste ${m.meta.view.title}`
+                              : m.meta?.source && m.meta.source !== 'Assistenten'
+                                ? `\u00a0· läste ${m.meta.source}`
+                                : ''
+                          }`}
                     </Text>
                   </HStack>
                 )
@@ -471,7 +523,13 @@ export function Transcript({
                 metadata={
                   <ChatMessageMetadata
                     timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />}
-                    footer={m.role === 'assistant' ? answerFooter(m.meta) : undefined}
+                    footer={
+                      m.role === 'assistant'
+                        ? answerFooter(m.meta)
+                        : m.meta?.handed
+                          ? `Skickat till ${m.meta.handed.name}`
+                          : undefined
+                    }
                   />
                 }
               >
@@ -487,6 +545,7 @@ export function Transcript({
                       {m.body}
                     </Markdown>
                     {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
+                    {m.meta?.handover && !m.meta.handover.failed && <HandoverFoot handover={m.meta.handover} />}
                     {m.meta?.cards?.map(id => (
                       <TurnCard key={id} id={id} render={renderCard} />
                     ))}
@@ -565,7 +624,16 @@ export function Transcript({
                 <ChatMessage
                   key={`turn-${n + 1}`}
                   sender="assistant"
-                  name={<VisuallyHidden>Assistenten</VisuallyHidden>}
+                  name={
+                    pending.handed ? (
+                      <HStack gap={1} vAlign="center">
+                        <Icon icon={SparklesIcon} size="sm" color="accent" />
+                        <Text type="supporting">{`${pending.handed.name}\u00a0· ${pending.handed.source}`}</Text>
+                      </HStack>
+                    ) : (
+                      <VisuallyHidden>Assistenten</VisuallyHidden>
+                    )
+                  }
                 >
                   <ChatMessageBubble variant="ghost" width="100%">
                     <VStack gap={2}>

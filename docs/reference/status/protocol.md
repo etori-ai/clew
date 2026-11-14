@@ -60,6 +60,14 @@ The web half: one action dialog (`apps/web/src/components/action-dialog.tsx`, As
 
 **Evidence.** [Search module](../../../apps/server/src/modules/search), [tests](../../../tests/unit/search.test.ts)
 
+## The assistants profile
+
+**Works in this checkout.** [D125](../../decisions/D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) items 1 to 9. A manifest's `assistants` names the read that lists the assistants a person may ask, and the connector serves `POST /clew/ask`, answered as server-sent events. The person picks an assistant in the box's menu, under the models; the box says whom it talks to and offers the way back; each question goes there unchanged and alone, and the answer is drawn as that assistant's own with its sources and a link that continues the conversation in the other system. The registry checks the connector, the listing read's switch and scope, the person's live authority and that the source still lists the assistant, on every question. The turn, the conversation's state (`thread.handover`, migration 0079) and one audit row (`conversation.handed`, no text) commit together. Implemented by `connectors/hello` (an example assistant) and `connectors/eneo`.
+
+**Limits and pending work.** Nothing can be sent with a question: a handed-over turn with a chip is refused (D125 item 10 is not built). The Eneo connector is tested against recorded answers of Eneo's API only; the change it needs in Eneo is not released and no real Eneo has been asked. No fixture of the development stack has an assistant, so it is not on `localhost:3020` without registering `hello`. `scripts/connector-check.ts` does not probe `/clew/ask` yet. The manual screen-reader pass has not been made. A menu opened with the mouse and closed with Esc also closes the conversation (it did before this change, for the model menu).
+
+**Evidence.** [contracts](../../../packages/contracts/src/handover.ts), [registry](../../../packages/connectors/src/index.ts), [transport](../../../packages/connectors/src/remote.ts), [the turn](../../../apps/server/src/assistant/handover.ts), [the box](../../../apps/web/src/components/composer.tsx), [scenarios](../../../tests/unit/handover.test.ts), [Eneo's stream](../../../tests/unit/eneo-assistants.test.ts), [store contract](../../../tests/store-contract.ts), [browser evidence](../../../tests/a11y/handover.spec.ts)
+
 ## External agent MCP
 
 **Works in this checkout.** Design intent only; SCIM moved to the Users and identity row.

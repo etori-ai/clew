@@ -118,6 +118,13 @@ export const assistantQuery = queryOptions({
   queryFn: () => api.assistantStatus(),
   retry: false,
 });
+/** The assistants of other systems the person may hand a conversation to: asked of every source, so kept a while. */
+export const handoverAssistantsQuery = queryOptions({
+  queryKey: keys.handoverAssistants,
+  queryFn: async () => (await api.handoverAssistants()).assistants,
+  retry: false,
+  staleTime: 5 * 60_000,
+});
 export const calendarWeekQuery = (week: string) =>
   queryOptions({ queryKey: keys.calendar(week), queryFn: () => api.calendar(week) });
 export const membersQuery = queryOptions({

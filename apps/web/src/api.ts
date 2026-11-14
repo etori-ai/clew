@@ -52,6 +52,7 @@ import type {
   AddConnectorInput,
   Area,
   AssistantStatus,
+  HandoverAssistant,
   Attention,
   AvailabilityInput,
   AvailabilityResult,
@@ -496,6 +497,8 @@ export const api = {
   verbs: (id: string) => call<{ verbs: Verb[] }>(`/api/threads/${id}/verbs`),
   reopen: (id: string) => post<Thread>(`/api/threads/${id}/reopen`),
   assistantStatus: () => call<AssistantStatus>('/api/assistant/status'),
+  /** The assistants of other systems the person may hand a conversation to; empty when no source has any for them. */
+  handoverAssistants: () => call<{ assistants: HandoverAssistant[] }>('/api/assistant/handover'),
   /** The person's own model in the composer (D24); null goes back to the default. */
   chooseModel: (modelId: string | null) => patch<AssistantStatus>('/api/assistant/model', { modelId }),
   today: () => call<TodayView>('/api/today'),

@@ -9,6 +9,7 @@ import {
   ChatComposerInput,
   ChatDictationButton,
   DropdownMenu,
+  DropdownMenuDivider,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   HStack,
@@ -26,21 +27,28 @@ import {
 } from '@clew/ui';
 import { mobileQuery } from './shell';
 import { api } from '../api';
-import { assistantQuery } from '../queries';
+import { assistantQuery, handoverAssistantsQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
-import { tokenValue, useClaimBox, useConversation, type AskFrom } from './conversation-context';
+import { tokenValue, useClaimBox, useConversation, type AskFrom, type Handed } from './conversation-context';
 import { useObjectMark } from '../marks';
 
+/** What Clew's own side of the menu is called when no model is configured: the router answers (D8). */
+const CLEW = 'clew';
 /**
- * The model choice (D24), in the composer's footer slot that Astryx keeps for a model selector: the person's models
- * with what each is good for. It is there whenever a model answers, also when there is only one, so the box always says
- * which model the next question goes to (D36); without a model the router answers and there is nothing to choose.
- * Choosing saves their own preference on the server, which resolves the model on every question; the toast says which
- * one the next question uses.
+ * Who answers the next question, in the composer's footer slot that Astryx keeps for a model selector: Clew's own
+ * models with what each is good for (D24), and under them the assistants of other systems the person may hand the
+ * conversation to (the assistants profile). It is there whenever there is something to say: a model answers, also when
+ * there is only one, so the box always says which model the next question goes to (D36), or another system's assistant
+ * can be picked. Choosing a model saves the person's own preference on the server, which resolves the model on every
+ * question. Choosing an assistant of another system saves nothing: from then on what the person writes in this box goes
+ * to it, and the box says so above the field until they go back to Clew. A conversation is handed to one assistant, so
+ * once it is, the menu offers that one only.
  */
-function ModelMenu({ isDisabled }: { isDisabled: boolean }) {
+function AnswerMenu({ isDisabled }: { isDisabled: boolean }) {
+  const talk = useConversation();
   const status = useQuery(assistantQuery).data;
+  const listed = useQuery(handoverAssistantsQuery).data ?? [];
   const client = useQueryClient();
   const toast = useToast();
   const choose = useMutation({
@@ -55,13 +63,24 @@ function ModelMenu({ isDisabled }: { isDisabled: boolean }) {
     onError: e =>
       toast({ body: errorMessage(e, 'Modellen kunde inte väljas.'), isAutoHide: false, uniqueID: 'model-choice' }),
   });
-  if (!status?.current) return null;
-  const current = status.current;
+  const kept = talk.conversation?.handover;
+  const assistants: Handed[] = kept
+    ? [{ id: kept.assistant, name: kept.name, source: kept.source }]
+    : listed.map(a => ({ id: a.id, name: a.name, source: a.source }));
+  const described = new Map(listed.map(a => [a.id, a.description]));
+  const current = status?.current;
+  if (!current && assistants.length === 0) return null;
+  const handed = talk.handed;
+  const title = handed?.name ?? current?.title ?? 'Clew';
   return (
     <DropdownMenu
       button={{
-        label: `Modell: ${current.title}`,
-        children: current.title,
+        label: handed
+          ? `Svarar: ${handed.name} i ${handed.source}`
+          : current
+            ? `Modell: ${current.title}`
+            : 'Svarar: Clew',
+        children: title,
         variant: 'ghost',
         size: 'sm',
         isDisabled: isDisabled || choose.isPending,
@@ -69,21 +88,46 @@ function ModelMenu({ isDisabled }: { isDisabled: boolean }) {
       menuWidth={280}
     >
       <DropdownMenuRadioGroup
-        label="Modell"
-        value={current.id}
+        label={current ? 'Modell' : 'Clew'}
+        value={handed ? undefined : (current?.id ?? CLEW)}
         onChange={id => {
-          if (id !== current.id) choose.mutate(id);
+          if (handed) talk.leaveHandover();
+          if (current && id !== current.id) choose.mutate(id);
         }}
       >
-        {status.choices.map(c => (
-          <DropdownMenuRadioItem
-            key={c.id}
-            value={c.id}
-            label={c.isDefault ? `${c.title} (standard)` : c.title}
-            description={c.description || undefined}
-          />
-        ))}
+        {current ? (
+          status.choices.map(c => (
+            <DropdownMenuRadioItem
+              key={c.id}
+              value={c.id}
+              label={c.isDefault ? `${c.title} (standard)` : c.title}
+              description={c.description || undefined}
+            />
+          ))
+        ) : (
+          <DropdownMenuRadioItem value={CLEW} label="Clew" />
+        )}
       </DropdownMenuRadioGroup>
+      {assistants.length > 0 && <DropdownMenuDivider />}
+      {assistants.length > 0 && (
+        <DropdownMenuRadioGroup
+          label="Assistenter i andra system"
+          value={handed?.id}
+          onChange={id => {
+            const picked = assistants.find(a => a.id === id);
+            if (picked && picked.id !== handed?.id) talk.handTo(picked);
+          }}
+        >
+          {assistants.map(a => (
+            <DropdownMenuRadioItem
+              key={a.id}
+              value={a.id}
+              label={`${a.name} · ${a.source}`}
+              description={described.get(a.id) || undefined}
+            />
+          ))}
+        </DropdownMenuRadioGroup>
+      )}
     </DropdownMenu>
   );
 }
@@ -216,8 +260,11 @@ export function Composer({
       },
     };
   }, [talk.rememberObject, markOf]);
-  const placeholder =
-    place === 'conversation'
+  // Handed to another system's assistant: the box says whom it talks to, takes no chips and no `@`, and offers the way back.
+  const handed = thing ? null : talk.handed;
+  const placeholder = handed
+    ? `Fråga ${handed.name} …`
+    : place === 'conversation'
       ? 'Svara, eller @ för att peka på något …'
       : about
         ? `Fråga om ${about.label} …`
@@ -230,15 +277,22 @@ export function Composer({
   const announced = useAddedAnnouncement(talk.chips);
   const mobile = useMediaQuery(mobileQuery);
   // The scope line (H3.3): in a conversation, the conversation. Hem's box has none, also with a card open beside it.
-  const scope =
-    place === 'conversation' ? (
-      <Text type="supporting">
-        <Text as="span" weight="semibold" color="primary">
-          Det här samtalet
-        </Text>
-        {mobile ? '' : '\u00a0· svaret kommer under frågan'}
+  const scope = handed ? (
+    <Text type="supporting">
+      <Text as="span" weight="semibold" color="primary">
+        Du pratar med {handed.name}
       </Text>
-    ) : undefined;
+      {`\u00a0· ${handed.source}`}
+      {mobile ? '' : '. Det du skriver skickas dit, inget annat från samtalet.'}
+    </Text>
+  ) : place === 'conversation' ? (
+    <Text type="supporting">
+      <Text as="span" weight="semibold" color="primary">
+        Det här samtalet
+      </Text>
+      {mobile ? '' : '\u00a0· svaret kommer under frågan'}
+    </Text>
+  ) : undefined;
   // While an answer is on its way the send button is Stoppa and the field stays open, so the person can write the next
   // question meanwhile (D36); Enter waits until the answer is written (the input empties itself on a submit, so it is
   // held back through the input's own key seam). Acting on a card's verbs still rests the whole box.
@@ -253,7 +307,7 @@ export function Composer({
       density={place === 'landing' ? 'balanced' : 'compact'}
       placeholder={placeholder}
       drawer={
-        talk.chips.length > 0 || aboutChips.length > 0 ? (
+        !handed && (talk.chips.length > 0 || aboutChips.length > 0) ? (
           <Drawer
             {...(talk.chips.length > 0 ? { count: talk.chips.length + aboutChips.length } : {})}
             label="Objekt i samtalet"
@@ -277,11 +331,19 @@ export function Composer({
       input={
         <ChatComposerInput
           handleRef={talk.input}
-          label={place === 'conversation' ? 'Svara i samtalet' : thing ? 'Fråga Clew' : 'Vad vill du göra'}
+          label={
+            handed
+              ? `Fråga ${handed.name}`
+              : place === 'conversation'
+                ? 'Svara i samtalet'
+                : thing
+                  ? 'Fråga Clew'
+                  : 'Vad vill du göra'
+          }
           maxRows={place === 'landing' ? 4 : 3}
           style={place === 'landing' && roomy ? landingField : undefined}
           hasHistory={false}
-          triggers={thing ? [] : [trigger]}
+          triggers={thing || handed ? [] : [trigger]}
           placeholder={placeholder}
           onKeyDown={e => {
             if (talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
@@ -290,23 +352,38 @@ export function Composer({
       }
       headerActions={scope}
       headerContext={
-        place === 'conversation' ? (
-          <Link
-            href="/"
-            onClick={e => {
-              e.preventDefault();
-              talk.newConversation();
-            }}
-          >
-            Ny fråga i stället
-          </Link>
+        handed || place === 'conversation' ? (
+          <HStack gap={3} wrap="wrap">
+            {handed && (
+              <Link
+                href="/"
+                onClick={e => {
+                  e.preventDefault();
+                  talk.leaveHandover();
+                }}
+              >
+                Tillbaka till Clew
+              </Link>
+            )}
+            {place === 'conversation' && (
+              <Link
+                href="/"
+                onClick={e => {
+                  e.preventDefault();
+                  talk.newConversation();
+                }}
+              >
+                Ny fråga i stället
+              </Link>
+            )}
+          </HStack>
         ) : undefined
       }
       footerActions={
         <HStack gap={1} wrap="wrap">
           {/* The verbs about a card the person added with "Lägg till i samtalet", the one chip with nothing typed;
               a card merely open beside Hem brings none (D111 rule 6). */}
-          {!thing && talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
+          {!thing && !handed && talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
             <HStack gap={1} wrap="wrap" role="group" aria-label="Om ärendet">
               {talk.verbs.map(v => (
                 <Verb
@@ -320,7 +397,7 @@ export function Composer({
               ))}
             </HStack>
           )}
-          {place !== 'page' && !thing && <ModelMenu isDisabled={talk.busy} />}
+          {place !== 'page' && !thing && <AnswerMenu isDisabled={talk.busy} />}
           <VisuallyHidden role="status">{announced}</VisuallyHidden>
         </HStack>
       }
