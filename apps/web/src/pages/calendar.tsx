@@ -738,14 +738,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     );
   return (
     <Shell user={user} nav={nav}>
-      <PageFrame
-        title={head.title}
-        titleId={TITLE_ID}
-        meta={head.meta}
-        actions={head.actions}
-        actionsOnLine
-        end={pane}
-      >
+      <PageFrame title={head.title} titleId={TITLE_ID} meta={head.meta} actions={head.actions} actionsOnLine end={pane}>
         <VStack gap={4}>
           {error && (
             <Text as="p" role="alert" color="accent">
