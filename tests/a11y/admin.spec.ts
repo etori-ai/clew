@@ -571,7 +571,7 @@ test.describe('administration', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Anslutna system' })).toBeVisible();
       // No panel beside the page on a phone: the head's way back leads to the list.
       await expect(page.getByRole('navigation', { name: 'Administration', exact: true })).toHaveCount(0);
-      await page.getByRole('link', { name: 'Tillbaka till Administration' }).click();
+      await page.getByRole('main').getByRole('link', { name: 'Administration', exact: true }).click();
       await expect(page).toHaveURL('/admin');
     });
   });

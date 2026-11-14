@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { daysUntil, sameSubject, snoozeWhen, stockholmDate, type ItemEvent, type Thread } from '@clew/contracts';
 import {
-  ArrowLeftIcon,
   Avatar,
   Badge,
   Banner,
@@ -17,10 +16,6 @@ import {
   HStack,
   Icon,
   IconButton,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
-  LayoutPanel,
   Link,
   List,
   ListItem,
@@ -40,7 +35,7 @@ import { areasQuery, itemEventsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { executionStatus } from '../execution-status';
 import { useMarks } from '../marks';
-import { mobileQuery, shortQuery } from '../media';
+import { shortQuery } from '../media';
 import { readOf, withoutRead } from '../panel-address';
 import { documentHref } from '../review-address';
 import { canUndoReceipt, receiptComplete } from '../receipt-state';
@@ -64,6 +59,7 @@ import {
   type RowSystems,
 } from './card';
 import { StaleMark, useSilentSources } from './silent-sources';
+import { PageFrame, narrowPageQuery } from './page-frame';
 
 /**
  * A thing, drawn once (D126 rules 1 and 2, boards Att göra and Ärende, `.claude/canvas/app/thing.tsx`): a work item is
@@ -76,9 +72,6 @@ import { StaleMark, useSilentSources } from './silent-sources';
  * the item (rule 3): each of its reads is a link to the read's own page. Every fact comes from the item itself or from
  * its audit rows (`/api/threads/<id>/events`); nothing is guessed, and a field with nothing behind it is not drawn.
  */
-
-/** The template's own line for the facts (`work-item-detail`): in the end panel above it, above the read at and below it. */
-export const narrowItemQuery = '(max-width: 1024px)';
 
 const outcomeDot = {
   done: { variant: 'success', label: 'Klart' },
@@ -633,7 +626,7 @@ function waitWords(thread: Thread): string | null {
 }
 
 /** Where a work item is drawn at its narrow width: Att göra's reading pane, beside a conversation, in an answer. */
-export type ItemPlace = 'pane' | 'panel' | 'answer';
+export type ItemPlace = 'pane' | 'answer';
 /**
  * The work item at its narrow width (D126 rule 2, board Att göra's pane): the source line, the title as the link to the
  * item's page (the name is the way in; "Öppna som sida" is gone) with ✕ beside it where the item can be let go of, the
@@ -654,8 +647,6 @@ export function WorkItem({
   /** The title's level in the page's outline; the sections are one under it. */
   headingLevel: 2 | 3;
   onChange: (thread: Thread) => void;
-  /** Kept for the callers from before D126; nothing folds any more (rule 3). */
-  folded?: boolean;
   /** Let go of the item where it is open beside a list: its ✕, at the end of the title's row. */
   onClose?: () => void;
   /** "Fråga Clew" among the buttons (`AskClew`); absent beside the conversation about the item and in its answers. */
@@ -760,12 +751,8 @@ export function WorkItemPage({
   onChange: (thread: Thread) => void;
   /** "Fråga Clew" (`AskClew`), after the decisions. */
   ask?: ReactNode;
-  /** Kept for the callers from before D126: nothing stands beside the page any more (rule 3). */
-  panel?: { end: ReactNode; occupied: boolean } | undefined;
 }) {
-  const mobile = useMediaQuery(mobileQuery);
-  const narrow = useMediaQuery(narrowItemQuery);
-  const short = useMediaQuery(shortQuery);
+  const narrow = useMediaQuery(narrowPageQuery);
   const item = useWorkItem(thread, onChange);
   // The page opens on its heading (2.4.3), once per item: what the person came for.
   useEffect(() => {
@@ -773,69 +760,41 @@ export function WorkItemPage({
     return () => cancelAnimationFrame(frame);
   }, [thread.id]);
   const day = today();
-  const header = (
-    <LayoutHeader padding={mobile ? 4 : 6} hasDivider>
-      <VStack gap={4}>
-        <VStack gap={2}>
-          <HStack gap={4} vAlign="center" wrap="wrap">
-            <Link href={back.href} type="supporting" color="secondary">
-              <HStack as="span" gap={1} vAlign="center">
-                <Icon icon={ArrowLeftIcon} size="sm" />
-                {back.label}
-              </HStack>
-            </Link>
-            <Text type="supporting" color="secondary">
-              {sourceLine(item.mark, item.own)}
-            </Text>
-          </HStack>
-          <HStack gap={3} vAlign="center" wrap="wrap">
-            <Heading ref={item.title} tabIndex={-1} level={1}>
-              {thread.title}
-            </Heading>
-            {dueBadge(thread, day)}
-          </HStack>
-          {waitWords(thread) && <Text type="supporting">{waitWords(thread)}</Text>}
-        </VStack>
-        <ActionRow thread={thread} actions={item.actions} readHref={item.readHref} omit={item.omit} ask={ask} />
-        <Notes thread={thread} item={item} />
-      </VStack>
-    </LayoutHeader>
-  );
   const facts = <Facts thread={thread} item={item} />;
-  const column = (
-    <Read thread={thread} item={item} level={2} visual={2} idBase="item" facts={narrow ? facts : undefined} />
-  );
-  // The column scrolls in Astryx's ScrollableArea, which takes a tab stop while it scrolls, so an item whose column holds
-  // nothing focusable can still be read by keyboard (axe: scrollable-region-focusable). On a short screen the page
-  // scrolls as one instead (1.4.10).
-  const content = short ? (
-    <LayoutContent padding={mobile ? 4 : 6} isScrollable={false}>
-      {column}
-    </LayoutContent>
-  ) : (
-    <LayoutContent padding={0} isScrollable={false}>
-      <ScrollableArea label="Ärendet" height="100%" padding={mobile ? 4 : 6}>
-        {column}
-      </ScrollableArea>
-    </LayoutContent>
-  );
+  // The one page frame (D126): the way back with the source beside it, the title with when it is due, the buttons
+  // directly under it, the read in the column and the facts in the end panel; at 1024 px and below the read places the
+  // facts itself, first.
   return (
-    <Layout
-      height={short ? 'auto' : 'fill'}
-      header={header}
-      content={content}
-      end={
-        narrow ? undefined : (
-          <LayoutPanel width={340} padding={6} role="complementary" label="Uppgifter" hasDivider isScrollable={!short}>
-            <VStack gap={4}>
-              <Heading level={3} accessibilityLevel={2}>
-                Uppgifter
-              </Heading>
-              {facts}
-            </VStack>
-          </LayoutPanel>
-        )
+    <PageFrame
+      back={back}
+      trail={
+        <Text type="supporting" color="secondary">
+          {sourceLine(item.mark, item.own)}
+        </Text>
       }
-    />
+      title={thread.title}
+      titleRef={item.title}
+      status={dueBadge(thread, day)}
+      meta={waitWords(thread) ? <Text type="supporting">{waitWords(thread)}</Text> : undefined}
+      below={
+        <VStack gap={4}>
+          <ActionRow thread={thread} actions={item.actions} readHref={item.readHref} omit={item.omit} ask={ask} />
+          <Notes thread={thread} item={item} />
+        </VStack>
+      }
+      label="Ärendet"
+      scrollTabStop
+      facts={
+        <VStack gap={4}>
+          <Heading level={3} accessibilityLevel={2}>
+            Uppgifter
+          </Heading>
+          {facts}
+        </VStack>
+      }
+      factsAbove={false}
+    >
+      <Read thread={thread} item={item} level={2} visual={2} idBase="item" facts={narrow ? facts : undefined} />
+    </PageFrame>
   );
 }

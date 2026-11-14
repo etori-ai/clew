@@ -6,14 +6,10 @@ import {
   EmptyState,
   HStack,
   Heading,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   Link,
   MetadataList,
   MetadataListItem,
   Skeleton,
-  StackItem,
   StatusDot,
   Table,
   type TableColumn,
@@ -29,12 +25,12 @@ import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { useRail } from '../components/nav';
 import { AttentionSkeleton, UnitsSkeleton } from '../components/loading';
-import { PAGE_WIDTH } from '../components/entity-page';
 import { Summary, measureOf, summaryOf, toneWeight } from '../components/unit-figures';
 import { sourceWayHref, unitPageHref } from '../person-address';
 import { errorMessage } from '../query-policy';
 import { fieldText } from '../components/view';
 import { DOT } from '../dot';
+import { PageFrame } from '../components/page-frame';
 
 type Unit = EntityList['groups'][number]['entities'][number];
 type Answer = { data?: EntitySection; isPending: boolean; isError: boolean };
@@ -274,35 +270,15 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     </>
   );
 
-  const gutter = mobile ? 4 : 6;
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        // Hem's column (the product owner, 2026-11-14): every page in the same centred frame.
-        contentWidth={PAGE_WIDTH}
-        header={
-          <LayoutHeader padding={gutter} hasDivider>
-            <HStack gap={3} vAlign="center" wrap="wrap">
-              <StackItem size="fill">
-                <VStack gap={0.5}>
-                  <Heading level={1}>Läget</Heading>
-                  {units.length > 0 && (
-                    <Text type="supporting" color="secondary">
-                      {units.length === 1 ? '1 enhet' : `${units.length} enheter`}
-                    </Text>
-                  )}
-                </VStack>
-              </StackItem>
-            </HStack>
-          </LayoutHeader>
-        }
-        content={
-          <LayoutContent padding={gutter} isScrollable={!short} label="Enheter">
-            <VStack gap={6}>{body}</VStack>
-          </LayoutContent>
-        }
-      />
+      <PageFrame
+        title="Läget"
+        meta={units.length > 0 ? (units.length === 1 ? '1 enhet' : `${units.length} enheter`) : undefined}
+        label="Enheter"
+      >
+        <VStack gap={6}>{body}</VStack>
+      </PageFrame>
     </Shell>
   );
 }

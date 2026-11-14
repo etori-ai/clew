@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import {
   announcements,
   desktop,
@@ -10,58 +10,65 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { ENTITY_UNIT, NOW } from './data';
-import { menuRows } from './phonebook';
-import { Units } from './unit-data';
-
-/** What a person sees of a rail row: where it starts, how wide and tall it is, and its type. */
-const rowLook = (row: Locator) =>
-  row.evaluate(element => {
-    const { x, width, height } = element.getBoundingClientRect();
-    return { x, width, height, font: getComputedStyle(element).font };
-  });
+import { NOW } from './data';
 
 for (const viewport of [desktop, narrow])
-  test(`the bell beside the installation's name works by keyboard at ${viewport.width}px`, async ({ page, api: _ }) => {
+  test(`Påminnelser is a row of the rail under Mitt arbete and works by keyboard at ${viewport.width}px`, async ({
+    page,
+    api: _,
+  }) => {
     await page.setViewportSize(viewport);
     await open(page, '/');
-    // Without a header connector (D112 item 1) the rail's heading is the installation's name with the bell; on a phone
-    // the shell draws that heading as its bar.
+    // Without a header connector (D112 item 1) the rail's heading is the installation's name alone; the reminders are a
+    // row of the rail under Mitt arbete (D126, pending the product owner), on a phone in the drawer with the rail.
     const header =
       viewport === narrow ? page.getByRole('banner') : page.getByRole('navigation', { name: 'Sidonavigering' });
-    const bell = header.getByRole('button', { name: 'Påminnelser: 0', exact: true });
-    await expect(bell).toBeVisible();
     const home = header.getByRole('link', { name: /Startsidan/ });
     await expect(home).toBeVisible();
     await expect(home.locator('button')).toHaveCount(0);
-    await bell.focus();
+    await expect(header.getByRole('button', { name: /^Påminnelser/ })).toHaveCount(viewport === narrow ? 0 : 1);
+    const nav = await openNav(page);
+    const row = nav.getByRole('button', { name: 'Påminnelser', exact: true });
+    await expect(row).toBeVisible();
+    // Under Kalender, the last of Mitt arbete's places.
+    expect((await row.boundingBox())!.y).toBeGreaterThan(
+      (await nav.getByRole('link', { name: 'Kalender', exact: true }).boundingBox())!.y,
+    );
+    await row.focus();
     await page.keyboard.press('Enter');
     const reminders = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
     await expect(reminders).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(bell).toBeFocused();
+    await expect(row).toBeFocused();
   });
 
 for (const viewport of [desktop, narrow])
-  test(`the person is the last row of the rail and opens the settings by keyboard at ${viewport.width}px`, async ({
+  test(`the person is the last row of the rail and leads to their own page at ${viewport.width}px`, async ({
     page,
     api,
   }) => {
     api.admin = true;
     await page.setViewportSize(viewport);
     await open(page, '/');
-    // Without a header connector the person is the rail's last row, under Administration (D112 item 1, board Sidebar);
-    // on a phone in the drawer, which stays under the settings so Escape gives the focus back to the row.
+    // Without a header connector the person is the rail's last row, under Administration (D112 item 1, board Shell): the
+    // link to their own page (D126 rule 1), where their settings are.
     const nav = await openNav(page);
-    const account = nav.getByRole('button', { name: 'Testa Testsson', exact: true });
-    await expect(account).toBeVisible();
+    const account = nav.getByRole('link', { name: 'Testa Testsson', exact: true });
+    await expect(account).toHaveAttribute('href', '/people/testperson');
     await expect(nav.getByRole('link', { name: 'Administration', exact: true })).toHaveAttribute('href', '/admin');
     expect((await account.boundingBox())!.y).toBeGreaterThan(
       (await nav.getByRole('link', { name: 'Administration', exact: true }).boundingBox())!.y,
     );
-    await expect(page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true })).toHaveCount(0);
-    await account.focus();
-    await page.keyboard.press('Enter');
+  });
+
+for (const viewport of [desktop, narrow])
+  test(`the settings open over the page from their address and close by keyboard at ${viewport.width}px`, async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(viewport);
+    // The person's own page links here (`?settings=1`, D39); closing replaces the address, so Back never opens them again.
+    await open(page, '/todo?settings=1');
     const settings = page.getByRole('dialog', { name: 'Testa Testsson', exact: true });
     await expect(settings).toBeVisible();
     await expect(settings.getByText('Skönsmons skola', { exact: true })).toBeVisible();
@@ -71,10 +78,10 @@ for (const viewport of [desktop, narrow])
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(settings).not.toBeVisible();
-    await expect(account).toBeFocused();
+    await expect(page).toHaveURL('/todo');
   });
 
-test('the phone bar holds the heading and the bell, and the drawer holds the rail with the person at its foot', async ({
+test('the phone bar holds the heading, and the drawer holds the rail with the reminders and the person at its foot', async ({
   page,
   api: _,
 }) => {
@@ -83,12 +90,12 @@ test('the phone bar holds the heading and the bell, and the drawer holds the rai
   const header = page.getByRole('banner');
   await expect(page.getByRole('button', { name: 'Öppna navigering' })).toBeVisible();
   await expect(header.getByRole('link', { name: /Startsidan/ })).toBeVisible();
-  await expect(header.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeVisible();
   const nav = await openNav(page);
+  await expect(nav.getByRole('button', { name: 'Påminnelser', exact: true })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
   await expect(nav.getByRole('button', { name: 'Sök', exact: true })).toBeVisible();
   await expect(nav.getByRole('link', { name: /^Att göra/ })).toBeVisible();
-  await expect(nav.getByRole('button', { name: 'Testa Testsson', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Testa Testsson', exact: true })).toBeVisible();
   // No header connector, no places of the header's in the drawer.
   await expect(nav.getByRole('group', { name: 'Huvudmeny' })).toHaveCount(0);
 });
@@ -96,7 +103,7 @@ test('the phone bar holds the heading and the bell, and the drawer holds the rai
 test('a reminder opens its work item in Att göra’s reading pane, with the focus on it', async ({ page, api }) => {
   api.threads = api.threads.map(t => (t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t));
   await open(page, '/todo?area=budget');
-  await page.getByRole('button', { name: 'Påminnelser: 1', exact: true }).click();
+  await page.getByRole('button', { name: /^Påminnelser\s*1$/ }).click();
   const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
   await expect(list).toBeVisible();
   await expectNoAxeViolations(page);
@@ -116,7 +123,7 @@ test('a reminder opens its work item in Att göra’s reading pane, with the foc
       .getByRole('complementary', { name: 'Valt ärende' })
       .getByRole('article', { name: 'Ärende: Ledighetsansökan från Johan Byström', exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeAttached();
+  await expect(page.getByRole('button', { name: 'Påminnelser', exact: true })).toBeAttached();
 });
 
 for (const [source, heading] of [['/calendar', 'Vecka']] as const)
@@ -126,7 +133,7 @@ for (const [source, heading] of [['/calendar', 'Vecka']] as const)
   }) => {
     api.threads = api.threads.map(t => (t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t));
     await open(page, source);
-    const bell = page.getByRole('button', { name: 'Påminnelser: 1', exact: true });
+    const bell = page.getByRole('button', { name: /^Påminnelser\s*1$/ });
     await bell.click();
     const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
     await expect(list).toBeVisible();
@@ -141,18 +148,18 @@ for (const [source, heading] of [['/calendar', 'Vecka']] as const)
     api.threads = api.threads.map(t => (t.id === 'ledighet' ? { ...t, state: 'handled' } : t));
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: /^Ledighetsansökan från Johan Byström/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeAttached();
+    await expect(page.getByRole('button', { name: 'Påminnelser', exact: true })).toBeAttached();
     await page.goBack();
     await expect(page.getByRole('heading', { level: 1, name: heading })).toBeAttached();
   });
 
-test('an empty bell says what will appear, leads to the overview and restores focus on Escape', async ({
+test('an empty list of reminders says what will appear, leads to the overview and restores focus on Escape', async ({
   page,
   api: _,
 }) => {
   await page.setViewportSize(narrow);
   await open(page, '/todo?area=personal');
-  const bell = page.getByRole('banner').getByRole('button', { name: 'Påminnelser: 0', exact: true });
+  const bell = (await openNav(page)).getByRole('button', { name: 'Påminnelser', exact: true });
   await bell.click();
   const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
   await expect(list.getByText('Inga aktuella påminnelser')).toBeVisible();
@@ -165,18 +172,19 @@ test('an empty bell says what will appear, leads to the overview and restores fo
   await expect(list).not.toBeVisible();
 });
 
-test('the reminders hang from the bell at the desktop and the count is part of the button', async ({ page, api }) => {
+test('the reminders open beside their row at the desktop and the count is part of the row', async ({ page, api }) => {
   api.threads = api.threads.map(t => (t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t));
   await page.setViewportSize(desktop);
   await open(page, '/calendar');
-  const bell = page.getByRole('button', { name: 'Påminnelser: 1', exact: true });
+  const bell = page.getByRole('button', { name: /^Påminnelser\s*1$/ });
   await expect(bell).toContainText('1');
   await bell.click();
   const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
   await expect(list.and(page.locator('.astryx-popover'))).toBeVisible();
   const trigger = (await bell.boundingBox())!;
   const surface = (await list.boundingBox())!;
-  expect(surface.y).toBeGreaterThanOrEqual(trigger.y + trigger.height);
+  // Beside the rail, at the row's end, never over the rail's own rows.
+  expect(surface.x).toBeGreaterThanOrEqual(trigger.x + trigger.width - 1);
   expect(surface.height).toBeLessThan(desktop.height / 2);
   expect(surface.width).toBeLessThanOrEqual(380);
   await expect(list.getByRole('link', { name: /Ledighetsansökan/ })).toBeVisible();
@@ -189,7 +197,7 @@ test.describe('on a touch phone', () => {
   test('the reminders rise as a sheet with the same content', async ({ page, api }) => {
     api.threads = api.threads.map(t => (t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t));
     await open(page, '/calendar');
-    const bell = page.getByRole('button', { name: 'Påminnelser: 1', exact: true });
+    const bell = (await openNav(page)).getByRole('button', { name: /^Påminnelser\s*1$/ });
     await bell.click();
     const sheet = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
     await expect(sheet).toBeVisible();
@@ -208,7 +216,7 @@ test.describe('on a touch phone', () => {
 test('a failed reminder read is explicit and can be retried', async ({ page, api: _ }) => {
   await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: 'Tillfälligt fel' } }));
   await page.goto('/calendar');
-  const bell = page.getByRole('button', { name: 'Påminnelser – kunde inte uppdateras', exact: true });
+  const bell = page.getByRole('button', { name: /^Påminnelser\s*kunde inte uppdateras$/ });
   await bell.click();
   const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
   await expect(list.getByText('Tillfälligt fel', { exact: true })).toBeVisible();
@@ -225,8 +233,7 @@ test('a blocked browser preference stays usable without claiming it was saved', 
       },
     });
   });
-  await open(page, '/');
-  await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
+  await open(page, '/?settings=1');
   await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
   await expect(page.getByText(/Webbläsaren tillåter inte att valet sparas/)).toBeVisible();
   await expect(page.getByRole('radio', { name: 'Mörkt', exact: true })).toBeChecked();
@@ -234,15 +241,14 @@ test('a blocked browser preference stays usable without claiming it was saved', 
 
 test('logout reports failure, then ends the session after a successful retry', async ({ page, api }) => {
   await page.route('**/api/auth/logout', route => route.fulfill({ status: 503 }));
-  await open(page, '/');
-  const account = page.getByRole('button', { name: 'Testa Testsson', exact: true });
-  await account.click();
+  await open(page, '/?settings=1');
+  const account = page.getByRole('link', { name: 'Testa Testsson', exact: true });
   await page.getByRole('button', { name: 'Logga ut', exact: true }).click();
   await expect
     .poll(() => announcements(page))
     .toContainEqual(expect.stringContaining('Utloggningen kunde inte bekräftas. Försök igen.'));
-  // The dialog closed with the attempt; the retry opens it again.
-  await account.click();
+  // The dialog closed with the attempt; the retry opens it again from its address.
+  await open(page, '/?settings=1');
   await page.unroute('**/api/auth/logout');
   await page.route('**/api/auth/logout', route => {
     expect(route.request().headers()['x-csrf-token']).toBe('test');
@@ -255,181 +261,25 @@ test('logout reports failure, then ends the session after a successful retry', a
 });
 
 /**
- * Every page has the panel (the product owner, 2026-11-11). A page without one beside its own column (Kalender,
- * Administration) gets what its address opens, a card or a view, in the drawer over it from the shell; closing the
- * drawer leaves the page as it was. The bell, a toast and the rail's search lead there (above, `reliability.spec.ts`,
- * `structure.spec.ts`); the first test follows such an address the way the router follows a link inside Clew, with the
- * focus where the person was.
+ * Nothing opens over a page (D126 rule 3): an address from before that opened a work item over a page (a saved link, a
+ * toast in an older tab) leads to the item's own page, with the page it lay over as the way back, in its place in the
+ * history; on Att göra it is the item in the reading pane.
  */
-test.describe('the panel over a page that has none of its own', () => {
+test.describe('an address that opened a thing over a page', () => {
   test.use({ viewport: desktop });
-  test('a card in the address lies in the drawer over Kalender, and Esc leaves Kalender as it was with the focus back', async ({
-    page,
-    api: _,
-  }) => {
-    // From Hem, which holds the panel itself and lets go of it when the person leaves.
-    await open(page, '/');
-    await page
-      .getByRole('navigation', { name: 'Sidonavigering' })
-      .getByRole('link', { name: 'Kalender', exact: true })
-      .click();
-    const week = page.getByRole('heading', { level: 1, name: 'Vecka' });
-    await expect(week).toBeVisible();
-    const title = await page.title();
-    const opener = page.getByRole('button', { name: 'Ny bokning' });
-    await opener.focus();
-    await page.evaluate(() => {
-      window.history.pushState(null, '', '/calendar?card=fakturor');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    });
-    const drawer = page.getByRole('dialog', { name: 'Ärende' });
-    await expect(drawer.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
-    await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
-    // The card has its own box in the panel (D112 item 7), so it offers no way into another one.
-    await expect(drawer.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    // Kalender stays the page under it: its heading, its title and its path.
-    await expect(week).toBeAttached();
-    await expect(page).toHaveTitle(title);
-    await expectNoAxeViolations(page);
-    await page.keyboard.press('Escape');
-    await expect(drawer).toHaveCount(0);
-    await expect(page).toHaveURL(/\/calendar$/);
-    await expect(opener).toBeFocused();
-    await expect(week).toBeVisible();
-    // On Att göra the card is the work item in the reading pane (D112), drawn once and in no drawer.
-    await page.evaluate(() => {
-      window.history.pushState(null, '', '/todo?item=fakturor');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    });
-    await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
+  test('leads to the thing’s own page, with the page as the way back', async ({ page, api: _ }) => {
+    await open(page, '/calendar?card=omtanke');
+    await expect(page).toHaveURL('/items/omtanke?from=%2Fcalendar');
+    await expect(page.getByRole('heading', { level: 1, name: /^Omtankesamtal med Anna Lindqvist/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Kalender', exact: true }).first()).toHaveAttribute(
+      'href',
+      '/calendar',
+    );
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await open(page, '/todo?card=fakturor');
+    await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(page.getByRole('complementary', { name: 'Valt ärende' }).locator('#card-fakturor')).toBeVisible();
-    await expect(page.locator('#card-fakturor')).toHaveCount(1);
-    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
-
-  test('opened by its address the card is there after a load, and ✕ leaves Kalender without the card', async ({
-    page,
-    api: _,
-  }) => {
-    await open(page, '/calendar?card=omtanke');
-    const drawer = page.getByRole('dialog', { name: 'Ärende' });
-    await expect(drawer.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
-    await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
-    await expectNoAxeViolations(page);
-    await drawer.getByRole('button', { name: 'Stäng panelen' }).click();
-    await expect(drawer).toHaveCount(0);
-    await expect(page).toHaveURL(/\/calendar$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeVisible();
-    // Nothing is left holding the focus inside the drawer that closed.
-    expect(await page.evaluate(() => !document.activeElement?.closest('dialog'))).toBe(true);
-  });
-
-  test('a card that is not among the person’s cards says so in the drawer over Administration, and the page stays', async ({
-    page,
-    api,
-  }) => {
-    api.admin = true;
-    await open(page, '/admin/connectors?card=okand');
-    const drawer = page.getByRole('dialog', { name: 'Ärende' });
-    await expect(drawer.getByText('Ärendet finns inte längre bland dina ärenden.')).toBeVisible();
-    await expect(page).toHaveURL('/admin/connectors?card=okand');
-    await expectNoAxeViolations(page);
-    await page.keyboard.press('Escape');
-    await expect(drawer).toHaveCount(0);
-    await expect(page).toHaveURL(/\/admin\/connectors$/);
-  });
-
-  test('a card’s read unfolds inside the card in the drawer, and the drawer holds the card all along', async ({
-    page,
-    api: _,
-  }) => {
-    await open(page, '/calendar?card=omtanke');
-    const drawer = page.getByRole('dialog', { name: 'Ärende' });
-    const button = drawer.locator('[data-read="pattern"]');
-    await button.click();
-    await expect(page).toHaveURL('/calendar?card=omtanke&open-card=omtanke&open-action=pattern');
-    const section = drawer.locator('#read-card-omtanke');
-    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
-    await expect(button).toBeFocused();
-    await expect(drawer.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
-    await expect(page.getByRole('dialog')).toHaveCount(1);
-    await expectNoAxeViolations(page);
-    // Esc lets go of the card, read and all: Kalender as it was.
-    await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/calendar$/);
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-  });
-});
-
-/**
- * One panel (the product owner, 2026-11-11: "there are multiple different sidebars"): on every page that holds it, a
- * card stands beside the page from the one width, 1340 px, as a named region that leaves the page in use, and below it
- * is the drawer over the page; either way under the same header, the same small "Kort" at the same level and the same
- * ✕ in the same place. The page gives way to the panel, never the other way round: nothing scrolls sideways.
- */
-test.describe('one panel on every page, from one width', () => {
-  /** Whether the page under what is open still takes the focus: it does beside the panel, never under the drawer. */
-  const pageTakesFocus = (page: Page) =>
-    page.evaluate(() => {
-      const target = document.querySelector<HTMLElement>('main a[href], [role="main"] a[href]');
-      target?.focus();
-      return !!target && document.activeElement === target;
-    });
-  /** The panel's name for a card: drawn small as artboard E draws "KORT", at the outline's second level for everyone. */
-  const kort = (surface: Locator) => surface.locator('[aria-level="2"]').filter({ hasText: 'Ärende' });
-  /** Where the header's name and ✕ stand in the surface that holds them, and how large the name is drawn. */
-  const headerLook = async (surface: Locator) => {
-    // Inside the surface's own edge: the drawer draws a 1 px line on its edge, where beside the page the resize
-    // handle's divider stands outside the region.
-    const edge = await surface.evaluate(el => ({ start: el.clientLeft, top: el.clientTop }));
-    const outer = (await surface.boundingBox())!;
-    const box = { ...outer, x: outer.x + edge.start, y: outer.y + edge.top, width: outer.width - edge.start };
-    const name = kort(surface);
-    const close = surface.getByRole('button', { name: 'Stäng panelen' });
-    const named = (await name.boundingBox())!;
-    const closer = (await close.boundingBox())!;
-    return {
-      size: await name.evaluate(el => getComputedStyle(el).fontSize),
-      nameFromStart: Math.round(named.x - box.x),
-      nameFromTop: Math.round(named.y - box.y),
-      closeFromEnd: Math.round(box.x + box.width - (closer.x + closer.width)),
-      closeFromTop: Math.round(closer.y - box.y),
-    };
-  };
-  for (const [what, path] of [
-    ['Personal', '/staff?card=omtanke'],
-    ['a person’s page', '/people/johan?card=omtanke'],
-    ['a unit’s page', `/units/${ENTITY_UNIT.id}?card=omtanke`],
-    ['a tool’s page', '/tools/phonebook.directory?card=omtanke'],
-  ] as const)
-    test(`a card on ${what} stands beside the page at 1440 px and is the drawer at 1200 px, under the same header`, async ({
-      page,
-      api,
-    }) => {
-      api.menu = menuRows;
-      await new Units().route(page);
-      await page.setViewportSize({ width: 1440, height: 900 });
-      await open(page, path);
-      const beside = page.getByRole('complementary', { name: 'Ärende' });
-      await expect(beside.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
-      await expect(kort(beside)).toBeFocused();
-      await expect(page.getByRole('dialog')).toHaveCount(0);
-      expect(await pageTakesFocus(page)).toBe(true);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      await expectNoAxeViolations(page);
-      const besideLook = await headerLook(beside);
-
-      await page.setViewportSize({ width: 1200, height: 900 });
-      await open(page, path);
-      const drawer = page.getByRole('dialog', { name: 'Ärende' });
-      await expect(drawer.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
-      await expect(kort(drawer)).toBeFocused();
-      await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
-      expect(await pageTakesFocus(page)).toBe(false);
-      await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
-      await expectNoAxeViolations(page);
-      expect(await headerLook(drawer)).toEqual(besideLook);
-    });
 });
 
 /**

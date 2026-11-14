@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ConnectorSummary, SessionUser } from '@clew/contracts';
 import {
   Button,
+  Card,
   EmptyState,
   HStack,
   Link,
@@ -178,11 +179,10 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
         connectors === null ? undefined : `${all.length} system${problems ? `\u00a0· ${problems} med problem` : ''}`
       }
       action={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />}
-      flush
       pending={list.isPending}
     >
       {(error || connectors === null) && (
-        <VStack padding={mobile ? 4 : 6}>
+        <VStack gap={2}>
           {error && (
             <Text as="p" role="alert" color="accent">
               {error}
@@ -195,10 +195,10 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
           )}
         </VStack>
       )}
-      {/* The register meets the frame's edges (board Admin). What is on, what has a problem and what is off are the
-          filter's own counts, in a toolbar over it: one row that both says and does. */}
+      {/* The register sits in the page's column in a card, as Hem's lists do (D126). What is on, what has a problem and
+          what is off are the filter's own counts, in a toolbar over it: one row that both says and does. */}
       {connectors !== null && (
-        <>
+        <Card padding={0}>
           <Toolbar
             label="Anslutningar"
             size="sm"
@@ -269,7 +269,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
                 hasHover
               />
             ))}
-        </>
+        </Card>
       )}
       <AddConnectorDialog
         isOpen={adding}

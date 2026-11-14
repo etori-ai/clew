@@ -8,8 +8,6 @@ import {
   Button,
   EmptyState,
   HStack,
-  Layout,
-  LayoutContent,
   Link,
   MetadataList,
   MetadataListItem,
@@ -38,20 +36,13 @@ import {
 } from '../person-address';
 import { TALK_PARAM } from '../talk-address';
 import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell';
 import { FieldValue } from '../components/view';
 import { ContentSkeleton } from '../components/loading';
 import { AskClew } from '../components/thing-panel';
 import { TalkTab } from '../components/talk-overlay';
 import { RegisterHolding } from '../components/register-holding';
-import {
-  EntityPage,
-  PAGE_WIDTH,
-  PageSection,
-  RailSection,
-  ThingTabs,
-  type PageSectionEntry,
-} from '../components/entity-page';
+import { EntityPage, PageSection, RailSection, ThingTabs, type PageSectionEntry } from '../components/entity-page';
 import {
   EntityActions,
   NeedsYouRows,
@@ -71,6 +62,7 @@ import {
 import { OwnCompetence } from './competence';
 import { PlanTab } from './boarding';
 import { employmentLabel, employmentPercent, employmentTitles } from './person-model';
+import { PageFrame } from '../components/page-frame';
 
 /** The rail's width and the facts' panel beside the column (`EntityPage`). */
 const SIDE_NAV = 260,
@@ -277,7 +269,7 @@ function OverviewSection({ answer, href }: { answer: SectionAnswer; href: string
 export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { key = '' } = useParams<{ key: string }>();
   const [search] = useSearchParams();
-  const { pathname } = useLocation();
+  const { pathname, search: here } = useLocation();
   const navigate = useNavigate();
   const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: on a short screen nothing is pinned beside the page, and the page scrolls as one.
@@ -369,39 +361,33 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   let body: ReactNode;
   if (missing || read.isError || !detail)
     body = (
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        contentWidth={PAGE_WIDTH}
-        content={
-          <LayoutContent padding={mobile ? 4 : 6} isScrollable={!short}>
-            {missing ? (
-              <EmptyState
-                headingLevel={1}
-                title="Personen finns inte"
-                description="Det finns ingen sådan person, eller så har du inte tillgång till uppgifterna om hen. Adressen kan också ha ändrats."
-                actions={<Button label="Till startsidan" href="/" />}
+      <PageFrame>
+        {missing ? (
+          <EmptyState
+            headingLevel={1}
+            title="Personen finns inte"
+            description="Det finns ingen sådan person, eller så har du inte tillgång till uppgifterna om hen. Adressen kan också ha ändrats."
+            actions={<Button label="Till startsidan" href="/" />}
+          />
+        ) : read.isError ? (
+          <VStack gap={3}>
+            <Text as="p" role="alert">
+              {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
+            </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                isLoading={read.isFetching}
+                onClick={() => void read.refetch()}
               />
-            ) : read.isError ? (
-              <VStack gap={3}>
-                <Text as="p" role="alert">
-                  {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
-                </Text>
-                <HStack>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    label="Försök igen"
-                    isLoading={read.isFetching}
-                    onClick={() => void read.refetch()}
-                  />
-                </HStack>
-              </VStack>
-            ) : (
-              <ContentSkeleton />
-            )}
-          </LayoutContent>
-        }
-      />
+            </HStack>
+          </VStack>
+        ) : (
+          <ContentSkeleton />
+        )}
+      </PageFrame>
     );
   else {
     const { name } = detail.entity;
@@ -494,7 +480,23 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         icon={<Avatar name={name} size={mobile ? 48 : 60} tooltip={false} aria-hidden />}
         title={name}
         subtitle={nameLine(detail)}
-        actions={<EntityActions detail={detail} mobile={mobile} ask={ask} />}
+        actions={
+          <EntityActions
+            detail={detail}
+            mobile={mobile}
+            ask={
+              own ? (
+                <>
+                  {ask}
+                  {/* The person's own settings (D39), which the rail's foot row opened before it led here (D126). */}
+                  <Button variant="secondary" label="Inställningar" href={settingsHref(pathname, here)} />
+                </>
+              ) : (
+                ask
+              )
+            }
+          />
+        }
         tabs={
           <ThingTabs
             label={`Om ${name}`}

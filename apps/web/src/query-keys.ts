@@ -24,7 +24,6 @@ export const keys = {
   document: (request: unknown) => ['document', request] as const,
   previewAll: ['preview'] as const,
   view: (capability: string, input: string | null) => ['view', capability, input] as const,
-  cardView: (threadId: string, actionId: string) => ['card-view', threadId, actionId] as const,
   /**
    * The action dialog's reads (D112 item 10): what an action would write for exactly these rows and answers, and the
    * free times and the day for a meeting ask. Reads, never cached across an item's change (`version` is its `updatedAt`).

@@ -1,27 +1,14 @@
 import { useMemo } from 'react';
 import { useLocation } from 'react-router';
 import type { SiteHeaderView } from '@clew/contracts';
-import {
-  AppShell,
-  HStack,
-  Layout,
-  LayoutContent,
-  SideNav,
-  SideNavHeading,
-  Skeleton,
-  VStack,
-  VisuallyHidden,
-  useMediaQuery,
-} from '@clew/ui';
+import { AppShell, HStack, SideNav, SideNavHeading, Skeleton, VStack, VisuallyHidden, useMediaQuery } from '@clew/ui';
 import { createHeaderBandTheme } from '@clew/ui/theme';
 import { SiteHeader, selectedItem } from '@clew/site-header';
 import { useBranding } from '../branding';
 import { mobileQuery } from '../media';
 import { InstallationLogo, SITE_NAME, headerLogo } from './shell';
 import { ContentSkeleton, HemSkeleton, TitleSkeleton, UnitsSkeleton } from './loading';
-
-/** Hem's column, as `start.tsx` draws it (D126, board Hem). */
-const HEM_WIDTH = 1120;
+import { PageFrame } from './page-frame';
 
 /**
  * The app before the session is known: the shell in the shape it is about to have, not a spinner on an empty page
@@ -38,35 +25,19 @@ export function FirstLoad({ header }: { header: SiteHeaderView | null }) {
   const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
   const shared = header?.source ? header : null;
   const here = window.location.origin + location.pathname + location.search;
+  // In the one page frame every page has (D126), so nothing moves when the page takes the placeholders' place.
   const page =
     location.pathname === '/' ? (
-      <Layout
-        height="auto"
-        contentWidth={HEM_WIDTH}
-        content={
-          <LayoutContent padding={mobile ? 4 : 6} isScrollable={false}>
-            <HemSkeleton />
-          </LayoutContent>
-        }
-      />
+      <PageFrame plain pinned={false}>
+        <HemSkeleton />
+      </PageFrame>
     ) : (
-      <Layout
-        height="fill"
-        padding={mobile ? 3 : 8}
-        content={
-          <LayoutContent padding={0}>
-            <VStack
-              paddingInline={mobile ? 3 : 8}
-              paddingBlockStart={mobile ? 3 : 8}
-              paddingBlockEnd={mobile ? 3 : 5}
-              gap={6}
-            >
-              <TitleSkeleton />
-              {location.pathname === '/units' ? <UnitsSkeleton /> : <ContentSkeleton heading={false} />}
-            </VStack>
-          </LayoutContent>
-        }
-      />
+      <PageFrame>
+        <VStack gap={6}>
+          <TitleSkeleton />
+          {location.pathname === '/units' ? <UnitsSkeleton /> : <ContentSkeleton heading={false} />}
+        </VStack>
+      </PageFrame>
     );
   return (
     <AppShell

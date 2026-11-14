@@ -32,8 +32,6 @@ import {
   FormLayout,
   HStack,
   Heading,
-  Layout,
-  LayoutContent,
   Link,
   List,
   ListItem,
@@ -97,9 +95,10 @@ import { useShownForTheWayBack } from '../way-back';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
-import { EntityPage, PAGE_WIDTH, PageSection, RailSection, type PageSectionEntry } from '../components/entity-page';
+import { EntityPage, PageSection, RailSection, type PageSectionEntry } from '../components/entity-page';
 import { DialogFrame } from '../components/dialog-frame';
 import { StartPlanDialog } from '../components/boarding-start';
+import { PageFrame } from '../components/page-frame';
 
 /**
  * One person's introduction or leaving as a page (D124, D116 rule 11: a list a person works through is a page), at
@@ -160,7 +159,6 @@ function Plan({
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const client = useQueryClient();
-  const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: on a short screen nothing is pinned beside the page, and the page scrolls as one.
   const short = useMediaQuery(shortQuery);
   const announce = useAnnounce();
@@ -360,20 +358,7 @@ function Plan({
     ) : (
       <ContentSkeleton />
     );
-    body =
-      frame === 'tab' ? (
-        state
-      ) : (
-        <Layout
-          height={short ? 'auto' : 'fill'}
-          contentWidth={PAGE_WIDTH}
-          content={
-            <LayoutContent padding={mobile ? 4 : 6} isScrollable={!short}>
-              {state}
-            </LayoutContent>
-          }
-        />
-      );
+    body = frame === 'tab' ? state : <PageFrame>{state}</PageFrame>;
   } else {
     const here = pageOnly(pathname, search);
     const plans = person?.plans ?? [];
@@ -913,17 +898,12 @@ function Redirecting({
   missing: boolean;
   to: string | null;
 }) {
-  const mobile = useMediaQuery(mobileQuery);
   const nav = useRail({ current: { surface: 'verktyg', view: null }, admin, manager: user.role === 'manager' });
   usePageTitle(missing ? 'Planen finns inte' : null);
   if (to) return <Navigate replace to={to} />;
   return (
     <Shell user={user} nav={nav}>
-      <Layout
-        height="fill"
-        padding={mobile ? 3 : 8}
-        content={<LayoutContent>{missing ? <PlanMissing /> : <ContentSkeleton />}</LayoutContent>}
-      />
+      <PageFrame>{missing ? <PlanMissing /> : <ContentSkeleton />}</PageFrame>
     </Shell>
   );
 }

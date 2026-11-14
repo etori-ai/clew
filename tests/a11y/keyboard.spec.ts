@@ -190,17 +190,19 @@ test.describe('2.4.3 focus order', () => {
     await expect(page.getByRole('list', { name: 'Behöver dig' }).locator('#work-fakturor')).toBeVisible();
   });
 
-  test('the side panel can be closed with a button and hands focus back', async ({ page, api }) => {
-    // A row on a tool's page opens its own view over the page at this width (D50); closing it gives the row's link back.
+  test('a name on a tool’s page leads to its own page, and Back hands the focus back to the name (D126 rule 1)', async ({
+    page,
+    api,
+  }) => {
+    // Nothing opens over the page (rule 3): the row's name is the link to its contact card's page, the tool the way back.
     api.menu = menuRows;
     await open(page, '/tools/phonebook.directory');
     const trigger = page.getByRole('link', { name: 'Anna Lindqvist' });
     await trigger.focus();
     await page.keyboard.press('Enter');
-    const panel = page.getByRole('dialog');
-    await expect(panel).toBeVisible();
-    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
-    await expect(panel).toBeHidden();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/phonebook\.person\?/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.goBack();
     await expect(trigger).toBeFocused();
   });
 

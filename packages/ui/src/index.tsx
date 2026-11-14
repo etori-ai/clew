@@ -149,6 +149,8 @@ export {
   useStreamingText,
 } from '@astryxdesign/core/hooks';
 export { Lightbox } from '@astryxdesign/core/Lightbox';
+// An image of evidence at its column's width, at its own proportions (the review's scanned invoice, D126).
+export { AspectRatio } from '@astryxdesign/core/AspectRatio';
 export type { AnimatedLayout } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
 export {

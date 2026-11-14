@@ -64,9 +64,11 @@ test.describe('the shared header on every page', () => {
     await expect(rail.getByRole('link', { name: 'Kalender', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(rail.getByRole('link', { name: 'Intranätet' })).toHaveCount(0);
     await expect(rail.getByRole('button', { name: 'Testa Testsson', exact: true })).toHaveCount(0);
+    // The reminders are the band's bell, not a row of the rail as well.
+    await expect(rail.getByRole('button', { name: /^Påminnelser/ })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
-  test('without a header connector there is no band: the rail carries the installation’s name, the bell and the person (D112 item 1)', async ({
+  test('without a header connector there is no band: the rail carries the installation’s name, the reminders and the person (D112 item 1, D126)', async ({
     page,
     api: _,
   }) => {
@@ -76,8 +78,8 @@ test.describe('the shared header on every page', () => {
     await expect(page.getByRole('navigation', { name: 'Huvudmeny', exact: true })).toHaveCount(0);
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
     await expect(rail.getByRole('link', { name: 'Startsidan' })).toHaveAttribute('href', '/');
-    await expect(rail.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeVisible();
-    await expect(rail.getByRole('button', { name: 'Testa Testsson', exact: true })).toBeVisible();
+    await expect(rail.getByRole('button', { name: 'Påminnelser', exact: true })).toBeVisible();
+    await expect(rail.getByRole('link', { name: 'Testa Testsson', exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
   });
   test('on a phone the bar holds the heading, the bell and the person, and the places are rows in the drawer', async ({

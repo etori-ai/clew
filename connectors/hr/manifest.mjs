@@ -168,8 +168,10 @@ const absenceOverview = {
     ),
   }),
   // The view (D38): absence per person as a table. A row names the employee by user name (`subject`, D97 item 6), so
-  // the name leads to the person in Clew, and the row opens the employee's pattern by its own link. Health data: the
-  // model is handed only that the rows are shown.
+  // the name leads to the person in Clew, and the row opens the employee's pattern by its own link. Its rows are
+  // hr.person's, asked for everyone at once (`byKey`, D127): where an administrator offers hr.person on Personal, the
+  // figure on Hem and anything else that opens this read lead to that tab. Health data: the model is handed only that
+  // the rows are shown.
   view: {
     kind: 'table',
     title: 'name',
@@ -178,6 +180,7 @@ const absenceOverview = {
     noun: { one: 'medarbetare', other: 'medarbetare' },
     empty: 'Ingen frånvaro de senaste sex månaderna.',
     subject: { entity: 'person', key: 'person' },
+    byKey: 'hr.person',
     open: { capability: 'hr.absencePattern', title: 'Mönster', params: { ref: 'ref' } },
     fields: [
       { key: 'name', label: 'Namn' },
@@ -299,15 +302,29 @@ const leaveRequests = {
   input: empty,
   output: object({
     rows: array(
-      object({ ref: string, name: string, from: string, to: string, days: integer, type: string, clash: boolean }),
+      object(
+        {
+          ref: string,
+          person: string,
+          name: string,
+          from: string,
+          to: string,
+          days: integer,
+          type: string,
+          clash: boolean,
+        },
+        ['ref', 'name', 'from', 'to', 'days', 'type', 'clash'],
+      ),
     ),
   }),
   // The view (D38): the open requests as a table; who asks for leave when is the person's, so the model reads a summary.
+  // A row names the employee by user name (`subject`, D97 item 6), so the name leads to the person in Clew.
   view: {
     kind: 'table',
     title: 'name',
     ref: 'ref',
     modelReads: 'summary',
+    subject: { entity: 'person', key: 'person' },
     noun: { one: 'ansökan', other: 'ansökningar' },
     empty: 'Inga ledighetsansökningar väntar på beslut.',
     fields: [
@@ -509,7 +526,8 @@ export const sickOnDay = n => `Sjuk · dag ${n}`;
  * Where each person stands today (D97): a read about a person, asked with a batch of user names, one row per employee of
  * the manager's unit in this system, carrying the key it was asked with. Anyone else is no row. Presence is the column
  * "Närvaro" on Personal: "I tjänst" is plain, an absence a neutral badge, so only the absences carry a tone. It is the
- * row in one value (`compact`): where the whole row is drawn, a section reads "I dag" and "Kommande".
+ * row in one value (`compact`): where the whole row is drawn, a section reads "I dag" and "Kommande", and the last six
+ * months as hr.absenceOverview counts them, whose rows these are (D127).
  */
 const person = {
   name: 'hr.person',
@@ -535,8 +553,12 @@ const person = {
           presence: string,
           today: string,
           upcoming: string,
+          short: integer,
+          vab: integer,
+          long: integer,
+          periods: integer,
         },
-        ['key', 'ref', 'presence', 'today'],
+        ['key', 'ref', 'presence', 'today', 'short', 'vab', 'long', 'periods'],
       ),
     },
   }),
@@ -562,6 +584,11 @@ const person = {
       },
       { key: 'today', label: 'I dag' },
       { key: 'upcoming', label: 'Kommande' },
+      // The last six months, as the overview counts them; the short periods are what the rehab rule counts.
+      { key: 'short', label: 'Korttidsfrånvaro, 6 mån', format: 'number', unit: { one: 'dag', other: 'dagar' } },
+      { key: 'periods', label: 'Perioder', format: 'number', unit: { one: 'period', other: 'perioder' }, beside: true },
+      { key: 'vab', label: 'Vab, 6 mån', format: 'number', unit: { one: 'dag', other: 'dagar' } },
+      { key: 'long', label: 'Långtidsfrånvaro, 6 mån', format: 'number', unit: { one: 'dag', other: 'dagar' } },
     ],
     open: { capability: 'hr.absencePattern', title: 'Frånvaromönster', params: { ref: 'ref' } },
   },

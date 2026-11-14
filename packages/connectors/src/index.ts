@@ -380,6 +380,11 @@ export interface AboutRead {
   view: View;
   /** The page of Clew's own domain where the person writes about one entity (D95, D96), from a core connector. */
   page?: EntityPage;
+  /**
+   * The reads of the same connector the person may call that answer these rows without keys: their view names this
+   * read as `byKey` (D127), so whatever opens one of them without input opens this read where it is placed.
+   */
+  overviews?: string[];
   /** The most keys one call takes: the read's own `maxItems`, never more than `ENTITY_KEYS_MAX`. */
   batch: number;
   /** The administrator offers it under Visa on the entity's list (D97 item 3). */
@@ -1379,8 +1384,9 @@ export class Registry implements HoldingsReader {
   /**
    * The reads about an entity kind a person may call (D97), connector by connector and by name within one, with what the
    * entities module places them by: the view as the person gets it (a row's `open` only when they may call that read),
-   * how many keys one call takes, and the administrator's lens and column (a column only while its field is in the
-   * view). As in `errandSources`, `about` is tested before the scope and Clew's core connector is skipped: a core
+   * how many keys one call takes, the administrator's lens and column (a column only while its field is in the view),
+   * and the reads that answer its rows without keys (`byKey`, D127) the person may call. As in `errandSources`, `about`
+   * is tested before the scope and Clew's core connector is skipped: a core
    * capability's scope may ask the registry, and must never be asked from here.
    */
   aboutReads(actor: Actor, entity: EntityKind): AboutRead[] {
@@ -1393,6 +1399,15 @@ export class Registry implements HoldingsReader {
       const column = choice?.column && view.fields.some(f => f.key === choice.column) ? choice.column : undefined;
       const declared = (capability.input as { properties?: { keys?: { maxItems?: unknown } } }).properties?.keys
         ?.maxItems;
+      // The connector's reads that answer the same rows without keys (D127), those the person may call.
+      const overviews = connector.capabilities
+        .filter(
+          c =>
+            (c.view?.kind === 'table' || c.view?.kind === 'list') &&
+            c.view.byKey === capability.name &&
+            !!this.allowed(actor, c.name),
+        )
+        .map(c => c.name);
       return [
         {
           name: capability.name,
@@ -1401,6 +1416,7 @@ export class Registry implements HoldingsReader {
           title: capability.title,
           view: { ...rest, ...(open ? { open } : {}) } as View,
           ...(capability.about?.page ? { page: capability.about.page } : {}),
+          ...(overviews.length ? { overviews } : {}),
           batch:
             typeof declared === 'number' && declared >= 1
               ? Math.min(ENTITY_KEYS_MAX, Math.floor(declared))

@@ -51,6 +51,9 @@ export const talksView: View = {
   ],
   // A row is one of the manager's people, by user name (D97 item 6): the name links to the person.
   subject: { entity: 'person', key: 'userName' },
+  // The same people's places in the round as `talks.person` answers them by key (D127): where an administrator offers
+  // that lens on Personal, the figure on Hem leads to its tab, not to this read's page.
+  byKey: TALKS_CONNECTOR + '.person',
 };
 /** The reader's action points, the ones they own and the ones about them: what the owner's card opens with no input. */
 export const commitmentsView: View = {

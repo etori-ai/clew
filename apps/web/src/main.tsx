@@ -15,7 +15,6 @@ import { TodoPage } from './pages/todo';
 import { ItemPage } from './pages/item';
 import { todoFromHem } from './work-items';
 import { ConversationProvider } from './components/conversation-context';
-import { PanelClaims } from './components/page-panel';
 import { ReviewPage } from './pages/review';
 import { legacyReview, reviewPageFrom } from './review-address';
 import { clearDrafts } from './review-session';
@@ -201,12 +200,10 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       }}
     >
       <QueryClientProvider client={client}>
-        {/* One conversation for the whole session's pages (D50): asked on Hem, it is still there when the transcript takes the column, and no other page has a box of its own (D126 rule 5). Every page has the panel: the pages that draw it beside their column claim it, and the shell draws it over the others. */}
+        {/* One conversation for the whole session's pages (D50): asked on Hem, it is still there when the transcript takes the column, and no other page has a box of its own (D126 rule 5). */}
         <ConversationProvider>
           <HeldCapabilities.Provider value={shell.capabilities}>
-            <HeldRelations.Provider value={shell.relations}>
-              <PanelClaims>{children(shell)}</PanelClaims>
-            </HeldRelations.Provider>
+            <HeldRelations.Provider value={shell.relations}>{children(shell)}</HeldRelations.Provider>
           </HeldCapabilities.Provider>
         </ConversationProvider>
         {Devtools && (

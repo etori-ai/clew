@@ -130,7 +130,8 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page).toHaveURL('/items/fakturor?from=%2F');
     await open(page, '/todo?tab=done');
     await expect(heading(page, 1, 'Att göra')).toBeVisible();
-    await expect(page.getByRole('list', { name: 'Klart' }).getByRole('listitem')).toHaveCount(2);
+    // The queue is a table (board Att göra, the `table-inbox` template): its header row and the two items done.
+    await expect(page.getByRole('table', { name: 'Klart' }).getByRole('row')).toHaveCount(3);
   });
 
   for (const path of ['/', '/todo?item=fakturor'])
@@ -265,9 +266,14 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(heading(page, 2, 'ons 4 nov')).toBeVisible();
   });
 
-  test('the side panel has a heading', async ({ page, api: _ }) => {
+  test('a view opened over Hem by an address from before is its own page, named by its heading (D126 rule 3)', async ({
+    page,
+    api: _,
+  }) => {
     await open(page, '/?open=hr.whoIsOn&open-title=Bemanning');
-    await expect(page.getByRole('dialog').getByRole('heading', { name: 'Bemanning' })).toBeVisible();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.whoIsOn\?/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(heading(page, 1, 'Bemanning')).toBeVisible();
   });
 });
 
@@ -285,9 +291,9 @@ test.describe('3.1.2 language of parts', () => {
 
   // On the landing the box has no header and already holds the focus (G); the conversation's scope line carries the shortcut.
 
-  test('the side panel shows Swedish labels and readable values', async ({ page, api: _ }) => {
+  test('a view’s page shows Swedish labels and readable values', async ({ page, api: _ }) => {
     await open(page, '/?open=hr.whoIsOn&open-title=Bemanning');
-    const panel = page.getByRole('dialog');
+    const panel = page.getByRole('main');
     await expect(panel).toBeVisible();
     await expect(panel.getByText('I tjänst', { exact: true })).toBeVisible();
     await expect(panel.getByText('Frånvarande', { exact: true })).toBeVisible();
@@ -348,7 +354,7 @@ test.describe('D26 questions answered from documents', () => {
     );
     // A passage goes into a conversation only beside a conversation's own box (D112 item 7); the page has "Fråga Clew".
     await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    await expect(panel.getByRole('link', { name: 'Fråga Clew' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Fråga Clew' })).toBeVisible();
     await expect(rows.nth(2)).toContainText('2 år sedan');
     await expect(rows.nth(2).getByRole('link', { name: 'Öppna' })).toHaveCount(0);
     await expect(panel.getByText(/^SharePoint svarade inte\./)).toBeVisible();
@@ -358,8 +364,8 @@ test.describe('D26 questions answered from documents', () => {
 
 test.describe('D30 the obligation', () => {
   test('the card carries its steps, its judgement calls and its day loads with names', async ({ page, api: _ }) => {
-    // The row keeps the thread's id; its card, open in the panel, has its own (D50).
-    await open(page, '/?card=samtal');
+    // The row keeps the thread's id; the work item, open in Att göra's reading pane, has its own (D50, D126 rule 2).
+    await open(page, '/todo?item=samtal');
     const card = page.locator('#card-samtal');
     await expect(card.getByRole('list', { name: 'Steg' })).toBeVisible();
     await expect(card.getByRole('list', { name: 'Steg' }).getByRole('listitem')).toHaveCount(4);
@@ -373,7 +379,7 @@ test.describe('D30 the obligation', () => {
     page,
     api: _,
   }) => {
-    await open(page, '/?tab=waiting&card=samtal-svar');
+    await open(page, '/todo?tab=waiting&item=samtal-svar');
     const card = page.locator('#card-samtal-svar');
     await expect(card).toContainText('1 av 2 svarat');
     await expect(card.getByRole('progressbar')).toHaveCount(0);

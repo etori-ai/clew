@@ -1,18 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
   cardOverPage,
-  cardWithRead,
-  keepingPanel,
   pageOnly,
-  panelOf,
   panelRedirect,
   panelSearch,
   readOf,
   viewSearch,
-  withAsk,
   withCard,
   withEntry,
-  withRead,
   withView,
   withoutPanel,
   withoutRead,
@@ -57,11 +52,6 @@ describe('a work item opened from a page is its own page (D126 rule 1)', () => {
       '/items/ledighet?from=%2Fpeople%2Fkarin',
     );
   });
-  test('a row’s own read from before is the item’s page, where the read is one of its links', () => {
-    expect(cardWithRead('/', '?tab=done&open=a.b&open-title=A&card=other', 't1', 'pattern')).toBe(
-      '/items/t1?from=%2F%3Ftab%3Ddone',
-    );
-  });
 });
 
 describe('a view opened from a page is its own page (D126 rule 1)', () => {
@@ -85,12 +75,6 @@ describe('a view opened from a page is its own page (D126 rule 1)', () => {
         input: { ref: 'p1' },
       }),
     ).toBe('/conversations/c1?open=phonebook.person&open-title=Kontaktkort&open-input=%7B%22ref%22%3A%22p1%22%7D');
-    expect(panelOf(new URLSearchParams('?open=phonebook.directory&open-title=Telefonbok&via=1'))).toEqual({
-      kind: 'view',
-      capability: 'phonebook.directory',
-      title: 'Telefonbok',
-      input: {},
-    });
   });
   test('without the view the page keeps everything else', () => {
     expect(withoutView('/', '?card=t1&open=a.b&open-title=A&open-input=%7B%7D&via=1')).toBe('/?card=t1');
@@ -130,31 +114,17 @@ describe('an address that opened a thing over a page leads to its page (D126 rul
 describe('the addresses from before that still mean something', () => {
   test('a card’s read from before is named, so the item can lead it to the read’s page', () => {
     const q = new URLSearchParams('?show=x&card=t1&open-card=t1&open-action=pattern');
-    expect(panelOf(q)).toEqual({ kind: 'card', threadId: 't1' });
     expect(readOf(q)).toEqual({ threadId: 't1', actionId: 'pattern' });
     expect(readOf(new URLSearchParams('?card=t1&open-card=t1'))).toBeNull();
-    expect(withRead('/staff', '?show=x', 't1', 'pattern')).toBe('/staff?show=x&open-card=t1&open-action=pattern');
     expect(withoutRead('/staff', '?show=x&card=t1&open-card=t1&open-action=pattern')).toBe('/staff?show=x&card=t1');
-  });
-  test('"Fråga Clew" from before makes the page the thing; the page leads it to the conversation', () => {
-    expect(withAsk('/items/omtanke', '?from=%2Ftodo')).toBe('/items/omtanke?from=%2Ftodo&ask=1');
-    expect(withAsk('/staff', '?show=talks&card=c1&open-card=c1&open-action=pattern&review=c1')).toBe(
-      '/staff?show=talks&ask=1',
-    );
-    expect(panelOf(new URLSearchParams('?ask=1'))).toEqual({ kind: 'page' });
   });
   test("Kalender's entry is the page's own thing", () => {
     expect(withEntry('/calendar', '?date=2026-11-09&view=week&ask=1', 'p1')).toBe(
       '/calendar?date=2026-11-09&view=week&entry=p1',
     );
-    expect(panelOf(new URLSearchParams('?entry=p1'))).toEqual({ kind: 'entry', id: 'p1' });
     expect(withoutPanel('/calendar', '?date=2026-11-09&entry=p1')).toBe('/calendar?date=2026-11-09');
   });
-  test('a move within the page keeps what is open beside it; the page’s own address keeps nothing of it', () => {
-    expect(keepingPanel('/people/johan?section=directory.contact&from=%2Fstaff', '?from=%2Fstaff&card=t1')).toBe(
-      '/people/johan?section=directory.contact&from=%2Fstaff&card=t1',
-    );
-    expect(keepingPanel('/people/johan', '')).toBe('/people/johan');
+  test('the page’s own address keeps nothing of what lay beside or over it, nor "Fråga Clew" from before', () => {
     expect(pageOnly('/staff', '?show=x&card=t1&open-card=t1&open-action=pattern')).toBe('/staff?show=x');
     expect(pageOnly('/', '?tab=done&card=f&review=f&step=2')).toBe('/?tab=done');
     expect(pageOnly('/calendar', '?date=2026-11-09&entry=p1&ask=1')).toBe('/calendar?date=2026-11-09');

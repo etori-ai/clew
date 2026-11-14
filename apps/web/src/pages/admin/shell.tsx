@@ -5,15 +5,15 @@ import { Button, EmptyState, Layout, LayoutContent, useMediaQuery } from '@clew/
 import { useRail } from '../../components/nav';
 import { Shell, mobileQuery } from '../../components/shell';
 import { AsyncContent, ContentSkeleton } from '../../components/loading';
+import { PageFrame } from '../../components/page-frame';
 import { usePageTitle } from '../../page-title';
 import {
   AdminFrame,
-  AdminSectionHeader,
   AdminSectionsList,
-  AdminThingHeader,
   adminSection,
   useAdminSections,
   type AdminSection,
+  type AdminThing,
 } from '../../components/admin-frame';
 
 export type { AdminSection } from '../../components/admin-frame';
@@ -33,7 +33,6 @@ export function AdminShell({
   meta,
   action,
   thing,
-  flush = false,
   pending = false,
   children,
 }: {
@@ -44,39 +43,24 @@ export function AdminShell({
   meta?: ReactNode;
   action?: ReactNode;
   /** A thing's page in the section: where it stands, its mark and state, its actions; the way back is its section's. */
-  thing?: {
-    back?: { label: string; href: string };
-    place?: ReactNode;
-    icon?: ReactNode;
-    status?: ReactNode;
-    meta?: ReactNode;
-    actions?: ReactNode;
-  };
-  /** A register that meets the frame's edges, as the board draws the connectors' table. */
-  flush?: boolean;
+  thing?: AdminThing;
   pending?: boolean;
   children: ReactNode;
 }) {
   // Only an administrator reaches this shell: `main.tsx` draws NotAdmin for anyone else.
   const nav = useRail({ current: { surface: 'admin' }, admin: true, manager: user.role === 'manager' });
   const own = adminSection(section);
-  const header = thing ? (
-    <AdminThingHeader
-      back={thing.back ?? { label: own.label, href: own.href }}
-      place={thing.place}
-      title={title}
-      icon={thing.icon}
-      status={thing.status}
-      meta={thing.meta}
-      actions={thing.actions}
-    />
-  ) : (
-    <AdminSectionHeader title={title ?? own.label} meta={meta} action={action} />
-  );
   return (
     <Shell user={user} nav={nav}>
-      <AdminFrame section={section} header={header} label={title ?? own.label} flush={flush}>
-        <AsyncContent pending={pending} fallback={<ContentSkeleton heading={false} />} gap={flush ? 0 : 5}>
+      <AdminFrame
+        section={section}
+        title={thing ? title : (title ?? own.label)}
+        meta={meta}
+        action={action}
+        thing={thing}
+        label={title ?? own.label}
+      >
+        <AsyncContent pending={pending} fallback={<ContentSkeleton heading={false} />} gap={5}>
           {children}
         </AsyncContent>
       </AdminFrame>
@@ -101,24 +85,18 @@ export function AdminIndexPage({ user }: { user: SessionUser }) {
   return (
     <Shell user={user} nav={nav}>
       {sections.length === 0 ? (
-        <Layout
-          height="auto"
-          padding={mobile ? 4 : 6}
-          content={
-            <LayoutContent isScrollable={false}>
-              {settled ? (
-                <EmptyState
-                  headingLevel={1}
-                  title="Inget att administrera ännu"
-                  description="Det du har behörighet till är inte påslaget. Det syns här när systemförvaltaren slår på det under Anslutna system."
-                  actions={<Button label="Till startsidan" href="/" />}
-                />
-              ) : (
-                <ContentSkeleton label="Hämtar administrationen …" />
-              )}
-            </LayoutContent>
-          }
-        />
+        <PageFrame>
+          {settled ? (
+            <EmptyState
+              headingLevel={1}
+              title="Inget att administrera ännu"
+              description="Det du har behörighet till är inte påslaget. Det syns här när systemförvaltaren slår på det under Anslutna system."
+              actions={<Button label="Till startsidan" href="/" />}
+            />
+          ) : (
+            <ContentSkeleton label="Hämtar administrationen …" />
+          )}
+        </PageFrame>
       ) : (
         <AdminSectionsList />
       )}

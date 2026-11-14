@@ -6,13 +6,8 @@ import {
   Card,
   EmptyState,
   HStack,
-  Heading,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   Link,
   List,
-  StackItem,
   StatusDot,
   Table,
   Text,
@@ -35,7 +30,7 @@ import { useRail } from '../components/nav';
 import { titled, useConversation } from '../components/conversation-context';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { LinkRow } from '../components/work-row';
-import { HEM_WIDTH } from './start';
+import { PageFrame } from '../components/page-frame';
 
 type Row = {
   id: string;
@@ -177,39 +172,19 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
   );
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      {/* Hem's container (the product owner, 2026-11-14: one container for every page): its column's width, and the
-          header and the content at Hem's padding, so the title starts on the line Hem's greeting starts on. */}
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        contentWidth={HEM_WIDTH}
-        header={
-          <LayoutHeader padding={mobile ? 4 : 6} paddingBlockEnd={0}>
-            <HStack gap={3} vAlign="center" wrap="wrap">
-              <StackItem size="fill">
-                <VStack gap={0.5}>
-                  <Heading level={1}>Samtal</Heading>
-                  {read.data && (
-                    <Text type="supporting" color="secondary">
-                      {rows.length === 1 ? '1 samtal' : `${rows.length} samtal`}
-                    </Text>
-                  )}
-                </VStack>
-              </StackItem>
-              <Button label="Ny fråga" variant="primary" href="/" />
-            </HStack>
-          </LayoutHeader>
-        }
-        content={
-          <LayoutContent padding={mobile ? 4 : 6} isScrollable={!short}>
-            <AsyncContent
-              pending={read.isPending}
-              fallback={<ContentSkeleton label="Hämtar dina samtal …" rows={4} heading={false} />}
-            >
-              {list}
-            </AsyncContent>
-          </LayoutContent>
-        }
-      />
+      <PageFrame
+        title="Samtal"
+        meta={read.data ? (rows.length === 1 ? '1 samtal' : `${rows.length} samtal`) : undefined}
+        actions={<Button label="Ny fråga" variant="primary" href="/" />}
+        label="Samtal"
+      >
+        <AsyncContent
+          pending={read.isPending}
+          fallback={<ContentSkeleton label="Hämtar dina samtal …" rows={4} heading={false} />}
+        >
+          {list}
+        </AsyncContent>
+      </PageFrame>
     </Shell>
   );
 }

@@ -472,6 +472,7 @@ function Rows({
   wide,
   isOpen,
   labelledBy,
+  carded = false,
 }: {
   view: RowsView;
   rows: Row[];
@@ -480,6 +481,8 @@ function Rows({
   isOpen?: ((view: ViewRef) => boolean) | undefined;
   /** The id of the small heading that names the rows under a section; the rows are then named by it, not by the source. */
   labelledBy?: string | undefined;
+  /** On a page of its own the list sits in a card, as Hem's lists and every register's table do (D126). */
+  carded?: boolean;
 }) {
   const talk = useConversation();
   const titleField = view.fields.find(f => f.key === view.title)!;
@@ -648,10 +651,11 @@ function Rows({
     );
   }
   // The list, and a table on a narrow surface: the row is not interactive itself, so its name, its numbers and its `@` are the only stops.
-  return (
+  const list = (
     <List
       hasDividers
-      density="compact"
+      // In a card on its own page, at Hem's rows' density; compact where rows sit under a section or an answer.
+      density={carded ? 'balanced' : 'compact'}
       {...(labelledBy ? { 'aria-labelledby': labelledBy } : { 'aria-label': view.source })}
     >
       {rows.map((row, i) => {
@@ -731,6 +735,7 @@ function Rows({
       })}
     </List>
   );
+  return carded ? <Card padding={0}>{list}</Card> : list;
 }
 
 export function DeclaredView({
@@ -1019,6 +1024,7 @@ export function DeclaredView({
           wide={wide && !limit && !only}
           isOpen={isOpen}
           labelledBy={section ? sectionId : undefined}
+          carded={!!title}
         />
       )}
       {only && rows.length > 0 && rows.length < new Set(only).size && (

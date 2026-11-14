@@ -453,6 +453,13 @@ describe('the rules', () => {
       }),
       'phonebook',
     ],
+    'view-by-key-names-a-read-about-the-subject': [
+      broken(phonebook, m => {
+        m.capabilities[0].view.subject = { entity: 'person', key: 'ref' };
+        m.capabilities[0].view.byKey = 'phonebook.person';
+      }),
+      'phonebook',
+    ],
     'view-beside-follows': [
       broken(phonebook, m => {
         m.capabilities[0].view.fields[0].beside = true;

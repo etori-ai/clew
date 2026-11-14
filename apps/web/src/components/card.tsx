@@ -335,8 +335,6 @@ const TimeSubMenu = ({ label, rows, own }: { label: string; rows: TimeRows['rows
 type ActionProps = {
   thread: Thread;
   onChange: (thread: Thread) => void;
-  /** One of the card's own reads into the panel was pressed: the card unfolds it, a row opens its card with it unfolded. */
-  onRead?: (action: ThreadAction) => void;
 };
 /**
  * Running one of a card's actions, shared by the card, the row and the review (D73), so a decision sent from the
@@ -351,7 +349,6 @@ type ActionProps = {
 export function useCardAction({
   thread,
   onChange,
-  onRead,
 }: Pick<ActionProps, 'thread'> & Partial<Omit<ActionProps, 'thread'>>) {
   const { run, apply, busy: running, error } = useThreadAction({ onChange });
   const decision = useDecisionSend({ onChange });
@@ -486,8 +483,7 @@ export function useCardAction({
         });
         return true;
       }
-      // A read into the panel unfolds in the card, by its address (`open-card` and `open-action`), so it survives reload.
-      onRead?.(action);
+      // Any other read is a link to the read's own page, which the item draws (D126 rule 3): nothing unfolds here.
       return true;
     }
     // The outcome is the source's (D45): nothing is predicted, the button stays loading until the answer has come to rest.
@@ -521,7 +517,7 @@ export const reviewedAction = (thread: Thread) =>
   thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
 
 /** Everything a work item can do, wherever it is drawn: run an action, snooze, dismiss, and keep the selection. */
-export function useThreadActions({ thread, onChange, onRead }: ActionProps) {
+export function useThreadActions({ thread, onChange }: ActionProps) {
   const {
     run,
     apply,
@@ -537,7 +533,6 @@ export function useThreadActions({ thread, onChange, onRead }: ActionProps) {
   } = useCardAction({
     thread,
     onChange,
-    onRead,
   });
   const status = executionStatus(thread.execution);
   // Said in the words the item shows, which say that it is queued while its system does not answer.

@@ -46,7 +46,10 @@ function Tile({ area, href }: { area: Area; href: string | null }) {
         </Text>
         {tone && <Badge variant={tone.variant} label={tone.word} />}
       </HStack>
-      <Text type="display-3" hasTabularNumbers>
+      {/* The board's figure (a display-3 heading's semibold, proportional figures): a tile's value stands alone, so it is
+          never set in tabular figures, which Figtree draws in another shape; not a heading, which would put every
+          figure in the page's outline. */}
+      <Text type="display-3" weight="semibold">
         {figure.value}
       </Text>
       {figure.comparison && (

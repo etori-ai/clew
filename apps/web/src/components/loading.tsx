@@ -1,6 +1,5 @@
 import type { ComponentProps, ReactNode } from 'react';
-import { Card, Divider, Grid, HStack, Skeleton, VStack, VisuallyHidden, useEntryAnimation } from '@clew/ui';
-import { TodayHeading } from './today';
+import { Card, Divider, Grid, Skeleton, VStack, VisuallyHidden, useEntryAnimation } from '@clew/ui';
 
 type Gap = ComponentProps<typeof VStack>['gap'];
 
@@ -57,32 +56,6 @@ export function ContentSkeleton({
             </VStack>
           ))}
         </VStack>
-      </Card>
-    </VStack>
-  );
-}
-
-/** Hem's "I dag" reserves its place from the first paint, its real heading over the card the rows will stand in. */
-export function AsideSkeleton({ calendar = true }: { calendar?: boolean }) {
-  return (
-    <VStack gap={3} as="section" aria-labelledby="i-dag">
-      <TodayHeading calendar={calendar} />
-      <Card padding={4}>
-        <VisuallyHidden role="status">Hämtar i dag …</VisuallyHidden>
-        {Array.from({ length: 3 }, (_, i) => (
-          <VStack key={i} gap={0}>
-            {i > 0 && <Divider />}
-            <HStack gap={3} paddingBlock={3}>
-              <VStack width={52}>
-                <Skeleton height={18} width={40} index={i} />
-              </VStack>
-              <VStack gap={1.5} width="100%">
-                <Skeleton height={18} width="85%" index={i} />
-                <Skeleton height={14} width="60%" index={i} />
-              </VStack>
-            </HStack>
-          </VStack>
-        ))}
       </Card>
     </VStack>
   );

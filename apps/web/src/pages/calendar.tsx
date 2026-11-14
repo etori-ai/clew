@@ -65,7 +65,7 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { useRail } from '../components/nav';
 import { EventDialog, type Mode } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
-import { PageHeader } from '../components/page-header';
+import { PageFrame } from '../components/page-frame';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { AskClew } from '../components/thing-panel';
 import type { ThingSubject } from '../components/conversation-context';
@@ -673,18 +673,17 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   // controls are Astryx's `sm`, as the toolbar that held them made them (28 px, under the heading's 32 px line). Both
   // rows are full at 375 px, so "Fråga om veckan" is not on a phone's head (it would make a third row and push the week
   // down); an entry opened on a phone still has "Fråga Clew" among its buttons in the drawer.
-  const header = mobile ? (
-    <VStack as="section" aria-label="Kalender">
-      <PageHeader
-        title={shortTitle}
-        titleId={TITLE_ID}
-        end={
+  // In the one page frame (D126): the title on the line every page's title stands on, the controls at its end.
+  const head = mobile
+    ? {
+        title: shortTitle,
+        actions: (
           <HStack gap={2} vAlign="center" wrap="wrap">
             {proposalsMenu}
             {bookButton}
           </HStack>
-        }
-        meta={
+        ),
+        meta: (
           <VStack gap={2}>
             <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
               {steps}
@@ -697,112 +696,96 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
             </HStack>
             {silentHead}
           </VStack>
-        }
-      />
-    </VStack>
-  ) : (
-    <PageHeader
-      title={capital(title)}
-      titleId={TITLE_ID}
-      meta={silentHead}
-      end={
-        <HStack gap={3} vAlign="center" wrap="wrap">
-          {steps}
-          <SegmentedControl label="Vy" size="sm" value={view} onChange={v => go({ view: v as View })}>
-            <SegmentedControlItem value="day" label="Dag" />
-            <SegmentedControlItem value="week" label="Vecka" />
-            <SegmentedControlItem value="month" label="Månad" />
-          </SegmentedControl>
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            {askWeek}
-            {proposalsMenu}
-            {bookButton}
-          </HStack>
-        </HStack>
+        ),
       }
-    />
-  );
+    : {
+        title: capital(title),
+        actions: (
+          <HStack gap={3} vAlign="center" wrap="wrap">
+            {steps}
+            <SegmentedControl label="Vy" size="sm" value={view} onChange={v => go({ view: v as View })}>
+              <SegmentedControlItem value="day" label="Dag" />
+              <SegmentedControlItem value="week" label="Vecka" />
+              <SegmentedControlItem value="month" label="Månad" />
+            </SegmentedControl>
+            <HStack gap={2} vAlign="center" wrap="wrap">
+              {askWeek}
+              {proposalsMenu}
+              {bookButton}
+            </HStack>
+          </HStack>
+        ),
+        meta: silentHead,
+      };
   // A person with no calendar (D116, amended 2026-11-12): the page says so and who connects one, and draws no grid or
   // controls that would only fail.
   if (withoutCalendar)
     return (
       <Shell user={user} nav={nav}>
-        <Layout
-          height="fill"
-          padding={mobile ? 3 : 8}
-          header={
-            <LayoutHeader hasDivider>
-              <PageHeader title="Kalender" />
-            </LayoutHeader>
-          }
-          content={
-            <LayoutContent>
-              <EmptyState
-                headingLevel={2}
-                icon={<Icon icon="calendar" size="lg" />}
-                title="Ingen kalender är kopplad till dig"
-                description={
-                  calendarHidden
-                    ? 'En administratör kopplar kalendern under Anslutna system.'
-                    : 'En administratör kopplar ditt kalenderkonto.'
-                }
-              />
-            </LayoutContent>
-          }
-        />
+        <PageFrame title="Kalender" titleId={TITLE_ID}>
+          <EmptyState
+            headingLevel={2}
+            icon={<Icon icon="calendar" size="lg" />}
+            title="Ingen kalender är kopplad till dig"
+            description={
+              calendarHidden
+                ? 'En administratör kopplar kalendern under Anslutna system.'
+                : 'En administratör kopplar ditt kalenderkonto.'
+            }
+          />
+        </PageFrame>
       </Shell>
     );
   return (
     <Shell user={user} nav={nav}>
-      {/* The same gutter as every page (D74, D63 item 13): the Layout's padding reaches the header, so the title stands 32 px in from the rail and 32 px down on a desktop, 12 on a phone. */}
-      <Layout
-        height="fill"
-        padding={mobile ? 3 : 8}
-        header={<LayoutHeader hasDivider>{header}</LayoutHeader>}
+      <PageFrame
+        title={head.title}
+        titleId={TITLE_ID}
+        meta={head.meta}
+        actions={head.actions}
+        actionsOnLine
+        label={capital(title)}
         end={pane}
-        content={
-          <LayoutContent>
-            <VStack gap={4}>
-              {error && (
-                <Text as="p" role="alert" color="accent">
-                  {error}
-                </Text>
-              )}
-              {/* Nothing read while the calendar does not answer: no empty grid that would pass for a free week. */}
-              {calendarSilent && !read ? (
-                <EmptyState
-                  headingLevel={2}
-                  icon={<Icon icon="calendar" size="lg" />}
-                  title="Kalendern kan inte visas just nu"
-                  description="Mötena visas här när kalendern svarar igen."
-                />
-              ) : (
-                <AsyncContent
-                  pending={pending}
-                  fallback={<ContentSkeleton label="Hämtar kalendern …" rows={7} heading={false} />}
-                >
-                  <EventCalendar
-                    view={calendarView}
-                    date={anchor}
-                    items={items}
-                    label={capital(title)}
-                    dayHeadingLevel={2}
-                    accessiblePath={
-                      proposed.length
-                        ? 'Förslag i sidhuvudet leder till varje förslag; Retur på en post öppnar den.'
-                        : 'Retur på en post öppnar den.'
-                    }
-                    selectedId={entryId ?? undefined}
-                    onItemClick={item => navigate(withEntry(pathname, search, item.id))}
-                    onMoveProposal={proposed.length ? moveProposal : undefined}
-                    onSelectRange={mobile ? undefined : (start, end) => setBooking({ start, end })}
-                  />
-                </AsyncContent>
-              )}
-            </VStack>
-          </LayoutContent>
-        }
-      />
+      >
+        <VStack gap={4}>
+          {error && (
+            <Text as="p" role="alert" color="accent">
+              {error}
+            </Text>
+          )}
+          {/* Nothing read while the calendar does not answer: no empty grid that would pass for a free week. */}
+          {calendarSilent && !read ? (
+            <EmptyState
+              headingLevel={2}
+              icon={<Icon icon="calendar" size="lg" />}
+              title="Kalendern kan inte visas just nu"
+              description="Mötena visas här när kalendern svarar igen."
+            />
+          ) : (
+            <AsyncContent
+              pending={pending}
+              fallback={<ContentSkeleton label="Hämtar kalendern …" rows={7} heading={false} />}
+            >
+              <EventCalendar
+                view={calendarView}
+                date={anchor}
+                items={items}
+                label={capital(title)}
+                dayHeadingLevel={2}
+                accessiblePath={
+                  proposed.length
+                    ? 'Förslag i sidhuvudet leder till varje förslag; Retur på en post öppnar den.'
+                    : 'Retur på en post öppnar den.'
+                }
+                selectedId={entryId ?? undefined}
+                onItemClick={item => navigate(withEntry(pathname, search, item.id))}
+                onMoveProposal={proposed.length ? moveProposal : undefined}
+                onSelectRange={mobile ? undefined : (start, end) => setBooking({ start, end })}
+              />
+            </AsyncContent>
+          )}
+        </VStack>
+      </PageFrame>
       {drawer}
       {/* Both dialogs write the cache themselves (D33): a moved proposal's thread, or the loaded weeks read again. */}
       <EventDialog

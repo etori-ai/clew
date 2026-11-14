@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
@@ -28,16 +28,24 @@ import { useBranding } from '../branding';
 import { headerQuery, threadsQuery } from '../queries';
 import { useAnnounceSilentSources } from './silent-sources';
 import { api } from '../api';
-import { ReminderBell } from './reminders';
-import { PanelOverPage } from './page-panel';
+import { KeepNavigation, ReminderBell } from './reminders';
 import { mobileQuery } from '../media';
-import { cardOverPage } from '../panel-address';
+import { cardOverPage, panelRedirect } from '../panel-address';
+import { personPageHref } from '../person-address';
 import { pageLocation, usePublishPageLocation } from '../page-location';
 import { useFocusOnTheWayBack } from '../way-back';
 
 export { mobileQuery, shortQuery } from '../media';
 /** The installation's name in the rail's heading until the default header has said it. */
 export const SITE_NAME = 'Startsidan';
+/** The person's settings (D39) as part of the address, so a link can open them and Back never opens them again. */
+const SETTINGS_PARAM = 'settings';
+/** The page the person is on with their settings over it: the way to them from the person's own page (D126). */
+export function settingsHref(pathname: string, search: string): string {
+  const q = new URLSearchParams(search);
+  q.set(SETTINGS_PARAM, '1');
+  return `${pathname}?${q.toString()}`;
+}
 
 type Logo = Readonly<{ src: string; alt: string; darkSrc?: string }>;
 /**
@@ -102,9 +110,11 @@ type Props = {
  * once. On a phone the shell draws the rail's heading, or the band's heading row, as its bar, and the places go into
  * the drawer with the rail.
  *
- * Every page has the panel (the product owner, 2026-11-11: what is opened from a page opens beside that page). A page
- * that holds it beside its own column claims it (`usePagePanel`); on any other page the shell draws what the address
- * opens, a card or a view, in the drawer over the page, and closing it leaves the page as it was.
+ * The person at the rail's foot is the link to their own page (D126 rule 1); their settings (D39: the appearance and
+ * the way out) open over any page from the address (`?settings=1`, `settingsHref`), which their own page links to.
+ * Nothing opens over a page otherwise (D126 rule 3): an address from before that opened a work item or a view over it
+ * (a saved link, a toast in an older tab) is replaced by that thing's own page, with the page it lay over as the way
+ * back (`panelRedirect`), before anything is painted.
  */
 export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const { mode, setMode, isPersistent } = useAppearance();
@@ -132,10 +142,12 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   // A system that does not answer is said where its content is missing, never at the top of the page (D116, amended
   // 2026-11-12); the first time it is seen silent in the session it is said once (4.1.3).
   useAnnounceSilentSources();
-  // The phone's drawer closes when a row in it is chosen. The person's row opens the settings over the drawer instead,
-  // so the row is still there for Escape to give the focus back to (2.4.3).
+  // The phone's drawer closes when a row in it is chosen, unless the row opens something over it (`KeepNavigation`).
   const [navigationOpen, setNavigationOpen] = useState(false);
   const keepNavigation = useRef(false);
+  const keep = useRef(() => {
+    keepNavigation.current = true;
+  }).current;
   const changeNavigation = (open: boolean) => {
     if (open || !keepNavigation.current) setNavigationOpen(open);
     keepNavigation.current = false;
@@ -143,7 +155,19 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   useEffect(() => {
     setNavigationOpen(false);
   }, [location.key]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // An address from before D126 that opened a thing over the page leads to that thing's page (rule 3).
+  const oldPanel = panelRedirect(location.pathname, location.search);
+  useLayoutEffect(() => {
+    if (oldPanel) navigate(oldPanel, { replace: true });
+  }, [oldPanel]);
+  const settingsOpen = new URLSearchParams(location.search).get(SETTINGS_PARAM) === '1';
+  // Closed by replacing the address, so Back never opens the settings again.
+  const closeSettings = () => {
+    const q = new URLSearchParams(location.search);
+    q.delete(SETTINGS_PARAM);
+    const rest = q.toString();
+    navigate({ search: rest ? `?${rest}` : '' }, { replace: true });
+  };
   const deliveryContext = useRef(threadsQ.data),
     deliveryMounted = useRef(false);
   deliveryContext.current = threadsQ.data;
@@ -198,23 +222,12 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const siteName = headerQ.data?.menu.site.name ?? SITE_NAME;
   /** The rail's heading without a band: the installation's logo, as D37 to D39 allow a native image there, and its name. */
   const heading = shared ? undefined : (
-    <SideNavHeading
-      heading={siteName}
-      headingHref="/"
-      headerEndContent={<ReminderBell />}
-      icon={<InstallationLogo logo={branding.logo} />}
-    />
+    <SideNavHeading heading={siteName} headingHref="/" icon={<InstallationLogo logo={branding.logo} />} />
   );
-  /** The person (board Sidebar): the last row at the rail's foot, opening the settings (D39); on the band where there is one. */
+  /** The person (board Shell): the last row at the rail's foot, the link to their own page; on the band where there is one. */
+  const ownPage = personPageHref(user.id);
   const person = shared ? null : (
-    <SideNavItem
-      label={user.name}
-      icon={UserCircleIcon}
-      onClick={() => {
-        keepNavigation.current = true;
-        setSettingsOpen(true);
-      }}
-    />
+    <SideNavItem label={user.name} icon={UserCircleIcon} href={ownPage} isSelected={location.pathname === ownPage} />
   );
   const footer = nav.footer || person;
   return (
@@ -253,38 +266,49 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
         sideNav={
           // Collapsible as the template has it. Not resizable: Astryx draws the rail's resize handle beside the navigation
           // landmark, outside every landmark (axe: region), so the rail keeps its own width (D112's gaps).
-          <SideNav
-            collapsible
-            header={heading}
-            topContent={nav.top}
-            footer={
-              footer ? (
-                <SideNavSection title="Konto" isHeaderHidden>
-                  {nav.footer}
-                  {person}
+          <KeepNavigation.Provider value={keep}>
+            <SideNav
+              collapsible
+              header={heading}
+              topContent={nav.top}
+              footer={
+                footer ? (
+                  <SideNavSection title="Konto" isHeaderHidden>
+                    {nav.footer}
+                    {person}
+                  </SideNavSection>
+                ) : undefined
+              }
+            >
+              {/* On a phone the header's places are rows in the drawer, since the bar holds only the heading there. Every row is a link to its address. */}
+              {shared && mobile ? (
+                <SideNavSection title="Huvudmeny">
+                  {shared.menu.items.map(item => (
+                    <SideNavItem key={item.id} label={item.label} href={item.href} isSelected={item.id === selected} />
+                  ))}
                 </SideNavSection>
-              ) : undefined
-            }
-          >
-            {/* On a phone the header's places are rows in the drawer, since the bar holds only the heading there. Every row is a link to its address. */}
-            {shared && mobile ? (
-              <SideNavSection title="Huvudmeny">
-                {shared.menu.items.map(item => (
-                  <SideNavItem key={item.id} label={item.label} href={item.href} isSelected={item.id === selected} />
-                ))}
-              </SideNavSection>
-            ) : null}
-            {nav.sections}
-          </SideNav>
+              ) : null}
+              {nav.sections}
+            </SideNav>
+          </KeepNavigation.Provider>
         }
       >
         {children}
-        <PanelOverPage />
       </AppShell>
       {nav.overlay}
       {/* The settings (D39), the same composition as the band's person: the colour choice and the way out. */}
-      <Dialog isOpen={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogHeader title={user.name} onOpenChange={setSettingsOpen} />
+      <Dialog
+        isOpen={settingsOpen}
+        onOpenChange={open => {
+          if (!open) closeSettings();
+        }}
+      >
+        <DialogHeader
+          title={user.name}
+          onOpenChange={open => {
+            if (!open) closeSettings();
+          }}
+        />
         <VStack gap={4} padding={3}>
           {user.unitLabel ? <Text type="supporting">{user.unitLabel}</Text> : null}
           <RadioList
@@ -308,11 +332,11 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
               label="Logga ut"
               variant="secondary"
               onClick={() => {
-                setSettingsOpen(false);
+                closeSettings();
                 void logout();
               }}
             />
-            <Button label="Stäng" variant="primary" onClick={() => setSettingsOpen(false)} />
+            <Button label="Stäng" variant="primary" onClick={closeSettings} />
           </HStack>
         </VStack>
       </Dialog>

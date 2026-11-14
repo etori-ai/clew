@@ -1,18 +1,12 @@
 import { useRef, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Button,
   Heading,
   HStack,
   Icon,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   LayoutPanel,
-  Link,
   List,
   ListItem,
-  StackItem,
   Text,
   VStack,
   useAnimatedLayout,
@@ -20,7 +14,8 @@ import {
 } from '@clew/ui';
 import { useHeldCapabilities } from '../capabilities';
 import { areasQuery } from '../queries';
-import { mobileQuery, shortQuery } from '../media';
+import { mobileQuery } from '../media';
+import { PageFrame } from './page-frame';
 import { ADMIN_ROWS, type AdminSection } from './nav';
 
 export type { AdminSection } from './nav';
@@ -64,7 +59,10 @@ function SectionsPanel({ current }: { current: AdminSection }) {
   return (
     <LayoutPanel width={240} padding={4} hasDivider role="navigation" label="Administration">
       <VStack gap={3} ref={area}>
-        <Heading level={2}>Administration</Heading>
+        {/* Inset as the rows' labels are, so the heading starts on the line the page's title and the labels start on. */}
+        <VStack paddingInline={2}>
+          <Heading level={2}>Administration</Heading>
+        </VStack>
         <List animatedLayout={animatedLayout}>
           {sections.map(r => (
             <ListItem
@@ -90,189 +88,107 @@ export function AdminSectionsList() {
   const area = useRef<HTMLDivElement>(null);
   const animatedLayout = useAnimatedLayout({ containerRef: area });
   return (
-    <Layout
-      height="auto"
-      content={
-        <LayoutContent padding={4} isScrollable={false}>
-          <VStack gap={4} ref={area}>
-            <Heading level={1}>Administration</Heading>
-            <List density="spacious" aria-label="Administration" animatedLayout={animatedLayout}>
-              {sections.map(r => (
-                <ListItem
-                  key={r.section}
-                  itemKey={r.section}
-                  label={r.label}
-                  href={r.href}
-                  endContent={<Icon icon="chevronRight" size="sm" color="secondary" />}
-                />
-              ))}
-            </List>
-          </VStack>
-        </LayoutContent>
-      }
-    />
+    <PageFrame title="Administration" label="Administration">
+      <VStack ref={area}>
+        <List density="spacious" aria-label="Administration" animatedLayout={animatedLayout}>
+          {sections.map(r => (
+            <ListItem
+              key={r.section}
+              itemKey={r.section}
+              label={r.label}
+              href={r.href}
+              endContent={<Icon icon="chevronRight" size="sm" color="secondary" />}
+            />
+          ))}
+        </List>
+      </VStack>
+    </PageFrame>
   );
 }
 
-/**
- * Every administration page in one frame (D126, board Admin, the `settings-sidebar` template): the administration's own
- * panel in the start slot beside a page of its own, whose head is the section's (`AdminSectionHeader`) or a thing's in it
- * (`AdminThingHeader`) and whose content is the register or the form. Under 768 px the panel gives way to the list at
- * `/admin`, as the template drills from the menu into a section, and each head has its way back. The head stays while
- * the content scrolls; on a short screen nothing is pinned and the page scrolls as one (1.4.10). `flush` lets a register
- * meet the edges as the board draws it; a form keeps the content's gutters.
- */
-export function AdminFrame({
-  section,
-  header,
-  label,
-  flush = false,
-  children,
-}: {
-  section: AdminSection;
-  header: ReactNode;
-  /** What the content is named while it scrolls: the page's title. */
-  label: string;
-  flush?: boolean;
-  children: ReactNode;
-}) {
-  const mobile = useMediaQuery(mobileQuery);
-  const short = useMediaQuery(shortQuery);
-  const page = (
-    <Layout
-      height={short ? 'auto' : 'fill'}
-      header={header}
-      content={
-        <LayoutContent padding={flush ? 0 : mobile ? 4 : 6} isScrollable={!short} label={label}>
-          {children}
-        </LayoutContent>
-      }
-    />
-  );
-  if (mobile) return page;
-  return (
-    <Layout
-      height={short ? 'auto' : 'fill'}
-      start={<SectionsPanel current={section} />}
-      content={
-        <LayoutContent padding={0} isScrollable={false}>
-          {page}
-        </LayoutContent>
-      }
-    />
-  );
-}
-
-/**
- * A section's head (board Admin): its title, the facts line under it and its one primary action at the end of the
- * title's line. On a phone the way back to the sections stands before the title, as the template's back button does.
- */
-export function AdminSectionHeader({
-  title,
-  meta,
-  action,
-}: {
-  title: string;
-  /** The line under the title: what the section holds, in supporting text. */
-  meta?: ReactNode;
-  /** The section's own controls: its one primary action, and the ways to its sub-pages where it has them. */
-  action?: ReactNode;
-}) {
-  const mobile = useMediaQuery(mobileQuery);
-  return (
-    <LayoutHeader padding={mobile ? 4 : 6} hasDivider>
-      <HStack gap={3} vAlign="center" wrap="wrap">
-        <StackItem size="fill">
-          <HStack gap={2} vAlign="center">
-            {mobile && (
-              <Button
-                variant="ghost"
-                size="sm"
-                isIconOnly
-                icon={<Icon icon="chevronLeft" size="sm" />}
-                label="Tillbaka till Administration"
-                href="/admin"
-              />
-            )}
-            <VStack gap={0.5}>
-              <Heading level={1}>{title}</Heading>
-              {typeof meta === 'string' ? (
-                <Text type="supporting" color="secondary">
-                  {meta}
-                </Text>
-              ) : (
-                meta
-              )}
-            </VStack>
-          </HStack>
-        </StackItem>
-        {action}
-      </HStack>
-    </LayoutHeader>
-  );
-}
-
-/**
- * A thing's head inside a section (D126 rule 1, board Arende, the `work-item-detail` composition): the way back to the
- * section with where the thing stands beside it, the title with its mark and state, and the actions directly under the
- * title. Without a title (the thing is still being read, or is gone) only the way back is drawn, and the content says why.
- */
-export function AdminThingHeader({
-  back,
-  place,
-  title,
-  icon,
-  status,
-  meta,
-  actions,
-}: {
-  back: { label: string; href: string };
+/** A thing's page inside a section (D126 rule 1, board Arende): where it stands, its mark and state, its actions. */
+export interface AdminThing {
+  /** The way back; by default the thing's section. */
+  back?: { label: string; href: string };
   /** Where the thing stands, after the way back on the trail's line. */
   place?: ReactNode;
-  title: string | null;
   /** A mark that belongs to the title and stands before it: a connected system's swatch. */
   icon?: ReactNode;
   /** The thing's state beside its title. */
   status?: ReactNode;
   /** What the thing is, under the title's line: the sentence a sub-page opens with. */
   meta?: ReactNode;
+  /** The thing's actions, directly under the title (the `work-item-detail` composition). */
   actions?: ReactNode;
+}
+
+/**
+ * Every administration page in the one page frame (D126, board Admin, the `settings-sidebar` template; the product
+ * owner 2026-11-14: Hem's container is every page's): the page's head above, its title on the line every page's title
+ * stands on, and under it the administration's own panel of sections in the start slot beside the section's content,
+ * both inside the same column. A section's head is its title, the facts line under it and its one primary action at
+ * the end of the title's line; a thing's in a section is the way back to its section with where it stands, the title
+ * with its mark and state, and its actions directly under the title (without a title, while the thing is read or when
+ * it is gone, only the way back, and the content says why). Under 768 px the panel gives way to the list at `/admin`,
+ * as the template drills from the menu into a section, and each head has its way back there. A register sits in the
+ * column in a card, as Hem's lists do.
+ */
+export function AdminFrame({
+  section,
+  title,
+  meta,
+  action,
+  thing,
+  label,
+  children,
+}: {
+  section: AdminSection;
+  /** The page's level-1 heading; null while a thing is being read or is gone, when the content holds the heading. */
+  title: string | null;
+  /** A section's facts line under its title. */
+  meta?: ReactNode;
+  /** A section's own controls: its one primary action, and the ways to its sub-pages where it has them. */
+  action?: ReactNode;
+  thing?: AdminThing | undefined;
+  /** What the content is named while it scrolls: the page's title. */
+  label: string;
+  children: ReactNode;
 }) {
   const mobile = useMediaQuery(mobileQuery);
+  const own = adminSection(section);
+  const back = thing
+    ? (thing.back ?? { label: own.label, href: own.href })
+    : mobile
+      ? { label: 'Administration', href: '/admin' }
+      : null;
   return (
-    <LayoutHeader padding={mobile ? 4 : 6} hasDivider>
-      <VStack gap={4}>
-        <VStack gap={2}>
-          <HStack gap={4} vAlign="center" wrap="wrap">
-            <Link href={back.href} type="supporting" color="secondary">
-              <HStack as="span" gap={1} vAlign="center">
-                <Icon icon="chevronLeft" size="sm" />
-                {back.label}
-              </HStack>
-            </Link>
-            {typeof place === 'string' ? (
-              <Text type="supporting" color="secondary">
-                {place}
-              </Text>
-            ) : (
-              place
-            )}
-          </HStack>
-          {title !== null && (
-            <HStack gap={3} vAlign="center" wrap="wrap">
-              {icon}
-              <Heading level={1}>{title}</Heading>
-              {status}
-            </HStack>
-          )}
-          {meta}
-        </VStack>
-        {actions && (
+    <PageFrame
+      back={back}
+      trail={
+        typeof thing?.place === 'string' ? (
+          <Text type="supporting" color="secondary">
+            {thing.place}
+          </Text>
+        ) : (
+          thing?.place
+        )
+      }
+      icon={thing && title !== null ? thing.icon : undefined}
+      title={thing ? title : (title ?? own.label)}
+      status={thing?.status}
+      meta={thing ? thing.meta : meta}
+      actions={thing ? undefined : action}
+      below={
+        thing?.actions ? (
           <HStack gap={2} vAlign="center" wrap="wrap">
-            {actions}
+            {thing.actions}
           </HStack>
-        )}
-      </VStack>
-    </LayoutHeader>
+        ) : undefined
+      }
+      label={label}
+      start={mobile ? undefined : <SectionsPanel current={section} />}
+    >
+      {children}
+    </PageFrame>
   );
 }

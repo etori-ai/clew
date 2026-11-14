@@ -11,9 +11,6 @@ import {
   HStack,
   Icon,
   IconButton,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   LayoutPanel,
   Link,
   Skeleton,
@@ -21,7 +18,6 @@ import {
   Text,
   VStack,
   VisuallyHidden,
-  useEntryAnimation,
   useMediaQuery,
   type AgendaItem,
 } from '@clew/ui';
@@ -42,12 +38,11 @@ import { titled, useConversation, type ChipRef } from '../components/conversatio
 import { drawn } from '../components/thing-panel';
 import { cardBody } from '../components/card-panel';
 import { PanelBody, answersWithRowsOf } from '../components/panel';
-import { useView } from '../components/page-panel';
+import { useView } from '../components/view-read';
 import { BriefSkeleton } from '../components/brief';
 import { PersonSourceBody, useSectionAnswers } from '../components/entity-sections';
 import { EventDialog } from '../components/calendar/event-dialog';
-
-export type EntryStyle = NonNullable<ReturnType<typeof useEntryAnimation>> | undefined;
+import { PageFrame, type EntryStyle } from '../components/page-frame';
 
 /**
  * From this window width the thing a conversation is about stands beside the transcript (D126 rule 2, board Samtal):
@@ -90,19 +85,7 @@ interface About {
  * box has the focus, and nothing is sent until the person writes. At narrow width the thing is one link away instead of
  * a pane. On a short screen (1.4.10) nothing is docked and the page scrolls as one.
  */
-export function ConversationPage({
-  entry,
-  onChange,
-  width,
-}: {
-  entry: EntryStyle;
-  onChange: (thread: Thread) => void;
-  /**
-   * Hem's column (the product owner, 2026-11-14: Hem's container is every page's): the header stands in it, so the title
-   * starts on the line Hem's greeting starts on; the transcript keeps ChatLayout's own centred column inside it.
-   */
-  width: number;
-}) {
+export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onChange: (thread: Thread) => void }) {
   const talk = useConversation();
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
@@ -156,37 +139,25 @@ export function ConversationPage({
   const loading = !!routeId && routeId !== 'new' && talk.conversation?.id !== routeId && !talk.pending && !talk.error;
   const handed = talk.handed;
   const handedOrdinal = handed ? (marks.system(handed.id.slice(0, handed.id.indexOf(':')))?.ordinal ?? null) : null;
-  const header = (
-    <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
-      <StackItem size="fill">
-        <VStack gap={0.5}>
-          <Heading level={1} id="samtal" tabIndex={-1}>
-            {loading ? 'Samtal' : conversationTitle(talk)}
-          </Heading>
-          <Text type="supporting" color="secondary">
-            {`Samtal med ${withWords(handed)}`}
-            {about.name && (
-              <>
-                {' · om '}
-                {about.pane && beside ? (
-                  about.name
-                ) : about.href ? (
-                  <Link href={about.href}>{about.name}</Link>
-                ) : (
-                  about.name
-                )}
-              </>
-            )}
-          </Text>
-        </VStack>
-      </StackItem>
-      {/* Whose box this is now, by the mark of the system it lives in (D71, board SamtalEneo). */}
-      {handed && <AreaChip ordinal={handedOrdinal} label={handed.source} />}
-    </HStack>
+  // The line under the title: whom the conversation is with and, when it is about a thing, which (a link where the thing
+  // is not beside the transcript).
+  const meta = (
+    <Text type="supporting" color="secondary">
+      {`Samtal med ${withWords(handed)}`}
+      {about.name && (
+        <>
+          {' · om '}
+          {about.pane && beside ? about.name : about.href ? <Link href={about.href}>{about.name}</Link> : about.name}
+        </>
+      )}
+    </Text>
   );
+  const heading = loading ? 'Samtal' : conversationTitle(talk);
+  // Whose box this is now, by the mark of the system it lives in (D71, board SamtalEneo).
+  const handedChip = handed ? <AreaChip ordinal={handedOrdinal} label={handed.source} /> : undefined;
   const composer = <Composer place="conversation" about={about.chips} />;
   const body = loading ? (
-    <VStack gap={2} padding={4}>
+    <VStack gap={2}>
       <VisuallyHidden role="status">Hämtar samtalet …</VisuallyHidden>
       <Skeleton width="60%" height={14} />
       <Skeleton width="40%" height={14} index={1} />
@@ -210,35 +181,30 @@ export function ConversationPage({
       }}
     />
   );
+  // The conversation in the page frame every page has (D126, the product owner 2026-11-14): the title on Hem's line,
+  // the transcript and its box in the column under it, and the thing it is about in the end panel inside the same frame.
+  // On a short screen (1.4.10) nothing is docked and the page scrolls as one.
   if (short)
     return (
-      <VStack gap={4} padding={mobile ? 4 : 6} xstyle={entry}>
-        {header}
-        {body}
-        {composer}
+      <>
+        <PageFrame entry={entry} title={heading} titleId="samtal" meta={meta} actions={handedChip}>
+          <VStack gap={4}>
+            {body}
+            {composer}
+          </VStack>
+        </PageFrame>
         {dialog}
-      </VStack>
+      </>
     );
   return (
     <>
-      <Layout
-        xstyle={entry}
-        height="fill"
-        contentWidth={width}
-        header={
-          <LayoutHeader padding={mobile ? 4 : 6} hasDivider>
-            {header}
-          </LayoutHeader>
-        }
-        content={
-          <LayoutContent padding={0} isScrollable={false}>
-            {/* As the `ai-chat` template holds it: the chat column is the content's full height, and ChatLayout owns
-                the scroll, so the box stays docked inside the window. */}
-            <VStack height="100%">
-              <ChatLayout composer={composer}>{body}</ChatLayout>
-            </VStack>
-          </LayoutContent>
-        }
+      <PageFrame
+        entry={entry}
+        title={heading}
+        titleId="samtal"
+        meta={meta}
+        actions={handedChip}
+        bare
         end={
           beside && about.pane ? (
             <LayoutPanel
@@ -253,7 +219,13 @@ export function ConversationPage({
             </LayoutPanel>
           ) : undefined
         }
-      />
+      >
+        {/* As the `ai-chat` template holds it: the chat column is the content's full height, and ChatLayout owns the
+            scroll, so the box stays docked inside the window. */}
+        <VStack height="100%">
+          <ChatLayout composer={composer}>{body}</ChatLayout>
+        </VStack>
+      </PageFrame>
       {dialog}
     </>
   );

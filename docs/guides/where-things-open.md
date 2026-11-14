@@ -82,7 +82,7 @@ What the person meets, from every place the button is drawn (a work item in Att 
 - **Det här händer** lists the values, then your `effect` read's rows for exactly those values (read again whenever they change, and "Du kan ångra i N minuter." when you give `undoMinutes`), or your system's name and the capability's `description` without an effect read. While your effect read has not answered, nothing can be sent.
 - **When nothing is required** (an approval with an optional comment) the dialog opens at Det här händer, so it is two presses; the ask is one step back ("Lägg till kommentar till medarbetaren").
 - **A refusal** from your input schema or Clew's check is shown on the field whose label it starts with ("När: tiden har redan passerat."), with the focus there, else at the top of Det här händer. A `maxLength` in your schema is checked when the person sends.
-- **An execute about a person or a unit** opens its work item beside the page first, with the dialog over it on the item's own button; a propose that asks is filled in before it starts, and drafts its work item with the answers.
+- **An action about a person or a unit** opens the dialog before anything exists (D126 item 7): an execute's Det här händer is its effect read for that person or unit, and its last button makes the work item with the person's decision in it; a propose's last button drafts its work item with the answers. Cancelling leaves nothing behind.
 
 [Status](../reference/status/protocol.md#what-a-write-asks-and-what-it-says-it-will-do).
 

@@ -12,7 +12,7 @@ import {
   sourceWayHref,
   unitPageHref,
 } from '../src/person-address';
-import { dialogFirst } from '../src/entity-actions';
+import { lastButton } from '../src/entity-actions';
 
 describe('a row that names an entity leads to it (D97 item 6, D83 rule 4)', () => {
   test('a unit is a page of its own, with the page it was opened from', () => {
@@ -149,9 +149,9 @@ describe('nothing opens over a page (D126 rule 3): a talk and a dialogue are tab
   });
 });
 
-describe('nothing is created before the action dialog’s last button (D126 rule 4)', () => {
-  test('every propose opens the dialog first, also one that asks nothing; an execute is decided on its work item', () => {
-    expect(dialogFirst({ kind: 'propose' })).toBe(true);
-    expect(dialogFirst({ kind: 'execute' })).toBe(false);
+describe('nothing is created before the action dialog’s last button (D126 item 7)', () => {
+  test('every action opens the dialog first; its last button drafts a propose and decides an execute at once', () => {
+    expect(lastButton({ kind: 'propose' })).toBe('drafts');
+    expect(lastButton({ kind: 'execute' })).toBe('decided');
   });
 });

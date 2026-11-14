@@ -55,7 +55,7 @@ export function NoCalendar({ hidden }: { hidden: boolean }) {
   );
 }
 
-/** The block's heading line, shared with its placeholder (`AsideSkeleton`) so the block does not move when the day arrives. */
+/** The block's heading line, the same while the day is read and once it has arrived, so the block does not move. */
 export function TodayHeading({ calendar = true }: { calendar?: boolean }) {
   return (
     <HStack justify="between" vAlign="center" gap={2} wrap="wrap">

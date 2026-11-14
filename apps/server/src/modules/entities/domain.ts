@@ -338,6 +338,7 @@ export const sourceOf = (read: AboutRead): EntitySource => ({
   title: read.title,
   view: read.view,
   ...(read.page ? { page: read.page } : {}),
+  ...(read.overviews?.length ? { overviews: read.overviews } : {}),
   ...ownOf(read),
 });
 export const actionOf = (action: AboutAction): EntityAction => ({

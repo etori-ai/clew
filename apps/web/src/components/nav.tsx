@@ -26,7 +26,7 @@ import {
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { titled, useConversation } from './conversation-context';
-import { areasQuery, entityListQuery, threadsQuery } from '../queries';
+import { areasQuery, entityListQuery, headerQuery, threadsQuery } from '../queries';
 import { groupThreads } from '../stream';
 import { clewIcon } from '../icons';
 import { cardOverPage } from '../panel-address';
@@ -37,6 +37,7 @@ import { toolsOf } from '../tool-catalogue';
 import { conversationState, needsYouOf, todoHref } from '../work-items';
 import type { ShellNav } from './shell';
 import { useHeldCapabilities } from '../capabilities';
+import { ReminderRow } from './reminders';
 
 /** The administration's sections (D45). The rail has one row for all of them; the administration lists them itself. */
 export type AdminSection =
@@ -139,7 +140,7 @@ type Found = ({ href: string } | { card: string }) & { detail: string; group: st
  * account at the foot. Ny fråga and Sök first, each with its icon, so the rail's own collapse draws them as icons named
  * by their labels as it does every row; Sök opens Astryx's `CommandPalette` over the page, which finds conversations,
  * work items, areas and tools. Then "Mitt arbete": Hem, Att göra with how much needs the person, and Kalender while the
- * calendar is the person's to see (D23). "Min enhet" for a manager (D94): Personal, whose tabs are the unit's
+ * calendar is the person's to see (D23), and Påminnelser with how many are due (`ReminderRow`). "Min enhet" for a manager (D94): Personal, whose tabs are the unit's
  * competence, talks and introductions (D126; their pages mark it), and Läget, the unit the manager follows up, or the
  * list of them when there are several (D117). "Verktyg": the views an administrator placed as tools (D40, each a page of
  * its own, D42) and Clew's own lists the person has (`toolsOf`), the first four, and "Alla verktyg", the page that lists
@@ -172,6 +173,8 @@ export function useRail({
   const systems = areasData?.systems;
   const sees = (connector: string) => !systems || systems.some(s => s.connector === connector);
   const held = useHeldCapabilities();
+  // The reminders are a row here while no shared header's band stands above the rail with its bell (D88).
+  const banded = !!useQuery(headerQuery).data?.source;
   const adminRows = admin
     ? ADMIN_ROWS.filter(r => held.includes(r.capability) && (!r.system || (!!systems && sees(r.system))))
     : [];
@@ -309,6 +312,8 @@ export function useRail({
               isSelected={current.surface === 'calendar'}
             />
           )}
+          {/* The reminders (D39), where the bell beside the rail's heading was (D126, pending the product owner). */}
+          {!banded && <ReminderRow />}
         </SideNavSection>
         {/* Min enhet (D94, D126): a manager's people and the unit's state; the server checks the assignments on every read. */}
         {manager && (

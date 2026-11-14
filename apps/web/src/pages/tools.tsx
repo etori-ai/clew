@@ -11,9 +11,6 @@ import {
   Heading,
   HStack,
   Icon,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   Link,
   StackItem,
   Text,
@@ -27,10 +24,10 @@ import { areasQuery, headerQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { narrowTools, toolboxPage, toolGroups, toolsOf, whatItIs } from '../tool-catalogue';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { Shell, shortQuery } from '../components/shell';
 import { toolHref, useRail } from '../components/nav';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { PageHeader } from '../components/page-header';
+import { PageFrame } from '../components/page-frame';
 
 /** The search field's words in the address (D43): the narrowed catalogue survives a reload and Back. */
 const FILTER = 'filter';
@@ -73,7 +70,6 @@ function ToolTile({ tool, from }: { tool: MenuEntry; from: string }) {
  * asked of the server.
  */
 export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
-  const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: with 480 px or less in height nothing is pinned; the whole page scrolls.
   const short = useMediaQuery(shortQuery);
   const nav = useRail({ current: { surface: 'tools' }, admin, manager: user.role === 'manager' });
@@ -162,61 +158,52 @@ export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        header={
-          <LayoutHeader hasDivider padding={mobile ? 4 : 6}>
-            <PageHeader
-              title="Alla verktyg"
-              meta={
-                read.data && all.length > 0 ? (
-                  <Text type="supporting" color="secondary">
-                    {typed.trim() ? `${shown.length} av ${counted(all.length)}` : counted(all.length)}
-                  </Text>
-                ) : undefined
-              }
+      <PageFrame
+        title="Alla verktyg"
+        meta={
+          read.data && all.length > 0
+            ? typed.trim()
+              ? `${shown.length} av ${counted(all.length)}`
+              : counted(all.length)
+            : undefined
+        }
+        label="Alla verktyg"
+      >
+        <VStack gap={6}>
+          {all.length > 0 && (
+            <TextInput
+              ref={field}
+              type="search"
+              enterKeyHint="search"
+              label="Sök bland verktygen"
+              isLabelHidden
+              placeholder="Sök bland verktygen"
+              startIcon="search"
+              size="lg"
+              hasClear
+              value={typed}
+              onChange={narrow}
             />
-          </LayoutHeader>
-        }
-        content={
-          <LayoutContent padding={mobile ? 4 : 6} isScrollable={!short}>
-            <VStack gap={6}>
-              {all.length > 0 && (
-                <TextInput
-                  ref={field}
-                  type="search"
-                  enterKeyHint="search"
-                  label="Sök bland verktygen"
-                  isLabelHidden
-                  placeholder="Sök bland verktygen"
-                  startIcon="search"
-                  size="lg"
-                  hasClear
-                  value={typed}
-                  onChange={narrow}
-                />
-              )}
-              <AsyncContent
-                pending={read.isPending}
-                fallback={<ContentSkeleton label="Hämtar verktygen …" rows={3} heading={false} />}
-              >
-                {tiles}
-              </AsyncContent>
-              {/* The intranet's own page of tools, at the foot, in a new tab: Clew never makes up the address. */}
-              {more && (
-                <VStack gap={4}>
-                  <Divider />
-                  <Text type="supporting">
-                    <Link href={more.href} isExternalLink hasUnderline>
-                      Fler verktyg på intranätet
-                    </Link>
-                  </Text>
-                </VStack>
-              )}
+          )}
+          <AsyncContent
+            pending={read.isPending}
+            fallback={<ContentSkeleton label="Hämtar verktygen …" rows={3} heading={false} />}
+          >
+            {tiles}
+          </AsyncContent>
+          {/* The intranet's own page of tools, at the foot, in a new tab: Clew never makes up the address. */}
+          {more && (
+            <VStack gap={4}>
+              <Divider />
+              <Text type="supporting">
+                <Link href={more.href} isExternalLink hasUnderline>
+                  Fler verktyg på intranätet
+                </Link>
+              </Text>
             </VStack>
-          </LayoutContent>
-        }
-      />
+          )}
+        </VStack>
+      </PageFrame>
     </Shell>
   );
 }

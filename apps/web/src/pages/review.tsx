@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { Receipt, ReviewEvidence, SessionUser, Thread, ThreadAction } from '@clew/contracts';
 import {
   AreaChip,
-  ArrowLeftIcon,
+  AspectRatio,
   Badge,
   Banner,
   Button,
@@ -15,17 +15,11 @@ import {
   HStack,
   Icon,
   IconButton,
-  Layout,
-  LayoutContent,
   LayoutFooter,
-  LayoutHeader,
-  LayoutPanel,
   Lightbox,
-  Link,
   List,
   ListItem,
   ProgressBar,
-  ScrollableArea,
   Skeleton,
   Step,
   Stepper,
@@ -60,7 +54,7 @@ import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
 import { reviewedAction, useCardAction } from '../components/card';
-import { narrowItemQuery } from '../components/work-item';
+import { PageFrame, WayBack, narrowPageQuery } from '../components/page-frame';
 import { DocumentReader } from '../components/document-reader';
 import { ReviewRecovery } from '../components/review-recovery';
 
@@ -104,7 +98,6 @@ function railOf(from: string | null): RailCurrent {
 export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { threadId = '' } = useParams<{ threadId: string }>();
   const [search] = useSearchParams();
-  const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
   const from = insideClew(search.get('from'));
   const listQ = useQuery(threadsQuery);
@@ -118,20 +111,19 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
   const missing = (!!live && !action) || (!live && notFound);
   const failed = !live && ((listQ.isError && !listQ.data) || (oneQ.isError && !notFound));
   const origin = originOf(from, useQuery(areasQuery).data?.menu);
-  const back = origin ?? { label: live?.title ?? 'Ärendet', href: from ?? itemPageHref(threadId) };
+  // The way back names the place it leads to: the item by its title, another page by its name, or "Tillbaka" to a page
+  // Clew cannot name.
+  const back =
+    !from || from.startsWith('/items/')
+      ? { label: live?.title ?? 'Ärendet', href: from ?? itemPageHref(threadId) }
+      : (origin ?? { label: 'Tillbaka', href: from });
   const nav = useRail({ current: railOf(from), admin, manager: user.role === 'manager' });
   const rows = live ? reviewRows(live) : [];
   const step = live && action ? stepOf(search, rows.length + 1) : null;
   const reviewing = !!live && !!action && step !== null;
   // The review names the tab itself while it is drawn (`Review`); the page's other states name it here.
   usePageTitle(reviewing ? null : missing ? 'Ärendet finns inte' : live && action ? 'Steget finns inte' : null);
-  const message = (content: ReactNode) => (
-    <Layout
-      height={short ? 'auto' : 'fill'}
-      padding={mobile ? 3 : 8}
-      content={<LayoutContent isScrollable={!short}>{content}</LayoutContent>}
-    />
-  );
+  const message = (content: ReactNode) => <PageFrame>{content}</PageFrame>;
   let body: ReactNode;
   if (reviewing) body = <Review key={threadId} live={live} action={action} step={step} from={from} back={back} />;
   else if (live && action)
@@ -179,6 +171,33 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
 }
 
 /**
+ * An image of the evidence at the column's width (a scanned invoice from before documents had pages): Astryx's
+ * `AspectRatio` at the image's own proportions, read once it has loaded, with the image contained in it, so it is drawn
+ * whole and never cropped or stretched. Its place is held by a skeleton until then.
+ */
+function FullWidthImage({ src, alt }: { src: string; alt: string }) {
+  const [ratio, setRatio] = useState<number | null>(null);
+  useEffect(() => {
+    setRatio(null);
+    const image = new Image();
+    image.onload = () =>
+      setRatio(image.naturalWidth && image.naturalHeight ? image.naturalWidth / image.naturalHeight : 4 / 3);
+    image.onerror = () => setRatio(4 / 3);
+    image.src = src;
+    return () => {
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [src]);
+  if (ratio === null) return <Skeleton height={480} />;
+  return (
+    <AspectRatio ratio={ratio} fit="contain">
+      <img src={src} alt={alt} />
+    </AspectRatio>
+  );
+}
+
+/**
  * The review itself (D70, D73): one row at a time beside its document, then Skicka. The decisions are the draft
  * (`useReviewDraft`); the evidence of each document read (D79) is this page's alone. Nothing is written until the last
  * step's one button, which runs the same execute with the approved refs through the item's own action (`useCardAction`).
@@ -202,8 +221,7 @@ function Review({
   const location = useLocation();
   const { pathname, search } = location;
   const mobile = useMediaQuery(mobileQuery);
-  const short = useMediaQuery(shortQuery);
-  const narrow = useMediaQuery(narrowItemQuery);
+  const narrow = useMediaQuery(narrowPageQuery);
   // While the decision is on its way the item turns handled in the cache: the review keeps the item it was sending from
   // until it has led back to the item.
   const [sending, setSending] = useState(false);
@@ -489,8 +507,7 @@ function Review({
             onReady={(id, revision, loaded) => setReady(prev => ({ ...prev, [readyKey(id, revision)]: loaded }))}
           />
         ) : dataUrl && isImage ? (
-          // A native image is the one thing here Astryx has no component for: it is sized to its column and nothing more.
-          <img src={dataUrl} alt={legacy!.title} style={{ display: 'block', width: '100%', height: 'auto' }} />
+          <FullWidthImage src={dataUrl} alt={legacy!.title} />
         ) : dataUrl ? (
           <VStack gap={2}>
             <Text>{legacy!.title}</Text>
@@ -616,17 +633,15 @@ function Review({
   );
   // The way back, the title and where the review stands, as the work item's page draws its header (`work-item-detail`,
   // D126 rule 1): the review is a sub-page of the thing, under the same trail.
+  const trailLine = (
+    <Text type="supporting" color="secondary">
+      {[mark.source, mark.title].filter(Boolean).join('\u00a0· ')}
+    </Text>
+  );
   const trail = (
     <HStack gap={4} wrap="wrap" vAlign="center">
-      <Link href={back.href} type="supporting" color="secondary">
-        <HStack as="span" gap={1} vAlign="center">
-          <Icon icon={ArrowLeftIcon} size="sm" />
-          {back.label}
-        </HStack>
-      </Link>
-      <Text type="supporting" color="secondary">
-        {[mark.source, mark.title].filter(Boolean).join('\u00a0· ')}
-      </Text>
+      <WayBack back={back} />
+      {trailLine}
     </HStack>
   );
   const progress =
@@ -677,15 +692,9 @@ function Review({
         max={items.length}
       />
     ) : null;
-  const head = (
+  const headLine = `${thread.title}\u00a0· ${readOnly ? 'resultat och underlag' : 'inget skrivs förrän du skickar'}`;
+  const headBelow = (
     <VStack gap={mobile ? 3 : 4}>
-      {trail}
-      <VStack gap={1}>
-        <Heading level={1}>{title}</Heading>
-        <Text type="supporting" color="secondary">
-          {`${thread.title}\u00a0· ${readOnly ? 'resultat och underlag' : 'inget skrivs förrän du skickar'}`}
-        </Text>
-      </VStack>
       <HStack gap={2} vAlign="center" wrap="wrap">
         {flowStatus}
         <Text type="supporting">
@@ -730,6 +739,19 @@ function Review({
           Kvittot visar beslutets resultat. Underlagen visar källans nuvarande version.
         </Text>
       )}
+    </VStack>
+  );
+  // On a phone the whole head scrolls with the step (it is in the column, not the frame's header).
+  const head = (
+    <VStack gap={mobile ? 3 : 4}>
+      {trail}
+      <VStack gap={1}>
+        <Heading level={1}>{title}</Heading>
+        <Text type="supporting" color="secondary">
+          {headLine}
+        </Text>
+      </VStack>
+      {headBelow}
     </VStack>
   );
   const stepBody = completed ? (
@@ -819,9 +841,10 @@ function Review({
       </VStack>
     </LayoutFooter>
   );
-  // The column scrolls in Astryx's ScrollableArea, which takes a tab stop while it scrolls, so a step whose column
-  // holds nothing focusable can still be read by keyboard; on a short screen the page scrolls as one instead (1.4.10).
-  // On a phone the header scrolls with the step, so the document is not left a strip under it.
+  // The one page frame (D126): the way back with the item's system, the review's title and line, its progress and its
+  // steps under them, the step in the column, "Hittills" in the end panel and the decision in the footer. On a phone
+  // the header scrolls with the step, so the document is not left a strip under it; on a short screen the page scrolls
+  // as one (1.4.10).
   const column = (
     <VStack gap={6}>
       {mobile && head}
@@ -829,37 +852,26 @@ function Review({
       {narrow && !completed && soFar}
     </VStack>
   );
-  return (
-    <Layout
-      height={short ? 'auto' : 'fill'}
-      header={
-        mobile ? undefined : (
-          <LayoutHeader padding={6} hasDivider>
-            {head}
-          </LayoutHeader>
-        )
-      }
-      content={
-        short ? (
-          <LayoutContent padding={mobile ? 4 : 6} isScrollable={false}>
-            {column}
-          </LayoutContent>
-        ) : (
-          <LayoutContent padding={0} isScrollable={false}>
-            <ScrollableArea label="Granskningen" height="100%" padding={mobile ? 4 : 6}>
-              {column}
-            </ScrollableArea>
-          </LayoutContent>
-        )
-      }
-      end={
-        narrow || completed ? undefined : (
-          <LayoutPanel width={340} padding={6} role="complementary" label="Hittills" hasDivider isScrollable={!short}>
-            {soFar}
-          </LayoutPanel>
-        )
-      }
+  return mobile ? (
+    <PageFrame label="Granskningen" scrollTabStop footer={footer}>
+      {column}
+    </PageFrame>
+  ) : (
+    <PageFrame
+      back={back}
+      trail={trailLine}
+      title={title}
+      meta={headLine}
+      below={headBelow}
+      label="Granskningen"
+      scrollTabStop
+      facts={completed ? undefined : soFar}
+      factsLabel="Hittills"
+      // Where the window is narrow "Hittills" follows the step in the column.
+      factsAbove={false}
       footer={footer}
-    />
+    >
+      {column}
+    </PageFrame>
   );
 }

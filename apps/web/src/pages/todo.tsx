@@ -13,22 +13,18 @@ import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-q
 import { isSnoozed, sameSubject, streamGroup, type Area, type SessionUser, type Thread } from '@clew/contracts';
 import {
   Badge,
+  Card,
   DropdownMenu,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   EmptyState,
-  Heading,
   HStack,
   Icon,
   IconButton,
   InboxIcon,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   LayoutPanel,
   Link,
   ResizeHandle,
-  StackItem,
   Tab,
   Table,
   TabList,
@@ -79,9 +75,10 @@ import { AsyncContent } from '../components/loading';
 import { cardBody } from '../components/card-panel';
 import { whenWord } from '../components/work-item';
 import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
-import { itemSubject } from '../components/page-panel';
+import { itemSubject } from '../components/view-read';
 import { AskClew } from '../components/thing-panel';
 import type { ThingSubject } from '../components/conversation-context';
+import { PAGE_WIDTH, PageFrame } from '../components/page-frame';
 
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
@@ -99,6 +96,12 @@ const INTERACTIVE_WITHIN_ROW =
  * surface, as the board draws the list and the pane at about 45 and 55.
  */
 const SINGLE_SURFACE_BELOW = 900;
+/**
+ * Att göra's column, the one page that may be wider than the page frame's (D126): the queue and its reading pane side by
+ * side in Hem's 1120 px left the item's name 305 px at a 1470 px window, under the 320 px a name reads in; 1160 px is
+ * the narrowest column that gives it that. Pending the product owner's decision (2026-11-14).
+ */
+const TODO_WIDTH = PAGE_WIDTH + 40;
 const PANE_MIN = 440;
 const LIST_MIN = 300;
 const PANE_SHARE = 0.55;
@@ -238,7 +241,9 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   }, [left, !!threadsQ.data]);
 
   // The template's measure: the page's own box decides whether the pane stands beside the list.
-  const [surfaceRef, surfaceWidth] = useSurfaceWidth();
+  const [surfaceRef, pageWidth] = useSurfaceWidth();
+  // The list and the pane share the page's column (D126), so the column, not the page's box, is what they divide.
+  const surfaceWidth = Math.min(pageWidth, TODO_WIDTH);
   const isMeasured = surfaceWidth > 0;
   const single = isMeasured ? surfaceWidth < SINGLE_SURFACE_BELOW : mobile;
   const moved = useRef(false),
@@ -509,9 +514,9 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     [itemId, navigate],
   );
   const list = (
-    <AsyncContent pending={loading} fallback={<BriefSkeleton compact={mobile} />}>
+    <AsyncContent pending={loading} fallback={<BriefSkeleton compact={mobile} />} gap={4}>
       {(sourcesLine && rows.length > 0) || failed || rows.length === 0 ? (
-        <VStack gap={3} padding={mobile ? 4 : 6}>
+        <VStack gap={3}>
           {sourcesLine && rows.length > 0 && (
             <Text as="p" role="status">
               {sourcesLine}
@@ -545,14 +550,16 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
         </VStack>
       ) : null}
       {!failed && rows.length > 0 && (
-        <Table<QueueRow>
-          aria-label={tabTitle[tab]}
-          data={tableRows}
-          columns={shownColumns}
-          idKey="id"
-          hasHover
-          plugins={itemId && !single ? { open: openStatus, rows: rowPlugin } : { rows: rowPlugin }}
-        />
+        <Card padding={0}>
+          <Table<QueueRow>
+            aria-label={tabTitle[tab]}
+            data={tableRows}
+            columns={shownColumns}
+            idKey="id"
+            hasHover
+            plugins={itemId && !single ? { open: openStatus, rows: rowPlugin } : { rows: rowPlugin }}
+          />
+        </Card>
       )}
     </AsyncContent>
   );
@@ -610,54 +617,39 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       </VStack>
     );
 
-  const gutter = mobile ? 4 : 6;
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <Layout
-        ref={surfaceRef}
-        height={short ? 'auto' : 'fill'}
-        padding={0}
-        header={
-          <LayoutHeader padding={0}>
-            <VStack gap={0}>
-              <HStack gap={3} vAlign="center" wrap="wrap" padding={gutter} paddingBlockEnd={3}>
-                <StackItem size="fill">
-                  <VStack gap={0.5}>
-                    <Heading level={1} id="att-gora" tabIndex={-1}>
-                      Att göra
-                    </Heading>
-                    {countsLine && (
-                      <Text type="supporting" color="secondary">
-                        {countsLine}
-                      </Text>
-                    )}
-                  </VStack>
-                </StackItem>
-                {filters}
-                <AskClew subject={queueSubject} />
-              </HStack>
-              <TabList hasDivider value={tab} onChange={() => {}} aria-label="Urval">
-                {todoTabs.map(t => {
-                  const badge = tabBadge(t);
-                  return (
-                    <Tab
-                      key={t}
-                      value={t}
-                      label={mobile ? tabWord[t] : tabTitle[t]}
-                      href={href({ tab: t, item: null })}
-                      {...(badge ? { endContent: badge } : {})}
-                    />
-                  );
-                })}
-              </TabList>
-            </VStack>
-          </LayoutHeader>
+      {/* The one page frame (D126): the title, its counts, the filters and the piles in the header, and the queue and
+          its reading pane side by side inside the same column, the list in a card as Hem's lists are. */}
+      <PageFrame
+        layoutRef={surfaceRef}
+        width={TODO_WIDTH}
+        title="Att göra"
+        titleId="att-gora"
+        meta={countsLine ?? undefined}
+        actions={
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            {filters}
+            <AskClew subject={queueSubject} />
+          </HStack>
         }
-        content={
-          <LayoutContent padding={0} isScrollable={!short}>
-            {list}
-          </LayoutContent>
+        tabs={
+          <TabList hasDivider={false} isFullBleed value={tab} onChange={() => {}} aria-label="Urval">
+            {todoTabs.map(t => {
+              const badge = tabBadge(t);
+              return (
+                <Tab
+                  key={t}
+                  value={t}
+                  label={mobile ? tabWord[t] : tabTitle[t]}
+                  href={href({ tab: t, item: null })}
+                  {...(badge ? { endContent: badge } : {})}
+                />
+              );
+            })}
+          </TabList>
         }
+        label={tabTitle[tab]}
         end={
           single || !itemId ? undefined : (
             <>
@@ -682,7 +674,9 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
             </>
           )
         }
-      />
+      >
+        {list}
+      </PageFrame>
     </Shell>
   );
 }

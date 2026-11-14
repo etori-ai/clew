@@ -3,38 +3,20 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser, ViewRef } from '@clew/contracts';
 import type { PanelViewSpec } from '@clew/contracts';
-import {
-  ArrowLeftIcon,
-  Banner,
-  Button,
-  EmptyState,
-  Heading,
-  HStack,
-  Icon,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
-  LayoutPanel,
-  Link,
-  ScrollableArea,
-  Skeleton,
-  Text,
-  VStack,
-  useMediaQuery,
-} from '@clew/ui';
+import { Banner, Button, EmptyState, Heading, HStack, Skeleton, Text, VStack, useMediaQuery } from '@clew/ui';
 import { areasQuery, entityDetailQuery } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
 import { opensAsPage, viewOpenHref, withViewInput } from '../view-address';
 import { useShownForTheWayBack } from '../way-back';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { Shell, shortQuery } from '../components/shell';
 import { placeOfRead, useRail, type RailCurrent } from '../components/nav';
 import { DeclaredView } from '../components/view';
 import { PanelBody, answersWithRowsOf } from '../components/panel';
-import { useView, viewSubject } from '../components/page-panel';
+import { useView, viewSubject } from '../components/view-read';
 import { AskClew } from '../components/thing-panel';
-import { narrowItemQuery } from '../components/work-item';
+import { PageFrame, WayBack } from '../components/page-frame';
 import { PageHeader } from '../components/page-header';
 import { ContentArrival, ContentSkeleton } from '../components/loading';
 
@@ -95,7 +77,6 @@ function placeOf(from: string | null): RailCurrent {
  * panel, above the read where the window is narrow. The view is drawn by the one renderer (D38).
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
-  const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: with 480 px or less in height nothing is pinned beside the page.
   const short = useMediaQuery(shortQuery);
   const { capability = '' } = useParams<{ capability: string }>();
@@ -139,7 +120,11 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const ready = areasQ.data !== undefined && !missing;
   const from = insideClew(search.get('from'));
   const back = from
-    ? (originOf(from, menu) ?? { label: from.startsWith('/conversations/') ? 'Samtalet' : 'Tillbaka', href: from })
+    ? (originOf(from, menu) ?? {
+        // A read's page that is no tool in the menu is named by the read's own title; nothing Clew can name, "Tillbaka".
+        label: views?.find(v => v.capability === toolOf(from))?.title ?? 'Tillbaka',
+        href: from,
+      })
     : null;
   // A tool in the rail marks its row; a read of a connector with a place of its own in the rail (Kompetens, Kalender)
   // marks that place wherever it was opened from; any other view the place it was opened from.
@@ -161,7 +146,6 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const ask = <AskClew subject={subject} />;
   const heading = missing ? 'Verktyget finns inte' : title || null;
   usePageTitle(heading, heading ?? false);
-  const narrow = useMediaQuery(narrowItemQuery);
   // Arrived from a link on another page, the person starts at the heading (2.4.3): the page they left took the focus
   // with it. From the rail, or with the focus somewhere already, it stays where it is.
   useEffect(() => {
@@ -186,18 +170,18 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   // The way back (a person's page names it the same way): the page the view was opened from, by its name.
   const trail = back && (
     <HStack>
-      <Link href={back.href} type="supporting" color="secondary">
-        <HStack as="span" gap={1} vAlign="center">
-          <Icon icon={ArrowLeftIcon} size="sm" />
-          {back.label}
-        </HStack>
-      </Link>
+      <WayBack back={back} />
     </HStack>
   );
+  // "Försök igen" stands in the banner, never behind its "Expandera" (errands.spec, requests.spec).
   const banner = failed && (
-    <Banner status="error" title={failed.message}>
-      <Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />
-    </Banner>
+    <Banner
+      status="error"
+      container="section"
+      collapsible={false}
+      title={failed.message}
+      endContent={<Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />}
+    />
   );
   // One thing (D126 rule 1): the thing's page, as a work item's is drawn.
   const thing = tool?.spec && ONE_THING.has(tool.spec.kind) ? tool : null;
@@ -222,139 +206,103 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
         part={which}
       />
     );
-    // A record with more than its facts reads in the column with the facts beside it; anything else is its read alone.
-    const column = split ? (
-      <VStack gap={6}>
-        {narrow && part('facts')}
-        {part('body')}
-      </VStack>
-    ) : spec.kind === 'record' || spec.kind === 'detail' ? (
-      part('facts')
-    ) : (
-      part('body')
-    );
+    // A record with more than its facts reads in the column with the facts beside it (above it where the window is
+    // narrow); anything else is its read alone.
+    const column = split
+      ? part('body')
+      : spec.kind === 'record' || spec.kind === 'detail'
+        ? part('facts')
+        : part('body');
     return (
-      <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-        <Layout
-          height={short ? 'auto' : 'fill'}
-          header={
-            <LayoutHeader padding={mobile ? 4 : 6} hasDivider>
+      // Keyed by the read, so one read's page giving way to another's (a row's contact card, Back to the rows) is a new
+      // page that finds the link it was left by on the way back (`useFocusOnTheWayBack`, 2.4.3).
+      <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+        <PageFrame
+          back={back}
+          trail={
+            <Text type="supporting" color="secondary">
+              {[spec.source, name !== title ? title : ''].filter(Boolean).join('\u00a0· ')}
+            </Text>
+          }
+          title={name}
+          titleId={TITLE_ID}
+          // The thing's actions under its title: a read has none of its own here but the question about it.
+          below={
+            <VStack gap={4}>
+              <HStack gap={2}>{ask}</HStack>
+              {banner}
+            </VStack>
+          }
+          label={title || 'Vyn'}
+          scrollTabStop
+          facts={
+            split ? (
               <VStack gap={4}>
-                <VStack gap={2}>
-                  <HStack gap={4} vAlign="center" wrap="wrap">
-                    {trail}
-                    <Text type="supporting" color="secondary">
-                      {[spec.source, name !== title ? title : ''].filter(Boolean).join('\u00a0· ')}
-                    </Text>
-                  </HStack>
-                  <Heading level={1} id={TITLE_ID} tabIndex={-1}>
-                    {name}
-                  </Heading>
-                </VStack>
-                {/* The thing's actions under its title: a read has none of its own here but the question about it. */}
-                <HStack gap={2}>{ask}</HStack>
-                {banner}
+                <Heading level={3} accessibilityLevel={2}>
+                  Uppgifter
+                </Heading>
+                {part('facts')}
               </VStack>
-            </LayoutHeader>
-          }
-          content={
-            short ? (
-              <LayoutContent padding={mobile ? 4 : 6}>
-                <ContentArrival>{column}</ContentArrival>
-              </LayoutContent>
-            ) : (
-              <LayoutContent padding={0} isScrollable={false}>
-                <ScrollableArea label={title || 'Vyn'} height="100%" padding={mobile ? 4 : 6}>
-                  <ContentArrival>{column}</ContentArrival>
-                </ScrollableArea>
-              </LayoutContent>
-            )
-          }
-          end={
-            split && !narrow ? (
-              <LayoutPanel
-                width={340}
-                padding={6}
-                role="complementary"
-                label="Uppgifter"
-                hasDivider
-                isScrollable={!short}
-              >
-                <VStack gap={4}>
-                  <Heading level={3} accessibilityLevel={2}>
-                    Uppgifter
-                  </Heading>
-                  {part('facts')}
-                </VStack>
-              </LayoutPanel>
             ) : undefined
           }
-        />
+        >
+          <ContentArrival>{column}</ContentArrival>
+        </PageFrame>
       </Shell>
     );
   }
+  // A register (D126 rule 8): the view draws its own title line with its controls and its count (D74), so the way back
+  // and the title stand in the frame's column, on the lines every page's title stands on.
   return (
-    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      {/* `padding={0}` on the content and the padding on the stack is the template's way to keep a table on the heading's line. The title stands 32 px in from the rail and 32 px down, as on every page (D74). */}
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        padding={mobile ? 3 : 8}
-        content={
-          <LayoutContent padding={0}>
-            <VStack
-              paddingInline={mobile ? 3 : 8}
-              paddingBlockStart={mobile ? 3 : 8}
-              paddingBlockEnd={mobile ? 3 : 5}
-              gap={4}
-            >
-              {missing ? (
-                <EmptyState
-                  headingLevel={1}
-                  title="Verktyget finns inte"
-                  description="Det är inte påslaget för dig, eller så har adressen ändrats."
-                  actions={<Button label="Till startsidan" href="/" />}
-                />
-              ) : (
-                <>
-                  {trail}
-                  {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
-                  {title
-                    ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} end={ask} />
-                    : !failed && <Skeleton height={32} width={200} />}
-                  {banner}
-                  {tool ? (
-                    <ContentArrival>
-                      {tool.spec ? (
-                        <DeclaredView
-                          view={tool.spec}
-                          output={tool.output}
-                          input={tool.input}
-                          isLoading={main.isLoading}
-                          headingLevel={2}
-                          tableQuery={tableQuery}
-                          title={title}
-                          titleId={TITLE_ID}
-                          pageAction={ask}
-                          /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the page. */
-                          onInput={next =>
-                            navigate(withViewInput(location.pathname, location.search, next), { replace: true })
-                          }
-                          hrefFor={hrefFor}
-                        />
-                      ) : (
-                        /* A read that declares no view (D38) is drawn as the panel draws one: its hits, its rows or its facts. */
-                        <PanelBody output={tool.output} source={tool.source} input={tool.input} hrefFor={hrefFor} />
-                      )}
-                    </ContentArrival>
+    <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+      <PageFrame label={title || 'Vyn'}>
+        <VStack gap={4}>
+          {missing ? (
+            <EmptyState
+              headingLevel={1}
+              title="Verktyget finns inte"
+              description="Det är inte påslaget för dig, eller så har adressen ändrats."
+              actions={<Button label="Till startsidan" href="/" />}
+            />
+          ) : (
+            <>
+              {trail}
+              {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
+              {title
+                ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} end={ask} />
+                : !failed && <Skeleton height={32} width={200} />}
+              {banner}
+              {tool ? (
+                <ContentArrival>
+                  {tool.spec ? (
+                    <DeclaredView
+                      view={tool.spec}
+                      output={tool.output}
+                      input={tool.input}
+                      isLoading={main.isLoading}
+                      headingLevel={2}
+                      tableQuery={tableQuery}
+                      title={title}
+                      titleId={TITLE_ID}
+                      pageAction={ask}
+                      /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the page. */
+                      onInput={next =>
+                        navigate(withViewInput(location.pathname, location.search, next), { replace: true })
+                      }
+                      hrefFor={hrefFor}
+                    />
                   ) : (
-                    !failed && <ContentSkeleton heading={false} />
+                    /* A read that declares no view (D38) is drawn as the panel draws one: its hits, its rows or its facts. */
+                    <PanelBody output={tool.output} source={tool.source} input={tool.input} hrefFor={hrefFor} />
                   )}
-                </>
+                </ContentArrival>
+              ) : (
+                !failed && <ContentSkeleton heading={false} />
               )}
-            </VStack>
-          </LayoutContent>
-        }
-      />
+            </>
+          )}
+        </VStack>
+      </PageFrame>
     </Shell>
   );
 }

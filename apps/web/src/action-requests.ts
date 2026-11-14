@@ -3,11 +3,11 @@ import type { AskValues } from '@clew/contracts';
 import type { ActionStep } from './action-path';
 
 /**
- * Asking a work item to open one of its actions in the action dialog (D112 item 10) from outside the item: an execute
- * started from a person, a unit or Personal's row menu opens its work item beside the page and its dialog over it (D111
- * rule 4), and an assistant's draft opens the dialog at a given step with the values it filled in (D112 item 8). The
- * item takes the request once, when it is drawn with that action; nothing is kept in the address, so a reload never
- * greets the person with a dialog they did not ask for.
+ * Asking a work item to open one of its actions in the action dialog (D112 item 10) from outside the item: an
+ * assistant's draft opens the dialog at a given step with the values it filled in (D112 item 8). An action about a
+ * person or a unit no longer comes this way: its dialog opens before any work item exists (`entity-actions.ts`, D126
+ * item 7). The item takes the request once, when it is drawn with that action; nothing is kept in the address, so a
+ * reload never greets the person with a dialog they did not ask for.
  */
 export interface ActionRequest {
   threadId: string;

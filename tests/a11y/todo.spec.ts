@@ -279,49 +279,10 @@ test.describe('the panel beside the page', () => {
     await expect(log).toContainText('Sök i telefonboken: 2 rader.');
     await expect(log.getByRole('link', { name: 'Visa allt' })).toBeFocused();
   });
-
-  test("Fråga Clew on a tool's page asks about the page in the panel; the conversation goes on with the view beside it, searched as it was", async ({
-    page,
-    api,
-  }) => {
-    api.menu = [menuRow];
-    await open(page, `/tools/phonebook.directory?input=${encodeURIComponent(JSON.stringify({ query: 'lärare' }))}`);
-    // The tool's page asks with "Fråga Clew" in its header (D112 item 7): no box at its foot.
-    await expect(composer(page)).toHaveCount(0);
-    await page.getByRole('main').getByRole('link', { name: 'Fråga Clew' }).click();
-    const panel = page.getByRole('complementary', { name: 'Telefonbok' });
-    const box = panel.getByRole('textbox', { name: 'Fråga Clew' });
-    await box.fill('Vem är på plats?');
-    await box.press('Enter');
-    await expect(panel.getByText('Tio personer är på plats i dag.')).toBeVisible();
-    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?/);
-    await expect(box).toBeFocused();
-    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:phonebook.directory']);
-    await expectNoAxeViolations(page);
-    // "Fortsätt som samtal" leads to the conversation. The directory is a table, a page of its own (D116), so it is not
-    // drawn beside the transcript: the conversation keeps it as its chip.
-    await panel.getByRole('link', { name: 'Fortsätt som samtal' }).click();
-    await expect(page).toHaveURL(/\/conversations\/[^/?]+$/);
-    await expect(page.getByRole('complementary', { name: 'Telefonbok' })).toHaveCount(0);
-    await expect(answer(page)).toBeVisible();
-  });
 });
 
 test.describe('asking from a page on a narrower screen', () => {
   test.use({ viewport: desktop });
-
-  test("the tool's page asks in the drawer over it, with the view as the question's subject", async ({ page, api }) => {
-    api.menu = [menuRow];
-    await open(page, '/tools/phonebook.directory');
-    await page.getByRole('main').getByRole('link', { name: 'Fråga Clew' }).click();
-    const drawer = page.getByRole('dialog', { name: 'Telefonbok' });
-    const box = drawer.getByRole('textbox', { name: 'Fråga Clew' });
-    await box.fill('Vem är på plats?');
-    await box.press('Enter');
-    await expect(drawer.getByText('Tio personer är på plats i dag.')).toBeVisible();
-    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?ask=1$/);
-    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:phonebook.directory']);
-  });
 
   test('a question on the landing after a closed conversation starts a new one', async ({ page, api }) => {
     await open(page, '/');

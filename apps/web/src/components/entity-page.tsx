@@ -1,34 +1,8 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useId, type ReactNode, type Ref } from 'react';
 import { useNavigate } from 'react-router';
-import { useIsFetching } from '@tanstack/react-query';
-import {
-  ArrowLeftIcon,
-  Divider,
-  Heading,
-  HStack,
-  Icon,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
-  LayoutPanel,
-  Link,
-  StackItem,
-  Tab,
-  TabList,
-  TabMenu,
-  Text,
-  VStack,
-  useMediaQuery,
-} from '@clew/ui';
-import { mobileQuery, shortQuery } from '../media';
-import { narrowItemQuery } from './work-item';
-
-/**
- * Hem's column (`HEM_WIDTH` in `pages/start.tsx`, board Hem): the product owner decided on 2026-11-14 that every page
- * shares it, so a register, a person, a unit and a plan sit in the same centred frame as Hem's greeting and blocks, with
- * the same header and content padding. A shared page frame will own it in a later pass.
- */
-export const PAGE_WIDTH = 1120;
+import { Divider, Heading, HStack, StackItem, Tab, TabList, TabMenu, Text, VStack, useMediaQuery } from '@clew/ui';
+import { mobileQuery } from '../media';
+import { PageFrame } from './page-frame';
 
 /**
  * A thing's page for a person, a unit or a plan (D126 rule 1, board Person, the `work-item-detail` composition the work
@@ -62,13 +36,10 @@ export function ThingTabs({
   tabs,
   onPress,
   tabRef,
-  hasDivider = false,
 }: {
   label: string;
   value: string;
   tabs: ThingTab[];
-  /** A rule under the strip, where the header above it has none (a register). */
-  hasDivider?: boolean;
   onPress?: (value: string) => void;
   /** The current tab's element, for a page that gives it the focus. */
   tabRef?: (el: HTMLElement | null) => void;
@@ -88,9 +59,9 @@ export function ThingTabs({
   );
   return (
     <TabList
-      hasDivider={hasDivider}
-      // The strip meets the header's edges and its labels start on the title's line (the product owner, 2026-11-14:
-      // every page in Hem's column).
+      // The rule under the strip is the page frame's header's, as on every page (D126); the strip meets the header's edges
+      // and its labels start on the title's line.
+      hasDivider={false}
       isFullBleed
       value={value}
       onChange={next => {
@@ -165,54 +136,6 @@ export function EntityPage({
   /** Where the thing stands, under the name's line and before the phone's actions: a plan's progress (D124). */
   meta?: ReactNode;
 }) {
-  const mobile = useMediaQuery(mobileQuery);
-  const narrow = useMediaQuery(narrowItemQuery);
-  const short = useMediaQuery(shortQuery);
-  const gutter = mobile ? 4 : 6;
-  const trail =
-    back || crumbs || place ? (
-      <HStack gap={3} wrap="wrap" vAlign="center">
-        {back && (
-          <Link href={back.href} type="supporting" color="secondary">
-            <HStack as="span" gap={1} vAlign="center">
-              <Icon icon={ArrowLeftIcon} size="sm" />
-              {back.label}
-            </HStack>
-          </Link>
-        )}
-        {back && (crumbs || place) && <Divider orientation="vertical" />}
-        {crumbs}
-        {place && (
-          <Text type="supporting" color="secondary">
-            {place}
-          </Text>
-        )}
-      </HStack>
-    ) : null;
-  const header = (
-    <LayoutHeader padding={gutter} paddingBlockEnd={tabs ? 0 : gutter} hasDivider>
-      <VStack gap={tabs ? 3 : 0}>
-        <VStack gap={mobile ? 3 : 4}>
-          {trail}
-          <HStack gap={4} vAlign="center" wrap="wrap">
-            {icon}
-            <StackItem size="fill">
-              <VStack gap={0.5}>
-                <Heading level={1} {...(headingRef ? { ref: headingRef, tabIndex: -1 } : {})}>
-                  {title}
-                </Heading>
-                {subtitle && <Text color="secondary">{subtitle}</Text>}
-              </VStack>
-            </StackItem>
-            {!mobile && actions}
-          </HStack>
-          {meta}
-          {mobile && actions}
-        </VStack>
-        {tabs}
-      </VStack>
-    </LayoutHeader>
-  );
   const read =
     sections.length === 0 ? (
       (empty ?? null)
@@ -226,32 +149,35 @@ export function EntityPage({
         ))}
       </VStack>
     );
-  // Where the window is narrow the facts stand above the read, as the work item's page draws them.
-  const column = narrow ? (
-    <VStack gap={6}>
-      <VStack as="section" gap={4} aria-label="Uppgifter">
-        {details}
-      </VStack>
-      <Divider />
-      {read}
-    </VStack>
-  ) : (
-    read
-  );
-  // The column scrolls in the Layout's content, named while it scrolls; on a short screen the page scrolls as one.
-  const content = (
-    <LayoutContent padding={gutter} isScrollable={!short} label={label}>
-      {column}
-    </LayoutContent>
-  );
-  const end = narrow ? undefined : (
-    <LayoutPanel width={340} padding={6} role="complementary" label="Uppgifter" hasDivider isScrollable={!short}>
-      {details}
-    </LayoutPanel>
-  );
-  // Hem's column (the product owner, 2026-11-14): every page in the same centred frame, the facts' panel inside it.
+  // The one page frame (D126): the way back with where the thing stands, the mark, the name and its line, the actions
+  // at the end of the name's line, the tabs, the read in the column and the facts in the end panel.
   return (
-    <Layout height={short ? 'auto' : 'fill'} contentWidth={PAGE_WIDTH} header={header} content={content} end={end} />
+    <PageFrame
+      back={back}
+      trail={
+        crumbs || place ? (
+          <>
+            {crumbs}
+            {place && (
+              <Text type="supporting" color="secondary">
+                {place}
+              </Text>
+            )}
+          </>
+        ) : undefined
+      }
+      icon={icon}
+      title={title}
+      titleRef={headingRef}
+      meta={subtitle ? <Text color="secondary">{subtitle}</Text> : undefined}
+      actions={actions}
+      below={meta}
+      tabs={tabs}
+      label={label}
+      facts={details}
+    >
+      {read}
+    </PageFrame>
   );
 }
 
@@ -319,84 +245,4 @@ export function RailSection({
       {children}
     </VStack>
   );
-}
-
-/**
- * The section the address names (`?section=<capability>` or `needs-you`): an old link, "N att agera på" on Personal and
- * a talk's way back still land on it. Once its heading is on the page it is scrolled to the top of the column and takes
- * the focus, once per page and section, so a card opened beside the page, a talk over it or a reload of what the panel
- * holds never has the focus taken back. While something else holds the focus (`hold`: a thing in the panel, a talk or
- * a review over the page) the section is only scrolled to. The sections and their reads answer one by one, and one
- * that answers above the heading pushes it down as it grows into place with Astryx's motion: while the heading still
- * has the focus (or, held, while nobody has scrolled the column since) it is scrolled to again as each read lands and
- * once that motion has ended, so the focus is never left out of sight (2.4.7, 2.4.11). Returns the ref each section's
- * heading takes.
- */
-export function useAddressedSection(section: string | undefined, page: string, hold: boolean) {
-  const pending = useIsFetching();
-  const headings = useRef(new Map<string, HTMLHeadingElement>());
-  const refs = useRef(new Map<string, (el: HTMLHeadingElement | null) => void>());
-  const landed = useRef<string | null>(null);
-  const waiting = useRef(pending);
-  const scrolledTo = useRef(0);
-  const [mounted, setMounted] = useState(0);
-  const refFor = useCallback((id: string) => {
-    let ref = refs.current.get(id);
-    if (!ref) {
-      ref = el => {
-        if (el) {
-          headings.current.set(id, el);
-          setMounted(n => n + 1);
-        } else headings.current.delete(id);
-      };
-      refs.current.set(id, ref);
-    }
-    return ref;
-  }, []);
-  useEffect(() => {
-    if (!section) {
-      landed.current = null;
-      return;
-    }
-    const at = `${page}\n${section}`;
-    const heading = headings.current.get(section);
-    const arrived = waiting.current !== pending;
-    waiting.current = pending;
-    /** The column the heading scrolls in, and where it stood after the last time it was scrolled to the heading. */
-    const scroller = (el: HTMLElement) => {
-      let at = el.parentElement;
-      while (at && !/auto|scroll/.test(getComputedStyle(at).overflowY)) at = at.parentElement;
-      return at;
-    };
-    const scrollTo = (el: HTMLHeadingElement) => {
-      el.scrollIntoView({ block: 'start' });
-      scrolledTo.current = scroller(el)?.scrollTop ?? 0;
-    };
-    /**
-     * Scrolled to again, now and once what is growing above it has settled: while it holds the focus, or while what
-     * holds the focus beside or over the page has left the column where it was put.
-     */
-    const keep = (el: HTMLHeadingElement) => {
-      const still = () => {
-        if (!el.isConnected) return;
-        const untouched = hold && Math.abs((scroller(el)?.scrollTop ?? 0) - scrolledTo.current) < 2;
-        if (document.activeElement === el || untouched) scrollTo(el);
-      };
-      still();
-      const growing = document
-        .getAnimations()
-        .filter(a => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity);
-      if (growing.length) void Promise.all(growing.map(a => a.finished.catch(() => undefined))).then(still);
-    };
-    if (landed.current === at) {
-      if (arrived && heading) keep(heading);
-      return;
-    }
-    if (!heading) return;
-    landed.current = at;
-    scrollTo(heading);
-    if (!hold) heading.focus({ preventScroll: true });
-    keep(heading);
-  }, [section, page, hold, mounted, pending]);
-  return refFor;
 }

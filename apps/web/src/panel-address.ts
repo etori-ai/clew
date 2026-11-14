@@ -16,13 +16,6 @@ import { DIALOGUE_PARAM } from './dialogue-address';
  * unfold is gone (D126 rule 3): a work item's read is a link to the read's own page, and the item leads such an address
  * there itself (`work-item.tsx`), since only it knows what the read is asked with.
  */
-export type PanelRef =
-  | { kind: 'view'; capability: string; title: string; input: Record<string, unknown> }
-  | { kind: 'card'; threadId: string }
-  /** A thing the page itself holds open in the panel: Kalender's event or proposal (`entry`, D112 item 9). */
-  | { kind: 'entry'; id: string }
-  /** "Fråga Clew" in the page's header from before D126: the page itself as the thing asked about. */
-  | { kind: 'page' };
 /** A card's own read the address unfolded in that card, before D126. */
 export interface ReadRef {
   threadId: string;
@@ -32,9 +25,12 @@ export interface ReadRef {
 /** `via` marked a view opened from another one in the panel, before D116 ended that: dropped wherever a view is. */
 const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via'];
 const READ_KEYS = ['open-card', 'open-action'];
-/** A page's own things in the panel: a calendar entry, and the page itself asked about. Anything opened takes their place. */
+/**
+ * A page's own things beside it: Kalender's entry (D112 item 9), and "Fråga Clew" from before D126 (`ask=1`), which no
+ * longer opens anything and is dropped wherever a page's own address is taken. Anything opened takes their place.
+ */
 export const ENTRY_PARAM = 'entry';
-export const ASK_PARAM = 'ask';
+const ASK_PARAM = 'ask';
 const OWN_KEYS = [ENTRY_PARAM, ASK_PARAM];
 /** Every name the panel's part of an address uses: what a page drops when it opens its own thing in the panel's place. */
 const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card', ...READ_KEYS, ...OWN_KEYS];
@@ -86,31 +82,6 @@ const viewAt = (
   return address(`/tools/${encodeURIComponent(view.capability)}`, q);
 };
 
-/** What the address says the panel holds: a view first, then the card. Read on the conversation's page. */
-export function panelOf(search: URLSearchParams): PanelRef | null {
-  const open = search.get('open');
-  if (open)
-    return {
-      kind: 'view',
-      capability: open,
-      title: search.get('open-title') ?? open,
-      input: parse(search.get('open-input')),
-    };
-  const card = search.get('card');
-  if (card) return { kind: 'card', threadId: card };
-  const entry = search.get(ENTRY_PARAM);
-  if (entry) return { kind: 'entry', id: entry };
-  return search.get(ASK_PARAM) === '1' ? { kind: 'page' } : null;
-}
-/**
- * The same page asking about itself, the address "Fråga Clew" had before D126: a page that still passes its own thing
- * (`usePagePanel`'s `pageThing`) is led from it to the conversation about that thing (D126 rule 5).
- */
-export function withAsk(pathname: string, search: URLSearchParams | string): string {
-  const q = without(search, [...PANEL_KEYS, ...FOCUSED_KEYS]);
-  q.set(ASK_PARAM, '1');
-  return address(pathname, q);
-}
 /** The same page with one of its own calendar entries in the panel (D112 item 9), in the place of anything open there. */
 export function withEntry(pathname: string, search: URLSearchParams | string, id: string): string {
   const q = without(search, PANEL_KEYS);
@@ -151,30 +122,6 @@ export function withView(
 export function withoutView(pathname: string, search: URLSearchParams | string): string {
   return address(pathname, without(search, VIEW_KEYS));
 }
-/**
- * A card's read unfolded in the card, before D126. The read is now on its own page, a link the item draws; this keeps
- * the address of a caller that has not moved on (`work-item.tsx` leads it to the read's page).
- */
-export function withRead(
-  pathname: string,
-  search: URLSearchParams | string,
-  threadId: string,
-  actionId: string,
-): string {
-  const q = new URLSearchParams(search);
-  q.set('open-card', threadId);
-  q.set('open-action', actionId);
-  return address(pathname, q);
-}
-/** A row's own read from before D126: the work item's page, where the read is one of its links. */
-export function cardWithRead(
-  pathname: string,
-  search: URLSearchParams | string,
-  threadId: string,
-  _actionId: string,
-): string {
-  return withCard(pathname, search, threadId);
-}
 /** The same page with the card's read folded again. */
 export function withoutRead(pathname: string, search: URLSearchParams | string): string {
   return address(pathname, without(search, READ_KEYS));
@@ -203,20 +150,6 @@ export function cardOverPage(pathname: string, search: URLSearchParams | string,
     return address('/todo', q);
   }
   return withCard(pathname, without(search, FOCUSED_KEYS), threadId);
-}
-/**
- * `target`, another address of the same page, with what the panel holds in `search` kept: a move within the page (a
- * person's section) leaves what is open beside it open.
- */
-export function keepingPanel(target: string, search: URLSearchParams | string): string {
-  const at = target.indexOf('?');
-  const q = new URLSearchParams(at < 0 ? '' : target.slice(at));
-  const from = new URLSearchParams(search);
-  PANEL_KEYS.forEach(k => {
-    const v = from.get(k);
-    if (v !== null) q.set(k, v);
-  });
-  return address(at < 0 ? target : target.slice(0, at), q);
 }
 /** The page's own address with nothing in its panel and nothing over it: what a way back to the page holds (`from`). */
 export function pageOnly(pathname: string, search: URLSearchParams | string): string {
@@ -250,8 +183,7 @@ export function panelSearch(search: URLSearchParams | string): string {
  * the page): a view (`open`) to the view's own page, a work item (`card`) to its page, with the page it lay over as
  * the way back; on Att göra a work item is the one in the reading pane, and on the item's own page the card is that
  * page. Null where the address carries nothing of the kind, and on the conversation's page, which keeps its thing beside
- * the transcript (rule 2). A calendar entry is Kalender's own (D27) and is left to it; "Fråga Clew" from before is led
- * by the page that knows its thing (`usePagePanel`).
+ * the transcript (rule 2). A calendar entry is Kalender's own (D27) and is left to it.
  */
 export function panelRedirect(pathname: string, search: URLSearchParams | string): string | null {
   if (besideConversation(pathname)) return null;

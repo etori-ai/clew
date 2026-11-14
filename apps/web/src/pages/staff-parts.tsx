@@ -11,14 +11,10 @@ import {
   EmptyState,
   HStack,
   Heading,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   Link,
   List,
   ListItem,
   MoreMenu,
-  StackItem,
   Table,
   Text,
   VStack,
@@ -32,8 +28,9 @@ import {
 import { FieldCell, FieldValue, badgeVariant, fieldText, fieldWord, isBadged } from '../components/view';
 import { personTitle } from '../components/entity-sections';
 import { useRail } from '../components/nav';
-import { PAGE_WIDTH, ThingTabs } from '../components/entity-page';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { ThingTabs } from '../components/entity-page';
+import { PageFrame } from '../components/page-frame';
+import { Shell, shortQuery } from '../components/shell';
 import type { EntityActionStart } from '../entity-actions';
 import { pageOnly } from '../panel-address';
 import { NEEDS_YOU, personPageHref, sourceWayHref, wayBack } from '../person-address';
@@ -609,7 +606,7 @@ let pressedTab: string | null = null;
  * for someone the server would answer: the lenses and the competence matrix for a manager, the search for a registrar,
  * Kompetens and Introduktion och avslut while their module is visible to the person (D23). The rail marks Personal on
  * every tab. The content scrolls under the header; on a short screen nothing is pinned and the page scrolls as one
- * (1.4.10). Every tab sits in Hem's column, with Hem's header and content padding (`PAGE_WIDTH`).
+ * (1.4.10). Every tab sits in the one page frame (`PageFrame`, D126).
  */
 export function PersonalFrame({
   user,
@@ -632,7 +629,6 @@ export function PersonalFrame({
   label: string;
   children: ReactNode;
 }) {
-  const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
   const manager = user.role === 'manager';
   const nav = useRail({ current: { surface: 'staff' }, admin, manager });
@@ -642,7 +638,6 @@ export function PersonalFrame({
   const sees = (connector: string) => !systems || systems.some(s => s.connector === connector);
   const registrar = useHeldRelations().includes('registrar');
   const groups = list?.groups ?? [];
-  const gutter = mobile ? 4 : 6;
   const current = useCallback(
     (el: HTMLElement | null) => {
       if (!el || pressedTab !== tab) return;
@@ -653,66 +648,45 @@ export function PersonalFrame({
   );
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        // Hem's column (the product owner, 2026-11-14): the title, the tabs and the table in the same centred frame.
-        contentWidth={PAGE_WIDTH}
-        header={
-          <LayoutHeader padding={gutter} paddingBlockEnd={0}>
-            <VStack gap={3}>
-              <HStack gap={3} vAlign="center" wrap="wrap">
-                <StackItem size="fill">
-                  <VStack gap={0.5}>
-                    <Heading level={1} id={PERSONAL_TITLE_ID} tabIndex={-1}>
-                      Personal
-                    </Heading>
-                    {groups.length > 0 && (
-                      <Text type="supporting" color="secondary">
-                        {peopleLine(groups)}
-                      </Text>
-                    )}
-                  </VStack>
-                </StackItem>
-                {end}
-              </HStack>
-              <ThingTabs
-                label="Personal"
-                value={tab}
-                hasDivider
-                onPress={value => {
-                  if (value !== tab) pressedTab = value;
-                }}
-                tabRef={current}
-                tabs={[
-                  ...(manager ? [{ value: ALL_TAB, label: 'Medarbetare', href: lensHref(null) }] : []),
-                  ...(manager
-                    ? (list?.lenses ?? []).map(l => {
-                        const badge = badges?.get(l.capability);
-                        return {
-                          value: l.capability,
-                          label: l.title,
-                          href: lensHref(l.capability),
-                          ...(badge ? { badge } : {}),
-                        };
-                      })
-                    : []),
-                  ...(sees('competence') && (manager || registrar)
-                    ? [{ value: COMPETENCE_TAB, label: 'Kompetens', href: manager ? MATRIX_PATH : SEARCH_PATH }]
-                    : []),
-                  ...(sees('boarding') && manager
-                    ? [{ value: BOARDING_TAB, label: 'Introduktion och avslut', href: BOARDING_PATH }]
-                    : []),
-                ]}
-              />
-            </VStack>
-          </LayoutHeader>
+      <PageFrame
+        title="Personal"
+        titleId={PERSONAL_TITLE_ID}
+        meta={groups.length > 0 ? peopleLine(groups) : undefined}
+        actions={end}
+        label={label}
+        tabs={
+          <ThingTabs
+            label="Personal"
+            value={tab}
+            onPress={value => {
+              if (value !== tab) pressedTab = value;
+            }}
+            tabRef={current}
+            tabs={[
+              ...(manager ? [{ value: ALL_TAB, label: 'Medarbetare', href: lensHref(null) }] : []),
+              ...(manager
+                ? (list?.lenses ?? []).map(l => {
+                    const badge = badges?.get(l.capability);
+                    return {
+                      value: l.capability,
+                      label: l.title,
+                      href: lensHref(l.capability),
+                      ...(badge ? { badge } : {}),
+                    };
+                  })
+                : []),
+              ...(sees('competence') && (manager || registrar)
+                ? [{ value: COMPETENCE_TAB, label: 'Kompetens', href: manager ? MATRIX_PATH : SEARCH_PATH }]
+                : []),
+              ...(sees('boarding') && manager
+                ? [{ value: BOARDING_TAB, label: 'Introduktion och avslut', href: BOARDING_PATH }]
+                : []),
+            ]}
+          />
         }
-        content={
-          <LayoutContent padding={gutter} isScrollable={!short} label={label}>
-            {children}
-          </LayoutContent>
-        }
-      />
+      >
+        {children}
+      </PageFrame>
     </Shell>
   );
 }

@@ -147,6 +147,13 @@ export function originLabel(path: string | null): string | null {
   if (pathname === '/') return 'Hem';
   if (pathname === '/todo') return 'Att göra';
   if (pathname === '/calendar') return 'Kalender';
+  // The rail's names for the registers it ends its lists with (D126 rule 7).
+  if (pathname === '/tools') return 'Alla verktyg';
+  if (pathname === '/conversations') return 'Alla samtal';
+  if (pathname.startsWith('/conversations/')) return 'Samtalet';
+  if (pathname === '/units') return 'Läget';
+  if (pathname.startsWith('/competence/matrix')) return 'Kompetens';
+  if (pathname.startsWith('/items/')) return 'Ärendet';
   // D121: a person's holdings opened from a hit of the registrar's search.
   if (pathname === '/competence/search') return 'Kompetenssökning';
   // D124: a plan opened from the list (item 12), and a person opened from their plan's "Tillhör".

@@ -74,6 +74,11 @@ export function createConnector({
   const managerOf = (actor, unitId) => actor.role === 'manager' && unitOf(actor) === unitId;
   const personKey = actor => unitOf(actor) + ':' + personOf(actor);
   const nameOf = ref => records().employees.find(e => e.ref === ref)?.name ?? 'Medarbetare';
+  /** The user name of the employee behind a ref, as `{ person }`, or nothing when the employee is not known. */
+  const personOfRef = ref => {
+    const personId = records().employees.find(e => e.ref === ref)?.personId;
+    return personId ? { person: personId } : {};
+  };
   const staff = unitId => records().employees.filter(e => e.unitId === unitId);
 
   const decided = () => state.get('leave-decisions', {});
@@ -143,8 +148,24 @@ export function createConnector({
     return a.kind === 'short' && n <= SICK_DAYS ? sickOnDay(n) : 'Sjukskriven';
   };
   /**
+   * One employee's absence the last six months, as `hr.absenceOverview` and `hr.person` both answer it (the overview's
+   * view says its rows are hr.person's, `byKey`): days of short sick leave, vab and long sick leave, and how many short
+   * periods, which the rehab rule counts.
+   */
+  function sixMonthsOf(employee, day = today()) {
+    const since = addDays(day, -180);
+    const mine = records().absences.filter(a => a.employee === employee.ref && a.to >= since);
+    const days = k => mine.filter(a => a.kind === k).reduce((n, a) => n + daysBetween(a.from, a.to) + 1, 0);
+    return {
+      short: days('short'),
+      vab: days('vab'),
+      long: days('long'),
+      periods: mine.filter(a => a.kind === 'short').length,
+    };
+  }
+  /**
    * One employee's row for `hr.person` (D97): presence today, today in a few more words (the shift, or the absence and
-   * when it ends), and the next absence that is known, an undecided leave request saying so.
+   * when it ends), the next absence that is known, an undecided leave request saying so, and the last six months.
    */
   function presenceOf(employee, key, day = today()) {
     const all = absencesOf(employee);
@@ -168,6 +189,7 @@ export function createConnector({
             upcoming: `${next.kind === 'leave' ? next.word : absenceWord(next, next.from).replace(/ · dag \d+$/, '')} ${period(next.from, next.to)}${next.pending ? ', väntar på beslut' : ''}`,
           }
         : {}),
+      ...sixMonthsOf(employee, day),
     };
   }
 
@@ -200,22 +222,14 @@ export function createConnector({
       return { date, onDuty, absent };
     },
     'hr.absenceOverview': actor => {
-      const since = addDays(today(), -180);
       const rows = staff(unitOf(actor))
-        .map(e => {
-          const mine = records().absences.filter(a => a.employee === e.ref && a.to >= since);
-          const days = k => mine.filter(a => a.kind === k).reduce((n, a) => n + daysBetween(a.from, a.to) + 1, 0);
-          return {
-            ref: e.ref,
-            // The employee's user name (their `personId` here), the key Clew knows them by (D97 item 6).
-            person: e.personId,
-            name: e.name,
-            short: days('short'),
-            vab: days('vab'),
-            long: days('long'),
-            periods: mine.filter(a => a.kind === 'short').length,
-          };
-        })
+        .map(e => ({
+          ref: e.ref,
+          // The employee's user name (their `personId` here), the key Clew knows them by (D97 item 6).
+          person: e.personId,
+          name: e.name,
+          ...sixMonthsOf(e),
+        }))
         .sort((a, b) => b.periods - a.periods);
       return { rows };
     },
@@ -237,6 +251,8 @@ export function createConnector({
       return {
         rows: open.map(r => ({
           ref: r.ref,
+          // The employee's user name (their `personId` here), the key Clew knows them by (D97 item 6).
+          ...personOfRef(r.employee),
           name: nameOf(r.employee),
           from: r.from,
           to: r.to,

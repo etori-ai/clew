@@ -11,8 +11,6 @@ export interface CardPlace {
   /** A proposal's times as rows rather than the week (`ThreadCard`). */
   compact?: boolean;
   onChange: (thread: Thread) => void;
-  /** Kept for the callers from before D126: nothing folds under a conversation any more (rule 5). */
-  folded?: boolean;
   /**
    * Where the item can be let go of (Att göra's reading pane): its ✕ stands at the end of the item's own header row,
    * not in a row of its own above it.

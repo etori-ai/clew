@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { View, ViewEntry } from '@clew/contracts';
 import {
   declaredPage,
+  lensesOpening,
   openedAsPage,
   opensAsPage,
   peopleReadHref,
@@ -173,7 +174,7 @@ describe('a read about the reader’s people is Personal’s tab or the person�
     open: { capability: 'sys.pattern', title: 'Mönster', params: { ref: 'ref' } },
   };
   const reads = (rows?: Array<Record<string, unknown>>): PeopleReads => ({
-    lenses: [{ capability: 'sys.person', view: presence }],
+    lenses: [{ capability: 'sys.person', view: presence, overviews: ['sys.overview'] }],
     people: [
       { key: 'p-anna', sourceKey: 'anna' },
       { key: 'p-erik', sourceKey: 'erik' },
@@ -195,9 +196,25 @@ describe('a read about the reader’s people is Personal’s tab or the person�
       '/people/p-erik?section=sys.person',
     );
   });
+  test('a read that answers the lens’s rows without keys (byKey, D127) is the lens’s tab too: Hem’s “Frånvaro per person”', () => {
+    expect(peopleReadHref({ capability: 'sys.overview' }, reads(rows), '/')).toBe('/staff?show=sys.person');
+    expect(peopleReadHref({ capability: 'sys.overview', input: {} }, reads(undefined))).toBe('/staff?show=sys.person');
+    // Read with an input it is its own page; without the lens offered, its own page too.
+    expect(peopleReadHref({ capability: 'sys.overview', input: { q: 'anna' } }, reads(rows))).toBeNull();
+    expect(peopleReadHref({ capability: 'sys.overview' }, { ...reads(rows), lenses: [] })).toBeNull();
+  });
+  test('the whole path: the tile’s read is Personal’s tab, and a row’s fuller read from there is the person’s tab', () => {
+    // Hem's tile names the overview; from Personal's tab a person's fuller read is their page at the lens's tab.
+    const tab = peopleReadHref({ capability: 'sys.overview', title: 'Frånvaro per person' }, reads(rows), '/');
+    expect(tab).toBe('/staff?show=sys.person');
+    expect(lensesOpening(reads(rows), 'sys.pattern').map(l => l.capability)).toEqual(['sys.person']);
+    expect(peopleReadHref({ capability: 'sys.pattern', input: { ref: 'emp:2' } }, reads(rows), tab)).toBe(
+      '/people/p-erik?section=sys.person&from=%2Fstaff%3Fshow%3Dsys.person',
+    );
+  });
   test('while the lens’s rows are on their way it is not known yet; a row nobody here is, and any other read, keep their page', () => {
     expect(peopleReadHref({ capability: 'sys.pattern', input: { ref: 'emp:1' } }, reads(undefined))).toBeUndefined();
     expect(peopleReadHref({ capability: 'sys.pattern', input: { ref: 'emp:9' } }, reads(rows))).toBeNull();
-    expect(peopleReadHref({ capability: 'sys.overview' }, reads(rows))).toBeNull();
+    expect(peopleReadHref({ capability: 'sys.other' }, reads(rows))).toBeNull();
   });
 });

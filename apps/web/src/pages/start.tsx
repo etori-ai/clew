@@ -10,9 +10,6 @@ import {
   Grid,
   Heading,
   HStack,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   Link,
   List,
   StackItem,
@@ -35,7 +32,6 @@ import { Composer } from '../components/composer';
 import { useConversation } from '../components/conversation-context';
 import { ConversationPage, conversationTitle } from './conversation';
 
-type EntryStyle = NonNullable<ReturnType<typeof useEntryAnimation>> | undefined;
 /**
  * The column fades in when it changes hands (D92): the conversation taking Hem's place when a question is sent, and Hem
  * coming back when the conversation closes. Keyed by whose turn it is, so each hand-over mounts anew and gets Astryx's
@@ -58,11 +54,10 @@ import { NewsBlock } from '../components/news';
 import { FocusNews, focusOf } from '../components/focus-news';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
+import { PageFrame, type EntryStyle } from '../components/page-frame';
 
 /** How many work items Hem shows under "Behöver dig" (board Hem): the most urgent; every one is in Att göra. */
 const ON_HEM = 4;
-/** Hem's column (board Hem): the greeting, the box and the blocks share one width, centred in the page. */
-export const HEM_WIDTH = 1120;
 /** Hem's address, the way back from every page Hem leads to (D116). */
 const HEM = '/';
 const EMPTY_THREADS: Thread[] = [];
@@ -91,7 +86,7 @@ const dayLine = (date: string, unit: string) => {
  * rows in Att göra. No digest sentences, no suggestion chips and no tool tiles (D126 rule 8): the tools are in the rail
  * and on Alla verktyg, and Mina ärenden (D90) and what the person ordered or reported (D123) are two of them. Every row
  * and tile leads to the page of what it names (D126 rule 1), with Hem as the way back; nothing opens over Hem, and an
- * address that opened something beside it before leads to that thing's page (the shell's `PanelOverPage`, rule 3).
+ * address that opened something beside it before leads to that thing's page (the shell's `panelRedirect`, rule 3).
  *
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel beside it (rule 2):
  * the view an answer names, the card or view that was open when it was asked, or the page it was asked on. The address
@@ -326,20 +321,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       </RowCard>
     </VStack>
   );
-  /** The greeting, the day and the unit, and the box once under them (board Hem); the box is anchored under the heading (D53). */
-  const greeting = (
-    <VStack gap={4}>
-      <VStack gap={1}>
-        <Heading level={1} id="hem" tabIndex={-1}>
-          {greetingOf(user.name, new Date())}
-        </Heading>
-        <Text type="supporting" color="secondary">
-          {dayLine(todayDate, user.unitLabel)}
-        </Text>
-      </VStack>
-      <Composer place="landing" near={near} />
-    </VStack>
-  );
   /** Hem's blocks (board Hem), in its order: the callout, the two blocks side by side, Läget, Nyheter, the action points. */
   const blocks = (
     <VStack gap={8}>
@@ -379,27 +360,22 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
   /** What the column holds: the conversation's page when a conversation is open (D31, D126 rule 5), else Hem. */
   const column = (entry: EntryStyle) => {
-    if (talk.open) return <ConversationPage entry={entry} onChange={replace} width={HEM_WIDTH} />;
-    // Hem (D126, board Hem): the greeting and the box in the Layout's header, pinned while the blocks scroll under them,
-    // in one column of the board's width. On a phone and on a short screen nothing is pinned (1.4.10): the Layout grows
-    // with its content and the shell's main region scrolls the whole page.
-    const pinned = !mobile && !short;
+    if (talk.open) return <ConversationPage entry={entry} onChange={replace} />;
+    // Hem (D126, board Hem): the greeting, the day line and the box in the frame's header (the box anchored under the
+    // heading, D53), pinned while the blocks scroll under them. On a phone and on a short screen nothing is pinned
+    // (1.4.10): the page grows with its content and the shell's main region scrolls the whole page.
     return (
-      <Layout
-        xstyle={entry}
-        height={pinned ? 'fill' : 'auto'}
-        contentWidth={HEM_WIDTH}
-        header={
-          <LayoutHeader padding={mobile ? 4 : 6} paddingBlockEnd={0}>
-            {greeting}
-          </LayoutHeader>
-        }
-        content={
-          <LayoutContent padding={mobile ? 4 : 6} isScrollable={pinned}>
-            {blocks}
-          </LayoutContent>
-        }
-      />
+      <PageFrame
+        entry={entry}
+        plain
+        pinned={!mobile && !short}
+        title={greetingOf(user.name, new Date())}
+        titleId="hem"
+        meta={dayLine(todayDate, user.unitLabel)}
+        below={<Composer place="landing" near={near} />}
+      >
+        {blocks}
+      </PageFrame>
     );
   };
 

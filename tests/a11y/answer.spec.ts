@@ -308,3 +308,73 @@ test.describe('a conversation about a thing', () => {
       await expectNoAxeViolations(page);
     });
 });
+
+/**
+ * The assistant drafts, the person decides (D112 item 8), on the conversation's page since the panel with a box of its
+ * own left the pages (D126 rules 2 and 5): the item stands beside the transcript, and the draft in the transcript opens
+ * the item's own action dialog at its last and its first step. The mock answers "Boka det …" with a draft of "Boka
+ * samtalet" on the rehab item (`data.ts`).
+ */
+test.describe('the assistant drafts, the person decides (D112 item 8)', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  const ask = async (page: Page, text: string) => {
+    const box = composer(page);
+    await box.fill(text);
+    await box.press('Enter');
+  };
+
+  test('a draft shows its values with Utkast; Granska och boka opens the dialog at its last step and Ändra at its first; once sent the draft says so', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/conversations/new?card=omtanke');
+    await ask(page, 'Boka det på fredag och skriv något vänligt');
+    const log = page.getByRole('log');
+    const draft = log.getByRole('region', { name: 'Utkast: Boka samtalet' });
+    await expect(draft.getByText('Utkast', { exact: true })).toBeVisible();
+    await expect(draft.getByText('Rum 12')).toBeVisible();
+    await expect(draft.getByText('Hej! Ses vi på fredag?')).toBeVisible();
+    await expectNoAxeViolations(page);
+    // "Granska och boka": the dialog at "Det här händer", read for exactly the drafted values; nothing is sent.
+    await draft.getByRole('button', { name: 'Granska och boka' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Boka samtalet' });
+    await expect(dialog.getByRole('heading', { name: 'När du trycker Boka samtalet' })).toBeVisible();
+    await expect.poll(() => api.effectReads.length).toBeGreaterThan(0);
+    expect(api.effectReads.at(-1)!.body).toMatchObject({
+      values: { when: '2026-11-06T08:00:00.000Z', place: 'Rum 12', message: 'Hej! Ses vi på fredag?' },
+    });
+    expect(api.acted).toEqual([]);
+    await dialog.getByRole('button', { name: 'Avbryt' }).click();
+    await expect(dialog).toBeHidden();
+    // "Ändra": the same dialog at its first step, with the drafted time chosen.
+    await draft.getByRole('button', { name: 'Ändra' }).click();
+    await expect(dialog.getByRole('radiogroup', { name: /^När/ })).toBeVisible();
+    await expect(dialog.getByRole('radio', { name: /^Fredag 6 november/ })).toBeChecked();
+    await expect(dialog.getByRole('textbox', { name: 'Plats' })).toHaveValue('Rum 12');
+    await dialog.getByRole('button', { name: 'Nästa' }).click();
+    await dialog.getByRole('button', { name: 'Boka samtalet' }).click();
+    await expect(dialog).toBeHidden();
+    expect(api.acted.at(-1)).toMatchObject({
+      threadId: 'omtanke',
+      body: { actionId: 'book', values: { when: '2026-11-06T08:00:00.000Z', place: 'Rum 12' } },
+    });
+    // The draft reads the item back: sent, with the source's headline, and no buttons any more.
+    await expect(draft.getByText('Samtalet är registrerat i personalsystemet.')).toBeVisible();
+    await expect(draft.getByRole('button', { name: 'Granska och boka' })).toHaveCount(0);
+  });
+
+  test('a newer draft of the same action marks the older one as replaced', async ({ page, api: _ }) => {
+    await open(page, '/conversations/new?card=omtanke');
+    const log = page.getByRole('log');
+    await ask(page, 'Boka det på fredag');
+    await expect(log.getByRole('region', { name: 'Utkast: Boka samtalet' })).toHaveCount(1);
+    await ask(page, 'Boka det på fredag i stället');
+    const drafts = log.getByRole('region', { name: 'Utkast: Boka samtalet' });
+    await expect(drafts).toHaveCount(2);
+    await expect(drafts.first().getByText('Ersatt av ett nyare utkast').first()).toBeVisible();
+    // The dot beside the word is decoration, so the state is heard once.
+    await expect(drafts.first().getByRole('img', { name: 'Ersatt av ett nyare utkast' })).toHaveCount(0);
+    await expect(drafts.first().getByRole('button', { name: 'Granska och boka' })).toHaveCount(0);
+    await expect(drafts.last().getByRole('button', { name: 'Granska och boka' })).toBeVisible();
+  });
+});

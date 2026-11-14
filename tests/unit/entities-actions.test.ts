@@ -98,7 +98,13 @@ const anything = { type: 'object' } as never;
 
 /** The sources: what they were asked, call by call. */
 function sources() {
-  const asked = { prepare: [] as unknown[], report: [] as unknown[], flag: [] as unknown[] };
+  const asked = {
+    prepare: [] as unknown[],
+    report: [] as unknown[],
+    flag: [] as unknown[],
+    order: [] as unknown[],
+    orderEffect: [] as unknown[],
+  };
   /** The HR system knows two people on the school, by user name. */
   const employees: Record<string, string> = { 'maria.o': 'hr:emp:1', 'anna.l': 'hr:emp:2' };
   const prepare: Capability = {
@@ -205,6 +211,61 @@ function sources() {
     scope: {},
     run: async () => ({}),
   };
+  /** An order for a person in a service desk (D112, D123): asks what and an optional message, and says beforehand what it does. */
+  const orderInput = {
+    type: 'object',
+    properties: {
+      person: { type: 'string' },
+      what: { type: 'string', enum: ['laptop', 'phone'] },
+      note: { type: 'string', maxLength: 40 },
+    },
+    required: ['person', 'what'],
+    additionalProperties: false,
+  } as never;
+  const order: Capability = {
+    name: 'it.order',
+    kind: 'execute',
+    title: 'Beställ',
+    description: 'Lägger en beställning i IT-servicedesken.',
+    model: false,
+    about: { entity: 'person', param: 'person' },
+    input: orderInput,
+    output: anything,
+    scope: { roles: ['manager'] },
+    asks: [
+      {
+        kind: 'choice',
+        property: 'what',
+        label: 'Vad',
+        required: true,
+        options: [
+          { value: 'laptop', label: 'Bärbar dator' },
+          { value: 'phone', label: 'Mobiltelefon' },
+        ],
+      },
+      { kind: 'text', property: 'note', label: 'Meddelande', required: false },
+    ],
+    effect: 'it.orderEffect',
+    run: async (_actor, input) => {
+      asked.order.push(input);
+      return { headline: 'Beställt.', rows: [] };
+    },
+  };
+  const orderEffect: Capability = {
+    name: 'it.orderEffect',
+    kind: 'read',
+    title: 'Det här händer när beställningen läggs',
+    description: 'Vad beställningen gör, utan att något skrivs.',
+    model: false,
+    input: orderInput,
+    output: anything,
+    scope: { roles: ['manager'] },
+    run: async (_actor, raw) => {
+      const input = raw as { person: string; what: string };
+      asked.orderEffect.push(input);
+      return { rows: [{ label: `En beställning läggs för ${input.person}`, detail: input.what }] };
+    },
+  };
   const area = { id: 'employees', title: 'Medarbetare', roles: ['manager' as const], standing: [], schedules: [] };
   const connectors: Connector[] = [
     {
@@ -216,17 +277,27 @@ function sources() {
     },
     { id: 'units', kind: 'passthrough', source: 'Bemanningen', areas: [], capabilities: [plan] },
   ];
-  return { asked, connectors };
+  const desk: Connector = {
+    id: 'it',
+    kind: 'passthrough',
+    source: 'IT-servicedesken',
+    areas: [],
+    capabilities: [order, orderEffect],
+  };
+  return { asked, connectors, desk };
 }
 
-/** The world as the composition wires it; with `fixture`, the HR system is the development stack's own (D61). */
-function world(options: { fixture?: boolean } = {}) {
+/**
+ * The world as the composition wires it; with `fixture`, the HR system is the development stack's own (D61); with
+ * `desk`, a service desk whose order asks and says what it does; with `auditDown`, a store whose audit cannot be written.
+ */
+function world(options: { fixture?: boolean; desk?: boolean; auditDown?: boolean } = {}) {
   // The development stack's HR system knows the seed's user names; the in-test one knows its own.
   const people = directory(options.fixture ? {} : { maria: 'maria.o', anna: 'anna.l' });
   const keys = memoryPersonKeys(people.state);
-  const { asked, connectors: inTest } = sources();
+  const { asked, connectors: inTest, desk } = sources();
   const fixtures = fixtureConnectors({ only: ['hr'], clock: () => new Date(T) });
-  const connectors = options.fixture ? fixtures.connectors : inTest;
+  const connectors = options.fixture ? fixtures.connectors : options.desk ? [...inTest, desk] : inTest;
   // Who may be asked about (D117) as the composition installs it: the entities module's rule over the same directory.
   const relations = relationUsecases({
     directory: people.staff,
@@ -236,6 +307,20 @@ function world(options: { fixture?: boolean } = {}) {
   const registry = new Registry({ relations: relations.relate });
   for (const c of connectors) registry.register(c).govern(c.id, openGovernance());
   const store = memoryThreadStore();
+  // The same store, whose transactions fail at the audit row: what was written before it in the transaction is undone.
+  const writes: typeof store = options.auditDown
+    ? Object.assign(Object.create(store) as typeof store, {
+        transaction: (fn =>
+          store.transaction(tx =>
+            fn({
+              ...tx,
+              writeAudit: async () => {
+                throw new Error('audit unavailable');
+              },
+            }),
+          )) as typeof store.transaction,
+      })
+    : store;
   let n = 0;
   // The server's `runCapability`: the registry's call path as the person, a source's refusal as a Swedish input error.
   const run = async (persona: AuthenticatedContext, name: string, input: unknown) => {
@@ -246,7 +331,7 @@ function world(options: { fixture?: boolean } = {}) {
     }
   };
   const started = startedCards({
-    store,
+    store: writes,
     registry,
     run,
     digest: value => JSON.stringify(value),
@@ -279,14 +364,18 @@ function world(options: { fixture?: boolean } = {}) {
   const actions = entityActionUsecases({
     open: entities.detail,
     start: started.startCard,
+    // As the composition wires it: the card's one button, the human decision (D45).
+    decide: (p, threadId, answers) => decisions.act(p, threadId, 'decide', undefined, undefined, answers),
     effect: decisions.effectFor,
     clock: () => new Date(T),
   });
   const nothingWritten = () => {
     expect(store.dump()).toEqual([]);
     expect(store.audit).toEqual([]);
+    expect(approvals).toEqual([]);
     expect(asked.report).toEqual([]);
     expect(asked.flag).toEqual([]);
+    expect(asked.order).toEqual([]);
   };
   return {
     people,
@@ -675,9 +764,101 @@ describe('an action about a person, started from the menu', () => {
   });
 });
 
+describe('an execute sent from its dialog: nothing exists before the last button (D126 item 7)', () => {
+  test('the dialog reads what would happen, and cancelling it leaves no work item, no audit row and nothing approved', async () => {
+    const w = world({ desk: true });
+    const hillevi = w.people.persona('hillevi');
+    // "Det här händer" for exactly the answers on the step: the source's effect read, asked by the user name.
+    expect(await w.actions.effect(hillevi, 'person', 'anna', 'it.order', { what: 'laptop' })).toEqual({
+      rows: [{ label: 'En beställning läggs för anna.l', detail: 'laptop' }],
+      source: 'IT-servicedesken',
+    });
+    expect(w.asked.orderEffect).toEqual([{ person: 'anna.l', what: 'laptop' }]);
+    // The person presses Avbryt: the dialog sent nothing else, so nothing is left behind.
+    w.nothingWritten();
+  });
+
+  test('the last button makes the work item and decides it with the answers, the card and its audit row in one transaction', async () => {
+    const w = world({ desk: true });
+    const hillevi = w.people.persona('hillevi');
+    const { threadId } = (await w.actions.decide(hillevi, 'person', 'anna', 'it.order', {
+      what: 'laptop',
+      note: ' Före måndag ',
+    }))!;
+    const card = (await w.access.read(hillevi, threadId))!;
+    // The card keeps the person by id and nothing of the answers (D122, D45: approved input is sealed, the card is not).
+    expect(card).toMatchObject({
+      connector: 'it',
+      title: 'Beställ',
+      trigger: { reason: 'Du valde Beställ för Anna Lindqvist', source: 'IT-servicedesken' },
+      actions: [{ id: 'decide', capability: 'it.order', kind: 'execute', input: { person: 'anna' } }],
+    });
+    // (Its topic tells it from another order by a digest of them; this world's digest is the JSON itself.)
+    const { topic: _topic, ...kept } = card;
+    expect(JSON.stringify(kept)).not.toContain('Före måndag');
+    expect(w.store.audit.map(a => [a.action, a.subject, a.details?.kind, a.details?.about, a.details?.asked])).toEqual([
+      ['thread.started', 'thread:' + threadId, 'execute', { entity: 'person', id: 'anna' }, undefined],
+    ]);
+    // The decision hands the approved intent with the answers to the ledger (D45), still without reaching the source.
+    expect(w.approvals).toEqual([
+      expect.objectContaining({
+        operation: 'it.order',
+        payload: { person: 'anna.l', what: 'laptop', note: 'Före måndag' },
+        asked: { what: 'laptop', note: 'Före måndag' },
+        presentation: expect.objectContaining({ threadId, actionId: 'decide' }),
+        subject: { param: 'person', personId: 'anna' },
+      }),
+    ]);
+    expect(w.asked.order).toEqual([]);
+    // The same order sent twice is the one card and the one decision; another order is another card.
+    const again = (await w.actions.decide(hillevi, 'person', 'anna', 'it.order', {
+      what: 'laptop',
+      note: 'Före måndag',
+    }))!;
+    expect(again.threadId).toBe(threadId);
+    const ids = (w.approvals as Array<{ decisionId: string }>).map(a => a.decisionId);
+    expect(new Set(ids).size).toBe(1);
+    const other = (await w.actions.decide(hillevi, 'person', 'anna', 'it.order', { what: 'phone' }))!;
+    expect(other.threadId).not.toBe(threadId);
+    expect(w.store.dump()).toHaveLength(2);
+  });
+
+  test('the card and its audit row are one transaction: an audit that cannot be written leaves no card and decides nothing', async () => {
+    const w = world({ desk: true, auditDown: true });
+    await expect(
+      w.actions.decide(w.people.persona('hillevi'), 'person', 'anna', 'it.order', { what: 'laptop' }),
+    ).rejects.toThrow('audit unavailable');
+    w.nothingWritten();
+  });
+
+  test('an answer that does not fit is refused before anything is made; a propose and what is not offered are not decided here', async () => {
+    const w = world({ desk: true });
+    const hillevi = w.people.persona('hillevi');
+    for (const [values, problem] of [
+      [{}, 'Vad behöver fyllas i.'],
+      [{ what: 'tablet' }, 'Vad: välj ett av alternativen.'],
+      [{ what: 'laptop', colour: 'svart' }, 'Åtgärden frågar inte efter det värdet.'],
+      // Checked with the input against the capability's schema before the card is made.
+      [{ what: 'laptop', note: 'x'.repeat(41) }, undefined],
+    ] as const) {
+      const refused = w.actions.decide(hillevi, 'person', 'anna', 'it.order', values);
+      await expect(refused).rejects.toBeInstanceOf(InputError);
+      if (problem) await expect(refused).rejects.toThrow(problem);
+    }
+    await expect(w.actions.decide(hillevi, 'person', 'maria', 'hr.prepare')).rejects.toThrow(
+      'Åtgärden kan inte beslutas härifrån.',
+    );
+    // A colleague the order does not admit, an unknown key and an action not about that kind: undefined, the route's 404.
+    expect(await w.actions.decide(hillevi, 'person', 'karin', 'it.order', { what: 'laptop' })).toBeUndefined();
+    expect(await w.actions.decide(hillevi, 'person', 'nobody', 'it.order', { what: 'laptop' })).toBeUndefined();
+    expect(await w.actions.decide(hillevi, 'unit', 'unit-skola', 'it.order', { what: 'laptop' })).toBeUndefined();
+    w.nothingWritten();
+  });
+});
+
 describe('the route', () => {
-  function stack() {
-    const w = world();
+  function stack(options: Parameters<typeof world>[0] = {}) {
+    const w = world(options);
     const routes = entityRoutes({
       // The reads are `entities-routes.test.ts`'s; this stack only starts actions.
       entities: {} as EntityRouteDeps['entities'],
@@ -711,6 +892,31 @@ describe('the route', () => {
       expect(await answer.json()).toEqual({ error: 'Okänd adress.' });
     }
     expect(w.store.dump()).toHaveLength(1);
+  });
+  test('an execute is sent from its dialog to /decide: the card and its decision, or the one 404, or the answer refused', async () => {
+    const w = stack({ desk: true });
+    const effect = await w.post(
+      '/person/anna/effect',
+      JSON.stringify({ capability: 'it.order', values: { what: 'phone' } }),
+    );
+    expect(effect.status).toBe(200);
+    expect(w.store.dump()).toEqual([]);
+    const sent = await w.post(
+      '/person/anna/decide',
+      JSON.stringify({ capability: 'it.order', values: { what: 'phone' } }),
+    );
+    expect(sent.status).toBe(200);
+    const { threadId } = (await sent.json()) as { threadId: string };
+    expect(w.store.dump().map(r => r.thread.id)).toEqual([threadId]);
+    expect(w.approvals).toHaveLength(1);
+    const missing = await w.post('/person/karin/decide', JSON.stringify({ capability: 'it.order', values: {} }));
+    expect([missing.status, await missing.json()]).toEqual([404, { error: 'Okänd adress.' }]);
+    const refused = await w.post('/person/anna/decide', JSON.stringify({ capability: 'it.order', values: {} }));
+    expect([refused.status, await refused.json()]).toEqual([400, { error: 'Vad behöver fyllas i.' }]);
+    const propose = await w.post('/person/maria/decide', JSON.stringify({ capability: 'hr.prepare' }));
+    expect([propose.status, await propose.json()]).toEqual([400, { error: 'Åtgärden kan inte beslutas härifrån.' }]);
+    expect(w.store.dump()).toHaveLength(1);
+    expect(w.asked.order).toEqual([]);
   });
   test('a body that is not { capability } is a bad request, and a refusal from the source is its own Swedish words', async () => {
     const w = stack();

@@ -230,6 +230,31 @@ function effectProblem(c: Descriptor['capabilities'][number], connector: Descrip
   return undefined;
 }
 
+/**
+ * Why a view's `byKey` (D127) may not be used, or undefined when it may: the rows name their entity (`subject`), the read
+ * opens without input, and `byKey` names another read of the same connector about that kind of entity, with a table or
+ * list view, which answers the same rows asked by key.
+ */
+function byKeyProblem(c: Descriptor['capabilities'][number], connector: Descriptor): string | undefined {
+  const view = c.view;
+  if ((view?.kind !== 'table' && view?.kind !== 'list') || view.byKey === undefined) return undefined;
+  if (!view.subject)
+    return `Capability ${c.name}: byKey names the read about the entities the rows name; declare them in subject (D127).`;
+  const required = asSchema(c.input)?.required;
+  if (Array.isArray(required) && required.length)
+    return `Capability ${c.name}: byKey stands for this read opened without input; a read that requires input cannot declare it (D127).`;
+  const read = connector.capabilities.find(r => r.name === view.byKey);
+  if (
+    !read ||
+    read.name === c.name ||
+    read.kind !== 'read' ||
+    read.about?.entity !== view.subject.entity ||
+    (read.view?.kind !== 'table' && read.view?.kind !== 'list')
+  )
+    return `Capability ${c.name}: byKey names ${view.byKey}, which is not a read of this connector about a ${view.subject.entity} with a table or list view (D127).`;
+  return undefined;
+}
+
 /** The properties a schema lists. */
 const listed = (schema: Schema | undefined) => Object.keys(schema?.properties ?? {});
 /** Whether a schema's `enum` or `const`, where it has one, stays within `allowed`. */
@@ -319,6 +344,8 @@ export function connectorProblems(
       problems.push(`Capability ${c.name}: execute capabilities are never tools (D8).`);
     const view = viewProblem(c, connector.capabilities);
     if (view) problems.push(`Capability ${view} (D38).`);
+    const byKey = byKeyProblem(c, connector);
+    if (byKey) problems.push(byKey);
     const menu = menuProblem(c);
     if (menu) problems.push(`Capability ${menu} (D40).`);
     if ((c.view?.kind === 'document' || (c.view?.kind === 'record' && c.view.document)) && !connector.documents)

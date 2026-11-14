@@ -16,13 +16,14 @@ import type { EntityActions } from '../modules/entities/actions';
  * address, calling one use case and answering what it returns. A kind Clew does not have, a key outside the rule and a
  * source the reader may not use (or that nobody placed, for the list) all answer the same 404 as an unknown address, so
  * the answer never tells which. A person who manages nobody gets a list without groups, not a refusal: the web decides
- * what to draw. One write: an action from the entity's menu becomes a card (D8), and the same 404 answers an action the
- * entity does not offer the reader. Its effect (D112) is a read of what the action would write, with the same 404.
+ * what to draw. Two writes: an action from the entity's menu becomes a card (D8), and an execute sent from its dialog
+ * becomes its card and its decision at once (D126 item 7); the same 404 answers an action the entity does not offer the
+ * reader. Its effect (D112) is a read of what the action would write, with the same 404.
  */
 export interface EntityRouteDeps {
   entities: Pick<EntityUsecases, 'list' | 'rows' | 'detail' | 'section'>;
-  /** Starting an action about an entity, and what it would write; without it the routes only read. */
-  actions?: Pick<EntityActions, 'start' | 'effect'>;
+  /** Starting an action about an entity, deciding an execute, and what it would write; without it the routes only read. */
+  actions?: Pick<EntityActions, 'start' | 'effect'> & Partial<Pick<EntityActions, 'decide'>>;
   /** The session guard; a test passes its own. */
   guard?: MiddlewareHandler<Env>;
 }
@@ -33,7 +34,7 @@ function capabilityOf(value: string | undefined) {
   if (!value || !CAPABILITY.test(value)) throw new InputError('Ogiltig förfrågan.');
   return value;
 }
-/** The body of a start or an effect: `{ capability }`, with the person's answers to its asks in `values` (D112), and nothing else. */
+/** The body of a start, a decision or an effect: `{ capability }`, with the person's answers to its asks in `values` (D112), and nothing else. */
 async function actionInput(request: Request): Promise<EntityActionInput> {
   const text = await request.text();
   let value: unknown;
@@ -98,6 +99,19 @@ export function entityRoutes(deps: EntityRouteDeps) {
       const { capability, values } = await actionInput(c.req.raw);
       return answer(c, await actions.start(c.get('session').context, kind, c.req.param('key'), capability, values));
     });
+    /**
+     * An execute sent from the action dialog's last button (D126 item 7): its card and its human decision with the
+     * person's answers, in that order; nothing of it exists before this request.
+     */
+    if (actions.decide) {
+      const decide = actions.decide;
+      routes.post('/:kind/:key/decide', async c => {
+        const kind = kindOf(c);
+        if (!kind) return notFound(c);
+        const { capability, values } = await actionInput(c.req.raw);
+        return answer(c, await decide(c.get('session').context, kind, c.req.param('key'), capability, values));
+      });
+    }
     /** "Det här händer" before the card exists (D112): what the action would write; a read, nothing is written. */
     routes.post('/:kind/:key/effect', async c => {
       const kind = kindOf(c);

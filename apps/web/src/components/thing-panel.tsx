@@ -1,7 +1,6 @@
 import { useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { Button, Icon, SparklesIcon } from '@clew/ui';
-import { withAsk } from '../panel-address';
 import { addressChipRefs } from '../conversation-about';
 import { useConversation, useModelConfigured, type ThingSubject } from './conversation-context';
 
@@ -32,11 +31,10 @@ export function useAskAbout(): (subject: ThingSubject, options?: { replace?: boo
 }
 
 /**
- * "Fråga Clew" (D126 rule 5, board Ärende): a ghost button among a thing's actions that leads to a new conversation
- * with that thing beside it (`useAskAbout`). Nothing is asked until the person writes. A page that names its thing
- * passes it as `subject`; one that does not yet leads to its own address with `ask=1`, which its `usePagePanel` turns
- * into the same conversation about the thing it passes as `pageThing`. Without a model there is nothing to ask, and the
- * button is not drawn (D8). `onAsk` replaces the whole verb, for a page that asks otherwise.
+ * "Fråga Clew" (D126 rule 5, boards Ärende and Person): the one button every page uses to ask about its thing, a ghost
+ * with the sparkles among the thing's actions, leading to a new conversation with that thing beside it
+ * (`useAskAbout`). Nothing is asked until the person writes. Until the page knows its thing, and without a model to ask
+ * (D8), the button is not drawn. `onAsk` replaces the whole verb, for a page that asks otherwise.
  */
 export function AskClew({
   label = 'Fråga Clew',
@@ -52,15 +50,11 @@ export function AskClew({
   size?: 'sm' | 'md' | 'lg';
 }) {
   const model = useModelConfigured();
-  const { pathname, search } = useLocation();
   const askAbout = useAskAbout();
-  if (!model) return null;
-  const icon = <Icon icon={SparklesIcon} size="sm" />;
   const ask = onAsk ?? (subject ? () => askAbout(subject) : undefined);
-  return ask ? (
-    <Button size={size} variant="ghost" label={label} icon={icon} onClick={ask} />
-  ) : (
-    <Button size={size} variant="ghost" label={label} icon={icon} href={withAsk(pathname, search)} />
+  if (!model || !ask) return null;
+  return (
+    <Button size={size} variant="ghost" label={label} icon={<Icon icon={SparklesIcon} size="sm" />} onClick={ask} />
   );
 }
 

@@ -9,8 +9,6 @@ import {
   Button,
   EmptyState,
   HStack,
-  Layout,
-  LayoutContent,
   Link,
   List,
   ListItem,
@@ -39,14 +37,7 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
 import { AskClew } from '../components/thing-panel';
 import { DialogueTab } from '../components/dialogue-overlay';
-import {
-  EntityPage,
-  PAGE_WIDTH,
-  PageSection,
-  RailSection,
-  ThingTabs,
-  type PageSectionEntry,
-} from '../components/entity-page';
+import { EntityPage, PageSection, RailSection, ThingTabs, type PageSectionEntry } from '../components/entity-page';
 import {
   EntityActions,
   NeedsYouRows,
@@ -62,6 +53,7 @@ import {
   type SectionAnswer,
 } from '../components/entity-sections';
 import { KeyFigureTiles } from '../components/unit-figures';
+import { PageFrame } from '../components/page-frame';
 
 /**
  * Whether the reader manages the unit and how many people it has: the people the reader may ask about come in one group
@@ -419,39 +411,33 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   let body: ReactNode;
   if (missing || read.isError || !detail)
     body = (
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        contentWidth={PAGE_WIDTH}
-        content={
-          <LayoutContent padding={mobile ? 4 : 6} isScrollable={!short}>
-            {missing ? (
-              <EmptyState
-                headingLevel={1}
-                title="Enheten finns inte"
-                description="Det finns ingen sådan enhet, eller så hör du inte till den. Adressen kan också ha ändrats."
-                actions={<Button label="Till startsidan" href="/" />}
+      <PageFrame>
+        {missing ? (
+          <EmptyState
+            headingLevel={1}
+            title="Enheten finns inte"
+            description="Det finns ingen sådan enhet, eller så hör du inte till den. Adressen kan också ha ändrats."
+            actions={<Button label="Till startsidan" href="/" />}
+          />
+        ) : read.isError ? (
+          <VStack gap={3}>
+            <Text as="p" role="alert">
+              {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
+            </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                isLoading={read.isFetching}
+                onClick={() => void read.refetch()}
               />
-            ) : read.isError ? (
-              <VStack gap={3}>
-                <Text as="p" role="alert">
-                  {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
-                </Text>
-                <HStack>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    label="Försök igen"
-                    isLoading={read.isFetching}
-                    onClick={() => void read.refetch()}
-                  />
-                </HStack>
-              </VStack>
-            ) : (
-              <ContentSkeleton />
-            )}
-          </LayoutContent>
-        }
-      />
+            </HStack>
+          </VStack>
+        ) : (
+          <ContentSkeleton />
+        )}
+      </PageFrame>
     );
   else {
     const { name } = detail.entity;
