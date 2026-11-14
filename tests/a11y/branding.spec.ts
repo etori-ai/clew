@@ -125,7 +125,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
     await open(page, '/calendar');
     for (const appearance of ['light', 'dark'] as const) {
       if (appearance === 'dark') {
-        await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
+        await open(page, '/calendar?settings=1');
         await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
         await page.keyboard.press('Escape');
       }
@@ -145,7 +145,8 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
 
   test('appearance changes the theme and survives navigation and reload', async ({ page, api: _ }) => {
     await page.goto('/');
-    const profileButton = page.getByRole('button', { name: 'Testa Testsson', exact: true });
+    // The person at the rail's foot is the link to their own page; their settings open from the address (D126).
+    const profileButton = page.getByRole('link', { name: 'Testa Testsson', exact: true });
     await expect(profileButton).toBeVisible();
     await expect(page.getByRole('main').getByRole('heading', { level: 1 }).first()).toBeVisible();
     const appearance = () =>
@@ -158,7 +159,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
           color: getComputedStyle(element).color,
         }));
     const light = await appearance();
-    await profileButton.click();
+    await page.goto('/?settings=1');
     await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
     const dark = await appearance();
     expect(dark.mode).toBe('dark');
@@ -181,7 +182,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
     await page.reload();
     await expect(profileButton).toBeVisible();
     await expect.poll(async () => (await appearance()).mode).toBe(dark.mode);
-    await profileButton.click();
+    await page.goto('/calendar?settings=1');
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();
     // The default follows the computer, so it has both schemes open; Ljust fixes one, with the same colour.
     expect(light.mode).toBe('light dark');

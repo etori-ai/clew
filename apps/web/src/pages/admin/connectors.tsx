@@ -33,7 +33,6 @@ import { usePageTitle } from '../../page-title';
 import { AddConnectorDialog } from './add';
 import { audienceLabel, kindLabel, statusOf } from './labels';
 import { AdminShell } from './shell';
-import { PageHeader } from '../../components/page-header';
 import { DOT } from '../../dot';
 
 /**
@@ -98,18 +97,6 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
     const s = statusOf(c);
     return <StatusDot variant={s.tone} label={s.label} aria-hidden />;
   };
-  const statusText = (c: ConnectorSummary) => {
-    const s = statusOf(c);
-    return (
-      <VStack gap={0}>
-        <HStack gap={1} vAlign="center">
-          {status(c)}
-          <Text>{s.label}</Text>
-        </HStack>
-        <Text type="supporting">{c.bundled ? 'I processen' : <Timestamp value={c.health.at} format="auto" />}</Text>
-      </VStack>
-    );
-  };
   const toggle = (c: ConnectorSummary) => (
     <Switch
       size="sm"
@@ -132,67 +119,84 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
       </VStack>
     </HStack>
   );
+  // The board's register (D126, board Admin): the name is the link to the system's page, then whom it shows to, its
+  // state in words, when it was last checked and the switch. What a system can do is said on its page (Översikt), and on a
+  // phone, which has no columns, under its name.
   const columns = [
     {
       key: 'system',
       header: 'System',
-      width: proportional(1, { minWidth: 200 }),
+      width: proportional(2, { minWidth: 200 }),
       renderCell: (r: Row) => (
         <HStack gap={2} vAlign="center">
           <SystemSwatch ordinal={r.c.ordinal} />
           <VStack gap={0}>
-            <Link href={`/admin/connectors/${r.c.id}`} weight="semibold">
+            <Link href={`/admin/connectors/${r.c.id}`} color="primary" weight="semibold">
               {r.c.source}
             </Link>
-            <Text type="supporting">{idLine(r.c)}</Text>
+            <Text type="supporting" color="secondary">
+              {idLine(r.c)}
+            </Text>
           </VStack>
         </HStack>
       ),
     },
-    { key: 'status', header: 'Status', width: pixel(150), renderCell: (r: Row) => statusText(r.c) },
     {
       key: 'audience',
-      header: 'Vem ser det',
-      width: proportional(1, { minWidth: 120 }),
+      header: 'Syns för',
+      width: pixel(160),
       renderCell: (r: Row) => <Text>{audienceLabel(r.c.audience)}</Text>,
     },
     {
-      key: 'caps',
-      header: 'Funktioner',
-      width: proportional(1, { minWidth: 160 }),
+      key: 'status',
+      header: 'Läge',
+      width: pixel(170),
       renderCell: (r: Row) => (
-        <VStack gap={0}>
-          <Text>{functions(r.c)}</Text>
-          <Text type="supporting">{reach(r.c)}</Text>
-        </VStack>
+        <HStack gap={2} vAlign="center">
+          {status(r.c)}
+          <Text>{statusOf(r.c).label}</Text>
+        </HStack>
       ),
     },
-    { key: 'on', header: 'På', width: pixel(72), renderCell: (r: Row) => toggle(r.c) },
+    {
+      key: 'checked',
+      header: 'Kontrollerad',
+      width: pixel(140),
+      renderCell: (r: Row) => (
+        <Text color="secondary">{r.c.bundled ? 'I processen' : <Timestamp value={r.c.health.at} format="auto" />}</Text>
+      ),
+    },
+    { key: 'on', header: 'Påslagen', width: pixel(100), align: 'end' as const, renderCell: (r: Row) => toggle(r.c) },
   ];
   const all = connectors ?? [];
+  const problems = all.filter(c => matches(c, 'problem')).length;
   return (
-    <AdminShell user={user} crumbs={[{ label: 'Anslutna system' }]} pending={list.isPending}>
-      <PageHeader
-        title="Anslutna system"
-        end={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />}
-        meta={
-          <Text as="p" color="secondary">
-            Systemen Startsidan läser från och agerar i. Här avgör du vem som ser en anslutning; vad var och en får göra
-            avgör systemet självt.
-          </Text>
-        }
-      />
-      {error && (
-        <Text as="p" role="alert" color="accent">
-          {error}
-        </Text>
+    <AdminShell
+      user={user}
+      section="anslutningar"
+      title="Anslutna system"
+      meta={
+        connectors === null ? undefined : `${all.length} system${problems ? `\u00a0· ${problems} med problem` : ''}`
+      }
+      action={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />}
+      pending={list.isPending}
+    >
+      {(error || connectors === null) && (
+        <VStack gap={2}>
+          {error && (
+            <Text as="p" role="alert" color="accent">
+              {error}
+            </Text>
+          )}
+          {connectors === null && (
+            <Text type="supporting" role="status">
+              Läser anslutningarna …
+            </Text>
+          )}
+        </VStack>
       )}
-      {connectors === null && (
-        <Text type="supporting" role="status">
-          Läser anslutningarna …
-        </Text>
-      )}
-      {/* What is on, what has a problem and what is off are the filter's own counts: one row that both says and does. A Section with padding 0 bleeds over the page's gutters (it is edge-to-edge by definition); the bordered box is a Card. */}
+      {/* The register sits in the page's column in a card, as Hem's lists do (D126). What is on, what has a problem and
+          what is off are the filter's own counts, in a toolbar over it: one row that both says and does. */}
       {connectors !== null && (
         <Card padding={0}>
           <Toolbar
@@ -209,11 +213,6 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
                   />
                 ))}
               </SegmentedControl>
-            }
-            endContent={
-              <Text type="supporting">
-                {shown.length === all.length ? `${all.length} anslutningar` : `${shown.length} av ${all.length}`}
-              </Text>
             }
           />
           {shown.length === 0 && (

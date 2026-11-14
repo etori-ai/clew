@@ -57,7 +57,7 @@ group is the file's own and may be referenced:
 
 **Hämta mall för temafil** on the page downloads a valid file to start from: Clew's own base colours for the roles
 the contrast check reads. Once a theme is saved the same button downloads that theme.
-[`themes/sundsvall/theme.tokens.json`](../../themes/sundsvall/theme.tokens.json) is a complete example with a palette.
+[`themes/sundsvall/theme.tokens.json`](../../themes/sundsvall/theme.tokens.json) is a complete example with a palette, and [`themes/clew/`](../../themes/clew/) is Clew's own look, chosen on the canvas of [D126](../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md) item 11: ink indigo as the accent on a cool paper ground, with the ball of thread as its logo. An installation nobody has configured stays Astryx Neutral (D46); Clew's look is applied like any other example.
 
 ### What is refused
 
@@ -96,7 +96,7 @@ The account row › Inställningar offers light and dark mode, saved as a local 
 Where the database is reachable (inside the app container), the same changes without a browser:
 
 ```sh
-bun scripts/appearance-set.ts themes/sundsvall   # the theme and logo an example folder names
+bun scripts/appearance-set.ts themes/clew        # the theme and logo an example folder names (or themes/sundsvall)
 bun scripts/appearance-set.ts --reset            # Astryx Neutral, no logo
 bun scripts/appearance-set.ts --show             # what is saved now
 ```

@@ -15,8 +15,9 @@ test.describe('appearance (D39)', () => {
   test('follows the computer until the person chooses, and the choice is kept', async ({ page, api: _ }) => {
     await open(page, '/');
     await expect.poll(() => dark(page)).toBe(true);
-    // Without a header connector the person is the rail's last row, in the drawer on a phone (D112 item 1).
-    await (await openNav(page)).getByRole('button', { name: 'Testa Testsson', exact: true }).click();
+    // Without a header connector the person's settings open over the page from their address, which their own page
+    // links to (D126: the person at the rail's foot is the link to that page).
+    await open(page, '/?settings=1');
     await expect(page.getByRole('radio', { name: 'Samma som datorn', exact: true })).toBeChecked();
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();
     await expect.poll(() => dark(page)).toBe(false);

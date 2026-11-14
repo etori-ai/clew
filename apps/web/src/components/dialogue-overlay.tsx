@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   DIALOGUE_TEXT_MAX,
@@ -15,47 +14,32 @@ import {
   AlertDialog,
   Badge,
   Banner,
-  BottomSheet,
   Button,
   DateInput,
-  Drawer,
-  DrawerHeader,
   EmptyState,
   FormLayout,
   Heading,
   HStack,
-  Icon,
-  IconButton,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   List,
   ListItem,
   RadioList,
   RadioListItem,
-  StackItem,
   StatusDot,
   Tab,
   TabList,
   Text,
   TextArea,
   VStack,
-  useMediaQuery,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { api } from '../api';
 import { dialogueQuery, entityDetailQuery, entitySectionQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { useDialogueAction } from '../mutations';
-import { useOverlayTitle } from '../page-title';
-import { dialogueOf, withDialogue, withoutDialogue } from '../dialogue-address';
 import { ContentSkeleton } from './loading';
 import { StateWords, measureOf, summaryOf } from './unit-figures';
 import { fieldText } from './view';
-import { mobileQuery, shortQuery } from './shell';
 
-/** The drawer's desktop width: a unit's dialogue, area by area, with its forms. */
-const DIALOGUE_WIDTH = 600;
 /** The words of a state, as the server's `TONE_WORDS`; the colour is never alone. */
 const TONE: Record<
   DialogueTone,
@@ -78,143 +62,54 @@ const instant = new Intl.DateTimeFormat('sv-SE', {
 const instantText = (at: string) => instant.format(new Date(at)).replace(/\./g, '');
 
 /**
- * One unit's follow-up dialogue (D118) as a focused overlay over the unit's page (D83, D111 rule 5), composed as the
- * talk drawer is: an end `Drawer` on a desktop and a tall `BottomSheet` on a phone. The address is the page's own with
- * `dialog=<unitId>` (`dialogue-address.ts`); the page stays mounted under it. Closing (✕, Esc, the way back) replaces the
- * address with the same one without `dialog`, and the focus goes back to what opened it, else the section's "Öppna
- * dialogen". Nothing is read until an address names a dialogue.
+ * One unit's follow-up dialogue (D118) as the dialogue's tab on the unit's page (D126 rule 3: the drawer that lay over
+ * the page is gone; the dialogue is where the unit is). The address is the unit's page with the dialogue's source as
+ * `section` (`person-address.ts`); an address that laid the drawer over the page (`?dialog=<unitId>`) leads here. Nothing
+ * is read until the tab is shown.
  *
  * The areas are tabs; each shows its figure or its assessment per dimension with the history, the questions to talk
- * about, the activities with a form to add one, and the reader's own notes (D120), which nobody else sees. A refusal (the module switched off, a unit the reader does not follow
- * up) is the dialogue that is not there, with the way back.
+ * about, the activities with a form to add one, and the reader's own notes (D120), which nobody else sees. A refusal (the
+ * module switched off, a unit the reader does not follow up) is the dialogue that is not there.
  */
-export function DialogueOverlay({ unitId, back }: { unitId: string; back: string }) {
-  const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const [search] = useSearchParams();
-  const mobile = useMediaQuery(mobileQuery);
-  const short = useMediaQuery(shortQuery);
-  const named = dialogueOf(search);
-  // The dialogue shown, kept while the overlay slides away so its content does not blank mid-exit (Astryx Drawer).
-  const [shownId, setShownId] = useState<string | null>(named);
-  if (named && named !== shownId) setShownId(named);
-  const read = useQuery({ ...dialogueQuery(shownId ?? unitId), enabled: !!shownId });
+export function DialogueTab({ unitId }: { unitId: string }) {
+  const read = useQuery(dialogueQuery(unitId));
   const data = read.data;
-  const settled = read.data !== undefined || read.isError;
-  const isOpen = !!named && settled;
-  const found = !!data && shownId === unitId;
-  const title = read.isError ? 'Uppföljningsdialog' : found ? data.unit.label : 'Uppföljningsdialogen finns inte';
-  const label = found ? `Uppföljningsdialog med ${data.unit.label}` : title;
-  useOverlayTitle(isOpen && found ? label : null);
-
-  const onOpenChange = (open: boolean) => {
-    if (!open) navigate(withoutDialogue(pathname, search), { replace: true });
-  };
-  // After a reload nothing opened the drawer, so the focus would stay on the page's body: the section's way into this
-  // dialogue takes it.
-  const page = useRef({ pathname, search: search.toString() });
-  page.current = { pathname, search: search.toString() };
-  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
-  const sheetPanel = useCallback((panel: HTMLDivElement | null) => setDialog(panel?.closest('dialog') ?? null), []);
-  const openRef = useRef(named);
-  openRef.current = named;
-  const shownRef = useRef(shownId);
-  shownRef.current = shownId;
-  useEffect(() => {
-    if (!dialog) return;
-    const closed = () => {
-      const id = shownRef.current;
-      if (!openRef.current) setShownId(null);
-      requestAnimationFrame(() => {
-        const active = document.activeElement;
-        if (!id || (active && active !== document.body)) return;
-        const { pathname, search } = page.current;
-        // The section's way in is read on its own; when it has not arrived the first section's heading takes the focus,
-        // so it never falls to the page's body.
-        (
-          document.querySelector<HTMLElement>(`a[href="${CSS.escape(withDialogue(pathname, search, id))}"]`) ??
-          document.querySelector<HTMLElement>('main h2[tabindex="-1"]')
-        )?.focus();
-      });
-    };
-    dialog.addEventListener('close', closed);
-    return () => dialog.removeEventListener('close', closed);
-  }, [dialog]);
-
-  const header = mobile ? (
-    <LayoutHeader>
-      <VStack gap={1}>
-        <HStack justify="between" vAlign="center" gap={2}>
-          <StackItem size="fill">
-            <Heading level={2}>{title}</Heading>
-          </StackItem>
-          <IconButton variant="ghost" label="Stäng" icon={<Icon icon="close" />} onClick={() => onOpenChange(false)} />
-        </HStack>
-        {found && <Text type="supporting">Uppföljningsdialog</Text>}
-      </VStack>
-    </LayoutHeader>
-  ) : (
-    <DrawerHeader title={title} {...(found ? { subtitle: 'Uppföljningsdialog' } : {})} onOpenChange={onOpenChange} />
-  );
-  const content = !shownId ? null : read.isError ? (
-    <Banner
-      status="error"
-      title={errorMessage(read.error, 'Uppföljningsdialogen kunde inte hämtas.')}
-      endContent={
-        <Button
-          label="Försök igen"
-          size="sm"
-          variant="secondary"
-          isLoading={read.isFetching}
-          onClick={() => void read.refetch()}
-        />
-      }
-    />
-  ) : found ? (
-    data.areas.length ? (
-      <Dialogue key={data.unit.id} data={data} />
-    ) : (
-      <EmptyState
-        headingLevel={3}
-        title="Uppföljningsdialogen har inga områden än"
-        description="Ingen har lagt in områdena och frågorna för uppföljningsdialogen."
-        actions={<Button label={back} onClick={() => onOpenChange(false)} />}
+  if (read.isError)
+    return (
+      <Banner
+        status="error"
+        title={errorMessage(read.error, 'Uppföljningsdialogen kunde inte hämtas.')}
+        endContent={
+          <Button
+            label="Försök igen"
+            size="sm"
+            variant="secondary"
+            isLoading={read.isFetching}
+            onClick={() => void read.refetch()}
+          />
+        }
       />
-    )
+    );
+  if (data === undefined) return <ContentSkeleton label="Hämtar uppföljningsdialogen …" rows={4} heading={false} />;
+  // `null`: the module is off for the reader, or the unit is not one they follow up.
+  if (data === null || data.unit.id !== unitId)
+    return (
+      <EmptyState
+        isCompact
+        headingLevel={3}
+        title="Uppföljningsdialogen finns inte"
+        description="Enheten finns inte bland dem du följer upp, eller så är dialogstödet avstängt."
+      />
+    );
+  return data.areas.length ? (
+    <Dialogue key={data.unit.id} data={data} />
   ) : (
     <EmptyState
+      isCompact
       headingLevel={3}
-      title="Uppföljningsdialogen finns inte"
-      description="Enheten finns inte bland dem du följer upp, eller så är dialogstödet avstängt."
-      actions={<Button label={back} onClick={() => onOpenChange(false)} />}
+      title="Uppföljningsdialogen har inga områden än"
+      description="Ingen har lagt in områdena och frågorna för uppföljningsdialogen."
     />
-  );
-  const body = shownId ? (
-    <Layout height={short ? 'auto' : 'fill'} header={header} content={<LayoutContent>{content}</LayoutContent>} />
-  ) : null;
-  return mobile ? (
-    <BottomSheet
-      ref={sheetPanel}
-      isOpen={isOpen}
-      onOpenChange={onOpenChange}
-      label={label}
-      height="tall"
-      purpose="form"
-    >
-      {body}
-    </BottomSheet>
-  ) : (
-    <Drawer
-      ref={setDialog}
-      isOpen={isOpen}
-      onOpenChange={onOpenChange}
-      label={label}
-      side="end"
-      width={DIALOGUE_WIDTH}
-      purpose="form"
-    >
-      {body}
-    </Drawer>
   );
 }
 

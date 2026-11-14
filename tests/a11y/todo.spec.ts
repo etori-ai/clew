@@ -11,98 +11,48 @@ import {
 } from './support';
 import { menuRow } from './phonebook';
 
-/** Wide enough for the panel to stand beside the page's column (D50); at the suite's desktop width it lies over it. */
+/** Wide enough for a pane to stand beside the queue or the conversation (D126 rule 2). */
 const wide = { width: 1440, height: 900 };
-/** Hem's box as it is with nothing added: also with a card open beside it (D111 rule 6). */
-const HEM_PLACEHOLDER = 'Skriv eller säg vad du vill göra …';
 
 /**
- * D50: the column is where the person is, the panel is what they hold beside it, and the conversation is never in the
- * panel. A work item opened from Att göra is in its reading pane (D112 item 3, `queue.spec.ts`); the card is drawn
- * there as it is drawn everywhere, so its own reads and its rows' links are tested here, in the pane. Opening is not
- * asking (D111 rule 6): a card goes into the box only with "Lägg till i samtalet", where a box is on the page.
+ * One page per thing (D126 rules 1 to 3): nothing lies beside or over a page, and a pane exists in two places only,
+ * beside Att göra's queue and beside a conversation. A work item opened from Att göra is in its reading pane
+ * (`queue.spec.ts`); the item is drawn there as it is drawn everywhere, so its own reads and its rows' links are tested
+ * here, in the pane. Opening is not asking (D111 rule 6): beside a conversation an item goes into the box only with
+ * "Lägg till i samtalet".
  */
-test.describe('the panel beside the page', () => {
+test.describe('the panes beside the queue and the conversation', () => {
   test.use({ viewport: wide });
 
-  test('beside the page the panel comes with what was opened and folds away and back with the one button on its edge; at rest there is no panel', async ({
+  test('nothing stands beside Hem and nothing scrolls sideways; an address that opened a view beside it leads to the view’s page, and Back returns to Hem', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
-    const panel = page.getByRole('complementary', { name: 'Bemanning' });
-    // The page never scrolls sideways (1.4.10): the folded panel's handle once stood on the window's edge with half of
-    // its grab zone past it, which made the shell's main area 8 px wider inside than it shows. The handle is there
-    // only while the panel is shown.
+    // The page never scrolls sideways (1.4.10), and there is no panel, no handle and no button for one (rule 3).
     const sideways = () => page.getByRole('main').evaluate(el => el.scrollWidth - el.clientWidth);
-    const handle = page.getByRole('separator', { name: 'Ändra panelens bredd' });
     expect(await sideways()).toBe(0);
-    await expect(handle).toHaveCount(0);
-    // At rest the panel is folded away (D72, revised 2026-11-10): no region for what was opened, and the one button in
-    // the page's corner saying the way to the panel.
-    await expect(page.getByRole('button', { name: 'Fäll ihop panelen' })).toHaveCount(0);
-    const atRest = page.getByRole('button', { name: 'Visa panelen' });
-    await expect(atRest).toBeVisible();
-    await expect(page.getByRole('complementary', { name: 'Öppet bredvid' })).toHaveCount(0);
-    // Shown with nothing open the panel says so, with the focus on its heading; Esc folds it and gives the focus to
-    // the button.
-    await atRest.click();
-    const empty = page.getByRole('complementary', { name: 'Öppet bredvid' });
-    await expect(empty.getByRole('heading', { name: 'Inget är öppet bredvid sidan' })).toBeVisible();
-    await expect(empty.locator('[aria-level="2"]').filter({ hasText: 'Öppet bredvid' })).toBeFocused();
-    await expect(page).toHaveURL(/\/$/);
-    await expect(handle).toBeVisible();
-    expect(await sideways()).toBe(0);
-    await expectNoAxeViolations(page);
-    await page.keyboard.press('Escape');
-    await expect(empty).toHaveCount(0);
-    await expect(atRest).toBeFocused();
-    await expect(handle).toHaveCount(0);
-    expect(await sideways()).toBe(0);
-    // A view opened brings the panel with it alone.
+    await expect(page.getByRole('complementary')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /panelen/ })).toHaveCount(0);
+    await expect(page.getByRole('separator', { name: 'Ändra panelens bredd' })).toHaveCount(0);
+    await expect(composer(page)).toBeVisible();
+    // An address from before D126 that held a view beside Hem is the view's own page in its place, Hem its way back.
     await open(page, '/?open=hr.whoIsOn&open-title=Bemanning');
-    await expect(panel).toBeVisible();
-    // The button floats over the page's top right corner beside the panel's inner edge, outside the panel, so it is
-    // there when the panel is folded away, and in a layer of its own, so no column of the page's is kept for it. It
-    // stands clear of a scrollbar that takes space (17 px at most), in the 32 px the page keeps free (D63 item 14,
-    // revised 2026-11-10).
-    const fold = page.getByRole('button', { name: 'Fäll ihop panelen' });
-    await expect(panel.getByRole('button', { name: 'Fäll ihop panelen' })).toHaveCount(0);
-    const gap = (await panel.boundingBox())!.x - ((await fold.boundingBox())!.x + (await fold.boundingBox())!.width);
-    expect(gap).toBeGreaterThanOrEqual(18);
-    expect(gap).toBeLessThanOrEqual(24);
-    expect(await fold.evaluate(el => el.closest(':popover-open') !== null)).toBe(true);
-    await expect(handle).toBeVisible();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.whoIsOn\?/);
+    await expect(heading(page, 1, 'Bemanning')).toBeVisible();
+    await expect(page.getByRole('complementary')).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(await sideways()).toBe(0);
-    await fold.click();
-    // Folding hides and nothing more (D63 item 14, revised): the address keeps the view, the box is as it was
-    // (opening is not asking, D111 rule 6), and the focus stays on the button, which now says the way back, at the
-    // window's edge.
-    await expect(panel).toHaveCount(0);
-    await expect(page).toHaveURL(/\/\?open=hr\.whoIsOn&open-title=Bemanning$/);
-    await expect(page.getByText(HEM_PLACEHOLDER, { exact: true })).toBeVisible();
-    const show = page.getByRole('button', { name: 'Visa panelen' });
-    await expect(show).toBeFocused();
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen är ihopfälld'));
-    // The button stands at the window's edge with the folded panel, the handle is gone and nothing scrolls sideways.
-    await expect
-      .poll(async () => (await show.boundingBox())!.x + (await show.boundingBox())!.width)
-      .toBeGreaterThan(1440 - 40);
-    expect((await show.boundingBox())!.x + (await show.boundingBox())!.width).toBeLessThanOrEqual(1440 - 18);
-    await expect(handle).toHaveCount(0);
-    expect(await sideways()).toBe(0);
-    // Showing it again brings the view back with the focus on its heading.
-    await show.click();
-    await expect(panel).toBeVisible();
-    await expect(panel.getByRole('heading', { level: 2, name: 'Bemanning' })).toBeFocused();
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen visas'));
     await expectNoAxeViolations(page);
-    // Closing what it holds removes the panel, and the button stays.
-    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
+    const back = page
+      .getByRole('main')
+      .getByRole('link', { name: /Hem|Startsidan/ })
+      .first();
+    await expect(back).toHaveAttribute('href', '/');
+    await back.focus();
+    await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/$/);
-    await expect(panel).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Fäll ihop panelen' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Visa panelen' })).toBeVisible();
+    await expect(composer(page)).toBeVisible();
   });
 
   test('opening a card leaves the box as it was; Lägg till i samtalet puts it in, with its verbs, and its X lets go of the chip, not of the card', async ({
@@ -115,7 +65,8 @@ test.describe('the panel beside the page', () => {
     );
     // Beside a conversation, where a box is on the page (Hem holds no card since D112: its cards are Att göra's).
     await open(page, '/conversations/fraga?card=fakturor');
-    const panel = page.getByRole('complementary', { name: 'Ärende' });
+    // The pane beside a conversation is named by the thing it holds (D126 rule 2).
+    const panel = page.getByRole('complementary', { name: 'Attestera 3 fakturor, 48 200 kr' });
     const card = panel.locator('#card-fakturor');
     await expect(card.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
     // Opening is not asking: no token and no verbs about the card.
@@ -146,97 +97,66 @@ test.describe('the panel beside the page', () => {
     await expect(card.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
   });
 
-  test("a card's own read unfolds inside the card under its buttons, is said aloud, survives a reload and folds again", async ({
+  test("a work item's own read is a link to the read's page under Fler åtgärder, with the queue and the item as the way back, and Back returns to the item", async ({
     page,
-    api,
+    api: _,
   }) => {
-    api.cardReadDelay = 400;
     await open(page, '/todo?item=omtanke');
-    const card = page.getByRole('complementary', { name: 'Valt ärende' });
-    const button = card.locator('[data-read="pattern"]');
-    await expect(button).toHaveAccessibleName('Se mönstret');
-    await expect(button).toHaveAttribute('aria-expanded', 'false');
-    await button.click();
-    // The address says which read is unfolded, in place of the one before: Back is not a step through every fold.
-    await expect(page).toHaveURL(/\/todo\?item=omtanke&open-card=omtanke&open-action=pattern$/);
-    const section = card.locator('#read-card-omtanke');
-    // While the read is on its way the section holds its shape, and the focus stays on the button.
-    await expect(section.locator('[aria-busy="true"]')).toBeVisible();
-    await expect(button).toBeFocused();
-    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
-    await expect(button).toBeFocused();
-    await expect(button).toHaveAttribute('aria-expanded', 'true');
-    await expect(button).toHaveAttribute('aria-controls', 'read-card-omtanke');
-    await expect
-      .poll(async () => (await announcements(page)).filter(a => a === 'Se mönstret visas i ärendet.'))
-      .toHaveLength(1);
-    // The card stays whole around it: its title, its decision, and nothing has taken its place in the panel.
-    await expect(card.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
-    await expect(card.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
-    await expect(page.getByRole('complementary', { name: 'Se mönstret' })).toHaveCount(0);
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+    // Nothing unfolds inside the item (D126 rule 3): the read is a row of the item's menu that is a link to its page.
+    await expect(pane.locator('[aria-controls^="read-card-"]')).toHaveCount(0);
+    const more = pane.getByRole('button', { name: 'Fler åtgärder' });
+    await more.click();
+    const read = page.getByRole('menu', { name: 'Fler åtgärder' }).getByRole('menuitem', { name: 'Se mönstret' });
+    await expect(read).toHaveAttribute('href', /^\/tools\/hr\.absencePattern\?.*from=%2Ftodo%3Fitem%3Domtanke/);
     await expectNoAxeViolations(page);
-    // A reload is the same card with the same read unfolded.
-    await page.reload();
-    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
-    await expect(button).toHaveAttribute('aria-expanded', 'true');
-    // The section's own toggle folds it, and the focus goes to the button that unfolded it.
-    await section.getByRole('button', { name: 'Se mönstret' }).click();
+    await read.click();
+    // The read's own page: its title, its rows, the queue with the item as its way back, and nothing over it.
+    await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.absencePattern\?/);
+    await expect(heading(page, 1, 'Se mönstret')).toBeVisible();
+    await expect(page.getByRole('main').getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(
+      page
+        .getByRole('main')
+        .getByRole('link', { name: /Att göra/ })
+        .first(),
+    ).toHaveAttribute('href', '/todo?item=omtanke');
+    await expectNoAxeViolations(page);
+    // Back is the queue with the item in its pane, as it was.
+    await page.goBack();
     await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
-    await expect(section).toHaveCount(0);
-    await expect(button).toBeFocused();
-    await expect(button).toHaveAttribute('aria-expanded', 'false');
-    // The button unfolds it again and folds it again; the card stays where it is all along.
-    await button.click();
-    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
-    await button.click();
-    await expect(section).toHaveCount(0);
-    await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
-    await expect(button).toBeFocused();
+    await expect(pane.getByRole('heading', { name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
   });
 
-  test("a card's read that fails says so in the card with Försök igen, one that answers with an address opens a tab and unfolds nothing, and one declared as a link out says so", async ({
+  test("an address that unfolded a read in the item leads to the read's page, which says when its source does not answer and reads again with Försök igen; a read declared as a link out says so", async ({
     page,
-    api,
+    api: _,
   }) => {
-    api.cardReadFails = true;
+    let fails = true;
+    await page.route('**/api/cap/hr.absencePattern*', route =>
+      fails ? route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } }) : route.fallback(),
+    );
+    // An address from before D126 (`open-card`, `open-action`) is the read's page in its place: never a decision.
     await open(page, '/todo?item=omtanke&open-card=omtanke&open-action=pattern');
-    const card = page.getByRole('complementary', { name: 'Valt ärende' });
-    const section = card.locator('#read-card-omtanke');
-    await expect(section.getByText('Källan svarade inte.')).toBeVisible();
-    await expect
-      .poll(async () => (await announcements(page)).filter(a => a === 'Källan svarade inte.'))
-      .toHaveLength(1);
-    await expect(card.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.absencePattern\?/);
+    const main = page.getByRole('main');
+    await expect(main.getByText('Källan svarade inte.')).toBeVisible();
     await expectNoAxeViolations(page);
-    api.cardReadFails = false;
-    await section.getByRole('button', { name: 'Försök igen' }).click();
-    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
-    // A read that answers with an address is a way out: a new tab once, and the card stays folded.
-    await open(page, '/todo?item=omtanke');
-    api.cardReads.pattern = { output: { url: 'https://hr.example.test/franvaro/anna' } };
-    await page.evaluate(() => {
-      const opened: string[] = [];
-      Object.assign(window, { opened });
-      window.open = (url?: string | URL) => {
-        opened.push(String(url));
-        return null;
-      };
-    });
-    await card.locator('[data-read="pattern"]').click();
-    await expect
-      .poll(() => page.evaluate(() => (window as unknown as { opened: string[] }).opened))
-      .toEqual(['https://hr.example.test/franvaro/anna']);
-    await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
-    await expect(section).toHaveCount(0);
-    await expect(card.locator('[data-read="pattern"]')).toBeFocused();
-    await expect
-      .poll(async () => (await announcements(page)).filter(a => a.includes('öppnades i en ny flik')))
-      .toHaveLength(1);
-    // A read declared as a link out (`target: 'link'`) says on its button that it leaves Clew, in the words Astryx's own
+    fails = false;
+    await main.getByRole('button', { name: 'Försök igen' }).click();
+    await expect(main.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    // A read declared as a link out (`target: 'link'`) says on its row that it leaves Clew, in the words Astryx's own
     // link out says (D111 rule 8).
     await open(page, '/todo?item=fakturor');
-    await expect(card.getByRole('button', { name: /^Öppna i ekonomisystemet\s*\(öppnas i ny flik\)$/ })).toBeVisible();
+    const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+    const out = pane
+      .getByRole('button', { name: /^Öppna i ekonomisystemet\s*\(öppnas i ny flik\)$/ })
+      .or(pane.getByRole('link', { name: /^Öppna i ekonomisystemet\s*\(öppnas i ny flik\)$/ }));
+    if (!(await out.first().isVisible())) await pane.getByRole('button', { name: 'Fler åtgärder' }).click();
+    await expect(
+      out.or(page.getByRole('menuitem', { name: /^Öppna i ekonomisystemet\s*\(öppnas i ny flik\)$/ })).first(),
+    ).toBeVisible();
     await expectNoAxeViolations(page);
   });
 
@@ -279,49 +199,10 @@ test.describe('the panel beside the page', () => {
     await expect(log).toContainText('Sök i telefonboken: 2 rader.');
     await expect(log.getByRole('link', { name: 'Visa allt' })).toBeFocused();
   });
-
-  test("Fråga Clew on a tool's page asks about the page in the panel; the conversation goes on with the view beside it, searched as it was", async ({
-    page,
-    api,
-  }) => {
-    api.menu = [menuRow];
-    await open(page, `/tools/phonebook.directory?input=${encodeURIComponent(JSON.stringify({ query: 'lärare' }))}`);
-    // The tool's page asks with "Fråga Clew" in its header (D112 item 7): no box at its foot.
-    await expect(composer(page)).toHaveCount(0);
-    await page.getByRole('main').getByRole('link', { name: 'Fråga Clew' }).click();
-    const panel = page.getByRole('complementary', { name: 'Telefonbok' });
-    const box = panel.getByRole('textbox', { name: 'Fråga Clew' });
-    await box.fill('Vem är på plats?');
-    await box.press('Enter');
-    await expect(panel.getByText('Tio personer är på plats i dag.')).toBeVisible();
-    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?/);
-    await expect(box).toBeFocused();
-    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:phonebook.directory']);
-    await expectNoAxeViolations(page);
-    // "Fortsätt som samtal" leads to the conversation. The directory is a table, a page of its own (D116), so it is not
-    // drawn beside the transcript: the conversation keeps it as its chip.
-    await panel.getByRole('link', { name: 'Fortsätt som samtal' }).click();
-    await expect(page).toHaveURL(/\/conversations\/[^/?]+$/);
-    await expect(page.getByRole('complementary', { name: 'Telefonbok' })).toHaveCount(0);
-    await expect(answer(page)).toBeVisible();
-  });
 });
 
 test.describe('asking from a page on a narrower screen', () => {
   test.use({ viewport: desktop });
-
-  test("the tool's page asks in the drawer over it, with the view as the question's subject", async ({ page, api }) => {
-    api.menu = [menuRow];
-    await open(page, '/tools/phonebook.directory');
-    await page.getByRole('main').getByRole('link', { name: 'Fråga Clew' }).click();
-    const drawer = page.getByRole('dialog', { name: 'Telefonbok' });
-    const box = drawer.getByRole('textbox', { name: 'Fråga Clew' });
-    await box.fill('Vem är på plats?');
-    await box.press('Enter');
-    await expect(drawer.getByText('Tio personer är på plats i dag.')).toBeVisible();
-    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?ask=1$/);
-    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:phonebook.directory']);
-  });
 
   test('a question on the landing after a closed conversation starts a new one', async ({ page, api }) => {
     await open(page, '/');
@@ -368,8 +249,12 @@ test.describe('a card row that names a person', () => {
     );
     await open(page, '/todo?item=omtanke');
     const card = page.getByRole('complementary', { name: 'Valt ärende' }).locator('#card-omtanke');
-    const name = card.getByRole('link', { name: 'Anna Lindqvist', exact: true });
+    const name = card.getByRole('region', { name: 'Rader' }).getByRole('link', { name: 'Anna Lindqvist', exact: true });
     await expect(name).toHaveAttribute('href', '/people/anna?from=%2Ftodo%3Fitem%3Domtanke');
+    // The item's facts name whom it is about too (D126 rule 1, "Berör"), with the same link to the same page.
+    await expect(
+      card.getByRole('definition').getByRole('link', { name: 'Anna Lindqvist', exact: true }),
+    ).toHaveAttribute('href', '/people/anna?from=%2Ftodo%3Fitem%3Domtanke');
     await expect(card.getByText('Tre sjukperioder sedan juni')).toBeVisible();
     await expectNoAxeViolations(page);
     // From the item's heading the keyboard reaches its buttons in the header, then the name in its rows (board WorkItem).
@@ -431,7 +316,7 @@ test.describe('a card row that names a person', () => {
     const card = page.getByRole('complementary', { name: 'Valt ärende' }).locator('#card-sjuk');
     const box = card.getByRole('checkbox', { name: /Erik Sandström/ });
     await expect(box).toBeChecked();
-    const name = card.getByRole('link', { name: 'Erik Sandström', exact: true });
+    const name = card.getByRole('region', { name: 'Rader' }).getByRole('link', { name: 'Erik Sandström', exact: true });
     await expect(name).toHaveAttribute('href', '/people/erik?from=%2Ftodo%3Fitem%3Dsjuk');
     await expectNoAxeViolations(page);
     // Pressing the link leads away; it does not tick the row.

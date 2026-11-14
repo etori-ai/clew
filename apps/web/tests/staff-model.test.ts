@@ -208,9 +208,10 @@ describe('Personal (D97)', () => {
     expect(cardLinkTexts(withCards, 'p-anna')).toEqual([]);
   });
   test('the count line names the unit, or how many units there are', () => {
-    expect(peopleLine(list.groups)).toBe('6 medarbetare på Bergsåkers skola');
+    // Board Personal: the unit first, then how many.
+    expect(peopleLine(list.groups)).toBe('Bergsåkers skola\u00a0· 6 medarbetare');
     expect(peopleLine([...list.groups, { id: 'u2', label: 'Fritids', entities: [person('lena')] }])).toBe(
-      '7 medarbetare på 2 enheter',
+      '2 enheter\u00a0· 7 medarbetare',
     );
   });
 });

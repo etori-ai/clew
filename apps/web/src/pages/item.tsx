@@ -1,26 +1,27 @@
 import { useCallback, useRef } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { isSnoozed, type SessionUser, type Thread } from '@clew/contracts';
-import { Button, EmptyState, HStack, Layout, LayoutContent, Link, Text, VStack, useMediaQuery } from '@clew/ui';
+import { Button, EmptyState, HStack, Text, VStack, useMediaQuery } from '@clew/ui';
 import { ApiError } from '../api';
 import { areasQuery, threadQuery, threadsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
 import { todoHref } from '../work-items';
+import { useShownForTheWayBack } from '../way-back';
 import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { Shell, shortQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
 import { WorkItemPage } from '../components/work-item';
 import { cardBody } from '../components/card-panel';
-import { itemSubject, usePagePanel, type OwnThing } from '../components/page-panel';
+import { itemSubject } from '../components/view-read';
 import { AskClew } from '../components/thing-panel';
-import { PageHeader } from '../components/page-header';
+import { PageFrame } from '../components/page-frame';
 
 /**
- * A work item as a page (D112 item 4, board WorkItem, `/items/<threadId>`): the item's own address, reached by its title
- * in Att göra's reading pane and in the panel beside any page, with `from` as the way back (the same
+ * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`): the item's own address, reached by its name
+ * in every row and by its title in Att göra's reading pane, with `from` as the way back (the same
  * convention as a person's page, `person-address.ts`). The way back names the page it came from when Clew can name it,
  * else Att göra. The item comes from the stream every page shares (D33), so a decision here is the decision everywhere;
  * an item the stream no longer lists (handled long ago) is read on its own. An item the person may not see is the
@@ -33,9 +34,11 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
   const { threadId = '' } = useParams<{ threadId: string }>();
   const [search] = useSearchParams();
   const navigate = useNavigate();
-  const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
   const from = insideClew(search.get('from'));
+  // Back, or the way back, gives the focus to the link that opened the item (its row, its title in the pane), 2.4.3.
+  const location = useLocation();
+  useShownForTheWayBack(location.pathname + location.search);
   const listQ = useQuery(threadsQuery);
   const listed = listQ.data?.threads.find(t => t.id === threadId);
   // Not in the stream (handled more than a week ago, or past its history): the item on its own, as the server reads it.
@@ -45,7 +48,8 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
     (oneQ.isError && oneQ.error instanceof ApiError && oneQ.error.status === 404) || (oneQ.isSuccess && !oneQ.data);
   const failed = (listQ.isError && !listQ.data) || (oneQ.isError && !missing);
   const origin = originOf(from, useQuery(areasQuery).data?.menu);
-  const back = origin ?? { label: 'Att göra', href: from ?? todoHref({}) };
+  // The way back names the place it leads to: a page Clew cannot name is "Tillbaka", never Att göra's name on it.
+  const back = origin ?? (from ? { label: 'Tillbaka', href: from } : { label: 'Att göra', href: todoHref({}) });
   // The rail marks the place the item was opened from; without one, Att göra.
   const tool = toolOf(from);
   const current: RailCurrent = from?.startsWith('/staff')
@@ -66,80 +70,55 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
     (t: Thread) => {
       if (t.id !== threadId) return;
       const sentAway = t.state === 'dismissed' || (t.state === 'open' && isSnoozed(t, new Date().toISOString()));
-      if (sentAway) navigate(leaving.current, { replace: true });
+      // The queue it goes back to gives the focus to the row after it (2.4.3), by its id in the history's state.
+      if (sentAway) navigate(leaving.current, { replace: true, state: { left: t.id } });
     },
     [threadId, navigate],
   );
-  // "Fråga Clew" (D112 item 7, board Assistant): the item on the page is the thing the panel asks about. Its facts and
-  // buttons are the page's, so the panel holds only its name, the conversation and the box.
-  const pageThing: OwnThing | null = thread
-    ? { id: `page:item:${thread.id}`, title: thread.title, subtitle: 'Ärendet på sidan', subject: itemSubject(thread) }
-    : null;
-  const panel = usePagePanel({ overlayOnly: short, onChange, pageThing });
+  // "Fråga Clew" (D126 rule 5): a new conversation with the item beside it.
+  const ask = thread ? <AskClew subject={itemSubject(thread)} /> : null;
   let body;
   if (thread && !thread.proposals.length)
-    body = <WorkItemPage thread={thread} back={back} onChange={onChange} ask={<AskClew size="lg" />} panel={panel} />;
-  // The calendar's proposals keep their own card (D112 item 9), under the way back and the item's title.
+    body = <WorkItemPage thread={thread} back={back} onChange={onChange} ask={ask} />;
+  // The calendar's proposals keep their own card (D27, D112 item 9), under the way back and the item's title.
   else if (thread)
     body = (
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        padding={mobile ? 3 : 8}
-        end={panel.end}
-        content={
-          <LayoutContent isScrollable={!short}>
-            <VStack gap={4}>
-              <HStack>
-                <Link href={back.href} type="supporting" color="secondary">
-                  {back.label}
-                </Link>
-              </HStack>
-              <PageHeader title={thread.title} end={<AskClew />} />
-              {cardBody(thread, { place: 'panel', level: 2, onChange })}
-            </VStack>
-          </LayoutContent>
-        }
-      />
+      <PageFrame back={back} title={thread.title} actions={ask}>
+        {cardBody(thread, { place: 'pane', level: 2, onChange })}
+      </PageFrame>
     );
   else
     body = (
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        padding={mobile ? 3 : 8}
-        content={
-          <LayoutContent isScrollable={!short}>
-            {missing ? (
-              <EmptyState
-                headingLevel={1}
-                title="Ärendet finns inte"
-                description="Det finns inget sådant ärende bland dina, eller så har du inte längre tillgång till det. Adressen kan också ha ändrats."
-                actions={<Button label="Till Att göra" href={todoHref({})} />}
+      <PageFrame>
+        {missing ? (
+          <EmptyState
+            headingLevel={1}
+            title="Ärendet finns inte"
+            description="Det finns inget sådant ärende bland dina, eller så har du inte längre tillgång till det. Adressen kan också ha ändrats."
+            actions={<Button label="Till Att göra" href={todoHref({})} />}
+          />
+        ) : failed ? (
+          <VStack gap={3}>
+            <Text as="p" role="alert">
+              {errorMessage(oneQ.error ?? listQ.error, 'Ärendet kunde inte hämtas just nu.')}
+            </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                onClick={() => void (listQ.isError ? listQ.refetch() : oneQ.refetch())}
               />
-            ) : failed ? (
-              <VStack gap={3}>
-                <Text as="p" role="alert">
-                  {errorMessage(oneQ.error ?? listQ.error, 'Ärendet kunde inte hämtas just nu.')}
-                </Text>
-                <HStack>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    label="Försök igen"
-                    onClick={() => void (listQ.isError ? listQ.refetch() : oneQ.refetch())}
-                  />
-                </HStack>
-              </VStack>
-            ) : (
-              <ContentSkeleton />
-            )}
-          </LayoutContent>
-        }
-      />
+            </HStack>
+          </VStack>
+        ) : (
+          <ContentSkeleton />
+        )}
+      </PageFrame>
     );
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       {body}
-      {panel.overlay}
     </Shell>
   );
 }

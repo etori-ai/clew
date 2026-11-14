@@ -49,7 +49,6 @@ import { errorMessage } from '../../query-policy';
 import { useAdminAction } from '../../mutations';
 import { usePageTitle } from '../../page-title';
 import { DialogFrame } from '../../components/dialog-frame';
-import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
 import { AdminShell } from './shell';
 import { SOURCES_PATH } from './competence-sources';
@@ -708,26 +707,29 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
     },
   ];
   return (
-    <AdminShell user={user} section="kompetens" crumbs={[{ label: 'Kompetens' }]} pending={query.isPending}>
-      <PageHeader
-        title="Kompetens"
-        meta={
-          <Text as="p" color="secondary">
-            Katalogen över kompetenser och intyg som en chef kan registrera för sina medarbetare. Här bestämmer du vad
-            som finns att välja och hur länge ett intyg gäller när arbetsgivaren sätter regeln.
-          </Text>
-        }
-        end={
-          !refused && query.data ? (
-            <HStack gap={2} wrap="wrap">
-              <Button variant="secondary" label="Krav" href={REQUIREMENTS_PATH} />
-              <Button variant="secondary" label="Källor" href={SOURCES_PATH} />
-              <Button variant="secondary" label="Importera" href={IMPORT_PATH} />
-              <Button variant="primary" label="Lägg till kompetens" href={editHref(NEW)} />
-            </HStack>
-          ) : undefined
-        }
-      />
+    <AdminShell
+      user={user}
+      section="kompetens"
+      title="Kompetens"
+      meta={
+        <Text as="p" type="supporting" color="secondary">
+          Katalogen över kompetenser och intyg som en chef kan registrera för sina medarbetare. Här bestämmer du vad som
+          finns att välja och hur länge ett intyg gäller när arbetsgivaren sätter regeln.
+        </Text>
+      }
+      // The section's one primary action, after the ways to its three sub-pages, each a page of its own (D126).
+      action={
+        !refused && query.data ? (
+          <HStack gap={2} wrap="wrap">
+            <Button variant="secondary" label="Krav" href={REQUIREMENTS_PATH} />
+            <Button variant="secondary" label="Källor" href={SOURCES_PATH} />
+            <Button variant="secondary" label="Importera" href={IMPORT_PATH} />
+            <Button variant="primary" label="Lägg till kompetens" href={editHref(NEW)} />
+          </HStack>
+        ) : undefined
+      }
+      pending={query.isPending}
+    >
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}

@@ -134,7 +134,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
       'https://intra.example/semester',
     );
     await expect(answer.getByText('Kollektivavtalet', { exact: true })).toBeVisible();
-    await expect(answer.getByRole('link', { name: 'Fortsätt i Kunskapsbanken' })).toHaveAttribute(
+    await expect(answer.getByRole('link', { name: 'Fortsätt samtalet i Kunskapsbanken' })).toHaveAttribute(
       'href',
       'https://kunskap.example/samtal/1',
     );
@@ -152,10 +152,11 @@ test.describe('handing a conversation to another system’s assistant', () => {
     await recipient(page, 'HR-assistenten').click();
     await expect(page.getByRole('menuitemradio')).toHaveCount(2);
     await option(page, /HR-assistenten/).click();
-    // "Ny fråga i stället" starts over with Clew.
-    await page.getByRole('link', { name: 'Ny fråga i stället' }).click();
-    await expect(composer(page)).toBeFocused();
-    await expect(menuButton(page, 'Modell: Kapabel')).toBeVisible();
+    // The box says what leaves Clew (board SamtalEneo), and the header says whom the conversation is with.
+    await expect(
+      page.getByText('Det du skriver går till Kunskapsbanken. Inget annat ur samtalet följer med.'),
+    ).toBeVisible();
+    await expect(page.getByText('Samtal med HR-assistenten i Kunskapsbanken', { exact: true })).toBeVisible();
   });
   test('a conversation that was handed over opens still talking to the assistant', async ({ page, api }) => {
     api.handoverAssistants = [hrAssistant];
@@ -199,7 +200,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
       expect(await reflowProblems(page)).toEqual([]);
       await expectNoAxeViolations(page);
     });
-  test('Clew’s own assistant suggests an assistant and asks first: yes sends the question as written, and the box turns to the assistant', async ({
+  test('Clew’s own assistant suggests an assistant and asks first: yes sends the question as written, it stands once marked as sent on, and the box turns to the assistant', async ({
     page,
     api,
   }) => {
@@ -208,12 +209,12 @@ test.describe('handing a conversation to another system’s assistant', () => {
     await open(page, '/');
     await composer(page).fill('Hur många semesterdagar har jag rätt till?');
     await composer(page).press('Enter');
-    // Nothing has gone anywhere: the question stands, and Clew asks where it should go.
-    const yes = page.getByRole('button', { name: 'Fråga HR-assistenten', exact: true });
+    // Nothing has gone anywhere: the question stands, and Clew asks where it should go (board SamtalEneoFraga).
+    const yes = page.getByRole('button', { name: 'Skicka till HR-assistenten', exact: true });
     await expect(yes).toBeFocused();
-    await expect(page.getByText(/kan svara på det här\. Väljer du det skickas din fråga dit/)).toBeVisible();
+    await expect(page.getByText(/kan svara på det här\. Vill du att jag skickar frågan dit\?/)).toBeVisible();
     await expect(page.getByRole('log').getByText('Svarar på frågor om anställning och ledighet.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Låt Clew svara', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Svara själv, Clew', exact: true })).toBeVisible();
     await expect
       .poll(() => announcements(page))
       .toContainEqual(
@@ -232,13 +233,36 @@ test.describe('handing a conversation to another system’s assistant', () => {
       assistant: 'kunskap:hr',
       suggested: true,
     });
-    // The question is on the page once.
+    // The question is on the page once (D126 item 6): the same message says it was sent on, and the suggestion is one
+    // line under it; no second line says whom the person talks to.
+    const log = page.getByRole('log');
+    await expect(log.getByText('Hur många semesterdagar har jag rätt till?', { exact: true })).toHaveCount(1);
+    await expect(log.getByText('Skickad vidare till HR-assistenten i Kunskapsbanken')).toHaveCount(1);
     await expect(
-      page.getByRole('log').getByText('Hur många semesterdagar har jag rätt till?', { exact: true }),
+      log.getByText('Clew föreslog HR-assistenten i Kunskapsbanken\u00a0· du valde att fråga den', { exact: true }),
     ).toHaveCount(1);
-    await expect(page.getByText('Clew skickade frågan till HR-assistenten')).toBeVisible();
+    await expect(log.getByText('Du pratar med HR-assistenten', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Skicka till HR-assistenten', exact: true })).toHaveCount(0);
     await expect(recipient(page, 'HR-assistenten')).toBeVisible();
     await expect(handedBox(page)).toBeFocused();
+    await expectNoAxeViolations(page);
+  });
+  test('at 320 px the question sent on, the line in the suggestion’s place and the answer reflow without a sideways scroll', async ({
+    page,
+    api,
+  }) => {
+    api.handoverAssistants = [hrAssistant];
+    api.routes = /semesterdagar/;
+    await page.setViewportSize(narrow);
+    await open(page, '/');
+    await composer(page).fill('Hur många semesterdagar har jag rätt till?');
+    await composer(page).press('Enter');
+    await page.getByRole('button', { name: 'Skicka till HR-assistenten', exact: true }).click();
+    await expect(
+      page.getByRole('article', { name: ANSWERED, exact: true }).getByText('25 semesterdagar'),
+    ).toBeVisible();
+    await expect(page.getByText(/^Clew föreslog HR-assistenten i Kunskapsbanken/)).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
   });
   test('no to the suggestion: Clew answers the same question, and is not asked to hand it over again', async ({
@@ -250,10 +274,10 @@ test.describe('handing a conversation to another system’s assistant', () => {
     await open(page, '/');
     await composer(page).fill('Hur många semesterdagar har jag?');
     await composer(page).press('Enter');
-    await page.getByRole('button', { name: 'Låt Clew svara', exact: true }).click();
+    await page.getByRole('button', { name: 'Svara själv, Clew', exact: true }).click();
     await expect(page.getByText(/Du har 18 semesterdagar/)).toBeVisible();
     expect(api.asked.at(-1)).toEqual({ text: 'Hur många semesterdagar har jag?', chips: [], own: true });
-    await expect(page.getByRole('button', { name: 'Fråga HR-assistenten', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Skicka till HR-assistenten', exact: true })).toHaveCount(0);
     await expect(recipient(page, 'Clew')).toBeVisible();
     await expect(composer(page)).toBeFocused();
   });
@@ -285,7 +309,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
       page.getByRole('log').getByText('HR-assistenten lämnade tillbaka frågan · Clew svarar', { exact: true }),
     ).toHaveCount(1);
     // Clew's own answer, named as Clew's, on the page and not on the assistant's surface.
-    await expect(page.getByRole('article', { name: 'Clew · läste Kalendern', exact: true })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Clew', exact: true })).toBeVisible();
     await expect(page.getByRole('article', { name: ANSWERED, exact: true })).toHaveCount(0);
     await expect
       .poll(() => announcements(page))

@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
-import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { isSnoozed, type Area, type SessionUser, type Thread } from '@clew/contracts';
 import {
-  Button,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
+import { isSnoozed, sameSubject, streamGroup, type Area, type SessionUser, type Thread } from '@clew/contracts';
+import {
+  Badge,
+  Card,
   DropdownMenu,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -12,21 +22,27 @@ import {
   Icon,
   IconButton,
   InboxIcon,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   LayoutPanel,
+  Link,
   ResizeHandle,
-  StackItem,
   Tab,
+  Table,
   TabList,
   Text,
   TextInput,
+  Token,
   VStack,
+  VisuallyHidden,
+  XMarkIcon,
+  pixel,
+  proportional,
   useAnnounce,
   useMediaQuery,
   useResizable,
+  useTableRowStatus,
   useToast,
+  type TableColumn,
+  type TablePlugin,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { areasQuery, threadsQuery } from '../queries';
@@ -37,8 +53,11 @@ import { useMarks } from '../marks';
 import { usePageTitle } from '../page-title';
 import {
   doneOf,
+  fromClewItself,
+  itemPageHref,
   needsYouOf,
   rowFacts,
+  rowLine,
   sourcesNotice,
   tabOf,
   tabTitle,
@@ -46,43 +65,52 @@ import {
   todoHref,
   todoTabs,
   waitingOf,
+  type RowFacts,
   type TodoTab,
 } from '../work-items';
 import { useRail } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { PageHeader } from '../components/page-header';
-import { WorkList, WorkRow } from '../components/work-row';
-import { silentLine, useSilentSources } from '../components/silent-sources';
+import { silentLine, staleWhy, useSilentSources } from '../components/silent-sources';
 import { BriefSkeleton } from '../components/brief';
 import { AsyncContent } from '../components/loading';
 import { cardBody } from '../components/card-panel';
-import { WorkItemPage } from '../components/work-item';
+import { whenWord } from '../components/work-item';
 import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
-import { itemSubject, usePagePanel, type OwnThing } from '../components/page-panel';
-import { AskClew, ThingWithConversation } from '../components/thing-panel';
-import { useFocusThingBox, useModelConfigured, useThingConversation } from '../components/conversation-context';
+import { itemSubject } from '../components/view-read';
+import { AskClew } from '../components/thing-panel';
+import type { ThingSubject } from '../components/conversation-context';
+import { PAGE_WIDTH, PageFrame } from '../components/page-frame';
 
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
 const ALL_SYSTEMS = 'all';
 /** A field the person is typing in keeps the focus when the pane changes (the filter). */
 const TYPING = 'input, textarea, [contenteditable="true"]';
+/** What in a row is a control of its own: a press there is that control's, never the row's (the template's `isRowItself`). */
+const INTERACTIVE_WITHIN_ROW =
+  'a, button, input, select, textarea, [role="button"], [role="checkbox"], [role="menuitem"]';
 
 /**
  * The `table-inbox` template's own widths. Below `SINGLE_SURFACE_BELOW` of room for the page the list and the pane do
- * not fit side by side, so a chosen item takes the whole surface and the list comes back when it closes, as every mail
- * client does on a phone. The pane may not be dragged narrower than `PANE_MIN` nor the list than `LIST_MIN`. The pane
- * opens at `PANE_SHARE` of the surface: the board draws the list and the pane at about 45 and 55.
+ * not fit side by side, so there is no pane: a row leads to the item's page (D126 rule 2, board Att göra on a phone).
+ * The pane may not be dragged narrower than `PANE_MIN` nor the list than `LIST_MIN`, and opens at `PANE_SHARE` of the
+ * surface, as the board draws the list and the pane at about 45 and 55.
  */
 const SINGLE_SURFACE_BELOW = 900;
+/**
+ * Att göra's column, the one page that may be wider than the page frame's (D126): the queue and its reading pane side by
+ * side in Hem's 1120 px left the item's name 305 px at a 1470 px window, under the 320 px a name reads in; 1160 px is
+ * the narrowest column that gives it that. Pending the product owner's decision (2026-11-14).
+ */
+const TODO_WIDTH = PAGE_WIDTH + 40;
 const PANE_MIN = 440;
 const LIST_MIN = 300;
 const PANE_SHARE = 0.55;
 
 /**
- * The width of the box the page was given, as the `table-inbox` template measures it (`useSurfaceWidth`): every
- * decision here is about that box, not the window, which also holds the rail. The first read is synchronous, before
- * paint, and `offsetWidth` is the laid-out width as the observer reports it after that.
+ * The width of the box the page was given, as the `table-inbox` template measures it (`useSurfaceWidth`, D112 gap 4):
+ * every decision here is about that box, not the window, which also holds the rail. The first read is synchronous,
+ * before paint, and `offsetWidth` is the laid-out width as the observer reports it after that.
  */
 function useSurfaceWidth() {
   const ref = useRef<HTMLDivElement>(null);
@@ -103,13 +131,37 @@ function useSurfaceWidth() {
 }
 
 /**
- * Att göra (D112 item 3, board Inbox, the `table-inbox` template): a queue that indexes a reading pane. The tabs are the
- * piles (Behöver dig, Väntar på andra, Klart) as links, so the address names the pile; a filter field and the system
- * narrow the rows. A row is one link: choosing it shows the work item in the pane beside the list and puts it in the
- * address as `item`, so Back, Forward and a reload show the same. The pane draws the work item at its narrow width
- * (D112 item 4, `WorkItem`), its title the link to the item's page. Where the pane does not fit beside the list (the template measures
- * the page's own box) the item takes the whole surface as its page draws it (`WorkItemPage`: the details behind an
- * information button, on a phone the buttons pinned to the foot), with the way back to the list.
+ * The rows the queue drew last, in their order: an item's page that sends its item away (Avfärda, Inte nu) leads back
+ * here naming it (`state.left`), and the row after it takes the focus (2.4.3), as when the pane let go of it.
+ */
+let drawnRows: string[] = [];
+
+/** One row of the queue's table: the work item and what the row says about it. */
+interface QueueRow extends Record<string, unknown> {
+  id: string;
+  thread: Thread;
+  facts: RowFacts;
+  href: string;
+}
+
+/** The one person or unit the item's rows are about, when there is exactly one: whom the item is about. */
+function aboutOf(thread: Thread): string | null {
+  const named = thread.items.filter(i => i.subject);
+  const first = named[0];
+  return first && named.every(i => sameSubject(i.subject!, first.subject!)) ? first.label : null;
+}
+
+/**
+ * Att göra (D126 rule 2, board Att göra, the `table-inbox` template): a queue that indexes a reading pane. The title
+ * with how much needs the person and waits on others; the piles (Behöver dig, Väntar på andra, Klart) as tabs that are
+ * links, so the address names the pile; a filter field and the system in the title's row narrow the rows. Astryx's
+ * `Table`: the item's name is the row's link, in semibold while it is due now, with whom it is about under it; the
+ * system as a token; when it is due as a badge, or for Klart when it was done. Choosing a row shows the work item in the
+ * pane beside the list and puts it in the address as `item`, so Back, Forward and a reload show the same; the open row
+ * is the current one (`aria-current`) with Astryx's row status in its gutter. The pane is the item at its narrow width
+ * (`WorkItem`): the source line, its title as the link to its page and the buttons under it that never scroll away, then
+ * the facts, "Varför ser jag detta?" and "Händelser". Where the pane does not fit beside the list (the template measures
+ * the page's own box) there is no pane: a row leads to the item's page.
  */
 export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -167,43 +219,34 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const rows = piles[tab].filter(matches);
 
   const nav = useRail({ current: { surface: 'todo' }, admin, manager: user.role === 'manager' });
+  usePageTitle('Att göra');
+  // Back from an item's page that sent its item away: the row after it, among the rows drawn before it went.
+  const location = useLocation();
+  const left = (location.state as { left?: string } | null)?.left ?? null;
+  const [before] = useState(() => drawnRows);
+  useEffect(() => {
+    drawnRows = rows.map(t => t.id);
+  });
+  useEffect(() => {
+    if (!left || !threadsQ.data) return;
+    const at = before.indexOf(left);
+    const here = new Set(rows.map(t => t.id));
+    const next = [...before.slice(at + 1), ...before.slice(0, Math.max(at, 0)).reverse()].find(id => here.has(id));
+    const frame = requestAnimationFrame(() =>
+      (
+        (next ? document.getElementById(`work-${next}`)?.querySelector<HTMLElement>('a[href]') : null) ??
+        document.getElementById('att-gora')
+      )?.focus(),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [left, !!threadsQ.data]);
 
   // The template's measure: the page's own box decides whether the pane stands beside the list.
-  const [surfaceRef, surfaceWidth] = useSurfaceWidth();
+  const [surfaceRef, pageWidth] = useSurfaceWidth();
+  // The list and the pane share the page's column (D126), so the column, not the page's box, is what they divide.
+  const surfaceWidth = Math.min(pageWidth, TODO_WIDTH);
   const isMeasured = surfaceWidth > 0;
   const single = isMeasured ? surfaceWidth < SINGLE_SURFACE_BELOW : mobile;
-  const fullWidth = single && !!itemId;
-  // The item alone on the surface is its page (D112 item 12): the tab names the item.
-  usePageTitle(fullWidth && item ? item.title : 'Att göra');
-  // The reading pane is the panel of an opened thing (D112 item 7): the work item on top, the conversation about it
-  // under it and the box at the foot, while a model is configured (D8). Without one it is the item alone, as before.
-  const model = useModelConfigured();
-  const paneSubject = item && model && !single ? itemSubject(item) : null;
-  const paneTalk = useThingConversation(paneSubject);
-  const focusPaneBox = useFocusThingBox();
-  // "Fråga Clew" (D112 item 7): without an item in the pane the queue is the thing, its rows what the box asks about;
-  // an item the whole surface shows (the template's single surface) is the thing itself.
-  const pageThing: OwnThing | null =
-    item && single
-      ? { id: `page:item:${item.id}`, title: item.title, subtitle: 'Ärendet på sidan', subject: itemSubject(item) }
-      : !itemId
-        ? {
-            id: `page:todo:${tab}`,
-            title: 'Att göra',
-            subtitle: tabTitle[tab],
-            subject: {
-              key: `todo:${tab}`,
-              label: 'ärendena',
-              chips: rows
-                .slice(0, 8)
-                .map(t => ({ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title, threadId: t.id })),
-              search: '',
-            },
-          }
-        : null;
-  // The page holds the panel (D50): beside the queue for what is opened from it, over the page while the reading pane
-  // takes the end slot.
-  const slot = usePagePanel({ overlayOnly: short || (!!itemId && !single), onChange, pageThing });
   const moved = useRef(false),
     placing = useRef(false);
   const pane = useResizable({
@@ -225,6 +268,14 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   /** The same queue with something changed, keeping what else the address holds. */
   const href = (next: Parameters<typeof todoHref>[0]) => todoHref(next, search);
   const close = () => navigate(href({ item: null }));
+  /** Where a row leads: the item in the pane beside the list, or its page where there is no pane. */
+  const rowHref = (t: Thread) => (single ? itemPageHref(t.id, href({ item: null })) : href({ item: t.id }));
+  // An item in the address where the pane does not fit (a link from a wider window, the bell on a phone) is its page,
+  // with the queue as the way back, in the place of this address.
+  const known = isMeasured || mobile;
+  useLayoutEffect(() => {
+    if (known && single && itemId) navigate(itemPageHref(itemId, href({ item: null })), { replace: true });
+  }, [known, single, itemId]);
 
   // The focus follows what the pane shows (2.4.3): the item's heading when one is chosen, the row that opened it when
   // it closes, or the row after it when the item left the pile with its own button (Avfärda, Inte nu).
@@ -249,12 +300,13 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       const active = document.activeElement;
       if (itemId) {
         if (active instanceof HTMLElement && active.matches(TYPING) && !paneRef.current?.contains(active)) return;
-        const article = document.getElementById(`card-${itemId}`);
-        // The item's title, also where its header stands above the conversation, outside the article (`useThingHead`).
-        const heading =
-          document.getElementById(`card-${itemId}-title`) ??
-          article?.querySelector<HTMLElement>('h1, h2, h3, h4, h5, h6, [role="heading"]');
-        (heading?.tabIndex === -1 ? heading : (article ?? paneRef.current))?.focus();
+        // An item that is not there says so in the pane, whose ✕ then takes the focus.
+        const heading = document.getElementById(`card-${itemId}-title`);
+        (
+          heading ??
+          document.getElementById(`card-${itemId}`) ??
+          paneRef.current?.querySelector<HTMLElement>('button')
+        )?.focus();
         return;
       }
       const next = after.current;
@@ -291,32 +343,45 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   // A source not read yet is said over the rows, and an empty pile is then never said to be nothing (D8). One that does
   // not answer is said on its own rows, and in the empty pile by name (D116, amended 2026-11-12).
   const sourcesLine = sourcesNotice(threadsQ.data?.sources);
-  const silent = useSilentSources().list;
-  const silentWords = silent.length ? `${silent.map(silentLine).join('. ')}.` : null;
+  const silent = useSilentSources();
+  const silentWords = silent.list.length ? `${silent.list.map(silentLine).join('. ')}.` : null;
   const count = (t: TodoTab) => piles[t].filter(x => !area || x.area === area).length;
-  // Klart has no count (board Inbox): what is done is not a call to look. On a phone the strip has the short words
-  // alone (board PhoneInbox): with the counts the three do not fit 320 px under the text-spacing overrides (1.4.12), and
-  // a strip that scrolls sideways hides its last pile. How much needs the person stays on the rail's Att göra.
-  const tabLabel = (t: TodoTab) => {
-    if (mobile) return tabWord[t];
-    return t === 'done' || loading ? tabTitle[t] : `${tabTitle[t]}\u00a0· ${count(t)}`;
+  // The counts line under the title (board Att göra): what needs the person and what waits on others; what is done is
+  // not a call to look.
+  const countsLine = loading ? null : `${count('needs-you')} behöver dig · ${count('waiting')} väntar på andra`;
+  // On a phone the strip has the short words (board PhoneInbox: "Väntar"), so the three with their counts fit 320 px
+  // under the text-spacing overrides (1.4.12).
+  const tabBadge = (t: TodoTab) => {
+    if (t === 'done' || loading) return undefined;
+    const n = count(t);
+    if (!n) return undefined;
+    return (
+      <Badge
+        variant={t === 'needs-you' ? 'error' : 'neutral'}
+        label={
+          <>
+            {n}
+            <VisuallyHidden> ärenden</VisuallyHidden>
+          </>
+        }
+      />
+    );
   };
 
   const systemLabel = area ? marks.areaTitle(area) : 'Alla system';
   const filters = (
-    <HStack gap={2} vAlign="end" wrap="wrap">
-      <StackItem size="fill">
-        <TextInput
-          type="search"
-          label="Filtrera"
-          isLabelHidden
-          placeholder="Filtrera"
-          startIcon="search"
-          value={filter}
-          hasClear
-          onChange={value => navigate(href({ filter: value || null }), { replace: true })}
-        />
-      </StackItem>
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      <TextInput
+        type="search"
+        label="Filtrera"
+        isLabelHidden
+        placeholder="Filtrera"
+        startIcon="search"
+        value={filter}
+        hasClear
+        width={mobile ? undefined : 240}
+        onChange={value => navigate(href({ filter: value || null }), { replace: true })}
+      />
       {areas.length > 0 && (
         <DropdownMenu button={{ label: systemLabel, variant: 'secondary' }}>
           <DropdownMenuRadioGroup
@@ -334,52 +399,168 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     </HStack>
   );
 
+  // "Fråga Clew" about the pile (D126 rule 5): a list is no thing beside the conversation, so it goes as its chips.
+  const queueSubject: ThingSubject = {
+    key: `todo:${tab}`,
+    label: 'ärendena',
+    chips: rows
+      .slice(0, 8)
+      .map(t => ({ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title, threadId: t.id })),
+    search: '',
+  };
+
   const empty: Record<TodoTab, string> = {
     'needs-you': 'Inget behöver dig just nu.',
     waiting: 'Inget väntar. Det som väntar på andra, eller som du lagt åt sidan, kommer tillbaka av sig självt.',
     done: 'Inget är klart ännu.',
   };
+  const tableRows: QueueRow[] = rows.map(t => ({
+    id: t.id,
+    thread: t,
+    facts: rowFacts(t, now, todayDate),
+    href: rowHref(t),
+  }));
+  /**
+   * Under the name: whom it is about (board Att göra); in the other piles also where it stands and why, in words (1.4.1),
+   * and under Klart with what outcome ("Klart · Ledigheten är beviljad", "Avfärdat · …").
+   */
+  const aboutLine = (r: QueueRow) => {
+    const t = r.thread;
+    const stale = t.state === 'open' && !!silent.of(t.connector);
+    const about = aboutOf(t);
+    const why = tab !== 'needs-you' || !about ? rowLine(r.facts) : null;
+    const words = [about, why && stale ? staleWhy(why) : why].filter(Boolean).join(' · ');
+    return stale && !why ? staleWhy(words) : words;
+  };
+  const columns: TableColumn<QueueRow>[] = [
+    {
+      key: 'title',
+      header: 'Ärende',
+      width: proportional(3),
+      renderCell: r => (
+        <VStack gap={0.5}>
+          <Link
+            href={r.href}
+            color="primary"
+            weight={tab === 'needs-you' && streamGroup(r.thread, todayDate) === 'nu' ? 'semibold' : 'normal'}
+            aria-current={r.id === itemId ? 'true' : undefined}
+          >
+            {r.thread.title}
+          </Link>
+          <Text type="supporting" color="secondary">
+            {aboutLine(r)}
+          </Text>
+        </VStack>
+      ),
+    },
+    {
+      key: 'source',
+      header: 'Från',
+      width: pixel(150),
+      // An item from Clew itself names no system (`fromClewItself`): Clew is not a system the person goes to.
+      renderCell: r =>
+        fromClewItself(r.thread, areasQ.data?.systems) ? null : (
+          <Token size="sm" label={marks.ofThread(r.thread).source} />
+        ),
+    },
+    tab === 'done'
+      ? {
+          key: 'done',
+          header: 'Klart',
+          width: pixel(130),
+          align: 'end',
+          renderCell: r =>
+            r.thread.handledAt ? (
+              <Text type="supporting" color="secondary" textWrap="nowrap">
+                {whenWord(r.thread.handledAt)}
+              </Text>
+            ) : null,
+        }
+      : {
+          key: 'due',
+          header: 'Senast',
+          width: pixel(120),
+          align: 'end',
+          renderCell: r => (r.facts.due ? <Badge variant={r.facts.due.variant} label={r.facts.due.label} /> : null),
+        },
+  ];
+  // Beside the pane, or on a phone, the system's column gives way (the template drops its tags while the pane is open).
+  const shownColumns = single || (itemId && surfaceWidth < 1200) ? columns.filter(c => c.key !== 'source') : columns;
+  // The row open in the pane (the template's `aria-current`), with Astryx's row status in the gutter that says it in
+  // words; Astryx's Table has no styled state of its own for an open row (D126, Astryx gaps). A press anywhere on a row
+  // follows its link, unless it was on a control of its own; the link stays the row's one tab stop.
+  const openStatus = useTableRowStatus<QueueRow>({
+    getStatus: useCallback(
+      (r: QueueRow) => (r.id === itemId ? { color: 'accent', label: 'Visas bredvid' } : null),
+      [itemId],
+    ),
+  });
+  const rowPlugin = useMemo(
+    (): TablePlugin<QueueRow> =>
+      ({
+        transformBodyRow: (props: any, r: QueueRow) => ({
+          ...props,
+          htmlProps: {
+            ...props.htmlProps,
+            id: `work-${r.id}`,
+            'aria-current': r.id === itemId ? 'true' : undefined,
+            onClick: (event: MouseEvent) => {
+              const target = event.target as HTMLElement | null;
+              if (target?.closest(INTERACTIVE_WITHIN_ROW) || event.defaultPrevented) return;
+              navigate(r.href);
+            },
+          },
+        }),
+      }) as TablePlugin<QueueRow>,
+    [itemId, navigate],
+  );
   const list = (
-    <AsyncContent pending={loading} fallback={<BriefSkeleton compact={mobile} />}>
-      {sourcesLine && rows.length > 0 && (
-        <Text as="p" role="status">
-          {sourcesLine}
-        </Text>
-      )}
-      {failed ? (
-        <Text as="p" role="alert" color="accent">
-          {errorMessage(threadsQ.error, 'Sidan kunde inte läsas.')}
-        </Text>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          isCompact
-          headingLevel={2}
-          icon={<Icon icon={InboxIcon} size="lg" />}
-          title={
-            words || area
-              ? 'Inget som stämmer med valet'
-              : sourcesLine || silentWords
-                ? 'Inväntar källornas besked'
-                : 'Tomt här'
-          }
-          description={
-            words || area ? 'Ändra filtret eller välj ett annat system.' : (silentWords ?? sourcesLine ?? empty[tab])
-          }
-        />
-      ) : (
-        <WorkList label={tabTitle[tab]}>
-          {rows.map(t => (
-            <WorkRow
-              key={t.id}
-              thread={t}
-              facts={rowFacts(t, now, todayDate)}
-              // The system's name, as Hem names the same row (app critique, 2026-11-13); the area is the item's own.
-              source={marks.ofThread(t).source}
-              href={href({ item: t.id })}
-              isSelected={t.id === itemId}
-            />
-          ))}
-        </WorkList>
+    <AsyncContent pending={loading} fallback={<BriefSkeleton compact={mobile} />} gap={4}>
+      {(sourcesLine && rows.length > 0) || failed || rows.length === 0 ? (
+        <VStack gap={3}>
+          {sourcesLine && rows.length > 0 && (
+            <Text as="p" role="status">
+              {sourcesLine}
+            </Text>
+          )}
+          {failed ? (
+            <Text as="p" role="alert" color="accent">
+              {errorMessage(threadsQ.error, 'Sidan kunde inte läsas.')}
+            </Text>
+          ) : (
+            rows.length === 0 && (
+              <EmptyState
+                isCompact
+                headingLevel={2}
+                icon={<Icon icon={InboxIcon} size="lg" />}
+                title={
+                  words || area
+                    ? 'Inget som stämmer med valet'
+                    : sourcesLine || silentWords
+                      ? 'Inväntar källornas besked'
+                      : 'Tomt här'
+                }
+                description={
+                  words || area
+                    ? 'Ändra filtret eller välj ett annat system.'
+                    : (silentWords ?? sourcesLine ?? empty[tab])
+                }
+              />
+            )
+          )}
+        </VStack>
+      ) : null}
+      {!failed && rows.length > 0 && (
+        <Card padding={0}>
+          <Table<QueueRow>
+            aria-label={tabTitle[tab]}
+            data={tableRows}
+            columns={shownColumns}
+            idKey="id"
+            hasHover
+            plugins={itemId && !single ? { open: openStatus, rows: rowPlugin } : { rows: rowPlugin }}
+          />
+        </Card>
       )}
     </AsyncContent>
   );
@@ -410,124 +591,70 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   ) : (
     <BriefSkeleton rows={1} compact />
   );
-  /**
-   * The item beside the list (board Inbox): ✕ lets go of it, and the work item at its narrow width. With a model the
-   * pane is the thing's panel (D112 item 7): the conversation about the item under it, its facts folding while it runs,
-   * and the box at the foot.
-   */
   const closeItem = (
     <HStack justify="end">
-      <IconButton variant="ghost" size="sm" label="Stäng ärendet" icon={<Icon icon="close" />} onClick={close} />
+      <IconButton variant="ghost" label="Stäng ärendet" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={close} />
     </HStack>
   );
-  const reading = paneSubject ? (
-    <VStack ref={paneRef} height={short ? undefined : '100%'} onKeyDown={escape}>
-      {/* A calendar proposal keeps its own card and ✕ above it; a work item's ✕ is in its own header row. */}
-      {!!item?.proposals.length && (
-        <VStack paddingInline={6} paddingBlockStart={6}>
-          {closeItem}
-        </VStack>
-      )}
-      {/* The pane's height, so the box docked at the foot stays on screen (2.4.11). */}
-      <StackItem size="fill">
-        <ThingWithConversation
-          talk={paneTalk}
-          subject={paneSubject}
-          short={short}
-          thing={cardBody(item!, {
-            place: 'pane',
-            level: 2,
-            compact: true,
-            onChange,
-            folded: paneTalk.running,
-            onClose: close,
-          })}
-        />
-      </StackItem>
-    </VStack>
-  ) : (
-    <VStack ref={paneRef} gap={3} onKeyDown={escape}>
-      {(!item || !!item.proposals.length) && closeItem}
-      {item ? cardBody(item, { place: 'pane', level: 2, compact: true, onChange, onClose: close }) : missing}
-    </VStack>
-  );
   /**
-   * The item alone where the pane does not fit (D112 items 3 and 12): its page, the way back to the list as its trail.
-   * An item that is not there says so under the way back.
+   * The item beside the list (board Att göra): the work item at its narrow width, its ✕ in its own title row. A
+   * calendar proposal keeps its own card (D27) with ✕ above it, as does an item that is not there.
    */
-  const alone =
+  const reading =
     item && !item.proposals.length ? (
-      <VStack ref={paneRef} height="100%" onKeyDown={escape}>
-        <WorkItemPage
-          thread={item}
-          back={{ label: 'Att göra', href: href({ item: null }) }}
-          onChange={onChange}
-          ask={<AskClew size="lg" />}
-          panel={slot}
-        />
+      <VStack ref={paneRef} height={short ? undefined : '100%'} onKeyDown={escape}>
+        {cardBody(item, {
+          place: 'pane',
+          level: 2,
+          onChange,
+          onClose: close,
+          ask: <AskClew subject={itemSubject(item)} />,
+        })}
       </VStack>
     ) : (
-      <VStack ref={paneRef} gap={3} onKeyDown={escape}>
-        <HStack>
-          <Button variant="ghost" label="Att göra" icon={<Icon icon="chevronLeft" />} onClick={close} />
-        </HStack>
+      <VStack ref={paneRef} gap={3} padding={6} onKeyDown={escape}>
+        {closeItem}
         {item ? cardBody(item, { place: 'pane', level: 2, compact: true, onChange }) : missing}
       </VStack>
     );
-  const page = fullWidth && !!item && !item.proposals.length;
 
-  const gutter = mobile ? 3 : 8;
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <Layout
-        ref={surfaceRef}
-        height={short ? 'auto' : 'fill'}
-        padding={0}
-        header={
-          page ? undefined : (
-            <LayoutHeader padding={0}>
-              <VStack gap={4} paddingInline={gutter} paddingBlockStart={gutter} paddingBlockEnd={3}>
-                <PageHeader
-                  title="Att göra"
-                  titleId="att-gora"
-                  end={<AskClew {...(paneSubject ? { onAsk: focusPaneBox } : {})} />}
+      {/* The one page frame (D126): the title, its counts, the filters and the piles in the header, and the queue and
+          its reading pane side by side inside the same column, the list in a card as Hem's lists are. */}
+      <PageFrame
+        layoutRef={surfaceRef}
+        width={TODO_WIDTH}
+        title="Att göra"
+        titleId="att-gora"
+        meta={countsLine ?? undefined}
+        actions={
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            {filters}
+            <AskClew subject={queueSubject} />
+          </HStack>
+        }
+        tabs={
+          <TabList hasDivider={false} isFullBleed value={tab} onChange={() => {}} aria-label="Urval">
+            {todoTabs.map(t => {
+              const badge = tabBadge(t);
+              return (
+                <Tab
+                  key={t}
+                  value={t}
+                  label={mobile ? tabWord[t] : tabTitle[t]}
+                  href={href({ tab: t, item: null })}
+                  {...(badge ? { endContent: badge } : {})}
                 />
-                {/* Nothing here applies to one item, so where the item has the whole surface the piles and the filter go with the list (the template's full-width pane). */}
-                {!fullWidth && (
-                  <>
-                    <TabList hasDivider value={tab} onChange={() => {}} aria-label="Urval">
-                      {todoTabs.map(t => (
-                        <Tab key={t} value={t} label={tabLabel(t)} href={href({ tab: t, item: null })} />
-                      ))}
-                    </TabList>
-                    {filters}
-                  </>
-                )}
-              </VStack>
-            </LayoutHeader>
-          )
+              );
+            })}
+          </TabList>
         }
-        content={
-          page ? (
-            // The item's page scrolls itself, with its header and, on a phone, its buttons pinned.
-            <LayoutContent padding={0} isScrollable={false}>
-              {alone}
-            </LayoutContent>
-          ) : (
-            <LayoutContent padding={0} isScrollable={!short}>
-              <VStack paddingInline={gutter} paddingBlockEnd={gutter}>
-                {fullWidth ? alone : list}
-              </VStack>
-            </LayoutContent>
-          )
-        }
+        label={tabTitle[tab]}
         end={
-          single || !itemId ? (
-            page ? undefined : (
-              slot.end
-            )
-          ) : (
+          single || !itemId ? undefined : (
             <>
+              {/* The handle comes before the pane, whose inline-start edge it drags; `hasDivider` is the handle's. */}
               <ResizeHandle
                 direction="horizontal"
                 isReversed
@@ -538,8 +665,8 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
               />
               <LayoutPanel
                 resizable={pane.props}
-                padding={paneSubject ? 0 : 6}
-                isScrollable={!paneSubject || short}
+                padding={0}
+                isScrollable={short || !item || !!item.proposals.length}
                 role="complementary"
                 label="Valt ärende"
               >
@@ -548,8 +675,9 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
             </>
           )
         }
-      />
-      {slot.overlay}
+      >
+        {list}
+      </PageFrame>
     </Shell>
   );
 }

@@ -4,7 +4,8 @@ import { ENTITY_UNIT } from './data';
 import { BELOW_UNIT, SICK_UNIT, Units } from './unit-data';
 
 /**
- * Dialogstöd (D117): the units the reader follows up side by side at `/units`, their own and those of the managers who
+ * Läget's register (D117; D126 rule 8, the rail's Läget for a manager who follows up several units): the units the
+ * reader follows up side by side at `/units`, their own and those of the managers who
  * report to them. What needs a conversation first: "Att ta upp" counts the units by the states that need action or
  * watching, and within a group the unit with the most of them stands first. On a wide screen one row per unit and one
  * column per source with something for the group, each cell that source's row in short; on a phone a card per unit. A
@@ -15,7 +16,7 @@ const column = (scope: Locator, title: string) => scope.getByRole('columnheader'
 const tableOf = (page: Page, group: string) =>
   page.getByRole('region', { name: group, exact: true }).getByRole('table');
 const rowOf = (table: Locator, unit: string) => table.getByRole('row').filter({ hasText: unit });
-test.describe('Dialogstöd, the units side by side', () => {
+test.describe('Läget’s register, the units side by side', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test('what to take up on top, the units with most of it first, a column per source with something, and a name opens the unit', async ({
@@ -26,10 +27,10 @@ test.describe('Dialogstöd, the units side by side', () => {
     units.withBelow = true;
     await units.route(page);
     await open(page, '/units');
-    await expect(heading(page, 1, 'Dialogstöd')).toBeVisible();
-    // Dialogstöd is a manager's place in the rail, after Personal, marked here and on every unit's page.
+    await expect(heading(page, 1, 'Läget')).toBeVisible();
+    // Läget is a manager's place in the rail, after Personal (D126 rule 7), marked here and on every unit's page.
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
-    const entry = rail.getByRole('link', { name: 'Dialogstöd', exact: true });
+    const entry = rail.getByRole('link', { name: 'Läget', exact: true });
     await expect(entry).toHaveAttribute('href', '/units');
     await expect(entry).toHaveAttribute('aria-current', 'page');
     await expect(heading(page, 2, 'Mina enheter')).toBeVisible();
@@ -72,7 +73,7 @@ test.describe('Dialogstöd, the units side by side', () => {
     await school.click();
     await expect(heading(page, 1, ENTITY_UNIT.label)).toBeVisible();
     const trail = page.getByRole('navigation', { name: 'Enheter', exact: true });
-    await expect(trail.getByRole('link', { name: 'Dialogstöd', exact: true })).toHaveAttribute('href', '/units');
+    await expect(trail.getByRole('link', { name: 'Läget', exact: true })).toHaveAttribute('href', '/units');
     await expect(entry).toHaveAttribute('aria-current', 'page');
   });
 
@@ -143,7 +144,7 @@ test.describe('Dialogstöd, the units side by side', () => {
     await units.route(page);
     await page.setViewportSize({ width: 320, height: 640 });
     await open(page, '/units');
-    await expect(heading(page, 1, 'Dialogstöd')).toBeVisible();
+    await expect(heading(page, 1, 'Läget')).toBeVisible();
     await expect(page.getByRole('table')).toHaveCount(0);
     const mine = page.getByRole('region', { name: 'Mina enheter', exact: true });
     await expect(mine.getByRole('link', { name: ENTITY_UNIT.label, exact: true })).toBeVisible();

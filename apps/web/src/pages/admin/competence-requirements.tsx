@@ -43,7 +43,6 @@ import { errorMessage } from '../../query-policy';
 import { useAdminAction } from '../../mutations';
 import { usePageTitle } from '../../page-title';
 import { DialogFrame } from '../../components/dialog-frame';
-import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
 import { LevelField, isSkillType, levelLabel } from '../../components/register-holding';
 import { AdminShell } from './shell';
@@ -670,26 +669,24 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
     <AdminShell
       user={user}
       section="kompetens"
-      crumbs={[{ label: 'Kompetens', href: '/admin/competence' }, { label: 'Krav' }]}
-      pending={query.isPending}
-    >
-      <PageHeader
-        title="Krav på kompetens"
-        meta={
-          <Text as="p" color="secondary">
+      title="Krav på kompetens"
+      thing={{
+        meta: (
+          <Text as="p" type="supporting" color="secondary">
             Vad som krävs av den som har en befattning eller är placerad på en enhet, och hur stor del av en befattning
             som ska ha en kompetens. Den som saknar något som krävs får det markerat som Saknas.
           </Text>
-        }
-        end={
+        ),
+        actions:
           !refused && ready ? (
-            <HStack gap={2} wrap="wrap">
-              <Button ref={targetOpener} variant="secondary" label="Lägg till andelsmål" href={newTargetHref} />
+            <>
               <Button ref={requirementOpener} variant="primary" label="Lägg till krav" href={newRequirementHref} />
-            </HStack>
-          ) : undefined
-        }
-      />
+              <Button ref={targetOpener} variant="secondary" label="Lägg till andelsmål" href={newTargetHref} />
+            </>
+          ) : undefined,
+      }}
+      pending={query.isPending}
+    >
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}

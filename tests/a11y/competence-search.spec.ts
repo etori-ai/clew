@@ -29,7 +29,7 @@ import {
  * desktop, phone and 320 px.
  */
 const SEARCH = '/competence/search';
-const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Kompetenssökning' });
+const heading = (page: Page) => page.getByRole('heading', { level: 2, name: 'Kompetenssökning' });
 const form = (page: Page) => page.getByRole('search', { name: 'Sök vem som har en kompetens' });
 const typeField = (page: Page) => form(page).getByRole('combobox', { name: 'Kompetens' });
 /** The count, a status that begins with a number; not Astryx's live region, which mirrors an empty state's text. */
@@ -261,10 +261,6 @@ test.describe('Kompetens › Kompetenssökning', () => {
         expect(api.searchBodies).toEqual([]);
         expect(api.typesNamed).toEqual([]);
         await expectNoAxeViolations(page);
-        // The reader's own page has no tab to it either.
-        await open(page, '/competence');
-        await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeVisible();
-        await expect(tabs(page)).toHaveCount(0);
       });
     });
 
@@ -484,20 +480,20 @@ test.describe('Kompetens › Kompetenssökning', () => {
         .toContainEqual(expect.stringContaining('Något gick fel. Försök igen.'));
       expect(await announcements(page)).not.toContainEqual(expect.stringContaining('är hämtad'));
     });
-    test('a registrar who manages people too has the place’s three pages as tabs, this one current', async ({
+    test('a registrar who manages people too has the Kompetens tab’s two views as tabs, this one current', async ({
       page,
       api,
     }) => {
       registrar(api);
       api.employee = false;
       await open(page, SEARCH);
-      await expect(tabs(page).getByRole('link')).toHaveCount(3);
-      for (const name of ['Mina kompetenser', 'Medarbetare', 'Kompetenssökning'])
+      await expect(tabs(page).getByRole('link')).toHaveCount(2);
+      for (const name of ['Medarbetarnas kompetens', 'Kompetenssökning'])
         await expect(tabs(page).getByRole('link', { name })).toBeVisible();
       await expect(tabs(page).getByRole('link', { name: 'Kompetenssökning' })).toHaveAttribute('aria-current', 'true');
-      await tabs(page).getByRole('link', { name: 'Mina kompetenser' }).click();
-      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeVisible();
-      await expect(tabs(page).getByRole('link', { name: 'Kompetenssökning' })).toBeVisible();
+      await tabs(page).getByRole('link', { name: 'Medarbetarnas kompetens' }).click();
+      await expect(page.getByRole('heading', { level: 2, name: 'Medarbetarnas kompetens' })).toBeVisible();
+      await expect(tabs(page).getByRole('link', { name: 'Medarbetarnas kompetens' })).toBeFocused();
       // A registrar is shown the Kompetens place, never Administration: the relation is no capability (D118).
       await expect(page.getByRole('link', { name: 'Administration' })).toHaveCount(0);
     });

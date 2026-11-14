@@ -28,8 +28,6 @@ import {
   EmptyState,
   HStack,
   Icon,
-  Layout,
-  LayoutContent,
   Link,
   List,
   ListItem,
@@ -56,6 +54,7 @@ import {
 } from '@clew/ui';
 import { api } from '../api';
 import {
+  COMPETENCE_PATH,
   SEARCH_PATH,
   holdingsPageHref,
   noSearchHref,
@@ -75,17 +74,15 @@ import {
 } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { useRail } from '../components/nav';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { usePagePanel } from '../components/page-panel';
-import { panelBesideQuery } from '../components/panel';
+import { mobileQuery } from '../components/shell';
 import { levelLabel } from '../components/register-holding';
 import { personPageFrom } from '../person-address';
 import { CompetenceHeader, managesFrom, untilWords } from './competence-parts';
+import { COMPETENCE_TAB, PersonalFrame } from './staff-parts';
 
-/** The page's column at its widest: the width every page has (1216 px) less its padding on each side. */
-const COLUMN = 1216 - 2 * 32;
-const PADDING = 32;
+/** The rail's width and the tab's gutters, which the result's least width does not count. */
+const SIDE_NAV = 260;
+const PADDING = 24;
 const TITLE_ID = 'kompetenssokning-rubrik';
 /** The columns of the result, as Användare sizes its own (D100); with several types, one column each. */
 const WIDTHS = {
@@ -215,8 +212,8 @@ function HoldingsLink({ row, from }: { row: CompetenceSearchRow; from: string })
 }
 
 /**
- * Kompetenssökning at `/competence/search` (D121 items 4 and 5, D120 item 8), the third page of the place Kompetens, for
- * a reader who holds the relation `registrar` by grant: who in the organisation holds every one of up to five types.
+ * Kompetenssökning at `/competence/search` (D121 items 4 and 5, D120 item 8), a view of Personal's Kompetens tab since
+ * D126 rule 8 (`PersonalFrame`), for a reader who holds the relation `registrar` by grant: who in the organisation holds every one of up to five types.
  * Built as Administration › Användare is (D100, Astryx's filter bar over a table): the types chosen in a field that asks
  * the catalogue on the server as the reader types (Astryx's `Tokenizer`; a catalogue may hold thousands); a unit, with
  * everything below it; a status and a validity window for the types that can end; a least level for the skills. The
@@ -225,16 +222,13 @@ function HoldingsLink({ row, from }: { row: CompetenceSearchRow; from: string })
  * headers Astryx's sortable ones, its count a status that is read out when it changes; the file holds what the screen
  * shows, every page of it. Every search, every person opened and every file is logged on the server (D121 item 5), a
  * search read once per address while the page is mounted, and the page says so. A Table where it fits, its rows as a
- * list on a phone, beside the panel and where the columns do not fit, with "Sortera" in place of the headers. Anyone
+ * list on a phone and where the columns do not fit, with "Sortera" in place of the headers. Anyone
  * without the relation, or with the module off for them, is refused by the server, the page says why, and nothing is
  * searched or logged.
  */
 export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin: boolean }) {
-  usePageTitle('Kompetenssökning');
+  usePageTitle('Kompetenssökning · Personal');
   const mobile = useMediaQuery(mobileQuery);
-  const short = useMediaQuery(shortQuery);
-  const nav = useRail({ current: { surface: 'competence' }, admin, manager: user.role === 'manager' });
-  const panel = usePagePanel({ overlayOnly: short });
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -510,13 +504,12 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
       renderCell: r => <HoldingsLink row={r.row} from={from} />,
     },
   ];
-  // The rows are a table where its columns fit beside the rail (and the panel, when it is open), else a list.
+  // The rows are a table where its columns fit beside the rail, else a list.
   const { tableMinWidth } = resolveColumnWidths(
     columns.map(c => ({ key: c.key, ...(c.width ? { width: c.width } : {}) })),
   );
-  const fitsAlone = useMediaQuery(panelBesideQuery(tableMinWidth + 2 * PADDING, 0));
-  const fitsBeside = useMediaQuery(panelBesideQuery(tableMinWidth + 2 * PADDING));
-  const narrow = mobile || !(panel.occupied ? fitsBeside : fitsAlone);
+  const fits = useMediaQuery(`(min-width: ${SIDE_NAV + tableMinWidth + 2 * PADDING}px)`);
+  const narrow = mobile || !fits;
   const unreadable =
     asked.unreadable === 'types'
       ? `Adressen anger fler än ${COMPETENCE_SEARCH_TYPES_MAX} kompetenser, och en sökning gäller högst ${COMPETENCE_SEARCH_TYPES_MAX}.`
@@ -527,365 +520,343 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
           : null;
 
   return (
-    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        padding={mobile ? 3 : 8}
-        end={panel.end}
-        content={
-          <LayoutContent isScrollable={!short}>
-            <VStack hAlign="center">
-              <VStack gap={5} width="100%" maxWidth={COLUMN}>
-                <CompetenceHeader
-                  title="Kompetenssökning"
-                  titleId={TITLE_ID}
-                  page="search"
-                  hasTabs={manages && !off}
-                  hasSearch={searcher && !off}
-                />
-                {off ? (
-                  <Card>
-                    <EmptyState
-                      headingLevel={2}
-                      title="Kompetenssökning visas inte för dig"
-                      description={errorMessage(
-                        options.error,
-                        'Kompetenssökning är för den som har fått den genom en grupp.',
-                      )}
-                      actions={<Button label="Till Mina kompetenser" href="/competence" />}
+    <PersonalFrame user={user} admin={admin} tab={COMPETENCE_TAB} label="Kompetenssökning">
+      <VStack gap={5} width="100%">
+        <CompetenceHeader
+          title="Kompetenssökning"
+          titleId={TITLE_ID}
+          page="search"
+          hasTabs={manages && !off}
+          hasSearch={searcher && !off}
+        />
+        {off ? (
+          <Card>
+            <EmptyState
+              headingLevel={2}
+              title="Kompetenssökning visas inte för dig"
+              description={errorMessage(options.error, 'Kompetenssökning är för den som har fått den genom en grupp.')}
+              actions={<Button label="Till Mina kompetenser" href={COMPETENCE_PATH} />}
+            />
+          </Card>
+        ) : options.isError ? (
+          <VStack gap={2}>
+            <Text as="p" role="alert">
+              {errorMessage(options.error, 'Kompetenssökning kunde inte öppnas.')}
+            </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                isLoading={options.isFetching}
+                onClick={() => void options.refetch()}
+              />
+            </HStack>
+          </VStack>
+        ) : (
+          <Card padding={0}>
+            <Section variant="transparent" padding={3}>
+              <VStack gap={2} ref={top}>
+                {/* The fields lead, each where it was: a least level, offered once a skill is chosen, comes
+                            last so nothing moves for it; the status and the window stay, disabled with the reason, when
+                            every chosen type is a skill. */}
+                <HStack gap={2} wrap="wrap" vAlign="end" role="search" aria-label="Sök vem som har en kompetens">
+                  <Tokenizer<TypeItem>
+                    label="Kompetens"
+                    description={`De som har alla valda visas, högst ${COMPETENCE_SEARCH_TYPES_MAX}.`}
+                    placeholder="Sök på namn eller område"
+                    searchSource={source}
+                    value={tokens}
+                    onChange={items => choose(items)}
+                    handleRef={field}
+                    maxEntries={COMPETENCE_SEARCH_TYPES_MAX}
+                    hasEntriesOnFocus
+                    maxMenuItems={COMPETENCE_TYPE_SEARCH_MAX}
+                    emptySearchText="Ingen kompetens i katalogen heter så"
+                    renderItem={item => <TypeaheadItem item={item} description={item.auxiliaryData?.area} />}
+                    menu={{
+                      role: 'listbox',
+                      render: ({ listbox, isEmptySearch }) => (
+                        <VStack gap={0}>
+                          {listbox}
+                          {more && !isEmptySearch && (
+                            <Section variant="transparent" padding={2}>
+                              <Text type="supporting">Fler kompetenser matchar. Skriv mer av namnet.</Text>
+                            </Section>
+                          )}
+                        </VStack>
+                      ),
+                    }}
+                    width={mobile ? '100%' : 360}
+                  />
+                  <Selector
+                    label="Enhet"
+                    description="Med enheterna under den."
+                    placeholder="Hela organisationen"
+                    presentation="adaptive"
+                    hasClear
+                    hasSearch
+                    searchPlaceholder="Sök enhet"
+                    emptyText="Katalogen har inte fört in några enheter."
+                    emptySearchText="Ingen enhet heter så"
+                    options={[
+                      ...units.map(u => ({
+                        value: u.id,
+                        label: u.label,
+                        ...(u.parentLabel ? { description: u.parentLabel } : {}),
+                      })),
+                      // A unit the address names and the tree no longer holds is shown as such, so the field
+                      // and the refusal under it say the same.
+                      ...(asked.unitId && !units.some(u => u.id === asked.unitId)
+                        ? [{ value: asked.unitId, label: 'Enhet som inte finns' }]
+                        : []),
+                    ]}
+                    value={asked.unitId}
+                    onChange={(unitId: string | null) => show({ unitId: unitId || null })}
+                  />
+                  <MultiSelector
+                    label="Status"
+                    placeholder="Alla"
+                    presentation="adaptive"
+                    triggerDisplay="labels"
+                    hasClear
+                    options={COMPETENCE_SEARCH_STATUSES.map(s => ({ value: s, label: STATUS_LABEL[s] }))}
+                    value={asked.status}
+                    onChange={(value: string[]) =>
+                      show({ status: COMPETENCE_SEARCH_STATUSES.filter(s => value.includes(s)) })
+                    }
+                    isDisabled={allSkills && !asked.status.length}
+                    disabledMessage="En färdighet går inte ut, så den har ingen status att välja."
+                  />
+                  <Selector
+                    label="Giltigt till"
+                    placeholder="Alla datum"
+                    presentation="adaptive"
+                    hasClear
+                    options={COMPETENCE_SEARCH_WINDOWS.map(days => ({
+                      value: String(days),
+                      label: windowLabel(days),
+                    }))}
+                    value={asked.until ? String(asked.until) : null}
+                    onChange={(value: string | null) =>
+                      show({ until: COMPETENCE_SEARCH_WINDOWS.find(d => String(d) === value) ?? null })
+                    }
+                    isDisabled={allSkills && !asked.until}
+                    disabledMessage="En färdighet går inte ut, så den har inget slutdatum att välja."
+                  />
+                  {(someSkill || asked.minLevel) && (
+                    <Selector
+                      label="Lägsta nivå"
+                      placeholder="Alla nivåer"
+                      presentation="adaptive"
+                      hasClear
+                      options={COMPETENCE_LEVELS.map(l => ({ value: String(l), label: levelLabel(l) }))}
+                      value={asked.minLevel ? String(asked.minLevel) : null}
+                      onChange={(value: string | null) =>
+                        show({ minLevel: COMPETENCE_LEVELS.find(l => String(l) === value) ?? null })
+                      }
                     />
-                  </Card>
-                ) : options.isError ? (
-                  <VStack gap={2}>
-                    <Text as="p" role="alert">
-                      {errorMessage(options.error, 'Kompetenssökning kunde inte öppnas.')}
-                    </Text>
-                    <HStack>
+                  )}
+                </HStack>
+                {/* The one line that says what the search found, read out when it changes (4.1.3), on a line of
+                            its own under the fields, so nothing beside it moves when it is long: there from the start
+                            and empty before a search. */}
+                <Text weight="semibold" role="status">
+                  {said}
+                </Text>
+                <HStack gap={2} wrap="wrap" vAlign="center" justify="between">
+                  <Text type="supporting">
+                    Varje sökning, nedladdning och öppnad person loggas med vem som läste och när, också när en sökning
+                    öppnas från en länk eller laddas om.
+                  </Text>
+                  <HStack gap={2} wrap="wrap" vAlign="center">
+                    {data && data.total > 1 && (narrow || several) && (
+                      <Selector
+                        label="Sortera"
+                        isLabelHidden
+                        size="sm"
+                        presentation="adaptive"
+                        options={sortable}
+                        value={sortable.some(o => o.value === order) ? order : 'name:asc'}
+                        onChange={(value: string) => {
+                          const [sort, by] = value.split(':') as [CompetenceSearchSort, CompetenceSearchOrder];
+                          show({ sort, order: by });
+                        }}
+                        renderValue={o => `Sortera: ${o.label}`}
+                      />
+                    )}
+                    {narrowed && <Button size="sm" variant="ghost" label="Rensa filter" onClick={clear} />}
+                    {data && data.total > 0 && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        label={`Ladda ner ${rowsOf(data.total)} som CSV`}
+                        icon={<Icon icon={ArrowDownTrayIcon} size="sm" />}
+                        isLoading={downloading}
+                        onClick={() => void download()}
+                      />
+                    )}
+                  </HStack>
+                </HStack>
+              </VStack>
+            </Section>
+            {unreadable ? (
+              <Section variant="transparent" padding={3}>
+                <VStack gap={2}>
+                  <Text as="p" role="alert" color="accent">
+                    {unreadable}
+                  </Text>
+                  <HStack>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      label={asked.unreadable === 'unit' ? 'Sök utan enheten' : 'Börja om'}
+                      onClick={() =>
+                        navigate(
+                          asked.unreadable === 'unit'
+                            ? searchHref({ unitId: null }, location.search)
+                            : noSearchHref(location.search),
+                        )
+                      }
+                    />
+                  </HStack>
+                </VStack>
+              </Section>
+            ) : !body ? (
+              <EmptyState
+                isCompact
+                headingLevel={2}
+                title="Välj en kompetens"
+                description="Sök fram en eller flera kompetenser, så visas alla i organisationen som har dem, med var de står och när de går ut."
+              />
+            ) : listError ? (
+              <Section variant="transparent" padding={3}>
+                <VStack gap={2}>
+                  <Text as="p" role="alert" color="accent">
+                    {listError}
+                  </Text>
+                  <HStack gap={2} wrap="wrap">
+                    {unknown.length > 0 ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        label={unknown.length === 1 ? 'Sök utan den' : 'Sök utan dem'}
+                        onClick={() => show({ typeIds: asked.typeIds.filter(id => !unknown.includes(id)) })}
+                      />
+                    ) : (
                       <Button
                         size="sm"
                         variant="secondary"
                         label="Försök igen"
-                        isLoading={options.isFetching}
-                        onClick={() => void options.refetch()}
+                        isLoading={result.isFetching}
+                        onClick={() => void result.refetch()}
                       />
-                    </HStack>
-                  </VStack>
-                ) : (
-                  <Card padding={0}>
-                    <Section variant="transparent" padding={3}>
-                      <VStack gap={2} ref={top}>
-                        {/* The fields lead, each where it was: a least level, offered once a skill is chosen, comes
-                            last so nothing moves for it; the status and the window stay, disabled with the reason, when
-                            every chosen type is a skill. */}
-                        <HStack
-                          gap={2}
-                          wrap="wrap"
-                          vAlign="end"
-                          role="search"
-                          aria-label="Sök vem som har en kompetens"
-                        >
-                          <Tokenizer<TypeItem>
-                            label="Kompetens"
-                            description={`De som har alla valda visas, högst ${COMPETENCE_SEARCH_TYPES_MAX}.`}
-                            placeholder="Sök på namn eller område"
-                            searchSource={source}
-                            value={tokens}
-                            onChange={items => choose(items)}
-                            handleRef={field}
-                            maxEntries={COMPETENCE_SEARCH_TYPES_MAX}
-                            hasEntriesOnFocus
-                            maxMenuItems={COMPETENCE_TYPE_SEARCH_MAX}
-                            emptySearchText="Ingen kompetens i katalogen heter så"
-                            renderItem={item => <TypeaheadItem item={item} description={item.auxiliaryData?.area} />}
-                            menu={{
-                              role: 'listbox',
-                              render: ({ listbox, isEmptySearch }) => (
-                                <VStack gap={0}>
-                                  {listbox}
-                                  {more && !isEmptySearch && (
-                                    <Section variant="transparent" padding={2}>
-                                      <Text type="supporting">Fler kompetenser matchar. Skriv mer av namnet.</Text>
-                                    </Section>
-                                  )}
-                                </VStack>
-                              ),
-                            }}
-                            width={mobile ? '100%' : 360}
-                          />
-                          <Selector
-                            label="Enhet"
-                            description="Med enheterna under den."
-                            placeholder="Hela organisationen"
-                            presentation="adaptive"
-                            hasClear
-                            hasSearch
-                            searchPlaceholder="Sök enhet"
-                            emptyText="Katalogen har inte fört in några enheter."
-                            emptySearchText="Ingen enhet heter så"
-                            options={[
-                              ...units.map(u => ({
-                                value: u.id,
-                                label: u.label,
-                                ...(u.parentLabel ? { description: u.parentLabel } : {}),
-                              })),
-                              // A unit the address names and the tree no longer holds is shown as such, so the field
-                              // and the refusal under it say the same.
-                              ...(asked.unitId && !units.some(u => u.id === asked.unitId)
-                                ? [{ value: asked.unitId, label: 'Enhet som inte finns' }]
-                                : []),
-                            ]}
-                            value={asked.unitId}
-                            onChange={(unitId: string | null) => show({ unitId: unitId || null })}
-                          />
-                          <MultiSelector
-                            label="Status"
-                            placeholder="Alla"
-                            presentation="adaptive"
-                            triggerDisplay="labels"
-                            hasClear
-                            options={COMPETENCE_SEARCH_STATUSES.map(s => ({ value: s, label: STATUS_LABEL[s] }))}
-                            value={asked.status}
-                            onChange={(value: string[]) =>
-                              show({ status: COMPETENCE_SEARCH_STATUSES.filter(s => value.includes(s)) })
-                            }
-                            isDisabled={allSkills && !asked.status.length}
-                            disabledMessage="En färdighet går inte ut, så den har ingen status att välja."
-                          />
-                          <Selector
-                            label="Giltigt till"
-                            placeholder="Alla datum"
-                            presentation="adaptive"
-                            hasClear
-                            options={COMPETENCE_SEARCH_WINDOWS.map(days => ({
-                              value: String(days),
-                              label: windowLabel(days),
-                            }))}
-                            value={asked.until ? String(asked.until) : null}
-                            onChange={(value: string | null) =>
-                              show({ until: COMPETENCE_SEARCH_WINDOWS.find(d => String(d) === value) ?? null })
-                            }
-                            isDisabled={allSkills && !asked.until}
-                            disabledMessage="En färdighet går inte ut, så den har inget slutdatum att välja."
-                          />
-                          {(someSkill || asked.minLevel) && (
-                            <Selector
-                              label="Lägsta nivå"
-                              placeholder="Alla nivåer"
-                              presentation="adaptive"
-                              hasClear
-                              options={COMPETENCE_LEVELS.map(l => ({ value: String(l), label: levelLabel(l) }))}
-                              value={asked.minLevel ? String(asked.minLevel) : null}
-                              onChange={(value: string | null) =>
-                                show({ minLevel: COMPETENCE_LEVELS.find(l => String(l) === value) ?? null })
-                              }
-                            />
-                          )}
-                        </HStack>
-                        {/* The one line that says what the search found, read out when it changes (4.1.3), on a line of
-                            its own under the fields, so nothing beside it moves when it is long: there from the start
-                            and empty before a search. */}
-                        <Text weight="semibold" role="status">
-                          {said}
-                        </Text>
-                        <HStack gap={2} wrap="wrap" vAlign="center" justify="between">
-                          <Text type="supporting">
-                            Varje sökning, nedladdning och öppnad person loggas med vem som läste och när, också när en
-                            sökning öppnas från en länk eller laddas om.
-                          </Text>
-                          <HStack gap={2} wrap="wrap" vAlign="center">
-                            {data && data.total > 1 && (narrow || several) && (
-                              <Selector
-                                label="Sortera"
-                                isLabelHidden
-                                size="sm"
-                                presentation="adaptive"
-                                options={sortable}
-                                value={sortable.some(o => o.value === order) ? order : 'name:asc'}
-                                onChange={(value: string) => {
-                                  const [sort, by] = value.split(':') as [CompetenceSearchSort, CompetenceSearchOrder];
-                                  show({ sort, order: by });
-                                }}
-                                renderValue={o => `Sortera: ${o.label}`}
-                              />
-                            )}
-                            {narrowed && <Button size="sm" variant="ghost" label="Rensa filter" onClick={clear} />}
-                            {data && data.total > 0 && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                label={`Ladda ner ${rowsOf(data.total)} som CSV`}
-                                icon={<Icon icon={ArrowDownTrayIcon} size="sm" />}
-                                isLoading={downloading}
-                                onClick={() => void download()}
-                              />
-                            )}
-                          </HStack>
-                        </HStack>
-                      </VStack>
-                    </Section>
-                    {unreadable ? (
-                      <Section variant="transparent" padding={3}>
-                        <VStack gap={2}>
-                          <Text as="p" role="alert" color="accent">
-                            {unreadable}
-                          </Text>
-                          <HStack>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              label={asked.unreadable === 'unit' ? 'Sök utan enheten' : 'Börja om'}
-                              onClick={() =>
-                                navigate(
-                                  asked.unreadable === 'unit'
-                                    ? searchHref({ unitId: null }, location.search)
-                                    : noSearchHref(location.search),
-                                )
-                              }
-                            />
-                          </HStack>
-                        </VStack>
-                      </Section>
-                    ) : !body ? (
-                      <EmptyState
-                        isCompact
-                        headingLevel={2}
-                        title="Välj en kompetens"
-                        description="Sök fram en eller flera kompetenser, så visas alla i organisationen som har dem, med var de står och när de går ut."
-                      />
-                    ) : listError ? (
-                      <Section variant="transparent" padding={3}>
-                        <VStack gap={2}>
-                          <Text as="p" role="alert" color="accent">
-                            {listError}
-                          </Text>
-                          <HStack gap={2} wrap="wrap">
-                            {unknown.length > 0 ? (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                label={unknown.length === 1 ? 'Sök utan den' : 'Sök utan dem'}
-                                onClick={() => show({ typeIds: asked.typeIds.filter(id => !unknown.includes(id)) })}
-                              />
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                label="Försök igen"
-                                isLoading={result.isFetching}
-                                onClick={() => void result.refetch()}
-                              />
-                            )}
-                            {narrowed && <Button size="sm" variant="ghost" label="Rensa filter" onClick={clear} />}
-                          </HStack>
-                        </VStack>
-                      </Section>
-                    ) : !data || (searching && !result.isPlaceholderData) ? (
-                      <Section variant="transparent" padding={3}>
-                        <Text type="supporting">Söker …</Text>
-                      </Section>
-                    ) : data.total === 0 ? (
-                      <EmptyState
-                        isCompact
-                        headingLevel={2}
-                        title={
-                          data.unfiltered > 0
-                            ? 'Ingen matchar filtret'
-                            : several
-                              ? 'Ingen har alla de kompetenserna'
-                              : 'Ingen har den kompetensen'
-                        }
-                        description={loosen(data)}
-                        {...(narrowed ? { actions: <Button size="sm" label="Rensa filter" onClick={clear} /> } : {})}
-                      />
-                    ) : (
-                      <VStack gap={0} aria-busy={result.isPlaceholderData}>
-                        {narrow ? (
-                          <List aria-label={`Personer med ${names}`} hasDividers>
-                            {rows.map(row => (
-                              <ListItem
-                                key={row.personId}
-                                label={<PersonName row={row} href={personOf(row)} />}
-                                endContent={<HoldingsLink row={row} from={from} />}
-                                description={
-                                  <VStack gap={1} hAlign="start">
-                                    <Text type="supporting">{unitsOf(row)}</Text>
-                                    {several || !one ? (
-                                      shown.map((t, i) => (
-                                        <HStack key={t.id} gap={2} vAlign="center" wrap="wrap">
-                                          <Text type="supporting">{`${t.name}:`}</Text>
-                                          {row.held[i] &&
-                                            (isSkill(t) ? (
-                                              <Level held={row.held[i]} />
-                                            ) : (
-                                              <>
-                                                <Status held={row.held[i]} />
-                                                <Text type="supporting">{until(row.held[i])}</Text>
-                                              </>
-                                            ))}
-                                        </HStack>
-                                      ))
-                                    ) : row.held[0] ? (
+                    )}
+                    {narrowed && <Button size="sm" variant="ghost" label="Rensa filter" onClick={clear} />}
+                  </HStack>
+                </VStack>
+              </Section>
+            ) : !data || (searching && !result.isPlaceholderData) ? (
+              <Section variant="transparent" padding={3}>
+                <Text type="supporting">Söker …</Text>
+              </Section>
+            ) : data.total === 0 ? (
+              <EmptyState
+                isCompact
+                headingLevel={2}
+                title={
+                  data.unfiltered > 0
+                    ? 'Ingen matchar filtret'
+                    : several
+                      ? 'Ingen har alla de kompetenserna'
+                      : 'Ingen har den kompetensen'
+                }
+                description={loosen(data)}
+                {...(narrowed ? { actions: <Button size="sm" label="Rensa filter" onClick={clear} /> } : {})}
+              />
+            ) : (
+              <VStack gap={0} aria-busy={result.isPlaceholderData}>
+                {narrow ? (
+                  <List aria-label={`Personer med ${names}`} hasDividers>
+                    {rows.map(row => (
+                      <ListItem
+                        key={row.personId}
+                        label={<PersonName row={row} href={personOf(row)} />}
+                        endContent={<HoldingsLink row={row} from={from} />}
+                        description={
+                          <VStack gap={1} hAlign="start">
+                            <Text type="supporting">{unitsOf(row)}</Text>
+                            {several || !one ? (
+                              shown.map((t, i) => (
+                                <HStack key={t.id} gap={2} vAlign="center" wrap="wrap">
+                                  <Text type="supporting">{`${t.name}:`}</Text>
+                                  {row.held[i] &&
+                                    (isSkill(t) ? (
+                                      <Level held={row.held[i]} />
+                                    ) : (
                                       <>
-                                        <HStack gap={2} vAlign="center" wrap="wrap">
-                                          <Status held={row.held[0]} />
-                                          <Level held={row.held[0]} />
-                                        </HStack>
-                                        <Text type="supporting">{`Giltigt till: ${until(row.held[0])}`}</Text>
+                                        <Status held={row.held[i]} />
+                                        <Text type="supporting">{until(row.held[i])}</Text>
                                       </>
-                                    ) : null}
-                                  </VStack>
-                                }
-                              />
-                            ))}
-                          </List>
-                        ) : (
-                          <Table<Row>
-                            data={rows.map(row => ({ id: row.personId, row }))}
-                            idKey="id"
-                            columns={columns}
-                            plugins={{ sort: sortPlugin }}
-                            density="balanced"
-                            hasHover
-                            rowIndexStart={(data.page - 1) * data.pageSize + 1}
-                            rowCount={data.total}
-                          />
-                        )}
-                      </VStack>
-                    )}
-                    {data && data.total > COMPETENCE_SEARCH_PAGE_SIZES[0] && (
-                      <Section variant="transparent" padding={3}>
-                        <HStack justify="center">
-                          <Pagination
-                            label="Sidor i sökresultatet"
-                            size="sm"
-                            variant={mobile ? 'compact' : 'pages'}
-                            page={data.page}
-                            totalItems={data.total}
-                            pageSize={data.pageSize}
-                            onChange={turn}
-                            {...(mobile
-                              ? {}
-                              : {
-                                  pageSizeOptions: [...COMPETENCE_SEARCH_PAGE_SIZES],
-                                  onPageSizeChange: (size: number) =>
-                                    show({
-                                      pageSize:
-                                        COMPETENCE_SEARCH_PAGE_SIZES.find(n => n === size) ??
-                                        COMPETENCE_SEARCH_PAGE_SIZES[0],
-                                    }),
-                                })}
-                          />
-                        </HStack>
-                      </Section>
-                    )}
-                  </Card>
+                                    ))}
+                                </HStack>
+                              ))
+                            ) : row.held[0] ? (
+                              <>
+                                <HStack gap={2} vAlign="center" wrap="wrap">
+                                  <Status held={row.held[0]} />
+                                  <Level held={row.held[0]} />
+                                </HStack>
+                                <Text type="supporting">{`Giltigt till: ${until(row.held[0])}`}</Text>
+                              </>
+                            ) : null}
+                          </VStack>
+                        }
+                      />
+                    ))}
+                  </List>
+                ) : (
+                  <Table<Row>
+                    data={rows.map(row => ({ id: row.personId, row }))}
+                    idKey="id"
+                    columns={columns}
+                    plugins={{ sort: sortPlugin }}
+                    density="balanced"
+                    hasHover
+                    rowIndexStart={(data.page - 1) * data.pageSize + 1}
+                    rowCount={data.total}
+                  />
                 )}
               </VStack>
-            </VStack>
-          </LayoutContent>
-        }
-      />
-      {panel.overlay}
-    </Shell>
+            )}
+            {data && data.total > COMPETENCE_SEARCH_PAGE_SIZES[0] && (
+              <Section variant="transparent" padding={3}>
+                <HStack justify="center">
+                  <Pagination
+                    label="Sidor i sökresultatet"
+                    size="sm"
+                    variant={mobile ? 'compact' : 'pages'}
+                    page={data.page}
+                    totalItems={data.total}
+                    pageSize={data.pageSize}
+                    onChange={turn}
+                    {...(mobile
+                      ? {}
+                      : {
+                          pageSizeOptions: [...COMPETENCE_SEARCH_PAGE_SIZES],
+                          onPageSizeChange: (size: number) =>
+                            show({
+                              pageSize:
+                                COMPETENCE_SEARCH_PAGE_SIZES.find(n => n === size) ?? COMPETENCE_SEARCH_PAGE_SIZES[0],
+                            }),
+                        })}
+                  />
+                </HStack>
+              </Section>
+            )}
+          </Card>
+        )}
+      </VStack>
+    </PersonalFrame>
   );
 }

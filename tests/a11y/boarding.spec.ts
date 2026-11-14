@@ -87,7 +87,7 @@ test.describe('the plan for its manager', () => {
     ).toBeVisible();
     // An order is a plain to-do in this version: no row orders or books anything.
     await expect(main.getByRole('button', { name: /^(Beställ|Föreslå tid)$/ })).toHaveCount(0);
-    const rail = page.getByRole('complementary', { name: 'Detaljer' });
+    const rail = page.getByRole('complementary', { name: 'Uppgifter' });
     await expect(rail.getByText('Erik Sandström', { exact: true })).toBeVisible();
     await expect(rail.getByText('måndag 16 november 2026', { exact: true })).toBeVisible();
     await expect(rail.getByRole('link', { name: 'Person: Anna Lindqvist' })).toHaveAttribute(
@@ -335,16 +335,18 @@ test.describe('the ways in', () => {
       const detail = entityDetail(api.entityList, key);
       return detail && { ...detail, sections: [...detail.sections, boardingSource] };
     };
-    await open(page, '/people/anna?from=%2Fstaff');
+    // The plan's way in is in its source's tab of the person's page (D126 rule 9).
+    const tab = `/people/anna?section=${BOARDING_LENS}`;
+    await open(page, `${tab}&from=%2Fstaff`);
     const way = page.getByRole('region', { name: 'Introduktion och avslut', exact: true }).getByRole('link', {
       name: 'Öppna planen',
     });
-    await expect(way).toHaveAttribute('href', '/boarding/anna?from=%2Fpeople%2Fanna');
+    await expect(way).toHaveAttribute('href', `/boarding/anna?from=${encodeURIComponent(tab)}`);
     await way.click();
     await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
     await expect(page.getByRole('main').getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
       'href',
-      '/people/anna',
+      tab,
     );
     await page.goBack();
     await expect(way).toBeFocused();
@@ -380,18 +382,14 @@ test.describe('the ways in', () => {
 });
 
 test.describe('small screens', () => {
-  test('at 320 px the plan reflows, its facts behind Visa detaljer', async ({ page, api }) => {
+  test('at 320 px the plan reflows, its facts above the read (D126 rule 1)', async ({ page, api }) => {
     api.boarding = new BoardingMock();
     await page.setViewportSize(narrow);
     await open(page, PAGE);
     await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
+    const facts = page.getByRole('main').getByRole('region', { name: 'Uppgifter' });
+    await expect(facts.getByText('Erik Sandström', { exact: true })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
-    await page.getByRole('button', { name: 'Visa detaljer' }).click();
-    const details = page.getByRole('dialog', { name: 'Detaljer' });
-    await expect(details.getByText('Erik Sandström', { exact: true })).toBeVisible();
-    expect(await reflowProblems(page)).toEqual([]);
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: 'Visa detaljer' })).toBeFocused();
     await expectNoAxeViolations(page);
   });
 
@@ -435,7 +433,7 @@ function tied(api: MockApi) {
 test.describe('what an item is done with', () => {
   test.use({ viewport: wide });
 
-  test('by keyboard: an order about the person opens its work item beside the plan with the dialog over it, the preset chosen; Esc sends nothing; the last button places it and the item stays to do', async ({
+  test('by keyboard: an order about the person opens the dialog with the preset chosen and nothing made; Esc gives the focus back; the last button places it, its item opens on its page, and the plan’s item stays to do', async ({
     page,
     api,
   }) => {
@@ -455,21 +453,21 @@ test.describe('what an item is done with', () => {
 
     await order.focus();
     await page.keyboard.press('Enter');
-    // The same path a person's page starts on: the work item first, without the answers, beside this page.
-    await expect(page).toHaveURL(`${PAGE}&card=entity-servicedesk-order-anna`);
-    expect(api.entityStarts).toEqual([{ key: ANNA, capability: 'servicedesk.order' }]);
+    // The same path a person's page starts on (D126 item 7): the dialog first, and nothing exists before its last button.
     const dialog = page.getByRole('dialog', { name: 'Beställ från IT-servicedesken' });
     await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(PAGE);
+    expect(api.entityStarts).toEqual([]);
+    expect(api.entityDecides).toEqual([]);
     await expect(dialog.getByRole('radio', { name: 'Passerkort' })).toBeChecked();
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    const panel = page.getByRole('complementary', { name: 'Ärende' });
-    const decide = panel.getByRole('button', { name: 'Beställ från IT-servicedesken' });
-    await expect(decide).toBeFocused();
-    expect(api.acted).toEqual([]);
+    // Esc sends nothing and gives the focus back to the row's button that opened it.
+    await expect(order).toBeFocused();
+    expect(api.entityDecides).toEqual([]);
 
-    // Its own button opens the dialog again with the answer kept; the last button is the only thing that sends.
+    // The same button opens the dialog again with the answer kept; the last button is the only thing that sends.
     await page.keyboard.press('Enter');
     await expect(dialog.getByRole('radio', { name: 'Passerkort' })).toBeChecked();
     await dialog.getByRole('button', { name: 'Nästa' }).focus();
@@ -478,18 +476,22 @@ test.describe('what an item is done with', () => {
     await dialog.getByRole('button', { name: 'Beställ från IT-servicedesken' }).focus();
     await page.keyboard.press('Enter');
     await expect(dialog).toBeHidden();
-    await expect
-      .poll(() => api.acted.map(a => a.body))
-      .toEqual([{ actionId: 'decide', values: { item: 'access-card' } }]);
-    await expect(panel.getByText('Beställningen är lagd hos IT-servicedesken.')).toBeVisible();
-    // The plan holds the item, never the order: it is not ticked by it.
+    // An execute: its work item is made with the decision in it, and opens on its own page with the plan as the way
+    // back, which has none of its own.
+    expect(api.entityStarts).toEqual([]);
+    expect(api.entityDecides).toEqual([
+      { key: ANNA, capability: 'servicedesk.order', values: { item: 'access-card' } },
+    ]);
+    await expect(page).toHaveURL(
+      `/items/entity-servicedesk-order-anna?from=${encodeURIComponent(`/boarding/${ANNA}`)}`,
+    );
+    await expect(page.getByRole('main').getByText('Beställningen är lagd hos IT-servicedesken.')).toBeVisible();
+    await expectNoAxeViolations(page);
+    // Back leaves the work item for the plan as it was; the plan holds the item, never the order: it is not ticked by it.
+    await page.goBack();
+    await expect(page).toHaveURL(PAGE);
     await expect(item(page, 'Beställ passerkort')).not.toBeChecked();
     expect(boarding.writes).toEqual([]);
-    await expectNoAxeViolations(page);
-    // Closing the work item leaves the plan as it was, with the focus on the row's button that started it.
-    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
-    await expect(page).toHaveURL(PAGE);
-    await expect(order).toBeFocused();
   });
 
   test('a read leads to its page with the person as its input, and Back gives the focus to the link; an address leaves in a new tab', async ({

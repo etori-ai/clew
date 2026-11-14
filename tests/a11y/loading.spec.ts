@@ -34,10 +34,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, narrow]) {
       // Each block arrives with its own read (D112 item 2): the work items with the cards, while the figures keep their
       // shape until the areas have answered and the day until it has.
       await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
-      await expect(page.getByRole('region', { name: 'Läget', exact: true })).toHaveAttribute('aria-busy', 'true');
+      // Läget is the manager's unit, named in its heading (board Hem): "Läget på <enhet>".
+      await expect(page.getByRole('region', { name: /^Läget på / })).toHaveAttribute('aria-busy', 'true');
       await expect(page.getByText('Hämtar i dag …')).toBeAttached();
       areas();
-      await expect(page.getByRole('region', { name: 'Läget', exact: true })).not.toHaveAttribute('aria-busy', 'true');
+      await expect(page.getByRole('region', { name: /^Läget på / })).not.toHaveAttribute('aria-busy', 'true');
       day();
       await expect(page.getByText('Hämtar i dag …')).toHaveCount(0);
       await expect(composer(page)).toHaveText('En fråga medan sidan hämtas');
@@ -103,7 +104,7 @@ test('while the session is checked the shell stands in its final shape: the band
   const banner = page.getByRole('banner');
   await expect(banner.getByRole('link', { name: 'Organisation' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toBeVisible();
-  // Dialogstöd's own placeholder, "Att ta upp" and a table, where the page will be.
+  // Läget's own placeholder (D126 rule 10: the units the reader follows up, under Min enhet), where the page will be.
   await expect(page.getByRole('main').getByRole('status').filter({ hasText: 'Hämtar enheterna …' })).toBeAttached();
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);
   // Where the page will start and how tall the band is, before and after: nothing moves when the session arrives.
@@ -113,7 +114,7 @@ test('while the session is checked the shell stands in its final shape: the band
   });
   const before = await place();
   release();
-  await expect(page.getByRole('heading', { level: 1, name: 'Dialogstöd' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Läget' })).toBeVisible();
   expect(await place()).toEqual(before);
 });
 

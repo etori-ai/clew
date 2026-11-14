@@ -14,8 +14,8 @@ export const focusOf = (needsYou: readonly Thread[]): Thread | undefined => need
 /**
  * Fokusnyhet (D112, amended 2026-11-11, board Hem10): one callout between the box and the blocks, the open work item
  * that asks for the person's read receipt. It says what was published, by whom (the source), when, and that a receipt is
- * required, with "Läs", which opens the item in the panel beside Hem as every row on Hem does (`href`, amended
- * 2026-11-12), and the item's own receipt action as its button, through the one action path (a dialog only when the
+ * required, with "Läs", which leads to the item's page as every row on Hem does (`href`, D126 rule 1), and the item's
+ * own receipt action as its button, through the one action path (a dialog only when the
  * action asks something, else one press). It stays until the receipt is given; the receipt's arrival is said by Hem's
  * receipt notice, and for the moment the item keeps its place the callout says the source's answer instead of its
  * buttons. Astryx's `Banner` in its card container.
@@ -26,7 +26,7 @@ export function FocusNews({
   onChange,
 }: {
   thread: Thread;
-  /** Where "Läs" leads: the item in the panel beside the page the callout is on. */
+  /** Where "Läs" leads: the item's own page, with the page the callout is on as the way back. */
   href: string;
   onChange: (thread: Thread) => void;
 }) {

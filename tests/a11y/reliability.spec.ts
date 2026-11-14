@@ -56,10 +56,10 @@ test('two tabs and a reconnect announce a persisted reminder once; Visa opens it
       .getByRole('region', { name: 'Aviseringar' })
       .getByRole('button', { name: 'Visa', exact: true })
       .click();
-    // Visa opens the card over the page the toast was on, Kalender or Hem, in that page's panel (D111 rule 2; D112,
-    // amended 2026-11-12).
-    await expect(winner).toHaveURL(winner === page ? '/calendar?card=ledighet' : '/?card=ledighet');
-    await expect(winner.getByRole('article', { name: 'Ärende: ' + thread.title })).toBeVisible();
+    // Visa opens the work item's page, with the page the toast was on, Kalender or Hem, as the way back (D126 rule 1:
+    // nothing opens over a page).
+    await expect(winner).toHaveURL(winner === page ? '/items/ledighet?from=%2Fcalendar' : '/items/ledighet?from=%2F');
+    await expect(winner.getByRole('heading', { level: 1, name: thread.title })).toBeVisible();
     await Promise.all([page.reload(), second.reload()]);
     await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText(body)).toHaveCount(0);
     await expect(second.getByRole('region', { name: 'Aviseringar' }).getByText(body)).toHaveCount(0);

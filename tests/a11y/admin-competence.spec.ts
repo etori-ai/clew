@@ -94,15 +94,17 @@ test.describe('Administration › Kompetens', () => {
       api.admin = true;
       api.competenceTypes = competenceCatalogue();
       await open(page, '/admin/connectors');
-      // The row under Administration: the place Kompetens in the rail is the reader's own (D120 item 8), another link.
-      const row = page
-        .getByRole('navigation', { name: 'Sidonavigering' })
-        .getByRole('group', { name: 'Administration', exact: true })
-        .getByRole('link', { name: 'Kompetens', exact: true });
+      // The section in the administration's own panel (D126): the place Kompetens in the rail is the reader's own
+      // (D120 item 8), another link.
+      const sections = page.getByRole('navigation', { name: 'Administration', exact: true });
+      const row = sections.getByRole('link', { name: 'Kompetens', exact: true });
       await row.click();
       await expect(page).toHaveURL(/\/admin\/competence$/);
       await expect(page).toHaveTitle('Kompetens · Startsidan');
-      await expect(row).toHaveAttribute('aria-current', 'page');
+      // Astryx marks the row, not its link, as the current one.
+      await expect(
+        sections.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Kompetens', exact: true }) }),
+      ).toHaveAttribute('aria-current', 'true');
       await expect(page.getByRole('status').filter({ hasText: 'att registrera' })).toHaveText(
         '3 kompetenser att registrera, 1 arkiverade',
       );
@@ -125,13 +127,14 @@ test.describe('Administration › Kompetens', () => {
     }) => {
       api.admin = true;
       const kompetens = page
-        .getByRole('navigation', { name: 'Sidonavigering' })
-        .getByRole('group', { name: 'Administration', exact: true })
+        .getByRole('navigation', { name: 'Administration', exact: true })
         .getByRole('link', { name: 'Kompetens', exact: true });
       // Switched off (D108 item 13): no row, and the page itself still says why for an address from before.
       await open(page, '/admin/connectors');
       await expect(
-        page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Anslutna system' }),
+        page
+          .getByRole('navigation', { name: 'Administration', exact: true })
+          .getByRole('link', { name: 'Anslutna system' }),
       ).toBeVisible();
       await expect(kompetens).toHaveCount(0);
       await open(page, '/admin/competence');

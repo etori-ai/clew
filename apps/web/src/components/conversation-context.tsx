@@ -32,6 +32,7 @@ import { assistantQuery, threadQuery, verbsQuery } from '../queries';
 import { keys } from '../query-keys';
 import { useThreadAction } from '../mutations';
 import { panelSearch } from '../panel-address';
+import { talkingTo } from '../conversation-about';
 
 /** A chip as the page hands it to the composer (D12): the object's ref, kind and label, plus its card when it has one. */
 export interface ChipRef {
@@ -92,6 +93,11 @@ export interface PendingTurn {
    * line that says so.
    */
   back?: Handed;
+  /**
+   * With `handed`: the person said yes to Clew's suggestion of that assistant (D126 item 6). The question already on
+   * the page is the one sent on: it says so, and the suggestion has become one line under it.
+   */
+  suggested?: true;
 }
 /** The conversation's state and verbs, owned here (D31) and read by the row, the transcript, the page and every card. */
 export interface ConversationState {
@@ -106,14 +112,17 @@ export interface ConversationState {
   done: { text: string; undo?: () => Promise<void> } | null;
   busy: boolean;
   error: string | null;
-  /** The transcript is on the page in place of the stream. */
+  /**
+   * The conversation takes the column: on its own page (`/conversations/<id>`, and `/conversations/new` before anything
+   * is asked, D126 rule 5), or on Hem from the moment a question is sent there.
+   */
   open: boolean;
   value: string;
   verbs: Verb[];
   input: RefObject<ChatComposerInputHandle | null>;
   /**
-   * A conversation's own box is on the page (`/conversations/<id>`). "Lägg till i samtalet" is offered only then (D112
-   * item 7): everywhere else an opened thing has its own box in the panel, which asks about that thing.
+   * A conversation's own box is on the page (`/conversations/<id>`). "Lägg till i samtalet" is offered only then: no
+   * other page has a box (D126 rule 5).
    */
   hasBox: boolean;
   /** The box says it is on the page while it is mounted; the returned function says it has gone. */
@@ -123,8 +132,12 @@ export interface ConversationState {
   removeChip(ref: string): void;
   /** An object picked through the `@` trigger: its token sits in the field, its label is kept for the request. */
   rememberObject(object: ClewObject): void;
-  submit(raw: string, from?: AskFrom): Promise<void>;
-  ask(text: string, from?: AskFrom): void;
+  /**
+   * Sends a question. `about` is what the conversation's page is about by its address (the thing beside the
+   * transcript): it goes with every question there, as the chips in the drawer do, without being drawn in the drawer.
+   */
+  submit(raw: string, from?: AskFrom, about?: ChipRef[]): Promise<void>;
+  ask(text: string, from?: AskFrom, about?: ChipRef[]): void;
   /** Stoppa (D36): the turn is aborted, nothing is saved, and the question goes back in the box. */
   stop(): void;
   performActions(actions: ClewAction[]): Promise<void>;
@@ -132,7 +145,11 @@ export interface ConversationState {
   /** "Lägg under Behöver dig" under a cited answer (D26): the sources become a card under Behöver dig; nothing is executed. */
   makeCard(messageId: string): Promise<void>;
   openConversation(threadId: string): Promise<void>;
-  newConversation(): void;
+  /**
+   * A new conversation with Clew: nothing in it, nothing in the drawer. `from` is the page "Fråga Clew" was pressed on,
+   * where Esc leads back to; `stay` keeps the address (the caller navigates to the new conversation's page itself).
+   */
+  newConversation(options?: { from?: string; stay?: boolean }): void;
   close(): void;
   focus(): void;
   /** The page that shows cards hears of a thread the conversation changed before the cache is written, to hand the focus on (2.4.3). */
@@ -154,8 +171,6 @@ export interface ConversationState {
 const noop = () => undefined;
 const never = async () => undefined;
 const EMPTY_VERBS: Verb[] = [];
-const EMPTY_CHIPS: ChipRef[] = [];
-const EMPTY_REFS: string[] = [];
 export const ConversationContext = createContext<ConversationState>({
   chips: [],
   chipped: [],
@@ -277,9 +292,8 @@ interface Turns {
  * One conversation's turns (D31, D36): the question is drawn at once with its answer pending under it, the box is
  * cleared and rests with Stoppa, and the answer streams in, the capabilities it reads as steps and the model's text as
  * it is written. The written turn replaces the pending one when it is done. Stopped or failed, nothing was saved and the
- * question goes back in the box; a turn left behind (another conversation, another thing) is stopped and nothing goes
- * back. Every thread an answer carries goes into the cache (D33), the same path as a card's own action. The landing's
- * conversation and the conversation about a thing in the panel (D112 item 7) are this one machinery twice.
+ * question goes back in the box; a turn left behind (another conversation) is stopped and nothing goes back. Every
+ * thread an answer carries goes into the cache (D33), the same path as a card's own action.
  */
 function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   const announce = useAnnounce();
@@ -335,7 +349,15 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
       setBusy(true);
       setError(null);
       setDone(null);
-      setPending({ text, chips, at: new Date().toISOString(), steps: [], answer: '', ...(handed ? { handed } : {}) });
+      setPending({
+        text,
+        chips,
+        at: new Date().toISOString(),
+        steps: [],
+        answer: '',
+        ...(handed ? { handed } : {}),
+        ...(handed && suggested ? { suggested: true as const } : {}),
+      });
       setValue('');
       onStart?.();
       announce(handed ? `Frågar ${handed.name} …` : 'Söker svar …');
@@ -496,31 +518,35 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   };
 }
 
+/** The address of a conversation not asked yet: "Fråga Clew" lands here with the thing beside it (D126 rule 5). */
+const NEW = '/conversations/new';
 /**
- * The conversation (D31, D50): one state for the box and the transcript, held above the pages so a question asked on Hem
- * is the same conversation when the transcript takes the column. The transcript is on the page at `/` and at
- * `/conversations/:id`; `/conversations/new` is a conversation on its way, asked from another page and not yet answered.
- * Sending puts the transcript on the page; the box keeps focus throughout and sending never moves it. Chips travel in the
- * drawer and stay across turns; the text is cleared. Esc or "Stäng samtalet" leads back to where the conversation was
- * asked, and the conversation is kept under Samtal in the menu. A question about a thing opened beside a page is the
- * thing's own conversation (`ThingConversationProvider`), drawn in the panel.
+ * The conversation (D31, D50, D126): one state for the box and the transcript, held above the pages so a question asked
+ * on Hem is the same conversation when the transcript takes the column. The transcript is on the page at `/` once a
+ * question is sent there, and on the conversation's own page, `/conversations/:id`; `/conversations/new` is a
+ * conversation not asked yet, where "Fråga Clew" lands with the thing beside it and nothing is sent until the person
+ * writes. The box keeps focus throughout and sending never moves it. Chips travel in the drawer and stay across turns;
+ * the text is cleared. Esc leads back to where the conversation was asked, and the conversation is kept under Samtal.
  */
 export function ConversationProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const routeId = useMatch('/conversations/:conversationId')?.params.conversationId ?? null;
   const conversationId = routeId && routeId !== 'new' ? routeId : null;
+  const onRoute = routeId !== null;
   // The transcript belongs to the landing and to a conversation's own address; every other page keeps its column.
-  const here = location.pathname === '/' || routeId !== null;
+  const here = location.pathname === '/' || onRoute;
   const where = useRef({ onRoute: false, here: true });
-  where.current = { onRoute: routeId !== null, here };
-  // Where "Stäng samtalet" leads: the page the conversation was asked from, else the landing.
+  where.current = { onRoute, here };
+  // Where Esc leads: the page the conversation was asked from, else the landing.
   const origin = useRef<string | null>(null);
   const onConversation = useCallback(
     (id: string | null) => {
+      // A new conversation's page keeps what it is about (the thing beside it, `?card=`, `?open=`) at its own address.
+      const fresh = window.location.pathname === NEW;
       if (id)
-        navigate(`/conversations/${id}${panelSearch(window.location.search)}`, {
-          replace: window.location.pathname === '/conversations/new',
+        navigate(`/conversations/${id}${fresh ? window.location.search : panelSearch(window.location.search)}`, {
+          replace: fresh,
         });
       else if (where.current.onRoute) {
         const back = origin.current ?? '/';
@@ -587,8 +613,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const inline = useMemo(() => refsIn(value), [value]);
   const chipped = useMemo(() => [...new Set([...chips.map(c => c.ref), ...inline])], [chips, inline]);
   const plain = plainText(value);
-  // The transcript is on the page from the moment a question is sent: the question and its pending answer are drawn at once (D36).
-  const open = shown && here && (!!conversation || !!pending);
+  // A conversation's page is the conversation, asked or not; on Hem the transcript takes the column from the moment a
+  // question is sent: the question and its pending answer are drawn at once (D36).
+  const open = onRoute || (shown && here && (!!conversation || !!pending));
   const openRef = useRef(false);
   openRef.current = open;
   // One chip in the drawer and nothing typed: the verbs about it, from its actions and Clew's standard actions.
@@ -603,7 +630,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const shownRef = useRef(false);
   shownRef.current = shown;
   const close = useCallback(() => {
-    if (!shownRef.current) return;
+    if (!shownRef.current && !where.current.onRoute) return;
     abortTurn('stop');
     setShown(false);
     setError(null);
@@ -639,19 +666,24 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     },
     [input],
   );
-  const newConversation = useCallback(() => {
-    abortTurn('leave');
-    // A new conversation is with Clew's own assistant until the person picks another.
-    setHanded(null);
-    setConversation(null);
-    setLatest(null);
-    setDone(null);
-    setValue('');
-    setShown(false);
-    origin.current = null;
-    if (where.current.onRoute) navigate('/');
-    input.current?.focus();
-  }, [navigate, abortTurn, setConversation, setLatest, setDone, setValue, input]);
+  const newConversation = useCallback(
+    (options?: { from?: string; stay?: boolean }) => {
+      abortTurn('leave');
+      // A new conversation is with Clew's own assistant until the person picks another, and has nothing in its drawer.
+      setHanded(null);
+      setConversation(null);
+      setLatest(null);
+      setDone(null);
+      setError(null);
+      setValue('');
+      setChips([]);
+      setShown(false);
+      origin.current = options?.from ?? null;
+      if (where.current.onRoute && !options?.stay) navigate('/');
+      input.current?.focus();
+    },
+    [navigate, abortTurn, setConversation, setLatest, setDone, setError, setValue, input],
+  );
   const client = useQueryClient();
   const openConversation = useCallback(
     async (threadId: string) => {
@@ -659,8 +691,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       try {
         const t = await client.query(threadQuery(threadId));
         setConversation(conversationOf(t));
-        // A conversation that was handed to another system's assistant opens still talking to it, and says so.
-        setHanded(t.handover ? { id: t.handover.assistant, name: t.handover.name, source: t.handover.source } : null);
+        // A conversation that was handed to another system's assistant opens still talking to it, and says so, unless
+        // that assistant handed it back or returned it (D125 item 12).
+        setHanded(talkingTo(t));
         setLatest(null);
         setDone(null);
         setShown(true);
@@ -676,15 +709,22 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!conversationId) setHanded(null);
   }, [conversationId]);
-  // The route names the conversation: arriving at /conversations/:id (a link, the back button, a reload) puts the transcript on the page.
-  const routeConversation = useRef<string | null>(null);
+  // The route names the conversation: arriving at /conversations/:id (a link, the back button, a reload) puts the
+  // transcript on the page. Arriving at /conversations/new is a conversation not asked yet: whatever conversation was
+  // held before is let go of, unless a question is on its way from Hem to this address.
+  const wasOnRoute = useRef(false);
   useEffect(() => {
     if (conversationId && conversationId !== conversation?.id) void openConversation(conversationId);
-    else if (conversationId && !shown) setShown(true);
-    // Leaving /conversations/:id by the back button brings the stream back; the conversation stays under Samtal.
-    if (!conversationId && routeConversation.current && shown) setShown(false);
-    routeConversation.current = conversationId;
-  }, [conversationId]);
+    else if (onRoute && !shown) setShown(true);
+    if (routeId === 'new' && !pending && conversation) {
+      setConversation(null);
+      setLatest(null);
+      setDone(null);
+    }
+    // Leaving the conversation's page by the back button brings Hem back; the conversation stays under Samtal.
+    if (!onRoute && wasOnRoute.current && shown) setShown(false);
+    wasOnRoute.current = onRoute;
+  }, [routeId]);
   // Another page takes the column: the turn on its way is stopped, as leaving the page always did, and nothing pulls the person back.
   useEffect(() => {
     if (!here && shownRef.current) {
@@ -692,10 +732,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       setShown(false);
     }
   }, [here, abortTurn]);
-  // `/conversations/new` with nothing on its way (a reload, a stopped first question) is the landing, with the question back in the box.
-  useEffect(() => {
-    if (routeId === 'new' && !pending && !conversation) navigate('/', { replace: true });
-  }, [routeId, pending, conversation, navigate]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // ⌘K is "Nytt samtal" from anywhere (the canvas's H3 item 1): in a conversation it starts a new one, elsewhere it takes the focus to the box.
@@ -784,11 +820,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     [send, onConversation, navigate, announce],
   );
   const submit = useCallback(
-    async (raw: string, from?: AskFrom) => {
+    async (raw: string, from?: AskFrom, about?: ChipRef[]) => {
       const text = plainText(raw);
       const used = [
         ...new Map(
           [
+            ...(about ?? []),
             ...chips,
             ...(from?.chips ?? []),
             ...refsIn(raw)
@@ -826,7 +863,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     const o = offered.current;
     if (o) void dispatch(o.question, { own: true });
   }, [dispatch]);
-  const ask = useCallback((text: string, from?: AskFrom) => void submit(text, from), [submit]);
+  const ask = useCallback(
+    (text: string, from?: AskFrom, about?: ChipRef[]) => void submit(text, from, about),
+    [submit],
+  );
   const stop = useCallback(() => abortTurn('stop'), [abortTurn]);
 
   const state = useMemo<ConversationState>(
@@ -907,144 +947,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * What a thing in the panel is asked about (D112 item 7): a key that names the thing (`thread:<id>`, a view and its
- * input, a calendar entry, the page itself), the words the box uses for it, the chips that go with every question so
- * the answer is about it, and the panel's part of the conversation page's address, where the thing is the transcript's
- * artifact (`/conversations/<id>` with it beside).
+ * What "Fråga Clew" asks about (D126 rule 5): a key that names the thing (`thread:<id>`, a view and its input, a
+ * calendar entry, a person), the words for it, the chips that go with the question so the answer is about it, and the
+ * part of the conversation page's address that puts the thing beside the transcript (`?card=`, `?open=`, `?person=`;
+ * empty when nothing stands beside it, a list or a range of rows going as its chips alone).
  */
 export interface ThingSubject {
   key: string;
   label: string;
   chips: ChipRef[];
   search: string;
-}
-interface ThingConversations {
-  /** The thing the conversation held now is about, or null before anything was asked. */
-  key: string | null;
-  turns: Turns;
-  ask(subject: ThingSubject, raw: string): Promise<void>;
-  /** The thing on screen is not the one asked about: a turn still on its way is stopped and nothing is saved. */
-  leave(): void;
-}
-const ThingContext = createContext<ThingConversations | null>(null);
-
-/**
- * The conversation about the thing in the panel (D112 item 7), above the pages so it follows the thing from one page to
- * another (Att göra's item opened as its page continues the same exchange). One at a time: asking about another thing
- * starts a new conversation, and the earlier one stays under Samtal in the rail. It is the landing's turn machinery
- * (`useTurns`), the same API, the same transcript and the same box; only where it is drawn differs.
- */
-export function ThingConversationProvider({ children }: { children: ReactNode }) {
-  const turns = useTurns(noop);
-  const [key, setKey] = useState<string | null>(null);
-  const keyRef = useRef<string | null>(null);
-  keyRef.current = key;
-  const { send, conversation, abortTurn, setError } = turns;
-  const ask = useCallback(
-    async (subject: ThingSubject, raw: string) => {
-      const continuing = keyRef.current === subject.key ? conversation : null;
-      await send({
-        raw,
-        text: plainText(raw),
-        chips: subject.chips.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip),
-        current: continuing,
-        onStart: () => {
-          keyRef.current = subject.key;
-          setKey(subject.key);
-        },
-        // The box keeps the focus only while the panel is still about the thing asked about.
-        refocus: () => keyRef.current === subject.key,
-      });
-    },
-    [send, conversation],
-  );
-  const leave = useCallback(() => {
-    abortTurn('leave');
-    setError(null);
-  }, [abortTurn, setError]);
-  const value = useMemo(() => ({ key, turns, ask, leave }), [key, turns, ask, leave]);
-  return <ThingContext.Provider value={value}>{children}</ThingContext.Provider>;
-}
-
-/** The thing's conversation as the panel reads it, in the shape the box and the transcript already read. */
-export type ThingConversation = ConversationState & {
-  /** A conversation about this thing exists or is on its way: the thing's facts fold (D112 item 7). */
-  running: boolean;
-};
-/**
- * The conversation about `subject`, for the panel to provide to its box and transcript. A conversation about another
- * thing is not drawn here: a new thing starts with an empty transcript, and a turn still on its way about the previous
- * one is stopped (nothing is saved), as leaving the page stops it. The messages are read from the cache as well, so an
- * exchange continued on the conversation's own page is up to date when the person comes back to the thing.
- */
-export function useThingConversation(subject: ThingSubject | null): ThingConversation {
-  const things = useContext(ThingContext);
-  const active = !!things && !!subject && things.key === subject.key;
-  const key = subject?.key ?? null;
-  useEffect(() => {
-    // Another thing in the panel's place stops the turn about the previous one; closing the panel lets it finish, so
-    // the exchange is kept under Samtal and is there when the thing is opened again.
-    if (things && key !== null && things.key !== null && things.key !== key) things.leave();
-  }, [key]);
-  const turns = things?.turns;
-  const own = active ? (turns?.conversation ?? null) : null;
-  const live = useQuery({ ...threadQuery(own?.id ?? ''), enabled: !!own });
-  const conversation: Conversation | null =
-    own && live.data && live.data.messages.length > own.messages.length
-      ? { id: own.id, title: live.data.title, messages: live.data.messages }
-      : own;
-  const pending = active ? (turns?.pending ?? null) : null;
-  const ask = things?.ask;
-  const submit = useCallback(
-    async (raw: string) => {
-      if (subject && ask) await ask(subject, raw);
-    },
-    [subject, ask],
-  );
-  return useMemo<ThingConversation>(
-    () => ({
-      chips: EMPTY_CHIPS,
-      chipped: EMPTY_REFS,
-      conversation,
-      latest: active ? (turns?.latest ?? null) : null,
-      pending,
-      done: active ? (turns?.done ?? null) : null,
-      busy: turns?.busy ?? false,
-      error: active ? (turns?.error ?? null) : null,
-      open: !!conversation || !!pending,
-      value: turns?.value ?? '',
-      verbs: EMPTY_VERBS,
-      input: turns?.input ?? { current: null },
-      hasBox: false,
-      claimBox: () => noop,
-      setValue: turns?.setValue ?? noop,
-      addChip: noop,
-      removeChip: noop,
-      rememberObject: noop,
-      submit,
-      ask: (text: string) => void submit(text),
-      stop: () => turns?.abortTurn('stop'),
-      performActions: turns?.performActions ?? never,
-      cancelActions: turns?.cancelActions ?? noop,
-      makeCard: turns?.makeCard ?? never,
-      openConversation: never,
-      newConversation: noop,
-      close: noop,
-      focus: () => turns?.input.current?.focus(),
-      setThreadListener: noop,
-      // The box beside a thing asks Clew about that thing; it is never handed to another system's assistant.
-      handed: null,
-      handTo: noop,
-      leaveHandover: noop,
-      acceptOffer: noop,
-      declineOffer: noop,
-      running: !!conversation || !!pending,
-    }),
-    [conversation, active, turns, pending, submit],
-  );
-}
-/** The box beside the thing takes the focus (Att göra's "Fråga Clew" with an item already open in the reading pane). */
-export function useFocusThingBox(): () => void {
-  const things = useContext(ThingContext);
-  return useCallback(() => things?.turns.input.current?.focus(), [things]);
 }

@@ -1,22 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useParams } from 'react-router';
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Area, SessionUser, Thread, ViewRef } from '@clew/contracts';
+import { unresolvedExecution, type Area, type SessionUser, type Thread } from '@clew/contracts';
 import {
+  Badge,
   Banner,
   Button,
   Card,
-  ChatLayout,
   Grid,
   Heading,
   HStack,
-  Icon,
-  IconButton,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   Link,
-  MoreMenu,
+  List,
+  StackItem,
   Text,
   VStack,
   useAnnounce,
@@ -24,23 +20,18 @@ import {
   useMediaQuery,
   useToast,
 } from '@clew/ui';
-import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
+import { dayLabel, today } from '@clew/calendar/dates';
 import { errorMessage, noCalendar } from '../query-policy';
 import { areasQuery, assistantQuery, threadsQuery, todayQuery } from '../queries';
-import { applyThread } from '../thread-cache';
-import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
-import { withCard } from '../panel-address';
-import { viewOpenHref, type ViewTarget } from '../view-address';
-import { needsYouOf, rowFacts, sourcesNotice, todoHref } from '../work-items';
+import { declaredPage, viewPageHref, type ViewTarget } from '../view-address';
+import { itemPageHref, needsYouOf, rowFacts, sourcesNotice, todoHref } from '../work-items';
+import { DOT } from '../dot';
 import { Composer } from '../components/composer';
-import { PageHeader } from '../components/page-header';
-import { titled, useConversation, type ConversationState } from '../components/conversation-context';
-import { Transcript } from '../components/conversation';
-import { drawn } from '../components/thing-panel';
+import { useConversation } from '../components/conversation-context';
+import { ConversationPage } from './conversation';
 
-type EntryStyle = NonNullable<ReturnType<typeof useEntryAnimation>> | undefined;
 /**
  * The column fades in when it changes hands (D92): the conversation taking Hem's place when a question is sent, and Hem
  * coming back when the conversation closes. Keyed by whose turn it is, so each hand-over mounts anew and gets Astryx's
@@ -54,51 +45,52 @@ import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
 import { BriefSkeleton } from '../components/brief';
-import { WorkList, WorkRow } from '../components/work-row';
-import { MyErrands } from '../components/my-errands';
-import { MyRequests, REQUESTS_CAPABILITY, REQUESTS_TITLE } from '../components/my-requests';
+import { LinkRow } from '../components/work-row';
 import { MyCommitments } from '../components/my-commitments';
-import { AsideSkeleton, AsyncContent } from '../components/loading';
-import { usePagePanel } from '../components/page-panel';
-import { cardBody } from '../components/card-panel';
-import { EventDialog } from '../components/calendar/event-dialog';
-import type { AgendaItem } from '@clew/ui';
-import { NoCalendar, Today } from '../components/today';
-import { SilentNotice, silentLine, useSaySilent, useSilentSources } from '../components/silent-sources';
+import { NoCalendar, TodayCard, TodayCardSkeleton, TodayHeading } from '../components/today';
+import { SilentNotice, silentLine, staleWhy, useSaySilent, useSilentSources } from '../components/silent-sources';
 import { Lage } from '../components/lage';
 import { NewsBlock } from '../components/news';
 import { FocusNews, focusOf } from '../components/focus-news';
-import { Toolbox } from '../components/toolbox';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
+import { PageFrame, type EntryStyle } from '../components/page-frame';
 
-/** How many work items Hem shows under "Behöver dig" (D112 item 2): the most urgent; the rest are in Att göra. */
-const ON_HEM = 3;
-/** The question box's reading width (the `ai-chat-landing` template, board Main): the heading and the box, centred. */
-const LANDING_WIDTH = 720;
-/**
- * Everything under the box uses the page's width as Personal's does (the product owner, 2026-11-11: the 720 px column
- * was too narrow beside the other pages): the page's 1216 px less its padding, centred in what the panel leaves.
- */
-const PAGE_COLUMN = 1216 - 2 * 32;
+/** How many work items Hem shows under "Behöver dig" (board Hem): the most urgent; every one is in Att göra. */
+const ON_HEM = 4;
+/** Hem's address, the way back from every page Hem leads to (D116). */
+const HEM = '/';
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
 
+const hourIn = new Intl.DateTimeFormat('sv-SE', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Europe/Stockholm' });
+/** The greeting at the top of Hem (board Hem): the time of day in Stockholm and the person's first name. */
+export function greetingOf(name: string, at: Date): string {
+  const hour = Number(hourIn.format(at));
+  const words = hour < 10 ? 'God morgon' : hour < 12 ? 'God förmiddag' : hour < 18 ? 'God eftermiddag' : 'God kväll';
+  const first = name.trim().split(/\s+/)[0];
+  return first ? `${words}, ${first}` : words;
+}
+/** The line under the greeting: the day ("Fredag 14 november") and the person's unit. */
+const dayLine = (date: string, unit: string) => {
+  const day = dayLabel(date);
+  return [day.charAt(0).toLocaleUpperCase('sv-SE') + day.slice(1), unit].filter(Boolean).join(DOT);
+};
+
 /**
- * The start page (D34, D50, D112). At `/` the column is Hem, the `ai-chat-landing` template (D112 item 2, board Main,
- * amended 2026-11-11 by board Hem10): one heading, the box under it, the one item that asks for the person's read
- * receipt as a callout (Fokusnyhet), and three blocks side by side that stack when narrow: "Behöver dig", the three most
- * urgent work items, "I dag", the day as the calendar family draws it (D32), and "Nyheter", the newest news from the
- * person's news sources. The work list itself is Att göra's (`/todo`). Under the blocks Läget's figures stand for
- * Dialogstöd, then Verktygslådan, the person's tools, and then what D112 keeps as it was until it is decided: Mina
- * ärenden, Beställningar och felanmälningar (D123) and the person's own action points. "Sedan i går" and the suggestions under the box ("Menar du") were removed
- * on 2026-11-13: no digest sentences and no suggestion chips on a page. A work item opened from Hem (a row, "Läs", the
- * day's link to an item) and one thing opened from it (a piece of news, an errand, a budget) are in the panel beside
- * Hem, so the person stays on Hem (D112, amended 2026-11-12); opening it is not asking about it (D111 rule 6). A list or
- * a table opened from Hem (a tile of Läget, an answer's "Visa allt", "Visa allt" under Beställningar och felanmälningar) is its own page, with Hem as the way back (D116).
- * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
- * names, the card or view that was open when it was asked, or the page it was asked on. The address is the state
- * throughout (`panel-address.ts`).
+ * The start page (D34, D50, D112, D126). At `/` the column is Hem (D126, board Hem): the greeting and the day, the box
+ * once under them, and then the blocks, each a heading over its card that leads to its place: "Behöver dig", the most
+ * urgent work items, beside "I dag", the day as the calendar family draws it (D32); for a manager "Läget på <enhet>",
+ * the unit's figures as tiles; then "Nyheter". The item that asks for the person's read receipt stands above the blocks
+ * as one callout (Fokusnyhet). Under them the person's own action points (D96 item 7), drawn as a block, until they are
+ * rows in Att göra. No digest sentences, no suggestion chips and no tool tiles (D126 rule 8): the tools are in the rail
+ * and on Alla verktyg, and Mina ärenden (D90) and what the person ordered or reported (D123) are two of them. Every row
+ * and tile leads to the page of what it names (D126 rule 1), with Hem as the way back; nothing opens over Hem, and an
+ * address that opened something beside it before leads to that thing's page (the shell's `panelRedirect`, rule 3).
+ *
+ * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel beside it (rule 2):
+ * the view an answer names, the card or view that was open when it was asked, or the page it was asked on. The address
+ * is the state throughout (`panel-address.ts`).
  */
 export function StartPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -115,27 +107,23 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const loadingThreads = threadsQ.isPending && !threadsQ.isFetched;
   const loadingAreas = areasQ.isPending && !areasQ.isFetched;
   const areas = areasQ.data?.areas ?? EMPTY_AREAS;
+  const views = areasQ.data?.views;
   const day = dayQ.data ?? null;
   const assistant = assistantQ.data ?? null;
   const talk = useConversation();
-  const navigate = useNavigate();
-  const location = useLocation();
   const params = useParams<{ conversationId?: string }>();
-  // A card's review lies over the page in its own part of the address (`?review=`, D111 rule 5), which Hem reads past.
-  const [search] = useSearchParams();
-  const here = location.pathname;
   const conversationId = params.conversationId && params.conversationId !== 'new' ? params.conversationId : null;
-  // A view opened from this page (D116): a table or a list is its own page with this one as the way back, anything else
-  // is beside the page in the panel.
-  const viewHref = (v: ViewTarget & { title: string }) => viewOpenHref(areasQ.data?.views, here, search, v);
-  // A work item opened from Hem is beside Hem, in the panel every page has (D112, amended 2026-11-12): `?card=`.
-  const cardHref = (threadId: string) => withCard(here, search, threadId);
-  // An entry opened from the panel's day view (D32): the same dialog as on the calendar page, over the panel.
-  const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
+  /**
+   * Where a view named on Hem leads (D126 rule 1): the page Clew's own read declares for its rows, else the view's own
+   * page, with Hem as the way back.
+   */
+  const pageHref = (v: ViewTarget) => declaredPage(views, v.capability, v.input) ?? viewPageHref(v, HEM);
+  /** A work item named on Hem: its own page (D112 item 4, D126 rule 1), with Hem as the way back. */
+  const itemHref = (threadId: string) => itemPageHref(threadId, HEM);
   const toast = useToast();
   const announce = useAnnounce();
-  // A card's own button changed it (in the panel beside Hem or a conversation, in an answer, in the callout): when that
-  // took the focused button away, the focus goes to the item's title where the item is beside the page, else back to
+  // A card's own button changed it (in the pane beside a conversation, in an answer, in the callout): when that took
+  // the focused button away, the focus goes to the item's title where the item is beside the transcript, else back to
   // the box, rather than to nothing (2.4.3). Told before the cache is written.
   const changed = useRef<{ at: number; id: string } | null>(null);
   const replace = useCallback((t: Thread) => {
@@ -151,7 +139,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     const was = changed.current;
     changed.current = null;
     if (!was || Date.now() - was.at > 2_000 || document.activeElement !== document.body) return;
-    // The item in the panel beside the page (`card-<id>`): its title, which the receipt now stands under.
+    // The item in the pane beside the transcript (`card-<id>`): its title, which the receipt now stands under.
     const beside = document.getElementById(`card-${was.id}-title`);
     if (beside) beside.focus();
     else talk.focus();
@@ -172,7 +160,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     // the item as it changes: they are said here, once, as the toast appears (4.1.3).
     if (thread.receipt) announce(receiptMessage({ ...thread, receipt: thread.receipt }));
   });
-  const openView = (v: ViewRef) => navigate(viewHref(v));
   const marks = useMarks();
   const now = new Date().toISOString();
   const todayDate = today();
@@ -180,46 +167,23 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     () => groupThreads(threads, now, todayDate, undefined, lingering),
     [threads, now.slice(0, 16), todayDate, lingering],
   );
-  // What needs the person, in Att göra's order (D34): Hem shows the first three.
+  // What needs the person, in Att göra's order (D34): Hem shows the first few.
   const needsYou = useMemo(() => needsYouOf(all), [all]);
   // Fokusnyhet (D112, amended 2026-11-11): the most urgent item that asks for a read receipt stands above the blocks,
   // and is not a row under them too; any other such item stays an ordinary row.
   const focus = useMemo(() => focusOf(needsYou), [needsYou]);
   const first = useMemo(() => needsYou.filter(t => t.id !== focus?.id).slice(0, ON_HEM), [needsYou, focus]);
 
-  /**
-   * The panel (D50): the work item or the view the address names, or in a conversation the card that was open when the
-   * question was asked. A work item opened from Hem is beside Hem (D112, amended 2026-11-12), the same `?card=` every
-   * page has; only Hem's old tabs lead to Att göra (`todoFromHem`). With nothing open there is no panel. Closed after
-   * the item left Hem's rows (its receipt given beside Hem), nothing leads back to it: the focus goes to "Behöver dig".
-   */
-  const slot = usePagePanel({
-    overlayOnly: short,
-    failures: 'page',
-    onChange: replace,
-    onClosed: () => {
-      const active = document.activeElement;
-      if (active instanceof HTMLElement && active !== document.body && active.isConnected) return;
-      const needs = document.getElementById('behover-dig');
-      if (needs) needs.focus();
-      else talk.focus();
-    },
-    onOpenItem: (item, dayItems) => setOpenItem({ item, dayItems }),
-    // On a conversation's own page the panel is the transcript's artifact (D112 item 7): the conversation's box is the
-    // one to ask in, so the thing beside it has none of its own. On Hem a view opened beside it gets its box.
-    asks: !talk.open,
-  });
   // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day and the model's status are extras.
   const failed = [threadsQ, areasQ].find(q => q.isError && q.data === undefined);
-  const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.') : (slot.failure?.message ?? null);
-  const railCurrent: RailCurrent = { surface: 'start', conversationId };
-  const pageTitle = slot.view ? slot.view.title : conversationId ? 'Samtal' : 'Hem';
-  // While a card's review lies over Hem it names the document itself (`useOverlayTitle`), and Hem's comes back after it.
-  usePageTitle(pageTitle, slot.view || conversationId ? false : pageTitle);
-  const nav = useRail({ current: railCurrent, admin, manager: user.role === 'manager' });
+  const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.') : null;
+  const railCurrent: RailCurrent = { surface: 'start', conversationId, conversation: talk.open };
+  // A conversation names itself in the tab (`ConversationPage`: its question, or before one what it is about); Hem is
+  // named and spoken here.
+  usePageTitle(talk.open ? null : 'Hem');
+  const manager = user.role === 'manager';
+  const nav = useRail({ current: railCurrent, admin, manager });
 
-  /** A work item an answer is about, drawn in the turn at its narrow width (D112 item 4). */
-  const card = (t: Thread) => cardBody(t, { place: 'answer', level: 2, compact: mobile, onChange: replace });
   const assistantDown = !!assistant && assistant.configured && !assistant.available;
   const sources = threadsQ.data?.sources;
   // A source not read yet is said where the work is, and the page never says that nothing needs the person then; one
@@ -246,293 +210,171 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
 
   // The box's context for `@`: the work items Hem shows.
   const near = [...(focus ? [focus] : []), ...first].map(t => 'thread:' + t.id);
-  // On a phone the box is docked at the foot (G on the phone): the heading sits right above it.
-  const docked = mobile && !short;
   /**
-   * "Behöver dig" (D112 item 2, board Main): the three most urgent work items as rows, each opening the item in the
-   * panel beside Hem (amended 2026-11-12), marked while it is open there, and the way to all of them in Att göra. While
-   * the cards load the block keeps its shape.
+   * A work item's supporting line on Hem (board Hem): the system it comes from and why it is here. A system of Clew's
+   * own (an owned domain such as introductions, the house mark of D71: a known system without an ordinal) is not named,
+   * since the whole page is Clew's: the reason alone. Its state in words where the pile and the due badge do not already
+   * say it: "Ska göras" is what every row under Behöver dig is, so only another state is named (a proposal, a notice, a
+   * reminder, an action that waits on its source or needs a check). An open item whose system does not answer says at
+   * the end that it may be old (D116, amended 2026-11-12).
+   */
+  const lineOf = (t: Thread) => {
+    const facts = rowFacts(t, now, todayDate);
+    const mark = marks.ofThread(t);
+    const own = !!marks.system(mark.connector) && mark.ordinal === null;
+    const stale = t.state === 'open' && !!silent.of(t.connector);
+    const state = facts.state.label.startsWith('Ska göras') && !unresolvedExecution(t) ? null : facts.state.label;
+    return [own ? null : mark.source, state, stale ? staleWhy(facts.why) : facts.why].filter(Boolean).join(DOT);
+  };
+  /**
+   * "Behöver dig" (D112 item 2; D126, board Hem): the most urgent work items as rows in a card, the count beside the
+   * heading and the way to all of them in Att göra. A row's title is the link to the item's page and its due day the
+   * badge at its end. While the cards load the block keeps its shape; with nothing to draw it says so in the card, which
+   * ends level with I dag's beside it.
    */
   const needsBlock = (
-    <Card padding={4}>
-      <VStack gap={1} as="section" aria-labelledby="behover-dig">
-        <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-          <Heading id="behover-dig" tabIndex={-1} level={3} accessibilityLevel={2}>
+    <VStack gap={3} as="section" aria-labelledby="behover-dig">
+      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+        <HStack gap={2} vAlign="center">
+          <Heading id="behover-dig" tabIndex={-1} level={2}>
             Behöver dig
           </Heading>
-          {!loadingThreads && (
-            <Text type="supporting" weight="medium">
-              <Link href={todoHref({})} color="primary" hasUnderline>
-                {`Alla ${needsYou.length} i Att göra`}
-              </Link>
-            </Text>
-          )}
+          {!loadingThreads && needsYou.length > 0 && <Badge variant="error" label={String(needsYou.length)} />}
         </HStack>
-        <AsyncContent pending={loadingThreads} fallback={<BriefSkeleton compact />}>
-          {sourcesLine && (
-            <Text as="p" role="status">
-              {sourcesLine}
-            </Text>
-          )}
-          {first.length === 0 ? (
-            <VStack gap={1}>
-              <Text as="p" color="secondary">
-                {sourcesLine || silent.list.length
-                  ? 'Inväntar källornas besked.'
-                  : focus
-                    ? 'Inget mer behöver dig just nu.'
-                    : 'Inget behöver dig just nu.'}
-              </Text>
+        {!loadingThreads && <Link href={todoHref({})}>Visa alla</Link>}
+      </HStack>
+      <RowCard pending={loadingThreads} fallback={<BriefSkeleton compact />}>
+        <Card padding={0} height="100%">
+          {(sourcesLine || first.length === 0) && (
+            <VStack gap={1} padding={4}>
+              {sourcesLine && (
+                <Text as="p" role="status">
+                  {sourcesLine}
+                </Text>
+              )}
+              {first.length === 0 && (
+                <Text as="p" color="secondary">
+                  {sourcesLine || silent.list.length
+                    ? 'Inväntar källornas besked.'
+                    : focus
+                      ? 'Inget mer behöver dig just nu.'
+                      : 'Inget behöver dig just nu.'}
+                </Text>
+              )}
               {/* With nothing to draw, the system that does not answer is named where its work items would be. */}
-              {silent.list.length > 0 && (
+              {first.length === 0 && silent.list.length > 0 && (
                 <Text as="p" type="supporting">
                   {`${silent.list.map(silentLine).join('. ')}.`}
                 </Text>
               )}
             </VStack>
-          ) : (
-            <WorkList label="Behöver dig">
-              {first.map(t => (
-                <WorkRow
-                  key={t.id}
-                  thread={t}
-                  facts={rowFacts(t, now, todayDate)}
-                  source={marks.ofThread(t).source}
-                  href={cardHref(t.id)}
-                  isSelected={slot.card?.id === t.id}
-                />
-              ))}
-            </WorkList>
           )}
-        </AsyncContent>
-      </VStack>
-    </Card>
+          {first.length > 0 && (
+            <List hasDividers aria-label="Behöver dig">
+              {first.map(t => {
+                const due = rowFacts(t, now, todayDate).due;
+                return (
+                  <LinkRow
+                    key={t.id}
+                    id={`work-${t.id}`}
+                    itemKey={t.id}
+                    href={itemHref(t.id)}
+                    title={t.title}
+                    description={lineOf(t)}
+                    descriptionLines={0}
+                    endContent={due ? <Badge variant={due.variant} label={due.label} /> : undefined}
+                  />
+                );
+              })}
+            </List>
+          )}
+        </Card>
+      </RowCard>
+    </VStack>
   );
   /**
-   * "I dag" (board Main): the day as the calendar family draws it (D32), with the way to Kalender. It is always drawn: a
+   * "I dag" (board Hem): the day as the calendar family draws it (D32), with the way to Kalender. It is always drawn: a
    * day that cannot be read says why in the block (D116, amended 2026-11-12) instead of leaving its place to the others.
+   * Its card ends level with Behöver dig's beside it.
    */
   const dayBlock = (
-    <AsyncContent pending={loadingThreads || (dayQ.isPending && !calendarHidden)} fallback={<AsideSkeleton />}>
-      <Today
-        view={withoutCalendar ? null : day}
-        threads={threads}
-        cardHref={cardHref}
-        calendar={!withoutCalendar}
-        notice={
-          withoutCalendar ? (
-            <NoCalendar hidden={calendarHidden} />
-          ) : calendarSilent ? (
-            <SilentNotice
-              silent={{ source: calendarName, since: calendarSince }}
-              retrying={dayQ.isFetching}
-              onRetry={() => void dayQ.refetch()}
-            />
-          ) : undefined
-        }
-      />
-    </AsyncContent>
+    <VStack gap={3} as="section" aria-labelledby="i-dag">
+      <TodayHeading calendar={!withoutCalendar} />
+      <RowCard pending={loadingThreads || (dayQ.isPending && !calendarHidden)} fallback={<TodayCardSkeleton />}>
+        <TodayCard
+          view={withoutCalendar ? null : day}
+          threads={threads}
+          itemHref={itemHref}
+          notice={
+            withoutCalendar ? (
+              <NoCalendar hidden={calendarHidden} />
+            ) : calendarSilent ? (
+              <SilentNotice
+                silent={{ source: calendarName, since: calendarSince }}
+                retrying={dayQ.isFetching}
+                onRetry={() => void dayQ.refetch()}
+              />
+            ) : undefined
+          }
+        />
+      </RowCard>
+    </VStack>
   );
-  // The landing (D112 item 2, amended 2026-11-11, board Hem10): one heading, the box under it (docked at the foot on a
-  // phone), the item that asks for a read receipt, the three blocks, Läget, Verktygslådan, and under them what D112 keeps
-  // until it is decided. The box is anchored under the heading (D53).
-  const landing = () => (
+  /** Hem's blocks (board Hem), in its order: the callout, the two blocks side by side, Läget, Nyheter, the action points. */
+  const blocks = (
     <VStack gap={8}>
-      {/* The heading and the box at their reading width, centred over the page's full width. */}
-      <VStack hAlign="center">
-        <VStack gap={mobile ? 3 : 6} as="section" aria-label="Vad vill du göra" width="100%" maxWidth={LANDING_WIDTH}>
-          <Heading level={1} id="hem" tabIndex={-1} justify="center">
-            Vad vill du få gjort?
-          </Heading>
-          {!docked && <Composer place="landing" near={near} roomy />}
-        </VStack>
-      </VStack>
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}
         </Text>
       )}
-      {/* Fokusnyhet (board Hem10): between the box and the blocks, while an item asks for the person's read receipt. */}
-      {focus && <FocusNews thread={focus} href={cardHref(focus.id)} onChange={replace} />}
-      {/* The three blocks side by side where they fit, one under the other where they do not; news without a source
-          leaves its place to the others, while the day is always drawn and says why when it cannot be read. */}
-      <Grid columns={{ minWidth: 280, max: 3, repeat: 'fit' }} gap={4} align="start">
+      {/* Fokusnyhet (board Hem10): one callout above the blocks, while an item asks for the person's read receipt. */}
+      {focus && <FocusNews thread={focus} href={itemHref(focus.id)} onChange={replace} />}
+      {/* The two blocks side by side where they fit, one under the other where they do not. */}
+      <Grid columns={{ minWidth: 380, max: 2 }} gap={6}>
         {needsBlock}
         {dayBlock}
-        <NewsBlock hrefFor={viewHref} />
       </Grid>
-      {/* Dialogstöd's figures are Läget (D54), its heading leading to the unit's page; then the person's tools. */}
-      <Lage
-        areas={areas}
-        loading={loadingAreas}
-        sources={sources}
-        now={now}
-        unitLabel={user.unitLabel}
-        unitId={user.unitId || undefined}
-        // A tile leads where every other way to a tool leads, the tool's page (D42), when the view is a tool in the
-        // person's menu; any other view opens as a view opened from a page does (D116): a table or a list to its own
-        // page with Hem as the way back, anything else beside Hem in the panel.
-        viewHref={(capability, title) =>
-          areasQ.data?.menu?.some(e => e.capability === capability)
-            ? toolHref(capability)
-            : viewHref({ capability, title })
-        }
-        twoAcross={mobile}
-      />
-      <Toolbox />
-      {/* What D112 keeps as it was until decided, under the board's parts: Mina ärenden (D90), what the person ordered
-          or reported and waits for, apart from the errands they handle (D123), and the person's own action points (D96
-          item 7). */}
-      <MyErrands areas={areas} hrefFor={viewHref} />
-      <MyRequests
-        areas={areas}
-        hrefFor={viewHref}
-        listHref={viewHref({ capability: REQUESTS_CAPABILITY, title: REQUESTS_TITLE })}
-      />
+      {/* Läget (D54, D117): a manager's unit, each tile leading to the page of what it counts. */}
+      {manager && (
+        <Lage
+          areas={areas}
+          loading={loadingAreas}
+          unitLabel={user.unitLabel}
+          unitId={user.unitId || undefined}
+          // A tile leads where every other way to a tool leads, the tool's page (D42), when the view is a tool in the
+          // person's menu; any other view to its own page with Hem as the way back (D126 rule 1).
+          tileHref={(capability, title) =>
+            areasQ.data?.menu?.some(e => e.capability === capability)
+              ? toolHref(capability)
+              : pageHref({ capability, title })
+          }
+        />
+      )}
+      <NewsBlock hrefFor={pageHref} />
+      {/* The person's own action points (D96 item 7), under the board's parts and drawn as its blocks are, until they
+          are rows in Att göra; Mina ärenden (D90) is a tool in the rail (D126 rule 8). */}
       <MyCommitments />
     </VStack>
   );
-  /**
-   * The landing in the page's column, bounded and centred as Personal's is (a `VStack` with a `maxWidth` in one that
-   * centres it), not with the Layout's `contentWidth`, which would frame the shared panel with it: the panel in the
-   * page's end slot keeps the page's edge.
-   */
-  const column720 = (padding: 2 | 8) => (
-    <VStack hAlign="center" padding={padding}>
-      <VStack width="100%" maxWidth={PAGE_COLUMN} paddingBlockStart={mobile ? 0 : 6} paddingBlockEnd={6}>
-        {landing()}
-      </VStack>
-    </VStack>
-  );
-  /** The card open beside a conversation: the one that was open when the question was asked. */
-  const panelCard = slot.card;
-
-  /** When the person asked the conversation's first question: H1's line beside the title. "Nytt samtal i stället" sits in the box's scope line. */
-  const started = (state: ConversationState) => {
-    const first = state.conversation?.messages.find(m => m.role === 'user');
-    if (!first) return null;
-    const at = displayDate(first.createdAt);
-    return at === todayDate
-      ? timeLabel(first.createdAt)
-      : `${at === addDays(todayDate, -1) ? 'i går' : shortDayLabel(at)} ${timeLabel(first.createdAt)}`;
-  };
-  /**
-   * The conversation's page header (D74): its title as the page's h1 and, at the end of the line, when it was started
-   * and the way out; on a phone the close button and the more menu with Nytt samtal. Pinned in the `LayoutHeader`, and in
-   * the flow on a short screen, where nothing is pinned.
-   */
-  const conversationHeader = (
-    <PageHeader
-      title={titled(talk.conversation?.title ?? talk.pending?.text.slice(0, 80) ?? '')}
-      end={
-        mobile ? (
-          <HStack gap={1} vAlign="center">
-            <IconButton
-              size="sm"
-              variant="ghost"
-              label="Stäng samtalet"
-              icon={<Icon icon="close" />}
-              onClick={talk.close}
-            />
-            <MoreMenu
-              label="Fler val"
-              size="sm"
-              variant="ghost"
-              items={[{ id: 'new', label: 'Nytt samtal', onClick: talk.newConversation }]}
-            />
-          </HStack>
-        ) : (
-          <HStack gap={2} vAlign="center">
-            {started(talk) && <Text type="supporting">Startat av dig {started(talk)}</Text>}
-            <Button
-              size="sm"
-              variant="ghost"
-              label="Stäng samtalet"
-              endContent={<Icon icon="close" size="sm" />}
-              onClick={talk.close}
-            />
-          </HStack>
-        )
-      }
-    />
-  );
-  // The card beside the transcript is not drawn again in the turn that is about it: one card, one place.
-  // An assistant's draft (D112 item 8) opens in its work item's dialog: the item is drawn beside the transcript first
-  // when it is on the page nowhere (not beside it, not in a turn), and its dialog opens once it is.
-  const transcript = (
-    <Transcript
-      onOpenView={openView}
-      renderCard={t => (panelCard?.id === t.id ? null : card(t))}
-      viewHref={viewHref}
-      onDraft={draft => {
-        if (!drawn(draft.threadId)) navigate(withCard(here, search, draft.threadId));
-      }}
-    />
-  );
-
-  /** What the column holds: the transcript when a conversation is open (D31), else Hem. The panel is the Layout's end. */
+  /** What the column holds: the conversation's page when a conversation is open (D31, D126 rule 5), else Hem. */
   const column = (entry: EntryStyle) => {
-    if (talk.open)
-      return short ? (
-        <VStack gap={4} padding={3} xstyle={entry}>
-          {conversationHeader}
-          {transcript}
-          <Composer place="conversation" />
-        </VStack>
-      ) : (
-        // The same gutter as every page (D74 item 3): the Layout's padding reaches the header, so the title stands 32 px in
-        // from the rail and 32 px down on a desktop, 12 on a phone.
-        <Layout
-          xstyle={entry}
-          height="fill"
-          padding={mobile ? 3 : 8}
-          defaultHasDividers
-          header={<LayoutHeader>{conversationHeader}</LayoutHeader>}
-          end={slot.end}
-          content={
-            <LayoutContent isScrollable={false} padding={0}>
-              {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the column's edge like a page's. The transcript and the dock take the width Hem's content has, 32 px in from the rail like the title (the product owner, 2026-11-06: the same width as the start page; D74), not a centred column. */}
-              <VStack height="100%" paddingInline={mobile ? 0 : 8}>
-                <ChatLayout density="balanced" composer={<Composer place="conversation" />}>
-                  {transcript}
-                </ChatLayout>
-              </VStack>
-            </LayoutContent>
-          }
-        />
-      );
-    // Hem (D112 item 2): the landing in the template's column, the panel beside it only while a view is open; on a
-    // phone the box is docked at the foot, and on a short screen nothing is docked.
-    return short ? (
-      <VStack gap={4} padding={3} xstyle={entry}>
-        {landing()}
-      </VStack>
-    ) : (
-      <Layout
-        xstyle={entry}
-        height="fill"
-        padding={0}
-        end={slot.end}
-        content={
-          docked ? (
-            // On a phone the box floats over the content (the product owner, 2026-11-07): ChatLayout docks it in the
-            // frosted-glass layer the page scrolls under, as the conversation already has it. ChatLayout owns the
-            // scroll here, with no scroll-to-bottom button: Hem is read from the top.
-            <LayoutContent isScrollable={false} padding={0}>
-              {/* The bounded height is what makes ChatLayout the scroll container, as the conversation composes it. */}
-              <VStack height="100%">
-                <ChatLayout density="balanced" scrollButton={null} composer={<Composer place="landing" near={near} />}>
-                  {column720(2)}
-                </ChatLayout>
-              </VStack>
-            </LayoutContent>
-          ) : (
-            <LayoutContent isScrollable padding={0}>
-              {column720(8)}
-            </LayoutContent>
-          )
-        }
-      />
+    if (talk.open) return <ConversationPage entry={entry} onChange={replace} />;
+    // Hem (D126, board Hem): the greeting, the day line and the box in the frame's header (the box anchored under the
+    // heading, D53), pinned while the blocks scroll under them. On a phone and on a short screen nothing is pinned
+    // (1.4.10): the page grows with its content and the shell's main region scrolls the whole page.
+    return (
+      <PageFrame
+        entry={entry}
+        plain
+        pinned={!mobile && !short}
+        title={greetingOf(user.name, new Date())}
+        titleId="hem"
+        meta={dayLine(todayDate, user.unitLabel)}
+        below={<Composer place="landing" near={near} />}
+      >
+        {blocks}
+      </PageFrame>
     );
   };
 
@@ -566,22 +408,31 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       >
         <Entering key={talk.open ? 'conversation' : 'hem'}>{column}</Entering>
       </Shell>
-      {slot.overlay}
-      <EventDialog
-        item={openItem?.item ?? null}
-        dayItems={openItem?.dayItems ?? []}
-        onClose={() => setOpenItem(null)}
-        /* The day in the panel and every loaded week are read again; a moved proposal's thread goes into the cache like any other answer. */
-        onChanged={t => {
-          if (t) {
-            replace(t);
-            void applyThread(client, t);
-          }
-          void client.invalidateQueries({ queryKey: keys.viewAll });
-          void client.invalidateQueries({ queryKey: keys.calendarAll });
-        }}
-      />
     </>
+  );
+}
+
+/** A block's card once its first answer is here, with Astryx's entry motion, as `ContentArrival` draws a region. */
+function Arrived({ children }: { children: ReactNode }) {
+  const entry = useEntryAnimation('fadeIn');
+  return (
+    <VStack height="100%" xstyle={entry ?? undefined}>
+      {children}
+    </VStack>
+  );
+}
+/**
+ * The card under a block's heading in the row Behöver dig and I dag share (board Hem): its placeholder until the first
+ * answer, as `AsyncContent` has it, and then the card, which takes the height the row gives it, so the two cards end
+ * level whichever has fewer rows. On a phone, one block under the other, each is as tall as its rows.
+ */
+function RowCard({ pending, fallback, children }: { pending: boolean; fallback: ReactNode; children: ReactNode }) {
+  return (
+    <StackItem size="fill">
+      <VStack height="100%" aria-busy={pending}>
+        {pending ? fallback : <Arrived>{children}</Arrived>}
+      </VStack>
+    </StackItem>
   );
 }
 

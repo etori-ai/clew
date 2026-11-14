@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
@@ -13,7 +13,7 @@ import { DOT } from '../dot';
 
 /** The area of the talks domain (D96 item 7): with it chosen, Hem still shows the person's action points. */
 export const TALKS_AREA = 'talks';
-/** How many action points Hem shows before the person asks for the rest, as Mina ärenden does (D90). */
+/** How many action points Hem shows before the person asks for the rest. */
 const ROWS = 5;
 const DONE = 'Åtgärdspunkten är klar.';
 const REOPENED = 'Åtgärdspunkten är öppen igen.';
@@ -24,13 +24,14 @@ const toastFor = (id: string) => 'commitment:' + id;
 type FocusAfter = { left: string; index: number } | { back: string };
 
 /**
- * Mina åtgärdspunkter on Hem (D96 item 7): the open action points the person owns and those about them, after the day's
- * work beside Mina ärenden (D90), the first five and the rest in place. The person reads the text and ticks their own
- * off here; the card in their stream carries no text and opens this list (D96 items 5 and 6).
+ * Mina åtgärdspunkter on Hem (D96 item 7): the open action points the person owns and those about them, under Nyheter,
+ * the first five and the rest in place. The person reads the text and ticks their own off here; the card in their stream
+ * carries no text and opens this list (D96 items 5 and 6). Drawn as Hem's other blocks are (D126, board Hem): the h2
+ * with the count beside it and "Visa alla" at the end of its line, the points as a `List` in a `Card`.
  *
  * It is drawn only when there is something open. Without a talks system (`null`), with nothing open and while the first
- * read is on its way, nothing is drawn; a read that fails is an alert with the server's sentence and Försök igen, as
- * Mina ärenden has it. Read-only (another system answers, D96 item 9): no controls, and a row opens that system.
+ * read is on its way, nothing is drawn; a read that fails is an alert with the server's sentence and Försök igen in the
+ * block's card. Read-only (another system answers, D96 item 9): no controls, and a row's text opens that system.
  */
 export function MyCommitments() {
   const read = useQuery(commitmentsQuery());
@@ -66,26 +67,42 @@ export function MyCommitments() {
     )?.focus();
   }, [result]);
   if (read.isPending || result === null) return null;
-  if (!result && read.isError)
-    return (
-      <VStack gap={2} as="section" aria-label="Mina åtgärdspunkter">
-        <Heading ref={heading} id="mina-atgardspunkter" tabIndex={-1} level={3} accessibilityLevel={2}>
+  /**
+   * The block's heading line, as Hem's other blocks draw theirs (board Hem): the heading, how many are open beside it,
+   * and at the end of the line what leads on, here the rest of the points shown in place.
+   */
+  const head = (count: number | null, end?: ReactNode) => (
+    <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+      <HStack gap={2} vAlign="center">
+        <Heading ref={heading} id="mina-atgardspunkter" tabIndex={-1} level={2}>
           Mina åtgärdspunkter
         </Heading>
-        <VStack gap={2}>
-          <Text as="p" role="alert">
-            {read.error instanceof Error ? read.error.message : 'Åtgärdspunkterna kunde inte hämtas just nu.'}
-          </Text>
-          <HStack>
-            <Button
-              size="sm"
-              variant="secondary"
-              label="Försök igen"
-              isLoading={read.isFetching}
-              onClick={() => void read.refetch()}
-            />
-          </HStack>
-        </VStack>
+        {count !== null && <Badge variant="neutral" label={String(count)} />}
+      </HStack>
+      {end}
+    </HStack>
+  );
+  if (!result && read.isError)
+    return (
+      <VStack gap={3} as="section" aria-labelledby="mina-atgardspunkter">
+        {head(null)}
+        {/* The failure stands where the points would be, in the block's card, as Behöver dig says its own. */}
+        <Card padding={0}>
+          <VStack gap={2} padding={4}>
+            <Text as="p" role="alert">
+              {read.error instanceof Error ? read.error.message : 'Åtgärdspunkterna kunde inte hämtas just nu.'}
+            </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                isLoading={read.isFetching}
+                onClick={() => void read.refetch()}
+              />
+            </HStack>
+          </VStack>
+        </Card>
       </VStack>
     );
   if (!result || open.length === 0) return null;
@@ -93,20 +110,21 @@ export function MyCommitments() {
   const day = today();
   const showAll = () => {
     setAll(true);
-    // The button is gone once every row is shown, so the focus goes to the section's heading and not to the page's top.
+    // The control is gone once every row is shown, so the focus goes to the section's heading and not to the page's top.
     heading.current?.focus();
   };
   return (
-    <VStack gap={2} as="section" aria-label="Mina åtgärdspunkter">
-      <Heading ref={heading} id="mina-atgardspunkter" tabIndex={-1} level={3} accessibilityLevel={2}>
-        Mina åtgärdspunkter{DOT}
-        {open.length}
-      </Heading>
-      <ContentArrival gap={2}>
-        <Card>
+    <VStack gap={3} as="section" aria-labelledby="mina-atgardspunkter">
+      {head(
+        open.length,
+        // The rest in place, where the other blocks have their way on: Astryx's link drawn as a button, since it
+        // leads nowhere (the points have no page of their own to list them all).
+        !all && open.length > ROWS ? <Link onClick={showAll}>{`Visa alla (${open.length})`}</Link> : undefined,
+      )}
+      <ContentArrival>
+        <Card padding={0}>
           <List
             hasDividers
-            density="compact"
             {...(result.writable
               ? { 'aria-label': result.source }
               : { header: <Text type="supporting">{result.source}</Text> })}
@@ -130,11 +148,6 @@ export function MyCommitments() {
             ))}
           </List>
         </Card>
-        {!all && open.length > ROWS && (
-          <HStack>
-            <Button size="sm" variant="secondary" label={`Visa alla ${open.length} åtgärdspunkter`} onClick={showAll} />
-          </HStack>
-        )}
       </ContentArrival>
     </VStack>
   );

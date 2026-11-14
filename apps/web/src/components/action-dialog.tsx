@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Ask, AskValues, CardAction, EntityAction, EntityKind, Thread } from '@clew/contracts';
+import type { Ask, AskValues, CardAction, EffectPreview, EntityAction, EntityKind, Thread } from '@clew/contracts';
 import {
   Banner,
   Button,
@@ -73,8 +73,17 @@ import { QUEUED_LINE, silentLine, useSilentSources } from './silent-sources';
 export type ActionTarget =
   /** An action on a work item: its effect is read and its decision sent on the item, with the rows chosen there. */
   | { kind: 'item'; thread: Thread; action: CardAction; refs?: string[] }
-  /** An action about a person or a unit before any work item exists: a propose, which drafts the item with the values. */
-  | { kind: 'entity'; entity: { kind: EntityKind; key: string; name: string }; action: EntityAction };
+  /**
+   * An action about a person or a unit before any work item exists (D126 item 7): a propose, which drafts the item with
+   * the values, or an execute, which becomes its item with the decision made. Nothing exists before the last button;
+   * `readEffect` reads an execute's "Det här händer" for the values on the step, before anything is created.
+   */
+  | {
+      kind: 'entity';
+      entity: { kind: EntityKind; key: string; name: string };
+      action: EntityAction;
+      readEffect?: (values: AskValues) => Promise<EffectPreview>;
+    };
 export interface ActionDialogProps {
   target: ActionTarget;
   isOpen: boolean;
@@ -192,14 +201,28 @@ export function ActionDialog({
   const sent = sentValues(path.asks, values);
 
   const item = target.kind === 'item' ? target : null;
-  // The item's system does not answer (D45, D47): what is sent is queued and read back, said before the last button.
-  const silent = useSilentSources().of(item?.thread.connector ?? '');
-  // "Det här händer" is read for exactly the values on the step, and again whenever they change.
-  const effect = useQuery({
+  const about = target.kind === 'entity' ? target : null;
+  // The system an execute writes to does not answer (D45, D47): what is sent is queued and read back, said before the
+  // last button. A propose runs at once as the person, so a silent system refuses it instead.
+  const writesTo = item?.thread.connector ?? (about?.action.kind === 'execute' ? about.action.connector : '');
+  const silent = useSilentSources().of(writesTo);
+  // "Det här händer" is read for exactly the values on the step, and again whenever they change: on the work item, or,
+  // before any item exists, about the entity (D126 item 7).
+  const reading = isOpen && step === 'effect' && path.effect;
+  const itemEffect = useQuery({
     ...actionEffectQuery(item?.thread ?? { id: '', updatedAt: '' }, item?.action.id ?? '', item?.refs, sent),
-    enabled: isOpen && step === 'effect' && path.effect && !!item,
+    enabled: reading && !!item,
   });
-  const effectAnswered = !path.effect || !item || effect.isSuccess;
+  const entityEffect = useQuery({
+    queryKey: ['entity-action-effect', about?.entity.kind, about?.entity.key, about?.action.capability, sent],
+    queryFn: () => about!.readEffect!(sent),
+    enabled: reading && !!about?.readEffect,
+    retry: false,
+    staleTime: 0,
+  });
+  const effect = item ? itemEffect : entityEffect;
+  const readsEffect = !!item || !!about?.readEffect;
+  const effectAnswered = !path.effect || !readsEffect || effect.isSuccess;
   const lastFailure = useRef<string | null>(null);
   useEffect(() => {
     const failure = effect.isError ? errorMessage(effect.error, 'Det gick inte att läsa vad som händer.') : null;
@@ -265,31 +288,32 @@ export function ActionDialog({
       onClick={() => void send()}
     />
   );
-  const cancel = <Button size={size} variant="secondary" label="Avbryt" onClick={close} />;
+  const cancel = <Button size={size} variant="ghost" label="Avbryt" onClick={close} />;
   const missing = attempted ? askProblems(path.asks, values, now).length : 0;
+  // The footer as board Åtgärd draws it: the way out (Avbryt) or back (to the fill-in) as a ghost at the start, the
+  // step's one primary at the end. On "Det här händer" after a fill-in, Avbryt stays beside the primary as a ghost.
   const footer =
     step === 'fill-in'
       ? {
-          secondary: <Text type="supporting">Inget skickas i det här steget.</Text>,
+          secondary: cancel,
           primary: (
             <>
               {missing > 0 && <FieldStatus type="error" variant="detached" message={blockedText(missing)} />}
-              {cancel}
               <Button size={size} variant="primary" label="Nästa" onClick={toEffect} />
             </>
           ),
         }
-      : {
-          secondary: steps.length > 1 && (
-            <Button size={size} variant="secondary" label={fillInLabel(path.asks, values)} onClick={toFillIn} />
-          ),
-          primary: (
-            <>
-              {cancel}
-              {sendButton}
-            </>
-          ),
-        };
+      : steps.length > 1
+        ? {
+            secondary: <Button size={size} variant="ghost" label={fillInLabel(path.asks, values)} onClick={toFillIn} />,
+            primary: (
+              <>
+                {cancel}
+                {sendButton}
+              </>
+            ),
+          }
+        : { secondary: cancel, primary: sendButton };
   const header = (
     <>
       <DialogHeader
@@ -326,12 +350,12 @@ export function ActionDialog({
       onOpenChange={open => {
         if (!open) close();
       }}
-      width={620}
+      width={520}
       variant={mobile ? 'fullscreen' : 'standard'}
       purpose="form"
     >
       <DialogFrame header={header} error={null} secondary={footer.secondary} primary={footer.primary}>
-        <VStack ref={root} gap={5}>
+        <VStack ref={root} gap={4}>
           {refusal && !refusal.property && (
             <Banner
               ref={refusalBanner}
@@ -343,26 +367,32 @@ export function ActionDialog({
             />
           )}
           {step === 'fill-in' ? (
-            <FormLayout defaultOptionality="optional">
-              {path.asks.map(ask => (
-                <AskField
-                  key={ask.property}
-                  ask={ask}
-                  value={values[ask.property] ?? ''}
-                  onChange={value => {
-                    setValue(ask.property, value);
-                    if (refusal?.property === ask.property) setRefusal(null);
-                  }}
-                  problem={shown(ask.property)}
-                  labels={labels}
-                  isOpen={isOpen && step === 'fill-in'}
-                  mobile={mobile}
-                  keys={meetingKeys.current}
-                />
-              ))}
-            </FormLayout>
+            <>
+              <FormLayout defaultOptionality="optional">
+                {path.asks.map(ask => (
+                  <AskField
+                    key={ask.property}
+                    ask={ask}
+                    value={values[ask.property] ?? ''}
+                    onChange={value => {
+                      setValue(ask.property, value);
+                      if (refusal?.property === ask.property) setRefusal(null);
+                    }}
+                    problem={shown(ask.property)}
+                    labels={labels}
+                    isOpen={isOpen && step === 'fill-in'}
+                    mobile={mobile}
+                    keys={meetingKeys.current}
+                  />
+                ))}
+              </FormLayout>
+              {/* The step's last line, under the fields (board Åtgärd). */}
+              <Text type="supporting" color="secondary">
+                Inget skickas i det här steget.
+              </Text>
+            </>
           ) : (
-            <VStack gap={5}>
+            <VStack gap={4}>
               {path.asks.some(a => sent[a.property]) && (
                 <MetadataList columns="single">
                   {path.asks
@@ -378,7 +408,7 @@ export function ActionDialog({
                 <Heading ref={effectHeading} tabIndex={-1} level={3} id={effectId}>
                   {`När du trycker ${labels.label}`}
                 </Heading>
-                {path.effect && item ? (
+                {path.effect && readsEffect ? (
                   effect.isPending ? (
                     <VStack gap={2} aria-busy="true">
                       <Text type="supporting" role="status">
@@ -449,7 +479,8 @@ function EffectRows({
         <ListItem
           key={i}
           align="first-line"
-          label={<Text weight="semibold">{r.label}</Text>}
+          // In the body's own text, as board Åtgärd writes what will happen.
+          label={<Text>{r.label}</Text>}
           {...(r.detail ? { description: <Text type="supporting">{r.detail}</Text> } : {})}
           endContent={
             <Text type="supporting" textWrap="nowrap">

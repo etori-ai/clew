@@ -16,19 +16,42 @@ import { mergedSearch } from './unit-data';
 
 test.use({ viewport: desktop });
 
+/** Att göra's reading pane beside the queue (D126 rule 2, the `table-inbox` template). */
+const readingPane = (page: Page) => page.getByRole('complementary', { name: 'Valt ärende' });
+
 /**
- * Inte nu on the first row of Att göra, from the keyboard (D112 item 3): the row opens its work item in the reading pane
- * beside the list, with the focus on its heading, where Inte nu stands among the card's own buttons.
+ * Inte nu of the work item in the reading pane, from the keyboard: a sub-menu under the item's "Fler åtgärder" (D126
+ * rule 2, the board's MoreMenu), its rows saying when the item comes back.
+ */
+async function openInteNu(page: Page) {
+  // The pane puts the focus on the item's heading once it is drawn, and its Händelser arrive after it; the menu is
+  // reached once the item has settled.
+  await expect(readingPane(page).locator(':focus')).toHaveCount(1);
+  await expect(readingPane(page).getByRole('list', { name: 'Händelser, de senaste först' })).toBeVisible();
+  await readingPane(page).getByRole('button', { name: 'Fler åtgärder' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menu', { name: 'Fler åtgärder' })).toBeVisible();
+  // Down the menu's rows with the arrows to Inte nu, and into its sub-menu with the right arrow.
+  const interNu = page.getByRole('menu', { name: 'Fler åtgärder' }).getByRole('menuitem', { name: 'Inte nu' });
+  for (let i = 0; i < 10 && !(await interNu.evaluate(el => el === document.activeElement)); i++)
+    await page.keyboard.press('ArrowDown');
+  await expect(interNu).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('menu', { name: 'Inte nu' }).getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
+}
+
+/**
+ * Inte nu on the first row of Att göra, from the keyboard (D126 rule 2): the row's name opens its work item in the
+ * reading pane beside the queue, with the focus on its heading, and Inte nu is under its "Fler åtgärder".
  */
 async function openSnoozeRows(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole('list', { name: 'Behöver dig' }).getByRole('link').first().focus();
+  await page.getByRole('table', { name: 'Behöver dig' }).getByRole('link').first().focus();
   await page.keyboard.press('Enter');
-  const panel = page.getByRole('complementary', { name: 'Valt ärende' });
-  await expect(panel.getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeFocused();
-  await panel.getByRole('button', { name: 'Inte nu', exact: true }).focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
+  await expect(
+    readingPane(page).getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 48 200 kr' }),
+  ).toBeFocused();
+  await openInteNu(page);
 }
 
 test.describe('2.4.7 focus visible', () => {
@@ -69,7 +92,7 @@ test.describe('2.4.7 focus visible', () => {
     test(`a focused field with an error differs from the unfocused one, ${scheme}`, async ({ page, api: _ }) => {
       await page.emulateMedia({ colorScheme: scheme });
       await open(page, '/todo?item=fakturor');
-      await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
+      await openInteNu(page);
       await page.getByRole('menuitem', { name: /^Skriv själv/ }).click();
       const field = page
         .getByRole('dialog', { name: 'När ska jag ta upp det igen?' })
@@ -187,20 +210,22 @@ test.describe('2.4.3 focus order', () => {
     await undo.focus();
     await page.keyboard.press('Enter');
     // The item is back in its pile.
-    await expect(page.getByRole('list', { name: 'Behöver dig' }).locator('#work-fakturor')).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Behöver dig' }).locator('#work-fakturor')).toBeVisible();
   });
 
-  test('the side panel can be closed with a button and hands focus back', async ({ page, api }) => {
-    // A row on a tool's page opens its own view over the page at this width (D50); closing it gives the row's link back.
+  test('a name on a tool’s page leads to its own page, and Back hands the focus back to the name (D126 rule 1)', async ({
+    page,
+    api,
+  }) => {
+    // Nothing opens over the page (rule 3): the row's name is the link to its contact card's page, the tool the way back.
     api.menu = menuRows;
     await open(page, '/tools/phonebook.directory');
     const trigger = page.getByRole('link', { name: 'Anna Lindqvist' });
     await trigger.focus();
     await page.keyboard.press('Enter');
-    const panel = page.getByRole('dialog');
-    await expect(panel).toBeVisible();
-    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
-    await expect(panel).toBeHidden();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/phonebook\.person\?/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.goBack();
     await expect(trigger).toBeFocused();
   });
 
@@ -247,10 +272,10 @@ test.describe('D29 the Inte nu picker', () => {
     page,
     api: _,
   }) => {
-    // The work item's one time action stands among its buttons in Att göra's reading pane.
+    // The work item's one time action is a sub-menu of its "Fler åtgärder" in Att göra's reading pane (D126 rule 2).
     await open(page, '/todo?item=fakturor');
-    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
-    const menu = page.getByRole('menu');
+    await openInteNu(page);
+    const menu = page.getByRole('menu', { name: 'Inte nu' });
     await expect(menu).toBeVisible();
     for (const row of [
       'Om en timme',
@@ -273,7 +298,8 @@ test.describe('D29 the Inte nu picker', () => {
     await expect(dialog.getByRole('button', { name: /^Ta upp/ })).toBeDisabled();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    expect((await focused(page)).text).toBe('Inte nu');
+    // The focus goes back to the item's menu, where the picker was opened from (2.4.3).
+    await expect(readingPane(page).getByRole('button', { name: 'Fler åtgärder' })).toBeFocused();
   });
 });
 

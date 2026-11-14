@@ -66,7 +66,7 @@ const settled = (page: Page) =>
 const switchedOn = (api: MockApi) => {
   api.competenceTypes = competenceTypes();
 };
-const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Medarbetare', exact: true });
+const heading = (page: Page) => page.getByRole('heading', { level: 2, name: 'Medarbetarnas kompetens', exact: true });
 const approvalDialog = (page: Page) => page.getByRole('dialog', { name: 'Granska intyg' });
 const validation = (page: Page) => page.getByRole('dialog', { name: 'Bekräfta nivå' });
 /** Journalsystem is required of every report at least Självständig; Anna's own rating of it waits to be confirmed. */
@@ -162,7 +162,7 @@ function widened(m: CompetenceMatrixOutput): CompetenceMatrixOutput {
   };
 }
 
-test.describe('Kompetens › Medarbetare', () => {
+test.describe('Personal › Kompetens, the matrix', () => {
   for (const [layout, viewport] of [
     ['desktop', desktop],
     ['phone', phone],
@@ -172,7 +172,7 @@ test.describe('Kompetens › Medarbetare', () => {
       test('the matrix has no axe violations and every focus stop is marked', async ({ page, api }) => {
         switchedOn(api);
         await open(page, MATRIX);
-        await expect(page.getByRole('heading', { level: 1, name: 'Medarbetare', exact: true })).toBeVisible();
+        await expect(heading(page)).toBeVisible();
         await expect(cell(page, 'HLR', 'Anna Lindqvist')).toBeVisible();
         await expectNoAxeViolations(page);
         const { unmarked } = await hiddenFocusStops(page);
@@ -188,12 +188,11 @@ test.describe('Kompetens › Medarbetare', () => {
     }) => {
       switchedOn(api);
       await open(page, MATRIX);
-      await expect(page).toHaveTitle('Medarbetare · Startsidan');
-      // The tab is named as the page is headed (the review of 2026-11-13).
-      await expect(tabs(page).getByRole('link', { name: 'Medarbetare', exact: true })).toHaveAttribute(
-        'aria-current',
-        'true',
-      );
+      await expect(page).toHaveTitle('Kompetens · Personal · Startsidan');
+      // The matrix is Personal's Kompetens tab (D126 rule 8).
+      await expect(
+        page.getByRole('navigation', { name: 'Personal' }).getByRole('link', { name: 'Kompetens', exact: true }),
+      ).toHaveAttribute('aria-current', 'true');
       // The table has a name of its own (1.3.1), through the Table's documented hook for the table itself.
       const table = page.getByRole('grid', { name: 'Medarbetarnas kompetens' });
       await expect(table.getByRole('columnheader')).toHaveText(['Medarbetare', 'HLR', 'Fallskydd', 'Heta arbeten']);
@@ -952,21 +951,6 @@ test.describe('Kompetens › Medarbetare', () => {
       await expect(page.getByRole('grid')).toBeVisible();
     });
 
-    test('choosing a set keeps what is open beside the matrix', async ({ page, api }) => {
-      switchedOn(api);
-      api.competenceMatrixSets = true;
-      await page.setViewportSize({ width: 1440, height: 900 });
-      await open(page, `${MATRIX}?card=omtanke`);
-      const panel = page.getByRole('complementary', { name: 'Ärende' });
-      await expect(panel).toBeVisible();
-      await page.getByRole('combobox', { name: /Visa kompetenser för/ }).click();
-      await page.getByRole('option', { name: /^Undersköterska/ }).click();
-      await expect(page).toHaveURL(`${MATRIX}?card=omtanke&by=position%3Aunderskoterska`);
-      await expect(panel).toBeVisible();
-      // Two columns fit beside the panel, so the matrix is the table.
-      await expect(page.getByRole('grid').getByRole('columnheader')).toHaveText(['Medarbetare', 'HLR', 'Heta arbeten']);
-    });
-
     /**
      * Moving through a row of a grid that scrolls sideways, forwards to its last competence and back to its first by the
      * arrow keys, then out of the grid and back into it by Tab each way, its stop left scrolled out of view: how far
@@ -1048,43 +1032,6 @@ test.describe('Kompetens › Medarbetare', () => {
       await page.getByRole('link', { name: 'Ladda ner 3 medarbetare som CSV' }).click();
       expect((await download).suggestedFilename()).toBe('kompetens-2026-11-04.csv');
       expect(api.matrixDownloads).toEqual(['']);
-    });
-
-    test('beside the panel the matrix is a list of one person per item, the page never scrolling sideways', async ({
-      page,
-      api,
-    }) => {
-      switchedOn(api);
-      // Ten columns do not fit beside the panel at this width.
-      api.competenceMatrix = wide(api.competenceMatrix);
-      await page.setViewportSize({ width: 1440, height: 900 });
-      await open(page, `${MATRIX}?card=omtanke`);
-      await expect(page.getByRole('complementary', { name: 'Ärende' })).toBeVisible();
-      await expect(page.getByRole('grid')).toHaveCount(0);
-      const people = page.getByRole('list', { name: 'Medarbetare' });
-      await expect(people.getByRole('link', { name: 'Anna Lindqvist' })).toBeVisible();
-      const anna = page.getByRole('list', { name: 'Kompetens för Anna Lindqvist' });
-      // Each competence with its details in words and its one control.
-      const fall = anna.getByRole('listitem').filter({ hasText: 'Fallskydd' });
-      await expect(fall).toContainText('Saknas');
-      await expect(fall.getByRole('button')).toHaveAccessibleName('Anna Lindqvist, Fallskydd: saknas');
-      await expect(anna.getByRole('listitem').filter({ hasText: 'HLR' })).toContainText('Går ut snart, 10 jan. 2027');
-      // What nothing requires of a person is one quiet line: the control says "Krävs inte", once.
-      const erik = page.getByRole('list', { name: 'Kompetens för Erik Sandström' });
-      await expect(erik.getByRole('listitem').filter({ hasText: 'Heta arbeten' }).getByText('Krävs inte')).toHaveCount(
-        1,
-      );
-      // The name is underlined, as in the table: a link that says it is one without its colour (1.4.1).
-      const line = await people
-        .getByRole('link', { name: 'Anna Lindqvist' })
-        .evaluate(el => getComputedStyle(el).textDecorationLine);
-      expect(line).toContain('underline');
-      expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
-      await expectNoAxeViolations(page);
-      // Closed, the matrix is the table again.
-      await page.keyboard.press('Escape');
-      await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
-      await expect(page.getByRole('grid')).toBeVisible();
     });
 
     test('someone who manages nobody gets the page’s answer and no tabs; with the module off neither the rail nor the page has it', async ({

@@ -4,11 +4,15 @@ import {
   entityHref,
   fromCardsBeside,
   fromPersonBeside,
+  overlayRedirect,
   personPageFrom,
   personPageHref,
   recordSubject,
+  sourceTab,
+  sourceWayHref,
   unitPageHref,
 } from '../src/person-address';
+import { lastButton } from '../src/entity-actions';
 
 describe('a row that names an entity leads to it (D97 item 6, D83 rule 4)', () => {
   test('a unit is a page of its own, with the page it was opened from', () => {
@@ -95,5 +99,59 @@ describe("the entity a record names, by Clew's key (D97 item 6, D122)", () => {
     });
     expect(recordSubject(view(), 'unit-skola')).toBeUndefined();
     expect(recordSubject(view(undefined, { 'unit-skola': 'p-1' }), 'unit-skola')).toBeUndefined();
+  });
+});
+
+describe('nothing opens over a page (D126 rule 3): a talk and a dialogue are tabs of their page', () => {
+  const talk = { capability: 'talks.person', page: { title: 'Öppna samtalet', href: '?talk={id}' } };
+  const dialogue = { capability: 'dialogue.unit', page: { title: 'Öppna dialogen', href: '?dialog={key}' } };
+  const register = { capability: 'competence.person', page: { title: 'Registrera intyg', href: '?register={id}' } };
+  test('the way in names its tab', () => {
+    expect(sourceTab(talk.page)).toBe('talk');
+    expect(sourceTab(dialogue.page)).toBe('dialogue');
+    expect(sourceTab(register.page)).toBeNull();
+    expect(sourceTab(undefined)).toBeNull();
+  });
+  test("a row's way into a talk is the person's talk tab, with the register as the way back", () => {
+    expect(
+      sourceWayHref(
+        talk,
+        { key: 'p1', id: 'p1' },
+        { pathname: '/staff', search: '?show=talks.person' },
+        '/staff?show=talks.person',
+      ),
+    ).toBe('/people/p1?section=talks.person&from=%2Fstaff%3Fshow%3Dtalks.person');
+    expect(sourceWayHref(dialogue, { kind: 'unit', key: 'u1' }, { pathname: '/units', search: '' }, '/units')).toBe(
+      '/units/u1?section=dialogue.unit&from=%2Funits',
+    );
+  });
+  test("on the entity's own page the tab keeps the page's way back; any other way in keeps its address", () => {
+    expect(
+      sourceWayHref(talk, { key: 'p1', id: 'p1' }, { pathname: '/people/p1', search: '?from=%2Fstaff' }, '/people/p1'),
+    ).toBe('/people/p1?section=talks.person&from=%2Fstaff');
+    expect(sourceWayHref(register, { key: 'p1', id: 'p1' }, { pathname: '/people/p1', search: '?from=%2Fstaff' })).toBe(
+      '/people/p1?from=%2Fstaff&register=p1',
+    );
+  });
+  test('an address that laid the talk or the dialogue over a page leads to the tab, the page it lay over as the way back', () => {
+    expect(overlayRedirect('/staff', '?show=hr.person&talk=p1', { talk: 'talks.person' })).toBe(
+      '/people/p1?section=talks.person&from=%2Fstaff%3Fshow%3Dhr.person',
+    );
+    // Not known yet which source the talk is: the person's page finds it from the address.
+    expect(overlayRedirect('/staff', '?talk=p1')).toBe('/people/p1?from=%2Fstaff&talk=p1');
+    expect(overlayRedirect('/people/p1', '?from=%2Fstaff&talk=p1', { talk: 'talks.person' })).toBe(
+      '/people/p1?section=talks.person&from=%2Fstaff',
+    );
+    expect(overlayRedirect('/units/u1', '?dialog=u1', { dialogue: 'dialogue.unit' })).toBe(
+      '/units/u1?section=dialogue.unit',
+    );
+    expect(overlayRedirect('/staff', '?show=hr.person')).toBeNull();
+  });
+});
+
+describe('nothing is created before the action dialog’s last button (D126 item 7)', () => {
+  test('every action opens the dialog first; its last button drafts a propose and decides an execute at once', () => {
+    expect(lastButton({ kind: 'propose' })).toBe('drafts');
+    expect(lastButton({ kind: 'execute' })).toBe('decided');
   });
 });

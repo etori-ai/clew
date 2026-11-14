@@ -67,7 +67,13 @@ test.describe('model administration', () => {
       api.admin = true;
       await open(page, '/admin/models');
       await expect(page).toHaveTitle('Modeller · Startsidan');
-      await expect(page.getByRole('link', { name: 'Modeller', exact: true })).toHaveAttribute('aria-current', 'page');
+      // The section is marked in the administration's own panel (D126).
+      await expect(
+        page
+          .getByRole('navigation', { name: 'Administration', exact: true })
+          .getByRole('listitem')
+          .filter({ has: page.getByRole('link', { name: 'Modeller', exact: true }) }),
+      ).toHaveAttribute('aria-current', 'true');
       await expect(page.getByText('Den som inte valt själv får Kapabel (standard).')).toBeVisible();
       // Above the list, what a model reads and who answers for it (D122 item 1), in the words it was approved in.
       await expect(
@@ -361,7 +367,9 @@ test.describe("the person's model in the box", () => {
     await input.fill('Hur många semesterdagar har jag?');
     await input.press('Enter');
     await expect(page.getByRole('paragraph').filter({ hasText: 'Du har 18 semesterdagar kvar i år.' })).toBeVisible();
-    const answer = page.getByRole('article', { name: 'Assistenten · läste Personalsystemet', exact: true });
-    await expect(answer.getByText('Svar från Kapabel')).toBeVisible();
+    // The answer is Clew's turn (D126 rule 5: what it read stands as its tool calls, not in the turn's name), and the
+    // model that wrote it is named under it.
+    const answer = page.getByRole('article', { name: 'Clew', exact: true });
+    await expect(answer.getByText(/Svar från Kapabel/)).toBeVisible();
   });
 });

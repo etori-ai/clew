@@ -15,7 +15,10 @@ import {
   Dialog,
   DialogHeader,
   FormLayout,
+  HStack,
+  Heading,
   Selector,
+  StackItem,
   Tab,
   TabList,
   Text,
@@ -23,36 +26,36 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { api } from '../api';
-import { COMPETENCE_PATH, MATRIX_PATH, SEARCH_PATH } from '../competence-address';
+import { MATRIX_PATH, SEARCH_PATH } from '../competence-address';
 import { useAdminAction } from '../mutations';
 import { keys } from '../query-keys';
 import { refused } from '../query-policy';
 import { DialogFrame } from '../components/dialog-frame';
 import { longDay, shortDay } from '../components/panel-labels';
 import { LevelField, isSkillType, levelLabel } from '../components/register-holding';
-import { PageHeader } from '../components/page-header';
 import { mobileQuery } from '../components/shell';
 
 /**
- * What the pages of Kompetens share (D120 item 8): the header with the sibling pages as tabs that are links, what a cell
- * of the matrix draws and says, and the dialog in which a manager adds a requirement for one of their reports.
+ * What the views of Kompetens share (D120 item 8, D126): the head of Personal's Kompetens tab with its views as tabs that
+ * are links, what a cell of the matrix draws and says, and the dialog in which a manager adds a requirement for one of
+ * their reports.
  */
 
-/** Which page of the place is shown. */
+/** Which page of the place is shown: the reader's own (a tab of their own page since D126), the matrix, the search. */
 export type CompetencePageId = 'own' | 'matrix' | 'search';
-/** The tab pressed on the page before, so the page it leads to gives it the focus once drawn (`CompetenceHeader`). */
+/** The view pressed on the page before, so the page it leads to gives it the focus once drawn (`CompetenceHeader`). */
 let pressedTab: CompetencePageId | null = null;
 /**
- * The page's header (D74): its title and its own actions on the first line; under it, where the reader has another page
- * of the place, the place's pages as Astryx's navigation tabs, each a link with its own address (D116), the current one
- * marked: the matrix where the reader has it (`hasTabs`, `managesFrom`), and Kompetenssökning where they hold the
- * relation `registrar` (`hasSearch`, D121). Someone with neither has one page, so no tabs. Each tab is named as the page
- * it leads to is headed, so the two never disagree.
+ * The head of Personal's Kompetens tab (D126 rule 8: Kompetens is a tab of Personal, the reader's own competences a tab
+ * of their own page). Where the reader has both the matrix (someone reports to them, `managesFrom`) and the search (the
+ * relation `registrar`, D121), the two views as Astryx's navigation tabs, each a link with its own address (D116), the
+ * current one marked; then the view's heading at level 2 under Personal's, with its own actions at the end of its line.
+ * Someone with one view has no tabs. Each tab is named as the heading of the view it leads to, so the two never
+ * disagree.
  *
- * Each tab is a page of its own, so a press draws a new page, which would leave the focus nowhere (the review of
- * 2026-11-13). The focus goes where Att göra's tabs leave it, on the tab that was pressed, now the current one: the
- * pressed tab is remembered for the next page, whose header gives its tab the focus once it is drawn, also when the
- * tabs come a moment after the page (the matrix's while the server answers who reports to the reader).
+ * Each view is a page of its own, so a press draws a new page, which would leave the focus nowhere (the review of
+ * 2026-11-13): the pressed tab is remembered for the next page, whose header gives it the focus once it is drawn, also
+ * when the tabs come a moment after the page (the matrix's while the server answers who reports to the reader).
  */
 export function CompetenceHeader({
   title,
@@ -65,11 +68,12 @@ export function CompetenceHeader({
   title: string;
   titleId: string;
   page: CompetencePageId;
+  /** The reader has the matrix. */
   hasTabs: boolean;
   hasSearch?: boolean;
   end?: ReactNode;
 }) {
-  // The current page's tab, once drawn, takes the focus when it was pressed on the page before.
+  // The current view's tab, once drawn, takes the focus when it was pressed on the page before.
   const current = useCallback(
     (el: HTMLElement | null) => {
       if (!el || pressedTab !== page) return;
@@ -83,32 +87,38 @@ export function CompetenceHeader({
   );
   return (
     <VStack gap={4}>
-      <PageHeader title={title} titleId={titleId} {...(end ? { end } : {})} />
-      {(hasTabs || hasSearch) && (
+      {hasTabs && hasSearch && page !== 'own' && (
         <TabList
-          hasDivider
+          size="sm"
           value={page}
           onChange={value => {
             if (value !== page) pressedTab = value as CompetencePageId;
           }}
           aria-label="Kompetens"
         >
-          {tab('own', COMPETENCE_PAGE_TITLES.own, COMPETENCE_PATH)}
-          {hasTabs && tab('matrix', COMPETENCE_PAGE_TITLES.matrix, MATRIX_PATH)}
-          {hasSearch && tab('search', COMPETENCE_PAGE_TITLES.search, SEARCH_PATH)}
+          {tab('matrix', COMPETENCE_PAGE_TITLES.matrix, MATRIX_PATH)}
+          {tab('search', COMPETENCE_PAGE_TITLES.search, SEARCH_PATH)}
         </TabList>
       )}
+      <HStack gap={3} vAlign="center" wrap="wrap">
+        <StackItem size="fill">
+          <Heading level={2} id={titleId} tabIndex={-1}>
+            {title}
+          </Heading>
+        </StackItem>
+        {end}
+      </HStack>
     </VStack>
   );
 }
 /**
- * Each page's heading, which its tab says too (the review of 2026-11-13: the tab "Medarbetare" stood over the heading
- * "Medarbetarnas kompetens"). The matrix's is the short word, so the place's tabs fit a 320 px window side by side
- * (1.4.10) under the place the rail and the tabs' own name already say: Kompetens.
+ * Each view's heading, which its tab says too (the review of 2026-11-13: the tab "Medarbetare" stood over the heading
+ * "Medarbetarnas kompetens"). Under Personal, whose own first tab is "Medarbetare", the matrix is named for what it
+ * shows.
  */
 export const COMPETENCE_PAGE_TITLES: Readonly<Record<CompetencePageId, string>> = {
   own: 'Mina kompetenser',
-  matrix: 'Medarbetare',
+  matrix: 'Medarbetarnas kompetens',
   search: 'Kompetenssökning',
 };
 

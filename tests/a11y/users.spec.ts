@@ -82,26 +82,49 @@ test.describe('users administration', () => {
         );
         await page.getByRole('link', { name: 'Hillevi Berg', exact: true }).click();
         const main = page.getByRole('main');
-        await expect(main.getByRole('heading', { name: 'Hillevi Berg' })).toBeVisible();
-        const jobs = main.getByRole('region', { name: 'Anställningar' });
-        // Astryx's List, named for its section, so VoiceOver on Safari keeps the list and its count (W6).
-        await expect(jobs.getByRole('list', { name: 'Anställningar' }).getByRole('listitem')).toHaveCount(2);
-        await expect(jobs.getByRole('listitem').nth(0)).toContainText('Rektor');
-        await expect(jobs.getByRole('listitem').nth(0)).toContainText('Tillsvidare');
-        await expect(jobs.getByRole('listitem').nth(0).locator('time')).toHaveText('1 februari 2019');
-        await expect(jobs.getByRole('listitem').nth(1).getByText('Startdatum')).toHaveCount(0);
-        await expect(jobs.getByRole('listitem').nth(1)).toContainText('Samordnare');
-        await expect(jobs.getByRole('listitem').nth(0)).toContainText('60 %');
-        await expect(jobs.getByRole('listitem').nth(1)).toContainText('40 %');
-        await expect(jobs.getByText('Skolan', { exact: true })).toHaveCount(2);
-        const contacts = main.getByRole('region', { name: 'Kontaktuppgifter' });
-        await expect(contacts.locator('a[href^="tel:"]')).toHaveCount(3);
-        await expect(contacts.getByRole('link', { name: '010-000 00 02' })).toHaveAttribute('href', 'tel:0100000002');
-        await expect(contacts.getByText('Jour', { exact: true })).toBeVisible();
-        await expect(contacts.getByRole('link', { name: 'hillevi@clew.test' })).toHaveAttribute(
+        await expect(main.getByRole('heading', { level: 1, name: 'Hillevi Berg' })).toBeVisible();
+        // What the directory sent about her is the page's facts (D126 rule 1, board Person: Anställning, Kontakt), the
+        // end panel beside the read, above it where the window is narrow; each a list of terms and their values.
+        const facts = main
+          .getByRole('complementary', { name: 'Uppgifter' })
+          .or(main.getByRole('region', { name: 'Uppgifter' }));
+        for (const name of ['Anställning', 'Kontakt'])
+          expect(
+            await facts
+              .getByRole('heading', { name, exact: true })
+              .evaluate(h => Number(h.getAttribute('aria-level') ?? h.tagName.slice(1))),
+            name,
+          ).toBe(2);
+        // One list per employment, in the order sent: its title where there are several, its form, its first day and
+        // its share in words (the bar under it is for the eye); a fact the directory did not send is not drawn. Then how
+        // she is reached: the address as a link, every number under its category, and the user name.
+        await expect(facts.getByRole('term')).toHaveText([
+          'Befattning',
+          'Anställningsform',
+          'Startdatum',
+          'Omfattning',
+          'Befattning',
+          'Omfattning',
+          'E-post',
+          'Arbete',
+          'Arbete',
+          'Jour',
+          'Användarnamn',
+        ]);
+        const value = facts.getByRole('definition');
+        await expect(value.nth(0)).toHaveText('Rektor');
+        await expect(value.nth(1)).toHaveText('Tillsvidare');
+        await expect(value.nth(2).locator('time')).toHaveText('1 februari 2019');
+        await expect(value.nth(3)).toContainText('60 %');
+        await expect(value.nth(4)).toHaveText('Samordnare');
+        await expect(value.nth(5)).toContainText('40 %');
+        await expect(value.nth(6).getByRole('link', { name: 'hillevi@clew.test' })).toHaveAttribute(
           'href',
           'mailto:hillevi@clew.test',
         );
+        await expect(value.nth(8)).toHaveText('010-000 00 02');
+        await expect(value.nth(9)).toHaveText('070-000 00 03');
+        await expect(value.nth(10)).toHaveText('hillevi.berg');
         await expectNoAxeViolations(page);
         await main.getByRole('link', { name: 'Användare', exact: true }).click();
         await expect(page).toHaveURL(/\/admin\/users\?role=manager$/);
@@ -166,7 +189,18 @@ test.describe('users administration', () => {
       api.admin = true;
       await open(page, '/admin/users');
       await expect(page).toHaveTitle('Användare · Startsidan');
-      await expect(page.getByRole('link', { name: 'Användare', exact: true })).toHaveAttribute('aria-current', 'page');
+      // The rail has one row for Administration (D126 rule 10), marked; the section is marked in Administration's panel.
+      await expect(
+        page
+          .getByRole('navigation', { name: 'Sidonavigering' })
+          .getByRole('link', { name: 'Administration', exact: true }),
+      ).toHaveAttribute('aria-current', 'page');
+      await expect(
+        page
+          .getByRole('navigation', { name: 'Administration', exact: true })
+          .getByRole('listitem')
+          .filter({ has: page.getByRole('link', { name: 'Användare', exact: true }) }),
+      ).toHaveAttribute('aria-current', 'true');
       const people = page.getByRole('table').first();
       // The unit and the role are columns of their own: where a person is and what they are there are two questions.
       await expect(people.getByRole('columnheader')).toHaveText(['Person', 'Enhet', 'Roll', 'Behörigheter', 'Status']);
@@ -994,6 +1028,7 @@ test.describe('users administration', () => {
         'Administrera användare',
         'Administrera utseende',
         'Administrera kompetenskatalogen',
+        'Administrera introduktion och avslut',
       ]);
       await page.getByRole('option', { name: 'Administrera användare', exact: true }).click();
       await expect(page).toHaveURL(/\/admin\/users\?capability=admin\.users$/);

@@ -30,8 +30,6 @@ import {
   HStack,
   Heading,
   Icon,
-  Layout,
-  LayoutContent,
   Link,
   List,
   ListItem,
@@ -42,11 +40,11 @@ import {
   Text,
   Toolbar,
   VStack,
-  resolveColumnWidths,
   useMediaQuery,
 } from '@clew/ui';
 import { api } from '../api';
 import {
+  COMPETENCE_PATH,
   MATRIX_PATH,
   NEW,
   REQUIREMENT_PARAM,
@@ -72,12 +70,9 @@ import { competenceApprovalQuery, competenceMatrixQuery, competenceSkillQuery, c
 import { keys } from '../query-keys';
 import { errorMessage, refused } from '../query-policy';
 import { registerHref } from '../register-address';
-import { useRail } from '../components/nav';
 import { useHeldRelations } from '../capabilities';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { mobileQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { usePagePanel } from '../components/page-panel';
-import { panelBesideQuery } from '../components/panel';
 import { DialogFrame } from '../components/dialog-frame';
 import { LevelField, RegisterHolding, levelLabel } from '../components/register-holding';
 import {
@@ -96,21 +91,12 @@ import {
   managesFrom,
   reasonWords,
 } from './competence-parts';
-import { CELL_WIDTH, MatrixGrid, PERSON_WIDTH, useCellMenu, type MatrixGridHandle } from './competence-matrix-grid';
+import { MatrixGrid, useCellMenu, type MatrixGridHandle } from './competence-matrix-grid';
+import { COMPETENCE_TAB, PersonalFrame } from './staff-parts';
 
-/** The page's column at its widest: Astryx's comparison template caps the matrix at 1440 px, less the padding. */
-const COLUMN = 1440 - 2 * 32;
-/** The page's own padding on each side of the matrix, which the matrix's least width does not count. */
-const PADDING = 32;
 const TITLE_ID = 'matris-rubrik';
-/** The table's name: the page is "Medarbetare", its first column too, so the table says what it holds. */
+/** The table's name: what it holds, as the view's heading says it. */
 const TABLE_NAME = 'Medarbetarnas kompetens';
-/** The least width the matrix needs as a table with this many columns, as Astryx's Table works it out. */
-const matrixMinWidth = (columns: number) =>
-  resolveColumnWidths([
-    { key: 'person', width: PERSON_WIDTH },
-    ...Array.from({ length: columns }, (_, i) => ({ key: `type-${i}`, width: CELL_WIDTH })),
-  ]).tableMinWidth;
 const cellKey = (personId: string, typeId: string) => personId + '\n' + typeId;
 /** The key of a registration's own way in, its name, in the list of what waits, among the page's controls. */
 const awaitingKey = (holdingId: string) => 'awaiting\n' + holdingId;
@@ -728,7 +714,8 @@ function SkillDialog({
 }
 
 /**
- * Medarbetarnas kompetens at `/competence/matrix` (D108 item 11, D120 item 8), the second page of the place Kompetens:
+ * Medarbetarnas kompetens at `/competence/matrix` (D108 item 11, D120 item 8), Personal's Kompetens tab since D126 rule 8
+ * (`PersonalFrame`; the matrix itself is not redrawn in this pass and keeps its grid), each name a link to the person:
  * the people who report to the reader against the competences required of at least one of them, built on Astryx's
  * `table-comparison` template. It is no declared view: its columns are chosen, and a cell writes (D95 item 4). At most
  * `COMPETENCE_MATRIX_COLUMNS` columns at a time; the reader narrows them to a set by area or by position, which is
@@ -746,17 +733,13 @@ function SkillDialog({
  * its menu confirms it in a dialog named in the address (`validate`), which an address the reader may not confirm opens
  * nothing of, as for an approval. Closing a dialog or a confirmation gives the focus back to the cell's control, or to
  * the page's heading where the cell has gone with what was removed or where no cell opened it (D83 rule 7). The table
- * gives way to a list where it does not fit, on a phone and beside the panel, as Personal does, so at 320 px nothing
- * scrolls sideways; on a wider window the table scrolls sideways inside its own region, the names pinned, as the
+ * gives way to a list on a phone, as Personal does, so at 320 px nothing scrolls sideways; on a wider window the table scrolls sideways inside its own region, the names pinned, as the
  * template's does, and is a grid of one tab stop whose rows and columns are drawn as they come into view
  * (`MatrixGrid`).
  */
 export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin: boolean }) {
-  usePageTitle(COMPETENCE_PAGE_TITLES.matrix);
+  usePageTitle('Kompetens · Personal');
   const mobile = useMediaQuery(mobileQuery);
-  const short = useMediaQuery(shortQuery);
-  // The rail's Personal follows the session's role; who reports to the reader is the matrix read's answer (D99).
-  const nav = useRail({ current: { surface: 'competence' }, admin, manager: user.role === 'manager' });
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const client = useQueryClient();
@@ -765,14 +748,13 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const input = matrixInputOf(search);
   const matrixQ = useQuery(competenceMatrixQuery(input));
   const typesQ = useQuery(competenceTypesQuery);
-  const panel = usePagePanel({ overlayOnly: short });
   const read = matrixQ.data;
   const off = matrixQ.isError && refused(matrixQ.error);
   // What needs the manager, narrowed on the page from what the read answered (`only=attention`).
   const attention = attentionOnly(search);
   const data = useMemo(() => (read && attention ? competenceMatrixNeeding(read) : read), [read, attention]);
-  const tableBeside = useMediaQuery(panelBesideQuery(matrixMinWidth(data?.columns.length ?? 0) + 2 * PADDING));
-  const narrow = mobile || (panel.occupied && !tableBeside);
+  // The matrix is a grid of its own (it is not redrawn in D126's first pass): the list a phone draws below 768 px.
+  const narrow = mobile;
 
   // Each cell's control, so a dialog or a confirmation opened from it can give it the focus back.
   const controls = useRef(new Map<string, HTMLElement>());
@@ -993,126 +975,108 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     ) : undefined;
 
   return (
-    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        padding={mobile ? 3 : 8}
-        end={panel.end}
-        content={
-          <LayoutContent isScrollable={!short}>
-            <VStack hAlign="center">
-              <VStack gap={5} width="100%" maxWidth={COLUMN}>
-                <CompetenceHeader
-                  title={COMPETENCE_PAGE_TITLES.matrix}
-                  titleId={TITLE_ID}
-                  page="matrix"
-                  hasTabs={!off && managesFrom(user, matrixQ)}
-                  hasSearch={searcher}
-                  end={actions}
+    <PersonalFrame user={user} admin={admin} tab={COMPETENCE_TAB} label={TABLE_NAME}>
+      <VStack gap={5} width="100%">
+        <CompetenceHeader
+          title={COMPETENCE_PAGE_TITLES.matrix}
+          titleId={TITLE_ID}
+          page="matrix"
+          hasTabs={!off && managesFrom(user, matrixQ)}
+          hasSearch={searcher}
+          end={actions}
+        />
+        {change.error && (
+          <Text as="p" role="alert" color="accent">
+            {change.error}
+          </Text>
+        )}
+        {refusal && (
+          <Text as="p" role="alert" color="accent">
+            {refusal}
+          </Text>
+        )}
+        {off ? (
+          <Card>
+            <EmptyState
+              headingLevel={2}
+              title="Medarbetarnas kompetens visas inte för dig"
+              description={errorMessage(
+                matrixQ.error,
+                'Medarbetarnas kompetens visas för den som är chef för en enhet.',
+              )}
+              actions={<Button label="Till Mina kompetenser" href={COMPETENCE_PATH} />}
+            />
+          </Card>
+        ) : matrixQ.isError ? (
+          <VStack gap={2}>
+            <Text as="p" role="alert">
+              {errorMessage(matrixQ.error, 'Medarbetarnas kompetens kunde inte läsas.')}
+            </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                isLoading={matrixQ.isFetching}
+                onClick={() => void matrixQ.refetch()}
+              />
+            </HStack>
+          </VStack>
+        ) : (
+          <AsyncContent pending={matrixQ.isPending} fallback={<ContentSkeleton heading={false} />} gap={5}>
+            {read && read.awaiting.length > 0 && (
+              <Awaiting
+                rows={read.awaiting}
+                search={search}
+                headingRef={awaitingHeading}
+                control={awaitingControl}
+                onReview={row => {
+                  reviewedFrom.current = awaitingKey(row.holdingId);
+                }}
+              />
+            )}
+            {read && read.rows.length === 0 ? (
+              <Card>
+                <EmptyState
+                  headingLevel={2}
+                  title="Inga medarbetare att visa"
+                  description="Här ser den som är chef för en enhet sina medarbetares kompetens. Katalogen avgör vem som är chef; be systemförvaltaren om det inte stämmer."
                 />
-                {change.error && (
-                  <Text as="p" role="alert" color="accent">
-                    {change.error}
-                  </Text>
-                )}
-                {refusal && (
-                  <Text as="p" role="alert" color="accent">
-                    {refusal}
-                  </Text>
-                )}
-                {off ? (
+              </Card>
+            ) : read && read.columns.length === 0 ? (
+              <Card>
+                <EmptyState
+                  headingLevel={2}
+                  title="Inget krävs av dina medarbetare"
+                  description="När en befattning, en enhet eller du kräver en kompetens av någon av dem visas den här, med var var och en står."
+                />
+              </Card>
+            ) : read && data ? (
+              <>
+                <MatrixChoice data={read} attention={attention} shown={data} onChoose={choose} onAttention={narrowTo} />
+                {data.rows.length === 0 ? (
                   <Card>
                     <EmptyState
                       headingLevel={2}
-                      title="Medarbetarnas kompetens visas inte för dig"
-                      description={errorMessage(
-                        matrixQ.error,
-                        'Medarbetarnas kompetens visas för den som är chef för en enhet.',
-                      )}
-                      actions={<Button label="Till Mina kompetenser" href="/competence" />}
+                      title="Inget behöver åtgärdas"
+                      description="Inget som krävs av dem som visas saknas, har gått ut eller går ut snart, och ingen registrering väntar på granskning."
+                      actions={<Button label="Visa alla" href={attentionHref(false, search)} />}
                     />
                   </Card>
-                ) : matrixQ.isError ? (
-                  <VStack gap={2}>
-                    <Text as="p" role="alert">
-                      {errorMessage(matrixQ.error, 'Medarbetarnas kompetens kunde inte läsas.')}
-                    </Text>
-                    <HStack>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        label="Försök igen"
-                        isLoading={matrixQ.isFetching}
-                        onClick={() => void matrixQ.refetch()}
-                      />
-                    </HStack>
-                  </VStack>
                 ) : (
-                  <AsyncContent pending={matrixQ.isPending} fallback={<ContentSkeleton heading={false} />} gap={5}>
-                    {read && read.awaiting.length > 0 && (
-                      <Awaiting
-                        rows={read.awaiting}
-                        search={search}
-                        headingRef={awaitingHeading}
-                        control={awaitingControl}
-                        onReview={row => {
-                          reviewedFrom.current = awaitingKey(row.holdingId);
-                        }}
-                      />
+                  <VStack gap={0} aria-busy={matrixQ.isPlaceholderData}>
+                    {narrow ? (
+                      <MatrixList data={data} ctx={ctx} narrowed={attention} />
+                    ) : (
+                      <MatrixTable read={read} data={data} ctx={ctx} handle={grid} />
                     )}
-                    {read && read.rows.length === 0 ? (
-                      <Card>
-                        <EmptyState
-                          headingLevel={2}
-                          title="Inga medarbetare att visa"
-                          description="Här ser den som är chef för en enhet sina medarbetares kompetens. Katalogen avgör vem som är chef; be systemförvaltaren om det inte stämmer."
-                        />
-                      </Card>
-                    ) : read && read.columns.length === 0 ? (
-                      <Card>
-                        <EmptyState
-                          headingLevel={2}
-                          title="Inget krävs av dina medarbetare"
-                          description="När en befattning, en enhet eller du kräver en kompetens av någon av dem visas den här, med var var och en står."
-                        />
-                      </Card>
-                    ) : read && data ? (
-                      <>
-                        <MatrixChoice
-                          data={read}
-                          attention={attention}
-                          shown={data}
-                          onChoose={choose}
-                          onAttention={narrowTo}
-                        />
-                        {data.rows.length === 0 ? (
-                          <Card>
-                            <EmptyState
-                              headingLevel={2}
-                              title="Inget behöver åtgärdas"
-                              description="Inget som krävs av dem som visas saknas, har gått ut eller går ut snart, och ingen registrering väntar på granskning."
-                              actions={<Button label="Visa alla" href={attentionHref(false, search)} />}
-                            />
-                          </Card>
-                        ) : (
-                          <VStack gap={0} aria-busy={matrixQ.isPlaceholderData}>
-                            {narrow ? (
-                              <MatrixList data={data} ctx={ctx} narrowed={attention} />
-                            ) : (
-                              <MatrixTable read={read} data={data} ctx={ctx} handle={grid} />
-                            )}
-                          </VStack>
-                        )}
-                      </>
-                    ) : null}
-                  </AsyncContent>
+                  </VStack>
                 )}
-              </VStack>
-            </VStack>
-          </LayoutContent>
-        }
-      />
-      {panel.overlay}
+              </>
+            ) : null}
+          </AsyncContent>
+        )}
+      </VStack>
       {/* Registrera intyg (D108 item 7), from a cell with its competence chosen; closing gives the cell its focus back. */}
       <RegisterHolding opener={opener} people={read?.rows.map(r => ({ id: r.personId, name: r.name }))} />
       <PersonRequirementDialog
@@ -1171,7 +1135,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
         isActionLoading={change.busy}
         onAction={() => void confirm()}
       />
-    </Shell>
+    </PersonalFrame>
   );
 }
 

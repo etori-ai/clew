@@ -665,6 +665,13 @@ const rowsView = <K extends 'table' | 'list'>(kind: K) =>
     }),
     open: Type.Optional(ViewOpenSchema),
     subject: Type.Optional(RecordSubjectSchema),
+    byKey: Type.Optional(
+      Type.String({
+        maxLength: 80,
+        description:
+          "The read of the same connector about the entities `subject` names (its `about`, with a `table` or `list` view) that answers these same rows asked by key, one per entity (D127). The rows then have one place in Clew: where an administrator offers that read on the entity list (a tab of Personal for people), whatever opens this read without input (a figure's `opens`, a standing read, an answer's \"Visa allt\") opens that tab, and a row's name the entity's page at it. This read stays what the model, a reader without that tab and an address that names it are given. Requires `subject`, and this read opens without input.",
+      }),
+    ),
     input: Type.Optional(ViewInputSchema),
     empty: Type.Optional(
       Type.String({ minLength: 1, maxLength: 120, description: 'Swedish. Shown when there are no rows.' }),
@@ -2021,6 +2028,11 @@ export const EntitySourceSchema = object({
   title: Type.String(),
   view: ViewSchema,
   page: Type.Optional(EntityPageSchema),
+  /**
+   * The reads of the same connector the reader may call that answer these rows without keys (their view's `byKey`,
+   * D127): whatever opens one of them without input opens this source where it is placed, a lens's tab of the list.
+   */
+  overviews: Type.Optional(Type.Array(Type.String())),
   own,
 });
 export type EntitySource = Static<typeof EntitySourceSchema>;
@@ -4908,14 +4920,14 @@ const siteHref = Type.String({ minLength: 1, maxLength: 500, pattern: '^(/(?!/)[
 const siteId = Type.String({ minLength: 1, maxLength: 60, pattern: '^[a-z0-9][a-z0-9-]*$' });
 /**
  * What a place or a page is to Clew beyond the band (D112, amended 2026-11-11): `toolbox` is the intranet's page of
- * tools, which Hem links to under Verktygslådan as "Fler verktyg på intranätet". The installation marks it in its
- * content system; without a marked page Hem draws no such link.
+ * tools, which Alla verktyg links to at its foot as "Fler verktyg på intranätet" (D126). The installation marks it in
+ * its content system; without a marked page Clew draws no such link.
  */
 export const SITE_PURPOSES = ['toolbox'] as const;
 const sitePurpose = Type.Optional(
   literals(SITE_PURPOSES, {
     description:
-      '`toolbox`: the page that lists the intranet\'s tools. Hem links to it under Verktygslådan as "Fler verktyg på intranätet", in a new tab. At most one is used: the first in the band\'s order.',
+      '`toolbox`: the page that lists the intranet\'s tools. Alla verktyg, the page of every tool, links to it at its foot as "Fler verktyg på intranätet", in a new tab. At most one is used: the first in the band\'s order.',
   }),
 );
 export const SiteMenuLinkSchema = object({ id: siteId, label: siteLabel, href: siteHref, purpose: sitePurpose });

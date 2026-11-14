@@ -15,11 +15,15 @@ import {
 import { allCommitments, TALKS_FAIL_ERROR, TALKS_READ_ONLY_SOURCE, type CommitmentEntry } from './data';
 
 /**
- * Mina åtgärdspunkter on Hem (D96 item 7): the open action points the person owns and those about them, after the day's
- * work, the first five and the rest in place. The owner ticks one off with Klar, and the completion toast's Ångra opens
- * it again. Nothing is drawn without a talks system or with nothing open; another system answering is read-only.
+ * Mina åtgärdspunkter on Hem (D96 item 7): the open action points the person owns and those about them, under the
+ * board's blocks and drawn as they are (D126: the h2 with the count beside it and the way on at the end of its line, the
+ * points as a list in a card), the first five and the rest in place. The owner ticks one off with Klar, and the
+ * completion toast's Ångra opens it again. Nothing is drawn without a talks system or with nothing open; another system
+ * answering is read-only.
  */
 const section = (page: Page) => page.getByRole('region', { name: 'Mina åtgärdspunkter' });
+/** How many are open: the count beside the heading. */
+const count = (page: Page, n: number) => section(page).getByText(String(n), { exact: true });
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
 const row = (page: Page, text: string) => section(page).getByRole('listitem').filter({ hasText: text });
 const point = (id: string): CommitmentEntry => allCommitments().find(c => c.id === id)!;
@@ -52,8 +56,9 @@ for (const [layout, viewport] of [
     }) => {
       await open(page, '/');
       const mine = section(page);
-      await expect(heading(page, 2, 'Mina åtgärdspunkter · 5')).toBeVisible();
-      // After the day's work and after Läget, with Mina ärenden (D90) under the board's parts (D112, amended 2026-11-11).
+      await expect(heading(page, 2, 'Mina åtgärdspunkter')).toBeVisible();
+      await expect(count(page, 5)).toBeVisible();
+      // After the day's work and after Läget, under the board's parts (D126).
       const work = heading(page, 2, 'Behöver dig'),
         own = heading(page, 2, 'Mina åtgärdspunkter'),
         lage = heading(page, 2, 'Läget på Skönsmons skola');
@@ -107,7 +112,7 @@ for (const [layout, viewport] of [
       await page.keyboard.press('Enter');
       await expect(row(page, text)).toHaveCount(0);
       await expect(section(page).getByRole('listitem')).toHaveCount(4);
-      await expect(heading(page, 2, 'Mina åtgärdspunkter · 4')).toBeVisible();
+      await expect(count(page, 4)).toBeVisible();
       await expect(notices(page).getByText('Åtgärdspunkten är klar.')).toBeVisible();
       await expect.poll(() => said(page, 'Åtgärdspunkten är klar.')).toBe(1);
       // The focus is not lost with the row: it is on the next row's own control.
@@ -214,9 +219,12 @@ for (const [layout, viewport] of [
       api.commitments = [...allCommitments(), sixth];
       await open(page, '/');
       const mine = section(page);
-      await expect(heading(page, 2, 'Mina åtgärdspunkter · 6')).toBeVisible();
+      await expect(count(page, 6)).toBeVisible();
       await expect(mine.getByRole('listitem')).toHaveCount(5);
-      const more = mine.getByRole('button', { name: 'Visa alla 6 åtgärdspunkter' });
+      // The rest in place, at the end of the heading's line where the other blocks have their way on.
+      const more = mine.getByRole('button', { name: 'Visa alla (6)' });
+      const [line, control] = [await heading(page, 2, 'Mina åtgärdspunkter').boundingBox(), await more.boundingBox()];
+      expect(Math.abs(control!.y + control!.height / 2 - (line!.y + line!.height / 2))).toBeLessThan(8);
       await tabTo(page, more);
       await page.keyboard.press('Enter');
       await expect(mine.getByRole('listitem')).toHaveCount(6);
@@ -248,7 +256,7 @@ test.describe('Mina åtgärdspunkter is absent', () => {
 test.describe('Mina åtgärdspunkter when the read fails', () => {
   test.use({ viewport: desktop });
 
-  test('the section says so and can be tried again', async ({ page, api: _ }) => {
+  test('the section says so in its card and can be tried again', async ({ page, api: _ }) => {
     let down = true;
     await page.route('**/api/cap/clew.commitments**', route =>
       down

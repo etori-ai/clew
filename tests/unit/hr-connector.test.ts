@@ -301,29 +301,65 @@ describe('the HR fixture connector', () => {
     ]);
     const { registry, advance } = stack();
     expect(registry.tools(hillevi).map(t => t.name)).not.toContain('hr.person');
-    type Row = { key: string; ref: string; presence: string; today: string; upcoming?: string };
+    // The overview of absence per person says its rows are these, asked for everyone (D127): the manager's lens on
+    // Personal is where the figure on Hem leads.
+    const overview = parseManifest(hrManifest, 'hr').capabilities.find(c => c.name === 'hr.absenceOverview')!;
+    expect(overview.view).toMatchObject({ subject: { entity: 'person', key: 'person' }, byKey: 'hr.person' });
+    expect(registry.aboutReads(hillevi, 'person').find(r => r.name === 'hr.person')?.overviews).toEqual([
+      'hr.absenceOverview',
+    ]);
+    type Row = { key: string; ref: string; presence: string; today: string; upcoming?: string } & Record<
+      'short' | 'vab' | 'long' | 'periods',
+      number
+    >;
     const person = (actor: Actor, keys: string[]) => registry.run<{ rows: Row[] }>(actor, 'hr.person', { keys });
     const keys = ['Erik', 'anna', 'johan', 'karin', 'lars.bergstrom', 'erik', 'nobody', 'lena', 'jonas'];
-    expect((await person(hillevi, keys)).rows).toEqual([
-      { key: 'Erik', ref: 'hr:emp:1002', presence: 'Sjuk · dag 1', today: 'Sjuk · dag 1' },
-      { key: 'anna', ref: 'hr:emp:1001', presence: 'I tjänst', today: 'På plats' },
+    // Each row also counts the last six months as the overview does (D127), so the overview's rows are these rows.
+    const none = { short: 0, vab: 0, long: 0, periods: 0 };
+    const rows = (await person(hillevi, keys)).rows;
+    expect(rows).toEqual([
+      {
+        key: 'Erik',
+        ref: 'hr:emp:1002',
+        presence: 'Sjuk · dag 1',
+        today: 'Sjuk · dag 1',
+        ...none,
+        short: 3,
+        periods: 2,
+      },
+      { key: 'anna', ref: 'hr:emp:1001', presence: 'I tjänst', today: 'På plats', ...none, short: 4, periods: 3 },
       {
         key: 'johan',
         ref: 'hr:emp:1004',
         presence: 'I tjänst',
         today: 'På plats',
         upcoming: 'Semester 22–23 dec, väntar på beslut',
+        ...none,
+        vab: 2,
       },
-      { key: 'karin', ref: 'hr:emp:1013', presence: 'I tjänst', today: 'På plats' },
-      { key: 'lars.bergstrom', ref: 'hr:emp:1014', presence: 'I tjänst', today: 'På plats' },
+      { key: 'karin', ref: 'hr:emp:1013', presence: 'I tjänst', today: 'På plats', ...none },
+      { key: 'lars.bergstrom', ref: 'hr:emp:1014', presence: 'I tjänst', today: 'På plats', ...none },
       {
         key: 'lena',
         ref: 'hr:emp:1006',
         presence: 'Sjukskriven',
         today: 'Sjukskriven · dag 10, till 18 dec',
+        ...none,
+        long: 54,
       },
-      { key: 'jonas', ref: 'hr:emp:1011', presence: 'VAB', today: 'VAB' },
+      { key: 'jonas', ref: 'hr:emp:1011', presence: 'VAB', today: 'VAB', ...none, vab: 2 },
     ]);
+    const all = await registry.run<{ rows: Array<Record<string, unknown>> }>(hillevi, 'hr.absenceOverview', {});
+    for (const row of rows) {
+      const same = all.rows.find(r => r.ref === row.ref)!;
+      expect([row.ref, same.short, same.vab, same.long, same.periods]).toEqual([
+        row.ref,
+        row.short,
+        row.vab,
+        row.long,
+        row.periods,
+      ]);
+    }
     // A manager of another unit gets no row, Hassan included, and an employee is refused by the scope.
     const omsorg: Actor = { ...stranger, unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum' };
     expect((await person(stranger, keys)).rows).toEqual([]);

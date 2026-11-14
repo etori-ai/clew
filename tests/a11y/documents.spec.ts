@@ -76,8 +76,9 @@ async function originals(page: Page, api: MockApi) {
 }
 /** The invoices' review as a page, with Att göra's pane as its way back (D73, amended 2026-11-12). */
 const REVIEW = '/items/fakturor/review?from=%2Ftodo%3Fitem%3Dfakturor';
+/** One thing's own page (D126 rule 1), as a row's name in a register or an answer's link leads to it. */
 const viewHref = (capability: string, ref?: string) =>
-  `/?open=${capability}&open-title=Underlag${ref ? '&open-input=' + encodeURIComponent(JSON.stringify({ ref })) : ''}`;
+  `/tools/${capability}?${ref ? 'input=' + encodeURIComponent(JSON.stringify({ ref })) + '&' : ''}title=Underlag`;
 
 test.describe('the shared document and semantic catalogue', () => {
   test.use({ viewport: desktop });
@@ -99,11 +100,13 @@ test.describe('the shared document and semantic catalogue', () => {
         rows: card.items.map(i => ({ ref: i.ref, label: i.label, outcome: 'done', detail: 'Attesterad.' })),
       };
       await open(page, '/todo?tab=done');
-      // The row opens its work item beside Klart (D112), and the item's way to the review is the review's page, with
-      // Klart and the item as its way back (D73, amended 2026-11-12).
+      // The row opens its work item beside Klart, or as its page where the pane does not fit (D126 rule 2), and the
+      // item's way to the review is the review's page, with where the item was shown as its way back (D73).
+      const pane = viewport === desktop;
+      const shown = pane ? '/todo?tab=done&item=fakturor' : '/items/fakturor';
       await page.locator('#work-fakturor').getByRole('link').click();
       await page.getByRole('link', { name: 'Visa granskning', exact: true }).click();
-      await expect(page).toHaveURL('/items/fakturor/review?from=%2Ftodo%3Ftab%3Ddone%26item%3Dfakturor');
+      await expect(page).toHaveURL(`/items/fakturor/review?from=${encodeURIComponent(shown)}`);
       await expect(page.getByRole('heading', { level: 1, name: 'Visa 3 rader' })).toBeVisible();
       const review = page.getByRole('main');
       await expect(review.getByRole('status', { name: 'Sida 1 av 2' })).toBeVisible();
@@ -113,8 +116,8 @@ test.describe('the shared document and semantic catalogue', () => {
       expect(await reflowProblems(page, review)).toEqual([]);
       await expectNoAxeViolations(page);
       await review.getByRole('button', { name: 'Tillbaka till ärendet' }).click();
-      // Back to Klart as it was, with the item beside it: the tab is kept.
-      await expect(page).toHaveURL('/todo?tab=done&item=fakturor');
+      // Back to where the item was shown: Klart as it was with the item beside it, or the item's page as it was.
+      await expect(page).toHaveURL(pane ? shown : '/items/fakturor?from=%2Ftodo%3Ftab%3Ddone');
       await expect(page.getByRole('link', { name: 'Visa granskning', exact: true })).toBeFocused();
     });
   for (const viewport of [desktop, narrow])
@@ -299,7 +302,7 @@ test.describe('the shared document and semantic catalogue', () => {
   test('a record opens original PDF, DOCX and XLSX with page, sheet and attachment controls', async ({ page, api }) => {
     await originals(page, api);
     await open(page, viewHref('finance.record', 'finance:inv:55120'));
-    const panel = page.getByRole('dialog', { name: 'Underlag' });
+    const panel = page.getByRole('main');
     await expect(panel.getByRole('status', { name: 'Sida 1 av 2', exact: true })).toBeVisible();
     await panel.getByRole('button', { name: 'Visa sidans text' }).click();
     await expect(panel.getByText(/Faktura 55120\s+Skolgrossisten/)).toBeVisible();
@@ -341,34 +344,30 @@ test.describe('the shared document and semantic catalogue', () => {
     await expect(panel.getByRole('status', { name: 'Sida 2 av 2', exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Visa sidan', exact: true })).toBeVisible();
   });
-  test('an invoice beside the page links to its own page, where the same record is read in full and Back returns to it (D116)', async ({
+  test('an invoice opened over a page from before is its own page, the thing’s page with its facts beside the read, and Back returns (D126)', async ({
     page,
     api,
   }) => {
     await originals(page, api);
-    const beside = viewHref('finance.record', 'finance:inv:55120');
-    await open(page, beside);
-    const panel = page.getByRole('dialog', { name: 'Underlag' });
-    await expect(panel.getByRole('status', { name: 'Sida 1 av 2', exact: true })).toBeVisible();
-    // The record's name in the panel's header is the link to its page (the name is the way in, as a work item's title),
-    // with the panel's own page as the way back. The record is still read beside the page: the link is never the only
-    // way to it.
-    const link = panel
-      .getByRole('heading', { level: 2, name: 'Underlag', exact: true })
-      .getByRole('link', { name: 'Underlag' });
-    await expect(link).toHaveAttribute(
-      'href',
-      `/tools/finance.record?input=${encodeURIComponent(JSON.stringify({ ref: 'finance:inv:55120' }))}&title=Underlag&from=${encodeURIComponent(beside)}`,
+    // An address from before D126 that held the record beside Hem leads to the record's page, Hem as its way back.
+    await open(
+      page,
+      '/?open=finance.record&open-title=Underlag&open-input=' +
+        encodeURIComponent(JSON.stringify({ ref: 'finance:inv:55120' })),
     );
-    await link.click();
-    await expect(page).toHaveURL(/^[^?]*\/tools\/finance\.record\?input=.*&title=Underlag&from=/);
+    await expect(page).toHaveURL(
+      `/tools/finance.record?input=${encodeURIComponent(JSON.stringify({ ref: 'finance:inv:55120' }))}&title=Underlag&from=%2F`,
+    );
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const main = page.getByRole('main');
-    await expect(main.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Underlag');
+    // The record's own name is the page's heading; the read it was opened under stands on the source line.
+    await expect(main.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Faktura 55120');
+    await expect(main.getByText(/Underlag$/).first()).toBeVisible();
     await expect(main.getByRole('status', { name: 'Sida 1 av 2', exact: true })).toBeVisible();
     await expect(main.getByRole('combobox', { name: 'Dokument och bilagor' })).toBeVisible();
-    // The way back names Hem and leads to the record beside it as it was.
-    await expect(main.getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', beside);
+    // The facts in the end panel (board Ärende).
+    await expect(page.getByRole('complementary', { name: 'Uppgifter' })).toBeVisible();
+    await expect(main.getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/');
     expect(
       (
         await new AxeBuilder({ page })
@@ -377,14 +376,6 @@ test.describe('the shared document and semantic catalogue', () => {
           .analyze()
       ).violations,
     ).toEqual([]);
-    await page.goBack();
-    await expect(page).toHaveURL(beside);
-    await expect(
-      page
-        .getByRole('dialog', { name: 'Underlag' })
-        .getByRole('heading', { level: 2, name: 'Underlag', exact: true })
-        .getByRole('link', { name: 'Underlag' }),
-    ).toBeVisible();
   });
   test('metrics, line/bar series and activity have labelled values and accessible data tables', async ({
     page,
@@ -393,7 +384,7 @@ test.describe('the shared document and semantic catalogue', () => {
     await originals(page, api);
     for (const capability of ['finance.metrics', 'finance.trend', 'finance.comparison', 'finance.history']) {
       await open(page, viewHref(capability, capability === 'finance.history' ? 'finance:inv:55120' : undefined));
-      const panel = page.getByRole('dialog', { name: 'Underlag' });
+      const panel = page.getByRole('main');
       if (capability === 'finance.metrics')
         await expect(panel.getByText('uppgifter från', { exact: false }).first()).toBeVisible();
       else if (capability === 'finance.history')

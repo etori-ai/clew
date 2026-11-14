@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**128 in force**: 97 accepted and 31 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**130 in force**: 97 accepted and 33 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -60,6 +60,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D117 · The core decides who a source may be asked about, on every call, and signs the relation](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) | 2026-11-12 | provisional |  |
 | [D119 · The installation reads as itself, through a read no person can reach](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) | 2026-11-12 | provisional |  |
 | [D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) | 2026-11-13 | provisional |  |
+| [D127 · A read can say its rows are a read about people, asked for everyone, and then has one place](D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md) | 2026-11-14 | provisional |  |
 
 ## Identity
 
@@ -154,10 +155,11 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) | 2026-11-10 | accepted |  |
 | [D100 · The people list is read a page at a time and narrowed on the server](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) | 2026-11-11 | provisional | [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) |
 | [D111 · Where something opens is decided by what it is, never by the page it was clicked on](D111-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional | [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D116](README.md) |
-| [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional | [D116](README.md), [D124](README.md) |
-| [D116 · A panel is a peek at one thing; a list is a page, and every view has an address](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) | 2026-11-12 | provisional | [D124](README.md) |
+| [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional | [D116](README.md), [D124](README.md), [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) |
+| [D116 · A panel is a peek at one thing; a list is a page, and every view has an address](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) | 2026-11-12 | provisional | [D124](README.md), [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) |
 | [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
 | [D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) | 2026-11-13 | provisional |  |
+| [D126 · One page per thing, and one Astryx template per page type](D126-one-page-per-thing-one-astryx-template-per-page-type.md) | 2026-11-14 | provisional |  |
 
 ## Assistant
 

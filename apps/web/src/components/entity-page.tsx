@@ -1,40 +1,108 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type Ref } from 'react';
-import { useIsFetching } from '@tanstack/react-query';
-import {
-  Dialog,
-  DialogHeader,
-  Divider,
-  Heading,
-  HStack,
-  Icon,
-  IconButton,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
-  LayoutPanel,
-  Link,
-  ScrollableArea,
-  StackItem,
-  Text,
-  VStack,
-  useMediaQuery,
-} from '@clew/ui';
-import { mobileQuery, shortQuery } from '../media';
-import { narrowItemQuery } from './work-item';
+import { useId, type ReactNode, type Ref } from 'react';
+import { useNavigate } from 'react-router';
+import { Heading, HStack, StackItem, Tab, TabList, TabMenu, Text, VStack, useMediaQuery } from '@clew/ui';
+import { mobileQuery } from '../media';
+import { PageFrame } from './page-frame';
 
 /**
- * A person's or a unit's page (D112 item 5, board Person): the work item's page shape (`work-item-detail`,
- * `WorkItemPage`) drawn for an entity. The header holds the way back with where the entity stands on the same line, on
- * a phone as on a wide screen (D124 item 6), then the avatar, the name and its line, and the actions with "Fråga Clew"
- * at the end of the name's line (on a phone "Åtgärder" under it, the width of the column). The main column holds every section one under the other, each with its heading, the source's
- * badge on the heading's line and a rule between them; nothing is chosen, so there is no tab strip. The details rail is
- * 340 px beside the column, a named complementary region; at 1024 px and below, and while the page's panel holds
- * something beside it, its content is behind "Visa detaljer" in a fullscreen dialog, as on the work item's page. On a
- * short screen nothing is pinned and the page scrolls as one (1.4.10).
- *
- * The header's controls stay where they are at every width and with the panel open or closed, so a card an action made
- * closes back to the button that started it.
+ * A thing's page for a person, a unit or a plan (D126 rule 1, board Person, the `work-item-detail` composition the work
+ * item's page has, `WorkItemPage`): the way back with where the thing stands on the same line, then the thing's mark (a
+ * person's avatar), its name and its line, and its actions at the end of the name's line (on a phone under it), then
+ * the thing's tabs where it has them, each a link with its own address (D126 rule 9). The column holds the tab's
+ * sections one under the other, each with its heading, a wide step apart; the facts are a 340 px end panel, a
+ * named complementary region, and above the read at 1024 px and below, as on the work item's page. Nothing opens over
+ * or beside the page (rule 3). On a short screen nothing is pinned and the page scrolls as one (1.4.10).
  */
+
+/** One of a thing's tabs (D126 rule 9): its value, its name, its address and what it carries beside its name. */
+export interface ThingTab {
+  value: string;
+  label: string;
+  href: string;
+  /** Beside the name on a wide screen: a count that needs the reader. */
+  badge?: ReactNode;
+  /** The count in words, for the phone's menu, which draws no badge: "Ärenden (2)". */
+  count?: number;
+}
+/**
+ * A thing's tabs, or a register's views (D126 rules 8 and 9), as Astryx's `TabList` of links, each with its own address,
+ * the current one marked. On a phone the first tab stands and the others are under Astryx's `TabMenu` ("Fler"), which
+ * names the current one when it is among them, so the strip fits 320 px without scrolling sideways (1.4.10); choosing
+ * one there navigates to its address. `onPress` hears a tab pressed, for a page that keeps the focus on it across routes.
+ *
+ * `compact` is the same strip in the pane beside a conversation (D126 rule 2: the pane draws the page's parts): small
+ * tabs on a rule of their own inside the pane's padding, and, with more tabs than the pane's width holds, the first
+ * few standing and the rest under the same "Fler".
+ */
+export function ThingTabs({
+  label,
+  value,
+  tabs,
+  onPress,
+  tabRef,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  tabs: ThingTab[];
+  onPress?: (value: string) => void;
+  /** The current tab's element, for a page that gives it the focus. */
+  tabRef?: (el: HTMLElement | null) => void;
+  compact?: boolean;
+}) {
+  const mobile = useMediaQuery(mobileQuery);
+  const navigate = useNavigate();
+  // How many tabs stand before "Fler": one on a phone, the pane's few beside a conversation, else every one.
+  const standing = mobile ? 1 : compact && tabs.length > PANE_TABS ? PANE_TABS - 1 : tabs.length;
+  const shown = tabs.slice(0, standing);
+  const rest = tabs.slice(standing);
+  // One tab left over stands with the others: a menu of one says less than the tab itself.
+  const menu = rest.length > 1;
+  const tab = (t: ThingTab) => (
+    <Tab
+      key={t.value}
+      value={t.value}
+      label={t.label}
+      href={t.href}
+      {...(t.badge ? { endContent: t.badge } : {})}
+      {...(t.value === value && tabRef ? { ref: tabRef } : {})}
+    />
+  );
+  return (
+    <TabList
+      // On a page the rule under the strip is the page frame's header's, as on every page (D126); the strip meets the
+      // header's edges and its labels start on the title's line. In the pane the strip draws its own rule.
+      hasDivider={compact}
+      isFullBleed={!compact}
+      size={compact ? 'sm' : 'md'}
+      value={value}
+      onChange={next => {
+        onPress?.(next);
+        // A tab is a link and navigates itself; an option of the menu is not.
+        const option = menu ? rest.find(t => t.value === next) : undefined;
+        if (option && next !== value) navigate(option.href);
+      }}
+      aria-label={label}
+    >
+      {menu ? (
+        <>
+          {shown.map(tab)}
+          <TabMenu
+            label="Fler"
+            options={rest.map(t => ({ value: t.value, label: t.count ? `${t.label} (${t.count})` : t.label }))}
+          />
+        </>
+      ) : (
+        tabs.map(tab)
+      )}
+    </TabList>
+  );
+}
+/**
+ * The pane beside a conversation is 440 px: this many small tabs stand in it, "Fler" counted as one (a source's name
+ * such as "Utvecklingssamtal" is long). Should they still not fit, the strip scrolls, as Astryx's TabList does.
+ */
+const PANE_TABS = 3;
 
 /** One section of the main column, keyed so a section that leaves (a source with nothing) does not remount the others. */
 export interface PageSectionEntry {
@@ -50,11 +118,11 @@ export function EntityPage({
   title,
   subtitle,
   actions,
+  tabs,
   sections,
   empty,
   details,
   label,
-  panel,
   headingRef,
   meta,
 }: {
@@ -67,153 +135,64 @@ export function EntityPage({
   /** What stands before the name: a person's avatar. */
   icon?: ReactNode;
   title: string;
-  /** The line under the name: a person's title, "Enhet" for a unit. */
+  /** The line under the name: a person's title and unit, "Enhet" for a unit. */
   subtitle?: ReactNode;
   /** The actions about the entity and "Fråga Clew". */
   actions?: ReactNode;
+  /** The thing's tabs (`TabList`), under its name, at the foot of the header. */
+  tabs?: ReactNode;
   sections: PageSectionEntry[];
   /** What the column says when no section has anything. */
   empty?: ReactNode;
-  /** The details rail's content: "Detaljer" and where the entity belongs. */
+  /** The facts: in the end panel, above the read where the window is narrow. */
   details: ReactNode;
   /** The column's scroll area, named while it scrolls. */
   label: string;
-  /** The page's panel (`usePagePanel`), in the end slot after the rail. */
-  panel: { end: ReactNode; occupied: boolean };
   /** The heading, for a page that gives it the focus from a script (a plan just started, D124): never from Tab. */
   headingRef?: Ref<HTMLHeadingElement> | undefined;
   /** Where the thing stands, under the name's line and before the phone's actions: a plan's progress (D124). */
   meta?: ReactNode;
 }) {
-  const mobile = useMediaQuery(mobileQuery);
-  const narrowWindow = useMediaQuery(narrowItemQuery);
-  const short = useMediaQuery(shortQuery);
-  // While the panel holds something beside the page the details go behind "Visa detaljer", as in a narrow window, so the
-  // column keeps its width (the work item's page does the same).
-  const narrow = narrowWindow || panel.occupied;
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  // The dialog belongs to the narrow layout: a window widened under it lets go of it, so it does not come back by itself.
-  useEffect(() => {
-    if (!narrow) setDetailsOpen(false);
-  }, [narrow]);
-  const trail =
-    back || crumbs || place ? (
-      <HStack gap={3} wrap="wrap" vAlign="center">
-        {back && (
-          <Link href={back.href} type="supporting" color="secondary">
-            <HStack as="span" gap={1} vAlign="center">
-              <Icon icon="chevronLeft" size="sm" />
-              {back.label}
-            </HStack>
-          </Link>
-        )}
-        {back && (crumbs || place) && <Divider orientation="vertical" />}
-        {crumbs}
-        {place && (
-          <Text type="supporting" color="secondary">
-            {place}
-          </Text>
-        )}
-      </HStack>
-    ) : null;
-  const header = (
-    <LayoutHeader padding={mobile ? 4 : 6} hasDivider>
-      <VStack gap={mobile ? 3 : 4}>
-        {(trail || narrow) && (
-          <HStack gap={2} vAlign="center">
-            <StackItem size="fill">{trail}</StackItem>
-            {narrow && (
-              <IconButton
-                variant="secondary"
-                label="Visa detaljer"
-                tooltip="Visa detaljer"
-                icon={<Icon icon="info" />}
-                onClick={() => setDetailsOpen(true)}
-              />
-            )}
-          </HStack>
-        )}
-        <HStack gap={4} vAlign="start" wrap="wrap">
-          <StackItem size="fill">
-            <HStack gap={3} vAlign="center">
-              {icon}
-              <VStack gap={0}>
-                <Heading level={1} {...(headingRef ? { ref: headingRef, tabIndex: -1 } : {})}>
-                  {title}
-                </Heading>
-                {subtitle && <Text color="secondary">{subtitle}</Text>}
-              </VStack>
-            </HStack>
-          </StackItem>
-          {!mobile && actions}
-        </HStack>
-        {meta}
-        {mobile && actions}
-      </VStack>
-    </LayoutHeader>
-  );
-  const column =
+  // The sections one under the other a wide step apart, with no rule between them (board Person).
+  const read =
     sections.length === 0 ? (
       (empty ?? null)
     ) : (
-      <VStack gap={6}>
-        {sections.map((s, i) => (
-          <VStack key={s.key} gap={6}>
-            {i > 0 && <Divider />}
-            {s.node}
-          </VStack>
+      <VStack gap={8}>
+        {sections.map(s => (
+          <VStack key={s.key}>{s.node}</VStack>
         ))}
       </VStack>
     );
-  // The column scrolls in Astryx's ScrollableArea, which takes a tab stop while it scrolls, so a column with nothing
-  // focusable can still be read by keyboard (axe: scrollable-region-focusable). On a short screen the page scrolls as one.
-  // The column stays a scroll container while it still fits (`stickyContainment="always"`): the sections answer one by
-  // one, and a section the address names is scrolled to as they arrive (`useAddressedSection`), which a fitting
-  // ScrollableArea clips until it has seen them overflow.
-  const content = short ? (
-    <LayoutContent padding={mobile ? 4 : 6} isScrollable={false}>
-      {column}
-    </LayoutContent>
-  ) : (
-    <LayoutContent padding={0} isScrollable={false}>
-      <ScrollableArea label={label} height="100%" padding={mobile ? 4 : 6} stickyContainment="always">
-        {column}
-      </ScrollableArea>
-    </LayoutContent>
-  );
+  // The one page frame (D126): the way back with where the thing stands, the mark, the name and its line, the actions
+  // at the end of the name's line, the tabs, the read in the column and the facts in the end panel.
   return (
-    <>
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        header={header}
-        content={content}
-        end={
-          narrow ? (
-            panel.end
-          ) : (
-            <>
-              <LayoutPanel
-                width={340}
-                padding={6}
-                role="complementary"
-                label="Detaljer"
-                hasDivider
-                isScrollable={!short}
-              >
-                {details}
-              </LayoutPanel>
-              {panel.end}
-            </>
-          )
-        }
-      />
-      <Dialog variant="fullscreen" isOpen={narrow && detailsOpen} onOpenChange={setDetailsOpen}>
-        <Layout
-          header={<DialogHeader title="Detaljer" onOpenChange={setDetailsOpen} />}
-          content={<LayoutContent padding={4}>{details}</LayoutContent>}
-        />
-      </Dialog>
-    </>
+    <PageFrame
+      back={back}
+      trail={
+        crumbs || place ? (
+          <>
+            {crumbs}
+            {place && (
+              <Text type="supporting" color="secondary">
+                {place}
+              </Text>
+            )}
+          </>
+        ) : undefined
+      }
+      icon={icon}
+      title={title}
+      titleRef={headingRef}
+      meta={subtitle ? <Text color="secondary">{subtitle}</Text> : undefined}
+      actions={actions}
+      below={meta}
+      tabs={tabs}
+      label={label}
+      facts={details}
+    >
+      {read}
+    </PageFrame>
   );
 }
 
@@ -224,12 +203,15 @@ export function EntityPage({
  */
 export function PageSection({
   title,
+  level = 2,
   badge,
   end,
   headingRef,
   children,
 }: {
   title: string;
+  /** The heading's level: 2 on the page, 3 in the pane beside a conversation, under the thing's name (D126 rule 2). */
+  level?: 2 | 3 | undefined;
   /** Whose the section is: the source's name as a badge. */
   badge?: ReactNode;
   /** The source's own way in ("Öppna samtalet"), at the end of the heading's line. */
@@ -239,10 +221,10 @@ export function PageSection({
 }) {
   const id = useId();
   return (
-    <VStack as="section" gap={3} aria-labelledby={id}>
+    <VStack as="section" gap={2} aria-labelledby={id}>
       <HStack gap={2} vAlign="center" wrap="wrap">
         <StackItem size="fill">
-          <Heading id={id} ref={headingRef} tabIndex={-1} level={2}>
+          <Heading id={id} ref={headingRef} tabIndex={-1} level={level}>
             {title}
           </Heading>
         </StackItem>
@@ -281,84 +263,4 @@ export function RailSection({
       {children}
     </VStack>
   );
-}
-
-/**
- * The section the address names (`?section=<capability>` or `needs-you`): an old link, "N att agera på" on Personal and
- * a talk's way back still land on it. Once its heading is on the page it is scrolled to the top of the column and takes
- * the focus, once per page and section, so a card opened beside the page, a talk over it or a reload of what the panel
- * holds never has the focus taken back. While something else holds the focus (`hold`: a thing in the panel, a talk or
- * a review over the page) the section is only scrolled to. The sections and their reads answer one by one, and one
- * that answers above the heading pushes it down as it grows into place with Astryx's motion: while the heading still
- * has the focus (or, held, while nobody has scrolled the column since) it is scrolled to again as each read lands and
- * once that motion has ended, so the focus is never left out of sight (2.4.7, 2.4.11). Returns the ref each section's
- * heading takes.
- */
-export function useAddressedSection(section: string | undefined, page: string, hold: boolean) {
-  const pending = useIsFetching();
-  const headings = useRef(new Map<string, HTMLHeadingElement>());
-  const refs = useRef(new Map<string, (el: HTMLHeadingElement | null) => void>());
-  const landed = useRef<string | null>(null);
-  const waiting = useRef(pending);
-  const scrolledTo = useRef(0);
-  const [mounted, setMounted] = useState(0);
-  const refFor = useCallback((id: string) => {
-    let ref = refs.current.get(id);
-    if (!ref) {
-      ref = el => {
-        if (el) {
-          headings.current.set(id, el);
-          setMounted(n => n + 1);
-        } else headings.current.delete(id);
-      };
-      refs.current.set(id, ref);
-    }
-    return ref;
-  }, []);
-  useEffect(() => {
-    if (!section) {
-      landed.current = null;
-      return;
-    }
-    const at = `${page}\n${section}`;
-    const heading = headings.current.get(section);
-    const arrived = waiting.current !== pending;
-    waiting.current = pending;
-    /** The column the heading scrolls in, and where it stood after the last time it was scrolled to the heading. */
-    const scroller = (el: HTMLElement) => {
-      let at = el.parentElement;
-      while (at && !/auto|scroll/.test(getComputedStyle(at).overflowY)) at = at.parentElement;
-      return at;
-    };
-    const scrollTo = (el: HTMLHeadingElement) => {
-      el.scrollIntoView({ block: 'start' });
-      scrolledTo.current = scroller(el)?.scrollTop ?? 0;
-    };
-    /**
-     * Scrolled to again, now and once what is growing above it has settled: while it holds the focus, or while what
-     * holds the focus beside or over the page has left the column where it was put.
-     */
-    const keep = (el: HTMLHeadingElement) => {
-      const still = () => {
-        if (!el.isConnected) return;
-        const untouched = hold && Math.abs((scroller(el)?.scrollTop ?? 0) - scrolledTo.current) < 2;
-        if (document.activeElement === el || untouched) scrollTo(el);
-      };
-      still();
-      const growing = document
-        .getAnimations()
-        .filter(a => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity);
-      if (growing.length) void Promise.all(growing.map(a => a.finished.catch(() => undefined))).then(still);
-    };
-    if (landed.current === at) {
-      if (arrived && heading) keep(heading);
-      return;
-    }
-    if (!heading) return;
-    landed.current = at;
-    scrollTo(heading);
-    if (!hold) heading.focus({ preventScroll: true });
-    keep(heading);
-  }, [section, page, hold, mounted, pending]);
-  return refFor;
 }

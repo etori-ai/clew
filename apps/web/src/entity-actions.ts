@@ -1,10 +1,9 @@
 import { createElement, useCallback, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import type { AskValues, EntityAction, EntityKind } from '@clew/contracts';
-import { useAnnounce, type MoreMenu } from '@clew/ui';
+import type { AskValues, EffectPreview, EntityAction, EntityActionStarted, EntityKind } from '@clew/contracts';
+import { sessionFetch, type MoreMenu } from '@clew/ui';
 import { api } from './api';
-import { opensDialog } from './action-path';
-import { requestAction } from './action-requests';
+import { ApiError } from './api-error';
 import { ActionDialog } from './components/action-dialog';
 import { useEntityStart } from './mutations';
 import { withCard } from './panel-address';
@@ -59,35 +58,76 @@ export const withPreset = (
 /** Starting an action about an entity, and the source's refusal of the last one when it refused. */
 export interface EntityActionStart {
   /**
-   * Start `action` about `subject`. `values` are answers its dialog starts from (a plan's item tied to the action with
-   * them, D124): prefilled and still the person's to change, never sent before the dialog's last button.
+   * Open the action dialog of `action` about `subject`. `values` are answers it starts from (a plan's item tied to the
+   * action with them, D124): prefilled and still the person's to change, never sent before the dialog's last button.
    */
   start: (action: EntityAction, subject: ActionSubject, values?: AskValues) => void;
   /** The source's Swedish sentence, shown beside what started it until the next start. */
   error: string | null;
   busy: boolean;
-  /** The action dialog of a propose that asks (D112 item 10); the page renders it wherever it renders the buttons. */
+  /** The action dialog (D112 item 10); the page renders it wherever it renders the buttons. */
   dialog: ReactNode;
 }
+
 /**
- * Starting an action about an entity (D97, D8): the server starts it on the entity's key without the model and answers
- * the card the person decides on; nothing reaches the source's write before that decision. The card opens beside the
- * page the action was started on (D111 rule 4): that page's address with the card in its panel (`withCard`), beside the
- * page's column where both fit and over it where they do not, so starting something never takes the person away and
- * closing the card leaves the page as it was, with its lens, its section and a person's cards listed beside it. The
- * address is the page's when the start has answered, and the focus lands on the card's heading as on every card opened
- * in a panel. A refusal is said aloud once per start (4.1.3) and stays as `error` for the page to show beside the
- * control.
+ * The two routes of an action about an entity that the dialog reaches and `api.entities` does not carry (D112, D126
+ * item 7): what the action would write, read before anything exists, and an execute sent from the last button. Called
+ * as `api.ts` calls every route: through the session's fetch, a refusal as the server's Swedish sentence.
+ */
+async function entityRoute<T>(
+  route: 'effect' | 'decide',
+  kind: EntityKind,
+  key: string,
+  capability: string,
+  values: AskValues,
+): Promise<T> {
+  const response = await sessionFetch(`/api/entities/${kind}/${encodeURIComponent(key)}/${route}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ capability, values }),
+  });
+  const text = await response.text();
+  let data: unknown;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new ApiError(response.status, 'Tjänsten svarade oväntat.');
+  }
+  if (!response.ok) throw new ApiError(response.status, (data as { error?: string }).error ?? 'Något gick fel.');
+  return data as T;
+}
+/** "Det här händer" for an action about an entity before any work item exists: a read, nothing is written. */
+const entityEffect = (kind: EntityKind, key: string, capability: string, values: AskValues) =>
+  entityRoute<EffectPreview>('effect', kind, key, capability, values);
+/** An execute about an entity sent from its dialog: its work item and its human decision, at once (D45). */
+const entityDecide = (kind: EntityKind, key: string, capability: string, values: AskValues) =>
+  entityRoute<EntityActionStarted>('decide', kind, key, capability, values);
+
+/**
+ * What the action dialog's last button sends for an action about an entity (D126 item 7), the only thing it sends: a
+ * propose `drafts` its work item with the answers, which the person then decides on; an execute is `decided` at once,
+ * its work item made with the human decision in it. Nothing goes before it, whatever the kind, so every action opens the
+ * dialog first, also one that asks nothing, whose "Det här händer" is then the capability's own description.
+ */
+export const lastButton = (action: Pick<EntityAction, 'kind'>): 'drafts' | 'decided' =>
+  action.kind === 'execute' ? 'decided' : 'drafts';
+/**
+ * Starting an action about an entity (D97, D8): every one opens the action dialog first, and nothing is created before
+ * its last button (D126 item 7, the critique of 2026-11-14), so cancelling it leaves no trace. The dialog asks what the
+ * action asks and says what will happen: an execute's own effect read, else the capability's description. The last
+ * button sends it without the model: a propose drafts the work item the person then decides on, and an execute becomes
+ * its work item with the human decision already made, the approved intent in the ledger before any source is reached
+ * (D45). The work item then opens on its own page (D126 rule 1, `withCard`), with the page the action was started on as
+ * its way back, so Back leaves the person where they were, with its tab and its search. A refusal stays in the dialog,
+ * placed on the field it concerns.
  */
 export function useEntityAction(): EntityActionStart {
   const navigate = useNavigate();
   const location = useLocation();
   const here = useRef(location);
   here.current = location;
-  const announce = useAnnounce();
   const { start, busy, error, reset } = useEntityStart();
-  // A propose that asks is filled in before it starts (D112 item 10): its dialog, and what the person typed while the
-  // page stays (`askDraftKey`), so a closed and reopened dialog keeps it.
+  // The dialog, and what the person typed while the page stays (`askDraftKey`), so a closed and reopened dialog keeps it.
   const [asking, setAsking] = useState<{
     action: EntityAction;
     subject: ActionSubject;
@@ -95,41 +135,25 @@ export function useEntityAction(): EntityActionStart {
     open: boolean;
   } | null>(null);
   const [drafts, setDrafts] = useState<Readonly<Record<string, AskValues>>>({});
-  const run = useCallback(
-    (action: EntityAction, subject: ActionSubject, values?: AskValues) => {
-      const kind = subject.kind ?? 'person';
-      const preset = values && Object.keys(values).length ? values : undefined;
-      if (action.kind === 'propose' && opensDialog(action)) {
-        // What the person typed from this start before wins over its preset; the preset fills a dialog opened afresh.
-        const draft = askDraftKey(action, subject, preset);
-        setDrafts(d => withPreset(d, draft, preset));
-        setAsking({ action, subject, draft, open: true });
-        return;
-      }
-      void start(() => api.entities.start(kind, subject.key, action.capability), { kind, key: subject.key }).then(
-        started => {
-          if (!started) return;
-          if ('threadId' in started) {
-            // An execute's answers are given at its decision (D112): its work item opens beside the page with the dialog
-            // over it, on the item's own button, starting from the preset answers when there are any.
-            if (action.kind === 'execute' && opensDialog(action))
-              requestAction({ threadId: started.threadId, actionId: 'decide', ...(preset ? { values: preset } : {}) });
-            navigate(withCard(here.current.pathname, here.current.search, started.threadId));
-          } else announce(started.error);
-        },
-      );
-    },
-    [start, navigate, announce],
-  );
-  /** The propose with its answers: the work item it drafts opens beside the page; a refusal stays in the dialog. */
+  const run = useCallback((action: EntityAction, subject: ActionSubject, values?: AskValues) => {
+    const preset = values && Object.keys(values).length ? values : undefined;
+    // What the person typed from this start before wins over its preset; the preset fills a dialog opened afresh.
+    const draft = askDraftKey(action, subject, preset);
+    setDrafts(d => withPreset(d, draft, preset));
+    setAsking({ action, subject, draft, open: true });
+  }, []);
+  /** The action with its answers: the work item it makes opens on its page; a refusal stays in the dialog. */
   const send = async (values: AskValues): Promise<string | null> => {
     if (!asking) return null;
     const { action, subject, draft } = asking;
     const kind = subject.kind ?? 'person';
-    const started = await start(() => api.entities.start(kind, subject.key, action.capability, values), {
-      kind,
-      key: subject.key,
-    });
+    const started = await start(
+      () =>
+        lastButton(action) === 'decided'
+          ? entityDecide(kind, subject.key, action.capability, values)
+          : api.entities.start(kind, subject.key, action.capability, values),
+      { kind, key: subject.key },
+    );
     if (!started) return null;
     if ('error' in started) {
       // The dialog places the refusal; the page does not say it a second time.
@@ -147,6 +171,8 @@ export function useEntityAction(): EntityActionStart {
           kind: 'entity',
           entity: { kind: asking.subject.kind ?? 'person', key: asking.subject.key, name: asking.subject.name },
           action: asking.action,
+          readEffect: values =>
+            entityEffect(asking.subject.kind ?? 'person', asking.subject.key, asking.action.capability, values),
         },
         isOpen: asking.open,
         onOpenChange: open => {

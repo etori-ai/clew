@@ -1,16 +1,16 @@
-import { answersWithRows, type Thread, type ThreadAction, type ViewEntry } from '@clew/contracts';
+import { answersWithRows, type Thread, type ThreadAction, type View, type ViewEntry } from '@clew/contracts';
 import { withView, withoutView } from './panel-address';
-import { wayBack } from './person-address';
+import { personPageHref, wayBack } from './person-address';
 
 /**
  * Where a view is (D116; D42 gave a tool its page). Every read a person may open has a page of its own at
  * `/tools/<capability>`, whether or not an administrator placed it in the rail: `input` is what it is read with,
  * `title` the name it was opened under (the menu's row or the read's own title when absent) and `from` the page it was
  * opened from, the way back. A view that answers with rows, a table or a list, is a page: whatever opens one leads
- * there and Back returns. Anything else, one record, a contact card, a text, a day, is a peek beside the page it was
- * opened from (`?open=` in that page's address, `panel-address.ts`); a record or a document in the panel links to its
- * page. The kinds come from the reads the person may open (`/api/areas`, `views`); a read Clew does not know the kind
- * of opens beside the page, and the panel sends it on to its page if it answers with rows (`openedAsPage`).
+ * there and Back returns. Since D126 (one page per thing) so is everything else, one record, a contact card, a text, a
+ * day: it is the thing's own page, never a peek beside the page it was opened from, except beside a conversation, where
+ * the thing an answer names stands beside the transcript (`?open=`, `panel-address.ts`). The kinds come from the reads
+ * the person may open (`/api/areas`, `views`).
  */
 export interface ViewTarget {
   capability: string;
@@ -73,9 +73,9 @@ export function declaredPage(
   return page && /^\/[^/]/.test(page) ? page : undefined;
 }
 /**
- * Where opening a view from a page leads: the page Clew's own read declares for its rows (`declaredPage`); else a table
- * or a list to its page, with this page as the way back (what this page holds in its panel kept, so the way back returns
- * to it as it was); anything else beside this page, in its panel.
+ * Where opening a view from a page leads: the page Clew's own read declares for its rows (`declaredPage`); else the
+ * view's own page with this page as the way back (D126 rule 1; `withView` keeps one thing beside the transcript on the
+ * conversation's page, rule 2).
  */
 export function viewOpenHref(
   views: readonly ViewEntry[] | undefined,
@@ -127,4 +127,55 @@ export function readPageHref(
 ): string {
   const input = readInput(thread, action);
   return declaredPage(views, action.capability, input) ?? viewPageHref({ capability: action.capability, input }, from);
+}
+
+/**
+ * What Clew knows of the reader's people (D97), for `peopleReadHref`: the lenses an administrator offers over them (each
+ * a read about a person, with its declared view and the reads that answer its rows without keys, `overviews`, D127),
+ * the people the reader may ask about by Clew's key and the key a source names them by, and each lens's rows once read
+ * (undefined while on their way).
+ */
+export interface PeopleReads {
+  lenses: ReadonlyArray<{ capability: string; view: View; overviews?: readonly string[] | undefined }>;
+  people: ReadonlyArray<{ key: string; sourceKey: string }>;
+  rows: (capability: string) => ReadonlyArray<Record<string, unknown>> | undefined;
+}
+/** A table's or a list's fuller read about one of its rows, as the view declares it (`open`). */
+const openOf = (view: View) => (view.kind === 'table' || view.kind === 'list' ? view.open : undefined);
+/** The lenses whose fuller read about one person (their view's `open`) is `capability`. */
+export const lensesOpening = (reads: Pick<PeopleReads, 'lenses'>, capability: string) =>
+  reads.lenses.filter(l => openOf(l.view)?.capability === capability);
+/** The address of Personal at a lens's tab (D126 rule 8): a place in the rail, which names no way back. */
+export const lensTabHref = (capability: string) => `/staff?show=${encodeURIComponent(capability)}`;
+/**
+ * Where a read about the reader's people is (D126 rules 1 and 8, one page per thing), from what the sources declare and
+ * nothing else: a lens an administrator offers over the people is Personal's tab for it, and so is a read that answers
+ * the lens's rows without keys (its view's `byKey`, D127: Hem's "Frånvaro per person"), opened without input; a lens's
+ * fuller read about one person (its view's `open`, asked with that person's row's fields as its `params` say) is that
+ * person's page at the lens's tab, which draws that read, with `from` as the way back. Null for any other read, which
+ * keeps its own page (`viewPageHref`); undefined while the lens's rows that name the person are on their way.
+ */
+export function peopleReadHref(view: ViewTarget, reads: PeopleReads, from?: string | null): string | null | undefined {
+  if (reads.lenses.some(l => l.capability === view.capability)) return lensTabHref(view.capability);
+  const plain = !view.input || !Object.keys(view.input).length;
+  const whole = plain ? reads.lenses.find(l => l.overviews?.includes(view.capability)) : undefined;
+  if (whole) return lensTabHref(whole.capability);
+  const opening = lensesOpening(reads, view.capability);
+  let waiting = false;
+  for (const lens of opening) {
+    const params = Object.entries(openOf(lens.view)?.params ?? {});
+    const rows = reads.rows(lens.capability);
+    if (!rows) {
+      waiting = true;
+      continue;
+    }
+    if (!params.length) continue;
+    const row = rows.find(r =>
+      params.every(([input, field]) => r[field] !== undefined && String(r[field]) === String(view.input?.[input])),
+    );
+    const key = typeof row?.key === 'string' ? row.key.toLowerCase() : null;
+    const person = key ? reads.people.find(p => p.sourceKey.toLowerCase() === key) : undefined;
+    if (person) return personPageHref(person.key, { section: lens.capability, from: from ?? null });
+  }
+  return waiting ? undefined : null;
 }

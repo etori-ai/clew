@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import type { ViewEntry } from '@clew/contracts';
+import type { View, ViewEntry } from '@clew/contracts';
 import {
   declaredPage,
+  lensesOpening,
   openedAsPage,
   opensAsPage,
+  peopleReadHref,
+  type PeopleReads,
   readInput,
   readPageHref,
   viewOpenHref,
@@ -41,7 +44,7 @@ describe('every view has an address: its own page (D116)', () => {
   });
 });
 
-describe('a list or a table is a page; one thing is a peek beside the page (D116)', () => {
+describe('a list, a table and one thing are pages (D116, D126)', () => {
   test('what the person may open says which', () => {
     expect(opensAsPage(views, 'talks.talks')).toBe(true);
     expect(opensAsPage(views, 'incidents.deviations')).toBe(true);
@@ -68,9 +71,9 @@ describe('a list or a table is a page; one thing is a peek beside the page (D116
       }),
     ).toBe('/tools/incidents.deviations?input=%7B%22person%22%3A%22anna%22%7D&title=Avvikelser&from=%2Fpeople%2Fanna');
   });
-  test('one thing opens beside the page it was opened from, in the place of what lay there', () => {
+  test('one thing is its own page too (D126 rule 1), with the page it was opened from as the way back', () => {
     expect(viewOpenHref(views, '/', '?card=t1', { capability: 'finance.budget', title: 'Budget mot prognos' })).toBe(
-      '/?card=t1&open=finance.budget&open-title=Budget+mot+prognos',
+      '/tools/finance.budget?title=Budget+mot+prognos&from=%2F',
     );
     expect(
       viewOpenHref(views, '/tools/finance.invoices', '?from=%2F&open=a.b&open-title=A', {
@@ -78,9 +81,15 @@ describe('a list or a table is a page; one thing is a peek beside the page (D116
         title: 'Faktura',
         input: { ref: 'inv-1' },
       }),
-    ).toBe(
-      '/tools/finance.invoices?from=%2F&open=finance.record&open-title=Faktura&open-input=%7B%22ref%22%3A%22inv-1%22%7D',
-    );
+    ).toBe('/tools/finance.record?input=%7B%22ref%22%3A%22inv-1%22%7D&title=Faktura&from=%2Ftools%2Ffinance.invoices');
+  });
+  test('beside a conversation one thing stands beside the transcript, in the place of what lay there (rule 2)', () => {
+    expect(
+      viewOpenHref(views, '/conversations/c1', '?card=t1', {
+        capability: 'finance.budget',
+        title: 'Budget mot prognos',
+      }),
+    ).toBe('/conversations/c1?card=t1&open=finance.budget&open-title=Budget+mot+prognos');
   });
 });
 
@@ -154,5 +163,58 @@ describe('a read of Clew’s own that declares the page its rows are worked on l
   test('only a path inside Clew is followed', () => {
     for (const page of ['//evil.example/x', 'https://evil.example', 'javascript:alert(1)'])
       expect(declaredPage([{ capability: 'x.y', title: 'X', page }], 'x.y')).toBeUndefined();
+  });
+});
+
+describe('a read about the reader’s people is Personal’s tab or the person’s page (D126 rules 1 and 8)', () => {
+  const presence: View = {
+    kind: 'list',
+    title: 'presence',
+    fields: [{ key: 'presence', label: 'Närvaro' }],
+    open: { capability: 'sys.pattern', title: 'Mönster', params: { ref: 'ref' } },
+  };
+  const reads = (rows?: Array<Record<string, unknown>>): PeopleReads => ({
+    lenses: [{ capability: 'sys.person', view: presence, overviews: ['sys.overview'] }],
+    people: [
+      { key: 'p-anna', sourceKey: 'anna' },
+      { key: 'p-erik', sourceKey: 'erik' },
+    ],
+    rows: capability => (capability === 'sys.person' ? rows : undefined),
+  });
+  const rows = [
+    { key: 'Anna', ref: 'emp:1', presence: 'I tjänst' },
+    { key: 'erik', ref: 'emp:2', presence: 'Sjuk' },
+  ];
+  test('a lens is Personal’s tab for it, which names no way back', () => {
+    expect(peopleReadHref({ capability: 'sys.person' }, reads(rows), '/')).toBe('/staff?show=sys.person');
+  });
+  test('a lens’s fuller read about one person is that person’s page at the lens’s tab, found by the row it opens from', () => {
+    expect(
+      peopleReadHref({ capability: 'sys.pattern', input: { ref: 'emp:1' } }, reads(rows), '/tools/x?from=%2F'),
+    ).toBe('/people/p-anna?section=sys.person&from=%2Ftools%2Fx');
+    expect(peopleReadHref({ capability: 'sys.pattern', input: { ref: 'emp:2' } }, reads(rows))).toBe(
+      '/people/p-erik?section=sys.person',
+    );
+  });
+  test('a read that answers the lens’s rows without keys (byKey, D127) is the lens’s tab too: Hem’s “Frånvaro per person”', () => {
+    expect(peopleReadHref({ capability: 'sys.overview' }, reads(rows), '/')).toBe('/staff?show=sys.person');
+    expect(peopleReadHref({ capability: 'sys.overview', input: {} }, reads(undefined))).toBe('/staff?show=sys.person');
+    // Read with an input it is its own page; without the lens offered, its own page too.
+    expect(peopleReadHref({ capability: 'sys.overview', input: { q: 'anna' } }, reads(rows))).toBeNull();
+    expect(peopleReadHref({ capability: 'sys.overview' }, { ...reads(rows), lenses: [] })).toBeNull();
+  });
+  test('the whole path: the tile’s read is Personal’s tab, and a row’s fuller read from there is the person’s tab', () => {
+    // Hem's tile names the overview; from Personal's tab a person's fuller read is their page at the lens's tab.
+    const tab = peopleReadHref({ capability: 'sys.overview', title: 'Frånvaro per person' }, reads(rows), '/');
+    expect(tab).toBe('/staff?show=sys.person');
+    expect(lensesOpening(reads(rows), 'sys.pattern').map(l => l.capability)).toEqual(['sys.person']);
+    expect(peopleReadHref({ capability: 'sys.pattern', input: { ref: 'emp:2' } }, reads(rows), tab)).toBe(
+      '/people/p-erik?section=sys.person&from=%2Fstaff%3Fshow%3Dsys.person',
+    );
+  });
+  test('while the lens’s rows are on their way it is not known yet; a row nobody here is, and any other read, keep their page', () => {
+    expect(peopleReadHref({ capability: 'sys.pattern', input: { ref: 'emp:1' } }, reads(undefined))).toBeUndefined();
+    expect(peopleReadHref({ capability: 'sys.pattern', input: { ref: 'emp:9' } }, reads(rows))).toBeNull();
+    expect(peopleReadHref({ capability: 'sys.other' }, reads(rows))).toBeNull();
   });
 });

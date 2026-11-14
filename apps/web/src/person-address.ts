@@ -1,5 +1,7 @@
-import { sameSubject, type PanelViewSpec, type Subject } from '@clew/contracts';
+import { sameSubject, type EntityPage, type PanelViewSpec, type Subject } from '@clew/contracts';
 import { pageOnly } from './panel-address';
+import { TALK_PARAM, sourcePageHref } from './talk-address';
+import { DIALOGUE_PARAM } from './dialogue-address';
 
 /**
  * Where a person or a unit is (D97, D43, D83 rule 4, D111 rule 3): `/people/<key>` is the person as a page, by Clew's key,
@@ -10,6 +12,13 @@ import { pageOnly } from './panel-address';
  */
 /** The value Behöver dig takes in the address (`?section=`): never a capability's name, which always has a dot. */
 export const NEEDS_YOU = 'needs-you';
+/**
+ * The tabs of a person's own page that are not a source's (D126 rule 7: a person's own competences and plan are tabs of
+ * their own page): `?section=competence` is Mina kompetenser, `?section=plan` the person's own introduction or leaving.
+ * Neither has a dot, so neither is ever a capability's name.
+ */
+export const OWN_COMPETENCE = 'competence';
+export const OWN_PLAN = 'plan';
 const addressOf = (pathname: string, query: URLSearchParams) => {
   const q = query.toString();
   return q ? `${pathname}?${q}` : pathname;
@@ -79,9 +88,10 @@ export function fromCardsBeside(pathname: string, search: URLSearchParams | stri
   const page = personPageHref(key, { section: NEEDS_YOU, from: pageOnly(pathname, q) });
   return card ? `${page}&card=${encodeURIComponent(card)}` : page;
 }
-/** The unit as a page (D97, artboard E), with the page it was opened from. */
-export function unitPageHref(id: string, options: { from?: string | null } = {}): string {
+/** The unit as a page (D97, artboard E), with a tab chosen (`section`, as a person's) and the page it was opened from. */
+export function unitPageHref(id: string, options: { section?: string; from?: string | null } = {}): string {
   const q = new URLSearchParams();
+  if (options.section) q.set('section', options.section);
   const from = wayBack(options.from);
   if (from) q.set('from', from);
   return addressOf(`/units/${encodeURIComponent(id)}`, q);
@@ -137,6 +147,13 @@ export function originLabel(path: string | null): string | null {
   if (pathname === '/') return 'Hem';
   if (pathname === '/todo') return 'Att göra';
   if (pathname === '/calendar') return 'Kalender';
+  // The rail's names for the registers it ends its lists with (D126 rule 7).
+  if (pathname === '/tools') return 'Alla verktyg';
+  if (pathname === '/conversations') return 'Alla samtal';
+  if (pathname.startsWith('/conversations/')) return 'Samtalet';
+  if (pathname === '/units') return 'Läget';
+  if (pathname.startsWith('/competence/matrix')) return 'Kompetens';
+  if (pathname.startsWith('/items/')) return 'Ärendet';
   // D121: a person's holdings opened from a hit of the registrar's search.
   if (pathname === '/competence/search') return 'Kompetenssökning';
   // D124: a plan opened from the list (item 12), and a person opened from their plan's "Tillhör".
@@ -162,4 +179,73 @@ export function originOf(
   const tool = toolOf(from);
   const label = originLabel(from) ?? (tool ? menu.find(m => m.capability === tool)?.label : undefined);
   return label ? { label, href: from } : null;
+}
+
+/**
+ * A source's way in that is a tab of the entity's own page since D126 (rule 3: nothing opens over a page): one person's
+ * utvecklingssamtal (`?talk={id}`) is their page's tab for that source, one unit's follow-up dialogue (`?dialog={key}`)
+ * the unit's. Null for any other way in, which keeps its own address (`sourcePageHref`).
+ */
+export function sourceTab(page: EntityPage | undefined): 'talk' | 'dialogue' | null {
+  if (!page) return null;
+  if (page.href.startsWith(`?${TALK_PARAM}=`)) return 'talk';
+  if (page.href.startsWith(`?${DIALOGUE_PARAM}=`)) return 'dialogue';
+  return null;
+}
+/**
+ * Where a source's way in leads (D95, D126): a way in that is a tab of the entity's page leads to that page at the
+ * source's tab, with `back` as its way back (on the entity's own page, to the tab itself, its way back kept); any other
+ * is the source's own address as `sourcePageHref` fills it in.
+ */
+export function sourceWayHref(
+  source: { capability: string; page?: EntityPage | undefined },
+  entity: { kind?: 'person' | 'unit'; key: string; id?: string | undefined },
+  here: { pathname: string; search: string },
+  back?: string | null,
+): string | null {
+  if (!source.page) return null;
+  const tab = sourceTab(source.page);
+  if (!tab) return sourcePageHref(source.page, entity, here, back);
+  const unit = tab === 'dialogue' || entity.kind === 'unit';
+  const own = pageSubject(here.pathname);
+  // On the entity's own page the tab keeps the page's way back.
+  const from =
+    own && own.key === entity.key && own.entity === (unit ? 'unit' : 'person')
+      ? new URLSearchParams(here.search).get('from')
+      : back;
+  return unit
+    ? unitPageHref(entity.key, { section: source.capability, from })
+    : personPageHref(entity.id ?? entity.key, { section: source.capability, from });
+}
+/**
+ * Where an address that laid a talk or a dialogue over a page leads since D126 (rule 3: old addresses redirect to the
+ * page): `?talk=<personId>` to that person's page at the talk's tab, `?dialog=<unitId>` to the unit's page at the
+ * dialogue's tab, each with the page it lay over as the way back (or, on the entity's own page, the way back it had).
+ * `capability` names the source the tab belongs to, when the page knows it; without it the person's or unit's own page
+ * finds the tab from the address (`talk`, `dialog`) itself. Null for any other address.
+ */
+export function overlayRedirect(
+  pathname: string,
+  search: URLSearchParams | string,
+  capability?: { talk?: string | undefined; dialogue?: string | undefined },
+): string | null {
+  const q = new URLSearchParams(search);
+  const talk = q.get(TALK_PARAM),
+    dialogue = q.get(DIALOGUE_PARAM);
+  if (!talk && !dialogue) return null;
+  const subject = pageSubject(pathname);
+  const back = subject ? q.get('from') : pageOnly(pathname, q);
+  if (talk) {
+    const page = personPageHref(talk, { ...(capability?.talk ? { section: capability.talk } : {}), from: back });
+    return capability?.talk
+      ? page
+      : `${page}${page.includes('?') ? '&' : '?'}${TALK_PARAM}=${encodeURIComponent(talk)}`;
+  }
+  const page = unitPageHref(dialogue!, {
+    ...(capability?.dialogue ? { section: capability.dialogue } : {}),
+    from: back,
+  });
+  return capability?.dialogue
+    ? page
+    : `${page}${page.includes('?') ? '&' : '?'}${DIALOGUE_PARAM}=${encodeURIComponent(dialogue!)}`;
 }

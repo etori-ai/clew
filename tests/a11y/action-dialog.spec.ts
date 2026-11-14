@@ -431,8 +431,14 @@ test.describe('the action dialog on a phone', () => {
   });
 });
 
+/**
+ * An action about a person or a unit opens the action dialog first, and nothing exists before its last button (D126
+ * item 7): an execute reads "Det här händer" from `POST /api/entities/:kind/:key/effect` and its last button sends
+ * `.../decide`, which makes the work item with the decision in it; the item then opens on its own page (rule 1), with
+ * the page the action was started on as its way back. A cancelled dialog leaves nothing behind.
+ */
 test.describe('an action about a person or a unit that asks', () => {
-  test('an execute started on a person opens its work item beside the page with the dialog over it, on the item’s own button', async ({
+  test('an execute started on a person asks in the dialog, reads what happens about the person, and its last button decides; the item opens on its page', async ({
     page,
     api,
   }) => {
@@ -440,33 +446,67 @@ test.describe('an action about a person or a unit that asks', () => {
     await page.setViewportSize(WIDE);
     const here = `/people/johan?section=${PRESENCE_LENS}&from=%2Fstaff`;
     await open(page, here);
-    // Every action about the person is in the page's header (D112 item 5): the third and on under Fler.
-    await page.getByRole('main').getByRole('button', { name: 'Fler åtgärder för Johan Byström' }).click();
+    // Every action about the person is in the page's header (D126 rule 1): the third and on under Fler åtgärder.
+    const more = page.getByRole('main').getByRole('button', { name: 'Fler åtgärder för Johan Byström' });
+    await more.click();
     await page.getByRole('menuitem', { name: 'Boka omtankesamtal' }).click();
-    // The work item is started first, without the answers: they are given at its decision (D112).
-    expect(api.entityStarts).toEqual([{ key: 'johan', capability: 'hr.bookTalk' }]);
-    await expect(page).toHaveURL(`${here}&card=entity-hr-bookTalk-johan`);
     const dialog = dialogOf(page, 'Boka omtankesamtal');
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText('Personalsystemet · Boka omtankesamtal: Johan Byström')).toBeVisible();
+    // Nothing is created when the dialog opens: no work item, no decision, and the page keeps its address.
+    expect(api.entityStarts).toEqual([]);
+    expect(api.entityDecides).toEqual([]);
+    await expect(page).toHaveURL(here);
+    await expect(dialog.getByText('Personalsystemet · Johan Byström')).toBeVisible();
     await expect(when(dialog).getByRole('radio', { name: /^Torsdag 5 november/ })).toBeChecked();
     await expectNoAxeViolations(page);
-    // Closed, the item stays beside the page, and the focus is on its own button, which opens the dialog again.
+    // Esc sends nothing and gives the focus back to the menu's button, where the dialog was asked for (2.4.3).
+    await dialog.getByRole('textbox', { name: 'Plats' }).fill('Bergsåkers skola, rum 12');
     await page.keyboard.press('Escape');
-    const panel = page.getByRole('complementary', { name: 'Ärende' });
-    const decide = panel.getByRole('button', { name: 'Boka omtankesamtal' });
-    await expect(decide).toBeFocused();
+    await expect(dialog).toBeHidden();
+    await expect(more).toBeFocused();
+    expect(api.entityDecides).toEqual([]);
+    // Opened again from the same button, it keeps what was typed.
     await page.keyboard.press('Enter');
+    await page.getByRole('menuitem', { name: 'Boka omtankesamtal' }).click();
+    await expect(dialog.getByRole('textbox', { name: 'Plats' })).toHaveValue('Bergsåkers skola, rum 12');
     await dialog.getByRole('button', { name: 'Nästa' }).click();
+    // Det här händer is read about the person for exactly the values on the step, before anything exists.
+    await expect(dialog.getByRole('heading', { name: 'När du trycker Boka omtankesamtal' })).toBeFocused();
+    await expect(dialog.getByRole('list', { name: 'Det här händer' })).toContainText(
+      'På Johan Byström, torsdag 5 november kl. 13:15, Bergsåkers skola, rum 12',
+    );
+    expect(api.entityEffects.at(-1)).toEqual({
+      key: 'johan',
+      capability: 'hr.bookTalk',
+      values: { when: '2026-11-05T12:15:00.000Z', place: 'Bergsåkers skola, rum 12' },
+    });
+    await expectNoAxeViolations(page);
+    expect(api.entityDecides).toEqual([]);
+    // The last button is the action's own label and the only thing that sends: the item and its decision at once.
     await dialog.getByRole('button', { name: 'Boka omtankesamtal' }).click();
     await expect(dialog).toBeHidden();
-    await expect
-      .poll(() => api.acted.map(a => a.body))
-      .toEqual([{ actionId: 'decide', values: { when: '2026-11-05T12:15:00.000Z' } }]);
-    await expect(panel.getByText('Samtalet är registrerat i personalsystemet.')).toBeVisible();
+    expect(api.entityStarts).toEqual([]);
+    expect(api.entityDecides).toEqual([
+      {
+        key: 'johan',
+        capability: 'hr.bookTalk',
+        values: { when: '2026-11-05T12:15:00.000Z', place: 'Bergsåkers skola, rum 12' },
+      },
+    ]);
+    // The item opens on its own page with the person's page at its tab as the way back, which has none of its own.
+    await expect(page).toHaveURL(
+      `/items/entity-hr-bookTalk-johan?from=${encodeURIComponent(`/people/johan?section=${PRESENCE_LENS}`)}`,
+    );
+    await expect(page.getByRole('heading', { level: 1, name: 'Boka omtankesamtal: Johan Byström' })).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Kvitto, rad för rad' })).toContainText(
+      'registrerat för Johan Byström, torsdag 5 november kl. 13:15, Bergsåkers skola, rum 12',
+    );
+    await expectNoAxeViolations(page);
+    await page.goBack();
+    await expect(page).toHaveURL(here);
   });
 
-  test('an execute from a row’s menu on Personal opens its work item over the list with the dialog over it', async ({
+  test('an execute from a row’s menu on Personal opens only the dialog: Esc leaves the list as it was, with the focus on the menu’s button', async ({
     page,
     api,
   }) => {
@@ -476,20 +516,21 @@ test.describe('an action about a person or a unit that asks', () => {
     const menuButton = page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' });
     await menuButton.click();
     await page.getByRole('menuitem', { name: 'Boka omtankesamtal' }).click();
-    await expect(page).toHaveURL('/staff?card=entity-hr-bookTalk-karin');
-    expect(api.entityStarts).toEqual([{ key: 'karin', capability: 'hr.bookTalk' }]);
     const dialog = dialogOf(page, 'Boka omtankesamtal');
     await expect(when(dialog).getByRole('radio', { name: /^Torsdag 5 november/ })).toBeChecked();
+    await expect(page).toHaveURL('/staff');
+    expect(api.entityStarts).toEqual([]);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    // The item is the drawer over the list here; its own button has the focus, and Esc then closes the item.
-    const drawer = page.getByRole('dialog', { name: 'Ärende' });
-    await expect(drawer.getByRole('button', { name: 'Boka omtankesamtal' })).toBeFocused();
-    expect(api.acted).toEqual([]);
-    await page.keyboard.press('Escape');
+    // Nothing was made, nothing opened over the list, and the focus is back on the button the dialog came from.
     await expect(page).toHaveURL('/staff');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(menuButton).toBeFocused();
+    expect(api.entityStarts).toEqual([]);
+    expect(api.entityEffects).toEqual([]);
+    expect(api.entityDecides).toEqual([]);
+    expect(api.acted).toEqual([]);
   });
 
   test('a propose that asks is filled in before it starts, and starts with the answers', async ({ page, api }) => {
@@ -532,7 +573,10 @@ test.describe('an action about a person or a unit that asks', () => {
     expect(api.entityStarts).toEqual([
       { key: 'karin', capability: 'hr.registerAbsence', values: { from: '2026-11-05' } },
     ]);
-    await expect(page).toHaveURL('/staff?card=entity-hr-registerAbsence-karin');
+    // A propose drafts its work item, which opens on its own page with Personal as the way back (D126 rule 1).
+    await expect(page).toHaveURL('/items/entity-hr-registerAbsence-karin?from=%2Fstaff');
+    await expect(page.getByRole('heading', { level: 1, name: 'Registrera frånvaro: Karin Lindqvist' })).toBeVisible();
+    expect(api.entityDecides).toEqual([]);
   });
 
   test('a choice left out is said on its selector, which shows its focus over the error (2.4.7)', async ({

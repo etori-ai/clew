@@ -18,8 +18,9 @@ import {
 import { viewPageHref } from './view-address';
 
 /**
- * The place Kompetens in the rail (D120 item 8) and its pages, each an address of its own (D116): the reader's own
- * holdings at `/competence`, and the manager's matrix at `/competence/matrix` (D108 item 11). The matrix names its set
+ * Kompetens (D120 item 8) and its pages, each an address of its own (D116): the reader's own holdings, since D126 a tab
+ * of their own page (`/competence` leads there, and the helpers below take the page they are on as `base`), and the
+ * manager's matrix at `/competence/matrix` (D108 item 11), a tab of Personal. The matrix names its set
  * of columns in the address, `by` (`area:<the area>` or `position:<the position's id>`) and `part` (from 1, left out for
  * the first), so a reload, a link and Back show the same columns; `only=attention` narrows what it shows to the people
  * and the competences where something needs the manager, which the page does with what the read answered, so the read
@@ -122,12 +123,12 @@ export function withoutRequirement(search: URLSearchParams | string): string {
  * type, the dialog starts on it (`competence`, the name the matrix's registration uses too): a row of the reader's own
  * list leads there, to renew what has run out or register what is missing.
  */
-export function addHref(search: URLSearchParams | string = '', typeId?: string): string {
+export function addHref(search: URLSearchParams | string = '', typeId?: string, base = COMPETENCE_PATH): string {
   const q = new URLSearchParams(search);
   q.set(ADD_PARAM, NEW);
   if (typeId) q.set(ADD_TYPE_PARAM, typeId);
   else q.delete(ADD_TYPE_PARAM);
-  return address(COMPETENCE_PATH, q);
+  return address(base, q);
 }
 /** Whether the address opens that dialog. */
 export const adding = (search: URLSearchParams | string) => new URLSearchParams(search).get(ADD_PARAM) === NEW;
@@ -135,11 +136,11 @@ export const adding = (search: URLSearchParams | string) => new URLSearchParams(
 export const addingType = (search: URLSearchParams | string) =>
   adding(search) ? holdingIn(new URLSearchParams(search).get(ADD_TYPE_PARAM)) : null;
 /** The reader's own page with that dialog closed. */
-export function withoutAdd(search: URLSearchParams | string): string {
+export function withoutAdd(search: URLSearchParams | string, base = COMPETENCE_PATH): string {
   const q = new URLSearchParams(search);
   q.delete(ADD_PARAM);
   q.delete(ADD_TYPE_PARAM);
-  return address(COMPETENCE_PATH, q);
+  return address(base, q);
 }
 /** The registration whose decision the address opens over the matrix, or null for none. */
 export function approveOf(search: URLSearchParams | string): string | null {
@@ -191,18 +192,18 @@ export function withoutValidate(search: URLSearchParams | string): string {
 /** The reader's own skill the address opens to change (D120 item 2), or null for none. */
 export const skillOf = (search: URLSearchParams | string) => holdingIn(new URLSearchParams(search).get(SKILL_PARAM));
 /** The reader's own page with the dialog that changes this skill of theirs over it, the rest of the address kept. */
-export function skillHref(holdingId: string, search: URLSearchParams | string = ''): string {
+export function skillHref(holdingId: string, search: URLSearchParams | string = '', base = COMPETENCE_PATH): string {
   const q = new URLSearchParams(search);
   q.delete(ADD_PARAM);
   q.delete(ADD_TYPE_PARAM);
   q.set(SKILL_PARAM, holdingId);
-  return address(COMPETENCE_PATH, q);
+  return address(base, q);
 }
 /** The reader's own page with that dialog closed. */
-export function withoutSkill(search: URLSearchParams | string): string {
+export function withoutSkill(search: URLSearchParams | string, base = COMPETENCE_PATH): string {
   const q = new URLSearchParams(search);
   q.delete(SKILL_PARAM);
-  return address(COMPETENCE_PATH, q);
+  return address(base, q);
 }
 
 /**

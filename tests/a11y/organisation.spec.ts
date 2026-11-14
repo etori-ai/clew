@@ -74,10 +74,13 @@ test.describe('organisation', () => {
       api.admin = true;
       await open(page, '/admin/organisation');
       await expect(page).toHaveTitle('Organisation · Startsidan');
-      await expect(page.getByRole('link', { name: 'Organisation', exact: true })).toHaveAttribute(
-        'aria-current',
-        'page',
-      );
+      // The section is marked in the administration's own panel (D126), on its row.
+      await expect(
+        page
+          .getByRole('navigation', { name: 'Administration', exact: true })
+          .getByRole('listitem')
+          .filter({ has: page.getByRole('link', { name: 'Organisation', exact: true }) }),
+      ).toHaveAttribute('aria-current', 'true');
       const tree = page.getByRole('tree', { name: 'Organisationsträd' });
       // The roots are open from the start, so the level under each is read without a click; deeper levels are not.
       const kommunen = tree.getByRole('treeitem', { name: /Kommunen/ }).first();

@@ -2,14 +2,14 @@ import type { EntityPage } from '@clew/contracts';
 import { REVIEW_PARAM } from './review-address';
 
 /**
- * One person's utvecklingssamtal (D96 item 7) lies over the page it was opened on (D111 rule 5): the page's own address
- * with the person's id as `talk`, and everything else in it kept (Personal's lens, a person's section and way back, the
- * card or the cards open in the page's panel). Closing the drawer is the same address without `talk`, so the page is as
- * it was under it. A cold `/staff?talk=<personId>` is Personal with the talk over it.
+ * One person's utvecklingssamtal (D96 item 7) lay over the page it was opened on as a drawer until D126 (rule 3): the
+ * page's own address with the person's id as `talk`. The talk is the person's page's tab now (`person-address.ts`,
+ * `sourceTab`); `talk` remains as an address from before, which leads to that tab (`overlayRedirect`), and as the name
+ * the talks module's way in still declares (`?talk={id}`). `talkOf`, `withTalk` and `withoutTalk` read and write it for
+ * the callers that keep the old address.
  *
- * One focused overlay at a time: no control in Clew makes an address that names both a review and a talk. One that
- * arrives with both (typed or edited by hand) draws the review and ignores the talk, since the review may hold a
- * decision on its way: `talkOf` names no talk while `review` is there, and the talk opens once the review has closed.
+ * One focused overlay at a time: an address that names both a review and a talk draws the review and ignores the talk
+ * (`talkOf` names no talk while `review` is there).
  */
 export const TALK_PARAM = 'talk';
 

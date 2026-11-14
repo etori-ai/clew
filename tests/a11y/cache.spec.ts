@@ -31,19 +31,22 @@ test.describe('D33 the browser cache', () => {
     await page.waitForLoadState('networkidle');
     expect(count('/api/threads')).toBe(1);
   });
-  test('a card’s read posts its action once, for the card that unfolds it and the panel that would draw a table', async ({
+  test('an address that unfolded a card’s read leads to the read’s own page, which reads it once and posts nothing', async ({
     page,
     api: _,
   }) => {
+    // D126 rule 3: nothing unfolds inside a card any more; the address from before leads to the read's page.
     const posts: string[] = [];
+    const reads: string[] = [];
     page.on('request', r => {
       if (r.method() === 'POST' && r.url().includes('/act')) posts.push(r.url());
+      if (r.method() === 'GET' && r.url().includes('/api/cap/hr.absencePattern')) reads.push(r.url());
     });
-    await open(page, '/todo?item=omtanke&open-card=omtanke&open-action=pattern');
-    const card = page.getByRole('complementary', { name: 'Valt ärende' });
-    await expect(card.locator('#read-card-omtanke').getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    await page.goto('/todo?item=omtanke&open-card=omtanke&open-action=pattern');
+    await expect(page).toHaveURL(/\/tools\/hr\.absencePattern\?/);
     await page.waitForLoadState('networkidle');
-    expect(posts).toHaveLength(1);
+    expect(reads).toHaveLength(1);
+    expect(posts).toEqual([]);
   });
   test('an address that names a card’s decision asks for nothing: only the card’s button decides', async ({
     page,

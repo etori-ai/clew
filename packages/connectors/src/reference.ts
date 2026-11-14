@@ -205,6 +205,7 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].view.subject': { entity: 'person', key: 'person' },
   'capabilities[].view.subject.entity': 'person',
   'capabilities[].view.subject.key': 'person',
+  'capabilities[].view.byKey': 'hr.person',
   'capabilities[].about': { entity: 'person' },
   'capabilities[].about.entity': 'person',
   'capabilities[].about.param': 'person',
@@ -370,6 +371,14 @@ export const RULES: Rule[] = [
     enforced: 'loader',
     decision: 'D97',
     text: "Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere.",
+  },
+  {
+    id: 'view-by-key-names-a-read-about-the-subject',
+    title: 'A table of people names the read about them that answers the same rows',
+    fields: ['capabilities[].view.byKey', 'capabilities[].view.subject', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D127',
+    text: "`byKey` needs `subject`, and the read that declares it opens without input. It names another read of this manifest whose `about.entity` is `subject.entity` and whose view is a `table` or `list`, the read that answers the same rows asked by key. Where an administrator offers that read as a lens, whatever opens this read without input opens the lens's tab of the list instead; declare it only when both answer the same rows.",
   },
   {
     id: 'view-beside-follows',

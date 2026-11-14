@@ -12,7 +12,8 @@ import { keyedDrafts } from './keys';
  * decides on. Nothing else turns a `propose` or an `execute` with an input into a card without the model: a scan pushes
  * what a source wants, a card's own button runs on that card, and the box asks the model. A `propose` runs here as the
  * person and the `ThreadDraft` it answers is the card. An `execute` is never called here: it is the card's one button,
- * so it runs only through the human decision (`decisions.ts`), with the approved intent in the ledger first (D45). The
+ * so it runs only through the human decision (`decisions.ts`), with the approved intent in the ledger first (D45); one
+ * decided in its dialog (D126 item 7) is made here with the answers checked and is decided on the next step. The
  * person's choice is the card's reason, whatever the source wrote. While the card is open the same request, under the
  * same authority, gives the same card. The card, its first message and the audit row commit together.
  */
@@ -39,6 +40,13 @@ export interface StartContext {
   /** The person's answers to a propose's asks (D112), already in the input: the audit row names them. */
   asked?: Record<string, string>;
   /**
+   * An execute decided in its dialog (D126 item 7): the person's answers to its asks, which the decision sends. They are
+   * checked with the input against the capability's schema before the card is made, so a card the decision would refuse
+   * is never made, and they tell this card from one with other answers; they are never kept on the card, whose input is
+   * plain while approved input is sealed (D45). The decision's audit row names them, not this card's.
+   */
+  answers?: Record<string, string>;
+  /**
    * The person the action is about (D122): `input[param]` names them by Clew's key, their id, which is what the card
    * keeps and its topic is made from, and `sourceKey` is their user name now, what the source is sent. An execute's topic
    * names `param`, and the id is resolved to the user name again when the person decides (`decisions.ts`).
@@ -56,15 +64,19 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
   ): Promise<{ threadId: string }> {
     await persona.authorize();
     let found: Awaited<ReturnType<typeof registry.validate>>;
-    // An execute's asks are answered when the person decides on its card (D112): until then the input may lack them.
+    // An execute's asks are answered when the person decides on its card (D112): until then the input may lack them. One
+    // decided in its dialog brings its answers, checked here with the input (D126 item 7).
     const declared = registry.find(capability)?.capability;
-    const pending = declared?.kind === 'execute' ? pendingAsks(declared, Object.keys(input)) : [];
+    const answers = declared?.kind === 'execute' ? (context.answers ?? {}) : {};
+    if (context.answers && declared?.kind !== 'execute') throw new InputError('Åtgärden kan inte startas härifrån.');
+    const pending =
+      declared?.kind === 'execute' ? pendingAsks(declared, [...Object.keys(input), ...Object.keys(answers)]) : [];
     // What the source is sent: a person by their user name (D122), where the card keeps their id.
     const { person } = context;
     if (person && input[person.param] !== person.personId) throw new InputError('Åtgärden kan inte startas härifrån.');
     const sent = person ? { ...input, [person.param]: person.sourceKey } : input;
     try {
-      found = await registry.validate(audiencedActorOf(persona), capability, sent, pending);
+      found = await registry.validate(audiencedActorOf(persona), capability, { ...answers, ...sent }, pending);
     } catch (error) {
       throw error instanceof CapabilityError ? new InputError(error.message) : error;
     }
@@ -108,9 +120,16 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
     // The same action with the same input (for a propose, the same occurrence) under the same authority is one card. The
     // input names a person by id (D122), so a rename leaves the topic as it was and a reused name gives another card. An
     // execute's topic also says which property of its input keeps the person, for the decision to resolve.
+    // An execute decided in its dialog is told apart by its answers too, so another order is another card and the same
+    // order sent twice is the one card (a digest: the answers themselves are not kept on it).
     const topic = startedTopic(
       capability,
-      digest({ input, identity, authority: persona.authorizationVersion }),
+      digest({
+        input,
+        identity,
+        authority: persona.authorizationVersion,
+        ...(Object.keys(answers).length ? { answers } : {}),
+      }),
       chosen.kind === 'execute' ? person?.param : undefined,
     );
     const open = await store.openThread(persona.id, topic);

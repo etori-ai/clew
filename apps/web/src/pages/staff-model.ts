@@ -232,12 +232,12 @@ export function cardLinkTexts(list: EntityList, key: string): CardLink[] {
     ...(a.proposals > 0 ? [{ kind: 'proposal' as const, text: countText('proposal', a.proposals), ...thread }] : []),
   ];
 }
-/** The count line under the title: "5 medarbetare på Bergsåkers skola", or the number of units when there are several. */
+/** The line under the title (board Personal): "Bergsåkers skola · 5 medarbetare", or how many units when there are several. */
 export function peopleLine(groups: EntityList['groups']): string {
   const people = groups.reduce((sum, g) => sum + g.entities.length, 0);
   return groups.length === 1
-    ? `${people} medarbetare på ${groups[0]!.label}`
-    : `${people} medarbetare på ${groups.length} enheter`;
+    ? `${groups[0]!.label}\u00a0· ${people} medarbetare`
+    : `${groups.length} enheter\u00a0· ${people} medarbetare`;
 }
 /** "Personalsystemet", "Personalsystemet och Utvecklingssamtal", "A, B och C". */
 const joined = (words: string[]) =>

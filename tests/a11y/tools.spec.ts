@@ -11,13 +11,14 @@ import {
 } from './support';
 import { menuRows } from './phonebook';
 import { roomsMenuRow } from './rooms';
+import { TOOLBOX_HREF, siteHeaderWithToolbox } from './data';
 
 /**
  * A tool as a page (D42, D112 item 6, board Tool): a view an administrator chose for the menu opens at
  * `/tools/:capability` inside the one shell, as Kalender does, and never in the side panel. The phone book is the
  * example, answered by the connector itself. The page is the tool's name with the system's badge, the filter bar (the
- * view's search field and choice, the count of its rows) and the rows; a row's own read, the contact card, is the
- * inspector in the page's panel, the row is the current one while it is open, and the address names both.
+ * view's search field and choice, the count of its rows) and the rows; a row's own read, the contact card, is a page of
+ * its own with the tool as its way back (D126 rules 1 and 3): nothing opens beside or over the tool.
  */
 const directory = '/tools/phonebook.directory';
 const team = '/tools/phonebook.team';
@@ -100,7 +101,7 @@ test.describe('a tool as a page', () => {
     await expect(page).toHaveURL(/\/$/);
   });
 
-  test('a name opens the contact card in the side panel beside the page; closing it gives the rows and the focus back', async ({
+  test('a name opens the contact card’s own page with the tool as the way back; Back gives the rows and the focus back (D126 rules 1 and 3)', async ({
     page,
     api,
   }) => {
@@ -109,102 +110,43 @@ test.describe('a tool as a page', () => {
     const name = page.getByRole('link', { name: 'Anna Lindqvist' });
     await name.focus();
     await page.keyboard.press('Enter');
-    const contact = page.getByRole('complementary', { name: 'Kontaktkort' });
-    await expect(contact.getByText('Anna Lindqvist')).toBeVisible();
-    await expect(contact.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
-    // The address names the tool, what was asked in it and the card, so a link or a reload lands here.
-    await expect(page).toHaveURL(
-      /\/tools\/phonebook\.directory\?input=.*&open=phonebook\.person&open-title=Kontaktkort&open-input=/,
+    // Nothing opens over the page: the card is a page of its own, the record's name its heading.
+    await expect(page).toHaveURL(/\/tools\/phonebook\.person\?.*from=/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Kontaktkort' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Anna Lindqvist' })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: '0980-319 203' })).toHaveAttribute(
+      'href',
+      'tel:0980319203',
     );
-    await expect(contact.locator(':focus')).toHaveCount(1);
-    // The row whose read is open beside the page is the current one: beside the panel the rows are the list, and the
-    // row and its name say so.
-    const current = page.getByRole('main').getByRole('listitem').filter({ has: name });
-    await expect(current).toHaveAttribute('aria-current', 'true');
-    await expect(name).toHaveAttribute('aria-current', 'true');
-    // The first view in the panel has nothing to go back to: the way out is to close it.
-    await expect(contact.getByRole('button', { name: 'Tillbaka' })).toHaveCount(0);
-    await expect(page).toHaveTitle('Kontaktkort · Startsidan');
+    await expect(page.getByRole('main').getByRole('link', { name: 'Telefonbok', exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
-    await page.keyboard.press('Escape');
-    await expect(contact).toHaveCount(0);
-    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=[^&]*$/);
+    await page.goBack();
     await expect(page.getByRole('searchbox')).toHaveValue('lärare');
     await expect(page.getByRole('row')).toHaveCount(3);
     await expect(name).toBeFocused();
-    await expect(name).not.toHaveAttribute('aria-current', 'true');
-    await expect(page).toHaveTitle('Telefonbok · Startsidan');
   });
 
-  test('an address with a card opens the page and the card after a reload, and the back button closes the card', async ({
+  test('an address from before that opened a card or a contact card beside the tool leads to its page, the tool as the way back', async ({
+    page,
+    api,
+  }) => {
+    api.menu = menuRows;
+    await open(page, `${directory}?card=fakturor`);
+    await expect(page).toHaveURL(`/items/fakturor?from=${encodeURIComponent(directory)}`);
+    await expect(page.getByRole('heading', { level: 1, name: /^Attestera 3 fakturor/ })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('the page asks with Fråga Clew at the end of its title line, not a box at its foot, and nothing offers Lägg till i samtalet', async ({
     page,
     api,
   }) => {
     api.menu = menuRows;
     await open(page, directory);
-    await page.getByRole('link', { name: 'Anna Lindqvist' }).click();
-    await expect(page.getByRole('complementary', { name: 'Kontaktkort' })).toBeVisible();
-    await page.reload();
-    await expect(page.getByRole('complementary', { name: 'Kontaktkort' }).getByText('Anna Lindqvist')).toBeVisible();
-    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
-    // The selection is in the address: after the reload the same row is the current one.
-    await expect(page.getByRole('main').getByRole('link', { name: 'Anna Lindqvist' })).toHaveAttribute(
-      'aria-current',
-      'true',
-    );
-    await page.goBack();
-    await expect(page.getByRole('complementary', { name: 'Kontaktkort' })).toHaveCount(0);
-    await expect(page.getByRole('row')).toHaveCount(15);
-    await expect(page.locator('[aria-current="true"]').filter({ hasText: 'Anna Lindqvist' })).toHaveCount(0);
-  });
-
-  test('the page asks with Fråga Clew at the end of its title line, not a box at its foot; a card beside it has its own box and nothing offers Lägg till i samtalet', async ({
-    page,
-    api,
-  }) => {
-    api.menu = menuRows;
-    // Wide enough for the table to keep its width beside the card (1720 px), so the rows are the table's.
-    await page.setViewportSize({ width: 1920, height: 1080 });
-    await open(page, `${directory}?card=fakturor`);
-    await expect(page.getByRole('main').getByRole('link', { name: 'Fråga Clew' })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga Clew' })).toBeVisible();
     await expect(page.getByRole('combobox', { name: 'Vad vill du göra' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    const panel = page.getByRole('complementary', { name: 'Ärende' });
-    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
-    await expect(panel.getByRole('textbox', { name: 'Fråga Clew' })).toBeVisible();
-    await expect(page).toHaveURL(`${directory}?card=fakturor`);
-  });
-
-  test('where the table fits beside the inspector, the open row is the current one in the table and says so in words; Esc closes the inspector and gives the focus back to the row’s name', async ({
-    page,
-    api,
-  }) => {
-    api.menu = menuRows;
-    // The table needs 1720 px with the panel beside it (D112 item 6, board Tool: a table with an inspector).
-    await page.setViewportSize({ width: 1920, height: 1080 });
-    await open(page, directory);
-    const name = page.getByRole('link', { name: 'Hassan Ali' });
-    await name.focus();
-    await page.keyboard.press('Enter');
-    const inspector = page.getByRole('complementary', { name: 'Kontaktkort' });
-    await expect(inspector.getByText('Hassan Ali').first()).toBeVisible();
-    await expect(inspector.locator(':focus')).toHaveCount(1);
-    await expect(page.getByRole('table')).toBeVisible();
-    const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: 'Hassan Ali' }) });
-    await expect(row).toHaveAttribute('aria-current', 'true');
-    await expect(row.getByRole('img', { name: 'Visas bredvid' })).toBeVisible();
-    await expect(page.locator('tr[aria-current="true"]')).toHaveCount(1);
-    // The inspector is the page's panel: its close button, and the box under it asks about the contact card.
-    await expect(inspector.getByRole('button', { name: 'Stäng panelen' })).toBeVisible();
-    await expect(inspector.getByRole('textbox', { name: 'Fråga Clew' })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expectNoAxeViolations(page);
-    await inspector.getByRole('button', { name: 'Stäng panelen' }).focus();
-    await page.keyboard.press('Escape');
-    await expect(inspector).toHaveCount(0);
-    await expect(page).toHaveURL(directory);
-    await expect(name).toBeFocused();
-    await expect(page.locator('tr[aria-current="true"]')).toHaveCount(0);
   });
 
   test("another tool takes the page: its name is the heading and is said aloud, and its rows replace the first tool's", async ({
@@ -339,41 +281,17 @@ test.describe("a tool's page on a smaller screen", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   });
 
-  test('with a contact card beside it the page gives way: its rows are the list until the table fits beside the panel too', async ({
-    page,
-    api,
-  }) => {
-    // The panel stands beside every page from 1340 px; the table needs 1280 px beside the rail, and as much again
-    // beside the panel (1720 px), so between the two the page draws the list it draws on a narrower window.
-    await page.setViewportSize(wide);
-    api.menu = menuRows;
-    await open(page, directory);
-    await expect(page.getByRole('table')).toBeVisible();
-    await page.getByRole('link', { name: 'Hassan Ali' }).click();
-    const contact = page.getByRole('complementary', { name: 'Kontaktkort' });
-    await expect(contact.getByText('Hassan Ali').first()).toBeVisible();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByRole('table')).toHaveCount(0);
-    await expect(page.getByRole('list', { name: 'Telefonboken' }).getByRole('listitem')).toHaveCount(14);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expectNoAxeViolations(page);
-    await contact.getByRole('button', { name: 'Stäng panelen' }).click();
-    await expect(page.getByRole('table')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Hassan Ali' })).toBeFocused();
-  });
-
-  test('on a phone the page and the card both fit, and the card closes back to the rows', async ({ page, api }) => {
+  test('on a phone the page fits, and a name leads to the contact card’s page', async ({ page, api }) => {
     await page.setViewportSize(phone);
     api.menu = menuRows;
     await open(page, directory);
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
     await expectNoAxeViolations(page);
     await page.getByRole('link', { name: 'Hassan Ali' }).click();
-    const contact = page.getByRole('dialog', { name: 'Kontaktkort' });
-    await expect(contact.getByText('Hassan Ali')).toBeVisible();
+    await expect(page).toHaveURL(/\/tools\/phonebook\.person\?/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Hassan Ali' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     await expectNoAxeViolations(page);
-    await contact.getByRole('button', { name: 'Stäng panelen' }).click();
-    await expect(page.getByRole('list', { name: 'Telefonboken' }).getByRole('listitem')).toHaveCount(14);
   });
 
   test('at 320 px the page reflows: no sideways scrolling and nothing cut off', async ({ page, api }) => {
@@ -381,6 +299,145 @@ test.describe("a tool's page on a smaller screen", () => {
     api.menu = menuRows;
     await open(page, directory);
     await expect(page.getByRole('list', { name: 'Telefonboken' })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+});
+
+/**
+ * Alla verktyg (D126 rule 7, the `library` template): every tool the person may open, where the rail's first four end.
+ * The title and how many there are, a search field that narrows the tiles in place, the tiles in sections by the
+ * system they belong to, each tile the link to its tool's page with the catalogue as its way back, and at the foot the
+ * intranet's own page of tools when the shared header names one. The rail's row leads here and is marked while it is open.
+ */
+test.describe('Alla verktyg', () => {
+  test.use({ viewport: wide });
+  const catalogue = (page: import('@playwright/test').Page) => page.getByRole('main');
+  const tile = (page: import('@playwright/test').Page, name: string) =>
+    catalogue(page).getByRole('link', { name, exact: true });
+  const field = (page: import('@playwright/test').Page) => page.getByRole('searchbox', { name: 'Sök bland verktygen' });
+
+  test('every tool by its system, each tile its link with its icon, name, what it is and system; the rail’s row marked; one heading order', async ({
+    page,
+    api,
+  }) => {
+    api.menu = [...menuRows, roomsMenuRow];
+    await open(page, '/');
+    const all = rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link', { name: 'Alla verktyg' });
+    await expect(all).toHaveAttribute('href', '/tools');
+    await all.click();
+    await expect(page).toHaveURL('/tools');
+    await expect(page).toHaveTitle('Alla verktyg · Startsidan');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Alla verktyg');
+    await expect(all).toHaveAttribute('aria-current', 'page');
+    await expect(catalogue(page).getByText('3 verktyg', { exact: true })).toBeVisible();
+    // A section per system, Clew's own (the calendar's house mark) before the systems in their registered order.
+    const sections = catalogue(page).getByRole('region');
+    await expect(sections).toHaveCount(2);
+    await expect(sections.nth(0).getByRole('heading', { level: 2 })).toHaveText('Kalendern');
+    await expect(sections.nth(1).getByRole('heading', { level: 2 })).toHaveText('Telefonboken');
+    const phonebook = page.getByRole('region', { name: 'Telefonboken' });
+    await expect(phonebook.getByRole('heading', { level: 3 })).toHaveText(['Mitt team', 'Telefonbok']);
+    // What the tool is, when the read's own title says more than its name, and its system.
+    await expect(phonebook.getByText('Sök i telefonboken', { exact: true })).toBeVisible();
+    await expect(phonebook.getByText('Telefonboken', { exact: true })).toHaveCount(3);
+    await expect(tile(page, 'Telefonbok')).toHaveAttribute('href', '/tools/phonebook.directory?from=%2Ftools');
+    // The tiles of a row are one height.
+    const [a, b] = await Promise.all([tile(page, 'Mitt team').boundingBox(), tile(page, 'Telefonbok').boundingBox()]);
+    expect(Math.abs(a!.height - b!.height)).toBeLessThan(2);
+    // No intranet link without a header that names the intranet's page of tools.
+    await expect(page.getByRole('link', { name: /Fler verktyg på intranätet/ })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(wide.width);
+    await expectNoAxeViolations(page);
+  });
+
+  test('the field narrows in place: the address carries the words, the count is said; with no match the empty state clears the search back to the field', async ({
+    page,
+    api,
+  }) => {
+    api.menu = [...menuRows, roomsMenuRow];
+    await open(page, '/tools');
+    await field(page).fill('mitt');
+    await expect(field(page)).toBeFocused();
+    await expect(page).toHaveURL('/tools?filter=mitt');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveText(['Mitt team']);
+    await expect(catalogue(page).getByText('1 av 3 verktyg', { exact: true })).toBeVisible();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 verktyg'));
+    // A system's name narrows too.
+    await field(page).fill('kalendern');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveText(['Mötesrum']);
+    await field(page).fill('fordon');
+    await expect(page.getByRole('heading', { level: 2, name: 'Inget verktyg matchar sökningen' })).toBeVisible();
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Inget verktyg matchar sökningen'));
+    await expectNoAxeViolations(page);
+    await page.getByRole('button', { name: 'Rensa sökningen' }).click();
+    await expect(field(page)).toBeFocused();
+    await expect(field(page)).toHaveValue('');
+    await expect(page).toHaveURL('/tools');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveCount(3);
+    // The address is the state: a reload keeps the words.
+    await open(page, '/tools?filter=tele');
+    await expect(field(page)).toHaveValue('tele');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveText(['Mitt team', 'Telefonbok']);
+  });
+
+  test('a tile opens its tool’s page by keyboard, named as its way back, and Back returns to the tile', async ({
+    page,
+    api,
+  }) => {
+    api.menu = menuRows;
+    await open(page, '/tools');
+    await tile(page, 'Telefonbok').focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/tools/phonebook.directory?from=%2Ftools');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Telefonbok');
+    await page.goBack();
+    await expect(page).toHaveURL('/tools');
+    await expect(tile(page, 'Telefonbok')).toBeFocused();
+  });
+
+  test('the intranet’s page of tools at the foot, in a new tab, when the shared header names one', async ({
+    page,
+    api,
+  }) => {
+    api.menu = menuRows;
+    api.header = siteHeaderWithToolbox();
+    await open(page, '/tools');
+    const more = catalogue(page).getByRole('link', { name: /^Fler verktyg på intranätet/ });
+    await expect(more).toHaveAccessibleName(/^Fler verktyg på intranätet\s*\(öppnas i ny flik\)$/);
+    await expect(more).toHaveAttribute('href', TOOLBOX_HREF);
+    await expect(more).toHaveAttribute('target', '_blank');
+    // At the foot: after the last tile.
+    const [last, foot] = await Promise.all([tile(page, 'Telefonbok').boundingBox(), more.boundingBox()]);
+    expect(foot!.y).toBeGreaterThan(last!.y + last!.height);
+    await expectNoAxeViolations(page);
+  });
+
+  test('without a tool the page says so, with no field, and the rail has no Verktyg', async ({ page, api }) => {
+    api.menu = [];
+    await open(page, '/tools');
+    await expect(page.getByRole('heading', { level: 2, name: 'Inga verktyg för dig än' })).toBeVisible();
+    await expect(field(page)).toHaveCount(0);
+    await expect(rail(page).getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('at 320 px the tiles are one column, nothing reflows past the edge, and the field narrows them', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(narrow);
+    api.menu = [...menuRows, roomsMenuRow];
+    await open(page, '/tools');
+    const [a, b] = await Promise.all([tile(page, 'Mitt team').boundingBox(), tile(page, 'Telefonbok').boundingBox()]);
+    expect(b!.y).toBeGreaterThan(a!.y + a!.height);
+    expect(await reflowProblems(page)).toEqual([]);
+    await field(page).fill('tele');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveText(['Mitt team', 'Telefonbok']);
     expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
   });

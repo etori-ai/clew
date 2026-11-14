@@ -51,7 +51,6 @@ import { keys } from '../../query-keys';
 import { errorMessage } from '../../query-policy';
 import { useAdminAction } from '../../mutations';
 import { usePageTitle } from '../../page-title';
-import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
 import { AdminShell } from './shell';
 
@@ -569,18 +568,17 @@ export function AdminCompetenceImportPage({ user }: { user: SessionUser }) {
     <AdminShell
       user={user}
       section="kompetens"
-      crumbs={[{ label: 'Kompetens', href: '/admin/competence' }, { label: 'Importera' }]}
-      pending={query.isPending}
-    >
-      <PageHeader
-        title="Importera kompetenser"
-        meta={
-          <Text as="p" color="secondary">
+      title="Importera kompetenser"
+      thing={{
+        meta: (
+          <Text as="p" type="supporting" color="secondary">
             Lägg till många kompetenser i katalogen på en gång från en fil. Det som redan finns i katalogen hoppas över,
             så samma fil kan läsas in igen.
           </Text>
-        }
-      />
+        ),
+      }}
+      pending={query.isPending}
+    >
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}

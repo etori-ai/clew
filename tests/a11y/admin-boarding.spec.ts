@@ -30,11 +30,17 @@ const upload = (page: Page, text: string, name = 'lager.csv') =>
     .getByLabel('Fil med lager', { exact: true })
     .and(page.locator('input[type="file"]'))
     .setInputFiles({ name, mimeType: 'text/csv', buffer: Buffer.from(text, 'utf8') });
+/** The section's link in the administration's own panel (D126): the rail has one row for the whole administration. */
 const adminRow = (page: Page) =>
   page
-    .getByRole('navigation', { name: 'Sidonavigering' })
-    .getByRole('group', { name: 'Administration', exact: true })
+    .getByRole('navigation', { name: 'Administration', exact: true })
     .getByRole('link', { name: 'Introduktion och avslut', exact: true });
+/** Its row, which Astryx marks as the current one. */
+const adminItem = (page: Page) =>
+  page
+    .getByRole('navigation', { name: 'Administration', exact: true })
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('link', { name: 'Introduktion och avslut', exact: true }) });
 const goodFile = [
   'layer;event;condition;value;title;kind;owner;offsetDays;tiedTo',
   'Alla nyanställda;introduction;all;;Beställ dator och telefon;order;manager;-14;',
@@ -67,7 +73,7 @@ test.describe('Administration › Introduktion och avslut', () => {
     await adminRow(page).click();
     await expect(page).toHaveURL('/admin/boarding');
     await expect(page).toHaveTitle('Introduktion och avslut · Startsidan');
-    await expect(adminRow(page)).toHaveAttribute('aria-current', 'page');
+    await expect(adminItem(page)).toHaveAttribute('aria-current', 'true');
     await expect(page.getByRole('heading', { level: 1, name: 'Introduktion och avslut' })).toBeVisible();
     const intro = page.getByRole('table', { name: 'Lager för introduktion' });
     await expect(intro.getByRole('columnheader')).toHaveText(['Lager', 'Gäller', 'Punkter', 'Ändrad']);
@@ -99,7 +105,9 @@ test.describe('Administration › Introduktion och avslut', () => {
     api.capabilities = [...api.capabilities, 'admin.boarding'];
     await open(page, '/admin/connectors');
     await expect(
-      page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Anslutna system' }),
+      page
+        .getByRole('navigation', { name: 'Administration', exact: true })
+        .getByRole('link', { name: 'Anslutna system' }),
     ).toBeVisible();
     await expect(adminRow(page)).toHaveCount(0);
     await open(page, '/admin/boarding');

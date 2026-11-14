@@ -1321,7 +1321,7 @@
       "number": 112,
       "path": "docs/decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
       "title": "D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
-      "status": "provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone); items 6 and 7 refined by [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) (2026-11-12, provisional: a tool's page is every view's page, and the panel holds a view only when the view is one thing; a list or a table opened anywhere is its page); item 3's row gains the state's word by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) item 9 (2026-11-13, provisional, built), and item 5's person page is redrawn by its item 6 (not built)",
+      "status": "provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone); items 6 and 7 refined by [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) (2026-11-12, provisional: a tool's page is every view's page, and the panel holds a view only when the view is one thing; a list or a table opened anywhere is its page); item 3's row gains the state's word by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) item 9 (2026-11-13, provisional, built), and item 5's person page is redrawn by its item 6 (not built); the one panel with the assistant in it (item 7, and \"Öppna som sida\"), the rail of item 1 and Hem's blocks as item 2 drew them are replaced by [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) (2026-11-14, provisional: one page per thing, a pane only beside the queue and beside a conversation, the assistant on Hem and the conversation's page)",
       "date": "2026-11-11",
       "area": "ui"
     },
@@ -1357,7 +1357,7 @@
       "number": 116,
       "path": "docs/decisions/D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md",
       "title": "D116 · A panel is a peek at one thing; a list is a page, and every view has an address",
-      "status": "provisional (product owner, 2026-11-12; accepted when a manager outside the repository has worked through a list reached from Hem and back, and one connector author has known from the guide alone where their table and their record open; no manual screen-reader pass yet); amended 2026-11-12 (product owner): a system that does not answer is said where its content is missing, not as a banner at the top of the page, which replaces [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md)'s artboard 8 rule and the banner drawn under [D8](D08-every-action-works-without-the-model.md) for it; its first application, a unit of the organisation tree as a page, was withdrawn when merged with `main` on 2026-11-13, where [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) keeps the unit in its drawer ([open questions](../maintainers/open-questions.md))",
+      "status": "provisional (product owner, 2026-11-12; accepted when a manager outside the repository has worked through a list reached from Hem and back, and one connector author has known from the guide alone where their table and their record open; no manual screen-reader pass yet); amended 2026-11-12 (product owner): a system that does not answer is said where its content is missing, not as a banner at the top of the page, which replaces [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md)'s artboard 8 rule and the banner drawn under [D8](D08-every-action-works-without-the-model.md) for it; its first application, a unit of the organisation tree as a page, was withdrawn when merged with `main` on 2026-11-13, where [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) keeps the unit in its drawer ([open questions](../maintainers/open-questions.md)); the peek panel is replaced by [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) (2026-11-14, provisional): a list is still a page, and a single thing is now a page too",
       "date": "2026-11-12",
       "area": "ui"
     },
@@ -1522,6 +1522,24 @@
       "status": "provisional (the product owner's statements of 2026-11-13 and 2026-11-14, in substance: an assistant in another system is indivisible, so Clew asks it and never reaches into its knowledge; only the person's own message and what they choose goes there, and Clew adds and rewrites nothing; the handover is the person's own choice, sticky and visible; what may leave the Clew chat is closed by default and opened by a mark from the source; a person may send data about themselves and never about another person. They approved the plan this record follows on 2026-11-14. Items 1 to 9 are built on the hello connector's example assistant and against recorded answers of Eneo's API; item 10 is not built, and of item 11 the source's own finding read is not; item 13's hold knows names and card titles only; Eneo serves the protocol itself (item 9) and a real Eneo assistant has answered through it, by the person's pick and by the model's choice, on one development machine. Nothing outside the repository has tested it: no real Eneo has been asked)",
       "date": "2026-11-14",
       "area": "assistant, integrations"
+    },
+    {
+      "key": "D126-one-page-per-thing-one-astryx-template-per-page-type",
+      "number": 126,
+      "path": "docs/decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md",
+      "title": "D126 · One page per thing, and one Astryx template per page type",
+      "status": "provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation)",
+      "date": "2026-11-14",
+      "area": "ui"
+    },
+    {
+      "key": "D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone",
+      "number": 127,
+      "path": "docs/decisions/D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md",
+      "title": "D127 · A read can say its rows are a read about people, asked for everyone, and then has one place",
+      "status": "provisional (the product owner found on 2026-11-14 that Hem's \"Frånvaro per person\" still opened a page of its own beside Personal's Frånvaro tab; the field is built and the HR fixture and Clew's talks module declare it, and nothing outside the repository has declared or tested it)",
+      "date": "2026-11-14",
+      "area": "integrations, ui"
     }
   ],
   "documents": [
@@ -2270,6 +2288,18 @@
     {
       "path": "docs/decisions/D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md",
       "title": "D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md",
+      "title": "D126 · One page per thing, and one Astryx template per page type",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md",
+      "title": "D127 · A read can say its rows are a read about people, asked for everyone, and then has one place",
       "category": "decision-history",
       "headings": []
     },
@@ -3066,7 +3096,7 @@
       "title": "Where things open",
       "category": "integrator-guide",
       "headings": [
-        "The page and the panel",
+        "One page per thing",
         "What you declare, and where Clew shows it",
         "`target` and `confirm`",
         "`asks` and `effect`",
@@ -3185,6 +3215,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Waiting for the product owner",
+        "After the redesign on one pattern (D126)",
         "Handing a conversation to another system's assistant (D125)",
         "Records whose status needs a look",
         "Accessibility"
@@ -3374,9 +3405,11 @@
         "Type levels and the area mark",
         "Initial page loading",
         "The rail",
-        "The panel and the assistant beside a thing",
+        "The conversation and the thing beside it",
         "Adding to the box",
-        "Hem under the box"
+        "Hem under the box",
+        "Alla verktyg and a tool's page",
+        "Administration's frame"
       ]
     },
     {
@@ -4454,6 +4487,17 @@
         "What to keep",
         "Verification",
         "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-14-one-pattern-on-astryx-and-the-library-question.md",
+      "title": "One pattern on Astryx, and the library question",
+      "category": "review-history",
+      "headings": [
+        "The library question",
+        "What the critique found",
+        "The proposal, as the canvas draws it",
+        "What this would change, and what is open"
       ]
     },
     {

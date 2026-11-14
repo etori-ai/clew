@@ -20,14 +20,18 @@ connector, and imports nothing from the rest of the repository (D21). Start with
 
 A manager of the unit (role `manager`, unit `unit-skola` after `FIXTURE_UNIT_MAP`) gets the area `employees`: who is at
 work, absence per person with the rehab pattern (`hr.absenceOverview`, each row naming the employee by user name in
-`person`, the view's `subject`, so the name leads to the person in Clew and the pattern is the row's own link, "Mönster"),
-the leave requests waiting, the figure "Sjukfrånvaro n %" against the target, opening absence per person (D54), and the cards
+`person`, the view's `subject`, so the name leads to the person in Clew and the pattern is the row's own link, "Mönster";
+its rows are `hr.person`'s asked for everyone, `byKey`, so where an administrator offers that lens on Personal whatever
+opens the overview leads to Personal's Frånvaro tab,
+[D127](../../docs/decisions/D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md)),
+the leave requests waiting (each row naming the employee by user name, `subject`), the figure "Sjukfrånvaro n %" against
+the target, opening absence per person (D54), and the cards
 the scan pushes (a rehab talk to book, each leave request to decide). The same manager is answered `hr.person`, a read about a person
 ([D97](../../docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): asked with a batch of
 user names (`{ keys }`, at most 200), it gives one row per employee of the manager's unit here, `{ key, ref, presence,
-today, upcoming }`, the key as it was asked: "I tjänst", or the absence ("Sjuk · dag 1", "Sjukskriven", "VAB",
-"Semester") as the column Närvaro on Personal, today in a few words, and the next known absence, a leave request not yet
-decided saying so. Anyone else, an unknown key and a key asked twice are no row; an employee is refused by the scope.
+today, upcoming, short, vab, long, periods }`, the key as it was asked: "I tjänst", or the absence ("Sjuk · dag 1",
+"Sjukskriven", "VAB", "Semester") as the column Närvaro on Personal, today in a few words, the next known absence, a
+leave request not yet decided saying so, and the last six months as the overview counts them. Anyone else, an unknown key and a key asked twice are no row; an employee is refused by the scope.
 It declares `person: { admits: ['managed'] }`, so Clew sends it only the manager's own reports and tells it each key's
 relation in the request body the assertion is bound to
 ([D117](../../docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md));

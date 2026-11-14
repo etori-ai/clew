@@ -130,6 +130,12 @@ export const attentionSpec: PanelViewSpec = {
   connector: 'competence',
   source: 'Kompetens',
   chip: false,
+  // The people the rows name, by the key on the row, as the server resolves them (D122): a name links to the page.
+  people: {
+    'anna.lindqvist': 'anna.lindqvist',
+    'erik.sandstrom': 'erik.sandstrom',
+    'maria.kallstrom': 'maria.kallstrom',
+  },
 };
 const due = (userName: string, name: string, competence: string, status: string, expiresOn: string) => ({
   ref: `holding:competence:${userName}-${competence.toLowerCase()}`,

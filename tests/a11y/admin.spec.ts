@@ -28,6 +28,15 @@ async function pickSection(page: import('@playwright/test').Page, name: string) 
   await page.getByRole('menuitem', { name }).click();
   return page.getByRole('region', { name });
 }
+/**
+ * A section's row in the administration's own panel (D126). Astryx marks the row, not its link, as the current one, so
+ * the row is found by the link it holds.
+ */
+const sectionRow = (page: import('@playwright/test').Page, name: string) =>
+  page
+    .getByRole('navigation', { name: 'Administration', exact: true })
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('link', { name, exact: true }) });
 const routes = [
   ['the connectors list', '/admin/connectors'],
   ['a bundled connector', '/admin/connectors/calendar'],
@@ -102,45 +111,47 @@ test.describe('administration', () => {
       await expectNoAxeViolations(page);
     });
     test('the entry point shows only to an administrator', async ({ page, api }) => {
+      const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
       await open(page, '/');
-      await expect(page.getByRole('button', { name: 'Administration' })).toHaveCount(0);
+      await expect(rail.getByRole('link', { name: 'Administration', exact: true })).toHaveCount(0);
       api.admin = true;
       await open(page, '/');
-      await expect(page.getByRole('button', { name: 'Administration' })).toBeVisible();
+      await expect(rail.getByRole('link', { name: 'Administration', exact: true })).toBeVisible();
     });
-    test('Administration opens and closes like Områden, and its rows change the page and keep the rail', async ({
+    test('the rail’s one row opens the first section, and the administration’s own panel changes the page and keeps the rail (D126)', async ({
       page,
       api,
     }) => {
       api.admin = true;
       await open(page, '/');
       const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
-      const administration = rail.getByRole('button', { name: 'Administration', exact: true });
-      await expect(administration).toHaveAttribute('aria-expanded', 'false');
+      // The sections are no longer rows of the rail: the rail has one row, the administration lists them itself.
       await expect(rail.getByRole('link', { name: 'Modeller', exact: true })).toHaveCount(0);
-      await administration.click();
-      await expect(administration).toHaveAttribute('aria-expanded', 'true');
-      await rail.getByRole('link', { name: 'Anslutna system', exact: true }).click();
+      await rail.getByRole('link', { name: 'Administration', exact: true }).click();
+      // `/admin` gives way to the first section, so Back does not return to a page that only moves on.
       await expect(page).toHaveURL('/admin/connectors');
       await expect(page.getByRole('heading', { level: 1, name: 'Anslutna system' })).toBeVisible();
+      const sections = page.getByRole('navigation', { name: 'Administration', exact: true });
+      await expect(sections.getByRole('heading', { level: 2, name: 'Administration' })).toBeVisible();
+      await expect(sectionRow(page, 'Anslutna system')).toHaveAttribute('aria-current', 'true');
       await expect(rail.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
       await expect(rail.getByRole('link', { name: 'Kalender', exact: true })).toBeVisible();
-      await expect(rail.getByRole('link', { name: 'Anslutna system', exact: true })).toHaveAttribute(
+      await expect(rail.getByRole('link', { name: 'Administration', exact: true })).toHaveAttribute(
         'aria-current',
         'page',
       );
-      await rail.getByRole('link', { name: 'Modeller', exact: true }).click();
+      await sections.getByRole('link', { name: 'Modeller', exact: true }).click();
       await expect(page).toHaveURL('/admin/models');
       await expect(page.getByRole('heading', { level: 1, name: 'Modeller' })).toBeVisible();
       await expect(rail.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
-      await expect(rail.getByRole('link', { name: 'Modeller', exact: true })).toHaveAttribute('aria-current', 'page');
+      await expect(sectionRow(page, 'Modeller')).toHaveAttribute('aria-current', 'true');
       await expectNoAxeViolations(page);
-      await administration.focus();
-      await page.keyboard.press('Enter');
-      await expect(administration).toHaveAttribute('aria-expanded', 'false');
-      await expect(rail.getByRole('link', { name: 'Modeller', exact: true })).toHaveCount(0);
-      await page.keyboard.press('Enter');
-      await expect(administration).toHaveAttribute('aria-expanded', 'true');
+      // A thing in a section keeps the section marked and has the way back to it above its title.
+      await open(page, '/admin/connectors/finance');
+      await expect(sectionRow(page, 'Anslutna system')).toHaveAttribute('aria-current', 'true');
+      // The way back stands in the page's head, after the panel's row of the same name.
+      await page.getByRole('main').getByRole('link', { name: 'Anslutna system', exact: true }).last().click();
+      await expect(page).toHaveURL('/admin/connectors');
     });
     test('the list is in registration order with each system’s colour named; the area chip names the area (D71)', async ({
       page,
@@ -542,7 +553,36 @@ test.describe('administration', () => {
     });
   });
 
+  test.describe('phone', () => {
+    test.use({ viewport: phone });
+    test('the sections are a list at /admin, and each section has the way back to it (the settings-sidebar template)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin');
+      await expect(page).toHaveURL('/admin');
+      await expect(page.getByRole('heading', { level: 1, name: 'Administration' })).toBeVisible();
+      const sections = page.getByRole('list', { name: 'Administration' });
+      await expect(sections.getByRole('link', { name: 'Modeller', exact: true })).toBeVisible();
+      await expectNoAxeViolations(page);
+      await sections.getByRole('link', { name: 'Anslutna system', exact: true }).click();
+      await expect(page).toHaveURL('/admin/connectors');
+      await expect(page.getByRole('heading', { level: 1, name: 'Anslutna system' })).toBeVisible();
+      // No panel beside the page on a phone: the head's way back leads to the list.
+      await expect(page.getByRole('navigation', { name: 'Administration', exact: true })).toHaveCount(0);
+      await page.getByRole('main').getByRole('link', { name: 'Administration', exact: true }).click();
+      await expect(page).toHaveURL('/admin');
+    });
+  });
+
   test.describe('1.4.10 reflow', () => {
+    test('the sections and the list reflow at 320 px', async ({ page, api }) => {
+      api.admin = true;
+      await page.setViewportSize(narrow);
+      await open(page, '/admin');
+      expect(await reflowProblems(page)).toEqual([]);
+    });
     test('the list and a connector reflow at 320 px', async ({ page, api }) => {
       api.admin = true;
       await page.setViewportSize(narrow);

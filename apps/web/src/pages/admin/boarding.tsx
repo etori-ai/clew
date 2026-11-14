@@ -27,7 +27,6 @@ import { conditionWords, itemsWords, longDay, unitLabelOf } from '../../boarding
 import { boardingLayersQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
-import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
 import { AdminShell } from './shell';
 
@@ -57,24 +56,21 @@ export function AdminBoardingPage({ user }: { user: SessionUser }) {
     <AdminShell
       user={user}
       section="introduktion"
-      crumbs={[{ label: 'Introduktion och avslut' }]}
+      title="Introduktion och avslut"
+      meta={
+        <Text as="p" type="supporting" color="secondary">
+          Lagren som en chefs plan byggs av när en introduktion eller ett avslut startas. Varje lager är en lista med
+          punkter och gäller alla, en enhet med enheterna under den, en befattning eller en anställningsform. En plan
+          som redan har startats behåller sina punkter.
+        </Text>
+      }
+      action={
+        !refused && query.data ? (
+          <Button variant="secondary" label="Importera från fil" href={BOARDING_IMPORT_PATH} />
+        ) : undefined
+      }
       pending={query.isPending}
     >
-      <PageHeader
-        title="Introduktion och avslut"
-        meta={
-          <Text as="p" color="secondary">
-            Lagren som en chefs plan byggs av när en introduktion eller ett avslut startas. Varje lager är en lista med
-            punkter och gäller alla, en enhet med enheterna under den, en befattning eller en anställningsform. En plan
-            som redan har startats behåller sina punkter.
-          </Text>
-        }
-        end={
-          !refused && query.data ? (
-            <Button variant="secondary" label="Importera från fil" href={BOARDING_IMPORT_PATH} />
-          ) : undefined
-        }
-      />
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}

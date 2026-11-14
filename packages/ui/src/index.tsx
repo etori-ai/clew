@@ -107,6 +107,8 @@ export {
   useTableSelection,
   // Headers that sort, the order held by the page and read on the server (Kompetenssökning).
   useTableSortable,
+  // A row's status in a narrow gutter: the row open in Att göra's reading pane (D126).
+  useTableRowStatus,
 } from '@astryxdesign/core/Table';
 export type { TableColumn, TablePlugin, TableSortState } from '@astryxdesign/core/Table';
 // A searchable choice of several, over a search on the server (Kompetenssökning's types).
@@ -147,11 +149,14 @@ export {
   useStreamingText,
 } from '@astryxdesign/core/hooks';
 export { Lightbox } from '@astryxdesign/core/Lightbox';
+// An image of evidence at its column's width, at its own proportions (the review's scanned invoice, D126).
+export { AspectRatio } from '@astryxdesign/core/AspectRatio';
 export type { AnimatedLayout } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
 export {
   AcademicCapIcon,
   ArrowDownTrayIcon,
+  ArrowLeftIcon,
   ArrowPathIcon,
   ArrowsPointingOutIcon,
   AtSymbolIcon,
@@ -161,6 +166,7 @@ export {
   ChatBubbleLeftRightIcon,
   CheckCircleIcon,
   ClipboardDocumentCheckIcon,
+  Cog6ToothIcon,
   DocumentTextIcon,
   HomeIcon,
   InboxIcon,
@@ -174,6 +180,7 @@ export {
   Squares2X2Icon,
   UserCircleIcon,
   UsersIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 // The area mark (D71): the system's hue in registration order, the area's icon, the word always beside them.

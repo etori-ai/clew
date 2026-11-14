@@ -15,9 +15,8 @@ import {
 } from './support';
 
 /**
- * One unit's follow-up dialogue (D118) as a focused overlay over the unit's page (D83, D111 rule 5): an end Drawer on a
- * desktop, a tall sheet on a phone, at the page's own address with `dialog=<unitId>`. The way in is the Dialog section's
- * "Öppna dialogen". The areas are tabs; an assessed area has its state per dimension with a form and the history, every
+ * One unit's follow-up dialogue (D118) as the Dialog tab of the unit's page (D126 rule 3: nothing opens over a page), at
+ * `/units/<id>?section=dialogue.unit`; an address that laid it over the page (`?dialog=<unitId>`) leads there. The areas are tabs; an assessed area has its state per dimension with a form and the history, every
  * area its questions, its activities with a form to add one, and the reader's own notes (D120). `Dialogues` answers `/api/dialogue/**` from memory, as
  * the server would, so a write is read back.
  */
@@ -197,8 +196,9 @@ class Dialogues {
     );
   }
 }
-const drawer = (page: Page) =>
-  page.getByRole('dialog', { name: `Uppföljningsdialog med ${ENTITY_UNIT.label}`, exact: true });
+/** The dialogue's tab of the unit's page (D126 rule 3: nothing opens over the page), the section of its source. */
+const drawer = (page: Page) => page.getByRole('main').getByRole('region', { name: 'Dialog', exact: true });
+const TAB = `${school}?section=${DIALOGUE_UNIT}`;
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
 async function setUp(page: Page) {
   await new DialogueUnits().route(page);
@@ -214,15 +214,17 @@ for (const [layout, viewport] of [
   test.describe(`the dialogue on ${layout}`, () => {
     test.use({ viewport });
 
-    test('it opens over the unit’s page on the area to watch, read as an agenda; axe holds and every focus stop is marked', async ({
+    test('it is the unit’s Dialog tab, an address that laid it over the page leads there, and it opens on the area to watch, read as an agenda; axe holds and every focus stop is marked', async ({
       page,
       api: _,
     }) => {
       await setUp(page);
       await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+      await expect(page).toHaveURL(TAB);
       const dialog = drawer(page);
       await expect(dialog).toBeVisible();
-      await expect(page).toHaveTitle(`Uppföljningsdialog med ${ENTITY_UNIT.label} · Startsidan`);
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(page).toHaveTitle(`Dialog · ${ENTITY_UNIT.label} · Startsidan`);
       const tabs = dialog.getByRole('tablist', { name: 'Områden' });
       await expect(tabs.getByRole('tab')).toHaveCount(2);
       // Each tab says its area's state, and the drawer opens on the area that needs a conversation most.
@@ -279,16 +281,19 @@ for (const [layout, viewport] of [
 test.describe('the dialogue by keyboard', () => {
   test.use({ viewport: desktop });
 
-  test('open from the section, assess, add an activity, mark it done with a note, open it again, remove a done one, close', async ({
+  test('open from the unit’s tab, assess, add an activity, mark it done with a note, open it again, remove a done one', async ({
     page,
     api: _,
   }) => {
     const d = await setUp(page);
     await open(page, school);
-    const way = page.getByRole('main').getByRole('link', { name: 'Öppna dialogen' });
-    await expect(way).toHaveAttribute('href', `${school}?dialog=${ENTITY_UNIT.id}`);
+    const way = page
+      .getByRole('navigation', { name: `Om ${ENTITY_UNIT.label}` })
+      .getByRole('link', { name: 'Dialog', exact: true });
+    await expect(way).toHaveAttribute('href', TAB);
     await way.focus();
     await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(TAB);
     const dialog = drawer(page);
     await expect(dialog).toBeVisible();
     const panel = dialog.getByRole('tabpanel', { name: 'Verksamhet' });
@@ -368,12 +373,8 @@ test.describe('the dialogue by keyboard', () => {
     await expect(panel.getByRole('heading', { name: 'Aktiviteter', exact: true })).toBeFocused();
     await expect(panel.getByRole('list', { name: 'Klara aktiviteter' })).toHaveCount(0);
 
-    // Escape closes the dialogue: the page is as it was, the focus on the way in.
-    await dialog.getByRole('tab', { name: /Verksamhet/ }).focus();
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
-    await expect(page).toHaveURL(school);
-    await expect(way).toBeFocused();
+    // The dialogue is the page's tab: nothing closes, and the address stays the tab's.
+    await expect(page).toHaveURL(TAB);
   });
 
   test('a note of one’s own: written, changed and removed by keyboard, the focus never lost, blank said on the field', async ({
@@ -381,7 +382,7 @@ test.describe('the dialogue by keyboard', () => {
     api: _,
   }) => {
     const d = await setUp(page);
-    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+    await open(page, TAB);
     const panel = drawer(page).getByRole('tabpanel', { name: 'Verksamhet' });
     const notes = panel.getByRole('region', { name: 'Mina anteckningar' });
     const list = notes.getByRole('list', { name: 'Mina anteckningar' });
@@ -453,25 +454,12 @@ test.describe('the dialogue by keyboard', () => {
     await expect(notes.getByRole('heading', { name: 'Mina anteckningar' })).toBeFocused();
   });
 
-  test('closed after arriving by a direct link, the focus goes to the section’s way in, never the page’s body', async ({
-    page,
-    api: _,
-  }) => {
-    await setUp(page);
-    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
-    await expect(drawer(page)).toBeVisible();
-    await expect(page.getByRole('main').getByRole('link', { name: 'Öppna dialogen' })).toBeAttached();
-    await page.keyboard.press('Escape');
-    await expect(drawer(page)).toBeHidden();
-    await expect(page.getByRole('main').getByRole('link', { name: 'Öppna dialogen' })).toBeFocused();
-  });
-
   test('the other areas are hidden until found, and find in page reaching one selects its tab', async ({
     page,
     api: _,
   }) => {
     await setUp(page);
-    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+    await open(page, TAB);
     const dialog = drawer(page);
     await expect(dialog.getByRole('tabpanel', { name: 'Verksamhet' })).toBeVisible();
     const sick = dialog.locator('[role="tabpanel"][aria-label="Sjukfrånvaro"]');
@@ -487,7 +475,7 @@ test.describe('the dialogue by keyboard', () => {
 
   test('text being written survives a change of tab', async ({ page, api: _ }) => {
     await setUp(page);
-    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+    await open(page, TAB);
     const dialog = drawer(page);
     const panel = dialog.getByRole('tabpanel', { name: 'Verksamhet' });
     await panel.getByRole('button', { name: 'Lägg till aktivitet i Verksamhet' }).click();
@@ -499,7 +487,7 @@ test.describe('the dialogue by keyboard', () => {
 
   test('blank text is said on the field and nothing is sent', async ({ page, api: _ }) => {
     const d = await setUp(page);
-    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+    await open(page, TAB);
     const panel = drawer(page).getByRole('tabpanel', { name: 'Verksamhet' });
     await panel.getByRole('button', { name: 'Lägg till aktivitet i Verksamhet' }).click();
     const add = panel.getByRole('form', { name: 'Ny aktivitet' });
@@ -510,29 +498,28 @@ test.describe('the dialogue by keyboard', () => {
     expect(d.writes).toEqual([]);
   });
 
-  test('a unit the reader does not follow up is the dialogue that is not there, with the way back', async ({
+  test('a unit the reader does not follow up is the dialogue that is not there, said in the tab', async ({
     page,
     api: _,
   }) => {
     const d = await setUp(page);
     d.refused = true;
-    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
-    const dialog = page.getByRole('dialog', { name: 'Uppföljningsdialogen finns inte' });
-    await expect(dialog.getByRole('heading', { name: 'Uppföljningsdialogen finns inte' }).first()).toBeVisible();
-    await dialog.getByRole('button', { name: `Tillbaka till ${ENTITY_UNIT.label}` }).click();
-    await expect(page).toHaveURL(school);
+    await open(page, TAB);
+    await expect(drawer(page).getByRole('heading', { name: 'Uppföljningsdialogen finns inte' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: ENTITY_UNIT.label })).toBeVisible();
+    await expectNoAxeViolations(page);
   });
 
   test('reflows at 320 px', async ({ page, api: _ }) => {
     await setUp(page);
     await page.setViewportSize(narrow);
-    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+    await open(page, TAB);
     const dialog = drawer(page);
     await expect(dialog).toBeVisible();
     await dialog
       .getByRole('tabpanel', { name: 'Verksamhet' })
       .getByRole('button', { name: /Ny bedömning/ })
       .click();
-    expect(await reflowProblems(page, dialog)).toEqual([]);
+    expect(await reflowProblems(page)).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import { Registry, type Connector } from '../../packages/connectors/src/index';
+import { openGovernance, Registry, type Connector } from '../../packages/connectors/src/index';
 import { remoteConnector } from '../../packages/connectors/src/remote';
 import { describe, expect, test } from 'bun:test';
 import Ajv from 'ajv';
@@ -456,6 +456,65 @@ describe('a capability about an entity (D97)', () => {
       }
     }
   });
+  test('a table of people may say its rows are the read about a person asked for everyone (byKey, D127)', () => {
+    const round = {
+      name: 'appraisals.round',
+      kind: 'read',
+      title: 'Omgången',
+      description: 'Omgången, en rad per person.',
+      input: { type: 'object', properties: {} },
+      output: rows({ type: 'object', properties: { person: { type: 'string' }, state: { type: 'string' } } }),
+      model: true,
+      scope: { roles: ['manager'] },
+      view: {
+        kind: 'table',
+        title: 'state',
+        fields: [{ key: 'state', label: 'Samtal' }],
+        subject: { entity: 'person', key: 'person' },
+        byKey: 'appraisals.person',
+      },
+    };
+    const withRound = edited(talks, m => m.capabilities.push(round));
+    expect(manifestProblems(withRound, 'appraisals')).toEqual([]);
+    // The registry lists it on the read about a person, for a reader who may call it.
+    const registry = new Registry();
+    registry
+      .register(remoteConnector(parseManifest(withRound, 'appraisals'), { url: 'http://x', assert: async () => '' }))
+      .govern('appraisals', openGovernance());
+    const actor = { id: 'p', role: 'manager', unitId: 'u', unitLabel: 'U', organisationId: 'o' } as never;
+    expect(registry.aboutReads(actor, 'person').map(r => [r.name, r.overviews])).toEqual([
+      ['appraisals.person', ['appraisals.round']],
+    ]);
+    // The round is a manager's: for anyone else the read about a person names no overview.
+    expect(
+      registry
+        .aboutReads({ ...(actor as object), role: 'employee' } as never, 'person')
+        .map(r => [r.name, r.overviews]),
+    ).toEqual([['appraisals.person', undefined]]);
+    const broken: Array<[string, (c: any) => void, RegExp]> = [
+      ['without subject', c => delete c.view.subject, /declare them in subject/],
+      ['on a read that requires input', c => (c.input = keys()), /requires input cannot declare it/],
+      [
+        'naming a read about nobody',
+        c => (c.view.byKey = 'appraisals.commitments'),
+        /not a read of this connector about a person/,
+      ],
+      [
+        'naming a read about units',
+        c => (c.view.byKey = 'appraisals.units'),
+        /not a read of this connector about a person/,
+      ],
+      ['naming itself', c => (c.view.byKey = 'appraisals.round'), /not a read of this connector about a person/],
+      ['naming another system', c => (c.view.byKey = 'hr.person'), /not a read of this connector about a person/],
+    ];
+    for (const [what, change, problem] of broken) {
+      const document = edited(withRound, m => change(m.capabilities.at(-1)));
+      expect({ what, problems: manifestProblems(document, 'appraisals') }).toEqual({
+        what,
+        problems: [expect.stringMatching(problem)],
+      });
+    }
+  });
   test('the preview says which read opens which, who would see each place, and rows to draw them with', () => {
     const preview = previewManifest(talks, { id: 'appraisals' });
     expect(validPreview(preview)).toBe(true);
@@ -561,6 +620,16 @@ describe('a capability about an entity (D97)', () => {
         'a row that opens another system',
         edited(talks, m => (m.capabilities[0].view.open.capability = 'appraisals.nothing')),
         { path: 'capabilities[0].view.open.capability', anchor: 'rule-row-opens-own-read' },
+      ],
+      [
+        'a table of people whose byKey names a read about nobody',
+        edited(talks, m => {
+          m.capabilities[2].input = { type: 'object', properties: {} };
+          delete m.capabilities[2].about;
+          m.capabilities[2].view.byKey = 'appraisals.commitments';
+          m.capabilities[2].view.subject = { entity: 'person', key: 'key' };
+        }),
+        { path: 'capabilities[2].view.byKey', anchor: 'rule-view-by-key-names-a-read-about-the-subject' },
       ],
       [
         'a subject the record lacks',

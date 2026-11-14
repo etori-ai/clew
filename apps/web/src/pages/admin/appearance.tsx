@@ -48,7 +48,6 @@ import { errorMessage } from '../../query-policy';
 import { useAdminAction } from '../../mutations';
 import { usePageTitle } from '../../page-title';
 import { setBranding } from '../../branding';
-import { PageHeader } from '../../components/page-header';
 import { AdminShell } from './shell';
 
 /**
@@ -434,21 +433,23 @@ export function AdminAppearancePage({ user }: { user: SessionUser }) {
     setBranding(view);
   };
   return (
-    <AdminShell user={user} section="utseende" crumbs={[{ label: 'Utseende' }]} pending={query.isPending}>
-      <PageHeader
-        title="Utseende"
-        meta={
-          <Text type="supporting">
-            Temat och logotypen gäller hela installationen och ändras direkt, utan omstart.
-            {data?.updatedAt && data.updatedBy ? (
-              <>
-                {' '}
-                Senast ändrat av {data.updatedBy} <Timestamp value={data.updatedAt} format="date_time" />.
-              </>
-            ) : null}
-          </Text>
-        }
-      />
+    <AdminShell
+      user={user}
+      section="utseende"
+      title="Utseende"
+      meta={
+        <Text type="supporting" color="secondary">
+          Temat och logotypen gäller hela installationen och ändras direkt, utan omstart.
+          {data?.updatedAt && data.updatedBy ? (
+            <>
+              {' '}
+              Senast ändrat av {data.updatedBy} <Timestamp value={data.updatedAt} format="date_time" />.
+            </>
+          ) : null}
+        </Text>
+      }
+      pending={query.isPending}
+    >
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}

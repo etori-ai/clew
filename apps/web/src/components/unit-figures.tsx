@@ -86,7 +86,8 @@ export function KeyFigureTiles({ answers }: { answers: SectionAnswer[] }) {
         <Card key={source.capability} padding={4}>
           <VStack gap={2}>
             <Text type="supporting">{source.title}</Text>
-            <Text type="display-3" hasTabularNumbers>
+            {/* The same figure as Hem's Läget draws (board Hem): semibold, proportional figures. */}
+            <Text type="display-3" weight="semibold">
               {fieldText(title, row[title.key])}
             </Text>
             {summary.state && <StateWords field={summary.state} value={row[summary.state.key]} tone={summary.tone} />}

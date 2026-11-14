@@ -15,6 +15,8 @@ import { competenceConversation } from './data';
 import { competenceTypes } from './competence';
 
 test.use({ viewport: desktop });
+/** Hem's heading (board Hem): the greeting at the mocked clock, as `hem.spec.ts` reads it. */
+const GREETING = 'God morgon, Testa';
 
 /**
  * A question on its way (D36): the question is drawn at once with its answer pending under it, the transcript's log is
@@ -67,7 +69,7 @@ test.describe('the answer on its way', () => {
     await input.press('Enter');
     await page.getByRole('button', { name: 'Stoppa' }).click();
     await expect(page.getByRole('log')).toHaveCount(0);
-    await expect(heading(page, 1, 'Vad vill du få gjort?')).toBeVisible();
+    await expect(heading(page, 1, GREETING)).toBeVisible();
     await expect(composer(page)).toHaveText('Vem är på plats?');
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Frågan avbröts'));
     await page.waitForTimeout(api.answerDelay + 500);
@@ -104,8 +106,9 @@ test.describe('the answer on its way', () => {
       expect(await entering(log)).toBe(reducedMotion === 'no-preference');
       release();
       await expect(log).not.toHaveAttribute('aria-busy', 'true');
-      await page.getByRole('button', { name: 'Stäng samtalet' }).click();
-      const greeting = heading(page, 1, 'Vad vill du få gjort?');
+      // Esc leads back to where the conversation was asked (the conversation's page has no close button, board Samtal).
+      await page.keyboard.press('Escape');
+      const greeting = heading(page, 1, GREETING);
       await expect(greeting).toBeVisible();
       expect(await entering(greeting)).toBe(reducedMotion === 'no-preference');
     });
@@ -118,7 +121,7 @@ test.describe('the answer on its way', () => {
     api.threads = [];
     await open(page, '/');
     const input = composer(page);
-    const greeting = (await heading(page, 1, 'Vad vill du få gjort?').boundingBox())!;
+    const greeting = (await heading(page, 1, GREETING).boundingBox())!;
     const top = (await input.boundingBox())!.y;
     expect(top).toBeGreaterThan(greeting.y);
     // The quiet page (D112 item 2): Behöver dig says that nothing does, and the day stands beside it.
@@ -175,8 +178,8 @@ test.describe('the cards in a conversation', () => {
     await expect(maria).toHaveAttribute('href', /^\/people\/maria\.kallstrom\?from=%2Fconversations%2Fkompetens/);
     await expect(log.getByText('Anna Lindqvist')).toHaveCount(0);
     await expect(log.getByText(/^1 av 4 rader\./)).toBeVisible();
-    // Where the answer came from is the turn's line; the answer's text carries no system and no time.
-    await expect(log.getByText('Assistenten · läste Krav som inte uppfylls', { exact: true })).toBeVisible();
+    // What the turn read is its call (board SamtalVerktyg); the answer's text carries no system and no time.
+    await expect(log.getByText('Läste Krav som inte uppfylls', { exact: true })).toBeVisible();
     await expect(log.getByText('Maria Källströms brandskydd går ut 20 januari 2027.', { exact: true })).toBeVisible();
     await expect(log.getByText(/Kompetens \d\d:\d\d/)).toHaveCount(0);
     // The older answer's card, folded in its place: its title, its system and its count as the turn recorded them.
@@ -224,5 +227,158 @@ test.describe('the cards in a conversation', () => {
     await folded.click();
     await expect(log.getByText('Brandskydd', { exact: true })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
+  });
+});
+
+/**
+ * A conversation about a thing (D126 rules 2 and 5, board Samtal): "Fråga Clew" on a thing's page lands on a new
+ * conversation's page, `/conversations/new` with the thing in its address. The header names the thing, the thing stands
+ * beside the transcript drawn with the queue's pane's parts, the box has the focus and nothing is sent until the person
+ * writes; the question then goes with the thing. ✕ lets go of the thing and keeps the conversation. Narrower, the thing
+ * is one link away in the header.
+ */
+test.describe('a conversation about a thing', () => {
+  const TITLE = 'Attestera 3 fakturor, 48 200 kr';
+  test('"Fråga Clew" lands on an empty conversation with the thing beside it, and nothing is sent until the person writes', async ({
+    page,
+    api,
+  }) => {
+    // Nothing on the way throws (the start page once failed at this address before it drew anything).
+    const errors: string[] = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await open(page, '/items/fakturor');
+    await page.getByRole('button', { name: 'Fråga Clew' }).first().click();
+    await expect(page).toHaveURL(/\/conversations\/new\?card=fakturor$/);
+    // The page says what it is before anything is written (the product owner, 2026-11-14): never "Nytt samtal" for a
+    // conversation about a thing.
+    await expect(heading(page, 1, `Fråga om ${TITLE}`)).toBeVisible();
+    await expect(page.getByText('Samtal med Clew', { exact: true })).toBeVisible();
+    const pane = page.getByRole('complementary', { name: TITLE });
+    // The pane's title is the link to the item's page, the decisions stand under it, and it has no "Fråga Clew".
+    await expect(pane.getByRole('link', { name: TITLE })).toHaveAttribute('href', /^\/items\/fakturor\?from=/);
+    await expect(pane.getByRole('button', { name: 'Fråga Clew' })).toHaveCount(0);
+    await expect(composer(page)).toBeFocused();
+    await expect(page.getByRole('log')).toHaveCount(0);
+    expect(api.asked).toHaveLength(0);
+    expect(errors).toEqual([]);
+    await expectNoAxeViolations(page);
+    // A reload is the same empty conversation, never Hem.
+    await page.reload();
+    await expect(heading(page, 1, `Fråga om ${TITLE}`)).toBeVisible();
+    await expect(pane.getByRole('link', { name: TITLE })).toBeVisible();
+    // The question goes with the thing, which keeps its place beside the conversation once it has an address.
+    await composer(page).fill('Vem är på plats?');
+    await composer(page).press('Enter');
+    await expect(page.getByRole('log')).toContainText('Tio personer är på plats i dag.');
+    expect(api.asked.at(-1)).toMatchObject({ text: 'Vem är på plats?', chips: [{ ref: 'thread:fakturor' }] });
+    // Once asked, the question is the title and the line under it says what the conversation is about.
+    await expect(page.getByText(`Samtal med Clew\u00a0· om ${TITLE}`, { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/conversations\/konversation\?card=fakturor$/);
+    // The thing's chip is not drawn again above the question: it stands beside it.
+    await expect(page.getByRole('log').getByText(TITLE)).toHaveCount(0);
+    // ✕ lets go of the thing; the conversation stays and the box has the focus.
+    await pane.getByRole('button', { name: 'Stäng ärendet' }).click();
+    await expect(page).toHaveURL(/\/conversations\/konversation$/);
+    await expect(page.getByRole('complementary', { name: TITLE })).toHaveCount(0);
+    await expect(composer(page)).toBeFocused();
+  });
+  test('Esc in the pane lets go of the thing, and Esc in the conversation leads back to where it was asked', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/items/fakturor');
+    await page.getByRole('button', { name: 'Fråga Clew' }).first().click();
+    const pane = page.getByRole('complementary', { name: TITLE });
+    await pane.getByRole('link', { name: TITLE }).focus();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(/\/conversations\/new$/);
+    await expect(composer(page)).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(/\/items\/fakturor$/);
+  });
+  for (const [layout, viewport] of [
+    ['a laptop', { width: 1024, height: 768 }],
+    ['320 px', narrow],
+  ] as const)
+    test(`at ${layout} the thing is one link away in the header, and nothing scrolls sideways`, async ({
+      page,
+      api: _,
+    }) => {
+      await page.setViewportSize(viewport);
+      await open(page, '/conversations/new?card=fakturor');
+      await expect(page.getByRole('complementary', { name: TITLE })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: TITLE })).toHaveAttribute('href', /^\/items\/fakturor\?from=/);
+      expect(await reflowProblems(page)).toEqual([]);
+      await expectNoAxeViolations(page);
+    });
+});
+
+/**
+ * The assistant drafts, the person decides (D112 item 8), on the conversation's page since the panel with a box of its
+ * own left the pages (D126 rules 2 and 5): the item stands beside the transcript, and the draft in the transcript opens
+ * the item's own action dialog at its last and its first step. The mock answers "Boka det …" with a draft of "Boka
+ * samtalet" on the rehab item (`data.ts`).
+ */
+test.describe('the assistant drafts, the person decides (D112 item 8)', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  const ask = async (page: Page, text: string) => {
+    const box = composer(page);
+    await box.fill(text);
+    await box.press('Enter');
+  };
+
+  test('a draft shows its values with Utkast; Granska och boka opens the dialog at its last step and Ändra at its first; once sent the draft says so', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/conversations/new?card=omtanke');
+    await ask(page, 'Boka det på fredag och skriv något vänligt');
+    const log = page.getByRole('log');
+    const draft = log.getByRole('region', { name: 'Utkast: Boka samtalet' });
+    await expect(draft.getByText('Utkast', { exact: true })).toBeVisible();
+    await expect(draft.getByText('Rum 12')).toBeVisible();
+    await expect(draft.getByText('Hej! Ses vi på fredag?')).toBeVisible();
+    await expectNoAxeViolations(page);
+    // "Granska och boka": the dialog at "Det här händer", read for exactly the drafted values; nothing is sent.
+    await draft.getByRole('button', { name: 'Granska och boka' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Boka samtalet' });
+    await expect(dialog.getByRole('heading', { name: 'När du trycker Boka samtalet' })).toBeVisible();
+    await expect.poll(() => api.effectReads.length).toBeGreaterThan(0);
+    expect(api.effectReads.at(-1)!.body).toMatchObject({
+      values: { when: '2026-11-06T08:00:00.000Z', place: 'Rum 12', message: 'Hej! Ses vi på fredag?' },
+    });
+    expect(api.acted).toEqual([]);
+    await dialog.getByRole('button', { name: 'Avbryt' }).click();
+    await expect(dialog).toBeHidden();
+    // "Ändra": the same dialog at its first step, with the drafted time chosen.
+    await draft.getByRole('button', { name: 'Ändra' }).click();
+    await expect(dialog.getByRole('radiogroup', { name: /^När/ })).toBeVisible();
+    await expect(dialog.getByRole('radio', { name: /^Fredag 6 november/ })).toBeChecked();
+    await expect(dialog.getByRole('textbox', { name: 'Plats' })).toHaveValue('Rum 12');
+    await dialog.getByRole('button', { name: 'Nästa' }).click();
+    await dialog.getByRole('button', { name: 'Boka samtalet' }).click();
+    await expect(dialog).toBeHidden();
+    expect(api.acted.at(-1)).toMatchObject({
+      threadId: 'omtanke',
+      body: { actionId: 'book', values: { when: '2026-11-06T08:00:00.000Z', place: 'Rum 12' } },
+    });
+    // The draft reads the item back: sent, with the source's headline, and no buttons any more.
+    await expect(draft.getByText('Samtalet är registrerat i personalsystemet.')).toBeVisible();
+    await expect(draft.getByRole('button', { name: 'Granska och boka' })).toHaveCount(0);
+  });
+
+  test('a newer draft of the same action marks the older one as replaced', async ({ page, api: _ }) => {
+    await open(page, '/conversations/new?card=omtanke');
+    const log = page.getByRole('log');
+    await ask(page, 'Boka det på fredag');
+    await expect(log.getByRole('region', { name: 'Utkast: Boka samtalet' })).toHaveCount(1);
+    await ask(page, 'Boka det på fredag i stället');
+    const drafts = log.getByRole('region', { name: 'Utkast: Boka samtalet' });
+    await expect(drafts).toHaveCount(2);
+    await expect(drafts.first().getByText('Ersatt av ett nyare utkast').first()).toBeVisible();
+    // The dot beside the word is decoration, so the state is heard once.
+    await expect(drafts.first().getByRole('img', { name: 'Ersatt av ett nyare utkast' })).toHaveCount(0);
+    await expect(drafts.first().getByRole('button', { name: 'Granska och boka' })).toHaveCount(0);
+    await expect(drafts.last().getByRole('button', { name: 'Granska och boka' })).toBeVisible();
   });
 });

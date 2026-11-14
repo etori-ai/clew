@@ -186,15 +186,6 @@ export const documentQuery = (request: DocumentRequest) =>
     refetchOnReconnect: false,
     retry: false,
   });
-export const cardViewQuery = (threadId: string, actionId: string) =>
-  queryOptions({
-    queryKey: keys.cardView(threadId, actionId),
-    queryFn: () => api.act(threadId, actionId),
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    retry: false,
-  });
 
 /** Administration (D23). The detail read keeps its 400 for the page to turn into "Anslutningen finns inte". */
 /** The shared header (D88): what the person's header connector lists for them, read once per visit. */

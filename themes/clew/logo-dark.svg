@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="#aab6ff" stroke-width="2.3" stroke-linecap="round">
+  <title>Clew</title>
+  <circle cx="14" cy="14" r="10.5"/>
+  <path d="M5.2 9.600c6.200.6 12.600 5.200 15.600 12.600"/>
+  <path d="M3.900 16.400c5-1.200 10.600 1.400 13.600 7.400"/>
+  <path d="M10.600 4.200c6 1.800 11.400 7.400 13.600 14"/>
+  <path d="M14 24.500c6 0 8.500 3.400 16 3.400"/>
+</svg>

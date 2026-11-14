@@ -4,9 +4,8 @@ import { ANNA, BoardingMock, MARIA, PLAN } from './boarding';
 import { expect, expectNoAxeViolations, hiddenFocusStops, narrow, open, phone, reflowProblems, test } from './support';
 
 /**
- * Introduktion och avslut as a place (D124 item 12): the rail's row, drawn while the module is on for the reader and the
- * server says it applies to them, leads a manager to the list and someone whose own plan is all they have straight to
- * it; nobody else gets a row. The list `/boarding` (D116: a list is a page): the reader's own plan apart and above, the
+ * Introduktion och avslut (D124 item 12) as Personal's tab of that name (D126 rule 8); a person's own plan is a tab of
+ * their own page (rule 7). The list `/boarding` (D116: a list is a page): the reader's own plan apart and above, the
  * reports Clew suggests an introduction for, and the open plans they manage, each row's name the link to the plan,
  * whose way back is the list. Focus on arrival and on the way back, the empty states, 30 rows, reflow at 320 px and axe.
  * The mock's clock stands at 2026-11-04; Anna's first day is 16 November, one of her items is late, and Maria's
@@ -18,57 +17,37 @@ const TITLE = 'Introduktion och avslut';
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
 /** The place among the rail's places (no spec here holds `admin.boarding`, so there is no row of that name under Administration). */
 const place = (page: Page) => rail(page).getByRole('link', { name: TITLE, exact: true });
-const heading = (page: Page, name: string) => page.getByRole('heading', { level: 1, name, exact: true });
+const heading = (page: Page, name: string) => page.getByRole('heading', { name, exact: true });
 const plans = (page: Page) => page.getByRole('table', { name: 'Medarbetarnas planer' });
 const suggested = (page: Page) => page.getByRole('list', { name: 'Nya medarbetare utan introduktion' });
 /** The page's sections in the order a screen reader meets them, by their headings. */
 const sections = (page: Page) => page.getByRole('main').getByRole('heading', { level: 2 }).allTextContents();
 
-test.describe('the place in the rail', () => {
+test.describe('Personal’s tab', () => {
   test.use({ viewport: wide });
 
-  test('a manager is led to the list, which starts at its heading and is marked in the rail', async ({ page, api }) => {
-    api.boarding = new BoardingMock();
-    await open(page, '/');
-    await expect(place(page)).toHaveAttribute('href', LIST);
-    await place(page).click();
-    await expect(page).toHaveURL(LIST);
-    await expect(page).toHaveTitle(`${TITLE} · Startsidan`);
-    await expect(heading(page, TITLE)).toBeFocused();
-    await expect(place(page)).toHaveAttribute('aria-current', 'page');
-  });
-
-  test('someone with a plan about themself and none to manage is led straight to it, the row marked there', async ({
+  test('a manager is led to the list by Personal’s tab Introduktion och avslut, which is marked; the rail marks Personal', async ({
     page,
     api,
   }) => {
-    api.employee = true;
-    const boarding = (api.boarding = new BoardingMock());
-    boarding.reader = 'person';
-    await open(page, '/');
-    await expect(place(page)).toHaveAttribute('href', `/boarding/${ANNA}`);
-    await place(page).click();
-    await expect(page).toHaveURL(`/boarding/${ANNA}`);
-    await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
-    await expect(place(page)).toHaveAttribute('aria-current', 'page');
-    // Her way back is Hem, as before: the row leads to her plan, not to a list of one.
-    await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/');
+    api.boarding = new BoardingMock();
+    await open(page, '/staff');
+    const tab = page.getByRole('navigation', { name: 'Personal' }).getByRole('link', { name: TITLE, exact: true });
+    await expect(tab).toHaveAttribute('href', LIST);
+    await tab.click();
+    await expect(page).toHaveURL(LIST);
+    await expect(page).toHaveTitle(`${TITLE} · Personal · Startsidan`);
+    await expect(tab).toHaveAttribute('aria-current', 'true');
+    await expect(tab).toBeFocused();
+    await expect(rail(page).getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(place(page)).toHaveCount(0);
   });
 
-  test('no row for someone it does not apply to, nor for a manager while the module is off', async ({ page, api }) => {
-    // The buddy owns an item of Anna's plan, but no plan is about them or theirs to manage.
-    api.employee = true;
-    const boarding = (api.boarding = new BoardingMock());
-    boarding.reader = 'owner';
-    await open(page, '/');
-    await expect(rail(page).getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
-    await expect(place(page)).toHaveCount(0);
-    // Switched off, the manager gets no row either, and the list's address says so.
-    api.employee = false;
+  test('switched off, the list’s address says so', async ({ page, api }) => {
     api.boarding = null;
-    await open(page, '/');
-    await expect(rail(page).getByRole('link', { name: 'Personal', exact: true })).toBeVisible();
-    await expect(place(page)).toHaveCount(0);
     await open(page, LIST);
     await expect(
       page.getByRole('heading', { level: 2, name: 'Introduktion och avslut är inte påslaget för dig' }),
@@ -86,7 +65,7 @@ test.describe('the list', () => {
   }) => {
     api.boarding = new BoardingMock();
     await open(page, LIST);
-    await expect(heading(page, TITLE)).toBeVisible();
+    await expect(heading(page, 'Personal')).toBeVisible();
     expect(await sections(page)).toEqual(['Nya medarbetare utan introduktion', 'Medarbetarnas planer']);
     const table = plans(page);
     await expect(table.getByRole('columnheader')).toHaveText(['Medarbetare', 'Plan', 'Dag', 'Klara', 'Status']);
@@ -132,7 +111,10 @@ test.describe('the list', () => {
     await name.click();
     await expect(page).toHaveURL(`/boarding/${ANNA}?plan=${PLAN}&from=%2Fboarding`);
     await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
-    await expect(place(page)).toHaveAttribute('aria-current', 'page');
+    await expect(rail(page).getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     const back = page.getByRole('main').getByRole('link', { name: TITLE, exact: true });
     await expect(back).toHaveAttribute('href', LIST);
     await back.click();
@@ -169,7 +151,6 @@ test.describe('the list', () => {
     boarding.plans = [];
     boarding.reports = boarding.reports.filter(r => !r.startOn);
     await open(page, LIST);
-    await expect(place(page)).toHaveAttribute('href', LIST);
     expect(await sections(page)).toEqual(['Medarbetarnas planer']);
     await expect(page.getByRole('main').getByRole('heading', { level: 3, name: 'Inga pågående planer' })).toBeVisible();
     await expect(page.getByRole('main').getByRole('link', { name: 'Till Personal' })).toHaveAttribute('href', '/staff');
@@ -218,7 +199,7 @@ test.describe('a realistic size, and small screens', () => {
     boarding.ownPlan();
     await page.setViewportSize(narrow);
     await open(page, LIST);
-    await expect(heading(page, TITLE)).toBeVisible();
+    await expect(heading(page, 'Personal')).toBeVisible();
     const anna = page.getByRole('list', { name: 'Medarbetarnas planer' }).getByRole('listitem');
     await expect(anna.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toBeVisible();
     await expect(anna).toContainText('1 försenad');

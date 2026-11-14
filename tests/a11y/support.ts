@@ -1,6 +1,14 @@
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import type { ItemEvent, MenuEntry, PanelViewSpec, Thread, SiteHeaderView, ViewEntry } from '@clew/contracts';
+import type {
+  EffectPreview,
+  ItemEvent,
+  MenuEntry,
+  PanelViewSpec,
+  Thread,
+  SiteHeaderView,
+  ViewEntry,
+} from '@clew/contracts';
 import {
   NEXT_WEEK,
   NOW,
@@ -311,8 +319,15 @@ export class MockApi {
   entityRowsDelay: Record<string, number> = {};
   /** Every entities read that reached the mock, as path and query, in order. */
   entityReads: string[] = [];
-  /** Every action started from an entity's menu (D97), as the entity's key and capability, in order. */
+  /**
+   * Every propose started from an entity's action dialog (D97, D126 item 7), as the entity's key, the capability and the
+   * answers, in order. An execute is never started: its last button decides (`entityDecides`).
+   */
   entityStarts: Array<{ key: string; capability: string; values?: Record<string, string> }> = [];
+  /** Every "Det här händer" read for an action about an entity before anything exists (`.../effect`), in order. */
+  entityEffects: Array<{ key: string; capability: string; values?: Record<string, string> }> = [];
+  /** Every execute about an entity sent from its dialog's last button (`.../decide`, D126 item 7), in order. */
+  entityDecides: Array<{ key: string; capability: string; values?: Record<string, string> }> = [];
   /** Actions the source refuses, by capability, with its Swedish sentence (a 400, as the server passes it on). */
   entityRefusals: Record<string, string> = {};
   /**
@@ -1951,29 +1966,96 @@ export class MockApi {
    * not offer is a 404, a refusal is the source's sentence as a 400, and otherwise the card it became, which joins the
    * stream and opens beside the page it was started on. The same start while that card is open gives the same card.
    */
+  /**
+   * An action about an entity (D97) from its dialog (D126 item 7), answered as the entities module does: `effect` reads
+   * what an execute would write and writes nothing; `actions` starts a propose's work item with the answers; `decide`
+   * makes an execute's work item with the human decision in it, here read back at once as the source would answer it.
+   * An action the entity does not offer, or the wrong route for its kind, is the server's 404.
+   */
   private entityStart(route: Route, path: string) {
-    const [, , kind, key = '', sub] = path.split('/');
+    const [, , kind, key = '', sub = ''] = path.split('/');
     const posted = route.request().postDataJSON() as { capability?: string; values?: Record<string, string> } | null;
     const capability = posted?.capability ?? '';
     const opened = decodeURIComponent(key);
-    const detail =
-      sub !== 'actions'
-        ? undefined
-        : kind === 'person'
-          ? (this.entityDetailOf?.(opened) ?? entityDetail(this.entityList, opened))
-          : kind === 'unit'
-            ? this.unitDetailOf?.(opened)
-            : undefined;
+    const detail = !['actions', 'effect', 'decide'].includes(sub)
+      ? undefined
+      : kind === 'person'
+        ? (this.entityDetailOf?.(opened) ?? entityDetail(this.entityList, opened))
+        : kind === 'unit'
+          ? this.unitDetailOf?.(opened)
+          : undefined;
     const action = detail?.actions.find(a => a.capability === capability);
-    if (!detail || !action) return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
-    this.entityStarts.push({
+    if (!detail || !action || (sub !== 'actions' && action.kind !== 'execute'))
+      return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
+    const asked = {
       key: detail.entity.key,
       capability,
       ...(posted?.values ? { values: posted.values } : {}),
-    });
+    };
+    const values = posted?.values ?? {};
+    if (sub === 'effect') {
+      this.entityEffects.push(asked);
+      const details = [values.when ? talkTime(values.when) : 'nästa lediga tid', values.place].filter(Boolean);
+      return route.fulfill({
+        json: {
+          rows: [{ label: 'Omtankesamtalet registreras', detail: `På ${detail.entity.name}, ${details.join(', ')}` }],
+          undoMinutes: 10,
+          source: action.source,
+        } satisfies EffectPreview,
+      });
+    }
+    (sub === 'decide' ? this.entityDecides : this.entityStarts).push(asked);
     const refusal = this.entityRefusals[capability];
     if (refusal) return route.fulfill({ status: 400, json: { error: refusal } });
     const id = `entity-${capability.replace(/\W/g, '-')}-${detail.entity.key}`;
+    if (sub === 'decide') {
+      // The decision is made with the work item, and the source's answer read back onto it (D45, D70).
+      const decided: Thread = {
+        ...this.threads[0]!,
+        id,
+        topic: id,
+        connector: action.connector,
+        area: 'personal',
+        title: `${action.title}: ${detail.entity.name}`,
+        trigger: {
+          ...this.threads[0]!.trigger,
+          reason: `Du valde ${action.title} för ${detail.entity.name}`,
+          source: action.source,
+        },
+        summary: `${action.title} för ${detail.entity.name}.`,
+        state: 'handled',
+        handledAt: NOW,
+        items: [],
+        actions: [],
+        proposals: [],
+        receipt:
+          capability === 'servicedesk.order'
+            ? orderReceipt(values.item)
+            : {
+                at: NOW,
+                headline: `${action.title} är gjort i ${action.source.toLocaleLowerCase('sv-SE')}.`,
+                undoUntil: null,
+                undoCapability: null,
+                rows: [
+                  {
+                    ref: `${action.connector}:${detail.entity.key}`,
+                    label: action.title,
+                    outcome: 'done',
+                    detail: [
+                      `registrerat för ${detail.entity.name}`,
+                      values.when && talkTime(values.when),
+                      values.place,
+                    ]
+                      .filter(Boolean)
+                      .join(', '),
+                  },
+                ],
+              },
+        deadline: null,
+      };
+      this.threads = [...this.threads.filter(t => t.id !== id), decided];
+      return route.fulfill({ json: { threadId: id } });
+    }
     if (!this.threads.some(t => t.id === id))
       this.threads.push({
         ...this.threads[0]!,
@@ -2310,20 +2392,21 @@ export async function snoozeFirst(page: Page) {
   const button = page.getByRole('main').getByRole('button', { name: 'Inte nu', exact: true }).first();
   if (await button.isVisible()) await button.click();
   else {
-    const row = page.getByRole('main').getByRole('listitem').getByRole('link').first();
+    // A row of Hem's list or of Att göra's table (D126): its name is its one link.
+    const row = page.getByRole('main').locator('li, tbody tr').getByRole('link').first();
     const title = ((await row.textContent()) ?? '').trim();
     await row.click();
     const article = page.getByRole('article', { name: `Ärende: ${title}`, exact: true });
     const alone = page.getByRole('main').getByRole('heading', { level: 1, name: title, exact: true });
     await expect(article.or(alone).first()).toBeVisible();
     const item = (await article.isVisible()) ? article : page.getByRole('main');
+    // A calendar proposal keeps Inte nu among its buttons; a work item has it under Fler åtgärder (D126 rule 2).
     const own = item.getByRole('button', { name: 'Inte nu', exact: true }).first();
-    // The item has its buttons once Fler val is there, in every layout.
-    await expect(item.getByRole('button', { name: 'Fler val' }).first()).toBeVisible();
-    // On a phone the item's page has the next step pinned to the foot and Inte nu under Fler val (D112 item 12).
+    const more = item.getByRole('button', { name: 'Fler åtgärder' }).first();
+    await expect(own.or(more).first()).toBeVisible();
     if (await own.isVisible()) await own.click();
     else {
-      await item.getByRole('button', { name: 'Fler val' }).first().click();
+      await more.click();
       await page.getByRole('menuitem', { name: 'Inte nu' }).click();
     }
   }

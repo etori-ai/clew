@@ -1408,6 +1408,7 @@ JSON Schema of the input. Clew validates a call against it before the connector 
 - required
 - Pairs with:
   - **A view's controls bind to the input.** The query and the filter each bind to a property the input schema declares, and not to the same one. ([D38](../decisions/README.md))
+  - **A table of people names the read about them that answers the same rows.** `byKey` needs `subject`, and the read that declares it opens without input. It names another read of this manifest whose `about.entity` is `subject.entity` and whose view is a `table` or `list`, the read that answers the same rows asked by key. Where an administrator offers that read as a lens, whatever opens this read without input opens the lens's tab of the list instead; declare it only when both answer the same rows. ([D127](../decisions/D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md))
   - **A menu row is a view that opens without a question.** `menu` may be declared only on a `read` that has a `view` and whose input accepts `{}` (nothing `required`). The administrator still chooses which eligible views go in the menu; `menu` says what the row is called and marked with. ([D40](../decisions/D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md))
   - **A read about an entity is asked with a batch of keys.** A `read` that declares `about` takes `{ keys }`: its input is an object whose required `keys` is an array of strings with `maxItems` at most 200. It declares no `param`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **An action about an entity names the input that takes the key.** A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
@@ -2564,6 +2565,7 @@ The entity a record names (D97): the record property holding its key. Clew links
 - optional (table, list, detail only)
 - Pairs with:
   - **A record names an entity by a string it holds.** Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **A table of people names the read about them that answers the same rows.** `byKey` needs `subject`, and the read that declares it opens without input. It names another read of this manifest whose `about.entity` is `subject.entity` and whose view is a `table` or `list`, the read that answers the same rows asked by key. Where an administrator offers that read as a lens, whatever opens this read without input opens the lens's tab of the list instead; declare it only when both answer the same rows. ([D127](../decisions/D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md))
 
 Example:
 
@@ -2601,6 +2603,22 @@ Example:
 
 ```json
 "person"
+```
+
+#### `capabilities[].view.byKey`
+
+The read of the same connector about the entities `subject` names (its `about`, with a `table` or `list` view) that answers these same rows asked by key, one per entity (D127). The rows then have one place in Clew: where an administrator offers that read on the entity list (a tab of Personal for people), whatever opens this read without input (a figure's `opens`, a standing read, an answer's "Visa allt") opens that tab, and a row's name the entity's page at it. This read stays what the model, a reader without that tab and an address that names it are given. Requires `subject`, and this read opens without input.
+
+- Type: string
+- optional (table, list only)
+- Constraints: at most 80 characters
+- Pairs with:
+  - **A table of people names the read about them that answers the same rows.** `byKey` needs `subject`, and the read that declares it opens without input. It names another read of this manifest whose `about.entity` is `subject.entity` and whose view is a `table` or `list`, the read that answers the same rows asked by key. Where an administrator offers that read as a lens, whatever opens this read without input opens the lens's tab of the list instead; declare it only when both answer the same rows. ([D127](../decisions/D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md))
+
+Example:
+
+```json
+"hr.person"
 ```
 
 #### `capabilities[].view.input`
@@ -3056,6 +3074,7 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **A view's controls bind to the input** (loader; `capabilities[].input`, `capabilities[].view.input.query.key`, `capabilities[].view.input.filter.key`) ([D38](../decisions/README.md)): The query and the filter each bind to a property the input schema declares, and not to the same one.
 - **A row opens a read of the same connector** (loader; `capabilities[].view.open.capability`, `capabilities[].view.open.params`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): `open.capability` is a `read` of this manifest, and every key of `params` is an input property of that read, taken from a property the row has. A card's buttons and a row's link stay within one system.
 - **A record names an entity by a string it holds** (loader; `capabilities[].output`, `capabilities[].view.subject`, `capabilities[].view.subject.key`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere.
+- **A table of people names the read about them that answers the same rows** (loader; `capabilities[].view.byKey`, `capabilities[].view.subject`, `capabilities[].input`) ([D127](../decisions/D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md)): `byKey` needs `subject`, and the read that declares it opens without input. It names another read of this manifest whose `about.entity` is `subject.entity` and whose view is a `table` or `list`, the read that answers the same rows asked by key. Where an administrator offers that read as a lens, whatever opens this read without input opens the lens's tab of the list instead; declare it only when both answer the same rows.
 - **A field beside another follows one** (loader; `capabilities[].view.fields[].beside`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `beside` draws a field in the same cell or on the same line as the field before it, under that field's label: a state and its time, a count and what is late in it. It is never on the first field of a view or of a record's items.
 - **One field is the row in one value** (loader; `capabilities[].view.fields[].compact`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): At most one field of a view (or of a record's items) is `compact`: the row in one value, drawn where there is room for one value (a column on a list, a one-line summary) and left out where the whole row is drawn (a lens, a section, a detail).
 - **A menu row is a view that opens without a question** (loader; `capabilities[].menu`, `capabilities[].view`, `capabilities[].input`) ([D40](../decisions/D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md)): `menu` may be declared only on a `read` that has a `view` and whose input accepts `{}` (nothing `required`). The administrator still chooses which eligible views go in the menu; `menu` says what the row is called and marked with.

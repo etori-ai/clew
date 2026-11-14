@@ -31,10 +31,16 @@ test.describe('1.4.10 reflow', () => {
         expect(await reflowProblems(page)).toEqual([]);
       });
 
-  test('the side panel reflows at 320×640', async ({ page, api: _ }) => {
+  test('an address that opened the side panel leads to the view’s page, which reflows at 320×640', async ({
+    page,
+    api: _,
+  }) => {
+    // Nothing opens over a page (D126 rule 3): the view is its own page, which must fit a phone as the panel did.
     await page.setViewportSize(narrow);
     await open(page, '/?open=hr.whoIsOn&open-title=Bemanning');
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.whoIsOn\?/);
+    await expect(heading(page, 1, 'Bemanning')).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(await reflowProblems(page)).toEqual([]);
   });
 
@@ -57,7 +63,7 @@ test.describe('1.4.10 reflow', () => {
     for (const tab of await tabs.getByRole('link').all()) await expect(tab).toBeInViewport({ ratio: 1 });
     await tabs.getByRole('link', { name: /^Väntar/ }).click();
     await expect(page).toHaveURL(/\/todo\?tab=waiting$/);
-    await expect(page.getByRole('list', { name: 'Väntar på andra' })).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Väntar på andra' })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
     await page.getByRole('button', { name: 'Alla system' }).click();
     expect(await page.getByRole('menuitemradio').count()).toBeGreaterThanOrEqual(6);
@@ -89,19 +95,18 @@ test.describe('1.4.12 text spacing', () => {
     });
 });
 
-test.describe('an area’s whole name on its figure tile', () => {
-  // The chip is Astryx's Badge, one line, and a name wider than its room would end in an ellipsis: at 320 px the tiles
-  // stand one per row, so every area name of the mock ("Utvecklingssamtal" the longest) is drawn whole, with or without
-  // the text-spacing overrides. At 350 px, just under where two tiles start, the spaced name still fits its one tile.
+test.describe('a figure tile’s whole status on Hem', () => {
+  // Läget's tiles on Hem (D126, board Hem) say a figure's status in one Astryx Badge, one line, and a word wider than
+  // its room would end in an ellipsis: at 320 px the tiles stand one per row, so every status of the mock ("Behöver
+  // dig" the longest) is drawn whole, with or without the text-spacing overrides. At 350 px, just under where two tiles
+  // start, the spaced word still fits its one tile. A tile carries no area mark since D126, so the status is its chip.
   const spacing =
     '* { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important; } p { margin-bottom: 2em !important; }';
-  test('every figure tile shows its whole area name at 320 px, 640 and 256 high, and spaced at 350 px', async ({
+  test('every figure tile shows its whole status at 320 px, 640 and 256 high, and spaced at 350 px', async ({
     page,
-    api,
+    api: _,
   }) => {
-    const names = api.areas.filter(a => a.figure).map(a => a.title);
-    expect(names).toContain('Utvecklingssamtal');
-    const lage = page.getByRole('region', { name: 'Läget' });
+    const lage = page.getByRole('region', { name: /^Läget på/ });
     const runs = [
       ...[narrow, short].flatMap(viewport => [null, spacing].map(overrides => ({ viewport, overrides }))),
       { viewport: { width: 350, height: 640 }, overrides: spacing },
@@ -110,6 +115,7 @@ test.describe('an area’s whole name on its figure tile', () => {
       await page.setViewportSize(viewport);
       await open(page, '/');
       if (overrides) await page.addStyleTag({ content: overrides });
+      await expect(lage.locator('.astryx-badge').first()).toBeVisible();
       const chips = await lage.locator('.astryx-badge').evaluateAll(list =>
         list.map(el => {
           const label = el.lastElementChild as HTMLElement;
@@ -121,15 +127,10 @@ test.describe('an area’s whole name on its figure tile', () => {
           };
         }),
       );
-      for (const name of names)
-        expect(
-          chips.find(chip => chip.name === name),
-          `${name} at ${viewport.width}×${viewport.height}, ${overrides ? 'spaced' : 'plain'}`,
-        ).toEqual({
-          name,
-          cut: false,
-          inside: true,
-        });
+      const where = `at ${viewport.width}×${viewport.height}, ${overrides ? 'spaced' : 'plain'}`;
+      expect(chips.map(c => c.name).sort(), where).toEqual(['Behöver dig', 'Bevaka', 'Lugnt']);
+      for (const chip of chips)
+        expect(chip, `${chip.name} ${where}`).toEqual({ name: chip.name, cut: false, inside: true });
       expect(await reflowProblems(page, lage)).toEqual([]);
     }
   });

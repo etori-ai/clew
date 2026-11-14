@@ -1,29 +1,20 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { daysUntil, sameSubject, snoozeWhen, stockholmDate, type ItemEvent, type Thread } from '@clew/contracts';
 import {
-  AreaChip,
-  Avatar,
   Badge,
   Banner,
   Button,
+  Card,
   CheckboxList,
   CheckboxListItem,
-  ClickableCard,
-  Dialog,
-  DialogHeader,
   Divider,
   DocumentTextIcon,
   Heading,
   HStack,
   Icon,
   IconButton,
-  Layout,
-  LayoutContent,
-  LayoutFooter,
-  LayoutHeader,
-  LayoutPanel,
   Link,
   List,
   ListItem,
@@ -35,7 +26,7 @@ import {
   StatusDot,
   Text,
   VStack,
-  useAnimatedLayout,
+  XMarkIcon,
   useMediaQuery,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
@@ -44,13 +35,13 @@ import { areasQuery, itemEventsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { executionStatus } from '../execution-status';
 import { useMarks } from '../marks';
-import { mobileQuery, shortQuery } from '../media';
-import { readOf, withRead, withoutRead } from '../panel-address';
+import { shortQuery } from '../media';
+import { readOf, withoutRead } from '../panel-address';
 import { documentHref } from '../review-address';
 import { canUndoReceipt, receiptComplete } from '../receipt-state';
 import { entityHref } from '../person-address';
-import { dueOf, itemPageHref, noticeOf, rowsSaySomething, stateOf } from '../work-items';
-import { opensAsPage, readPageHref } from '../view-address';
+import { dueOf, fromClewItself, itemPageHref, noticeOf, rowsSaySomething, stateOf } from '../work-items';
+import { readPageHref } from '../view-address';
 import { useConversation } from './conversation-context';
 import {
   ActionRow,
@@ -67,26 +58,20 @@ import {
   type Actions,
   type RowSystems,
 } from './card';
-import { CardRead, unfoldsInCard, useCardRead } from './card-read';
-import { useThingHead } from './thing-head';
-import { Unfold } from './unfold';
 import { StaleMark, useSilentSources } from './silent-sources';
+import { PageFrame, narrowPageQuery } from './page-frame';
 
 /**
- * A work item (D112 item 4, the `work-item-detail` template, boards WorkItem, Inbox, PhoneItem and ActReceipt): one
- * shape at two widths. Narrow (`WorkItem`), in Att göra's reading pane, in the panel beside a page and in a
- * conversation's answer, it is the header (the source line, the title, the status, the badges and the buttons) and the
- * main column. As a page (`WorkItemPage`, `/items/<threadId>`) the same header and column get the details rail, which
- * moves behind an information button into a fullscreen dialog where the window is narrow, and on a phone the buttons
- * are pinned to the foot. The main column holds, each only when it has something to say: the receipt after a decision,
- * a notice's text with its way to the whole of it (D112, amended 2026-11-12), "Varför ser jag detta?", the rows (not
- * when their one row is the item itself, `rowsSaySomething`), "Dokument" and "Händelser". Every fact comes from the item
- * itself or from its audit rows (`/api/threads/<id>/events`); nothing is guessed, and a field with nothing behind it is
- * not drawn.
+ * A thing, drawn once (D126 rules 1 and 2, boards Att göra and Ärende, `.claude/canvas/app/thing.tsx`): a work item is
+ * the same parts wherever it is shown. Its page (`WorkItemPage`, `/items/<threadId>`, the `work-item-detail` template)
+ * is the way back and the title, the buttons directly under the title, the read in the column and the facts in the end
+ * `LayoutPanel` (above the read where the window is narrow). Att göra's reading pane (`WorkItem`, `place="pane"`) is the
+ * source line, the title as the link to the page and the buttons, which never scroll out of view (the critique of
+ * 2026-11-13 found an opened item showing its middle), then the facts, "Varför ser jag detta?", the rows and
+ * "Händelser" under them. The same narrow item stands beside a conversation and in an answer. Nothing unfolds inside
+ * the item (rule 3): each of its reads is a link to the read's own page. Every fact comes from the item itself or from
+ * its audit rows (`/api/threads/<id>/events`); nothing is guessed, and a field with nothing behind it is not drawn.
  */
-
-/** The template's own line for the details rail (`work-item-detail`: a dialog at 1024 px and below). */
-export const narrowItemQuery = '(max-width: 1024px)';
 
 const outcomeDot = {
   done: { variant: 'success', label: 'Klart' },
@@ -108,146 +93,60 @@ export function whenWord(instant: string, now = today()): string {
   return `${day} ${clock(instant)}`;
 }
 /**
- * A due day as the header's badge says it (board WorkItem: "Förfaller i dag"). A badge that only repeats the state's
- * word beside it ("Påminnelse") is left out, as on the item's row.
+ * A due day as the title's badge says it (board Ärende: "Svara i dag"). A badge that only repeats the state's word
+ * ("Påminnelse") is left out, as on the item's row.
  */
-function dueBadge(thread: Thread, now: string, state: string) {
-  const due = dueOf(thread, now);
-  if (!due || due.label === state) return null;
+function dueBadge(thread: Thread, day: string) {
+  const due = dueOf(thread, day);
+  const state = stateOf(thread, new Date().toISOString(), day);
+  if (!due || due.label === state.label) return null;
   const label =
     due.label === 'Försenad' || due.label === 'Påminnelse'
       ? due.label
-      : `Förfaller ${due.label.toLocaleLowerCase('sv-SE')}`;
+      : `Svara ${due.label.toLocaleLowerCase('sv-SE')}`;
   return <Badge variant={due.variant} label={label} />;
 }
-/** The one entity the item's rows are about, when there is exactly one: the source's own word for it is its row's label. */
-function aboutOne(thread: Thread) {
-  const named = thread.items.filter(i => i.subject);
-  const first = named[0];
-  return first && named.every(i => sameSubject(i.subject!, first.subject!)) ? first : null;
-}
+/** The source line: the system and the area; an item from Clew itself names its area alone (`fromClewItself`). */
+const sourceLine = (mark: { source: string; title: string }, own = false) =>
+  [own ? '' : mark.source, mark.title].filter(Boolean).join(' · ');
 
-/** The read unfolded in the item, the actions and the marks: everything both widths share. */
-function useWorkItem(thread: Thread, onChange: (thread: Thread) => void, idBase: string) {
-  const root = useRef<HTMLDivElement>(null);
-  /** The header with the buttons, where the narrow item draws it: in the article, or docked above a conversation. */
-  const head = useRef<HTMLDivElement>(null);
+/** Everything the parts of one work item share: its actions, its marks and where its reads lead. */
+function useWorkItem(thread: Thread, onChange: (thread: Thread) => void) {
   const title = useRef<HTMLHeadingElement>(null);
-  const animatedLayout = useAnimatedLayout({ containerRef: root });
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
-  // One of the item's own reads unfolded in it (`open-card` and `open-action`, D111 amended 2026-11-11), wherever it is
-  // drawn. The address is replaced, not pushed: unfolding is a change within the item, so Back never steps through it.
-  const asked = readOf(new URLSearchParams(search));
-  const unfolded = asked?.threadId === thread.id ? asked.actionId : null;
-  const read = useCardRead(thread, unfolded);
-  const readSection = `read-${idBase}-${thread.id}`;
-  const openRead =
-    read.action && !read.url && !(read.shown && !unfoldsInCard(read.shown.view, read.shown.output))
-      ? read.action.id
-      : null;
-  const onRead = (a: Thread['actions'][number]) =>
-    navigate(unfolded === a.id ? withoutRead(pathname, search) : withRead(pathname, search, thread.id, a.id), {
-      replace: true,
-    });
-  /** Folded by the section's toggle the toggle is gone with it: the focus goes to the button that unfolded it, else the title. */
-  const fold = (refocus: boolean) => {
-    const opener = read.action
-      ? (head.current ?? root.current)?.querySelector<HTMLElement>(`[data-read="${CSS.escape(read.action.id)}"]`)
-      : null;
-    navigate(withoutRead(pathname, search), { replace: true });
-    if (refocus) requestAnimationFrame(() => (opener?.isConnected ? opener : title.current)?.focus());
-  };
-  const actions = useThreadActions({ thread, onChange, onRead });
+  const areas = useQuery(areasQuery).data;
+  const views = areas?.views;
+  // This page without a read from before D126 in its address: the way back from a read's page.
+  const from = withoutRead(pathname, search);
+  // A read inside Clew is a link to its own page (D116, D126 rule 3), with the page the item is on as the way back; a
+  // read of Clew's own that declares the page its rows are worked on leads there instead (`declaredPage`).
+  const readHref = (a: Thread['actions'][number]) =>
+    a.kind === 'read' && a.target !== 'link' ? readPageHref(thread, a, from, views) : undefined;
+  // An address from before D126 that unfolded one of this item's reads in it (`open-card`, `open-action`) leads to the
+  // read's page in its place. Only a read is ever followed: an address never makes a decision.
+  const unfolded = readOf(new URLSearchParams(search));
+  const named =
+    unfolded?.threadId === thread.id
+      ? thread.actions.find(a => a.id === unfolded.actionId && a.kind === 'read' && a.target !== 'link')
+      : undefined;
+  const redirect = named && views !== undefined ? readPageHref(thread, named, from, views) : null;
+  useLayoutEffect(() => {
+    if (redirect) navigate(redirect, { replace: true });
+  }, [redirect]);
+  const actions = useThreadActions({ thread, onChange });
   const marks = useMarks();
   const mark = marks.ofThread(thread);
   const systems = rowSystems(thread, marks);
-  const from = pathname + search;
-  // A read that answers with rows is a page (D116): its button leads there, with the page the item is on as the way back;
-  // a read of Clew's own that declares the page its rows are worked on leads there instead (`declaredPage`).
-  const views = useQuery(areasQuery).data?.views;
-  const readHref = (a: Thread['actions'][number]) =>
-    a.kind === 'read' && a.target !== 'link' && opensAsPage(views, a.capability)
-      ? readPageHref(thread, a, withoutRead(pathname, search), views)
-      : undefined;
-  const unfold = read.action ? (
-    <CardRead
-      action={read.action}
-      read={read}
-      id={readSection}
-      animatedLayout={animatedLayout}
-      onFold={fold}
-      page={readPageHref(thread, read.action, withoutRead(pathname, search), views)}
-    />
-  ) : null;
   // A notice leads with its text, and its link out stands after the text instead of among the buttons.
   const notice = noticeOf(thread);
   const omit = notice?.out ? [notice.out.id] : undefined;
-  return {
-    root,
-    head,
-    title,
-    actions,
-    mark,
-    systems,
-    from,
-    openRead,
-    readHref,
-    readSection,
-    unfold,
-    animatedLayout,
-    notice,
-    omit,
-  };
+  const own = fromClewItself(thread, areas?.systems);
+  return { title, actions, mark, systems, own, from: pathname + search, readHref, notice, omit };
 }
 type ItemState = ReturnType<typeof useWorkItem>;
 
-/**
- * The status (the state the queue's dot shows, as text with its dot) and the badges: when it is due, its area, what it
- * is about; and, while the item's system does not answer, that it may be old and since when (D116, amended
- * 2026-11-12). The dot beside its word is decoration, hidden from assistive technology as the row's is, so the state is
- * heard once.
- */
-function StatusLine({ thread, item }: { thread: Thread; item: ItemState }) {
-  const now = new Date().toISOString(),
-    day = today();
-  const silent = useSilentSources().of(thread.connector);
-  const state = stateOf(thread, now, day);
-  const about = aboutOne(thread);
-  const draft = thread.messages.at(-1)?.meta?.draft;
-  const open = thread.state === 'open';
-  const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
-  // What the state's word does not say by itself: when a set-aside item comes back, who it waits on and when Clew reminds.
-  const detail =
-    open && thread.snoozedUntil && state.label === 'Inte nu'
-      ? snoozedLabel(thread.snoozedUntil)
-      : open && thread.waitingOn
-        ? [
-            `Väntar på ${thread.waitingOn}`,
-            reminder && !thread.waitingOn.startsWith('påminnelsen ')
-              ? `påminner dig ${snoozeWhen(reminder.dueAt, now)}`
-              : '',
-          ]
-            .filter(Boolean)
-            .join('\u00a0· ')
-        : '';
-  return (
-    <HStack gap={2} vAlign="center" wrap="wrap">
-      <HStack gap={1.5} vAlign="center">
-        <StatusDot variant={state.variant} label={state.label} aria-hidden />
-        <Text weight="semibold">{state.label}</Text>
-      </HStack>
-      {detail && <Text type="supporting">{detail}</Text>}
-      {dueBadge(thread, day, state.label)}
-      <AreaChip ordinal={item.mark.ordinal} icon={item.mark.icon} label={item.mark.title} />
-      {about && <Badge variant="neutral" label={about.label} />}
-      {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
-      {silent && open && <StaleMark silent={silent} />}
-    </HStack>
-  );
-}
-
-/** One section of the main column: its heading and what it holds, named by the heading. */
+/** A section of the read: its heading and what it holds, named by the heading. */
 function ItemSection({
   id,
   title,
@@ -262,7 +161,7 @@ function ItemSection({
   children: ReactNode;
 }) {
   return (
-    <VStack as="section" gap={3} aria-labelledby={id}>
+    <VStack as="section" gap={2} aria-labelledby={id}>
       <Heading id={id} level={visual} accessibilityLevel={level as 2 | 3 | 4 | 5}>
         {title}
       </Heading>
@@ -293,7 +192,7 @@ function Receipt({ thread, actions, systems }: { thread: Thread; actions: Action
           <Button
             size="sm"
             variant="secondary"
-            label={`${pending ? 'Ångra bekräftade' : 'Ångra'}\u00a0· ${minutes} min kvar`}
+            label={`${pending ? 'Ångra bekräftade' : 'Ångra'} · ${minutes} min kvar`}
             clickAction={() => actions.run(() => api.undoReceipt(thread.id))}
           />
         ) : undefined
@@ -319,62 +218,58 @@ function Receipt({ thread, actions, systems }: { thread: Thread; actions: Action
 }
 
 /**
- * "Varför ser jag detta?" (board WorkItem), open: the source's reason, where and when it came, and the item's lead. A
- * notice's lead is its text, drawn first in the column, so here it is the provenance line alone.
+ * "Varför ser jag detta?" (board Ärende): the source's reason, where and when it came. The item's lead (its summary)
+ * is the first paragraph of the read, above it (`Lead`).
  */
-function Why({ thread, notice }: { thread: Thread; notice: boolean }) {
+function Why({ thread }: { thread: Thread }) {
   return (
-    <VStack gap={2}>
-      <Text as="p">
-        {thread.trigger.reason.replace(/\.$/, '')}. Ärendet kom från {thread.trigger.source}{' '}
-        {whenWord(thread.trigger.at)}.
-      </Text>
-      {!notice && thread.summary && thread.summary !== thread.trigger.reason && (
-        <Text as="p" color="secondary">
-          {thread.summary}
-        </Text>
-      )}
-    </VStack>
+    <Text as="p">
+      {thread.trigger.reason.replace(/\.$/, '')}. Ärendet kom från {thread.trigger.source} {whenWord(thread.trigger.at)}
+      .
+    </Text>
   );
+}
+/** The item's own words (board Ärende's first section): a notice's text, else its summary where it says more than the reason. */
+function Lead({ thread, item }: { thread: Thread; item: ItemState }) {
+  const notice = item.notice;
+  if (notice) {
+    const out = notice.out;
+    if (!notice.paragraphs.length && !out) return null;
+    // A notice (D112, amended 2026-11-12): what the person is asked to read, a paragraph per paragraph of the source's
+    // text, and after it the item's link out to the whole of it, marked as leaving Clew (D111 rule 8).
+    return (
+      <VStack gap={3}>
+        {notice.paragraphs.map((p, i) => (
+          <Text key={i} as="p">
+            {p}
+          </Text>
+        ))}
+        {out && (
+          <HStack>
+            <Button
+              variant="secondary"
+              label={out.label}
+              clickAction={() => item.actions.perform(out)}
+              {...leavingMark(out)}
+            />
+          </HStack>
+        )}
+      </VStack>
+    );
+  }
+  if (!thread.summary || thread.summary === thread.trigger.reason) return null;
+  return <Text as="p">{thread.summary}</Text>;
 }
 
 /**
- * A notice's text (D112, amended 2026-11-12): what the person is asked to read, first in the column and under no
- * heading of its own, a paragraph per paragraph of the source's text, and after it the item's link out to the whole of
- * it, marked as leaving Clew as every link out is (D111 rule 8). The receipt's button stays among the item's buttons.
- */
-function NoticeText({ notice, item }: { notice: NonNullable<ItemState['notice']>; item: ItemState }) {
-  const out = notice.out;
-  return (
-    <VStack gap={3}>
-      {notice.paragraphs.map((p, i) => (
-        <Text key={i} as="p">
-          {p}
-        </Text>
-      ))}
-      {out && (
-        <HStack>
-          <Button
-            variant="secondary"
-            label={out.label}
-            clickAction={() => item.actions.perform(out)}
-            {...leavingMark(out)}
-          />
-        </HStack>
-      )}
-    </VStack>
-  );
-}
-
-/**
- * The rows (board WorkItem's checklist): Astryx's checkbox list where the rows are chosen for the item's action
+ * The rows (board Ärende's list in a card): Astryx's checkbox list where the rows are chosen for the item's action
  * (`selectable`, `selected`, `usesItems`), with how many are chosen; a plain list where they are not. A row that names a
  * person or a unit links to them (D97 item 6).
  */
-function Rows({ thread, actions, item }: { thread: Thread; actions: Actions; item: ItemState }) {
+function Rows({ thread, item }: { thread: Thread; item: ItemState }) {
   const conversation = useConversation();
   const open = thread.state === 'open';
-  const { selected, setSelected, selectable } = actions;
+  const { selected, setSelected, selectable } = item.actions;
   const describe = (ref: string, detail: string) =>
     item.systems.multi ? (
       <SystemLine mark={item.systems.of.get(ref)} words={detail} />
@@ -387,75 +282,77 @@ function Rows({ thread, actions, item }: { thread: Thread; actions: Actions; ite
       <Text type="supporting" color="secondary" hasTabularNumbers>
         {`${selected.length} av ${choosable} valda`}
       </Text>
-      <CheckboxList
-        label="Rader"
-        isLabelHidden
-        value={selected}
-        onChange={setSelected}
-        isReadOnly={!open || !!executionStatus(thread.execution)}
-        density="balanced"
-        hasDividers
-      >
+      <Card padding={0}>
+        <CheckboxList
+          label="Rader"
+          isLabelHidden
+          value={selected}
+          onChange={setSelected}
+          isReadOnly={!open || !!executionStatus(thread.execution)}
+          density="balanced"
+          hasDividers
+        >
+          {thread.items.map(i => (
+            <CheckboxListItem
+              key={i.ref}
+              value={i.ref}
+              align="start"
+              label={<ItemLabel item={i} from={item.from} />}
+              description={describe(i.ref, i.detail)}
+            />
+          ))}
+        </CheckboxList>
+      </Card>
+    </VStack>
+  ) : (
+    <Card padding={0}>
+      <List density="balanced" hasDividers>
         {thread.items.map(i => (
-          <CheckboxListItem
+          <ListItem
             key={i.ref}
-            value={i.ref}
-            align="start"
+            isSelected={conversation.chipped.includes(i.ref)}
             label={<ItemLabel item={i} from={item.from} />}
             description={describe(i.ref, i.detail)}
           />
         ))}
-      </CheckboxList>
-    </VStack>
-  ) : (
-    <List density="balanced" hasDividers edge="flush">
-      {thread.items.map(i => (
-        <ListItem
-          key={i.ref}
-          isSelected={conversation.chipped.includes(i.ref)}
-          label={<ItemLabel item={i} from={item.from} />}
-          description={describe(i.ref, i.detail)}
-        />
-      ))}
-    </List>
+      </List>
+    </Card>
   );
 }
 
 /**
- * "Dokument": the document behind each row the item reviews one at a time (D70), where its action names a `preview`
- * read. Each leads to the review's page at that row, where the document is drawn with the decision (D73, amended
- * 2026-11-12), and Back gives the focus to the row again.
+ * "Dokument" (board Ärende): the document behind each row the item reviews one at a time (D70), where its action names
+ * a `preview` read. Each is a link to the review's page at that row, where the document is drawn with the decision (D73,
+ * amended 2026-11-12), and Back gives the focus to the link again.
  */
 function Documents({ thread }: { thread: Thread }) {
   const { pathname, search } = useLocation();
   const rows = thread.items.filter(i => i.selectable);
   return (
-    <VStack gap={1}>
-      {rows.map((row, step) => (
-        <ClickableCard
-          key={row.ref}
-          label={`Öppna underlaget för ${row.label}`}
-          href={documentHref(thread.id, step, pathname + search)}
-          padding={3}
-        >
-          <HStack gap={3} vAlign="center">
-            <Icon icon={DocumentTextIcon} size="lg" color="secondary" />
-            <StackItem size="fill">
-              <VStack gap={0}>
-                <Text weight="semibold">{row.label}</Text>
-                <Text type="supporting" color="secondary">
-                  Underlag från {thread.trigger.source}
-                </Text>
-              </VStack>
-            </StackItem>
-          </HStack>
-        </ClickableCard>
-      ))}
-    </VStack>
+    <Card padding={0}>
+      <List hasDividers>
+        {rows.map((row, step) => (
+          <ListItem
+            key={row.ref}
+            startContent={<Icon icon={DocumentTextIcon} color="secondary" />}
+            label={
+              <Link
+                href={documentHref(thread.id, step, pathname + search)}
+                color="primary"
+                aria-label={`Öppna underlaget för ${row.label}`}
+              >
+                {row.label}
+              </Link>
+            }
+            description={<Text type="supporting">{`Underlag från ${thread.trigger.source}`}</Text>}
+          />
+        ))}
+      </List>
+    </Card>
   );
 }
 
-/** What one event says, after who did it (board WorkItem's Händelser). Facts the item holds; never a model's words. */
+/** What one event says, after who did it (board Ärende's Händelser). Facts the item holds; never a model's words. */
 function eventWords(e: ItemEvent, thread: Thread): string {
   const source = thread.trigger.source;
   switch (e.kind) {
@@ -503,9 +400,9 @@ function eventWords(e: ItemEvent, thread: Thread): string {
   }
 }
 /**
- * "Händelser" (board WorkItem, ActReceipt): what Clew and the person did to the item, newest first, with what Clew has
- * planned at the top (the person's reminder or the time a set-aside item comes back). Read from the item's audit rows;
- * the person is "Du", never by name, and nobody else is named.
+ * "Händelser" (board Ärende): what Clew and the person did to the item, newest first, with what Clew has planned at the
+ * top (the person's reminder or the time a set-aside item comes back), each a row of a list in a card with when under
+ * it. Read from the item's audit rows; the person is "Du", never by name, and nobody else is named.
  */
 function Events({ thread }: { thread: Thread }) {
   const events = useQuery(itemEventsQuery(thread.id, thread.updatedAt));
@@ -537,94 +434,168 @@ function Events({ thread }: { thread: Thread }) {
         </HStack>
       </VStack>
     );
+  // Who did it is the first word of the row (board Ärende's Händelser), with no mark before it.
   const row = (key: string, by: 'you' | 'clew', words: string, when: string) => (
     <ListItem
       key={key}
-      align="first-line"
-      startContent={<Avatar name={by === 'you' ? 'Du' : 'Clew'} size="sm" tooltip={false} aria-hidden />}
-      label={
-        <HStack gap={2} wrap="wrap" vAlign="center">
-          <Text weight="semibold">{by === 'you' ? 'Du' : 'Clew'}</Text>
-          <Text type="supporting" color="secondary">
-            {words}
-          </Text>
-        </HStack>
-      }
-      endContent={
-        <Text type="supporting" color="secondary" textWrap="nowrap">
-          {when}
-        </Text>
-      }
+      // As Text, which wraps: a label given as a string is cut to one line, and what is cut cannot be read (1.4.10).
+      label={<Text>{`${by === 'you' ? 'Du' : 'Clew'} ${words}`}</Text>}
+      description={<Text type="supporting">{when}</Text>}
     />
   );
   return (
-    <List density="compact" aria-label="Händelser, de senaste först">
-      {planned.map(p => row(p.key, 'clew', p.words, 'planerat'))}
-      {events.data.events.map((e, i) => row(`${e.at}:${i}`, e.by, eventWords(e, thread), whenWord(e.at)))}
-    </List>
+    <Card padding={0}>
+      <List hasDividers aria-label="Händelser, de senaste först">
+        {planned.map(p => row(p.key, 'clew', p.words, 'planerat'))}
+        {events.data.events.map((e, i) => row(`${e.at}:${i}`, e.by, eventWords(e, thread), whenWord(e.at)))}
+      </List>
+    </Card>
   );
 }
 const hasEvents = (thread: Thread) => !!thread.timers?.some(t => t.state === 'scheduled') || thread.kind === 'pushed';
 
-/** The main column, each section only where it has something to say, with a rule between them. */
-function MainColumn({
+/**
+ * The facts (board Ärende's `MetadataList`, the page's end panel and the pane under the buttons): the state with its
+ * dot, the people and units the rows name as links to their pages, when it is due, what it waits on and when it comes
+ * back, the source, when it came and when it was handled. Only what the item really has.
+ */
+function Facts({ thread, item }: { thread: Thread; item: ItemState }) {
+  const now = new Date().toISOString(),
+    day = today();
+  const state = stateOf(thread, now, day);
+  const subjects = thread.items.filter(
+    (i, n, all) => i.subject && all.findIndex(j => j.subject && sameSubject(j.subject, i.subject!)) === n,
+  );
+  const due = dueOf(thread, day);
+  const deadline = thread.deadline?.slice(0, 10);
+  const days = deadline ? daysUntil(deadline, day) : null;
+  return (
+    <MetadataList>
+      <MetadataListItem label="Status">
+        <HStack gap={2} vAlign="center">
+          <StatusDot variant={state.variant} label={state.label} aria-hidden />
+          <Text>{state.label}</Text>
+        </HStack>
+      </MetadataListItem>
+      {subjects.length > 0 && (
+        <MetadataListItem label="Berör">
+          <VStack gap={1} hAlign="start">
+            {subjects.map(i => {
+              const href = entityHref(i.subject!, item.from);
+              return (
+                // The row's own words: a source names the person or unit by key alone, so no face or name is guessed.
+                href ? (
+                  <Link key={i.ref} href={href}>
+                    {i.label}
+                  </Link>
+                ) : (
+                  <Text key={i.ref}>{i.label}</Text>
+                )
+              );
+            })}
+          </VStack>
+        </MetadataListItem>
+      )}
+      {deadline && (
+        <MetadataListItem label="Svara senast">
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            {due ? <Badge variant={due.variant} label={due.label.toLocaleLowerCase('sv-SE')} /> : null}
+            {(!due || days === null || days > 1) && <Text>{longDate(deadline)}</Text>}
+          </HStack>
+        </MetadataListItem>
+      )}
+      {thread.waitingOn && thread.state === 'open' && (
+        <MetadataListItem label="Väntar på">
+          <Text>{capital(thread.waitingOn)}</Text>
+        </MetadataListItem>
+      )}
+      {thread.snoozedUntil && thread.state === 'open' && (
+        <MetadataListItem label="Tillbaka">
+          <Text>{capital(whenWord(thread.snoozedUntil))}</Text>
+        </MetadataListItem>
+      )}
+      {/* An item from Clew itself has no source to name (`fromClewItself`). */}
+      {!item.own && (
+        <MetadataListItem label="Källa">
+          <Text>{sourceLine(item.mark)}</Text>
+        </MetadataListItem>
+      )}
+      <MetadataListItem label="Kom">
+        <Text>{capital(whenWord(thread.createdAt))}</Text>
+      </MetadataListItem>
+      {thread.handledAt && thread.state !== 'open' && (
+        <MetadataListItem label={thread.state === 'dismissed' ? 'Avfärdat' : 'Klart'}>
+          <Text>{capital(whenWord(thread.handledAt))}</Text>
+        </MetadataListItem>
+      )}
+    </MetadataList>
+  );
+}
+
+/**
+ * The read, under the facts in the pane and in the page's column, each part only where it has something to say: the
+ * receipt after a decision, the item's own words (a notice's text, its summary), "Varför ser jag detta?" (not after a
+ * decision), the rows (not when their one row is the item itself, `rowsSaySomething`), "Dokument" and "Händelser".
+ */
+function Read({
   thread,
   item,
   level,
   visual,
   idBase,
+  facts,
+  gap = 6,
 }: {
   thread: Thread;
   item: ItemState;
   /** The sections' heading level. */
   level: number;
-  visual: 2 | 3 | 4;
+  visual: 2 | 3;
   idBase: string;
+  /** The facts, where they stand in the read's flow (the pane, a narrow page): first, with a rule under them. */
+  facts?: ReactNode;
+  /** The space between the sections: the pane's step (board Att göra), or the page's wider one (board Ärende). */
+  gap?: 6 | 8;
 }) {
-  const { actions, notice } = item;
   const receipt = thread.receipt;
   const documents = reviewedAction(thread)?.preview ? thread.items.some(i => i.selectable) : false;
   const id = (part: string) => `${idBase}-${thread.id}-${part}`;
-  const sections: ReactNode[] = [
-    // A notice's text is what the item is for: it stays after the receipt, to be read again.
-    notice && (notice.paragraphs.length > 0 || notice.out) && <NoticeText key="text" notice={notice} item={item} />,
-    !receipt && (
-      <ItemSection key="why" id={id('why')} title="Varför ser jag detta?" level={level} visual={visual}>
-        <Why thread={thread} notice={!!notice} />
-      </ItemSection>
-    ),
-    !receipt && rowsSaySomething(thread) && (
-      <ItemSection key="rows" id={id('rows')} title="Rader" level={level} visual={visual}>
-        <Rows thread={thread} actions={actions} item={item} />
-      </ItemSection>
-    ),
-    documents && (
-      <ItemSection key="documents" id={id('documents')} title="Dokument" level={level} visual={visual}>
-        <Documents thread={thread} />
-      </ItemSection>
-    ),
-    hasEvents(thread) && (
-      <ItemSection key="events" id={id('events')} title="Händelser" level={level} visual={visual}>
-        <Events thread={thread} />
-      </ItemSection>
-    ),
-  ].filter(Boolean);
   return (
-    <VStack gap={6}>
-      {receipt && <Receipt thread={thread} actions={actions} systems={item.systems} />}
-      {sections.map((section, i) => (
-        <VStack key={i} gap={6}>
-          {i > 0 && <Divider />}
-          {section}
-        </VStack>
-      ))}
+    <VStack gap={gap}>
+      {receipt && <Receipt thread={thread} actions={item.actions} systems={item.systems} />}
+      {facts}
+      <Lead thread={thread} item={item} />
+      {!receipt && (
+        <ItemSection id={id('why')} title="Varför ser jag detta?" level={level} visual={visual}>
+          <Why thread={thread} />
+        </ItemSection>
+      )}
+      {!receipt && rowsSaySomething(thread) && (
+        <ItemSection id={id('rows')} title="Rader" level={level} visual={visual}>
+          <Rows thread={thread} item={item} />
+        </ItemSection>
+      )}
+      {documents && (
+        <ItemSection id={id('documents')} title="Dokument" level={level} visual={visual}>
+          <Documents thread={thread} />
+        </ItemSection>
+      )}
+      {hasEvents(thread) && (
+        <ItemSection id={id('events')} title="Händelser" level={level} visual={visual}>
+          <Events thread={thread} />
+        </ItemSection>
+      )}
     </VStack>
   );
 }
 
-/** What stands under the buttons when it applies: a reminder that could not be scheduled, a draft, a refusal. */
+/**
+ * What stands under the buttons when it applies: a reminder that could not be scheduled, a draft, a refusal, a system
+ * that may be old; and the confirmation and the action dialog the buttons open.
+ */
 function Notes({ thread, item }: { thread: Thread; item: ItemState }) {
   const draft = thread.messages.at(-1)?.meta?.draft;
+  const silent = useSilentSources().of(thread.connector);
   return (
     <>
       <TimerNote thread={thread} />
@@ -633,6 +604,7 @@ function Notes({ thread, item }: { thread: Thread; item: ItemState }) {
           Utkast från samtalet. Inget är skickat förrän du trycker på knappen här.
         </Text>
       )}
+      {silent && thread.state === 'open' && <StaleMark silent={silent} />}
       {item.actions.error && (
         <Text as="p" role="alert" color="accent">
           {item.actions.error}
@@ -643,48 +615,58 @@ function Notes({ thread, item }: { thread: Thread; item: ItemState }) {
     </>
   );
 }
+/** What the item's state does not say by itself, beside its title: set aside until when, or what it waits on. */
+function waitWords(thread: Thread): string | null {
+  if (thread.state !== 'open') return null;
+  const now = new Date().toISOString();
+  if (thread.snoozedUntil && Date.parse(thread.snoozedUntil) > Date.parse(now))
+    return snoozedLabel(thread.snoozedUntil);
+  const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
+  return thread.waitingOn && reminder && !thread.waitingOn.startsWith('påminnelsen ')
+    ? `Påminner dig ${snoozeWhen(reminder.dueAt, now)}`
+    : null;
+}
 
-/** Where a work item is drawn at its narrow width: the reading pane, the panel beside a page, a conversation's answer. */
-export type ItemPlace = 'pane' | 'panel' | 'answer';
+/** Where a work item is drawn at its narrow width: Att göra's reading pane, beside a conversation, in an answer. */
+export type ItemPlace = 'pane' | 'answer';
 /**
- * The work item at its narrow width (D112 item 4): the source line, the title, the status and the badges, the buttons
- * and what one of its reads unfolded, then the main column. An `article` named by its title. The title is the way to the
- * item's own page, a link (the name is the way in, 2026-11-13; "Öppna som sida" is gone), with this page as the way back.
+ * The work item at its narrow width (D126 rule 2, board Att göra's pane): the source line, the title as the link to the
+ * item's page (the name is the way in; "Öppna som sida" is gone) with ✕ beside it where the item can be let go of, the
+ * buttons directly under the title, then a rule and the read with the facts first. In the reading pane the head stands
+ * still and the read scrolls under it, so the decision never leaves the screen; on a short screen (1.4.10) and in an
+ * answer it all follows in one flow. An `article` named by its title.
  */
 export function WorkItem({
   thread,
   place,
   headingLevel,
   onChange,
-  folded = false,
   onClose,
+  ask,
 }: {
   thread: Thread;
   place: ItemPlace;
   /** The title's level in the page's outline; the sections are one under it. */
   headingLevel: 2 | 3;
   onChange: (thread: Thread) => void;
-  /**
-   * A conversation about the item runs under it in the panel (D112 item 7): the header stays, with the status, the
-   * badges and the buttons, and the main column folds under "Visa allt".
-   */
-  folded?: boolean;
   /** Let go of the item where it is open beside a list: its ✕, at the end of the title's row. */
   onClose?: () => void;
+  /** "Fråga Clew" among the buttons (`AskClew`); absent beside the conversation about the item and in its answers. */
+  ask?: ReactNode;
 }) {
+  const short = useMediaQuery(shortQuery);
   const idBase = place === 'answer' ? 'thread' : 'card';
-  const item = useWorkItem(thread, onChange, idBase);
-  // Beside a conversation (the panel, the reading pane) the header stands above the transcript, out of its scroll, as
-  // the item's page keeps it in its LayoutHeader; what one of its reads unfolded and the main column scroll under it.
-  const dock = useThingHead();
+  const item = useWorkItem(thread, onChange);
+  const pinnedHead = place === 'pane' && !short;
+  const inset = place === 'pane' ? 6 : 0;
   const head = (
-    <>
-      <VStack gap={1}>
-        <Text type="supporting" color="secondary">
-          {[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}
-        </Text>
-        <HStack gap={3} vAlign="start" wrap="wrap">
-          <StackItem size="fill">
+    <VStack gap={3}>
+      <HStack gap={3} vAlign="start">
+        <StackItem size="fill">
+          <VStack gap={1}>
+            <Text type="supporting" color="secondary">
+              {sourceLine(item.mark, item.own)}
+            </Text>
             <Heading
               ref={item.title}
               id={`${idBase}-${thread.id}-title`}
@@ -692,347 +674,135 @@ export function WorkItem({
               level={2}
               accessibilityLevel={headingLevel}
             >
-              <Link href={itemPageHref(thread.id, item.from)} hasUnderline>
+              <Link href={itemPageHref(thread.id, item.from)} color="primary" type="inherit" weight="semibold">
                 {thread.title}
               </Link>
             </Heading>
-          </StackItem>
-          {onClose && (
-            <IconButton
-              variant="ghost"
-              size="sm"
-              label="Stäng ärendet"
-              icon={<Icon icon="close" />}
-              onClick={onClose}
-            />
-          )}
-        </HStack>
-      </VStack>
-      <StatusLine thread={thread} item={item} />
+            {waitWords(thread) && <Text type="supporting">{waitWords(thread)}</Text>}
+          </VStack>
+        </StackItem>
+        {onClose && (
+          <IconButton
+            variant="ghost"
+            label="Stäng ärendet"
+            icon={<Icon icon={XMarkIcon} size="sm" />}
+            onClick={onClose}
+          />
+        )}
+      </HStack>
+      <ActionRow thread={thread} actions={item.actions} readHref={item.readHref} omit={item.omit} ask={ask} />
       <Notes thread={thread} item={item} />
-      <ActionRow
-        thread={thread}
-        actions={item.actions}
-        openRead={item.openRead}
-        readHref={item.readHref}
-        readSection={item.readSection}
-        omit={item.omit}
-      />
-    </>
+    </VStack>
   );
+  const read = (
+    <Read
+      thread={thread}
+      item={item}
+      level={headingLevel + 1}
+      visual={3}
+      idBase={idBase}
+      facts={<Facts thread={thread} item={item} />}
+    />
+  );
+  if (pinnedHead)
+    return (
+      <VStack
+        as="article"
+        height="100%"
+        tabIndex={-1}
+        aria-label={`Ärende: ${thread.title}`}
+        id={`${idBase}-${thread.id}`}
+      >
+        <VStack paddingInline={inset} paddingBlockStart={inset} paddingBlockEnd={4} gap={4}>
+          {head}
+          <Divider />
+        </VStack>
+        <StackItem size="fill">
+          <ScrollableArea label="Ärendet" height="100%" paddingInline={inset} paddingBlockEnd={inset}>
+            {read}
+          </ScrollableArea>
+        </StackItem>
+      </VStack>
+    );
   return (
     <VStack
-      ref={item.root}
-      gap={6}
       as="article"
+      gap={6}
+      padding={inset}
       tabIndex={-1}
       aria-label={`Ärende: ${thread.title}`}
       id={`${idBase}-${thread.id}`}
     >
-      {dock ? (
-        <>
-          {dock(
-            <VStack ref={item.head} gap={3}>
-              {head}
-            </VStack>,
-          )}
-          {item.unfold}
-        </>
-      ) : (
-        <VStack ref={item.head} gap={3}>
-          {head}
-          {item.unfold}
-        </VStack>
-      )}
-      <Unfold folded={folded} animatedLayout={item.animatedLayout}>
-        <MainColumn thread={thread} item={item} level={headingLevel + 1} visual={3} idBase={idBase} />
-      </Unfold>
+      {head}
+      <Divider />
+      {read}
     </VStack>
   );
 }
 
 /**
- * The details rail (board WorkItem): "Detaljer" as the facts the item really has, "Berör" as the people and units its
- * rows name, linked to their pages, and "Öppna i källan" as the item's own read that leads out of Clew (D111 rule 8).
- */
-function Details({ thread, item }: { thread: Thread; item: ItemState }) {
-  const now = new Date().toISOString(),
-    day = today();
-  const state = stateOf(thread, now, day);
-  const subjects = thread.items.filter(
-    (i, n, all) => i.subject && all.findIndex(j => j.subject && sameSubject(j.subject, i.subject!)) === n,
-  );
-  const out = thread.actions.filter(a => a.kind === 'read' && a.target === 'link');
-  const deadline = thread.deadline?.slice(0, 10);
-  const days = deadline ? daysUntil(deadline, day) : null;
-  return (
-    <VStack gap={10}>
-      <VStack gap={4}>
-        <Heading level={3} accessibilityLevel={2}>
-          Detaljer
-        </Heading>
-        <MetadataList>
-          <MetadataListItem label="Status">
-            <HStack gap={2} vAlign="center">
-              <StatusDot variant={state.variant} label={state.label} aria-hidden />
-              <Text>{state.label}</Text>
-            </HStack>
-          </MetadataListItem>
-          <MetadataListItem label="Källa">
-            <Text>{[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}</Text>
-          </MetadataListItem>
-          {deadline && (
-            <MetadataListItem label="Förfaller">
-              <Text>
-                {days === 0 ? 'I dag, ' : days === 1 ? 'I morgon, ' : ''}
-                {longDate(deadline)}
-              </Text>
-            </MetadataListItem>
-          )}
-          {thread.waitingOn && thread.state === 'open' && (
-            <MetadataListItem label="Väntar på">
-              <Text>{capital(thread.waitingOn)}</Text>
-            </MetadataListItem>
-          )}
-          {thread.snoozedUntil && thread.state === 'open' && (
-            <MetadataListItem label="Tillbaka">
-              <Text>{capital(whenWord(thread.snoozedUntil))}</Text>
-            </MetadataListItem>
-          )}
-          <MetadataListItem label="Skapat">
-            <Text>{capital(whenWord(thread.createdAt))}</Text>
-          </MetadataListItem>
-          {thread.handledAt && thread.state !== 'open' && (
-            <MetadataListItem label={thread.state === 'dismissed' ? 'Avfärdat' : 'Klart'}>
-              <Text>{capital(whenWord(thread.handledAt))}</Text>
-            </MetadataListItem>
-          )}
-        </MetadataList>
-      </VStack>
-      {subjects.length > 0 && (
-        <VStack gap={4}>
-          <Heading level={3} accessibilityLevel={2}>
-            Berör
-          </Heading>
-          <VStack gap={1}>
-            {subjects.map(i => {
-              const href = entityHref(i.subject!, item.from);
-              const kind = i.subject!.entity === 'unit' ? 'Enhet' : 'Person';
-              const body = (
-                <VStack gap={0}>
-                  <Text type="supporting" color="secondary">
-                    {kind}
-                  </Text>
-                  <Text weight="semibold">{i.label}</Text>
-                </VStack>
-              );
-              return href ? (
-                <ClickableCard key={i.ref} label={`${kind}: ${i.label}`} href={href} padding={3}>
-                  {body}
-                </ClickableCard>
-              ) : (
-                <VStack key={i.ref}>{body}</VStack>
-              );
-            })}
-          </VStack>
-        </VStack>
-      )}
-      {out.length > 0 && (
-        <VStack gap={4}>
-          <Heading level={3} accessibilityLevel={2}>
-            Öppna i källan
-          </Heading>
-          <VStack gap={2} hAlign="start">
-            {out.map(a => (
-              <Button
-                key={a.id}
-                variant="secondary"
-                label={a.label}
-                endContent={<Icon icon="externalLink" label="(öppnas i ny flik)" />}
-                clickAction={() => item.actions.perform(a)}
-              />
-            ))}
-          </VStack>
-        </VStack>
-      )}
-    </VStack>
-  );
-}
-
-/**
- * The work item as a page (D112 item 4, `/items/<threadId>`, the `work-item-detail` template): the trail back (to where
- * the person came from when Clew can name it, else Att göra) with the source, the title as the page's heading, the
- * status and badges and the buttons in the header; the main column; and the details rail, 340 px beside the column. At
- * 1024 px and below the rail's content is behind "Visa detaljer" in a fullscreen dialog, and on a phone the buttons are
- * pinned to the foot (board PhoneItem). On a short screen nothing is pinned and the page scrolls as one (1.4.10).
+ * The work item as a page (D126 rule 1, `/items/<threadId>`, the `work-item-detail` template, board Ärende): in the
+ * header the way back (to where the person came from when Clew can name it, else Att göra) with the source beside it,
+ * the title as the page's heading with when it is due, and the buttons directly under it; the read in the column; the
+ * facts under "Uppgifter" in the end panel, 340 px beside the column, and above the read at 1024 px and below. On a short
+ * screen nothing is pinned and the page scrolls as one (1.4.10).
  */
 export function WorkItemPage({
   thread,
   back,
   onChange,
   ask,
-  panel,
 }: {
   thread: Thread;
   back: { label: string; href: string };
   onChange: (thread: Thread) => void;
-  /** "Fråga Clew" (D112 item 7, board Assistant), after the item's own buttons in the header. */
+  /** "Fråga Clew" (`AskClew`), after the decisions. */
   ask?: ReactNode;
-  /**
-   * The page's panel (`usePagePanel`), in the end slot after the details rail. While it holds something beside the page
-   * the details go behind "Visa detaljer", as they do in a narrow window, so the column keeps its width.
-   */
-  panel?: { end: ReactNode; occupied: boolean } | undefined;
 }) {
-  const mobile = useMediaQuery(mobileQuery);
-  const narrowWindow = useMediaQuery(narrowItemQuery);
-  const narrow = narrowWindow || !!panel?.occupied;
-  const short = useMediaQuery(shortQuery);
-  const item = useWorkItem(thread, onChange, 'item');
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const narrow = useMediaQuery(narrowPageQuery);
+  const item = useWorkItem(thread, onChange);
   // The page opens on its heading (2.4.3), once per item: what the person came for.
   useEffect(() => {
     const frame = requestAnimationFrame(() => item.title.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [thread.id]);
-  const pinned = mobile && !short && thread.state === 'open';
-  const buttons = (
-    <ActionRow
-      thread={thread}
-      actions={item.actions}
-      pinned={pinned}
-      openRead={item.openRead}
-      readHref={item.readHref}
-      readSection={item.readSection}
-      omit={item.omit}
-    />
-  );
-  const trail = (
-    <HStack gap={3} wrap="wrap">
-      <Link href={back.href} type="supporting" color="secondary">
-        <HStack as="span" gap={1} vAlign="center">
-          <Icon icon="chevronLeft" size="sm" />
-          {back.label}
-        </HStack>
-      </Link>
-      {!mobile && <Divider orientation="vertical" />}
-      {!mobile && (
-        <Text type="supporting" color="secondary">
-          {[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}
-        </Text>
-      )}
-    </HStack>
-  );
-  const header = (
-    <LayoutHeader padding={mobile ? 4 : 6} hasDivider>
-      <VStack gap={mobile ? 3 : 4}>
-        <HStack gap={2} vAlign="center" justify="between">
-          {trail}
-          {narrow && (
-            <IconButton
-              variant="secondary"
-              label="Visa detaljer"
-              tooltip="Visa detaljer"
-              icon={<Icon icon="info" />}
-              onClick={() => setDetailsOpen(true)}
-            />
-          )}
-        </HStack>
-        <VStack gap={2}>
-          {mobile && (
-            <Text type="supporting" color="secondary">
-              {[item.mark.source, item.mark.title].filter(Boolean).join('\u00a0· ')}
-            </Text>
-          )}
-          <HStack gap={4} vAlign="start" wrap="wrap">
-            <StackItem size="fill">
-              <Heading ref={item.title} tabIndex={-1} level={1}>
-                {thread.title}
-              </Heading>
-            </StackItem>
-            {!narrow && (
-              <HStack gap={2} vAlign="center" wrap="wrap">
-                {buttons}
-                {ask}
-              </HStack>
-            )}
-          </HStack>
-        </VStack>
-        <StatusLine thread={thread} item={item} />
-        <Notes thread={thread} item={item} />
-        {narrow && (!pinned || ask) && (
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            {!pinned && buttons}
-            {ask}
-          </HStack>
-        )}
-      </VStack>
-    </LayoutHeader>
-  );
-  const column = (
-    <VStack gap={6}>
-      {item.unfold}
-      <MainColumn thread={thread} item={item} level={2} visual={2} idBase="item" />
-    </VStack>
-  );
-  // The column scrolls in Astryx's ScrollableArea, which takes a tab stop while it scrolls, so an item whose column holds
-  // nothing focusable can still be read by keyboard (axe: scrollable-region-focusable). On a short screen the page
-  // scrolls as one instead (1.4.10).
-  const content = short ? (
-    <LayoutContent padding={mobile ? 4 : 6} isScrollable={false}>
-      {column}
-    </LayoutContent>
-  ) : (
-    <LayoutContent padding={0} isScrollable={false}>
-      <ScrollableArea label="Ärendet" height="100%" padding={mobile ? 4 : 6}>
-        {column}
-      </ScrollableArea>
-    </LayoutContent>
-  );
+  const day = today();
+  const facts = <Facts thread={thread} item={item} />;
+  // The one page frame (D126): the way back with the source beside it, the title with when it is due, the buttons
+  // directly under it, the read in the column and the facts in the end panel; at 1024 px and below the read places the
+  // facts itself, first.
   return (
-    <>
-      <Layout
-        ref={item.root}
-        height={short ? 'auto' : 'fill'}
-        header={header}
-        content={content}
-        end={
-          narrow ? (
-            panel?.end
-          ) : (
-            <>
-              <LayoutPanel
-                width={340}
-                padding={6}
-                role="complementary"
-                label="Detaljer"
-                hasDivider
-                isScrollable={!short}
-              >
-                <Details thread={thread} item={item} />
-              </LayoutPanel>
-              {panel?.end}
-            </>
-          )
-        }
-        footer={
-          pinned ? (
-            <LayoutFooter padding={3} hasDivider>
-              {buttons}
-            </LayoutFooter>
-          ) : undefined
-        }
-      />
-      <Dialog variant="fullscreen" isOpen={narrow && detailsOpen} onOpenChange={setDetailsOpen}>
-        <Layout
-          header={<DialogHeader title="Detaljer" onOpenChange={setDetailsOpen} />}
-          content={
-            <LayoutContent padding={4}>
-              <Details thread={thread} item={item} />
-            </LayoutContent>
-          }
-        />
-      </Dialog>
-    </>
+    <PageFrame
+      back={back}
+      trail={
+        <Text type="supporting" color="secondary">
+          {sourceLine(item.mark, item.own)}
+        </Text>
+      }
+      title={thread.title}
+      titleRef={item.title}
+      status={dueBadge(thread, day)}
+      meta={waitWords(thread) ? <Text type="supporting">{waitWords(thread)}</Text> : undefined}
+      below={
+        <VStack gap={4}>
+          <ActionRow thread={thread} actions={item.actions} readHref={item.readHref} omit={item.omit} ask={ask} />
+          <Notes thread={thread} item={item} />
+        </VStack>
+      }
+      label="Ärendet"
+      scrollTabStop
+      facts={
+        <VStack gap={4}>
+          <Heading level={3} accessibilityLevel={2}>
+            Uppgifter
+          </Heading>
+          {facts}
+        </VStack>
+      }
+      factsAbove={false}
+    >
+      {/* The sections are the page's second level, drawn at the size the board gives them (board Ärende). */}
+      <Read thread={thread} item={item} level={2} visual={3} gap={8} idBase="item" facts={narrow ? facts : undefined} />
+    </PageFrame>
   );
 }
