@@ -35,14 +35,12 @@ import {
 } from '@clew/ui';
 import { api } from '../../api';
 import { ApiError } from '../../api-error';
-import { BOARDING_ADMIN_PATH } from '../../boarding-address';
 import { conditionWords, itemsWords } from '../../boarding';
 import { boardingLayersQuery } from '../../queries';
 import { keys } from '../../query-keys';
 import { errorMessage } from '../../query-policy';
 import { useAdminAction } from '../../mutations';
 import { usePageTitle } from '../../page-title';
-import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
 import { AdminShell } from './shell';
 
@@ -328,18 +326,17 @@ export function AdminBoardingImportPage({ user }: { user: SessionUser }) {
     <AdminShell
       user={user}
       section="introduktion"
-      crumbs={[{ label: 'Introduktion och avslut', href: BOARDING_ADMIN_PATH }, { label: 'Importera' }]}
-      pending={query.isPending}
-    >
-      <PageHeader
-        title="Importera lager"
-        meta={
-          <Text as="p" color="secondary">
+      title="Importera lager"
+      thing={{
+        meta: (
+          <Text as="p" type="supporting" color="secondary">
             Läs in lagren för introduktion och avslut från en fil. Ett lager som redan finns med samma händelse och namn
             ersätts om något i det har ändrats, så samma fil kan läsas in igen.
           </Text>
-        }
-      />
+        ),
+      }}
+      pending={query.isPending}
+    >
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}

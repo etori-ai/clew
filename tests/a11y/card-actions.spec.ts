@@ -21,39 +21,37 @@ test.describe('a row is one link; the steps are on the open work item', () => {
   }) => {
     await open(page, '/todo');
     const row = page.locator('#work-omtanke');
-    // A row is one link to its work item (D112 item 3): the steps are the item's.
+    // A row's name is its one link to its work item (D126 rule 4): the steps are the item's.
     await expect(row.getByRole('button')).toHaveCount(0);
     await row.getByRole('link').focus();
     await page.keyboard.press('Enter');
     const card = page.getByRole('complementary', { name: 'Valt ärende' });
     await expect(card.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
-    await expect(card.getByRole('button', { name: 'Se mönstret' })).toBeVisible();
     // Att göra has no question box, so the card offers no way into one (D111 rule 6).
     await expect(card.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    await card.getByRole('button', { name: 'Fler val' }).focus();
+    // The item's reads and Inte nu are under ⋯ (D126, board Att göra): a read is a link to its own page.
+    await card.getByRole('button', { name: 'Fler åtgärder' }).focus();
     await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'Se mönstret' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
-    await page.keyboard.press('Escape');
-    await card.getByRole('button', { name: 'Inte nu', exact: true }).focus();
-    await page.keyboard.press('Enter');
+    await page.getByRole('menuitem', { name: 'Inte nu' }).focus();
+    await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toHaveCount(0);
-    await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeFocused();
+    await expect(card.getByRole('button', { name: 'Fler åtgärder' })).toBeFocused();
   });
 
-  test('an open card has one time action: Inte nu among its buttons, and no second list under Fler val', async ({
-    page,
-    api: _,
-  }) => {
-    // The work item in Att göra's reading pane (D112 item 3).
+  test('an open card has one time action: Inte nu under ⋯, and no Påminn mig', async ({ page, api: _ }) => {
+    // The work item in Att göra's reading pane (D126 rule 2).
     await open(page, '/todo?item=fakturor');
     const card = page.getByRole('complementary', { name: 'Valt ärende' });
-    await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Påminn mig' })).toHaveCount(0);
-    await card.getByRole('button', { name: 'Fler val' }).click();
+    await card.getByRole('button', { name: 'Fler åtgärder' }).click();
     await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: /Påminn mig|Inte nu/ })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: 'Inte nu' })).toHaveCount(1);
+    await expect(page.getByRole('menuitem', { name: /Påminn mig/ })).toHaveCount(0);
   });
 
   test('the work item names its source as the source wrote it and promises no undo before a receipt says so', async ({
@@ -64,7 +62,7 @@ test.describe('a row is one link; the steps are on the open work item', () => {
     // why it is here (D112 item 4). Whether a write can be undone is only known from its receipt, so nothing says so before.
     await open(page, '/todo?item=ledighet');
     const card = page.locator('#card-ledighet');
-    await expect(card.getByText('Personalsystemet · Personal', { exact: true })).toBeVisible();
+    await expect(card.getByText('Personalsystemet · Personal', { exact: true }).first()).toBeVisible();
     await expect(card.getByText(/Ärendet kom från Personalsystemet /)).toBeVisible();
     await expect(page.getByText(/Ångra/)).toHaveCount(0);
   });
@@ -138,7 +136,8 @@ test.describe('a row is one link; the steps are on the open work item', () => {
 
   test('Skriv själv opens its dialog from the picker and the focus lands in the field', async ({ page, api: _ }) => {
     await open(page, '/todo?item=omtanke');
-    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
+    await page.getByRole('button', { name: 'Fler åtgärder' }).first().click();
+    await page.getByRole('menuitem', { name: 'Inte nu' }).click();
     await page.getByRole('menuitem', { name: /^Skriv själv/ }).click();
     const dialog = page.getByRole('dialog', { name: 'När ska jag ta upp det igen?' });
     await expect(dialog.getByRole('textbox', { name: 'När?' })).toBeVisible();
@@ -221,13 +220,11 @@ test.describe('a phone', () => {
     expect(work!.y).toBeLessThan(day!.y);
   });
 
-  test('Inte nu opens from Fler val on the work item alone on the page and shows its rows', async ({
-    page,
-    api: _,
-  }) => {
-    // On a phone the item is its page with the buttons pinned to the foot (D112 item 12): Inte nu is under Fler val.
+  test('Inte nu opens from Fler åtgärder on the work item’s page and shows its rows', async ({ page, api: _ }) => {
+    // On a phone there is no pane: the item is its page, its buttons under its title (D126 rule 2).
     await open(page, '/todo?item=fakturor');
-    await page.getByRole('main').getByRole('button', { name: 'Fler val' }).click();
+    await expect(page).toHaveURL(/\/items\/fakturor\?from=%2Ftodo$/);
+    await page.getByRole('main').getByRole('button', { name: 'Fler åtgärder' }).click();
     await page.getByRole('menuitem', { name: 'Inte nu' }).click();
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();
@@ -248,9 +245,8 @@ test.describe('a phone', () => {
         confirm: 'Avslå ansökan? Medarbetaren meddelas direkt.',
       });
     await open(page, '/todo?item=ledighet');
-    // On a phone a second step is under Fler val beside the pinned next step (D112 item 12).
-    await page.getByRole('main').getByRole('button', { name: 'Fler val' }).click();
-    await page.getByRole('menuitem', { name: 'Avslå', exact: true }).click();
+    // Two opposed decisions stand side by side at every width (D126 rule 2).
+    await page.getByRole('main').getByRole('button', { name: 'Avslå', exact: true }).click();
     const question = page.getByRole('alertdialog', { name: 'Avslå ansökan?' });
     await expect(question.getByRole('button', { name: 'Avbryt', exact: true })).toBeFocused();
     await expect(question.getByRole('button', { name: 'Avslå', exact: true })).toBeVisible();
@@ -260,8 +256,8 @@ test.describe('a phone', () => {
 });
 
 /**
- * D116: a work item's read that answers with a table, "Se i personalsystemet" on a leave request (every open request in
- * a table), is a link to the read's page, never the panel; the page names the place the item was on as its way back.
+ * D116, D126: a work item's read is a link to the read's page, never the panel; "Se i personalsystemet" on a leave
+ * request (every open request in a table) is a row under ⋯, and the page names the place the item was on as its way back.
  */
 test.describe('a read that answers with a table', () => {
   test.use({ viewport: desktop });
@@ -278,7 +274,7 @@ test.describe('a read that answers with a table', () => {
       { key: 'period', label: 'Period' },
     ],
   };
-  test('Se i personalsystemet leads to the read’s page with Hem and the item as the way back, and Back returns to the item', async ({
+  test('Se i personalsystemet leads to the read’s page with the item’s page as the way back, and Back returns to the item', async ({
     page,
     api,
   }) => {
@@ -316,36 +312,42 @@ test.describe('a read that answers with a table', () => {
         },
       });
     });
+    // An address from before D126 that held the item beside Hem leads to the item's page.
     await open(page, '/?card=ledighet');
-    const item = page.getByRole('dialog').locator('#card-ledighet');
-    const link = item.getByRole('link', { name: 'Se i personalsystemet' });
-    await expect(link).toHaveAttribute('href', '/tools/hr.leaveRequests?from=%2F%3Fcard%3Dledighet');
-    // A link, not a disclosure: it unfolds nothing in the item.
-    await expect(link).not.toHaveAttribute('aria-expanded', /.*/);
+    await expect(page).toHaveURL('/items/ledighet?from=%2F');
+    await page.getByRole('main').getByRole('button', { name: 'Fler åtgärder' }).click();
+    const link = page.getByRole('menuitem', { name: 'Se i personalsystemet' });
+    await expect(link).toHaveAttribute('href', '/tools/hr.leaveRequests?from=%2Fitems%2Fledighet');
     await link.click();
-    await expect(page).toHaveURL('/tools/hr.leaveRequests?from=%2F%3Fcard%3Dledighet');
+    await expect(page).toHaveURL('/tools/hr.leaveRequests?from=%2Fitems%2Fledighet');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const main = page.getByRole('main');
     await expect(main.getByRole('heading', { level: 1, name: 'Ledighetsansökningar' })).toBeVisible();
     await expect(main.getByRole('row')).toHaveCount(3);
-    await expect(main.getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/?card=ledighet');
     expect(asked).toHaveLength(1);
     await expectNoAxeViolations(page);
     await page.goBack();
-    await expect(page).toHaveURL('/?card=ledighet');
-    await expect(page.getByRole('dialog').locator('#card-ledighet')).toBeVisible();
+    await expect(page).toHaveURL('/items/ledighet?from=%2F');
+    await expect(page.getByRole('heading', { level: 1, name: /ledighet/i })).toBeVisible();
   });
 });
 
-test.describe('the side panel', () => {
+test.describe('one thing is its own page (D126 rule 1)', () => {
   test.use({ viewport: desktop });
 
-  test('a plain read says where it comes from and writes a date as a date', async ({ page, api }) => {
+  test('a plain read from before beside Hem is its page, says where it comes from and writes a date as a date', async ({
+    page,
+    api,
+  }) => {
     api.output = { date: '2026-11-04', onDuty: 'Anna Lindqvist' };
+    // A read that declares no view, among the reads the person may open (D116: one they may not open has no page).
+    api.views.push({ capability: 'hr.staffing', title: 'Bemanning' });
     await open(page, '/?open=hr.staffing&open-title=Bemanning');
-    const panel = page.getByRole('dialog', { name: 'Bemanning' });
-    await expect(panel).toContainText('4 november 2026');
-    await expect(panel).toContainText('Hämtat ur Personalsystemet. Inget av det sparas på Startsidan.');
+    await expect(page).toHaveURL('/tools/hr.staffing?title=Bemanning&from=%2F');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const main = page.getByRole('main');
+    await expect(main).toContainText('4 november 2026');
+    await expect(main).toContainText('Hämtat ur Personalsystemet. Inget av det sparas på Startsidan.');
   });
 });
 
@@ -357,8 +359,8 @@ test.describe('Klart', () => {
     api: _,
   }) => {
     await open(page, '/todo?tab=done');
-    const done = page.getByRole('list', { name: 'Klart' });
-    await expect(done.getByRole('listitem')).toHaveCount(2);
+    const done = page.getByRole('table', { name: 'Klart' });
+    await expect(done.getByRole('row')).toHaveCount(3);
     await expect(done.locator('#work-attest')).toContainText('Klart · ');
     await expect(done.locator('#work-avfardad')).toContainText('Avfärdat · ');
     await expect(done).not.toContainText('Vem är på plats i dag?');
@@ -402,8 +404,9 @@ test.describe('nothing is cut off', () => {
       await open(page, '/todo');
       await expect(page.locator('#work-omtanke').getByRole('link')).toBeVisible();
       expect(await cutOff(page.getByRole('main'))).toEqual([]);
-      // The pane does not fit beside the list at these widths: the item is its page (D112 items 3 and 4).
+      // The pane does not fit beside the list at these widths: the item is its page (D126 rule 2).
       await open(page, '/todo?item=omtanke');
+      await expect(page).toHaveURL(/\/items\/omtanke/);
       await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
       expect(await cutOff(page.getByRole('main'))).toEqual([]);
     });

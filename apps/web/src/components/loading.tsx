@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react';
-import { Card, Divider, Grid, Heading, HStack, Skeleton, VStack, VisuallyHidden, useEntryAnimation } from '@clew/ui';
+import { Card, Divider, Grid, HStack, Skeleton, VStack, VisuallyHidden, useEntryAnimation } from '@clew/ui';
+import { TodayHeading } from './today';
 
 type Gap = ComponentProps<typeof VStack>['gap'];
 
@@ -61,16 +62,13 @@ export function ContentSkeleton({
   );
 }
 
-/** Hem's "I dag" reserves its place from the first paint, including its real heading. */
-export function AsideSkeleton() {
-  const title = 'I dag';
+/** Hem's "I dag" reserves its place from the first paint, its real heading over the card the rows will stand in. */
+export function AsideSkeleton({ calendar = true }: { calendar?: boolean }) {
   return (
-    <Card padding={4}>
-      <VStack gap={1} as="section" aria-label={title}>
-        <Heading level={3} accessibilityLevel={2}>
-          {title}
-        </Heading>
-        <VisuallyHidden role="status">Hämtar {title.toLowerCase()} …</VisuallyHidden>
+    <VStack gap={3} as="section" aria-labelledby="i-dag">
+      <TodayHeading calendar={calendar} />
+      <Card padding={4}>
+        <VisuallyHidden role="status">Hämtar i dag …</VisuallyHidden>
         {Array.from({ length: 3 }, (_, i) => (
           <VStack key={i} gap={0}>
             {i > 0 && <Divider />}
@@ -85,8 +83,8 @@ export function AsideSkeleton() {
             </HStack>
           </VStack>
         ))}
-      </VStack>
-    </Card>
+      </Card>
+    </VStack>
   );
 }
 
@@ -136,25 +134,32 @@ export function UnitsSkeleton() {
   );
 }
 
-/** Hem before the session is known: the question's heading and the box at their reading width, then the three blocks. */
-export function HemSkeleton({ landingWidth }: { landingWidth: number }) {
+/**
+ * Hem before the session is known (D126, board Hem): the greeting and its line, the box under them, then "Behöver dig"
+ * beside "I dag", each a heading over its card, in the places the page draws them.
+ */
+export function HemSkeleton() {
   return (
     <VStack gap={8}>
-      <VStack hAlign="center">
-        <VStack gap={6} width="100%" maxWidth={landingWidth} hAlign="center">
-          <Skeleton height={36} width="55%" />
-          <Skeleton height={146} radius={4} index={1} />
+      <VStack gap={4}>
+        <VStack gap={1}>
+          <Skeleton height={32} width="35%" />
+          <Skeleton height={14} width="25%" index={1} />
         </VStack>
+        <Skeleton height={106} radius={4} index={2} />
       </VStack>
-      <Grid columns={{ minWidth: 280, max: 3, repeat: 'fit' }} gap={4} align="start">
-        {[0, 1, 2].map(i => (
-          <Card key={i} padding={4}>
-            <VStack gap={3}>
-              <Skeleton height={20} width="40%" index={i} />
-              <Skeleton height={16} width="85%" index={i + 1} />
-              <Skeleton height={16} width="65%" index={i + 2} />
-            </VStack>
-          </Card>
+      <Grid columns={{ minWidth: 380, max: 2 }} gap={6}>
+        {[0, 1].map(i => (
+          <VStack key={i} gap={3}>
+            <Skeleton height={24} width="30%" index={i} />
+            <Card padding={4}>
+              <VStack gap={3}>
+                <Skeleton height={16} width="85%" index={i + 1} />
+                <Skeleton height={16} width="65%" index={i + 2} />
+                <Skeleton height={16} width="75%" index={i + 3} />
+              </VStack>
+            </Card>
+          </VStack>
         ))}
       </Grid>
     </VStack>

@@ -2,16 +2,23 @@ import { useEffect } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser, ViewRef } from '@clew/contracts';
+import type { PanelViewSpec } from '@clew/contracts';
 import {
+  ArrowLeftIcon,
   Banner,
   Button,
   EmptyState,
+  Heading,
   HStack,
   Icon,
   Layout,
   LayoutContent,
+  LayoutHeader,
+  LayoutPanel,
   Link,
+  ScrollableArea,
   Skeleton,
+  Text,
   VStack,
   useMediaQuery,
 } from '@clew/ui';
@@ -24,16 +31,20 @@ import { useShownForTheWayBack } from '../way-back';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { placeOfRead, useRail, type RailCurrent } from '../components/nav';
 import { DeclaredView } from '../components/view';
-import { PanelBody, RAIL, answersWithRowsOf, panelBesideQuery } from '../components/panel';
-import { usePagePanel, useView, viewSubject, type OwnThing } from '../components/page-panel';
+import { PanelBody, answersWithRowsOf } from '../components/panel';
+import { useView, viewSubject } from '../components/page-panel';
 import { AskClew } from '../components/thing-panel';
+import { narrowItemQuery } from '../components/work-item';
 import { PageHeader } from '../components/page-header';
 import { ContentArrival, ContentSkeleton } from '../components/loading';
 
 /** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
 const tableQuery = '(min-width: 1280px)';
-/** With the panel open beside the page the table needs the same column, so a window wider by the panel: below it the page gives way and draws its list. */
-const tableBesideQuery = panelBesideQuery(1280 - RAIL);
+/** The kinds of read that are one thing (D126 rule 1): drawn as a thing's page, not as a register. */
+const ONE_THING: ReadonlySet<PanelViewSpec['kind']> = new Set(['record', 'detail', 'document', 'text']);
+/** A record whose read has more than its facts: the column holds the read and the end panel the facts. */
+const hasBody = (spec: PanelViewSpec) =>
+  spec.kind === 'record' && !!(spec.document || spec.items || spec.metrics || spec.series || spec.activity);
 /** The heading the page sends the focus to when the person arrives from a link on another page. */
 const TITLE_ID = 'vy-rubrik';
 /** The one person a view's input names by `person`, or null. */
@@ -70,25 +81,18 @@ function placeOf(from: string | null): RailCurrent {
 }
 
 /**
- * A view as a page (D42, D112 item 6, D116, board Tool), at `/tools/:capability`, inside the one shell, as Kalender is.
- * Every read the person may open has this page, whether or not an administrator placed it in the rail (D40): a list or
- * a table opened anywhere (a tile of Läget, a suggestion under the box, an answer's "Visa allt", a work item's "Se i
- * personalsystemet") is shown here, never in the panel, and a record or a document has it as its own page. The address
- * says what is shown: `input` what the read is asked, `title` the name it was opened under, `from` the page it was
- * opened from, whose name is the way back at the top of the page (a person's page names its way back the same way) and
- * where the rail stands when the view is no tool of its own. A read the person may not open, and one that does not
- * exist, both say "Verktyget finns inte" and nothing else, and are not asked for.
- * The page follows Astryx's `table-filter` template: the name as the heading with the system's badge on its line, the
- * filter bar under it (the view's own search field and choice, and the count of its rows), then the rows, all in one
- * scrolling column. The view is drawn by the one renderer (D38). A row's own read (`view.open`, a contact card) is the
- * inspector, and the inspector is the page's panel (`usePagePanel`, D112 item 7, so the box under it asks about it):
- * beside the page from the one width every page has (`BESIDE_FROM`), over it in a narrower window (D50). The row whose
- * read it is is the current one; ✕ or Esc closes it and gives the focus back to the row's name. A row whose read is
- * itself a list leads to that list's page. The page gives way, the panel does not: beside the panel the rows are the
- * list they are on a narrower window until the table fits too. The address names both, so a reload, a link and the
- * back button land where the person was.
- * "Fråga Clew" at the end of the title's line asks about the page (D112 item 7): the panel opens with the view as its
- * thing, the conversation under it and the box at its foot.
+ * A view as a page (D42, D116, D126), at `/tools/:capability`, inside the one shell, as Kalender is. Every read the
+ * person may open has this page, whether or not an administrator placed it in the rail (D40). The address says what is
+ * shown: `input` what the read is asked, `title` the name it was opened under, `from` the page it was opened from, whose
+ * name is the way back at the top of the page (a person's page names its way back the same way) and where the rail
+ * stands when the view is no tool of its own. A read the person may not open, and one that does not exist, both say
+ * "Verktyget finns inte" and nothing else, and are not asked for.
+ * A list or a table is a register (D126 rule 8, board Personal, the `table-page` template): the name as the heading
+ * with the system's badge and "Fråga Clew" on its line, the view's own search field and choice and the count under it,
+ * then the rows. The name in a row is the link to the row's own read, its page (rule 4); a row never opens a panel.
+ * One thing (a record, a contact card, a text, a document) is a thing's page (rule 1, the `work-item-detail`
+ * template): the way back and the title, "Fråga Clew" under it, the read in the column and a record's facts in the end
+ * panel, above the read where the window is narrow. The view is drawn by the one renderer (D38).
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -145,31 +149,19 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     manager: user.role === 'manager',
   });
   const tool = main.shown?.capability === capability ? main.shown : null;
-  // "Fråga Clew" (D112 item 7): the view as it stands is the thing the panel asks about; it is on the page, so the
-  // panel holds only its name, the conversation and the box.
-  const pageThing: OwnThing | null =
+  // "Fråga Clew" (D126 rule 5): a new conversation about the view as it stands; a list goes as its chip alone, one
+  // thing stands beside the conversation.
+  const subject =
     ready && title
-      ? {
-          id: `page:tool:${capability}`,
-          title,
-          subtitle: entry ? 'Verktyget på sidan' : 'Vyn på sidan',
-          subject: viewSubject(
-            { capability, title, input: main.shown?.input ?? {} },
-            opensAsPage(views, capability) || answersWithRowsOf(tool?.spec, tool?.output),
-          ),
-        }
+      ? viewSubject(
+          { capability, title, input: main.shown?.input ?? {} },
+          opensAsPage(views, capability) || answersWithRowsOf(tool?.spec, tool?.output),
+        )
       : null;
-  // The page says a failed read in its banner, as it says its own.
-  const slot = usePagePanel({ overlayOnly: short, failures: 'page', pageThing });
-  // The inspector (D112 item 6, board Tool): a row's own read in the page's panel, and the row it is the read of the
-  // current one.
-  const opened = slot.ref?.kind === 'view' ? slot.ref : null;
-  const isOpen = opened
-    ? (v: ViewRef) =>
-        v.capability === opened.capability && JSON.stringify(v.input ?? {}) === JSON.stringify(opened.input)
-    : undefined;
+  const ask = <AskClew subject={subject} />;
   const heading = missing ? 'Verktyget finns inte' : title || null;
-  usePageTitle(slot.view?.title ?? heading, slot.view ? false : (heading ?? false));
+  usePageTitle(heading, heading ?? false);
+  const narrow = useMediaQuery(narrowItemQuery);
   // Arrived from a link on another page, the person starts at the heading (2.4.3): the page they left took the focus
   // with it. From the rail, or with the focus somewhere already, it stays where it is.
   useEffect(() => {
@@ -188,27 +180,125 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
         }
       : main.failed && !missing
         ? { message: errorMessage(main.failed, 'Kunde inte hämta.'), retry: main.retry }
-        : slot.failure;
-  /** Where a row's own read leads (D116): a list to its own page with this one as the way back, one thing beside it. */
+        : null;
+  /** Where a row's own read leads (D116, D126): its own page, with this one as the way back. */
   const hrefFor = (v: ViewRef) => viewOpenHref(views, location.pathname, location.search, v);
   // The way back (a person's page names it the same way): the page the view was opened from, by its name.
   const trail = back && (
     <HStack>
       <Link href={back.href} type="supporting" color="secondary">
         <HStack as="span" gap={1} vAlign="center">
-          <Icon icon="chevronLeft" size="sm" />
+          <Icon icon={ArrowLeftIcon} size="sm" />
           {back.label}
         </HStack>
       </Link>
     </HStack>
   );
+  const banner = failed && (
+    <Banner status="error" title={failed.message}>
+      <Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />
+    </Banner>
+  );
+  // One thing (D126 rule 1): the thing's page, as a work item's is drawn.
+  const thing = tool?.spec && ONE_THING.has(tool.spec.kind) ? tool : null;
+  if (thing?.spec && !missing) {
+    const spec = thing.spec;
+    const split = hasBody(spec);
+    // A record's name is its own title (the supplier, the person); the read it was opened under says what it is.
+    const own =
+      (spec.kind === 'record' || spec.kind === 'detail') && thing.output && typeof thing.output === 'object'
+        ? (thing.output as Record<string, unknown>)[spec.title]
+        : undefined;
+    const name = typeof own === 'string' && own.trim() ? own : title;
+    const part = (which: 'facts' | 'body') => (
+      <DeclaredView
+        view={spec}
+        output={thing.output}
+        input={thing.input}
+        isLoading={main.isLoading}
+        headingLevel={2}
+        tableQuery={tableQuery}
+        hrefFor={hrefFor}
+        part={which}
+      />
+    );
+    // A record with more than its facts reads in the column with the facts beside it; anything else is its read alone.
+    const column = split ? (
+      <VStack gap={6}>
+        {narrow && part('facts')}
+        {part('body')}
+      </VStack>
+    ) : spec.kind === 'record' || spec.kind === 'detail' ? (
+      part('facts')
+    ) : (
+      part('body')
+    );
+    return (
+      <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+        <Layout
+          height={short ? 'auto' : 'fill'}
+          header={
+            <LayoutHeader padding={mobile ? 4 : 6} hasDivider>
+              <VStack gap={4}>
+                <VStack gap={2}>
+                  <HStack gap={4} vAlign="center" wrap="wrap">
+                    {trail}
+                    <Text type="supporting" color="secondary">
+                      {[spec.source, name !== title ? title : ''].filter(Boolean).join('\u00a0· ')}
+                    </Text>
+                  </HStack>
+                  <Heading level={1} id={TITLE_ID} tabIndex={-1}>
+                    {name}
+                  </Heading>
+                </VStack>
+                {/* The thing's actions under its title: a read has none of its own here but the question about it. */}
+                <HStack gap={2}>{ask}</HStack>
+                {banner}
+              </VStack>
+            </LayoutHeader>
+          }
+          content={
+            short ? (
+              <LayoutContent padding={mobile ? 4 : 6}>
+                <ContentArrival>{column}</ContentArrival>
+              </LayoutContent>
+            ) : (
+              <LayoutContent padding={0} isScrollable={false}>
+                <ScrollableArea label={title || 'Vyn'} height="100%" padding={mobile ? 4 : 6}>
+                  <ContentArrival>{column}</ContentArrival>
+                </ScrollableArea>
+              </LayoutContent>
+            )
+          }
+          end={
+            split && !narrow ? (
+              <LayoutPanel
+                width={340}
+                padding={6}
+                role="complementary"
+                label="Uppgifter"
+                hasDivider
+                isScrollable={!short}
+              >
+                <VStack gap={4}>
+                  <Heading level={3} accessibilityLevel={2}>
+                    Uppgifter
+                  </Heading>
+                  {part('facts')}
+                </VStack>
+              </LayoutPanel>
+            ) : undefined
+          }
+        />
+      </Shell>
+    );
+  }
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       {/* `padding={0}` on the content and the padding on the stack is the template's way to keep a table on the heading's line. The title stands 32 px in from the rail and 32 px down, as on every page (D74). */}
       <Layout
         height={short ? 'auto' : 'fill'}
         padding={mobile ? 3 : 8}
-        end={slot.end}
         content={
           <LayoutContent padding={0}>
             <VStack
@@ -229,13 +319,9 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                   {trail}
                   {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
                   {title
-                    ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} end={<AskClew />} />
+                    ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} end={ask} />
                     : !failed && <Skeleton height={32} width={200} />}
-                  {failed && (
-                    <Banner status="error" title={failed.message}>
-                      <Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />
-                    </Banner>
-                  )}
+                  {banner}
                   {tool ? (
                     <ContentArrival>
                       {tool.spec ? (
@@ -245,16 +331,15 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                           input={tool.input}
                           isLoading={main.isLoading}
                           headingLevel={2}
-                          tableQuery={slot.occupied ? tableBesideQuery : tableQuery}
+                          tableQuery={tableQuery}
                           title={title}
                           titleId={TITLE_ID}
-                          pageAction={<AskClew />}
+                          pageAction={ask}
                           /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the page. */
                           onInput={next =>
                             navigate(withViewInput(location.pathname, location.search, next), { replace: true })
                           }
                           hrefFor={hrefFor}
-                          isOpen={isOpen}
                         />
                       ) : (
                         /* A read that declares no view (D38) is drawn as the panel draws one: its hits, its rows or its facts. */
@@ -270,7 +355,6 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
           </LayoutContent>
         }
       />
-      {slot.overlay}
     </Shell>
   );
 }

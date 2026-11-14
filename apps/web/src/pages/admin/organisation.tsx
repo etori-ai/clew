@@ -40,7 +40,6 @@ import { adminQueries } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { AsyncContent, ContentSkeleton } from '../../components/loading';
-import { PageHeader } from '../../components/page-header';
 import { mobileQuery, shortQuery } from '../../components/shell';
 import { AdminShell } from './shell';
 
@@ -323,16 +322,18 @@ export function AdminOrganisationPage({ user }: { user: SessionUser }) {
   const problemsId = useId(),
     unitsId = useId();
   return (
-    <AdminShell user={user} section="organisation" crumbs={[{ label: 'Organisation' }]} pending={query.isPending}>
-      <PageHeader
-        title="Organisation"
-        meta={
-          <Text as="p" color="secondary">
-            Enheterna som katalogen har fört in, som de hänger ihop, med vem som leder varje enhet och hur många som
-            finns på den. Trädet ändras i katalogen; här ser du vad den senaste inläsningen gav.
-          </Text>
-        }
-      />
+    <AdminShell
+      user={user}
+      section="organisation"
+      title="Organisation"
+      meta={
+        <Text as="p" type="supporting" color="secondary">
+          Enheterna som katalogen har fört in, som de hänger ihop, med vem som leder varje enhet och hur många som finns
+          på den. Trädet ändras i katalogen; här ser du vad den senaste inläsningen gav.
+        </Text>
+      }
+      pending={query.isPending}
+    >
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}

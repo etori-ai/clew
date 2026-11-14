@@ -4,20 +4,21 @@ import { Card, Heading, HStack, Link, List, ListItem, PROPOSAL_MARK, Text, VStac
 import { timeLabel } from '@clew/calendar/dates';
 
 /**
- * "I dag" (D53, artboard A; D71, artboard 6): a card with the day's meetings in order, each with its time, its name and
- * its length and room, and the free gaps as their own rows ("Ledigt till …"); the longest gap says that the assistant
- * books nothing there without asking. The rows come from `agendaItems()`, the calendar family's one mapping (D32). The
- * calendar is one link away (board Main: "Kalender"). No sentence sums the day up: the rows do. The card stays when the
- * day cannot be read (D116, amended 2026-11-12): the calendar's silence with "Försök igen" stands under the heading, over
- * what was read before if anything was, and a person with no calendar is told so and who connects one, with no warning.
+ * "I dag" on Hem (D53, D71; D126, board Hem): the heading with the way to Kalender beside it, and under it a card with
+ * the day's meetings in order, each with its time, its name and its room, and the free gaps as their own rows ("Ledigt
+ * till …"). The rows come from `agendaItems()`, the calendar family's one mapping (D32). No sentence sums the day up:
+ * the rows do. The card stays when the day cannot be read (D116, amended 2026-11-12): the calendar's silence with
+ * "Försök igen" stands in it, over what was read before if anything was, and a person with no calendar is told so and
+ * who connects one, with no warning.
  */
 type Props = {
   /** The day as last read, or null when it has not been read. */
   view: TodayView | null;
   /** Every thread the page has: a card whose confirmed proposal made the meeting, a conversation whose chips name it. */
   threads?: Thread[];
-  cardHref?: (threadId: string) => string;
-  /** What stands under the heading when the day cannot be read now (`SilentNotice`, `NoCalendar`). */
+  /** A work item's page (D126 rule 1): where "från ärendet …" on a meeting leads. */
+  itemHref?: (threadId: string) => string;
+  /** What stands in the card when the day cannot be read now (`SilentNotice`, `NoCalendar`). */
   notice?: ReactNode;
   /** The person has a calendar: the link to Kalender is drawn. */
   calendar?: boolean;
@@ -41,7 +42,28 @@ export function NoCalendar({ hidden }: { hidden: boolean }) {
   );
 }
 
-export function Today({ view, threads = [], cardHref, notice, calendar = true }: Props) {
+/** The block's heading line, shared with its placeholder (`AsideSkeleton`) so the block does not move when the day arrives. */
+export function TodayHeading({ calendar = true }: { calendar?: boolean }) {
+  return (
+    <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+      <Heading id="i-dag" level={2}>
+        I dag
+      </Heading>
+      {calendar && <Link href="/calendar">Kalender</Link>}
+    </HStack>
+  );
+}
+
+/** The time at the start of a row, as wide for every row so the names line up. */
+const At = ({ at, quiet = false }: { at: string; quiet?: boolean }) => (
+  <VStack width={52}>
+    <Text weight="semibold" color={quiet ? 'secondary' : undefined} hasTabularNumbers>
+      {timeLabel(at)}
+    </Text>
+  </VStack>
+);
+
+export function Today({ view, threads = [], itemHref, notice, calendar = true }: Props) {
   // What a meeting came from (D63, the product owner's choice): the card whose confirmed time it is, and the
   // conversation the meeting was pointed at in ("underlaget ligger i samtalet"), each one link from its row.
   const madeBy = (e: TodayView['events'][number]) =>
@@ -62,36 +84,19 @@ export function Today({ view, threads = [], cardHref, notice, calendar = true }:
     [view],
   );
   return (
-    <Card padding={4}>
-      <VStack gap={1} as="section" aria-label="I dag">
-        <HStack justify="between" vAlign="center" gap={2}>
-          <Heading level={3} accessibilityLevel={2}>
-            I dag
-          </Heading>
-          {calendar && (
-            <Text type="supporting" weight="medium">
-              <Link href="/calendar" color="primary" hasUnderline>
-                Kalender
-              </Link>
-            </Text>
-          )}
-        </HStack>
-        {notice}
+    <VStack gap={3} as="section" aria-labelledby="i-dag">
+      <TodayHeading calendar={calendar} />
+      <Card padding={0}>
+        {notice && <VStack padding={4}>{notice}</VStack>}
         {view && (
-          <List hasDividers density="balanced" edge="flush" listStyle="none">
+          <List hasDividers aria-label="Dagens möten">
             {rows.length === 0 && <ListItem label={<Text color="secondary">Inga inbokade möten i dag</Text>} />}
             {rows.map(row => {
               if (row.kind === 'gap')
                 return (
                   <ListItem
                     key={row.id}
-                    startContent={
-                      <VStack width={52}>
-                        <Text weight="medium" color="secondary" hasTabularNumbers>
-                          {timeLabel(row.start)}
-                        </Text>
-                      </VStack>
-                    }
+                    startContent={<At at={row.start} quiet />}
                     label={<Text color="secondary">{row.title}</Text>}
                     description={row.meta ? <Text type="supporting">{row.meta}</Text> : undefined}
                   />
@@ -101,15 +106,9 @@ export function Today({ view, threads = [], cardHref, notice, calendar = true }:
               return (
                 <ListItem
                   key={row.id}
-                  startContent={
-                    <VStack width={52}>
-                      <Text weight="semibold" hasTabularNumbers>
-                        {timeLabel(row.start)}
-                      </Text>
-                    </VStack>
-                  }
+                  startContent={<At at={row.start} />}
                   label={
-                    <Text weight="semibold">
+                    <Text>
                       {row.marker && <Text aria-hidden="true">{`${PROPOSAL_MARK} `}</Text>}
                       {row.title}
                     </Text>
@@ -119,16 +118,16 @@ export function Today({ view, threads = [], cardHref, notice, calendar = true }:
                       {row.meta}
                       {talk && (
                         <>
-                          {'\u00a0· '}
+                          {' · '}
                           <Link href={`/conversations/${talk.id}`} color="secondary" hasUnderline>
                             underlaget ligger i samtalet
                           </Link>
                         </>
                       )}
-                      {card && cardHref && (
+                      {card && itemHref && (
                         <>
-                          {'\u00a0· '}
-                          <Link href={cardHref(card.id)} color="secondary" hasUnderline>
+                          {' · '}
+                          <Link href={itemHref(card.id)} color="secondary" hasUnderline>
                             från ärendet {card.title}
                           </Link>
                         </>
@@ -140,7 +139,7 @@ export function Today({ view, threads = [], cardHref, notice, calendar = true }:
             })}
           </List>
         )}
-      </VStack>
-    </Card>
+      </Card>
+    </VStack>
   );
 }

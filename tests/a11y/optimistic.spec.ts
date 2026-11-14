@@ -1,14 +1,14 @@
 import type { Locator, Page } from '@playwright/test';
 import { desktop, expect, open, phone, test } from './support';
 
-/** Avfärda the way a person does it (D48): from Fler val on the work item, opened from its row in Att göra (D112). */
+/** Avfärda the way a person does it (D48): from Fler åtgärder on the work item, opened from its row in Att göra (D126). */
 async function dismiss(page: Page, row: Locator) {
   await row.getByRole('link').click();
-  // The work item in the pane beside the queue, or its page alone on a phone (D112 items 3 and 12).
-  await page.getByRole('main').getByRole('button', { name: 'Fler val' }).first().click();
+  // The work item in the pane beside the queue, or its page on a phone (D126 rule 2).
+  await page.getByRole('main').getByRole('button', { name: 'Fler åtgärder' }).first().click();
   await page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' }).click();
 }
-const row = (page: Page, id: string) => page.getByRole('list', { name: 'Behöver dig' }).locator(`#work-${id}`);
+const row = (page: Page, id: string) => page.getByRole('table', { name: 'Behöver dig' }).locator(`#work-${id}`);
 
 test.describe("a card shows the person's own action at once (D64)", () => {
   test.use({ viewport: desktop });
@@ -50,7 +50,7 @@ test.describe("a card shows the person's own action at once (D64)", () => {
   });
 });
 
-test.describe('on a phone the work item is alone on the page (D112 item 12)', () => {
+test.describe('on a phone the work item is its page (D126 rule 2)', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 
   test('Avfärda leads back to the list without the item, and the focus lands on the row after it', async ({

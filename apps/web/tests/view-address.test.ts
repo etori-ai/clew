@@ -41,7 +41,7 @@ describe('every view has an address: its own page (D116)', () => {
   });
 });
 
-describe('a list or a table is a page; one thing is a peek beside the page (D116)', () => {
+describe('a list, a table and one thing are pages (D116, D126)', () => {
   test('what the person may open says which', () => {
     expect(opensAsPage(views, 'talks.talks')).toBe(true);
     expect(opensAsPage(views, 'incidents.deviations')).toBe(true);
@@ -68,9 +68,9 @@ describe('a list or a table is a page; one thing is a peek beside the page (D116
       }),
     ).toBe('/tools/incidents.deviations?input=%7B%22person%22%3A%22anna%22%7D&title=Avvikelser&from=%2Fpeople%2Fanna');
   });
-  test('one thing opens beside the page it was opened from, in the place of what lay there', () => {
+  test('one thing is its own page too (D126 rule 1), with the page it was opened from as the way back', () => {
     expect(viewOpenHref(views, '/', '?card=t1', { capability: 'finance.budget', title: 'Budget mot prognos' })).toBe(
-      '/?card=t1&open=finance.budget&open-title=Budget+mot+prognos',
+      '/tools/finance.budget?title=Budget+mot+prognos&from=%2F',
     );
     expect(
       viewOpenHref(views, '/tools/finance.invoices', '?from=%2F&open=a.b&open-title=A', {
@@ -78,9 +78,15 @@ describe('a list or a table is a page; one thing is a peek beside the page (D116
         title: 'Faktura',
         input: { ref: 'inv-1' },
       }),
-    ).toBe(
-      '/tools/finance.invoices?from=%2F&open=finance.record&open-title=Faktura&open-input=%7B%22ref%22%3A%22inv-1%22%7D',
-    );
+    ).toBe('/tools/finance.record?input=%7B%22ref%22%3A%22inv-1%22%7D&title=Faktura&from=%2Ftools%2Ffinance.invoices');
+  });
+  test('beside a conversation one thing stands beside the transcript, in the place of what lay there (rule 2)', () => {
+    expect(
+      viewOpenHref(views, '/conversations/c1', '?card=t1', {
+        capability: 'finance.budget',
+        title: 'Budget mot prognos',
+      }),
+    ).toBe('/conversations/c1?card=t1&open=finance.budget&open-title=Budget+mot+prognos');
   });
 });
 

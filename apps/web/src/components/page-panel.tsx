@@ -15,12 +15,21 @@ import { Button, HStack, Text, VStack, type AgendaItem } from '@clew/ui';
 import { areasQuery, threadsQuery, viewQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { pageLocation } from '../page-location';
-import { panelOf, viewSearch, withoutPanel, type PanelRef } from '../panel-address';
+import {
+  ASK_PARAM,
+  ENTRY_PARAM,
+  besideConversation,
+  panelOf,
+  panelRedirect,
+  viewSearch,
+  withoutPanel,
+  type PanelRef,
+} from '../panel-address';
 import { openedAsPage, opensAsPage, viewOpenHref, viewPageHref } from '../view-address';
 import { cardBody } from './card-panel';
 import { PanelBody, answersWithRowsOf, usePanel, type PanelFrame } from './panel';
-import { Unfold } from './unfold';
 import type { ThingSubject } from './conversation-context';
+import { useAskAbout } from './thing-panel';
 
 /** A work item as what the box beside it asks about (D112 item 7): its chip, and its card beside the conversation's page. */
 export const itemSubject = (thread: Pick<Thread, 'id' | 'title'>): ThingSubject => ({
@@ -168,33 +177,55 @@ export interface PagePanelSlot {
 }
 
 /**
- * The panel of a page (D50, D83 rule 1; the product owner, 2026-11-11: where something opens is decided by what it is,
- * never by the page it was clicked on). The address names what the panel holds the same way on every page
- * (`panel-address.ts`): `open` is a view and `card` is a card; the panel holds one opened thing, to peek at (D116, the
- * product owner, 2026-11-12: "The sidebar needs to be for peeking or some kind of instant actions, otherwise a full
- * route is needed"). A view that answers with rows is never drawn here: an address that opens one beside the page (a
- * saved link from before, a read whose kind was not known) is replaced by the view's own page. A record or a document
- * links to its page from the panel's header. The card is drawn as Hem draws it, from the same cache (D33), so a
- * decision made beside any page is the decision made on Hem, and one of its own reads unfolds inside it (`open-card`
- * with `open-action`, `card-read.tsx`). Closing lets go of the top layer only: the view leaves the card, the card
- * leaves the page. What differs per page comes in as options, and the panel itself is `usePanel`, which decides from
- * the one width `BESIDE_FROM` whether it stands beside the page or over it.
+ * The panel of a page (D50), since D126 (one page per thing) only where a thing still stands beside something: on the
+ * conversation's page, beside the transcript (rule 2), where the address names it as before (`panel-address.ts`: `open`
+ * a view, `card` a work item), and Kalender's own entry (D27, `entry`), which its page passes. Everywhere else nothing
+ * opens over the page (rule 3): the slot is empty, an address from before that named a card or a view leads to its page
+ * (`PanelOverPage`, in the shell), and one that asked about the page (`ask=1`) leads to the conversation about the page's
+ * own thing. No panel has a box of its own any more (rule 5): the conversation's box is the one to ask in.
+ *
+ * On the conversation's page: a view that answers with rows is never drawn here; an address that opens one beside the
+ * transcript is replaced by the view's own page. A record or a document links to its page from the panel's header.
+ * The card is drawn as every work item is, from the same cache (D33). Closing lets go of the top layer only: the view
+ * leaves the card, the card leaves the page. The panel itself is `usePanel`, which decides from the one width
+ * `BESIDE_FROM` whether it stands beside the page or over it.
  */
 function usePanelOnPage({
-  overlayOnly = false,
+  overlayOnly: pinnedNowhere = false,
   onClosed,
   failures = 'panel',
   onChange,
   onOpenItem,
   pageThing,
   entry,
-  asks = true,
+  asks: asksHere = true,
 }: PagePanelOptions): PagePanelSlot {
-  const [search] = useSearchParams();
+  const [rawSearch] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { pathname } = location;
   const address = pathname + location.search;
+  // Beside the conversation the panel is what it was; on Kalender only its own entry; on any other page nothing.
+  const conversation = besideConversation(pathname);
+  const holds = conversation || entry !== undefined;
+  const overlayOnly = pinnedNowhere || !holds;
+  const asks = conversation && asksHere;
+  // Off the conversation's page the address is read for Kalender's entry alone: a card or a view in it is on its way to
+  // its own page (`PanelOverPage`), and is never drawn here meanwhile.
+  const search = useMemo(() => {
+    if (conversation) return rawSearch;
+    const q = new URLSearchParams();
+    const own = rawSearch.get(ENTRY_PARAM);
+    if (own && entry !== undefined) q.set(ENTRY_PARAM, own);
+    if (rawSearch.get(ASK_PARAM) === '1') q.set(ASK_PARAM, '1');
+    return q;
+  }, [rawSearch, conversation, entry !== undefined]);
+  // "Fråga Clew" from before D126 (`ask=1`): the conversation about the page's own thing, in its place in the history.
+  const askAbout = useAskAbout();
+  const askedSubject = !conversation && search.get(ASK_PARAM) === '1' ? (pageThing?.subject ?? null) : null;
+  useLayoutEffect(() => {
+    if (askedSubject) askAbout(askedSubject, { replace: true });
+  }, [askedSubject?.key]);
   const ref = panelOf(search);
   const viewRef = ref?.kind === 'view' ? ref : null;
   /** The card the address names: in the panel unless a view lies over it. */
@@ -284,20 +315,17 @@ function usePanelOnPage({
         onClose: close,
         // What the box beside it asks about: the view, by its capability (D112 item 7).
         subject: viewSubject({ capability: shown.capability, title: shown.title, input: shown.input }),
-        // A view has no buttons of its own to keep: while a conversation about it runs, the whole view is behind "Visa allt".
-        body: (inline, folded) => (
-          <Unfold folded={folded}>
-            <PanelBody
-              output={shown.output}
-              view={shown.spec}
-              source={shown.source}
-              input={shown.input}
-              inline={inline}
-              isLoading={side.isLoading}
-              onOpenItem={onOpenItem}
-              hrefFor={hrefFor}
-            />
-          </Unfold>
+        body: inline => (
+          <PanelBody
+            output={shown.output}
+            view={shown.spec}
+            source={shown.source}
+            input={shown.input}
+            inline={inline}
+            isLoading={side.isLoading}
+            onOpenItem={onOpenItem}
+            hrefFor={hrefFor}
+          />
         ),
       };
     } else if (side.failed && !pageSays)
@@ -344,7 +372,8 @@ function usePanelOnPage({
       };
   }
   // A thing the page holds itself (D112 items 7 and 9): its calendar entry, or the page asked about with "Fråga Clew".
-  const own = !frame ? (ref?.kind === 'entry' ? entry : ref?.kind === 'page' ? pageThing : null) : null;
+  // The page asked about (`ask=1`) is beside the conversation now, never in a panel of its own (D126 rule 5).
+  const own = !frame ? (ref?.kind === 'entry' ? entry : ref?.kind === 'page' && conversation ? pageThing : null) : null;
   if (own)
     frame = {
       id: own.id,
@@ -367,8 +396,21 @@ function usePanelOnPage({
   const failure =
     viewRef && side.failed ? { message: errorMessage(side.failed, 'Kunde inte hämta.'), retry: side.retry } : null;
   const slot = usePanel(frame, { overlayOnly, onClosed, asks });
+  if (!holds) return EMPTY_SLOT;
   return { ...slot, frame, ref, card, view, failure };
 }
+/** A page with nothing beside it and nothing over it (D126 rule 3). */
+const EMPTY_SLOT: PagePanelSlot = {
+  end: undefined,
+  overlay: null,
+  occupied: false,
+  inline: false,
+  frame: null,
+  ref: null,
+  card: null,
+  view: null,
+  failure: null,
+};
 
 /**
  * Which pages hold the panel themselves. A page that calls `usePagePanel` claims it for as long as it is mounted; the
@@ -403,21 +445,17 @@ export function usePagePanel(options: PagePanelOptions): PagePanelSlot {
 }
 
 /**
- * The panel over a page that has none of its own (Administration): what the address opens, a card or a view,
- * lies in the drawer over the page, and closing it leaves the page as it was. A card that is not among the person's
- * cards says so in the drawer, as it does beside any page. Decided once the page is on screen: layout effects run from
- * the shell up to the page, so by the first re-render every page that holds the panel has claimed it, and the panel is
- * never drawn twice nor a card's read asked twice. Outside a session's pages (no `PanelClaims`) it draws nothing.
+ * Where the shell drew the panel over a page that had none of its own, until D126 ended the panel over pages (rule 3).
+ * It now draws nothing: on every page an address from before that opened a card or a view over it (a saved link, a
+ * bell or a toast in an older tab) is replaced by that thing's own page, with the page it lay over as the way back
+ * (`panelRedirect`), before anything is painted. The conversation's page keeps its thing beside the transcript.
  */
 export function PanelOverPage() {
-  const claimed = useContext(Claimed);
-  const [settled, setSettled] = useState(false);
-  useLayoutEffect(() => setSettled(true), []);
-  return settled && claimed === false ? <Overlay /> : null;
-}
-function Overlay() {
-  // Over the page only: Administration's pages grow with the shell's scroll and have no narrow layout to give way to
-  // (D111, amended 2026-11-11).
-  const slot = usePanelOnPage({ overlayOnly: true });
-  return <>{slot.overlay}</>;
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  const to = panelRedirect(pathname, search);
+  useLayoutEffect(() => {
+    if (to) navigate(to, { replace: true });
+  }, [to]);
+  return null;
 }

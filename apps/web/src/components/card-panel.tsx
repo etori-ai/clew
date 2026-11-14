@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { Thread } from '@clew/contracts';
 import { Card } from '@clew/ui';
 import { WorkItem, type ItemPlace } from './work-item';
@@ -10,24 +11,22 @@ export interface CardPlace {
   /** A proposal's times as rows rather than the week (`ThreadCard`). */
   compact?: boolean;
   onChange: (thread: Thread) => void;
-  /**
-   * A conversation about the item runs under it (D112 item 7): its main column folds under "Visa allt", and its header
-   * with the status and the buttons stays.
-   */
+  /** Kept for the callers from before D126: nothing folds under a conversation any more (rule 5). */
   folded?: boolean;
   /**
    * Where the item can be let go of (Att göra's reading pane): its ✕ stands at the end of the item's own header row,
    * not in a row of its own above it.
    */
   onClose?: () => void;
+  /** "Fråga Clew" among the item's buttons (`AskClew`, D126 rule 5). */
+  ask?: ReactNode;
 }
 
 /**
- * One work item, drawn the same wherever it is open at its narrow width (D112 item 4): in Att göra's reading pane,
- * beside a page or over it in the panel (`page-panel.tsx`) and in a conversation's answer. The items read the same cache
- * (D33), so a decision made in one place is the decision made everywhere: the same confirm, the same decision endpoint,
- * the same receipt. The calendar's proposals keep their own card (D112 item 9: the calendar is not redesigned); every
- * other item is `WorkItem`.
+ * One work item, drawn the same wherever it is open at its narrow width (D126 rule 2): in Att göra's reading pane,
+ * beside a conversation (`page-panel.tsx`) and in a conversation's answer. The items read the same cache (D33), so a
+ * decision made in one place is the decision made everywhere: the same confirm, the same decision endpoint, the same
+ * receipt. The calendar's proposals keep their own card (D27, D112 item 9); every other item is `WorkItem`.
  */
 export const cardBody = (thread: Thread, place: CardPlace) =>
   thread.proposals.length ? (
@@ -51,7 +50,7 @@ export const cardBody = (thread: Thread, place: CardPlace) =>
       place={place.place}
       headingLevel={place.level}
       onChange={place.onChange}
-      folded={!!place.folded}
       {...(place.onClose ? { onClose: place.onClose } : {})}
+      {...(place.ask ? { ask: place.ask } : {})}
     />
   );

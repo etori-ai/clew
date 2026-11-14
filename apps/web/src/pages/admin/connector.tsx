@@ -5,6 +5,7 @@ import type { CheckReport, ConnectorAudience, ConnectorDetail, ManifestDiff, Ses
 import {
   AlertDialog,
   AreaChip,
+  Badge,
   Banner,
   Button,
   Card,
@@ -59,7 +60,6 @@ import {
   statusOf,
 } from './labels';
 import { AdminShell } from './shell';
-import { PageHeader } from '../../components/page-header';
 import { DialogFrame } from '../../components/dialog-frame';
 import { DOT } from '../../dot';
 
@@ -157,7 +157,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const error = actionError ?? removal.error ?? readError;
   if (missing)
     return (
-      <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: id }]}>
+      <AdminShell user={user} section="anslutningar" title={null} thing={{}}>
         <EmptyState
           headingLevel={1}
           title="Anslutningen finns inte"
@@ -168,11 +168,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     );
   if (!c)
     return (
-      <AdminShell
-        pending={!error}
-        user={user}
-        crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: id }]}
-      >
+      <AdminShell pending={!error} user={user} section="anslutningar" title={null} thing={{}}>
         {error ? (
           <Text as="p" role="alert" color="accent">
             {error}
@@ -253,62 +249,66 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     },
   ];
   const removeLabel = `Ta bort ${c.source}`;
-  // A Toolbar keeps one row, which four buttons cannot at 320 px: on a phone they wrap (1.4.10).
+  // The actions directly under the title (D126 rule 1, board Arende): the switch first, then what an administrator does
+  // to a remote system, and last, set apart, the one action that cannot be taken back. They wrap on a phone (1.4.10).
   const actions = (
     <>
-      <Button
-        variant="secondary"
-        label="Testa anslutning"
-        isDisabled={busy}
-        clickAction={() =>
+      <Switch
+        label={c.state === 'enabled' ? 'På' : 'Av'}
+        labelPosition="start"
+        value={c.state === 'enabled'}
+        isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)}
+        disabledMessage="Utkastet är inte kontrollerat: kontrollera anslutningen först."
+        changeAction={on =>
           run(async () => {
-            const r = await api.admin.test(id);
-            setReport(r);
-            return r.ok ? 'Kontrollen gick bra.' : 'Kontrollen hittade fel, se listan.';
+            await api.admin.update(id, { state: on ? 'enabled' : 'disabled' });
+            return `${c.source} ${on ? 'är på' : 'är avstängd'}.`;
           })
         }
       />
-      <Button
-        variant="secondary"
-        label="Läs in igen från systemet"
-        isDisabled={busy}
-        clickAction={() =>
-          run(async () => {
-            const r = await api.admin.refresh(id, false);
-            if (r.diff.same) return 'Inget har ändrats i systemet.';
-            setDiff(r.diff);
-          })
-        }
-      />
-      <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setSecretOpen(true)} />
-    </>
-  );
-  // Set apart from the rest: the one action here that cannot be taken back.
-  const remove = <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />;
-  return (
-    <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: c.source }]}>
-      {/* The system's colour beside its name, and its place in the order under it (artboard 9, D71), in the one page header (D74). */}
-      <PageHeader
-        title={c.source}
-        icon={<SystemSwatch ordinal={c.ordinal} />}
-        end={
-          <Switch
-            label={c.state === 'enabled' ? 'På' : 'Av'}
-            labelPosition="start"
-            value={c.state === 'enabled'}
-            isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)}
-            disabledMessage="Utkastet är inte kontrollerat: kontrollera anslutningen först."
-            changeAction={on =>
+      {!c.bundled && (
+        <>
+          <Button
+            variant="secondary"
+            label="Testa anslutning"
+            isDisabled={busy}
+            clickAction={() =>
               run(async () => {
-                await api.admin.update(id, { state: on ? 'enabled' : 'disabled' });
-                return `${c.source} ${on ? 'är på' : 'är avstängd'}.`;
+                const r = await api.admin.test(id);
+                setReport(r);
+                return r.ok ? 'Kontrollen gick bra.' : 'Kontrollen hittade fel, se listan.';
               })
             }
           />
-        }
-        meta={
-          <VStack gap={1}>
-            <Text type="supporting">
+          <Button
+            variant="secondary"
+            label="Läs in igen från systemet"
+            isDisabled={busy}
+            clickAction={() =>
+              run(async () => {
+                const r = await api.admin.refresh(id, false);
+                if (r.diff.same) return 'Inget har ändrats i systemet.';
+                setDiff(r.diff);
+              })
+            }
+          />
+          <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setSecretOpen(true)} />
+          <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
+        </>
+      )}
+    </>
+  );
+  return (
+    <AdminShell
+      user={user}
+      section="anslutningar"
+      title={c.source}
+      thing={{
+        // The system's colour beside its name, its place in the order and its address on the trail's line (artboard 9, D71).
+        icon: <SystemSwatch ordinal={c.ordinal} />,
+        place: (
+          <>
+            <Text type="supporting" color="secondary">
               {[
                 swatchWords(c.ordinal),
                 c.kind ? kindLabel[c.kind].toLowerCase() : null,
@@ -317,16 +317,15 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                 .filter(Boolean)
                 .join('\u00a0· ')}
             </Text>
-            <HStack gap={1} vAlign="center" wrap="wrap">
-              <StatusDot variant={s.tone} label={s.label} aria-hidden />
-              <Text color="secondary">
-                {s.label}
-                {c.bundled ? '\u00a0· körs i Startsidan' : c.url ? `\u00a0· ${c.url}` : ''}
-              </Text>
-            </HStack>
-          </VStack>
-        }
-      />
+            <Text type="supporting" color="secondary">
+              {c.bundled ? 'Körs i Startsidan' : c.url}
+            </Text>
+          </>
+        ),
+        status: <Badge variant={s.tone} label={s.label} />,
+        actions,
+      }}
+    >
       {unhealthy && (
         <Banner
           status={c.health.status === 'unreachable' || c.health.status === 'protocol-outdated' ? 'warning' : 'error'}
@@ -367,17 +366,6 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           {tab === 'oversikt' && (
             <div id={panel('oversikt')} role={mobile ? 'region' : 'tabpanel'} aria-label="Översikt">
               <VStack gap={4}>
-                {!c.bundled &&
-                  (mobile ? (
-                    <VStack gap={3}>
-                      <HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">
-                        {actions}
-                      </HStack>
-                      <HStack>{remove}</HStack>
-                    </VStack>
-                  ) : (
-                    <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} endContent={remove} />
-                  ))}
                 {/* What an administrator acts on stands open; what a technician looks up when something is wrong folds away. The name, the status and the address are in the page's head. */}
                 <MetadataList columns={mobile ? 'single' : 'multi'}>
                   <MetadataListItem label="Vem ser det">{audienceLabel(c.audience)}</MetadataListItem>

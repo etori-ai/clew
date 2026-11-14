@@ -20,9 +20,7 @@ import {
   useAppearance,
   useMediaQuery,
   useToast,
-  Divider,
   HStack,
-  StackItem,
 } from '@clew/ui';
 import { createHeaderBandTheme } from '@clew/ui/theme';
 import { SiteHeader, SiteHeaderPerson, selectedItem } from '@clew/site-header';
@@ -40,20 +38,6 @@ import { useFocusOnTheWayBack } from '../way-back';
 export { mobileQuery, shortQuery } from '../media';
 /** The installation's name in the rail's heading until the default header has said it. */
 export const SITE_NAME = 'Startsidan';
-
-/**
- * The rows under a rail row that opens (D56). Astryx indents them only as far as the parent's label, so they read as its
- * equals; here they sit further in, with a line down from the parent's icon. The line is drawn only: the rows are already
- * a group. A vertical Divider takes its height from a parent of known height, which the StackItem gets by stretching.
- */
-export const SubRows = ({ children }: { children: ReactNode }) => (
-  <HStack gap={1} paddingInlineStart={4}>
-    <StackItem aria-hidden>
-      <Divider orientation="vertical" variant="strong" />
-    </StackItem>
-    <StackItem size="fill">{children}</StackItem>
-  </HStack>
-);
 
 type Logo = Readonly<{ src: string; alt: string; darkSrc?: string }>;
 /**
@@ -109,10 +93,10 @@ type Props = {
   children: ReactNode;
 };
 /**
- * One shell for every surface (D31, D39, D88, D112 item 1), the `shell-side-nav` template: Astryx owns navigation,
- * overlays and focus restoration. The rail is collapsible and resizable. Without a header connector the rail carries
+ * One shell for every surface (D31, D39, D88, D112 item 1, D126 rule 7), the `shell-side-nav` template: Astryx owns
+ * navigation, overlays and focus restoration. The rail is collapsible. Without a header connector the rail carries
  * the installation's identity: its heading is the installation's logo and name (D98) with the reminder bell, and the
- * person is the last row at its foot, opening the settings (D39). An installation whose header connector answers (D88)
+ * foot holds the one Administration row (`useRail`) and the person, the last row, opening the settings (D39). An installation whose header connector answers (D88)
  * gets the shared header as Astryx's TopNav above the rail instead: the logo, the name, the bell and the person on the
  * band, the places the connector lists under them; the rail then has no heading of its own, so the identity is said
  * once. On a phone the shell draws the rail's heading, or the band's heading row, as its bar, and the places go into
@@ -274,7 +258,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
             topContent={nav.top}
             footer={
               footer ? (
-                <SideNavSection title="Alltid" isHeaderHidden>
+                <SideNavSection title="Konto" isHeaderHidden>
                   {nav.footer}
                   {person}
                 </SideNavSection>

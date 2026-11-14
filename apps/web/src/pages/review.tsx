@@ -4,12 +4,12 @@ import { useQuery } from '@tanstack/react-query';
 import type { Receipt, ReviewEvidence, SessionUser, Thread, ThreadAction } from '@clew/contracts';
 import {
   AreaChip,
+  ArrowLeftIcon,
   Badge,
   Banner,
   Button,
   Card,
   CompletionFeedback,
-  Divider,
   EmptyState,
   Heading,
   HStack,
@@ -614,21 +614,19 @@ function Review({
   ) : (
     <Badge variant="neutral" icon={<Icon icon="clock" />} label="Inget att skicka" />
   );
-  // The way back, the title and where the review stands, as the work item's page draws its header (`work-item-detail`).
+  // The way back, the title and where the review stands, as the work item's page draws its header (`work-item-detail`,
+  // D126 rule 1): the review is a sub-page of the thing, under the same trail.
   const trail = (
-    <HStack gap={3} wrap="wrap" vAlign="center">
+    <HStack gap={4} wrap="wrap" vAlign="center">
       <Link href={back.href} type="supporting" color="secondary">
         <HStack as="span" gap={1} vAlign="center">
-          <Icon icon="chevronLeft" size="sm" />
+          <Icon icon={ArrowLeftIcon} size="sm" />
           {back.label}
         </HStack>
       </Link>
-      {!mobile && <Divider orientation="vertical" />}
-      {!mobile && (
-        <Text type="supporting" color="secondary">
-          {[mark.source, mark.title].filter(Boolean).join(' · ')}
-        </Text>
-      )}
+      <Text type="supporting" color="secondary">
+        {[mark.source, mark.title].filter(Boolean).join('\u00a0· ')}
+      </Text>
     </HStack>
   );
   const progress =

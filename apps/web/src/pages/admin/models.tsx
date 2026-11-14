@@ -31,7 +31,6 @@ import { usePageTitle } from '../../page-title';
 import { AddModelDialog, AddProviderDialog, PERSONAL_DATA_NOTICE } from './add-model';
 import { audienceLabel, modelStatusOf, providerStatusOf } from './labels';
 import { AdminShell } from './shell';
-import { PageHeader } from '../../components/page-header';
 import { DOT } from '../../dot';
 
 /**
@@ -92,7 +91,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
       renderCell: (r: Row) => (
         <VStack gap={0} hAlign="start">
           <HStack gap={2} vAlign="center" wrap="wrap">
-            <Link href={`/admin/models/${r.m.id}`} weight="semibold">
+            <Link href={`/admin/models/${r.m.id}`} color="primary" weight="semibold">
               {r.m.title}
             </Link>
             {r.m.isDefault && <Badge variant="neutral" label="Standard" />}
@@ -123,26 +122,28 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
   const models = data?.models ?? [];
   const fallback = models.find(m => m.isDefault && m.state === 'enabled') ?? models.find(m => m.state === 'enabled');
   return (
-    <AdminShell user={user} section="modeller" crumbs={[{ label: 'Modeller' }]} pending={list.isPending}>
-      <PageHeader
-        title="Modeller"
-        end={<Button variant="primary" label="Lägg till leverantör" onClick={() => setAddingProvider(true)} />}
-        meta={
-          <VStack gap={1}>
-            <Text as="p" color="secondary">
-              Modellerna som svarar i frågerutan. Du avgör vilka som är på, vem som kan välja dem och vilken som är
-              standard.
+    <AdminShell
+      user={user}
+      section="modeller"
+      title="Modeller"
+      action={<Button variant="primary" label="Lägg till leverantör" onClick={() => setAddingProvider(true)} />}
+      meta={
+        <VStack gap={0.5}>
+          <Text as="p" type="supporting" color="secondary">
+            Modellerna som svarar i frågerutan. Du avgör vilka som är på, vem som kan välja dem och vilken som är
+            standard.
+          </Text>
+          {data && models.length > 0 && (
+            <Text type="supporting" color="secondary">
+              {fallback
+                ? `Den som inte valt själv får ${fallback.title}${fallback.isDefault ? ' (standard)' : ', eftersom ingen modell är standard'}.`
+                : 'Ingen modell är på: rutan hittar bara exakta saker.'}
             </Text>
-            {data && models.length > 0 && (
-              <Text color="secondary">
-                {fallback
-                  ? `Den som inte valt själv får ${fallback.title}${fallback.isDefault ? ' (standard)' : ', eftersom ingen modell är standard'}.`
-                  : 'Ingen modell är på: rutan hittar bara exakta saker.'}
-              </Text>
-            )}
-          </VStack>
-        }
-      />
+          )}
+        </VStack>
+      }
+      pending={list.isPending}
+    >
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}
@@ -175,7 +176,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
               dividers={mine.length ? ['bottom'] : []}
               startContent={
                 <VStack gap={0}>
-                  <Link href={`/admin/models/providers/${p.id}`} weight="semibold">
+                  <Link href={`/admin/models/providers/${p.id}`} color="primary" weight="semibold">
                     {p.title}
                   </Link>
                   <HStack gap={1} vAlign="center">

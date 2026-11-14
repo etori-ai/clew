@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import type { CardAction, ThreadItem } from '@clew/contracts';
-import { noticeOf, paragraphsOf, receiptAction, rowsSaySomething, sourcesNotice, todoFromHem } from '../src/work-items';
+import {
+  fromClewItself,
+  noticeOf,
+  paragraphsOf,
+  receiptAction,
+  rowsSaySomething,
+  sourcesNotice,
+  todoFromHem,
+} from '../src/work-items';
 
 const ack: CardAction = {
   id: 'ack',
@@ -97,5 +105,20 @@ describe('the sources over the work (D8; D116, amended 2026-11-12)', () => {
     expect(sourcesNotice([{ lastSuccess: null, error: 'unavailable' }])).toBeNull();
     expect(sourcesNotice([{ lastSuccess: at, error: null }])).toBeNull();
     expect(sourcesNotice(undefined)).toBeNull();
+  });
+});
+
+describe('a work item from Clew itself names no source (D126)', () => {
+  const systems = [
+    { connector: 'hr', ordinal: 1 },
+    { connector: 'boarding', ordinal: null },
+  ];
+  test('its system is the person’s with no ordinal, as the registry marks Clew’s own', () => {
+    expect(fromClewItself({ connector: 'boarding' }, systems)).toBe(true);
+    expect(fromClewItself({ connector: 'hr' }, systems)).toBe(false);
+  });
+  test('a system the person cannot see, or systems not known yet, are never taken for Clew’s own', () => {
+    expect(fromClewItself({ connector: 'finance' }, systems)).toBe(false);
+    expect(fromClewItself({ connector: 'boarding' }, undefined)).toBe(false);
   });
 });

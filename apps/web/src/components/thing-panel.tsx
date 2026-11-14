@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Thread, ViewRef } from '@clew/contracts';
@@ -8,6 +8,7 @@ import { viewSearch, withAsk, withCard, withoutView } from '../panel-address';
 import { declaredPage, opensAsPage, viewPageHref } from '../view-address';
 import {
   ConversationContext,
+  useConversation,
   useModelConfigured,
   type ThingConversation,
   type ThingSubject,
@@ -18,29 +19,58 @@ import { cardBody } from './card-panel';
 import { HeadSlot } from './thing-head';
 
 /**
- * "Fråga Clew" (D112 item 7, boards Assistant and Calendar) in a page's header: the panel opens with the page itself as
- * the thing it is about ("Fråga om veckan" on Kalender). The address says so (`ask=1`), so the panel is there after a
- * reload and the back button closes it. Without a model there is nothing to ask, and the button is not drawn (D8).
- * `onAsk` is a page that already has the thing beside it with its box (Att göra's reading pane): the box takes the focus.
+ * Where "Fråga Clew" leads (D126 rule 5): the conversation's page with the thing beside it (its part of the address,
+ * `subject.search`), and the thing's chips in the box so the question is about it. The conversation is a new one.
+ */
+export const askAboutHref = (subject: ThingSubject): string => `/conversations/new${subject.search}`;
+/**
+ * "Fråga Clew" as a verb: a new conversation in the one box (`ConversationProvider`), the thing's chips in its drawer,
+ * and the conversation's page with the thing beside it. Nothing is asked until the person writes and sends (D111 rule
+ * 9: opening never asks the model).
+ */
+export function useAskAbout(): (subject: ThingSubject, options?: { replace?: boolean }) => void {
+  const talk = useConversation();
+  const navigate = useNavigate();
+  return useCallback(
+    (subject, options) => {
+      talk.newConversation();
+      subject.chips.forEach(chip => talk.addChip(chip));
+      navigate(askAboutHref(subject), options?.replace ? { replace: true } : undefined);
+    },
+    [talk, navigate],
+  );
+}
+
+/**
+ * "Fråga Clew" (D126 rule 5, board Ärende): a ghost button among a thing's actions that leads to a new conversation
+ * with that thing beside it and its chip in the box (`useAskAbout`). Nothing is asked until the person writes. A page
+ * that names its thing passes it as `subject`; one that does not yet leads to its own address with `ask=1`, which its
+ * `usePagePanel` turns into the same conversation about the thing it passes as `pageThing`. Without a model there is
+ * nothing to ask, and the button is not drawn (D8). `onAsk` replaces the whole verb, for a page that asks otherwise.
  */
 export function AskClew({
   label = 'Fråga Clew',
   onAsk,
+  subject,
   size = 'md',
 }: {
   label?: string;
   onAsk?: (() => void) | undefined;
-  /** The size of the controls beside it: Kalender's header is `sm`, a work item's buttons are `lg`. */
+  /** What the conversation is about: its chips in the box and its part of the conversation page's address. */
+  subject?: ThingSubject | null | undefined;
+  /** The size of the controls beside it: Kalender's header is `sm`. */
   size?: 'sm' | 'md' | 'lg';
 }) {
   const model = useModelConfigured();
   const { pathname, search } = useLocation();
+  const askAbout = useAskAbout();
   if (!model) return null;
-  const icon = <Icon icon={SparklesIcon} />;
-  return onAsk ? (
-    <Button size={size} variant="secondary" label={label} icon={icon} onClick={onAsk} />
+  const icon = <Icon icon={SparklesIcon} size="sm" />;
+  const ask = onAsk ?? (subject ? () => askAbout(subject) : undefined);
+  return ask ? (
+    <Button size={size} variant="ghost" label={label} icon={icon} onClick={ask} />
   ) : (
-    <Button size={size} variant="secondary" label={label} icon={icon} href={withAsk(pathname, search)} />
+    <Button size={size} variant="ghost" label={label} icon={icon} href={withAsk(pathname, search)} />
   );
 }
 
@@ -49,6 +79,8 @@ export const drawn = (threadId: string) =>
   !!document.getElementById('card-' + threadId) || !!document.getElementById('thread-' + threadId);
 
 /**
+ * Unused since D126 rule 5 (no box beside a thing but the conversation's own); kept until the conversation's page has
+ * moved off it.
  * The thing and the conversation about it in one panel (D112 item 7, boards Calendar and Assistant, the `ChatLayout`
  * panel view): the thing's head on top and out of the scroll (`useThingHead`), its facts under it and folded while a
  * conversation runs, the transcript under them, and the box docked at the foot by ChatLayout, which owns the scroll and

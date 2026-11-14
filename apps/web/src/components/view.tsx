@@ -112,6 +112,12 @@ export interface DeclaredViewProps {
    * about, which a record under it does not repeat as its heading.
    */
   section?: { title: string; about?: string | undefined } | undefined;
+  /**
+   * One thing on its own page (D126 rule 1, the `work-item-detail` template): the page draws the way back and the title,
+   * and the view only a part of the read. `facts` is a record's or a detail's facts (the end panel); `body` is what is
+   * read in the column (a record's document, its rows, its figures; a text; a document). Lists and tables ignore it.
+   */
+  part?: 'facts' | 'body' | undefined;
 }
 
 const tone = { ok: 'success', warn: 'warning', alert: 'error', none: 'neutral' } as const;
@@ -745,6 +751,7 @@ export function DeclaredView({
   pageAction,
   isOpen,
   section,
+  part,
 }: DeclaredViewProps) {
   const sectionId = useId();
   const wide = useMediaQuery(tableQuery);
@@ -814,7 +821,7 @@ export function DeclaredView({
     const body = (output as Row | null)?.[view.body];
     return (
       <VStack gap={3}>
-        {header}
+        {!part && header}
         {/* The text's headings start one level under the surface's title (artboard 7): h3 in the panel, h2 on a page. */}
         {typeof body === 'string' && body.trim() ? (
           <Markdown density="compact" headingLevelStart={headingLevel}>
@@ -830,7 +837,7 @@ export function DeclaredView({
     const body = (output as Row)?.[view.body];
     return (
       <VStack gap={3}>
-        {header}
+        {!part && header}
         {view.kind === 'document' ? (
           <DocumentReader
             bundle={body as DocumentBundle}
@@ -860,6 +867,63 @@ export function DeclaredView({
     // The person or unit the record names (D97 item 6): its heading leads to the entity, except on that entity's own page.
     const named = view.kind === 'detail' && view.subject ? recordSubject(view, record[view.subject.key]) : undefined;
     const entity = named ? entityHref(named, pathname + search) : undefined;
+    // On the thing's own page (D126) the column holds the read and the end panel the facts.
+    if (part === 'body')
+      return (
+        <VStack gap={6}>
+          {view.kind === 'record' && view.document && (
+            <DocumentReader
+              bundle={record[view.document] as DocumentBundle}
+              capability={view.capability}
+              input={input}
+            />
+          )}
+          {view.kind === 'record' && view.items && (
+            <Rows
+              view={{ ...view, kind: 'table', title: view.items.title, fields: view.items.fields }}
+              rows={(record[view.items.rows] as Row[]).slice(0, 500)}
+              hrefFor={hrefFor}
+              wide={wide}
+            />
+          )}
+          {view.kind === 'record' && view.metrics && <MetricView metrics={record[view.metrics] as Metric[]} />}
+          {view.kind === 'record' && view.series && <SeriesView series={record[view.series] as Series} />}
+          {view.kind === 'record' && view.activity && <ActivityView activity={record[view.activity] as Activity} />}
+          {view.external && <Text type="supporting">Hämtat ur {view.source}. Inget av det sparas på Startsidan.</Text>}
+        </VStack>
+      );
+    if (part === 'facts')
+      return (
+        <VStack gap={3}>
+          {/* The person or unit the record names leads to them (D97 item 6), as its heading did beside a page. */}
+          {entity && !empty(record[view.title]) && (
+            <Link href={entity} hasUnderline>
+              {String(record[view.title])}
+            </Link>
+          )}
+          {facts.length > 0 && (
+            <MetadataList>
+              {factLines.map(g => (
+                <MetadataListItem key={g.lead.key} label={g.lead.label}>
+                  <Cell
+                    group={{ lead: g.lead, beside: g.beside.filter(f => facts.includes(f)) }}
+                    row={record}
+                    day="long"
+                  />
+                </MetadataListItem>
+              ))}
+            </MetadataList>
+          )}
+          {out.length > 0 && (
+            <HStack gap={3} wrap="wrap">
+              {out.map(f => (
+                <Value key={f.key} field={f} value={record[f.key]} />
+              ))}
+            </HStack>
+          )}
+          {shown.length === 0 && <Text type="supporting">Inget att visa.</Text>}
+        </VStack>
+      );
     return (
       <VStack gap={3}>
         {header}

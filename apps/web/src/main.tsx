@@ -37,9 +37,10 @@ import { CompetenceSearchPage } from './pages/competence-search';
 import { PersonPage } from './pages/person';
 import { UnitPage } from './pages/unit';
 import { UnitsPage } from './pages/units';
+import { ConversationsPage } from './pages/conversations';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
-import { NotAdmin } from './pages/admin/shell';
+import { AdminIndexPage, NotAdmin } from './pages/admin/shell';
 import { AdminAppearancePage } from './pages/admin/appearance';
 import { AdminCompetencePage } from './pages/admin/competence';
 import { AdminCompetenceSourcesPage } from './pages/admin/competence-sources';
@@ -328,7 +329,7 @@ function App() {
       <Route
         path="/admin"
         element={admin(shell => (
-          <AdminConnectorsPage user={shell.user} />
+          <AdminIndexPage user={shell.user} />
         ))}
       />
       <Route
@@ -432,6 +433,11 @@ function App() {
       {/* What was a card is a work item (D112 item 4): its address leads to the item's page. */}
       <Route path="/cards/:threadId" element={<Protected>{() => <LegacyItem />}</Protected>} />
       <Route path="/" element={start} />
+      {/* Alla samtal (D126 rule 7): every conversation, where the rail's three latest end. */}
+      <Route
+        path="/conversations"
+        element={<Protected>{shell => <ConversationsPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
       <Route path="/conversations/:conversationId" element={start} />
       {/* Signed in first, so a link followed before signing in still lands in the review afterwards. */}
       <Route path="/cards/:threadId/review" element={<Protected>{() => <LegacyReview />}</Protected>} />

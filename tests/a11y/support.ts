@@ -2310,20 +2310,21 @@ export async function snoozeFirst(page: Page) {
   const button = page.getByRole('main').getByRole('button', { name: 'Inte nu', exact: true }).first();
   if (await button.isVisible()) await button.click();
   else {
-    const row = page.getByRole('main').getByRole('listitem').getByRole('link').first();
+    // A row of Hem's list or of Att göra's table (D126): its name is its one link.
+    const row = page.getByRole('main').locator('li, tbody tr').getByRole('link').first();
     const title = ((await row.textContent()) ?? '').trim();
     await row.click();
     const article = page.getByRole('article', { name: `Ärende: ${title}`, exact: true });
     const alone = page.getByRole('main').getByRole('heading', { level: 1, name: title, exact: true });
     await expect(article.or(alone).first()).toBeVisible();
     const item = (await article.isVisible()) ? article : page.getByRole('main');
+    // A calendar proposal keeps Inte nu among its buttons; a work item has it under Fler åtgärder (D126 rule 2).
     const own = item.getByRole('button', { name: 'Inte nu', exact: true }).first();
-    // The item has its buttons once Fler val is there, in every layout.
-    await expect(item.getByRole('button', { name: 'Fler val' }).first()).toBeVisible();
-    // On a phone the item's page has the next step pinned to the foot and Inte nu under Fler val (D112 item 12).
+    const more = item.getByRole('button', { name: 'Fler åtgärder' }).first();
+    await expect(own.or(more).first()).toBeVisible();
     if (await own.isVisible()) await own.click();
     else {
-      await item.getByRole('button', { name: 'Fler val' }).first().click();
+      await more.click();
       await page.getByRole('menuitem', { name: 'Inte nu' }).click();
     }
   }

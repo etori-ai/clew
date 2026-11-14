@@ -74,13 +74,14 @@ test.describe('Mina ärenden on Hem', () => {
     await expect(more).toHaveCount(0);
     await expect(section.getByRole('heading', { name: 'Mina ärenden' })).toBeFocused();
 
-    // A row opens the errand beside the page, in the system it came from.
+    // A row's name leads to the errand's own page, read from the system it came from, Hem as its way back (D126 rule 1).
     const link = section.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' });
-    await expect(link).toHaveAttribute('href', /open=sm\.errand/);
+    await expect(link).toHaveAttribute('href', /^\/tools\/sm\.errand\?.*from=%2F$/);
     await link.focus();
     await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/tools\/sm\.errand\?/);
     await expect(page.getByText('Ny medarbetare behöver konto i elevregistret')).toBeVisible();
-    await expect(section.getByRole('listitem')).toHaveCount(7);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
 

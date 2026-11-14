@@ -33,6 +33,8 @@ const invoices = (api: MockApi, count: number) => {
 };
 const ROWS = ['Energibolaget AB · 21 400 kr', 'Skolmaterial Norrland AB · 18 300 kr', 'Städservice Mitt AB · 8 500 kr'];
 const FROM_TODO = '/items/fakturor/review?from=%2Ftodo%3Fitem%3Dfakturor';
+/** The review opened from the item's own page (a phone has no pane, D126 rule 2). */
+const FROM_ITEM = '/items/fakturor/review?from=%2Fitems%2Ffakturor';
 const pane = (page: Page) => page.getByRole('complementary', { name: 'Valt ärende' });
 const title = (page: Page, name: string) => page.getByRole('heading', { level: 1, name });
 const rowHeading = (page: Page, name: string) => page.getByRole('heading', { level: 2, name });
@@ -97,7 +99,7 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
     await expect(page.getByRole('status', { name: 'Bekräftat av källan' })).toContainText('2 fakturor attesterade');
     await expect(page).toHaveURL('/todo?item=fakturor');
     expect(api.acted.at(-1)?.body.refs).toEqual(['finance:inv:1', 'finance:inv:3']);
-    const row = page.getByRole('list', { name: 'Behöver dig' }).locator('#work-fakturor');
+    const row = page.getByRole('table', { name: 'Behöver dig' }).locator('#work-fakturor');
     await expect(row).toContainText('Klart · 2 fakturor attesterade');
     await expect(pane(page).getByRole('button', { name: /^Ångra · \d+ min kvar$/ })).toBeVisible();
     await expect(pane(page).getByRole('list', { name: 'Kvitto, rad för rad' }).getByRole('listitem')).toHaveCount(2);
@@ -250,27 +252,28 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
     await expect(document).toBeFocused();
   });
 
-  test('Granska on a card beside Personal and in a conversation’s answer leads to the page, and Back to where it was with the focus on Granska', async ({
+  test('Granska on the item’s page opened from Personal and in a conversation’s answer leads to the page, and Back to where it was with the focus on Granska', async ({
     page,
     api,
   }) => {
     reviewed(api);
     const card = page.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' });
+    // An address from before D126 that held the item beside Personal is its page, Personal as the way back.
     await open(page, '/staff?card=fakturor');
-    const granska = card.getByRole('link', { name: 'Granska 3' });
-    await expect(granska).toHaveAttribute('href', '/items/fakturor/review?from=%2Fstaff%3Fcard%3Dfakturor');
+    await expect(page).toHaveURL('/items/fakturor?from=%2Fstaff');
+    const granska = page.getByRole('main').getByRole('link', { name: 'Granska 3' });
+    await expect(granska).toHaveAttribute('href', '/items/fakturor/review?from=%2Fitems%2Ffakturor');
     await granska.click();
     await expect(title(page, 'Granska 3 rader')).toBeVisible();
-    await expect(page.getByRole('main').getByRole('link', { name: 'Personal' })).toHaveAttribute(
-      'href',
-      '/staff?card=fakturor',
-    );
     await page.getByRole('button', { name: 'Lämna kvar' }).click();
     await page.goBack();
-    await expect(page).toHaveURL('/staff?card=fakturor');
-    await expect(page).toHaveTitle('Personal · Startsidan');
-    await expect(card.getByRole('link', { name: 'Fortsätt granska' })).toBeFocused();
-    await expect(card.getByRole('checkbox').nth(0)).not.toBeChecked();
+    await expect(page).toHaveURL('/items/fakturor?from=%2Fstaff');
+    await expect(page.getByRole('main').getByRole('link', { name: 'Fortsätt granska' })).toBeFocused();
+    await expect(page.getByRole('main').getByRole('checkbox').nth(0)).not.toBeChecked();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
+      'href',
+      '/staff',
+    );
 
     await open(page, '/');
     await composer(page).fill('attestera en faktura');
@@ -482,11 +485,12 @@ test.describe('the review on a phone: the same page, stacked (D73 amended 2026-1
   }) => {
     reviewed(api);
     await open(page, '/todo?item=fakturor');
-    // Where the pane does not fit the item is its page, alone on the surface (D112 item 12).
+    // Where the pane does not fit there is no pane: the item is its page (D126 rule 2), the review a sub-page of it.
+    await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo');
     await expect(page.getByRole('heading', { level: 1, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
     const granska = page.getByRole('main').getByRole('link', { name: 'Granska 3' });
     await granska.click();
-    await expect(page).toHaveURL(FROM_TODO);
+    await expect(page).toHaveURL(FROM_ITEM);
     await expect(title(page, 'Granska 3 rader')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     // The document above the decision; on a phone a step opens on its document, the verb a thumb's reach below it.
@@ -502,13 +506,13 @@ test.describe('the review on a phone: the same page, stacked (D73 amended 2026-1
     await expectNoAxeViolations(page);
     await page.screenshot({ path: 'test-results/review-page-phone.png' });
     await page.getByRole('button', { name: 'Lämna kvar' }).click();
-    await expect(page).toHaveURL(`${FROM_TODO}&step=2`);
+    await expect(page).toHaveURL(`${FROM_ITEM}&step=2`);
     await expect(rowHeading(page, ROWS[1]!)).toBeVisible();
     await verb(page).click();
-    await expect(page).toHaveURL(`${FROM_TODO}&step=3`);
+    await expect(page).toHaveURL(`${FROM_ITEM}&step=3`);
     expect(await reflowProblems(page)).toEqual([]);
     await page.goBack();
-    await expect(page).toHaveURL('/todo?item=fakturor');
+    await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo');
     await expect(page.getByRole('main').getByRole('link', { name: 'Fortsätt granska' })).toBeFocused();
     const boxes = page.getByRole('main').getByRole('checkbox');
     await expect(boxes.nth(0)).not.toBeChecked();

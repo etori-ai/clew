@@ -58,7 +58,6 @@ import { RETRY_DELAY_MS, errorMessage, retryPolicy } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { capabilityLabel, instantText, relationDescription, relationLabel, roleOfOne } from './labels';
 import { AdminShell } from './shell';
-import { PageHeader } from '../../components/page-header';
 import {
   IssueProvisionerDialog,
   RevokeProvisionerDialog,
@@ -641,16 +640,18 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     mappingsId = useId(),
     cataloguesId = useId();
   return (
-    <AdminShell user={user} section="anvandare" crumbs={[{ label: 'Användare' }]} pending={query.isPending}>
-      <PageHeader
-        title="Användare"
-        meta={
-          <Text as="p" color="secondary">
-            Personerna som katalogen har fört in i Clew, med enhet, roll och behörigheter. Vem som finns och var hen hör
-            hemma bestäms i katalogen; här avgör du vilka grupper som ger en behörighet i Clew.
-          </Text>
-        }
-      />
+    <AdminShell
+      user={user}
+      section="anvandare"
+      title="Användare"
+      meta={
+        <Text as="p" type="supporting" color="secondary">
+          Personerna som katalogen har fört in i Clew, med enhet, roll och behörigheter. Vem som finns och var hen hör
+          hemma bestäms i katalogen; här avgör du vilka grupper som ger en behörighet i Clew.
+        </Text>
+      }
+      pending={query.isPending}
+    >
       {error && <Banner status="error" role="alert" collapsible={false} title={error} />}
       {silent.length > 0 && (
         // The catalogues stand last on the page, so one that has stopped reading in is said here, with the way down.

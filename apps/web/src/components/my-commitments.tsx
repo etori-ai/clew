@@ -69,7 +69,7 @@ export function MyCommitments() {
   if (!result && read.isError)
     return (
       <VStack gap={2} as="section" aria-label="Mina åtgärdspunkter">
-        <Heading ref={heading} id="mina-atgardspunkter" tabIndex={-1} level={3} accessibilityLevel={2}>
+        <Heading ref={heading} id="mina-atgardspunkter" tabIndex={-1} level={2}>
           Mina åtgärdspunkter
         </Heading>
         <VStack gap={2}>
@@ -98,7 +98,7 @@ export function MyCommitments() {
   };
   return (
     <VStack gap={2} as="section" aria-label="Mina åtgärdspunkter">
-      <Heading ref={heading} id="mina-atgardspunkter" tabIndex={-1} level={3} accessibilityLevel={2}>
+      <Heading ref={heading} id="mina-atgardspunkter" tabIndex={-1} level={2}>
         Mina åtgärdspunkter{DOT}
         {open.length}
       </Heading>

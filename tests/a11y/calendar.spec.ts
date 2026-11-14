@@ -15,13 +15,13 @@ import {
 import type { Page } from '@playwright/test';
 import { NEXT_WEEK, events } from './data';
 
-/** Wide enough for the panel to stand beside the grid (1340 px, D111 amended): an entry opens in the end slot. */
+/** Wide enough for the page's own pane to stand beside the grid (1340 px): an entry opens in the end slot. */
 const WIDE = { width: 1440, height: 900 };
 
 /**
- * The calendar page (D27, D32, D112 item 9): three views on two widths, the view switch, a booking of one's own, an
- * entry opened from the grid into the panel, the proposals reached from the header, and a proposal moved without a
- * mouse. The grid itself is a picture (FullCalendar's time grid is not a WAI-ARIA grid); every change goes through a
+ * The calendar page (D27, D32, D112 item 9, D126): three views on two widths, the view switch, a booking of one's own,
+ * an entry opened from the grid into the page's own pane, the proposals reached from the header, and a proposal moved
+ * without a mouse. The grid itself is a picture (FullCalendar's time grid is not a WAI-ARIA grid); every change goes through a
  * dialog, which is the path these tests take.
  */
 const views = [
@@ -313,7 +313,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(page).not.toHaveURL(/entry=/);
     await expect(block).toBeFocused();
   });
-  test('a meeting someone else organises says so and has no organiser’s buttons; the box still asks about it', async ({
+  test('a meeting someone else organises says so and has no organiser’s buttons; Fråga Clew asks about it in a conversation (D126 rule 5)', async ({
     page,
     api,
   }) => {
@@ -354,12 +354,19 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(panel.getByText('Skolchefen', { exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Flytta …' })).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Ställ in …' })).toHaveCount(0);
-    const box = panel.getByRole('textbox', { name: 'Fråga Clew' });
+    // No box in the pane: "Fråga Clew" leaves for a conversation with the meeting's chip in the box.
+    await expect(panel.getByRole('textbox')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    await panel.getByRole('button', { name: 'Fråga Clew' }).click();
+    await expect(page).not.toHaveURL(/\/calendar/);
+    // The box is the one in the assistant's home: a combobox where `@` offers things, a textbox where it does not.
+    const named = { name: /^(Vad vill du göra|Svara i samtalet|Fråga Clew)$/ };
+    const box = page.getByRole('combobox', named).or(page.getByRole('textbox', named));
+    await expect(page.getByRole('button', { name: 'Ta bort Rektorsmöte' })).toBeVisible();
     await box.fill('Vad står på agendan?');
     await box.press('Enter');
-    await expect(panel.getByText('Tio personer är på plats i dag.')).toBeVisible();
+    await expect(page.getByText('Tio personer är på plats i dag.')).toBeVisible();
     expect(api.asked.at(-1)!.chips).toEqual([{ ref: 'event:rektorsmote', kind: 'event', label: 'Rektorsmöte' }]);
-    await expectNoAxeViolations(page);
   });
   test('cancelling opens the entry’s dialog at the question, asks once, inline, and is spoken when done', async ({
     page,
@@ -426,7 +433,9 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await page.keyboard.press('Enter');
     const drawer = page.getByRole('dialog', { name: 'Morgonmöte ledningsgrupp' });
     await expect(drawer.getByRole('button', { name: 'Flytta …' })).toBeVisible();
-    await expect(drawer.getByRole('textbox', { name: 'Fråga Clew' })).toBeVisible();
+    // The same pane as beside the grid: its buttons, "Fråga Clew" among them, and no box (D126 rule 5).
+    await expect(drawer.getByRole('button', { name: 'Fråga Clew' })).toBeVisible();
+    await expect(drawer.getByRole('textbox')).toHaveCount(0);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(drawer).toHaveCount(0);

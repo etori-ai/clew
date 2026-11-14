@@ -83,17 +83,16 @@ test.describe('Administration › Kompetens › Krav', () => {
       await page.getByRole('main').getByRole('link', { name: 'Krav', exact: true }).click();
       await expect(page).toHaveURL(REQUIREMENTS);
       await expect(page).toHaveTitle('Krav på kompetens · Startsidan');
-      // The rail keeps Kompetens as the place, and the trail leads back to the catalogue.
+      // The administration's panel keeps Kompetens as the section, and the way back leads to the catalogue (D126). The
+      // place Kompetens in the rail is the reader's own (D120 item 8), another link.
+      const sections = page.getByRole('navigation', { name: 'Administration', exact: true });
       await expect(
-        // Under Administration: the place Kompetens in the rail is the reader's own (D120 item 8), another link.
-        page
-          .getByRole('navigation', { name: 'Sidonavigering' })
-          .getByRole('group', { name: 'Administration', exact: true })
-          .getByRole('link', { name: 'Kompetens', exact: true }),
-      ).toHaveAttribute('aria-current', 'page');
-      await expect(
-        page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Kompetens' }),
-      ).toHaveAttribute('href', '/admin/competence');
+        sections.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Kompetens', exact: true }) }),
+      ).toHaveAttribute('aria-current', 'true');
+      await expect(page.getByRole('main').getByRole('link', { name: 'Kompetens', exact: true }).last()).toHaveAttribute(
+        'href',
+        '/admin/competence',
+      );
       const tables = page.getByRole('table');
       await expect(tables).toHaveCount(3);
       const [positions, units, targets] = [tables.nth(0), tables.nth(1), tables.nth(2)];

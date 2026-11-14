@@ -7,10 +7,10 @@ import { wayBack } from './person-address';
  * `/tools/<capability>`, whether or not an administrator placed it in the rail: `input` is what it is read with,
  * `title` the name it was opened under (the menu's row or the read's own title when absent) and `from` the page it was
  * opened from, the way back. A view that answers with rows, a table or a list, is a page: whatever opens one leads
- * there and Back returns. Anything else, one record, a contact card, a text, a day, is a peek beside the page it was
- * opened from (`?open=` in that page's address, `panel-address.ts`); a record or a document in the panel links to its
- * page. The kinds come from the reads the person may open (`/api/areas`, `views`); a read Clew does not know the kind
- * of opens beside the page, and the panel sends it on to its page if it answers with rows (`openedAsPage`).
+ * there and Back returns. Since D126 (one page per thing) so is everything else, one record, a contact card, a text, a
+ * day: it is the thing's own page, never a peek beside the page it was opened from, except beside a conversation, where
+ * the thing an answer names stands beside the transcript (`?open=`, `panel-address.ts`). The kinds come from the reads
+ * the person may open (`/api/areas`, `views`).
  */
 export interface ViewTarget {
   capability: string;
@@ -73,9 +73,9 @@ export function declaredPage(
   return page && /^\/[^/]/.test(page) ? page : undefined;
 }
 /**
- * Where opening a view from a page leads: the page Clew's own read declares for its rows (`declaredPage`); else a table
- * or a list to its page, with this page as the way back (what this page holds in its panel kept, so the way back returns
- * to it as it was); anything else beside this page, in its panel.
+ * Where opening a view from a page leads: the page Clew's own read declares for its rows (`declaredPage`); else the
+ * view's own page with this page as the way back (D126 rule 1; `withView` keeps one thing beside the transcript on the
+ * conversation's page, rule 2).
  */
 export function viewOpenHref(
   views: readonly ViewEntry[] | undefined,

@@ -55,9 +55,9 @@ for (const viewport of [desktop, narrow])
     const nav = await openNav(page);
     const account = nav.getByRole('button', { name: 'Testa Testsson', exact: true });
     await expect(account).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Administration', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Administration', exact: true })).toHaveAttribute('href', '/admin');
     expect((await account.boundingBox())!.y).toBeGreaterThan(
-      (await nav.getByRole('button', { name: 'Administration', exact: true }).boundingBox())!.y,
+      (await nav.getByRole('link', { name: 'Administration', exact: true }).boundingBox())!.y,
     );
     await expect(page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true })).toHaveCount(0);
     await account.focus();
@@ -120,7 +120,10 @@ test('a reminder opens its work item in Att göra’s reading pane, with the foc
 });
 
 for (const [source, heading] of [['/calendar', 'Vecka']] as const)
-  test(`a reminder opens and focuses its card over ${source}`, async ({ page, api }) => {
+  test(`a reminder from ${source} opens its work item's page, with ${source} as the way back`, async ({
+    page,
+    api,
+  }) => {
     api.threads = api.threads.map(t => (t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t));
     await open(page, source);
     const bell = page.getByRole('button', { name: 'Påminnelser: 1', exact: true });
@@ -129,25 +132,18 @@ for (const [source, heading] of [['/calendar', 'Vecka']] as const)
     await expect(list).toBeVisible();
     await expectNoAxeViolations(page);
     await list.getByRole('link', { name: /Ledighetsansökan/ }).click();
-    // The card opens over the page the person is on, with that page's own address kept (D111 rule 2): on Kalender in
-    // the shell's drawer, on Hem in its panel, over the page at this width, and the focus is in it.
-    await expect(page).toHaveURL(`${source}${source.includes('?') ? '&' : '?'}card=ledighet`);
+    // The work item's own page, with the page the person was on as the way back (D126 rules 1 and 3): nothing over it.
+    await expect(page).toHaveURL(`/items/ledighet?from=${encodeURIComponent(source)}`);
     await expect(list).not.toBeVisible();
-    await expect(page.getByRole('heading', { level: 1, name: heading })).toBeAttached();
-    const panel = page.getByRole('dialog', { name: 'Ärende', exact: true });
-    await expect(
-      panel.getByRole('article', { name: 'Ärende: Ledighetsansökan från Johan Byström', exact: true }),
-    ).toBeVisible();
-    await expect.poll(() => panel.evaluate(el => el.contains(document.activeElement))).toBe(true);
-    // Waiting on others and handled cards never count as outstanding reminders; the address still shows the card as it is now.
+    await expect(page.getByRole('heading', { level: 1, name: /^Ledighetsansökan från Johan Byström/ })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Ärende', exact: true })).toHaveCount(0);
+    // Waiting on others and handled cards never count as outstanding reminders; the address still shows the item as it is now.
     api.threads = api.threads.map(t => (t.id === 'ledighet' ? { ...t, state: 'handled' } : t));
     await page.reload();
-    await expect(
-      page
-        .getByRole('dialog', { name: 'Ärende', exact: true })
-        .getByRole('article', { name: 'Ärende: Ledighetsansökan från Johan Byström', exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /^Ledighetsansökan från Johan Byström/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeAttached();
+    await page.goBack();
+    await expect(page.getByRole('heading', { level: 1, name: heading })).toBeAttached();
   });
 
 test('an empty bell says what will appear, leads to the overview and restores focus on Escape', async ({
@@ -201,15 +197,11 @@ test.describe('on a touch phone', () => {
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page, sheet)).toEqual([]);
     await sheet.getByRole('link', { name: /Ledighetsansökan/ }).click();
-    await expect(page).toHaveURL('/calendar?card=ledighet');
+    // The work item's page, as from a wide screen (D126 rule 1), and it reflows at 320 px.
+    await expect(page).toHaveURL('/items/ledighet?from=%2Fcalendar');
     await expect(sheet).not.toBeVisible();
-    // On a phone the card lies over Kalender in the shell's drawer, and the focus is in it.
-    const card = page.getByRole('dialog', { name: 'Ärende', exact: true });
-    await expect(
-      card.getByRole('article', { name: 'Ärende: Ledighetsansökan från Johan Byström', exact: true }),
-    ).toBeVisible();
-    await expect.poll(() => card.evaluate(el => el.contains(document.activeElement))).toBe(true);
-    expect(await reflowProblems(page, card)).toEqual([]);
+    await expect(page.getByRole('heading', { level: 1, name: /^Ledighetsansökan från Johan Byström/ })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
   });
 });
 
@@ -260,48 +252,6 @@ test('logout reports failure, then ends the session after a successful retry', a
   await page.getByRole('button', { name: 'Logga ut', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Logga in', exact: true })).toBeVisible();
   await expect(account).toHaveCount(0);
-});
-
-for (const viewport of [desktop, narrow])
-  test(`a row that opens marks its rows with a line under its icon at ${viewport.width}px`, async ({ page, api }) => {
-    api.admin = true;
-    await page.setViewportSize(viewport);
-    await open(page, '/');
-    const nav = await openNav(page);
-    for (const [name, row] of [['Administration', 'Modeller']] as const) {
-      const parent = nav.getByRole('button', { name, exact: true });
-      await parent.click();
-      const rows = nav.getByRole('group', { name, exact: true });
-      await expect(rows.getByText(row, { exact: true })).toBeVisible();
-      expect(await reflowProblems(page, rows)).toEqual([]);
-
-      const line = (await rows.locator('[data-orientation="vertical"]').boundingBox())!;
-      const icon = (await parent.locator('svg').first().boundingBox())!;
-      expect(Math.abs(line.x - (icon.x + icon.width / 2))).toBeLessThan(1);
-      expect(line.height).toBe((await rows.boundingBox())!.height);
-
-      const own = (await parent.getByText(name, { exact: true }).boundingBox())!.x;
-      expect((await rows.getByText(row, { exact: true }).boundingBox())!.x).toBeGreaterThan(own + 8);
-      await expect(rows.getByRole('separator')).toHaveCount(0); // The line is a picture of the group the rows already are.
-
-      await parent.focus();
-      await page.keyboard.press('Tab');
-      await expect(rows.locator('a, button').first()).toBeFocused();
-    }
-    await expectNoAxeViolations(page);
-  });
-
-test('the person signs out from the drawer on a phone', async ({ page, api }) => {
-  await page.route('**/api/auth/logout', route => {
-    api.signedIn = false;
-    return route.fulfill({ json: { url: '/' } });
-  });
-  await page.setViewportSize(narrow);
-  await open(page, '/');
-  const nav = await openNav(page);
-  await nav.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Logga ut', exact: true }).click();
-  await expect(page.getByRole('link', { name: 'Logga in', exact: true })).toBeVisible();
 });
 
 /**
@@ -531,10 +481,10 @@ test.describe('the folded rail', () => {
     await expectNoAxeViolations(page);
     await field.fill('fakturor');
     await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
-    // Picked on Hem, the work item opens over Hem in its panel (D111 rule 2; D112, amended 2026-11-12).
-    await expect(page).toHaveURL(/\/\?card=fakturor$/);
+    // Picked on Hem, the work item opens on its own page with Hem as the way back (D126 rule 1).
+    await expect(page).toHaveURL('/items/fakturor?from=%2F');
     await expect(palette).toHaveCount(0);
-    await expect(page.getByRole('dialog', { name: 'Ärende', exact: true }).locator('#card-fakturor')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /^Attestera 3 fakturor/ })).toBeVisible();
   });
 
   test('Esc closes the search and gives the focus back to Sök', async ({ page, api: _ }) => {
@@ -575,40 +525,36 @@ test('a long conversation title stays inside the rail on one line', async ({ pag
 });
 
 /**
- * The rows under Administration are the ones the person may open (D85): each is drawn for a person holding the
- * capability its page is behind on the server, and Kompetens only while the module is switched on (D108 item 13). With
- * none of them there is no Administration in the rail.
+ * Administration in the rail (D126 rule 7): one row, to the administration, drawn for a person who holds any of its
+ * sections (D85), Kompetens counting only while the module is switched on (D108 item 13). Its sections are listed by the
+ * administration itself (`admin.spec.ts`).
  */
 test.describe('Administration in the rail, by what the person may open', () => {
   test.use({ viewport: desktop });
   const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
-  const rows = (page: Page) => rail(page).getByRole('group', { name: 'Administration', exact: true }).getByRole('link');
+  const row = (page: Page) => rail(page).getByRole('link', { name: 'Administration', exact: true });
 
-  test('every capability: every row but Kompetens while it is off', async ({ page, api }) => {
+  test('every capability: one row to the administration, marked there', async ({ page, api }) => {
     api.admin = true;
+    await open(page, '/');
+    await expect(row(page)).toHaveAttribute('href', '/admin');
+    await expect(rail(page).getByRole('group', { name: 'Administration', exact: true })).toHaveCount(0);
     await open(page, '/admin/connectors');
-    await expect(rows(page)).toHaveText(['Anslutna system', 'Modeller', 'Användare', 'Organisation', 'Utseende']);
+    await expect(row(page)).toHaveAttribute('aria-current', 'page');
   });
 
-  test('only admin.appearance: only Utseende', async ({ page, api }) => {
+  test('only admin.appearance: the row is there', async ({ page, api }) => {
     api.admin = true;
     api.capabilities = ['admin.appearance'];
-    await open(page, '/admin/appearance');
-    await expect(rows(page)).toHaveText(['Utseende']);
+    await open(page, '/');
+    await expect(row(page)).toBeVisible();
     await expectNoAxeViolations(page);
-  });
-
-  test('only admin.users: Användare and Organisation', async ({ page, api }) => {
-    api.admin = true;
-    api.capabilities = ['admin.users'];
-    await open(page, '/admin/users');
-    await expect(rows(page)).toHaveText(['Användare', 'Organisation']);
   });
 
   test('only admin.competence while the module is off: no Administration at all', async ({ page, api }) => {
     api.admin = true;
     api.capabilities = ['admin.competence'];
     await open(page, '/');
-    await expect(rail(page).getByRole('button', { name: 'Administration', exact: true })).toHaveCount(0);
+    await expect(row(page)).toHaveCount(0);
   });
 });

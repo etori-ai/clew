@@ -19,14 +19,12 @@ import {
   MetadataList,
   MetadataListItem,
   Section,
-  StatusDot,
   Switch,
   Tab,
   TabList,
   Text,
   TextInput,
   Timestamp,
-  Toolbar,
   VStack,
   useMediaQuery,
 } from '@clew/ui';
@@ -40,7 +38,6 @@ import { Findings } from './add-model';
 import { AudienceEditor } from './audience';
 import { actionLabel, actorLabel, audienceLabel, modelStatusOf, providerHealthLabel } from './labels';
 import { AdminShell } from './shell';
-import { PageHeader } from '../../components/page-header';
 import { DOT } from '../../dot';
 
 /** One model (D24): what it is and how it answers, who can pick it in the box, and its history. */
@@ -82,10 +79,9 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
   const { run, busy, error: actionError } = useAdminAction({ toastId: 'model:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.models], toastId: 'model:' + id });
   const error = actionError ?? removal.error ?? readError;
-  const crumbs = (label: string) => [{ label: 'Modeller', href: '/admin/models' }, { label }];
   if (missing)
     return (
-      <AdminShell user={user} section="modeller" crumbs={crumbs(id)}>
+      <AdminShell user={user} section="modeller" title={null} thing={{}}>
         <EmptyState
           headingLevel={1}
           title="Modellen finns inte"
@@ -96,7 +92,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
     );
   if (!m || !draft)
     return (
-      <AdminShell pending={!error} user={user} section="modeller" crumbs={crumbs(id)}>
+      <AdminShell pending={!error} user={user} section="modeller" title={null} thing={{}}>
         {error ? (
           <Text as="p" role="alert" color="accent">
             {error}
@@ -113,9 +109,22 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
   const changed = draft.title !== m.title || draft.description !== m.description || draft.model !== m.model;
   const panel = (t: TabId) => `panel-${t}`;
   const role = mobile ? 'region' : 'tabpanel';
-  // A Toolbar keeps one row, which these buttons cannot at 320 px: on a phone they wrap (1.4.10).
+  // The actions directly under the title (D126 rule 1, board Arende): the switch, Testa and the default, and last, set
+  // apart, the one that cannot be taken back. They wrap on a phone (1.4.10).
   const actions = (
     <>
+      <Switch
+        label={m.state === 'enabled' ? 'På' : 'Av'}
+        labelPosition="start"
+        value={m.state === 'enabled'}
+        isDisabled={busy}
+        changeAction={on =>
+          run(async () => {
+            await api.admin.updateModel(id, { state: on ? 'enabled' : 'disabled' });
+            return `${m.title} ${on ? 'är på' : 'är avstängd'}.`;
+          })
+        }
+      />
       <Button
         variant="secondary"
         label="Testa"
@@ -154,42 +163,33 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
           }
         />
       )}
+      <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
     </>
   );
-  const remove = <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />;
   return (
-    <AdminShell user={user} section="modeller" crumbs={crumbs(m.title)}>
-      <PageHeader
-        title={m.title}
-        end={
-          <Switch
-            label={m.state === 'enabled' ? 'På' : 'Av'}
-            labelPosition="start"
-            value={m.state === 'enabled'}
-            isDisabled={busy}
-            changeAction={on =>
-              run(async () => {
-                await api.admin.updateModel(id, { state: on ? 'enabled' : 'disabled' });
-                return `${m.title} ${on ? 'är på' : 'är avstängd'}.`;
-              })
-            }
-          />
-        }
-        meta={
-          /* The title's line holds the title and the switch alone (D74); "Standard" is a state of the model, so it stands in the line under it. */
-          <HStack gap={1} vAlign="center" wrap="wrap">
-            <StatusDot variant={s.tone} label={s.label} aria-hidden />
-            <Text type="supporting">
-              {s.label} ·{' '}
-              <Text type="code" color="secondary">
-                {m.model}
-              </Text>{' '}
-              hos {m.providerTitle}
-            </Text>
+    <AdminShell
+      user={user}
+      section="modeller"
+      title={m.title}
+      thing={{
+        // The model's id and where it answers on the trail's line; its state, and "Standard", beside its name.
+        place: (
+          <Text type="supporting" color="secondary">
+            <Text type="code" color="secondary">
+              {m.model}
+            </Text>{' '}
+            hos {m.providerTitle}
+          </Text>
+        ),
+        status: (
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            <Badge variant={s.tone} label={s.label} />
             {m.isDefault && <Badge variant="neutral" label="Standard" />}
           </HStack>
-        }
-      />
+        ),
+        actions,
+      }}
+    >
       {down && (
         <Banner
           status={m.health.status === 'unreachable' ? 'warning' : 'error'}
@@ -226,16 +226,6 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
           {tab === 'oversikt' && (
             <div id={panel('oversikt')} role={role} aria-label="Översikt">
               <VStack gap={4}>
-                {mobile ? (
-                  <VStack gap={3}>
-                    <HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">
-                      {actions}
-                    </HStack>
-                    <HStack>{remove}</HStack>
-                  </VStack>
-                ) : (
-                  <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} endContent={remove} />
-                )}
                 {report && <Findings report={report} label="Testets resultat" />}
                 <MetadataList columns={mobile ? 'single' : 'multi'}>
                   <MetadataListItem label="Id">{m.id}</MetadataListItem>

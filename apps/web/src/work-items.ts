@@ -7,6 +7,7 @@ import {
   streamGroup,
   unresolvedExecution,
   type CardAction,
+  type SystemMark,
   type Thread,
 } from '@clew/contracts';
 import { weekNumber } from '@clew/calendar/dates';
@@ -86,6 +87,17 @@ export function todoFromHem(search: URLSearchParams | string): string | null {
   const s = q.toString();
   return s ? `/todo?${s}` : '/todo';
 }
+
+/**
+ * Whether a work item comes from Clew itself (an owned domain, such as introduction and leaving, D124): its system is
+ * among the person's systems (`/api/areas`, `systems`) with no ordinal, which is how the registry marks Clew's own (a
+ * core connector or a bundled row, `Registry.ordinal`). Such an item names no source, on its row or in its source line:
+ * "Clew" is not a system the person goes to (the product owner, 2026-11-14). False while the systems are unknown.
+ */
+export const fromClewItself = (
+  thread: Pick<Thread, 'connector'>,
+  systems: readonly Pick<SystemMark, 'connector' | 'ordinal'>[] | undefined,
+): boolean => !!systems?.some(s => s.connector === thread.connector && s.ordinal === null);
 
 /** The queue in the order Hem's groups had it (D34): what is due, what comes later, the proposals, the notices. */
 export const needsYouOf = (g: Groups): Thread[] => [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom];

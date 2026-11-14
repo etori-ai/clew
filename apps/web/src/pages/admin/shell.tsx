@@ -1,65 +1,131 @@
 import type { ReactNode } from 'react';
+import { Navigate } from 'react-router';
 import type { SessionUser } from '@clew/contracts';
-import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, Layout, LayoutContent, VStack } from '@clew/ui';
-import { useRail, type AdminSection } from '../../components/nav';
+import { Button, EmptyState, Layout, LayoutContent, useMediaQuery } from '@clew/ui';
+import { useRail } from '../../components/nav';
 import { Shell, mobileQuery } from '../../components/shell';
-import { useMediaQuery } from '@clew/ui';
 import { AsyncContent, ContentSkeleton } from '../../components/loading';
+import { usePageTitle } from '../../page-title';
+import {
+  AdminFrame,
+  AdminSectionHeader,
+  AdminSectionsList,
+  AdminThingHeader,
+  adminSection,
+  useAdminSections,
+  type AdminSection,
+} from '../../components/admin-frame';
+
+export type { AdminSection } from '../../components/admin-frame';
 
 /**
- * The administration surface (D23, D24) on the shared shell (D31) with the same rail as every other page (D45): Anslutna
- * system and Modeller are rows under Administration. The page sits in a Layout whose contentWidth bounds and centres it,
- * so a table does not run to the edge of a wide screen and the page lines up with the start page's column. Each page
- * opens with the one page header (D74, `components/page-header.tsx`) under the trail. Only Astryx.
+ * The administration surface (D23, D24) on the shared shell (D31): the rail keeps one row for it, and every page is
+ * drawn in the administration's own frame (D126, board Admin, `components/admin-frame.tsx`): its sections in a panel
+ * beside the page, the page's head above its content. A section page names its title, the facts line under it and its
+ * one primary action (`meta`, `action`); a thing in a section (a connector, a model, a provider, a sub-page of
+ * Kompetens or an import) passes `thing`, and gets the thing's head: the way back to its section, the title, the
+ * actions under it. The panel and the way back replace the trail the pages had above their headers.
  */
-export type Crumb = { label: string; href?: string };
 export function AdminShell({
   user,
-  crumbs,
-  children,
-  section = 'anslutningar',
+  section,
+  title,
+  meta,
+  action,
+  thing,
+  flush = false,
   pending = false,
+  children,
 }: {
   user: SessionUser;
-  crumbs: Crumb[];
-  children: ReactNode;
-  section?: AdminSection;
+  section: AdminSection;
+  /** The page's level-1 heading; null while a thing is being read or is gone, when the content holds the heading. */
+  title: string | null;
+  meta?: ReactNode;
+  action?: ReactNode;
+  /** A thing's page in the section: where it stands, its mark and state, its actions; the way back is its section's. */
+  thing?: {
+    back?: { label: string; href: string };
+    place?: ReactNode;
+    icon?: ReactNode;
+    status?: ReactNode;
+    meta?: ReactNode;
+    actions?: ReactNode;
+  };
+  /** A register that meets the frame's edges, as the board draws the connectors' table. */
+  flush?: boolean;
   pending?: boolean;
+  children: ReactNode;
 }) {
-  const mobile = useMediaQuery(mobileQuery);
   // Only an administrator reaches this shell: `main.tsx` draws NotAdmin for anyone else.
-  const nav = useRail({ current: { surface: 'admin', section }, admin: true, manager: user.role === 'manager' });
+  const nav = useRail({ current: { surface: 'admin' }, admin: true, manager: user.role === 'manager' });
+  const own = adminSection(section);
+  const header = thing ? (
+    <AdminThingHeader
+      back={thing.back ?? { label: own.label, href: own.href }}
+      place={thing.place}
+      title={title}
+      icon={thing.icon}
+      status={thing.status}
+      meta={thing.meta}
+      actions={thing.actions}
+    />
+  ) : (
+    <AdminSectionHeader title={title ?? own.label} meta={meta} action={action} />
+  );
   return (
     <Shell user={user} nav={nav}>
-      {/* Layout's contentWidth bounds the page and centres it in the content area, the same mechanism as the start page's
-        column; the Layout owns its gutters through `padding`, 32 px as on every page (D74), and grows with the page so
-        the shell keeps the scroll. The trail stands above the page header, where Astryx places Breadcrumbs. */}
-      <Layout
-        height="auto"
-        contentWidth={1216}
-        padding={mobile ? 3 : 8}
-        content={
-          <LayoutContent isScrollable={false}>
-            <VStack gap={5}>
-              <Breadcrumbs label="Du är här" variant="supporting">
-                <BreadcrumbItem href="/">Startsidan</BreadcrumbItem>
-                <BreadcrumbItem href="/admin/connectors">Administration</BreadcrumbItem>
-                {crumbs.map((c, i) => (
-                  <BreadcrumbItem key={i} href={c.href} isCurrent={i === crumbs.length - 1}>
-                    {c.label}
-                  </BreadcrumbItem>
-                ))}
-              </Breadcrumbs>
-              <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={5}>
-                {children}
-              </AsyncContent>
-            </VStack>
-          </LayoutContent>
-        }
-      />
+      <AdminFrame section={section} header={header} label={title ?? own.label} flush={flush}>
+        <AsyncContent pending={pending} fallback={<ContentSkeleton heading={false} />} gap={flush ? 0 : 5}>
+          {children}
+        </AsyncContent>
+      </AdminFrame>
     </Shell>
   );
 }
+
+/**
+ * `/admin`, where the rail's one row leads: on a wide screen the first section the person may open, in place of this
+ * address, so Back does not return to a page that only moves on; on a phone the sections as a list of their own (the
+ * `settings-sidebar` template's menu), each leading to its section. A person whose every capability belongs to a module
+ * that is switched off is told so in the frame.
+ */
+export function AdminIndexPage({ user }: { user: SessionUser }) {
+  const mobile = useMediaQuery(mobileQuery);
+  const { sections, settled } = useAdminSections();
+  const nav = useRail({ current: { surface: 'admin' }, admin: true, manager: user.role === 'manager' });
+  // The sections without a module stand first, so the first one is known before `/api/areas` has answered.
+  const first = sections[0];
+  usePageTitle(mobile || !first ? 'Administration' : null);
+  if (!mobile && first) return <Navigate to={first.href} replace />;
+  return (
+    <Shell user={user} nav={nav}>
+      {sections.length === 0 ? (
+        <Layout
+          height="auto"
+          padding={mobile ? 4 : 6}
+          content={
+            <LayoutContent isScrollable={false}>
+              {settled ? (
+                <EmptyState
+                  headingLevel={1}
+                  title="Inget att administrera ännu"
+                  description="Det du har behörighet till är inte påslaget. Det syns här när systemförvaltaren slår på det under Anslutna system."
+                  actions={<Button label="Till startsidan" href="/" />}
+                />
+              ) : (
+                <ContentSkeleton label="Hämtar administrationen …" />
+              )}
+            </LayoutContent>
+          }
+        />
+      ) : (
+        <AdminSectionsList />
+      )}
+    </Shell>
+  );
+}
+
 /** A signed-in person without the grant capability who reaches /admin: no data, one way back. The server refuses every call anyway. */
 export function NotAdmin() {
   return (

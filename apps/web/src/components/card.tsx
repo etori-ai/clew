@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   dayWord,
   isSnoozed,
@@ -28,6 +28,7 @@ import {
   Icon,
   IconButton,
   Link,
+  MoreMenu,
   StackItem,
   Text,
   TextInput,
@@ -648,8 +649,8 @@ export type Actions = ReturnType<typeof useThreadActions>;
 /**
  * A read whose answer is an address out of Clew (`target: 'link'`) says on its control that it leaves (D111 rule 8):
  * Astryx's external-link glyph after the label, named with the words Astryx's own external link says in Swedish, so the
- * control's name is "Öppna i ekonomisystemet (öppnas i ny flik)" as a link out's is. A read into the panel unfolds in
- * the card instead and is not marked.
+ * control's name is "Öppna i ekonomisystemet (öppnas i ny flik)" as a link out's is. A read inside Clew is a link to
+ * its own page instead and is not marked.
  */
 export const leavingMark = (action: ThreadAction) =>
   action.kind === 'read' && action.target === 'link'
@@ -660,36 +661,36 @@ const reopenable = (thread: Thread) =>
   thread.state === 'dismissed' && !!thread.handledAt && Date.now() - Date.parse(thread.handledAt) <= 10 * 60_000;
 
 /**
- * A work item's buttons (D112 item 4, boards WorkItem, Inbox and PhoneItem): the one next step from the connector,
- * filled only when the item is due today (D48), its secondary actions, the item's one time action (D49: Inte nu while
- * it is the person's, Påminn mig while it waits on someone else), "Lägg till i samtalet" where the page has a box (D111
- * rule 6), and ⋯ with the rest and Avfärda. A step reviewed one row at a time is "Granska N", a link to the review's own
- * page ("Fortsätt granska" once begun; D70, D73 amended 2026-11-12). A decision on its way says so with Kontrollera status; a decided item keeps
- * "Visa granskning" and its reads; a dismissed one offers Återöppna. The receipt's Ångra is the receipt's own
- * (`work-item.tsx`). `pinned` is the phone's bar at the foot of the page (board PhoneItem): the next step and the first
- * secondary side by side the width of the screen, everything else under ⋯. An action the item draws elsewhere
- * (`omit`: a notice's link out, after its text) is not drawn here too.
+ * A work item's buttons, directly under its title wherever it is drawn (D126 rule 2, boards Att göra and Ärende): the
+ * one next step from the connector, filled only when the item is due today (D48), and the decisions beside it, so two
+ * opposed decisions (Godkänn and Avslå) stand side by side at every width; then "Fråga Clew" (`ask`, a ghost button
+ * that leads to the conversation about the item, rule 5), "Lägg till i samtalet" beside a conversation's own box (D111
+ * rule 6), and ⋯ ("Fler åtgärder") with the item's reads, the rest of its actions, "Inte nu" (D49: the item's one time
+ * action while it is the person's) and Avfärda. A read is a link to its own page (D126 rule 3: nothing unfolds in the
+ * item), a read out of Clew opens in a new tab and says so. A step reviewed one row at a time is "Granska N", a link to
+ * the review's page ("Fortsätt granska" once begun; D70, D73 amended 2026-11-12). A decision on its way says so with
+ * Kontrollera status; an item that waits on others keeps "Påminn mig"; a decided item keeps "Visa granskning" and its
+ * reads; a dismissed one offers Återöppna. The receipt's Ångra is the receipt's own (`work-item.tsx`). `pinned` is a
+ * bar at the foot of a phone's page: the decisions side by side the width of the screen, everything else under ⋯. An
+ * action the item draws elsewhere (`omit`: a notice's link out, after its text) is not drawn here too.
  */
 export function ActionRow({
   thread,
   actions,
   pinned = false,
-  openRead = null,
   readHref,
-  readSection,
   omit,
+  ask,
 }: {
   thread: Thread;
   actions: Actions;
   pinned?: boolean;
-  /** The read unfolded in the item now (`CardRead`), whose button says so. */
-  openRead?: string | null;
-  /** Where a read that answers with rows leads: its own page (D116). Such a read is a link, not a disclosure. */
+  /** Where a read inside Clew leads: its own page (D116, D126). A read without one is pressed. */
   readHref?: ((action: ThreadAction) => string | undefined) | undefined;
-  /** The id of the section a read unfolds in. */
-  readSection?: string;
   /** The ids of the actions the item draws in another place. */
   omit?: readonly string[] | undefined;
+  /** "Fråga Clew" (`AskClew`), after the decisions; absent where the item is beside its own conversation. */
+  ask?: ReactNode;
 }) {
   const conversation = useConversation();
   const silent = useSilentSources().of(thread.connector);
@@ -706,22 +707,16 @@ export function ActionRow({
   });
   const here = omit?.length ? thread.actions.filter(a => !omit.includes(a.id)) : thread.actions;
   const primary = here.find(a => a.role === 'primary');
-  const secondary = here.filter(a => a.role === 'secondary').slice(0, 2);
-  const overflow = here.filter(a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)));
+  // The decisions stand as buttons; a read, wherever the connector placed it, is in the menu (the board's ⋯).
+  const isRead = (a: ThreadAction) => a.kind === 'read';
+  const decisions = here.filter(a => a.role === 'secondary' && !isRead(a)).slice(0, 2);
+  const tucked = here.filter(
+    a => a !== primary && !decisions.includes(a) && (a.role === 'overflow' || a.role === 'secondary'),
+  );
+  const reads = tucked.filter(isRead);
+  const rest = tucked.filter(a => !isRead(a));
   const count = selected.length;
-  /**
-   * A read that unfolds in the item says so on its button (a disclosure, 4.1.2): whether it is unfolded and, while it
-   * is, the section it controls. The item finds the button again by `data-read` when the section's own toggle folds it.
-   */
-  const readState = (a: ThreadAction) =>
-    a.kind === 'read' && a.target !== 'link' && !readHref?.(a)
-      ? {
-          'aria-expanded': openRead === a.id,
-          ...(openRead === a.id && readSection ? { 'aria-controls': readSection } : {}),
-          'data-read': a.id,
-        }
-      : {};
-  /** A read that answers with rows leads to its page as a link (D116); every other action is pressed. */
+  /** A read inside Clew leads to its page as a link (D116, D126); every other action is pressed. */
   const pressOrLink = (a: ThreadAction) => {
     const href = readHref?.(a);
     return href ? { href } : { clickAction: () => perform(a) };
@@ -729,7 +724,6 @@ export function ActionRow({
   // "Attestera 2 valda" on an item whose rows are chosen (boards WorkItem and Inbox).
   const primaryLabel = primary && selectable ? `${primary.label} ${count} valda` : primary?.label;
   const due = streamGroup(thread, today()) === 'nu';
-  const size = 'lg' as const;
   const width = pinned ? '100%' : undefined;
   // Back from the review's page (by Back, its trail, or once it is sent), the focus is on the control that led there,
   // wherever the item is drawn: a row under Dokument, else "Granska N" (now perhaps "Fortsätt granska" or "Visa
@@ -759,7 +753,6 @@ export function ActionRow({
     reviewed ? (
       <Button
         ref={review}
-        size={size}
         variant={due ? 'primary' : 'secondary'}
         label={going ? 'Fortsätt granska' : `Granska ${rows.length}`}
         width={width}
@@ -767,7 +760,6 @@ export function ActionRow({
       />
     ) : (
       <Button
-        size={size}
         variant={due ? 'primary' : 'secondary'}
         label={primaryLabel ?? ''}
         isDisabled={selectable && count === 0}
@@ -776,63 +768,74 @@ export function ActionRow({
         {...pressOrLink(primary)}
         data-action={primary.id}
         data-thread={thread.id}
-        {...readState(primary)}
         {...leavingMark(primary)}
       />
     )
   ) : null;
   const addChip = () =>
     conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id });
-  // Only beside a conversation's own box (D112 item 7): everywhere else the item has its own box in the panel.
+  // Only beside a conversation's own box (D112 item 7, D126 rule 2).
   const addToConversation = conversation.hasBox ? (
     <Button
-      size={size}
       variant="ghost"
       label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'}
       isDisabled={inConversation}
       onClick={addChip}
     />
   ) : null;
-  /** ⋯: MoreMenu's button over DropdownMenu's compound rows, because MoreMenu's data rows cannot hold a sub-menu. */
-  const more = ({ tucked = [], time }: { tucked?: ThreadAction[]; time?: TimeRows }) => (
-    <>
-      <DropdownMenu
-        renderTrigger={trigger => (
-          <IconButton
-            {...trigger}
-            size="md"
-            variant="ghost"
-            label="Fler val"
-            tooltip="Fler val"
-            icon={<Icon icon="moreHorizontal" />}
-          />
-        )}
-        alignment="end"
-        menuWidth={300}
-        menuMaxHeight={480}
-      >
-        {[...tucked, ...overflow].map(a => (
-          <DropdownMenuItem
-            key={a.id}
-            label={a.label}
-            {...(readHref?.(a) ? { href: readHref(a) } : { onClick: () => void perform(a) })}
-            {...leavingMark(a)}
-          />
-        ))}
-        {time && <TimeSubMenu label="Inte nu" rows={time.rows} own={time.own} />}
-        {([...tucked, ...overflow].length > 0 || time) && <DropdownMenuDivider />}
-        <DropdownMenuItem label={'Avfärda\u00a0· inte aktuellt'} onClick={() => void dismiss()} />
-      </DropdownMenu>
-      {snoozeRows.dialog}
-      {remindRows.dialog}
-    </>
-  );
+  /**
+   * ⋯ "Fler åtgärder" (the board's MoreMenu): Astryx's MoreMenu trigger over DropdownMenu's compound rows, because
+   * MoreMenu's data rows cannot hold the "Inte nu" sub-menu. A read is a row that is a link to its page.
+   */
+  const more = ({
+    tucked: extra = [],
+    time,
+    dismissable = true,
+  }: {
+    tucked?: ThreadAction[];
+    time?: TimeRows;
+    dismissable?: boolean;
+  }) => {
+    const items = [...extra, ...reads, ...rest];
+    if (!items.length && !time && !dismissable) return null;
+    return (
+      <>
+        <DropdownMenu
+          renderTrigger={trigger => (
+            <IconButton
+              {...trigger}
+              variant="ghost"
+              label="Fler åtgärder"
+              tooltip="Fler åtgärder"
+              icon={<Icon icon="moreHorizontal" />}
+            />
+          )}
+          alignment="end"
+          menuWidth={300}
+          menuMaxHeight={480}
+        >
+          {items.map(a => (
+            <DropdownMenuItem
+              key={a.id}
+              label={a.label}
+              {...(readHref?.(a) ? { href: readHref(a) } : { onClick: () => void perform(a) })}
+              {...leavingMark(a)}
+            />
+          ))}
+          {time && <TimeSubMenu label="Inte nu" rows={time.rows} own={time.own} />}
+          {dismissable && (items.length > 0 || time) && <DropdownMenuDivider />}
+          {dismissable && <DropdownMenuItem label={'Avfärda · inte aktuellt'} onClick={() => void dismiss()} />}
+        </DropdownMenu>
+        {snoozeRows.dialog}
+        {remindRows.dialog}
+      </>
+    );
+  };
   const pending = executionStatus(thread.execution, !!silent);
   const viewReview =
     reviewed && (thread.receipt || pending || !open) ? (
       <Button
         ref={review}
-        size={size}
         variant="secondary"
         label="Visa granskning"
         href={reviewHref(thread.id, { from: pathname + search })}
@@ -850,14 +853,11 @@ export function ActionRow({
           : (!thread.execution ||
               ['pending', 'running', 'unknown'].includes(thread.execution.state) ||
               thread.execution.reason) && (
-              <Button
-                size={size}
-                label="Kontrollera status"
-                clickAction={() => run(() => api.checkExecution(thread.id))}
-              />
+              <Button label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
             )}
         {viewReview}
         <Text type="supporting">{pending}</Text>
+        {ask}
         {addToConversation}
       </HStack>
     );
@@ -866,19 +866,18 @@ export function ActionRow({
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
         <Button
-          size={size}
           variant="secondary"
           label="Ta upp nu"
           clickAction={() => run(() => api.reopen(thread.id), { optimistic: reopened(thread) })}
         />
+        {ask}
         {more({})}
       </HStack>
     );
   if (open && !thread.waitingOn) {
-    const secondaryButton = (a: ThreadAction) => (
+    const decisionButton = (a: ThreadAction) => (
       <Button
         key={a.id}
-        size={size}
         variant="secondary"
         label={a.label}
         isLoading={settling && pressed === a.id}
@@ -886,30 +885,30 @@ export function ActionRow({
         {...pressOrLink(a)}
         data-action={a.id}
         data-thread={thread.id}
-        {...readState(a)}
         {...leavingMark(a)}
       />
     );
-    // The phone's bar (board PhoneItem): the next step the width of the screen, everything else under ⋯, so its words
-    // are never cut at 320 px (1.4.10). The board draws a second step beside it, which only fits a short label.
+    // The phone's bar: the decisions side by side the width of the screen (two opposed decisions are never parted),
+    // everything else under ⋯, so their words are never cut at 320 px (1.4.10).
     if (pinned)
       return (
         <HStack gap={2} vAlign="center">
-          {primaryButton ? (
-            <StackItem size="fill">{primaryButton}</StackItem>
-          ) : (
-            secondary[0] && <StackItem size="fill">{secondaryButton(secondary[0])}</StackItem>
-          )}
-          {more({ tucked: primaryButton ? secondary : secondary.slice(1), time: snoozeRows })}
+          {primaryButton && <StackItem size="fill">{primaryButton}</StackItem>}
+          {decisions.slice(0, primaryButton ? 1 : 2).map(a => (
+            <StackItem key={a.id} size="fill">
+              {decisionButton(a)}
+            </StackItem>
+          ))}
+          {more({ tucked: decisions.slice(primaryButton ? 1 : 2), time: snoozeRows })}
         </HStack>
       );
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
         {primaryButton}
-        {secondary.map(secondaryButton)}
-        <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size="md" />
+        {decisions.map(decisionButton)}
+        {ask}
         {addToConversation}
-        {more({})}
+        {more({ time: snoozeRows })}
       </HStack>
     );
   }
@@ -920,34 +919,40 @@ export function ActionRow({
       <HStack gap={2} vAlign="center" wrap="wrap">
         {viewReview}
         <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size="md" />
+        {ask}
         {more({})}
       </HStack>
     );
-  // Decided or set aside for good: the review that was sent, the item's reads, and Återöppna while the server allows it.
-  const reads = secondary.filter(a => a.kind === 'read');
-  if (!viewReview && !reads.length && !reopenable(thread)) return null;
+  // Decided or set aside for good: the review that was sent, Återöppna while the server allows it, and the item's reads
+  // under ⋯ (nothing is left to dismiss).
+  const readsLeft = here.filter(a => a !== primary && isRead(a));
+  if (!viewReview && !readsLeft.length && !reopenable(thread) && !ask) return null;
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
       {reopenable(thread) && (
         <Button
-          size={size}
           variant="secondary"
           label="Återöppna"
           clickAction={() => run(() => api.reopen(thread.id), { optimistic: reopened(thread) })}
         />
       )}
       {viewReview}
-      {reads.map(a => (
-        <Button
-          key={a.id}
-          size={size}
-          variant="secondary"
-          label={a.label}
-          {...pressOrLink(a)}
-          {...readState(a)}
-          {...leavingMark(a)}
+      {ask}
+      {readsLeft.length > 0 && (
+        <MoreMenu
+          label="Fler åtgärder"
+          alignment="end"
+          items={readsLeft.map(a => {
+            const href = readHref?.(a);
+            return {
+              id: a.id,
+              label: a.label,
+              ...(href ? { href } : { onClick: () => void perform(a) }),
+              ...leavingMark(a),
+            };
+          })}
         />
-      ))}
+      )}
     </HStack>
   );
 }

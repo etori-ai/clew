@@ -14,18 +14,24 @@ import {
 import { NOTICE_REASON, NOTICE_TEXT, asNotice } from './data';
 
 /**
- * Att göra (D112 item 3, board Inbox, the `table-inbox` template): a queue that indexes a reading pane. The piles are
- * tabs that lead to their address; a row is one link, and choosing it puts the work item in the pane and in the
- * address (`/todo?item=`). Where the pane does not fit beside the list (the template measures the page's own box,
- * 900 px), the row leads to the item as its page, alone on the surface, with the way back to the list. Keyboard, focus, announcements, axe and
- * reflow at 320 px, the addresses of Hem's tabs from before D112, and a notice's layout in the pane.
+ * Att göra (D126 rule 2, board Att göra, the `table-inbox` template): a queue that indexes a reading pane. The piles are
+ * tabs that lead to their address; the rows are Astryx's Table, the name the row's one link, and choosing it puts the
+ * work item in the pane and in the address (`/todo?item=`). Where the pane does not fit beside the list (the template
+ * measures the page's own box, 900 px), there is no pane: the row leads to the item's page, with the way back to the
+ * list. Keyboard, focus, announcements, axe and reflow at 320 px, the addresses of Hem's tabs from before D112, and a
+ * notice's layout in the pane.
  */
 const wide = { width: 1440, height: 900 };
 /** The page's box is under 900 px beside the rail: one surface. */
 const tablet = { width: 1024, height: 768 };
-const queue = (page: import('@playwright/test').Page, name = 'Behöver dig') => page.getByRole('list', { name });
+const queue = (page: import('@playwright/test').Page, name = 'Behöver dig') => page.getByRole('table', { name });
+/** The queue's rows, each with its one link (the header row has none). */
+const rows = (page: import('@playwright/test').Page, name = 'Behöver dig') =>
+  queue(page, name)
+    .getByRole('row')
+    .filter({ has: page.getByRole('link') });
 const row = (page: import('@playwright/test').Page, title: string) =>
-  page.getByRole('link', { name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) });
+  page.getByRole('table').getByRole('link', { name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) });
 
 test.describe('Att göra: the piles', () => {
   test.use({ viewport: wide });
@@ -40,44 +46,43 @@ test.describe('Att göra: the piles', () => {
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('aria-current', 'page');
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toContainText('6');
-    // The tabs are the navigation pattern (no tablist): links, the current one marked.
+    // The tabs are the navigation pattern (no tablist): links, the current one marked, with how many as a badge.
     const tabs = page.getByRole('navigation', { name: 'Urval' });
-    await expect(tabs.getByRole('link', { name: 'Behöver dig · 6' })).toHaveAttribute('aria-current', 'true');
-    await expect(tabs.getByRole('link', { name: 'Väntar på andra · 3' })).toBeVisible();
+    await expect(tabs.getByRole('link', { name: /^Behöver dig\s*6 ärenden$/ })).toHaveAttribute('aria-current', 'true');
+    await expect(tabs.getByRole('link', { name: /^Väntar på andra\s*3 ärenden$/ })).toBeVisible();
     await expect(tabs.getByRole('link', { name: 'Klart', exact: true })).toBeVisible();
+    // The counts line under the title (board Att göra).
+    await expect(page.getByText('6 behöver dig\u00a0· 3 väntar på andra', { exact: true })).toBeVisible();
     // Behöver dig in Hem's order: what is due, what comes later, the proposal, the notice.
-    const rows = queue(page).getByRole('listitem');
-    await expect(rows).toHaveCount(6);
-    await expect(rows.first()).toContainText('Attestera 3 fakturor, 48 200 kr');
-    await expect(rows.first()).toContainText('I dag');
-    // The state is said in words at the start of the supporting line, held to its separator by a no-break space, so
-    // "Ska göras i dag" and "Ska göras" never differ by the dot's colour alone (1.4.1). The dot beside the words is
-    // decoration: nothing in the row is an image to assistive technology, and the state is heard once.
-    await expect(rows.first()).toHaveText(/Ska göras i dag\u00a0· Fakturorna förfaller i veckan/);
-    await expect(rows.first().locator('.astryx-status-dot')).toHaveAttribute('aria-hidden', 'true');
-    await expect(rows.first().getByRole('img')).toHaveCount(0);
-    await expect(rows.filter({ hasText: /Ska göras\u00a0· / }).first()).toBeVisible();
+    const all = rows(page);
+    await expect(all).toHaveCount(6);
+    await expect(all.first()).toContainText('Attestera 3 fakturor, 48 200 kr');
+    await expect(all.first()).toContainText('I dag');
+    await expect(all.first()).toContainText('Ekonomisystemet');
+    // An item about nobody in particular says its state in words and why it is here (1.4.1).
+    await expect(all.first()).toHaveText(/Ska göras i dag\u00a0· Fakturorna förfaller i veckan/);
+    await expect(all.first().getByRole('img')).toHaveCount(0);
     await expectNoAxeViolations(page);
     // Väntar på andra holds what waits on others and what the person set aside, which says when it comes back.
-    await tabs.getByRole('link', { name: 'Väntar på andra · 3' }).focus();
+    await tabs.getByRole('link', { name: /^Väntar på andra/ }).focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/todo\?tab=waiting$/);
     const waiting = queue(page, 'Väntar på andra');
-    await expect(waiting.getByRole('listitem')).toHaveCount(3);
+    await expect(rows(page, 'Väntar på andra')).toHaveCount(3);
     await expect(row(page, 'Tillbud 2026-1182, halkolycka i duschen')).toBeVisible();
     // What waits on someone says so once, with whom: the reason stands for the state.
     await expect(waiting.locator('#work-tillbud')).toContainText('Väntar på skyddsombudet');
     await expect(waiting.locator('#work-tillbud')).not.toContainText('Väntar på andra');
-    const snoozed = waiting.getByRole('listitem').filter({ hasText: 'Brandskyddsrond i oktober saknar protokoll' });
+    const snoozed = rows(page, 'Väntar på andra').filter({ hasText: 'Brandskyddsrond i oktober saknar protokoll' });
     await expect(snoozed).toContainText('Inte nu · Tillbaka i morgon 06:00');
     await tabs.getByRole('link', { name: 'Klart', exact: true }).click();
     await expect(page).toHaveURL(/\/todo\?tab=done$/);
-    await expect(queue(page, 'Klart').getByRole('listitem')).toHaveCount(2);
+    await expect(rows(page, 'Klart')).toHaveCount(2);
     await expect(row(page, 'Attesterade fakturor')).toBeVisible();
     await expectNoAxeViolations(page);
     // Back is the pile before: the address is the state.
     await page.goBack();
-    await expect(tabs.getByRole('link', { name: 'Väntar på andra · 3' })).toHaveAttribute('aria-current', 'true');
+    await expect(tabs.getByRole('link', { name: /^Väntar på andra/ })).toHaveAttribute('aria-current', 'true');
   });
 
   test('the filter and the system narrow the rows, stay in the address and say how many are left', async ({
@@ -88,20 +93,20 @@ test.describe('Att göra: the piles', () => {
     const filter = page.getByRole('searchbox', { name: 'Filtrera' });
     await filter.fill('fakt');
     await expect(page).toHaveURL(/\/todo\?filter=fakt$/);
-    await expect(queue(page).getByRole('listitem')).toHaveCount(1);
+    await expect(rows(page)).toHaveCount(1);
     await expect.poll(() => announcements(page)).toContainEqual('1 ärenden');
     await filter.fill('');
-    await expect(queue(page).getByRole('listitem')).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(6);
     await page.getByRole('button', { name: 'Alla system' }).click();
     await page.getByRole('menuitemradio', { name: 'Personal' }).click();
     await expect(page).toHaveURL(/\/todo\?area=personal$/);
-    await expect(queue(page).getByRole('listitem')).toHaveCount(3);
+    await expect(rows(page)).toHaveCount(3);
     await expect(row(page, 'Attestera 3 fakturor, 48 200 kr')).toHaveCount(0);
     await expect.poll(() => announcements(page)).toContainEqual('Visar Personal: 3 ärenden');
-    await expect(page.getByRole('link', { name: 'Behöver dig · 3' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Behöver dig\s*3 ärenden$/ })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('button', { name: 'Personal', exact: true })).toBeVisible();
-    await expect(queue(page).getByRole('listitem')).toHaveCount(3);
+    await expect(rows(page)).toHaveCount(3);
   });
 });
 
@@ -123,7 +128,12 @@ test.describe('Att göra: the reading pane', () => {
     await expect(pane.getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeFocused();
     await expect(page.locator('#work-fakturor')).toHaveAttribute('aria-current', 'true');
     await expect(pane.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
-    await expect(queue(page).getByRole('listitem')).toHaveCount(6);
+    // The decision stands directly under the title, before the facts (D126 rule 2).
+    const y = async (l: import('@playwright/test').Locator) => (await l.boundingBox())!.y;
+    expect(await y(pane.getByRole('button', { name: 'Attestera 2 valda' }))).toBeLessThan(
+      await y(pane.getByText('Status', { exact: true })),
+    );
+    await expect(rows(page)).toHaveCount(6);
     await expectNoAxeViolations(page);
     await row(page, 'Omtankesamtal med Anna Lindqvist').click();
     await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
@@ -155,8 +165,8 @@ test.describe('Att göra: the reading pane', () => {
     api: _,
   }) => {
     await open(page, '/todo');
-    const rows = queue(page).getByRole('listitem');
-    for (let i = 0; i < (await rows.count()); i++) await expect(rows.nth(i).getByRole('link')).toHaveCount(1);
+    const all = rows(page);
+    for (let i = 0; i < (await all.count()); i++) await expect(all.nth(i).getByRole('link')).toHaveCount(1);
     const fakturor = page.locator('#work-fakturor');
     await expect(fakturor.getByRole('link')).toHaveAccessibleName('Attestera 3 fakturor, 48 200 kr');
     // The badge and the source are read in the row, beside its link.
@@ -174,7 +184,8 @@ test.describe('Att göra: the reading pane', () => {
     await expect(fakturor.getByRole('link')).toHaveAttribute('aria-current', 'true');
     const omtanke = page.locator('#work-omtanke');
     const box = (await omtanke.boundingBox())!;
-    await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+    // At its far end, clear of the pane's resize handle on the list's edge.
+    await page.mouse.click(box.x + box.width - 24, box.y + box.height / 2);
     await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
     await expectNoAxeViolations(page);
   });
@@ -184,7 +195,7 @@ test.describe('Att göra: the reading pane', () => {
     api: _,
   }) => {
     await open(page, '/todo?item=tillbud');
-    await expect(page.getByRole('link', { name: 'Väntar på andra · 3' })).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByRole('link', { name: /^Väntar på andra/ })).toHaveAttribute('aria-current', 'true');
     const pane = page.getByRole('complementary', { name: 'Valt ärende' });
     await expect(pane.locator('#card-tillbud')).toBeVisible();
     await pane.getByRole('button', { name: 'Stäng ärendet' }).click();
@@ -201,56 +212,59 @@ test.describe('Att göra: the reading pane', () => {
 });
 
 test.describe('Att göra where the pane does not fit', () => {
-  test('on a narrower screen the row leads to the item alone, with the way back to the list and the focus on the row', async ({
+  test('on a narrower screen the row leads to the item’s page, with the way back to the list and the focus on the row', async ({
     page,
     api: _,
   }) => {
     await page.setViewportSize(tablet);
     await open(page, '/todo');
     await row(page, 'Ledighetsansökan från Johan Byström').click();
-    await expect(page).toHaveURL(/\/todo\?item=ledighet$/);
-    // The item alone is its page (D112 items 3 and 4): its title is the page's heading, the details behind a button.
+    await expect(page).toHaveURL('/items/ledighet?from=%2Ftodo');
+    // There is no pane: the item is its page (D126 rule 2), its facts above its read where the window is narrow.
     await expect(page.getByRole('complementary')).toHaveCount(0);
     await expect(queue(page)).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Ledighetsansökan från Johan Byström' })).toBeFocused();
     await expect(page).toHaveTitle('Ledighetsansökan från Johan Byström · Startsidan');
-    await expect(page.getByRole('button', { name: 'Visa detaljer' })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Status', { exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
     await page.getByRole('main').getByRole('link', { name: 'Att göra', exact: true }).click();
     await expect(page).toHaveURL(/\/todo$/);
-    await expect(queue(page).getByRole('listitem')).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(6);
     await expect(row(page, 'Ledighetsansökan från Johan Byström')).toBeFocused();
+    // An item in the address where the pane does not fit is its page, in that address's place.
+    await open(page, '/todo?item=omtanke');
+    await expect(page).toHaveURL('/items/omtanke?from=%2Ftodo');
   });
 
-  test('on a phone the rail is the drawer, the piles fit with their short names, and a row opens the item full screen', async ({
+  test('on a phone the rail is the drawer, the piles fit with their short names, and a row opens the item’s page', async ({
     page,
     api: _,
   }) => {
     await page.setViewportSize(phone);
     await open(page, '/todo');
-    // The short words alone on a phone, so the three piles fit 320 px also with the text-spacing overrides (1.4.12).
+    // The short words on a phone, so the three piles fit 320 px also with the text-spacing overrides (1.4.12).
     const piles = page.getByRole('navigation', { name: 'Urval' });
     await expect(piles.getByRole('link')).toHaveCount(3);
-    for (const name of ['Behöver dig', 'Väntar', 'Klart'])
-      await expect(piles.getByRole('link', { name, exact: true })).toBeInViewport({ ratio: 1 });
+    for (const name of [/^Behöver dig/, /^Väntar/, /^Klart/])
+      await expect(piles.getByRole('link', { name })).toBeInViewport({ ratio: 1 });
     const nav = await openNav(page);
     await expect(nav.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('aria-current', 'page');
     await page.keyboard.press('Escape');
     await row(page, 'Omtankesamtal med Anna Lindqvist').click();
     await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
-    // The next step pinned to the foot (board PhoneItem).
+    // The decision under the title (D126 rule 1).
     await expect(page.getByRole('button', { name: 'Boka samtalet' })).toBeInViewport();
     await expect(queue(page)).toHaveCount(0);
     expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
     await page.goBack();
-    await expect(queue(page).getByRole('listitem')).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(6);
   });
 
   for (const [path, title] of [
     ['/todo', 'Att göra'],
     ['/todo?tab=waiting', 'Att göra'],
-    ['/todo?item=fakturor', 'Attestera 3 fakturor, 48 200 kr'],
+    ['/items/fakturor', 'Attestera 3 fakturor, 48 200 kr'],
   ] as const)
     test(`${path} reflows at 320 px`, async ({ page, api: _ }) => {
       await page.setViewportSize(narrow);
@@ -280,22 +294,24 @@ test.describe('the addresses of Hem’s old tabs', () => {
 test.describe('Hem leads to Att göra', () => {
   test.use({ viewport: wide });
 
-  test('Behöver dig on Hem is the three most urgent items, each opening beside Hem, and the way to all of them in Att göra', async ({
+  test('a row of Behöver dig on Hem leads to its item’s page, and the way to all of them to Att göra', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
     const block = page.getByRole('region', { name: 'Behöver dig' });
-    await expect(block.getByRole('listitem')).toHaveCount(3);
-    // A row opens its item in the panel beside Hem (D112, amended 2026-11-12; `hem.spec.ts`).
-    await expect(block.getByRole('link', { name: /^Attestera 3 fakturor/ })).toHaveAttribute('href', '/?card=fakturor');
-    const all = block.getByRole('link', { name: 'Alla 6 i Att göra' });
+    // How many Hem shows is Hem's (`hem.spec.ts`). A row's name is the link to its item's page, with Hem as the way back (D126 rule 1).
+    await expect(block.getByRole('link', { name: /^Attestera 3 fakturor/ })).toHaveAttribute(
+      'href',
+      '/items/fakturor?from=%2F',
+    );
+    const all = block.getByRole('link', { name: /Att göra|Visa alla/ });
     await expect(all).toHaveAttribute('href', '/todo');
     await all.focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/todo$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
-    await expect(queue(page).getByRole('listitem')).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(6);
   });
 });
 
@@ -340,14 +356,15 @@ test.describe('Att göra: a notice in the reading pane', () => {
     await expect(whole).toBeFocused();
     for (let i = 0; i < steps; i++) await page.keyboard.press('Shift+Tab');
     await expect(ack).toBeFocused();
-    // An item that is not a notice keeps its lead under Varför ser jag detta? and its rows.
+    // An item that is not a notice leads its read with its own words, above Varför ser jag detta?, and keeps its rows;
+    // its link out to the source is under ⋯, marked as leaving Clew.
     await open(page, '/todo?item=fakturor');
     const invoices = pane.locator('#card-fakturor');
-    await expect(invoices.getByRole('region', { name: 'Varför ser jag detta?' })).toContainText(
-      'Alla matchar sina beställningar och ryms i budgeten.',
-    );
+    const lead = invoices.getByText('Alla matchar sina beställningar och ryms i budgeten.', { exact: false });
+    expect(await y(lead)).toBeLessThan(await y(invoices.getByRole('region', { name: 'Varför ser jag detta?' })));
     await expect(invoices.getByRole('heading', { name: 'Rader' })).toBeVisible();
-    await expect(invoices.getByRole('button', { name: /^Öppna i ekonomisystemet/ })).toHaveCount(1);
+    await invoices.getByRole('button', { name: 'Fler åtgärder' }).click();
+    await expect(page.getByRole('menuitem', { name: /^Öppna i ekonomisystemet/ })).toHaveCount(1);
   });
 });
 
@@ -370,9 +387,7 @@ test.describe('Att göra when a system does not answer', () => {
     await open(page, '/todo');
     await expect(page.locator('#work-omtanke')).toContainText('· kan vara gammal');
     await expect(page.locator('#work-fakturor')).toContainText('· kan vara gammal');
-    expect(await queue(page).getByRole('listitem').filter({ hasNotText: 'kan vara gammal' }).count()).toBeGreaterThan(
-      0,
-    );
+    expect(await rows(page).filter({ hasNotText: 'kan vara gammal' }).count()).toBeGreaterThan(0);
     // No sentence over the list and nothing over the page: the rows say it.
     expect(await silentSaidIn(page)).toEqual([]);
     await expect

@@ -18,8 +18,9 @@ export const hasErrands = (areas: Area[]) => areas.some(a => a.standing.some(s =
 /**
  * Mina ärenden on Hem (D90): the person's errands from every case system as one list in the page's own column, after
  * the day's work. It is the combined list's declared view drawn by the one renderer, with its own choice between what
- * is assigned and what the person reported, the first rows and a button for the rest. A row opens the errand beside
- * the page, in the system it came from. Nothing is stored: the list is read as the person each time Hem is.
+ * is assigned and what the person reported, the first rows and a button for the rest. A row leads to the errand's
+ * page (D126 rule 1), read from the system it came from. Nothing is stored: the list is read as the person each time
+ * Hem is.
  *
  * It is drawn only for a person with a case system, and it never says "no errands" when the systems did not answer:
  * the read fails then, and the section says so with a way to try again.
@@ -45,7 +46,7 @@ export function MyErrands({ areas, hrefFor }: { areas: Area[]; hrefFor: (view: V
   };
   return (
     <VStack gap={2} as="section" aria-label="Mina ärenden">
-      <Heading ref={heading} id="mina-arenden" tabIndex={-1} level={3} accessibilityLevel={2}>
+      <Heading ref={heading} id="mina-arenden" tabIndex={-1} level={2}>
         Mina ärenden
       </Heading>
       <AsyncContent

@@ -107,6 +107,8 @@ export {
   useTableSelection,
   // Headers that sort, the order held by the page and read on the server (Kompetenssökning).
   useTableSortable,
+  // A row's status in a narrow gutter: the row open in Att göra's reading pane (D126).
+  useTableRowStatus,
 } from '@astryxdesign/core/Table';
 export type { TableColumn, TablePlugin, TableSortState } from '@astryxdesign/core/Table';
 // A searchable choice of several, over a search on the server (Kompetenssökning's types).
@@ -152,6 +154,7 @@ export type { AnimatedLayout } from '@astryxdesign/core/hooks';
 export {
   AcademicCapIcon,
   ArrowDownTrayIcon,
+  ArrowLeftIcon,
   ArrowPathIcon,
   ArrowsPointingOutIcon,
   AtSymbolIcon,
@@ -161,6 +164,7 @@ export {
   ChatBubbleLeftRightIcon,
   CheckCircleIcon,
   ClipboardDocumentCheckIcon,
+  Cog6ToothIcon,
   DocumentTextIcon,
   HomeIcon,
   InboxIcon,

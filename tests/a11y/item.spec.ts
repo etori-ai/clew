@@ -3,12 +3,11 @@ import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProb
 import { NOTICE_REASON, NOTICE_TEXT, NOW, asNotice } from './data';
 
 /**
- * A work item as a page (D112 item 4, board WorkItem, `/items/<threadId>`, the `work-item-detail` template): reached
- * by its title, a link, in Att göra's reading pane and in the panel beside a page, with `from` as the way back. The
- * page is the item's header (the trail, the title, the status and badges, the buttons), the main column (a notice's
- * text, Varför ser jag detta?, the rows, Dokument, Händelser) and the details rail; at 1024 px and below the rail is
- * behind "Visa detaljer" in a fullscreen dialog, and on a phone the buttons are pinned to the foot (board PhoneItem,
- * D112 item 12).
+ * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`, the `work-item-detail` template): reached by
+ * its name in every row and by its title in Att göra's reading pane, with `from` as the way back. The page is the
+ * header (the way back with the source, the title with when it is due, the buttons directly under it), the read in the
+ * column (the item's own words, Varför ser jag detta?, the rows, Dokument, Händelser) and the facts under "Uppgifter"
+ * in the end panel; at 1024 px and below the facts stand above the read.
  */
 const wide = { width: 1440, height: 900 };
 const tablet = { width: 1024, height: 768 };
@@ -49,11 +48,11 @@ test.describe('the work item as a page', () => {
     for (let i = 1; i < levels.length; i++) expect(levels[i]! - levels[i - 1]!).toBeLessThanOrEqual(1);
     for (const name of ['Varför ser jag detta?', 'Rader', 'Händelser'])
       await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
-    // The status as the queue's dot says it, in words; the dot beside its word is decoration with no name of its own,
-    // so the state is heard once. The badges: when it is due and its area.
+    // The status among the facts, in words; the dot beside its word is decoration with no name of its own, so the
+    // state is heard once. When it is due is a badge beside the title (board Ärende).
     await expect(page.getByText('Ska göras i dag', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('img', { name: 'Ska göras i dag' })).toHaveCount(0);
-    await expect(page.getByText('Förfaller i dag', { exact: true })).toBeVisible();
+    await expect(page.getByText('Svara i dag', { exact: true })).toBeVisible();
     // The rows are a checklist with how many are chosen, the action's label counting them.
     await expect(page.getByText('2 av 3 valda', { exact: true })).toBeVisible();
     await expect(page.getByRole('checkbox', { name: /Energibolaget AB/ })).toBeChecked();
@@ -62,45 +61,37 @@ test.describe('the work item as a page', () => {
     const events = page.getByRole('list', { name: 'Händelser, de senaste först' });
     await expect(events).toContainText('Clew');
     await expect(events).toContainText('skapade ärendet: Fakturorna förfaller i veckan');
-    // The details rail: the facts the item has, and the way out to the source, marked as leaving Clew (D111 rule 8).
-    const details = page.getByRole('complementary', { name: 'Detaljer' });
-    await expect(details.locator('[aria-level="2"]').filter({ hasText: /^Detaljer$/ })).toBeVisible();
-    for (const term of ['Status', 'Källa', 'Förfaller', 'Skapat']) await expect(details).toContainText(term);
-    await expect(details).toContainText('4 november');
+    // The facts under Uppgifter in the end panel (board Ärende).
+    const details = page.getByRole('complementary', { name: 'Uppgifter' });
+    await expect(details.locator('[aria-level="2"]').filter({ hasText: /^Uppgifter$/ })).toBeVisible();
+    for (const term of ['Status', 'Källa', 'Svara senast', 'Kom']) await expect(details).toContainText(term);
+    // The way out to the source is under ⋯, marked as leaving Clew (D111 rule 8).
+    await page.getByRole('main').getByRole('button', { name: 'Fler åtgärder' }).click();
     await expect(
-      details.getByRole('button', { name: /^Öppna i ekonomisystemet\s*\(öppnas i ny flik\)$/ }),
+      page.getByRole('menuitem', { name: /^Öppna i ekonomisystemet\s*\(öppnas i ny flik\)$/ }),
     ).toBeVisible();
+    await page.keyboard.press('Escape');
     await expectNoAxeViolations(page);
-    // From the title the keyboard reaches the rows before the source's link out in the rail.
+    // From the title the keyboard reaches the decision first: the buttons stand directly under the title.
+    await title.focus();
     await page.keyboard.press('Tab');
-    const order: string[] = [];
-    for (let i = 0; i < 20 && !order.some(o => o.startsWith('Öppna i ekonomisystemet')); i++) {
-      order.push(await page.evaluate(() => document.activeElement?.textContent?.trim() ?? ''));
-      await page.keyboard.press('Tab');
-    }
-    expect(order.findIndex(o => o.startsWith('Attestera 2 valda'))).toBeGreaterThanOrEqual(0);
+    await expect(page.getByRole('button', { name: 'Attestera 2 valda' })).toBeFocused();
     // The trail leads back to the pane it was opened from.
     await page.getByRole('main').getByRole('link', { name: 'Att göra', exact: true }).click();
     await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(pane.locator('#card-fakturor')).toBeVisible();
   });
 
-  test('opened from a panel beside another page, its way back is that page; with no way back it is Att göra', async ({
+  test('opened from another page, its way back is that page; an address from before is the same page; with no way back it is Att göra', async ({
     page,
     api: _,
   }) => {
+    // An address from before D126 that held the item beside Personal leads to its page, Personal as the way back.
     await open(page, '/staff?card=omtanke');
-    const asPage = page
-      .getByRole('heading', { name: 'Omtankesamtal med Anna Lindqvist' })
-      .getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist' });
-    await expect(asPage).toHaveAttribute('href', '/items/omtanke?from=%2Fstaff%3Fcard%3Domtanke');
-    await asPage.click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeFocused();
+    await expect(page).toHaveURL('/items/omtanke?from=%2Fstaff');
+    await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
     const main = page.getByRole('main');
-    await expect(main.getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
-      'href',
-      '/staff?card=omtanke',
-    );
+    await expect(main.getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute('href', '/staff');
     await open(page, '/items/omtanke');
     await expect(page.getByRole('main').getByRole('link', { name: 'Att göra', exact: true })).toHaveAttribute(
       'href',
@@ -112,27 +103,17 @@ test.describe('the work item as a page', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
   });
 
-  test('a calendar proposal beside a page links its title to its page as every work item does, and not on that page itself (D116)', async ({
+  test('a calendar proposal opened from Hem is its page, and its title there leads nowhere further', async ({
     page,
     api,
   }) => {
     const proposal = api.threads.find(t => t.proposals.length > 0)!;
     await open(page, `/?card=${proposal.id}`);
-    const panel = page.getByRole('complementary', { name: 'Ärende' });
-    await expect(panel.locator(`#card-${proposal.id}`)).toBeVisible();
-    const asPage = panel.locator(`#card-${proposal.id}`).getByRole('heading').getByRole('link').first();
-    await expect(asPage).toHaveAttribute('href', `/items/${proposal.id}?from=%2F%3Fcard%3D${proposal.id}`);
-    await expectNoAxeViolations(page);
-    await asPage.click();
-    await expect(page).toHaveURL(`/items/${proposal.id}?from=%2F%3Fcard%3D${proposal.id}`);
+    await expect(page).toHaveURL(`/items/${proposal.id}?from=%2F`);
     await expect(page.getByRole('heading', { level: 1, name: proposal.title })).toBeVisible();
-    // On its own page the proposal is the page: its title leads nowhere further (the page's own "Fråga Clew" is the
-    // one link to this address, with `ask=1`).
-    await expect(page.getByRole('main').getByRole('heading').getByRole('link')).toHaveCount(0);
-    await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute(
-      'href',
-      `/?card=${proposal.id}`,
-    );
+    await expect(page.getByRole('main').getByRole('heading', { level: 1 }).getByRole('link')).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/');
+    await expectNoAxeViolations(page);
   });
 
   test('a decided item shows its receipt row by row, and its Händelser read the decision back', async ({
@@ -172,12 +153,9 @@ test.describe('the work item as a page', () => {
     await expect(why).toContainText(NOTICE_REASON);
     await expect(why).not.toContainText(NOTICE_TEXT[0]!);
     await expect(page.getByRole('heading', { level: 2, name: 'Rader' })).toHaveCount(0);
-    // The way to the whole of it after the text, marked as leaving Clew, and under Öppna i källan in the rail; not
-    // among the header's buttons.
+    // The way to the whole of it after the text, marked as leaving Clew; not among the header's buttons.
     const out = /^Läs hela nyheten\s*\(öppnas i ny flik\)$/;
-    const details = page.getByRole('complementary', { name: 'Detaljer' });
-    await expect(page.getByRole('button', { name: out })).toHaveCount(2);
-    await expect(details.getByRole('button', { name: out })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: out })).toHaveCount(1);
     expect(await y(main.getByRole('button', { name: out }).first())).toBeGreaterThan(await y(first));
     // One outline: the title, then the column's sections and the rail's, each one level under it.
     const levels = await outline(page);
@@ -205,11 +183,10 @@ test.describe('the work item as a page', () => {
     const row = page.getByRole('main').locator('#work-ledighet');
     await expect(row).toContainText('Påminnelse\u00a0· Ansökan väntar på beslut');
     await expect(row.getByText('Påminnelse', { exact: true })).toHaveCount(0);
-    // The page: the word in the status line, with the area's badge beside it and none that says the word again.
+    // The page: the word as its status among the facts, and no badge that says the word again.
     await open(page, '/items/ledighet');
     await expect(page.getByRole('heading', { level: 1, name: card.title })).toBeVisible();
     await expect(page.getByText('Påminnelse', { exact: true }).first()).toBeVisible();
-    await expect(page.locator('.astryx-badge').filter({ hasText: 'Personal' }).first()).toBeVisible();
     await expect(page.locator('.astryx-badge').filter({ hasText: 'Påminnelse' })).toHaveCount(0);
   });
 
@@ -235,34 +212,27 @@ test.describe('the work item as a page', () => {
   });
 });
 
-test.describe('the work item page where the rail does not fit', () => {
+test.describe('the work item page where the end panel does not fit', () => {
   test.use({ viewport: tablet });
 
-  test('the details are behind Visa detaljer in a fullscreen dialog, which takes the focus and gives it back', async ({
-    page,
-    api: _,
-  }) => {
+  test('the facts stand above the read, and the buttons under the title', async ({ page, api: _ }) => {
     await open(page, '/items/fakturor');
-    await expect(page.getByRole('complementary', { name: 'Detaljer' })).toHaveCount(0);
-    const show = page.getByRole('button', { name: 'Visa detaljer' });
-    await show.click();
-    const dialog = page.getByRole('dialog', { name: 'Detaljer' });
-    await expect(dialog).toBeVisible();
-    await expect.poll(() => dialog.evaluate(d => d.contains(document.activeElement))).toBe(true);
-    for (const term of ['Status', 'Källa', 'Förfaller', 'Skapat']) await expect(dialog).toContainText(term);
-    await expectNoAxeViolations(page);
-    await page.keyboard.press('Escape');
-    await expect(dialog).toHaveCount(0);
-    await expect(show).toBeFocused();
-    // The buttons stand under the status, in the page.
+    await expect(page.getByRole('complementary', { name: 'Uppgifter' })).toHaveCount(0);
+    const main = page.getByRole('main');
+    for (const term of ['Status', 'Källa', 'Svara senast', 'Kom']) await expect(main).toContainText(term);
+    const y = async (l: Locator) => (await l.boundingBox())!.y;
+    expect(await y(main.getByText('Status', { exact: true }))).toBeLessThan(
+      await y(main.getByRole('heading', { name: 'Varför ser jag detta?' })),
+    );
     await expect(page.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    await expectNoAxeViolations(page);
   });
 });
 
-test.describe('the work item page on a phone (D112 item 12, board PhoneItem)', () => {
+test.describe('the work item page on a phone', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 
-  test('the buttons are pinned to the foot, the rest is under Fler val, and the details are behind the information button', async ({
+  test('the buttons stand under the title, the rest is under Fler åtgärder, and the facts above the read', async ({
     page,
     api: _,
   }) => {
@@ -270,18 +240,11 @@ test.describe('the work item page on a phone (D112 item 12, board PhoneItem)', (
     await expect(page.getByRole('heading', { level: 1, name: INVOICES })).toBeFocused();
     const step = page.getByRole('button', { name: 'Attestera 2 valda' });
     await expect(step).toBeInViewport();
-    const box = await step.boundingBox();
-    expect(box!.y + box!.height).toBeGreaterThan(phone.height - 90);
-    // Pinned: scrolling the column to its end leaves the step where it is.
-    await page.getByRole('heading', { level: 2, name: 'Händelser' }).scrollIntoViewIfNeeded();
-    await expect(step).toBeInViewport();
-    expect((await step.boundingBox())!.y).toBeCloseTo(box!.y, 0);
-    await page.getByRole('button', { name: 'Fler val' }).click();
+    await page.getByRole('button', { name: 'Fler åtgärder' }).click();
     await expect(page.getByRole('menuitem', { name: 'Inte nu' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Visa detaljer' }).click();
-    await expect(page.getByRole('dialog', { name: 'Detaljer' })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Status', { exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
   });
 });

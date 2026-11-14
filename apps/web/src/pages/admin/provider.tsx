@@ -22,7 +22,6 @@ import {
   Text,
   TextInput,
   Timestamp,
-  Toolbar,
   VStack,
   useMediaQuery,
 } from '@clew/ui';
@@ -36,7 +35,6 @@ import { AddModelDialog, Findings } from './add-model';
 import { History } from './model';
 import { actorLabel, audienceLabel, modelStatusOf, providerHealthLabel, providerStatusOf } from './labels';
 import { AdminShell } from './shell';
-import { PageHeader } from '../../components/page-header';
 import { DOT } from '../../dot';
 
 /**
@@ -69,10 +67,9 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
   const { run, busy, error: actionError } = useAdminAction({ toastId: 'provider:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.models], toastId: 'provider:' + id });
   const error = actionError ?? removal.error ?? readError;
-  const crumbs = (label: string) => [{ label: 'Modeller', href: '/admin/models' }, { label }];
   if (missing)
     return (
-      <AdminShell user={user} section="modeller" crumbs={crumbs(id)}>
+      <AdminShell user={user} section="modeller" title={null} thing={{}}>
         <EmptyState
           headingLevel={1}
           title="Leverantören finns inte"
@@ -83,7 +80,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
     );
   if (!p || !draft)
     return (
-      <AdminShell pending={!error} user={user} section="modeller" crumbs={crumbs(id)}>
+      <AdminShell pending={!error} user={user} section="modeller" title={null} thing={{}}>
         {error ? (
           <Text as="p" role="alert" color="accent">
             {error}
@@ -104,9 +101,11 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
     setKeyOpen(false);
     setKey('');
   };
-  // A Toolbar keeps one row, which these buttons cannot at 320 px: on a phone they wrap (1.4.10).
+  // The actions directly under the title (D126 rule 1, board Arende): adding a model first, then Testa and the key, and
+  // last, set apart, removing, which waits for the models. They wrap on a phone (1.4.10).
   const actions = (
     <>
+      <Button variant="primary" label="Lägg till modell" onClick={() => setAdding(true)} />
       <Button
         variant="secondary"
         label="Testa"
@@ -120,33 +119,26 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
         }
       />
       <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setKeyOpen(true)} />
+      <Button
+        variant="destructive"
+        label="Ta bort"
+        isDisabled={busy || models.length > 0}
+        tooltip={models.length > 0 ? 'Ta bort leverantörens modeller först.' : undefined}
+        onClick={() => setRemoveOpen(true)}
+      />
     </>
   );
-  const remove = (
-    <Button
-      variant="destructive"
-      label="Ta bort"
-      isDisabled={busy || models.length > 0}
-      tooltip={models.length > 0 ? 'Ta bort leverantörens modeller först.' : undefined}
-      onClick={() => setRemoveOpen(true)}
-    />
-  );
   return (
-    <AdminShell user={user} section="modeller" crumbs={crumbs(p.title)}>
-      <PageHeader
-        title={p.title}
-        end={<Button variant="primary" label="Lägg till modell" onClick={() => setAdding(true)} />}
-        meta={
-          <HStack gap={1} vAlign="center" wrap="wrap">
-            <StatusDot variant={s.tone} label={s.label} aria-hidden />
-            <Text type="supporting">
-              {s.label}
-              {DOT}
-              {p.baseUrl}
-            </Text>
-          </HStack>
-        }
-      />
+    <AdminShell
+      user={user}
+      section="modeller"
+      title={p.title}
+      thing={{
+        place: p.baseUrl,
+        status: <Badge variant={s.tone} label={s.label} />,
+        actions,
+      }}
+    >
       {(p.health.status === 'unreachable' || p.health.status === 'key-rejected') && (
         <Banner
           status={p.health.status === 'unreachable' ? 'warning' : 'error'}
@@ -164,16 +156,6 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       )}
       <Card padding={4}>
         <VStack gap={4}>
-          {mobile ? (
-            <VStack gap={3}>
-              <HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">
-                {actions}
-              </HStack>
-              <HStack>{remove}</HStack>
-            </VStack>
-          ) : (
-            <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} endContent={remove} />
-          )}
           {report && (
             <VStack gap={3}>
               <Findings report={report} label="Testets resultat" />

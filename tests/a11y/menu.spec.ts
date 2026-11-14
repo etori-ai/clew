@@ -1,14 +1,14 @@
-import type { MenuEntry } from '@clew/contracts';
-import { desktop, expect, expectNoAxeViolations, narrow, open, openNav, phone, test } from './support';
+import type { MenuEntry, Thread } from '@clew/contracts';
+import { desktop, expect, expectNoAxeViolations, narrow, open, openNav, phone, reflowProblems, test } from './support';
 import { menuRow, menuRows } from './phonebook';
 
 /**
- * Verktyg in the menu (D40, D112 item 1): the views an administrator chose as tools, one click away on every page, under
- * Clew's own places (Hem, Att göra, Kalender and a manager's Personal). A row leads to the tool's own page (D42), as
- * Kalender does; the page itself is tested in `tools.spec.ts`. The test person is a manager, so Personal (D94) stands
- * after Kalender among the places; `staff.spec.ts` owns it.
- * The shared header (D88) marks Start as the current place on every page of Clew, so "the current row" is asked of the
- * rail, where one row is current at a time.
+ * The rail (D126 rule 7, board Shell): Ny fråga and Sök, then "Mitt arbete" (Hem, Att göra, Kalender), "Min enhet" for a
+ * manager (Personal, Läget), "Verktyg" (D40, D112 item 1: the views an administrator chose as tools, the first four,
+ * then "Alla verktyg") and "Samtal" (the three newest, then "Alla samtal"). A tool's row leads to the tool's own page
+ * (D42), as Kalender does; the page itself is tested in `tools.spec.ts`. The test person is a manager; `staff.spec.ts`
+ * owns Personal. The shared header (D88) marks Start as the current place on every page of Clew, so "the current row" is
+ * asked of the rail, where one row is current at a time.
  * The phone book's rows are named by its real manifest; they are in the menu only where a test puts them, as they are in
  * the product only where an administrator chose them.
  */
@@ -46,27 +46,32 @@ test.describe('Verktyg in the menu', () => {
     await expectNoAxeViolations(page);
   });
 
-  test("without a tool there is no Verktyg, and the places hold Hem, Att göra, the calendar and a manager's Personal and Dialogstöd", async ({
+  test('without a tool there is no Verktyg; Mitt arbete holds Hem, Att göra and Kalender, and a manager’s Min enhet Personal and Läget', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
     await expect(rail(page).getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
-    const order = await rail(page).getByRole('link').allTextContents();
-    const places = ['Hem', 'Att göra', 'Kalender', 'Personal', 'Dialogstöd'].map(p =>
-      order.findIndex(o => o.startsWith(p)),
-    );
-    expect(places.every(i => i >= 0)).toBe(true);
-    expect([...places].sort((a, b) => a - b)).toEqual(places);
-    await expect(rail(page).getByRole('link', { name: 'Dialogstöd', exact: true })).toHaveAttribute('href', '/units');
+    const mine = rail(page).getByRole('group', { name: 'Mitt arbete' });
+    await expect(mine.getByRole('link')).toHaveText([/^Hem/, /^Att göra/, 'Kalender']);
+    const unit = rail(page).getByRole('group', { name: 'Min enhet' });
+    await expect(unit.getByRole('link')).toHaveText(['Personal', 'Läget']);
+    await expect(unit.getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
+    // Läget is the unit the manager follows up, or the list of them when there are several or none is known.
+    await expect(unit.getByRole('link', { name: 'Läget' })).toHaveAttribute('href', '/units');
+    // Kompetens, Introduktion och avslut and Dialogstöd are tabs of Personal (D126), no rows of their own.
+    for (const gone of ['Kompetens', 'Introduktion och avslut', 'Dialogstöd'])
+      await expect(rail(page).getByRole('link', { name: gone, exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
   });
 
-  test('an employee has neither Personal nor Dialogstöd among the places', async ({ page, api }) => {
+  test('an employee has no Min enhet', async ({ page, api }) => {
     api.employee = true;
     await open(page, '/');
     await expect(rail(page).getByRole('link', { name: /^Hem/ })).toBeVisible();
+    await expect(rail(page).getByRole('group', { name: 'Min enhet' })).toHaveCount(0);
     await expect(rail(page).getByRole('link', { name: 'Personal', exact: true })).toHaveCount(0);
-    await expect(rail(page).getByRole('link', { name: 'Dialogstöd', exact: true })).toHaveCount(0);
+    await expect(rail(page).getByRole('link', { name: 'Läget', exact: true })).toHaveCount(0);
   });
 
   test('the row opens the tool as a page by keyboard, not in the side panel, and is marked as current', async ({
@@ -113,7 +118,7 @@ test.describe('Verktyg in the menu', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
   });
 
-  test('more than four tools: four show and the rest wait under Fler verktyg, a disclosure that says whether it is open', async ({
+  test('more than four tools: four show, and Alla verktyg opens the search narrowed to every tool; the one opened from it is marked in the rail', async ({
     page,
     api,
   }) => {
@@ -122,24 +127,92 @@ test.describe('Verktyg in the menu', () => {
     );
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
-    await expect(section.getByRole('link', { name: 'Fordon' })).toBeVisible();
-    await expect(section.getByRole('link', { name: 'Telefonbok' })).toBeHidden();
-    const more = section.getByRole('button', { name: 'Fler verktyg' });
-    await expect(more).toHaveAttribute('aria-expanded', 'false');
-    const moreLabel = (await more.getByText('Fler verktyg', { exact: true }).boundingBox())!;
-    const toolLabel = (await section
-      .getByRole('link', { name: 'Fordon' })
-      .getByText('Fordon', { exact: true })
-      .boundingBox())!;
-    expect(moreLabel.x).toBe(toolLabel.x);
-    await more.focus();
+    await expect(section.getByRole('link')).toHaveText(['Avtal', 'Blanketter', 'Diarium', 'Fordon']);
+    const all = section.getByRole('button', { name: 'Alla verktyg' });
+    await all.focus();
     await page.keyboard.press('Enter');
-    await expect(more).toHaveAttribute('aria-expanded', 'true');
-    await expect(section.getByRole('link', { name: 'Telefonbok' })).toBeVisible();
-    await expect(section.getByRole('link', { name: 'Lokaler' })).toBeVisible();
-    await expect(
-      section.getByRole('group', { name: 'Fler verktyg' }).locator('[data-orientation="vertical"]'),
-    ).toBeVisible();
+    const palette = page.getByRole('dialog', { name: 'Alla verktyg' });
+    const field = palette.getByRole('combobox', { name: 'Alla verktyg' });
+    await expect(field).toBeFocused();
+    await expect(palette.getByRole('option')).toHaveCount(6);
+    await expectNoAxeViolations(page);
+    // Esc gives the focus back to the row that opened it.
+    await page.keyboard.press('Escape');
+    await expect(palette).toHaveCount(0);
+    await expect(all).toBeFocused();
+    await all.click();
+    await page.getByRole('combobox', { name: 'Alla verktyg' }).fill('tele');
+    await expect(page.getByRole('option')).toHaveCount(1);
+    await page.getByRole('option', { name: /Telefonbok/ }).click();
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
+    // The tool open now is a row of the rail while it is open, marked as the current page.
+    await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute('aria-current', 'page');
+  });
+});
+
+/**
+ * Samtal in the rail (D126 rule 7): the three newest conversations, the open one marked, and "Alla samtal", the
+ * register of every conversation, where each title is the link to it.
+ */
+test.describe('Samtal in the rail and Alla samtal', () => {
+  const conversations = (base: Thread): Thread[] =>
+    ['Första frågan', 'Andra frågan', 'Tredje frågan', 'Fjärde frågan'].map((title, i) => ({
+      ...base,
+      id: `samtal-${i + 1}`,
+      title,
+      topic: `samtal-${i + 1}`,
+      updatedAt: `2026-11-0${4 - i}T07:00:00.000Z`,
+    }));
+
+  test('the three newest and Alla samtal; the register lists every one, each title its link, with no axe violations', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(desktop);
+    const base = api.threads.find(t => t.kind === 'question')!;
+    api.threads = [...api.threads.filter(t => t.kind !== 'question'), ...conversations(base)];
+    await open(page, '/');
+    const section = rail(page).getByRole('group', { name: 'Samtal' });
+    await expect(section.getByRole('link')).toHaveText([
+      'Första frågan',
+      'Andra frågan',
+      'Tredje frågan',
+      'Alla samtal',
+    ]);
+    const all = section.getByRole('link', { name: 'Alla samtal' });
+    await expect(all).toHaveAttribute('href', '/conversations');
+    await all.click();
+    await expect(page).toHaveURL('/conversations');
+    await expect(page.getByRole('heading', { level: 1, name: 'Samtal' })).toBeVisible();
+    await expect(page).toHaveTitle('Samtal · Startsidan');
+    await expect(all).toHaveAttribute('aria-current', 'page');
+    const main = page.getByRole('main');
+    await expect(main.getByRole('row')).toHaveCount(5);
+    const oldest = main.getByRole('link', { name: 'Fjärde frågan', exact: true });
+    await expect(oldest).toHaveAttribute('href', '/conversations/samtal-4');
+    await expectNoAxeViolations(page);
+    // The open conversation is marked in the rail, first in the place of the newest when it is older.
+    await oldest.click();
+    await expect(page).toHaveURL('/conversations/samtal-4');
+    await expect(section.getByRole('link', { name: 'Fjärde frågan' })).toHaveAttribute('aria-current', 'page');
+    await expect(section.getByRole('link')).toHaveText([
+      'Fjärde frågan',
+      'Första frågan',
+      'Andra frågan',
+      'Alla samtal',
+    ]);
+  });
+
+  test('at 320 px the register is a list of links and nothing reflows past the edge', async ({ page, api }) => {
+    await page.setViewportSize(narrow);
+    const base = api.threads.find(t => t.kind === 'question')!;
+    api.threads = [...api.threads.filter(t => t.kind !== 'question'), ...conversations(base)];
+    await open(page, '/conversations');
+    const list = page.getByRole('main').getByRole('list', { name: 'Samtal' });
+    await expect(list.getByRole('listitem')).toHaveCount(4);
+    await expect(list.getByRole('link', { name: 'Första frågan' })).toHaveAttribute('href', '/conversations/samtal-1');
+    expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
   });
 });

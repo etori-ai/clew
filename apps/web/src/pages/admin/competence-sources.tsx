@@ -42,7 +42,6 @@ import { errorMessage } from '../../query-policy';
 import { useAdminAction } from '../../mutations';
 import { usePageTitle } from '../../page-title';
 import { DialogFrame } from '../../components/dialog-frame';
-import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
 import { AdminShell } from './shell';
 import { instantText } from './labels';
@@ -411,13 +410,7 @@ export function AdminCompetenceSourcesPage({ user }: { user: SessionUser }) {
   // Closing replaces the dialog's address, so Back never opens a mapping again (D83 rule 8).
   const close = () => navigate(SOURCES_PATH, { replace: true });
   return (
-    <AdminShell
-      user={user}
-      section="kompetens"
-      crumbs={[{ label: 'Kompetens', href: '/admin/competence' }, { label: 'Källor' }]}
-      pending={query.isPending}
-    >
-      <PageHeader title="Källor för kompetens" />
+    <AdminShell user={user} section="kompetens" title="Källor för kompetens" thing={{}} pending={query.isPending}>
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}
