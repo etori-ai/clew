@@ -34,10 +34,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, narrow]) {
       // Each block arrives with its own read (D112 item 2): the work items with the cards, while the figures keep their
       // shape until the areas have answered and the day until it has.
       await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
-      await expect(page.getByRole('region', { name: 'Läget', exact: true })).toHaveAttribute('aria-busy', 'true');
+      // Läget is the manager's unit, named in its heading (board Hem): "Läget på <enhet>".
+      await expect(page.getByRole('region', { name: /^Läget på / })).toHaveAttribute('aria-busy', 'true');
       await expect(page.getByText('Hämtar i dag …')).toBeAttached();
       areas();
-      await expect(page.getByRole('region', { name: 'Läget', exact: true })).not.toHaveAttribute('aria-busy', 'true');
+      await expect(page.getByRole('region', { name: /^Läget på / })).not.toHaveAttribute('aria-busy', 'true');
       day();
       await expect(page.getByText('Hämtar i dag …')).toHaveCount(0);
       await expect(composer(page)).toHaveText('En fråga medan sidan hämtas');

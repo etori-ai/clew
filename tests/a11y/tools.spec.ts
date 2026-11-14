@@ -11,6 +11,7 @@ import {
 } from './support';
 import { menuRows } from './phonebook';
 import { roomsMenuRow } from './rooms';
+import { TOOLBOX_HREF, siteHeaderWithToolbox } from './data';
 
 /**
  * A tool as a page (D42, D112 item 6, board Tool): a view an administrator chose for the menu opens at
@@ -381,6 +382,145 @@ test.describe("a tool's page on a smaller screen", () => {
     api.menu = menuRows;
     await open(page, directory);
     await expect(page.getByRole('list', { name: 'Telefonboken' })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+});
+
+/**
+ * Alla verktyg (D126 rule 7, the `library` template): every tool the person may open, where the rail's first four end.
+ * The title and how many there are, a search field that narrows the tiles in place, the tiles in sections by the
+ * system they belong to, each tile the link to its tool's page with the catalogue as its way back, and at the foot the
+ * intranet's own page of tools when the shared header names one. The rail's row leads here and is marked while it is open.
+ */
+test.describe('Alla verktyg', () => {
+  test.use({ viewport: wide });
+  const catalogue = (page: import('@playwright/test').Page) => page.getByRole('main');
+  const tile = (page: import('@playwright/test').Page, name: string) =>
+    catalogue(page).getByRole('link', { name, exact: true });
+  const field = (page: import('@playwright/test').Page) => page.getByRole('searchbox', { name: 'Sök bland verktygen' });
+
+  test('every tool by its system, each tile its link with its icon, name, what it is and system; the rail’s row marked; one heading order', async ({
+    page,
+    api,
+  }) => {
+    api.menu = [...menuRows, roomsMenuRow];
+    await open(page, '/');
+    const all = rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link', { name: 'Alla verktyg' });
+    await expect(all).toHaveAttribute('href', '/tools');
+    await all.click();
+    await expect(page).toHaveURL('/tools');
+    await expect(page).toHaveTitle('Alla verktyg · Startsidan');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Alla verktyg');
+    await expect(all).toHaveAttribute('aria-current', 'page');
+    await expect(catalogue(page).getByText('3 verktyg', { exact: true })).toBeVisible();
+    // A section per system, Clew's own (the calendar's house mark) before the systems in their registered order.
+    const sections = catalogue(page).getByRole('region');
+    await expect(sections).toHaveCount(2);
+    await expect(sections.nth(0).getByRole('heading', { level: 2 })).toHaveText('Kalendern');
+    await expect(sections.nth(1).getByRole('heading', { level: 2 })).toHaveText('Telefonboken');
+    const phonebook = page.getByRole('region', { name: 'Telefonboken' });
+    await expect(phonebook.getByRole('heading', { level: 3 })).toHaveText(['Mitt team', 'Telefonbok']);
+    // What the tool is, when the read's own title says more than its name, and its system.
+    await expect(phonebook.getByText('Sök i telefonboken', { exact: true })).toBeVisible();
+    await expect(phonebook.getByText('Telefonboken', { exact: true })).toHaveCount(3);
+    await expect(tile(page, 'Telefonbok')).toHaveAttribute('href', '/tools/phonebook.directory?from=%2Ftools');
+    // The tiles of a row are one height.
+    const [a, b] = await Promise.all([tile(page, 'Mitt team').boundingBox(), tile(page, 'Telefonbok').boundingBox()]);
+    expect(Math.abs(a!.height - b!.height)).toBeLessThan(2);
+    // No intranet link without a header that names the intranet's page of tools.
+    await expect(page.getByRole('link', { name: /Fler verktyg på intranätet/ })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(wide.width);
+    await expectNoAxeViolations(page);
+  });
+
+  test('the field narrows in place: the address carries the words, the count is said; with no match the empty state clears the search back to the field', async ({
+    page,
+    api,
+  }) => {
+    api.menu = [...menuRows, roomsMenuRow];
+    await open(page, '/tools');
+    await field(page).fill('mitt');
+    await expect(field(page)).toBeFocused();
+    await expect(page).toHaveURL('/tools?filter=mitt');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveText(['Mitt team']);
+    await expect(catalogue(page).getByText('1 av 3 verktyg', { exact: true })).toBeVisible();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 verktyg'));
+    // A system's name narrows too.
+    await field(page).fill('kalendern');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveText(['Mötesrum']);
+    await field(page).fill('fordon');
+    await expect(page.getByRole('heading', { level: 2, name: 'Inget verktyg matchar sökningen' })).toBeVisible();
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Inget verktyg matchar sökningen'));
+    await expectNoAxeViolations(page);
+    await page.getByRole('button', { name: 'Rensa sökningen' }).click();
+    await expect(field(page)).toBeFocused();
+    await expect(field(page)).toHaveValue('');
+    await expect(page).toHaveURL('/tools');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveCount(3);
+    // The address is the state: a reload keeps the words.
+    await open(page, '/tools?filter=tele');
+    await expect(field(page)).toHaveValue('tele');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveText(['Mitt team', 'Telefonbok']);
+  });
+
+  test('a tile opens its tool’s page by keyboard, named as its way back, and Back returns to the tile', async ({
+    page,
+    api,
+  }) => {
+    api.menu = menuRows;
+    await open(page, '/tools');
+    await tile(page, 'Telefonbok').focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/tools/phonebook.directory?from=%2Ftools');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Telefonbok');
+    await page.goBack();
+    await expect(page).toHaveURL('/tools');
+    await expect(tile(page, 'Telefonbok')).toBeFocused();
+  });
+
+  test('the intranet’s page of tools at the foot, in a new tab, when the shared header names one', async ({
+    page,
+    api,
+  }) => {
+    api.menu = menuRows;
+    api.header = siteHeaderWithToolbox();
+    await open(page, '/tools');
+    const more = catalogue(page).getByRole('link', { name: /^Fler verktyg på intranätet/ });
+    await expect(more).toHaveAccessibleName(/^Fler verktyg på intranätet\s*\(öppnas i ny flik\)$/);
+    await expect(more).toHaveAttribute('href', TOOLBOX_HREF);
+    await expect(more).toHaveAttribute('target', '_blank');
+    // At the foot: after the last tile.
+    const [last, foot] = await Promise.all([tile(page, 'Telefonbok').boundingBox(), more.boundingBox()]);
+    expect(foot!.y).toBeGreaterThan(last!.y + last!.height);
+    await expectNoAxeViolations(page);
+  });
+
+  test('without a tool the page says so, with no field, and the rail has no Verktyg', async ({ page, api }) => {
+    api.menu = [];
+    await open(page, '/tools');
+    await expect(page.getByRole('heading', { level: 2, name: 'Inga verktyg för dig än' })).toBeVisible();
+    await expect(field(page)).toHaveCount(0);
+    await expect(rail(page).getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('at 320 px the tiles are one column, nothing reflows past the edge, and the field narrows them', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(narrow);
+    api.menu = [...menuRows, roomsMenuRow];
+    await open(page, '/tools');
+    const [a, b] = await Promise.all([tile(page, 'Mitt team').boundingBox(), tile(page, 'Telefonbok').boundingBox()]);
+    expect(b!.y).toBeGreaterThan(a!.y + a!.height);
+    expect(await reflowProblems(page)).toEqual([]);
+    await field(page).fill('tele');
+    await expect(catalogue(page).getByRole('heading', { level: 3 })).toHaveText(['Mitt team', 'Telefonbok']);
     expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
   });

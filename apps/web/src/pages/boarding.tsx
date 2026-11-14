@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -31,6 +31,7 @@ import {
   EmptyState,
   FormLayout,
   HStack,
+  Heading,
   Layout,
   LayoutContent,
   Link,
@@ -91,13 +92,12 @@ import { useEntityAction } from '../entity-actions';
 import { useHeldRelations } from '../capabilities';
 import { usePageTitle } from '../page-title';
 import { pageOnly } from '../panel-address';
-import { insideClew, originOf, pageSubject, personPageHref, toolOf } from '../person-address';
+import { OWN_PLAN, insideClew, originOf, pageSubject, personPageHref, toolOf } from '../person-address';
 import { useShownForTheWayBack } from '../way-back';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
-import { usePagePanel } from '../components/page-panel';
-import { EntityPage, PageSection, RailSection, type PageSectionEntry } from '../components/entity-page';
+import { EntityPage, PAGE_WIDTH, PageSection, RailSection, type PageSectionEntry } from '../components/entity-page';
 import { DialogFrame } from '../components/dialog-frame';
 import { StartPlanDialog } from '../components/boarding-start';
 
@@ -119,6 +119,43 @@ import { StartPlanDialog } from '../components/boarding-start';
  */
 export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { personId = '' } = useParams<{ personId: string }>();
+  const { search } = useLocation();
+  // The person's own plan is a tab of their own page (D126 rule 7): this address leads there, the plan or the start it
+  // names kept, and is replaced so Back does not come to it again.
+  if (personId === user.id) {
+    const q = new URLSearchParams(search);
+    const from = insideClew(q.get('from'));
+    q.delete('from');
+    q.delete('section');
+    const ownFrom = from && pageSubject(from.split('?')[0]!)?.key !== user.id ? from : null;
+    const page = personPageHref(user.id, { section: OWN_PLAN, from: ownFrom });
+    const rest = q.toString();
+    return <Navigate replace to={rest ? `${page}&${rest}` : page} />;
+  }
+  return <Plan user={user} admin={admin} personId={personId} frame="page" />;
+}
+
+/** The person's own plan as the tab of their own page (D126 rule 7): the plan's page without its frame. */
+export function PlanTab({ user, personId }: { user: SessionUser; personId: string }) {
+  return <Plan user={user} admin={false} personId={personId} frame="tab" />;
+}
+
+/**
+ * The plan's page and its tab are one: the same reads, the same writes and the same dialogs. `page` draws it in the
+ * thing's page (`EntityPage`) in the shell; `tab` draws its head, its phases and its facts in the column of the person's
+ * own page, under the page's heading.
+ */
+function Plan({
+  user,
+  admin,
+  personId,
+  frame,
+}: {
+  user: SessionUser;
+  admin: boolean;
+  personId: string;
+  frame: 'page' | 'tab';
+}) {
   const [search] = useSearchParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -138,7 +175,6 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
   const planId = chosen ?? (person ? defaultPlan(person.plans)?.id : undefined);
   const planQ = useQuery({ ...boardingPlanQuery(planId ?? ''), enabled: !!planId });
   const detail = planQ.data && planQ.data.plan.personId === personId ? planQ.data : undefined;
-  const panel = usePagePanel({ overlayOnly: short });
   const areas = useQuery(areasQuery).data;
   const menu = areas?.menu;
   const views = areas?.views ?? NO_VIEWS;
@@ -168,7 +204,8 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
   // The same path a person's page starts an action on: its work item beside this page, the action dialog over it.
   const entityAction = useEntityAction();
   const title = detail ? planTitle(detail.plan.event, name) : person ? `Introduktion och avslut för ${name}` : null;
-  usePageTitle(missing ? 'Planen finns inte' : title);
+  // On the person's own page the page names the tab.
+  usePageTitle(frame === 'tab' ? null : missing ? 'Planen finns inte' : title);
 
   // The way back (D116 rule 11): the page in `from` when Clew can name it (the person's own page by their id, the list
   // Introduktion och avslut), else where the reader works from: Personal for the manager, Att göra for an item's owner,
@@ -302,38 +339,42 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
   }, [closeFailure, announce]);
 
   let body: ReactNode;
-  if (missing || failed || (!person && !detail) || (planId && !detail))
-    body = (
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        padding={mobile ? 3 : 8}
-        content={
-          <LayoutContent isScrollable={!short}>
-            {missing ? (
-              <PlanMissing />
-            ) : failed ? (
-              <VStack gap={3}>
-                <Text as="p" role="alert">
-                  {errorMessage(failed.error, 'Planen kunde inte hämtas just nu.')}
-                </Text>
-                <HStack>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    label="Försök igen"
-                    isLoading={failed.isFetching}
-                    onClick={() => void failed.refetch()}
-                  />
-                </HStack>
-              </VStack>
-            ) : (
-              <ContentSkeleton />
-            )}
-          </LayoutContent>
-        }
-      />
+  if (missing || failed || (!person && !detail) || (planId && !detail)) {
+    const state = missing ? (
+      <PlanMissing />
+    ) : failed ? (
+      <VStack gap={3}>
+        <Text as="p" role="alert">
+          {errorMessage(failed.error, 'Planen kunde inte hämtas just nu.')}
+        </Text>
+        <HStack>
+          <Button
+            size="sm"
+            variant="secondary"
+            label="Försök igen"
+            isLoading={failed.isFetching}
+            onClick={() => void failed.refetch()}
+          />
+        </HStack>
+      </VStack>
+    ) : (
+      <ContentSkeleton />
     );
-  else {
+    body =
+      frame === 'tab' ? (
+        state
+      ) : (
+        <Layout
+          height={short ? 'auto' : 'fill'}
+          contentWidth={PAGE_WIDTH}
+          content={
+            <LayoutContent padding={mobile ? 4 : 6} isScrollable={!short}>
+              {state}
+            </LayoutContent>
+          }
+        />
+      );
+  } else {
     const here = pageOnly(pathname, search);
     const plans = person?.plans ?? [];
     const manager = access === 'manager';
@@ -513,53 +554,77 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
             </List>
           </RailSection>
         )}
-        <RailSection title="Tillhör">
-          {userName ? (
-            <ClickableCard label={`Person: ${name}`} href={personPageHref(personId, { from: here })} padding={3}>
+        {frame === 'page' && (
+          <RailSection title="Tillhör">
+            {userName ? (
+              <ClickableCard label={`Person: ${name}`} href={personPageHref(personId, { from: here })} padding={3}>
+                <VStack gap={0}>
+                  <Text type="supporting" color="secondary">
+                    Person
+                  </Text>
+                  <Text weight="semibold">{name}</Text>
+                </VStack>
+              </ClickableCard>
+            ) : (
               <VStack gap={0}>
                 <Text type="supporting" color="secondary">
                   Person
                 </Text>
                 <Text weight="semibold">{name}</Text>
               </VStack>
-            </ClickableCard>
-          ) : (
-            <VStack gap={0}>
-              <Text type="supporting" color="secondary">
-                Person
-              </Text>
-              <Text weight="semibold">{name}</Text>
-            </VStack>
-          )}
-        </RailSection>
+            )}
+          </RailSection>
+        )}
       </VStack>
     );
-    body = (
-      <EntityPage
-        back={back}
-        title={title ?? name}
-        subtitle={detail ? `${anchorWord[detail.plan.event]} ${longDay(detail.plan.anchorOn)}` : undefined}
-        actions={actions}
-        meta={
-          <>
-            {meta}
-            {tickError && <Banner status="error" title={tickError} collapsible={false} />}
-            {entityAction.error && <Banner status="error" title={entityAction.error} collapsible={false} />}
-          </>
-        }
-        sections={sections}
-        empty={empty}
-        details={details}
-        label={title ?? name}
-        panel={panel}
-        headingRef={headingRef}
-      />
-    );
+    body =
+      frame === 'tab' ? (
+        <VStack gap={6}>
+          <HStack gap={3} vAlign="center" wrap="wrap">
+            <StackItem size="fill">
+              <VStack gap={0.5}>
+                <Heading level={2} ref={headingRef} tabIndex={-1}>
+                  {title ?? name}
+                </Heading>
+                {detail && (
+                  <Text
+                    type="supporting"
+                    color="secondary"
+                  >{`${anchorWord[detail.plan.event]} ${longDay(detail.plan.anchorOn)}`}</Text>
+                )}
+              </VStack>
+            </StackItem>
+            {actions}
+          </HStack>
+          {meta}
+          {tickError && <Banner status="error" title={tickError} collapsible={false} />}
+          {entityAction.error && <Banner status="error" title={entityAction.error} collapsible={false} />}
+          {sections.length ? sections.map(s => <Fragment key={s.key}>{s.node}</Fragment>) : empty}
+          {details}
+        </VStack>
+      ) : (
+        <EntityPage
+          back={back}
+          title={title ?? name}
+          subtitle={detail ? `${anchorWord[detail.plan.event]} ${longDay(detail.plan.anchorOn)}` : undefined}
+          actions={actions}
+          meta={
+            <>
+              {meta}
+              {tickError && <Banner status="error" title={tickError} collapsible={false} />}
+              {entityAction.error && <Banner status="error" title={entityAction.error} collapsible={false} />}
+            </>
+          }
+          sections={sections}
+          empty={empty}
+          details={details}
+          label={title ?? name}
+          headingRef={headingRef}
+        />
+      );
   }
-  return (
-    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      {body}
-      {panel.overlay}
+  const dialogs = (
+    <>
       {entityAction.dialog}
       <StartPlanDialog
         event={dialogEvent}
@@ -587,6 +652,19 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
         isActionLoading={closeWrite.busy}
         onAction={() => void closePlan()}
       />
+    </>
+  );
+  if (frame === 'tab')
+    return (
+      <>
+        {body}
+        {dialogs}
+      </>
+    );
+  return (
+    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+      {body}
+      {dialogs}
     </Shell>
   );
 }

@@ -14,13 +14,14 @@ import { StartPage } from './pages/start';
 import { TodoPage } from './pages/todo';
 import { ItemPage } from './pages/item';
 import { todoFromHem } from './work-items';
-import { ConversationProvider, ThingConversationProvider } from './components/conversation-context';
+import { ConversationProvider } from './components/conversation-context';
 import { PanelClaims } from './components/page-panel';
 import { ReviewPage } from './pages/review';
 import { legacyReview, reviewPageFrom } from './review-address';
 import { clearDrafts } from './review-session';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
+import { ToolsPage } from './pages/tools';
 import { NewsPage } from './pages/news';
 import { LoginPage } from './pages/login';
 import { ManifestReferencePage } from './pages/protocol';
@@ -30,7 +31,7 @@ import { AdminConnectorPage } from './pages/admin/connector';
 import { AdminModelsPage } from './pages/admin/models';
 import { AdminUsersPage } from './pages/admin/users';
 import { AdminOrganisationPage } from './pages/admin/organisation';
-import { StaffPage } from './pages/staff';
+import { PeopleReadRoute, StaffPage } from './pages/staff';
 import { CompetencePage } from './pages/competence';
 import { ApprovalPage, CompetenceMatrixPage } from './pages/competence-matrix';
 import { CompetenceSearchPage } from './pages/competence-search';
@@ -200,15 +201,13 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       }}
     >
       <QueryClientProvider client={client}>
-        {/* One conversation for the whole session's pages (D50): asked on Hem, it is still there when the transcript takes the column; and one about the thing in the panel (D112 item 7), which follows that thing from page to page. Every page has the panel: the pages that draw it beside their column claim it, and the shell draws it over the others. */}
+        {/* One conversation for the whole session's pages (D50): asked on Hem, it is still there when the transcript takes the column, and no other page has a box of its own (D126 rule 5). Every page has the panel: the pages that draw it beside their column claim it, and the shell draws it over the others. */}
         <ConversationProvider>
-          <ThingConversationProvider>
-            <HeldCapabilities.Provider value={shell.capabilities}>
-              <HeldRelations.Provider value={shell.relations}>
-                <PanelClaims>{children(shell)}</PanelClaims>
-              </HeldRelations.Provider>
-            </HeldCapabilities.Provider>
-          </ThingConversationProvider>
+          <HeldCapabilities.Provider value={shell.capabilities}>
+            <HeldRelations.Provider value={shell.relations}>
+              <PanelClaims>{children(shell)}</PanelClaims>
+            </HeldRelations.Provider>
+          </HeldCapabilities.Provider>
         </ConversationProvider>
         {Devtools && (
           <Suspense fallback={null}>
@@ -276,9 +275,23 @@ function App() {
         path="/tools/boarding.person"
         element={<Protected>{shell => <BoardingPersonReadPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
+      {/* A read about the reader's people is Personal's tab or the person's page (D126 rules 1 and 8, `PeopleReadRoute`). */}
       <Route
         path="/tools/:capability"
-        element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>}
+        element={
+          <Protected>
+            {shell => (
+              <PeopleReadRoute user={shell.user}>
+                <ToolPage user={shell.user} admin={shell.admin} />
+              </PeopleReadRoute>
+            )}
+          </Protected>
+        }
+      />
+      {/* Alla verktyg (D126 rule 7): every tool the person may open, where the rail's first few end. */}
+      <Route
+        path="/tools"
+        element={<Protected>{shell => <ToolsPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       {/* Personal (D94): a manager's destination; the page itself tells anyone else, and the server refuses the read. */}
       <Route

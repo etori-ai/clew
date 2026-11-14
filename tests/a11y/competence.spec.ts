@@ -16,25 +16,42 @@ import {
   hiddenFocusStops,
   narrow,
   open,
-  openNav,
   phone,
   reflowProblems,
   test,
   type MockApi,
 } from './support';
+import { user } from './data';
 
 /**
- * Kompetens › Mina kompetenser (D120 item 8) at `/competence`: a place in the rail for everyone while the competence
- * module is switched on for them, the reader's own holdings drawn from `competence.holdings` by the declared view, a
- * required type they lack as "Saknas", and for a manager the place's pages as tabs that are links, the matrix one of
- * them. The page's own answer with nothing held or required and with the module off. A certificate of the reader's own
+ * Mina kompetenser (D120 item 8) as the Kompetens tab of the reader's own page (D126 rule 7), which `/competence` leads
+ * to: the reader's own holdings drawn from `competence.holdings` by the declared view, a required type they lack as
+ * "Saknas"; the manager's matrix is Personal's Kompetens tab (`competence-matrix.spec.ts`). The page's own answer with nothing held or required and with the module off. A certificate of the reader's own
  * added in a dialog named in the address (`add=new`, D108 item 7), what waits for the manager's decision in a card of its
  * own with "Ta tillbaka". A skill of the reader's own (D120) added in the same dialog, whose fields change with the kind
  * chosen, then changed in a dialog named in the address (`skill=<holding id>`) and removed after the confirmation, in a
  * card of its own. Keyboard, structure, axe and reflow, at desktop, phone and 320 px.
  */
 const OWN = '/competence';
+/** The reader's own page at its Kompetens tab, where `/competence` leads (D126 rule 7). */
+const OWN_PAGE = `/people/${user.id}?section=competence`;
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+/** The reader's own page as the server answers it: theirs, with nothing about them from a source (relation `self`). */
+test.beforeEach(async ({ page, api: _ }) => {
+  await page.route(
+    url => url.pathname === `/api/entities/person/${user.id}`,
+    route =>
+      route.fulfill({
+        json: {
+          entity: { kind: 'person', key: user.id, sourceKey: 'testa', name: user.name, id: user.id },
+          relation: 'self',
+          actions: [],
+          sections: [],
+          cards: [],
+        },
+      }),
+  );
+});
 const tabs = (page: Page) => page.getByRole('navigation', { name: 'Kompetens', exact: true });
 const switchedOn = (api: MockApi) => {
   api.competenceTypes = competenceTypes();
@@ -123,7 +140,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       test('the page has no axe violations and every focus stop is marked', async ({ page, api }) => {
         switchedOn(api);
         await open(page, OWN);
-        await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeVisible();
+        await expect(page.getByRole('heading', { level: 2, name: 'Mina kompetenser' })).toBeVisible();
         await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: 'Fallskydd' })).toBeVisible();
         await expectNoAxeViolations(page);
         const { unmarked } = await hiddenFocusStops(page);
@@ -133,56 +150,27 @@ test.describe('Kompetens › Mina kompetenser', () => {
 
   test.describe('desktop', () => {
     test.use({ viewport: desktop });
-    test('reached from the rail: the own holdings, what is missing said in words, and the tab that leads to the matrix', async ({
+    test('`/competence` leads to the Kompetens tab of the reader’s own page: the own holdings, what is missing said in words', async ({
       page,
       api,
     }) => {
       switchedOn(api);
-      await open(page, '/');
-      const place = rail(page).getByRole('link', { name: 'Kompetens', exact: true });
-      await place.focus();
-      await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(OWN);
-      await expect(page).toHaveTitle('Mina kompetenser · Startsidan');
-      await expect(place).toHaveAttribute('aria-current', 'page');
+      await open(page, OWN);
+      await expect(page).toHaveURL(OWN_PAGE);
+      await expect(page).toHaveTitle(`Kompetens · ${user.name} · Startsidan`);
+      await expect(page.getByRole('heading', { level: 1, name: user.name })).toBeVisible();
+      const own = page.getByRole('navigation', { name: `Om ${user.name}` });
+      await expect(own.getByRole('link', { name: 'Kompetens' })).toHaveAttribute('aria-current', 'true');
       const main = page.getByRole('main');
       // A required type the reader lacks is a row of its own, its status in words beside the badge's colour, the words
-      // written as every face of the register writes them (one casing, the review of 2026-11-13), and a day short in a
-      // row ("31 maj 2026" is the short form too; "10 jan. 2027" shows it).
+      // written as every face of the register writes them, and a day short in a row.
       await expect(main.getByRole('listitem').filter({ hasText: 'Fallskydd' })).toContainText('Saknas');
       await expect(main.getByRole('listitem').filter({ hasText: 'Heta arbeten' })).toContainText('Utgånget');
       await expect(main.getByRole('listitem').filter({ hasText: 'HLR' })).toContainText('Giltigt till: 10 jan. 2027');
-      // Clew's own register says nothing of being stored elsewhere: its rows are kept in Clew.
       await expect(main.getByText(/Inget av det sparas på Startsidan/)).toHaveCount(0);
-      // The place's pages as tabs that are links, each named as its page is headed, the current one marked; the matrix
-      // is one of them for a manager.
-      await expect(tabs(page).getByRole('link')).toHaveCount(2);
-      await expect(tabs(page).getByRole('link', { name: 'Mina kompetenser' })).toHaveAttribute('aria-current', 'true');
-      const matrix = tabs(page).getByRole('link', { name: 'Medarbetare', exact: true });
-      await expect(matrix).toHaveAttribute('href', '/competence/matrix');
-      await matrix.focus();
-      await page.keyboard.press('Enter');
-      await expect(page).toHaveURL('/competence/matrix');
-      await expect(page.getByRole('heading', { level: 1, name: 'Medarbetare', exact: true })).toBeVisible();
-      // The focus stays where it was, on the tab pressed, now the current one, as Att göra's tabs leave it: never the
-      // start of the document.
-      const current = tabs(page).getByRole('link', { name: 'Medarbetare', exact: true });
-      await expect(current).toHaveAttribute('aria-current', 'true');
-      await expect(current).toBeFocused();
-      // The rail keeps Kompetens as the place on both pages.
-      await expect(place).toHaveAttribute('aria-current', 'page');
-      // And back by the other tab, by keyboard (the tabs are one stop, the arrows move between them, Astryx's
-      // TabList): its tab has the focus on the page it leads to.
-      await page.keyboard.press('ArrowLeft');
-      await expect(tabs(page).getByRole('link', { name: 'Mina kompetenser' })).toBeFocused();
-      await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(OWN);
-      await expect(tabs(page).getByRole('link', { name: 'Mina kompetenser' })).toBeFocused();
-      await page.goBack();
-      await expect(page).toHaveURL('/competence/matrix');
-      await page.goBack();
-      await expect(page).toHaveURL(OWN);
-      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeVisible();
+      // The manager's views are Personal's Kompetens tab, not this page's (D126 rule 8).
+      await expect(tabs(page)).toHaveCount(0);
+      await expectNoAxeViolations(page);
     });
 
     test('the figure on Hem leads to the matrix narrowed to what needs attention, by the read’s declared page', async ({
@@ -218,7 +206,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL('/competence/matrix?only=attention');
       await expect(page.getByRole('switch', { name: /Visa bara det som behöver åtgärdas/ })).toBeChecked();
-      await expect(rail(page).getByRole('link', { name: 'Kompetens', exact: true })).toHaveAttribute(
+      await expect(rail(page).getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
         'aria-current',
         'page',
       );
@@ -233,7 +221,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       for (const from of ['%2F', '%2Ftodo', '%2Fcompetence%2Fmatrix']) {
         await open(page, `/tools/competence.attention?from=${from}`);
         await expect(page.getByRole('heading', { level: 1, name: 'Krav som inte uppfylls' })).toBeVisible();
-        await expect(rail(page).getByRole('link', { name: 'Kompetens', exact: true })).toHaveAttribute(
+        await expect(rail(page).getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
           'aria-current',
           'page',
         );
@@ -266,18 +254,18 @@ test.describe('Kompetens › Mina kompetenser', () => {
       const main = page.getByRole('main');
       // Heta arbeten has run out: its name is the way to registering it again, with the competence chosen.
       const heta = main.getByRole('link', { name: 'Heta arbeten', exact: true });
-      await expect(heta).toHaveAttribute('href', `${OWN}?add=new&competence=t-heta`);
+      await expect(heta).toHaveAttribute('href', `${OWN_PAGE}&add=new&competence=t-heta`);
       // A copied row whose type is not mapped has no type to register: its name is text.
       await expect(main.getByRole('link', { name: 'Livsmedelshygien' })).toHaveCount(0);
       await heta.focus();
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(`${OWN}?add=new&competence=t-heta`);
+      await expect(page).toHaveURL(`${OWN_PAGE}&add=new&competence=t-heta`);
       const dialog = page.getByRole('dialog', { name: 'Lägg till intyg' });
       await expect(dialog.getByRole('combobox', { name: /Kompetens/ })).toContainText('Heta arbeten');
       await expectNoAxeViolations(page);
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
-      await expect(page).toHaveURL(OWN);
+      await expect(page).toHaveURL(OWN_PAGE);
       await expect(heta).toBeFocused();
       // Closing replaced the dialog's address: Back leaves the page as it was before it opened, and opens no dialog.
       await page.goBack();
@@ -285,51 +273,11 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(page).not.toHaveURL(/add=new/);
     });
 
-    test('the rail draws Kompetens only while the module is on, and an address from before gets the page’s answer', async ({
-      page,
-      api,
-    }) => {
-      await open(page, '/');
-      await expect(rail(page).getByRole('link', { name: /^Hem/ })).toBeVisible();
-      await expect(rail(page).getByRole('link', { name: 'Kompetens', exact: true })).toHaveCount(0);
+    test('with the module off the own page’s Kompetens tab says so', async ({ page, api: _ }) => {
       await open(page, OWN);
       await expect(page.getByRole('heading', { level: 2, name: 'Kompetens är inte påslaget för dig' })).toBeVisible();
       await expect(tabs(page)).toHaveCount(0);
       await expectNoAxeViolations(page);
-      switchedOn(api);
-      await open(page, '/');
-      await expect(rail(page).getByRole('link', { name: 'Kompetens', exact: true })).toBeVisible();
-    });
-
-    test('on a hard load the place’s tabs and the rail’s Kompetens are drawn with the page and do not move when the reads answer', async ({
-      page,
-      api,
-    }) => {
-      switchedOn(api);
-      api.relations = ['registrar'];
-      // The rail's systems and the matrix's read answer a second and a half after the page is drawn.
-      api.areasDelay = 1500;
-      api.matrixDelay = 1500;
-      await page.goto(OWN);
-      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeVisible();
-      const place = rail(page).getByRole('link', { name: 'Kompetens', exact: true });
-      // Before either has answered: the session says a manager and a registrar, so all three pages are there at once.
-      const pages = async () => {
-        await expect(tabs(page).getByRole('link')).toHaveCount(3);
-        for (const [i, name] of ['Mina kompetenser', 'Medarbetare', 'Kompetenssökning'].entries())
-          await expect(tabs(page).getByRole('link').nth(i)).toHaveAccessibleName(name);
-      };
-      await pages();
-      await expect(place).toBeVisible();
-      await expect(addLink(page)).toBeVisible();
-      const before = { tabs: await tabs(page).boundingBox(), place: await place.boundingBox() };
-      expect(api.matrixReads).toEqual([]);
-      await page.waitForLoadState('networkidle');
-      await expect.poll(() => api.matrixReads.length).toBe(1);
-      // The answers change nothing that was drawn: the same tabs in the same place, the rail's row where it was.
-      await pages();
-      expect(await tabs(page).boundingBox()).toEqual(before.tabs);
-      expect(await place.boundingBox()).toEqual(before.place);
     });
 
     test('someone who manages nobody has the page without tabs, and nothing held or required is said as such', async ({
@@ -340,7 +288,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       api.employee = true;
       api.competenceHoldings = { rows: [] };
       await open(page, OWN);
-      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 2, name: 'Mina kompetenser' })).toBeVisible();
       await expect(tabs(page)).toHaveCount(0);
       await expect(
         page.getByRole('heading', { level: 2, name: 'Inget registrerat och inget som krävs' }),
@@ -360,7 +308,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       const add = addLink(page);
       await tabTo(page, add);
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(`${OWN}?add=new`);
+      await expect(page).toHaveURL(`${OWN_PAGE}&add=new`);
       const dialog = addDialog(page);
       await expect(dialog.getByText('Din chef behöver godkänna intyget innan det räknas.')).toBeVisible();
       await settled(page);
@@ -382,7 +330,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await send.focus();
       await page.keyboard.press('Enter');
       await expect(dialog).toBeHidden();
-      await expect(page).toHaveURL(OWN);
+      await expect(page).toHaveURL(OWN_PAGE);
       expect(api.ownWrites).toEqual([
         { method: 'POST', path: '/competence/own/holdings', body: { typeId: 't-hlr', issuedOn: '2026-10-01' } },
       ]);
@@ -420,7 +368,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await tabTo(page, main.getByRole('button', { name: 'Ta tillbaka HLR' }));
       await page.keyboard.press('Enter');
       await expect(main.getByRole('heading', { level: 2, name: 'Väntar på godkännande' })).toHaveCount(0);
-      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeFocused();
+      await expect(page.getByRole('heading', { level: 2, name: 'Mina kompetenser' })).toBeFocused();
     });
 
     test('a rejected registration is the person’s to remove, by keyboard, the focus going to the page’s heading once its card is gone', async ({
@@ -439,7 +387,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       expect(api.ownWrites).toEqual([{ method: 'DELETE', path: '/competence/own/rejected/own-2' }]);
       await expect(notices(page).getByText('Fallskydd är borttagen.')).toBeAttached();
       await expect(main.getByRole('heading', { level: 2, name: 'Avvisade av din chef' })).toHaveCount(0);
-      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeFocused();
+      await expect(page.getByRole('heading', { level: 2, name: 'Mina kompetenser' })).toBeFocused();
     });
 
     test('someone who reports to nobody is told it cannot be sent before anything is filled in, and Esc closes to Lägg till', async ({
@@ -459,7 +407,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expectNoAxeViolations(page);
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
-      await expect(page).toHaveURL(OWN);
+      await expect(page).toHaveURL(OWN_PAGE);
       await expect(addLink(page)).toBeFocused();
       expect(api.ownWrites).toEqual([]);
     });
@@ -482,7 +430,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
           .filter({ hasText: 'Du har redan en registrering av den kompetensen som väntar på godkännande.' }),
       ).toBeVisible();
       await expect(dialog.getByRole('combobox', { name: /Kompetens/ })).toContainText('Fallskydd');
-      await expect(page).toHaveURL(`${OWN}?add=new`);
+      await expect(page).toHaveURL(`${OWN_PAGE}&add=new`);
     });
   });
 
@@ -497,7 +445,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       const add = addLink(page);
       await tabTo(page, add);
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(`${OWN}?add=new`);
+      await expect(page).toHaveURL(`${OWN_PAGE}&add=new`);
       const dialog = addDialog(page);
       // The sentence about the kind chosen is a status region, so its change is said as well as shown.
       await expect(dialog.getByRole('status').filter({ hasText: 'Din chef' })).toHaveText(
@@ -539,7 +487,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await tabTo(page, save, 6);
       await page.keyboard.press('Enter');
       await expect(skill).toBeHidden();
-      await expect(page).toHaveURL(OWN);
+      await expect(page).toHaveURL(OWN_PAGE);
       expect(api.skillWrites).toEqual([
         { method: 'POST', path: '/competence/own/skills', body: { typeId: 't-eng', level: 2, interest: true } },
       ]);
@@ -574,7 +522,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       expect(box.height).toBeGreaterThanOrEqual(20);
       await tabTo(page, name);
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(`${OWN}?skill=skill-eng`);
+      await expect(page).toHaveURL(`${OWN_PAGE}&skill=skill-eng`);
       const change = skillDialog(page, 'Ändra nivå');
       await expect(change.getByText('Engelska', { exact: true })).toBeVisible();
       await expectLevelNames(change.getByRole('radiogroup', { name: /Nivå/ }));
@@ -589,7 +537,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await tabTo(page, change.getByRole('button', { name: 'Spara', exact: true }), 8);
       await page.keyboard.press('Enter');
       await expect(change).toBeHidden();
-      await expect(page).toHaveURL(OWN);
+      await expect(page).toHaveURL(OWN_PAGE);
       expect(api.skillWrites).toEqual([
         { method: 'PUT', path: '/competence/own/skills/skill-eng', body: { level: 3, interest: true } },
       ]);
@@ -620,7 +568,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       expect(api.skillWrites.at(-1)).toEqual({ method: 'DELETE', path: '/competence/own/skills/skill-eng' });
       await expect(notices(page).getByText('Engelska är borttagen.')).toBeAttached();
       await expect(main.getByRole('heading', { level: 2, name: 'Färdigheter' })).toHaveCount(0);
-      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeFocused();
+      await expect(page.getByRole('heading', { level: 2, name: 'Mina kompetenser' })).toBeFocused();
     });
 
     test('an address from before opens the change, and Esc closes it to the skill’s name', async ({ page, api }) => {
@@ -630,7 +578,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(change).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(change).toBeHidden();
-      await expect(page).toHaveURL(OWN);
+      await expect(page).toHaveURL(OWN_PAGE);
       await expect(page.getByRole('main').getByRole('link', { name: 'Engelska', exact: true })).toBeFocused();
       expect(api.skillWrites).toEqual([]);
     });
@@ -639,7 +587,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       withEnglish(api);
       await open(page, `${OWN}?skill=skill-gone`);
       await expect(page.getByRole('main').getByRole('alert')).toHaveText('Du har ingen sådan färdighet att ändra.');
-      await expect(page).toHaveURL(OWN);
+      await expect(page).toHaveURL(OWN_PAGE);
       await expect(skillDialog(page, 'Ändra nivå')).toHaveCount(0);
       await expectNoAxeViolations(page);
     });
@@ -683,12 +631,10 @@ test.describe('Kompetens › Mina kompetenser', () => {
 
   test.describe('phone', () => {
     test.use({ viewport: phone });
-    test('the place is in the rail’s drawer and the page reads as a list', async ({ page, api }) => {
+    test('the own page’s tab reads as a list on a phone', async ({ page, api }) => {
       switchedOn(api);
-      await open(page, '/');
-      const nav = await openNav(page);
-      await nav.getByRole('link', { name: 'Kompetens', exact: true }).click();
-      await expect(page).toHaveURL(OWN);
+      await open(page, OWN);
+      await expect(page).toHaveURL(OWN_PAGE);
       await expect(page.getByRole('main').getByRole('listitem').filter({ hasText: 'HLR' })).toBeVisible();
       await expectNoAxeViolations(page);
     });
@@ -700,7 +646,6 @@ test.describe('Kompetens › Mina kompetenser', () => {
       twoWaiting(api);
       await page.setViewportSize(narrow);
       await open(page, OWN);
-      await expect(tabs(page).getByRole('link', { name: 'Medarbetare', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Ta tillbaka HLR' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
       await open(page, `${OWN}?add=new`);

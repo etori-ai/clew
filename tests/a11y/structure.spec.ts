@@ -221,7 +221,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(heading(page, 2, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
     await expect(card.getByRole('checkbox')).toHaveCount(3);
     await expect(card.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
-    await expect(page.getByRole('article', { name: /^Assistenten/ })).toContainText('saknar beställning');
+    await expect(page.getByRole('article', { name: 'Clew', exact: true })).toContainText('saknar beställning');
   });
 
   test('the rail searches conversations and cards and opens what is picked: from Hem the work item’s page', async ({
@@ -279,7 +279,8 @@ test.describe('3.1.2 language of parts', () => {
     await input.press('Enter');
     await expect(answer(page)).toBeVisible();
     await expect(page.getByRole('article', { name: 'Du', exact: true })).toBeVisible();
-    await expect(page.getByRole('article', { name: /^Assistenten/ })).toBeVisible();
+    // Clew's turn names itself (board Samtal): the same word in Swedish as in English.
+    await expect(page.getByRole('article', { name: 'Clew', exact: true })).toBeVisible();
   });
 
   // On the landing the box has no header and already holds the focus (G); the conversation's scope line carries the shortcut.

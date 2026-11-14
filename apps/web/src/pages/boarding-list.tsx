@@ -14,8 +14,6 @@ import {
   EmptyState,
   HStack,
   Heading,
-  Layout,
-  LayoutContent,
   Link,
   List,
   ListItem,
@@ -33,22 +31,17 @@ import { anchorDay, overdueWords, planLine, plansWords, progressWords, shortDay 
 import { boardingPlansQuery, boardingSuggestionsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { useRail } from '../components/nav';
-import { RAIL } from '../components/panel';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { mobileQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
-import { PageHeader } from '../components/page-header';
+import { BOARDING_TAB, PERSONAL_TITLE_ID, PersonalFrame } from './staff-parts';
 
 const TITLE = 'Introduktion och avslut';
-/** The heading the page gives the focus to when the person arrives by a link, the rail's row. */
-const TITLE_ID = 'introduktion-rubrik';
 const OWN_ID = 'introduktion-egen';
 const SUGGESTED_ID = 'introduktion-forslag';
 const PLANS_ID = 'introduktion-planer';
-/** The list's column at its widest, as Personal and Kompetens have it: 1216 px less the page's padding on each side. */
-const COLUMN = 1216 - 2 * 32;
-/** The page's own padding on each side of the column, which the table's least width does not count. */
-const PADDING = 32;
+/** The rail's width and the tab's gutters, which the table's least width does not count. */
+const SIDE_NAV = 260;
+const PADDING = 24;
 /** The columns' widths: the person, the event, the day, the progress and a badge for what is late. */
 const WIDTHS = {
   name: proportional(2, { minWidth: 200 }),
@@ -62,7 +55,7 @@ const WIDTHS = {
  * rows a phone draws, so the page never scrolls sideways for them (1.4.10) and a name is never read apart from its plan.
  */
 const TABLE_MIN = resolveColumnWidths(Object.entries(WIDTHS).map(([key, width]) => ({ key, width }))).tableMinWidth;
-const tableQuery = `(min-width: ${RAIL + TABLE_MIN + 2 * PADDING}px)`;
+const tableQuery = `(min-width: ${SIDE_NAV + TABLE_MIN + 2 * PADDING}px)`;
 
 interface Row extends Record<string, unknown> {
   id: string;
@@ -76,8 +69,8 @@ const late = (plan: BoardingPlanSummary) =>
   plan.overdue > 0 ? <Badge variant="warning" label={overdueWords(plan.overdue)} /> : null;
 
 /**
- * Introduktion och avslut (D124 item 12, D116: a list is a page), `/boarding`, where the rail's row leads someone who
- * manages a unit or holds a plan to manage. The server's one read (`GET /api/boarding/plans`) says what is theirs: the
+ * Introduktion och avslut (D124 item 12, D116: a list is a page), `/boarding`, Personal's tab of that name since D126
+ * rule 8 (`PersonalFrame`), for someone who manages a unit or holds a plan to manage. The server's one read (`GET /api/boarding/plans`) says what is theirs: the
  * reader's own open plans, apart and above, when there are any; while any wait, the reports Clew suggests an
  * introduction for (D124 item 8), each with "Starta introduktion", the start dialog over the person's page; and the open
  * plans the reader manages or holds, nearest day first, as the list's card the way Personal draws its units and
@@ -86,17 +79,14 @@ const late = (plan: BoardingPlanSummary) =>
  * items are done and a badge where any is late. With no open plan a manager is told where plans are started; someone it
  * does not apply to, and the module switched off, are told so.
  *
- * Arrived by a link (the rail's row), the person starts at the heading (2.4.3). Coming back from a plan, by Back or by
+ * Arrived by a link (Personal's tab), the person starts at Personal's heading (2.4.3). Coming back from a plan, by Back or by
  * its way back, the shell gives the focus to the name that opened it (`useFocusOnTheWayBack`), and it stays there; a
  * reload leaves it where the browser puts it.
  */
 export function BoardingListPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
-  // 1.4.10: on a short screen nothing is pinned and the page scrolls as one.
-  const short = useMediaQuery(shortQuery);
   const wide = useMediaQuery(tableQuery);
-  const nav = useRail({ current: { surface: 'boarding' }, admin, manager: user.role === 'manager' });
-  usePageTitle(TITLE);
+  usePageTitle(`${TITLE} · Personal`);
   const plansQ = useQuery(boardingPlansQuery);
   const plans = plansQ.data;
   const manages = !!plans && (plans.manages || plans.rows.length > 0);
@@ -110,7 +100,7 @@ export function BoardingListPage({ user, admin }: { user: SessionUser; admin: bo
     if (pending || kind === 'POP') return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && active !== document.body && active.isConnected) return;
-    document.getElementById(TITLE_ID)?.focus();
+    document.getElementById(PERSONAL_TITLE_ID)?.focus();
   }, [pending]);
 
   let body: ReactNode;
@@ -178,22 +168,11 @@ export function BoardingListPage({ user, admin }: { user: SessionUser; admin: bo
     );
 
   return (
-    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        padding={mobile ? 3 : 8}
-        content={
-          <LayoutContent isScrollable={!short}>
-            <VStack hAlign="center">
-              <VStack gap={5} width="100%" maxWidth={COLUMN}>
-                <PageHeader title={TITLE} titleId={TITLE_ID} />
-                {body}
-              </VStack>
-            </VStack>
-          </LayoutContent>
-        }
-      />
-    </Shell>
+    <PersonalFrame user={user} admin={admin} tab={BOARDING_TAB} label={TITLE}>
+      <VStack gap={5} width="100%">
+        {body}
+      </VStack>
+    </PersonalFrame>
   );
 }
 

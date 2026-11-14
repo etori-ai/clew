@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Area, Capability, MenuEntry, Thread } from '@clew/contracts';
 import {
@@ -32,7 +32,8 @@ import { clewIcon } from '../icons';
 import { cardOverPage } from '../panel-address';
 import { viewPageHref } from '../view-address';
 import { pageLocation } from '../page-location';
-import { unitPageHref } from '../person-address';
+import { toolOf, unitPageHref } from '../person-address';
+import { toolsOf } from '../tool-catalogue';
 import { conversationState, needsYouOf, todoHref } from '../work-items';
 import type { ShellNav } from './shell';
 import { useHeldCapabilities } from '../capabilities';
@@ -81,6 +82,8 @@ export interface RailCurrent {
     | 'todo'
     | 'calendar'
     | 'verktyg'
+    /** Alla verktyg, the catalogue of every tool (D126 rule 7). */
+    | 'tools'
     | 'staff'
     | 'units'
     | 'competence'
@@ -88,7 +91,10 @@ export interface RailCurrent {
     | 'conversations'
     | 'admin';
   conversationId?: string | null;
-  /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
+  /**
+   * The capability whose tool page is open (D42), so its row under Verktyg is marked; null on a tool's page that does not
+   * know it is a tool, where the rail marks the tool whose page the address is.
+   */
   view?: string | null;
   /** The administration's section that is open (D45), for the administration's own panel. */
   section?: AdminSection;
@@ -115,17 +121,18 @@ const TOOLS_SHOWN = 4;
 /** How many conversations the rail shows, the newest; every conversation is on "Alla samtal" (D126). */
 const CONVERSATIONS_SHOWN = 3;
 /**
- * The address of a tool (D42): its own page, `/tools/:capability`, as the rail leads to it. Every other read the person
- * may open has the same page (D116, `view-address.ts`, which also names the way back to it).
+ * The address of a tool (D42): its own page, `/tools/:capability`, as the rail leads to it, and with `from` the page it
+ * was opened from as its way back (Alla verktyg). Every other read the person may open has the same page (D116,
+ * `view-address.ts`, which also names the way back to it).
  */
-export const toolHref = (capability: string) => viewPageHref({ capability });
+export const toolHref = (capability: string, from?: string) => viewPageHref({ capability }, from);
+/** Alla verktyg's address (D126 rule 7): every tool the person may open, where the rail's first few end. */
+export const TOOLS_HREF = '/tools';
 /**
  * A hit's address, or for a work item the item itself, which opens where a work item opens from the page the person is
  * on; `group` is the heading the search lists it under (Astryx's `CommandPalette` groups by it).
  */
 type Found = ({ href: string } | { card: string }) & { detail: string; group: string };
-/** What the palette searches: everything (Sök), or the tools alone (Alla verktyg). */
-type Searching = 'all' | 'tools';
 
 /**
  * The rail (D126 rule 7, board Shell, the `shell-side-nav` template): two verbs, the places in three short groups, the
@@ -135,7 +142,8 @@ type Searching = 'all' | 'tools';
  * calendar is the person's to see (D23). "Min enhet" for a manager (D94): Personal, whose tabs are the unit's
  * competence, talks and introductions (D126; their pages mark it), and Läget, the unit the manager follows up, or the
  * list of them when there are several (D117). "Verktyg": the views an administrator placed as tools (D40, each a page of
- * its own, D42), the first four, and "Alla verktyg", the palette narrowed to the tools. "Samtal": the three newest
+ * its own, D42) and Clew's own lists the person has (`toolsOf`), the first four, and "Alla verktyg", the page that lists
+ * every one of them (`/tools`). "Samtal": the three newest
  * conversations, each with a dot only where the data says something about it (the answer being written, a draft that
  * waits for the person), and "Alla samtal", the register of them. At the foot one row, Administration, for a person who
  * holds any of its sections (`ADMIN_ROWS`); the administration lists its sections itself. Every place is a link to a
@@ -153,11 +161,13 @@ export function useRail({
   manager: boolean;
 }): ShellNav {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const talk = useConversation();
   const threads = useQuery(threadsQuery).data?.threads ?? EMPTY_THREADS;
   const areasData = useQuery(areasQuery).data;
   const areas = areasData?.areas ?? EMPTY_AREAS;
-  const menu = areasData?.menu ?? EMPTY_MENU;
+  // Every tool the person may open: the views an administrator placed (D40) and Clew's own lists the person has.
+  const menu = useMemo(() => toolsOf(areasData?.menu ?? EMPTY_MENU, areas), [areasData?.menu, areas]);
   // A place whose system the person cannot see is not drawn (D23); until `/api/areas` answers, the rail draws it.
   const systems = areasData?.systems;
   const sees = (connector: string) => !systems || systems.some(s => s.connector === connector);
@@ -176,8 +186,8 @@ export function useRail({
   /** The conversation whose answer is being written now: the one on screen while a turn is on its way. */
   const answering = talk.pending ? (talk.conversation?.id ?? null) : null;
   // The search finds conversations, open work items, the areas and the tools from what the page already has: the same
-  // things the box's router finds without the model. "Alla verktyg" searches the tools alone.
-  const { source, toolSource, byId } = useMemo(() => {
+  // things the box's router finds without the model.
+  const { source, byId } = useMemo(() => {
     const tools: SearchableItem<Found>[] = menu.map(e => ({
       id: 'verktyg:' + e.capability,
       label: e.label,
@@ -203,21 +213,23 @@ export function useRail({
     ];
     return {
       source: createStaticSource(items),
-      toolSource: createStaticSource(tools),
       byId: new Map(items.map(i => [i.id, i.auxiliaryData!])),
     };
   }, [threads, areas, menu]);
+  // The tool whose page is open: the one the page names, else, on a tool's page that does not know it is a tool (one
+  // of Clew's own lists opened from the rail or from Alla verktyg), the one whose page the address is.
+  const openCapability = current.surface === 'verktyg' ? (current.view ?? toolOf(pathname)) : null;
   const tool = (e: MenuEntry) => (
     <SideNavItem
       key={e.capability}
       label={e.label}
       icon={clewIcon[e.icon]}
       href={toolHref(e.capability)}
-      isSelected={current.surface === 'verktyg' && current.view === e.capability}
+      isSelected={e.capability === openCapability}
     />
   );
   // The first tools, and the one open now when it is further down the list, so the page the person is on stays marked.
-  const openTool = menu.slice(TOOLS_SHOWN).find(e => current.surface === 'verktyg' && e.capability === current.view);
+  const openTool = menu.slice(TOOLS_SHOWN).find(e => e.capability === openCapability);
   const tools = [...menu.slice(0, TOOLS_SHOWN), ...(openTool ? [openTool] : [])];
   // The newest conversations, and the one open now first in their place when it is older, as the board marks it.
   const latest = g.questions.slice(0, CONVERSATIONS_SHOWN);
@@ -227,34 +239,28 @@ export function useRail({
   const conversations = openConversation ? [openConversation, ...latest.slice(0, CONVERSATIONS_SHOWN - 1)] : latest;
   // The search (board Shell's "Sök"): Astryx's command palette over the page, opened from its row in the rail. A pick
   // opens what it found: a work item where a work item opens from the page the person is on, anything else at its address.
-  const [searching, setSearching] = useState<Searching | null>(null);
+  const [searching, setSearching] = useState(false);
   const pick = (id: string) => {
     const hit = byId.get(id);
     if (!hit) return;
     const { pathname, search } = pageLocation();
     navigate('card' in hit ? cardOverPage(pathname, search, hit.card) : hit.href);
   };
-  const toolsOnly = searching === 'tools';
-  const label = toolsOnly ? 'Alla verktyg' : 'Sök i samtal och ärenden';
+  const label = 'Sök i samtal och ärenden';
   return {
     overlay: (
       <CommandPalette<SearchableItem<Found>>
-        isOpen={searching !== null}
+        isOpen={searching}
         onOpenChange={open => {
-          if (!open) setSearching(null);
+          if (!open) setSearching(false);
         }}
-        searchSource={toolsOnly ? toolSource : source}
+        searchSource={source}
         label={label}
-        input={
-          <CommandPaletteInput
-            label={label}
-            placeholder={toolsOnly ? 'Sök bland verktygen' : 'Sök i samtal och ärenden'}
-          />
-        }
+        input={<CommandPaletteInput label={label} placeholder={label} />}
         value=""
         onValueChange={pick}
-        emptySearchText={toolsOnly ? 'Inget verktyg heter så' : 'Inget samtal eller ärende heter så'}
-        emptyBootstrapText={toolsOnly ? 'Inga verktyg att välja bland' : 'Inget att söka bland än'}
+        emptySearchText="Inget samtal eller ärende heter så"
+        emptyBootstrapText="Inget att söka bland än"
         renderItem={item => (
           <VStack gap={0}>
             <Text>{item.label}</Text>
@@ -268,7 +274,7 @@ export function useRail({
         {/* The two verbs (board Shell, the template's "New chat" and "Search"): rows with icons, so a folded rail draws them as its other rows. */}
         <SideNavSection title="Börja" isHeaderHidden>
           <SideNavItem label="Ny fråga" icon={PlusIcon} href="/" />
-          <SideNavItem label="Sök" icon="search" onClick={() => setSearching('all')} />
+          <SideNavItem label="Sök" icon="search" onClick={() => setSearching(true)} />
         </SideNavSection>
         <Divider />
         <SideNavSection title="Mitt arbete">
@@ -321,8 +327,13 @@ export function useRail({
         {menu.length > 0 && (
           <SideNavSection title="Verktyg">
             {tools.map(tool)}
-            {/* Every tool, searchable: the palette narrowed to them, since no page lists them yet. */}
-            <SideNavItem label="Alla verktyg" icon={Squares2X2Icon} onClick={() => setSearching('tools')} />
+            {/* Every tool on a page of its own (D126 rule 7, the `library` template), marked while it is open. */}
+            <SideNavItem
+              label="Alla verktyg"
+              icon={Squares2X2Icon}
+              href={TOOLS_HREF}
+              isSelected={current.surface === 'tools'}
+            />
           </SideNavSection>
         )}
         {g.questions.length > 0 && (

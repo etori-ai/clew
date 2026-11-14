@@ -8,10 +8,12 @@ import {
   Heading,
   Layout,
   LayoutContent,
+  LayoutHeader,
   Link,
   MetadataList,
   MetadataListItem,
   Skeleton,
+  StackItem,
   StatusDot,
   Table,
   type TableColumn,
@@ -26,11 +28,10 @@ import { entityDetailQuery, entityListQuery, entitySectionQuery } from '../queri
 import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { useRail } from '../components/nav';
-import { PageHeader } from '../components/page-header';
 import { AttentionSkeleton, UnitsSkeleton } from '../components/loading';
+import { PAGE_WIDTH } from '../components/entity-page';
 import { Summary, measureOf, summaryOf, toneWeight } from '../components/unit-figures';
-import { unitPageHref } from '../person-address';
-import { sourcePageHref } from '../talk-address';
+import { sourceWayHref, unitPageHref } from '../person-address';
 import { errorMessage } from '../query-policy';
 import { fieldText } from '../components/view';
 import { DOT } from '../dot';
@@ -84,11 +85,17 @@ function SourceHeader({ source }: { source: EntitySource }) {
  */
 function UnitTable({ rows, columns }: { rows: TableRow[]; columns: UnitColumn[] }) {
   const pinned = useTableStickyColumns<TableRow>({ startKeys: ['unit'] });
-  return <Table<TableRow> data={rows} idKey="id" density="balanced" plugins={{ pinned }} columns={columns} />;
+  // In a card in Hem's column, as Hem puts its lists (the product owner, 2026-11-14).
+  return (
+    <Card padding={0}>
+      <Table<TableRow> data={rows} idKey="id" density="balanced" plugins={{ pinned }} columns={columns} />
+    </Card>
+  );
 }
 
 /**
- * Dialogstöd (D117): the units the reader follows up side by side, their own and those of the managers who report to
+ * Läget's register (D117; D126 rule 8, the `table-page` template), `/units`, where the rail's Läget leads a manager who
+ * follows up several units: the units the reader follows up side by side, their own and those of the managers who report to
  * them, in the groups the list of units gives ("Mina enheter", "Enheter under dig"). What needs a conversation comes
  * first: a line on top counts the units by the states that need action or watching, and within each group the units
  * with the most of those stand first. On a wide screen a table, one column per source about a unit that has something
@@ -100,7 +107,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
   const nav = useRail({ current: { surface: 'units' }, admin, manager: user.role === 'manager' });
-  usePageTitle('Dialogstöd');
+  usePageTitle('Läget');
   const list = useQuery(entityListQuery('unit'));
   const groups = list.data?.groups.filter(g => g.entities.length) ?? [];
   const units = groups.flatMap(g => g.entities);
@@ -146,14 +153,13 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     (a, b) => toneWeight(b.tone) - toneWeight(a.tone) || b.units.length - a.units.length,
   );
   /**
-   * Where a line's unit leads: into the source's own way in when that lies over the unit's page (the dialogue's
-   * `?dialog=`), else the unit's page; either way with Dialogstöd as the way back.
+   * Where a line's unit leads: to the source's own tab of the unit's page when its way in is one (the dialogue, D126
+   * rule 3), else the unit's page; either way with Läget's register as the way back.
    */
   const wayInto = (unit: Unit, source: EntitySource) => {
     const page = unitPageHref(unit.key, { from: UNITS });
     if (!source.page?.href.startsWith('?')) return page;
-    const [pathname, search = ''] = page.split('?');
-    return sourcePageHref(source.page, { key: unit.key }, { pathname: pathname!, search }) ?? page;
+    return sourceWayHref(source, { kind: 'unit', key: unit.key }, { pathname: UNITS, search: '' }, UNITS) ?? page;
   };
 
   const unitLink = (unit: Unit) => (
@@ -268,28 +274,32 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     </>
   );
 
+  const gutter = mobile ? 4 : 6;
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <Layout
         height={short ? 'auto' : 'fill'}
-        padding={mobile ? 3 : 8}
+        // Hem's column (the product owner, 2026-11-14): every page in the same centred frame.
+        contentWidth={PAGE_WIDTH}
+        header={
+          <LayoutHeader padding={gutter} hasDivider>
+            <HStack gap={3} vAlign="center" wrap="wrap">
+              <StackItem size="fill">
+                <VStack gap={0.5}>
+                  <Heading level={1}>Läget</Heading>
+                  {units.length > 0 && (
+                    <Text type="supporting" color="secondary">
+                      {units.length === 1 ? '1 enhet' : `${units.length} enheter`}
+                    </Text>
+                  )}
+                </VStack>
+              </StackItem>
+            </HStack>
+          </LayoutHeader>
+        }
         content={
-          <LayoutContent padding={0}>
-            <VStack
-              paddingInline={mobile ? 3 : 8}
-              paddingBlockStart={mobile ? 3 : 8}
-              paddingBlockEnd={mobile ? 3 : 5}
-              gap={6}
-            >
-              <VStack gap={1}>
-                <PageHeader title="Dialogstöd" />
-                <Text type="supporting">
-                  Nyckeltalen för dina enheter och för enheterna vars chefer rapporterar till dig, det som behöver
-                  samtal först. Välj en enhet för att gå igenom den.
-                </Text>
-              </VStack>
-              {body}
-            </VStack>
+          <LayoutContent padding={gutter} isScrollable={!short} label="Enheter">
+            <VStack gap={6}>{body}</VStack>
           </LayoutContent>
         }
       />

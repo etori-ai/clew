@@ -66,18 +66,23 @@ export interface EntityActionStart {
   /** The source's Swedish sentence, shown beside what started it until the next start. */
   error: string | null;
   busy: boolean;
-  /** The action dialog of a propose that asks (D112 item 10); the page renders it wherever it renders the buttons. */
+  /** The action dialog of a propose (D112 item 10); the page renders it wherever it renders the buttons. */
   dialog: ReactNode;
 }
 /**
+ * Whether the action dialog comes before anything is started (D126 rule 4: nothing is created before the dialog's last
+ * button). A propose drafts a work item the moment it starts, so every propose opens the dialog first, also one that
+ * asks nothing: its "Det här händer" is the capability's own description, and its last button is the start. An execute
+ * starts its work item first and is decided in the dialog over that item, where its answers are given (D112).
+ */
+export const dialogFirst = (action: Pick<EntityAction, 'kind'>): boolean => action.kind === 'propose';
+/**
  * Starting an action about an entity (D97, D8): the server starts it on the entity's key without the model and answers
- * the card the person decides on; nothing reaches the source's write before that decision. The card opens beside the
- * page the action was started on (D111 rule 4): that page's address with the card in its panel (`withCard`), beside the
- * page's column where both fit and over it where they do not, so starting something never takes the person away and
- * closing the card leaves the page as it was, with its lens, its section and a person's cards listed beside it. The
- * address is the page's when the start has answered, and the focus lands on the card's heading as on every card opened
- * in a panel. A refusal is said aloud once per start (4.1.3) and stays as `error` for the page to show beside the
- * control.
+ * the work item the person decides on; nothing reaches the source's write before that decision. A propose is filled in
+ * and confirmed in the action dialog before it starts (`dialogFirst`), so a menu's row never drafts anything by itself
+ * (the critique of 2026-11-14). Once started, the work item opens on its own page (D126 rule 1, `withCard`), with the
+ * page the action was started on as its way back, so Back leaves the person where they were, with its tab and its
+ * search. A refusal is said aloud once per start (4.1.3) and stays as `error` for the page to show beside the control.
  */
 export function useEntityAction(): EntityActionStart {
   const navigate = useNavigate();
@@ -99,7 +104,7 @@ export function useEntityAction(): EntityActionStart {
     (action: EntityAction, subject: ActionSubject, values?: AskValues) => {
       const kind = subject.kind ?? 'person';
       const preset = values && Object.keys(values).length ? values : undefined;
-      if (action.kind === 'propose' && opensDialog(action)) {
+      if (dialogFirst(action)) {
         // What the person typed from this start before wins over its preset; the preset fills a dialog opened afresh.
         const draft = askDraftKey(action, subject, preset);
         setDrafts(d => withPreset(d, draft, preset));
@@ -110,7 +115,7 @@ export function useEntityAction(): EntityActionStart {
         started => {
           if (!started) return;
           if ('threadId' in started) {
-            // An execute's answers are given at its decision (D112): its work item opens beside the page with the dialog
+            // An execute's answers are given at its decision (D112): its work item opens on its page with the dialog
             // over it, on the item's own button, starting from the preset answers when there are any.
             if (action.kind === 'execute' && opensDialog(action))
               requestAction({ threadId: started.threadId, actionId: 'decide', ...(preset ? { values: preset } : {}) });
@@ -121,7 +126,7 @@ export function useEntityAction(): EntityActionStart {
     },
     [start, navigate, announce],
   );
-  /** The propose with its answers: the work item it drafts opens beside the page; a refusal stays in the dialog. */
+  /** The propose with its answers: the work item it drafts opens on its page; a refusal stays in the dialog. */
   const send = async (values: AskValues): Promise<string | null> => {
     if (!asking) return null;
     const { action, subject, draft } = asking;

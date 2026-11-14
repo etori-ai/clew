@@ -11,7 +11,6 @@ import {
 } from '@clew/contracts';
 import {
   AreaLine,
-  ArrowsPointingOutIcon,
   Badge,
   Button,
   DayStrip,
@@ -42,13 +41,11 @@ import {
 } from '@clew/ui';
 import { dayLabel, timeRange } from '@clew/calendar/dates';
 import { fieldLabel, fieldValue, hiddenFields, reviewLabel, staleLabel } from './panel-labels';
-import { useConversation, useModelConfigured, useThingConversation, type ThingSubject } from './conversation-context';
+import { useConversation, type ThingSubject } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
 import { DeclaredView } from './view';
-import { ThingWithConversation } from './thing-panel';
 import { useMarks } from '../marks';
 import { entityHref } from '../person-address';
-import { shortQuery } from '../media';
 
 const plain = (address: string) => {
   try {
@@ -352,15 +349,12 @@ export interface PanelFrame {
   /** What the thing is and where it is from, under its name in the header ("Möte · Kalendern", board Calendar). */
   subtitle?: string;
   /**
-   * The content, told whether it is drawn beside the page (narrow, non-modal) or over it, and whether a conversation
-   * about it runs, so its facts fold to the essentials and its buttons with "Visa allt" (D112 item 7).
+   * The content, told whether it is drawn beside the page (narrow, non-modal) or over it. `folded` is always false: no
+   * conversation runs under a thing in a panel any more (D126 rule 5).
    */
   body: (inline: boolean, folded: boolean) => ReactNode;
   onClose: () => void;
-  /**
-   * What the box under the thing asks about (D112 item 7). The box is drawn whenever the thing has one and a model is
-   * configured; without a model, or a thing that is not asked about (a read that failed), the panel is the thing alone.
-   */
+  /** What "Fråga Clew" would ask about. The panel draws no box of its own any more (D126 rule 5). */
   subject?: ThingSubject;
   /** The address of what is on screen, so focus finds the link that led away when the person comes back to it. */
   address?: string | undefined;
@@ -414,10 +408,7 @@ type Options = {
    * a page whose opener is gone (the row of a card that was sent away) sends the focus on from here.
    */
   onClosed?: () => void;
-  /**
-   * Whether the thing gets the box under it (D112 item 7). False on a conversation's own page, where the transcript is
-   * the column and the panel is its artifact: the conversation's box is the one to ask in.
-   */
+  /** Kept for the callers from before D126: no panel has a box under its thing any more (rule 5). */
   asks?: boolean;
 };
 /**
@@ -433,11 +424,15 @@ type Options = {
  * (never away from a field the person is typing in: the box keeps the focus when a conversation brings its panel
  * along), Esc inside it closes it and gives focus back to what opened it, and one thing taking another's place is named
  * aloud (2.4.3, 4.1.3). Over the page the drawer gives the heading the focus and takes it back itself.
+ *
+ * Since D126 (one page per thing) nothing opens beside or over a page but in Att göra and beside a conversation, and the
+ * conversation's page draws its own pane (`pages/conversation.tsx`, rule 2); this stays for `usePagePanel` until the
+ * pages that still call it have moved off it.
  */
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
 export function usePanel(
   panel: PanelFrame | null,
-  { overlayOnly = false, onClosed, asks = true }: Options,
+  { overlayOnly = false, onClosed }: Options,
 ): {
   end: ReactNode | undefined;
   overlay: ReactNode;
@@ -448,16 +443,7 @@ export function usePanel(
 } {
   const fits = useMediaQuery(besideQuery);
   const inline = fits && !overlayOnly;
-  // 1.4.10: on a short screen nothing is docked in the panel either; the thing, the transcript and the box scroll as one.
-  const short = useMediaQuery(shortQuery);
   const announce = useAnnounce();
-  // The thing and the conversation about it (D112 item 7): the box is there while a model is configured (D8) and the
-  // thing is one that is asked about; the conversation is the thing's own, and folds its facts while it runs.
-  const model = useModelConfigured();
-  const subject = asks && model && panel?.subject ? panel.subject : null;
-  const talk = useThingConversation(subject);
-  const folded = !!subject && talk.running;
-  const continueHref = subject && talk.conversation ? `/conversations/${talk.conversation.id}${subject.search}` : null;
   const region = useRef<HTMLDivElement>(null);
   /** The drawer's dialog, where the panel is drawn over the page. */
   const drawer = useRef<HTMLDialogElement>(null);
@@ -701,18 +687,6 @@ export function usePanel(
           </VStack>
         </StackItem>
         <HStack gap={1} vAlign="center">
-          {/* A long exchange continues in the conversation view (D112 item 7, board Assistant): the transcript as the
-              page's column and the thing as its artifact beside it. */}
-          {continueHref && (
-            <IconButton
-              size="sm"
-              variant="ghost"
-              label="Fortsätt som samtal"
-              tooltip="Fortsätt som samtal"
-              icon={<Icon icon={ArrowsPointingOutIcon} />}
-              href={continueHref}
-            />
-          )}
           <IconButton
             size="sm"
             variant="ghost"
@@ -724,34 +698,19 @@ export function usePanel(
       </HStack>
     </LayoutHeader>
   );
-  /**
-   * The header and the body, laid out the same beside the page and in the drawer. With a box (D112 item 7) the body is
-   * the thing with the conversation under it, docked by ChatLayout, which owns the scroll; without one it is the thing
-   * alone in the content's own scroll, as before.
-   */
-  const framed = (frame: PanelFrame | null, inline: boolean) => {
-    const thing = frame?.body(inline, folded);
-    return (
-      <Layout
-        height="fill"
-        padding={6}
-        header={header}
-        content={
-          subject && frame ? (
-            <LayoutContent isScrollable={short} padding={short ? 6 : 0}>
-              <VStack id={BODY_ID} height={short ? undefined : '100%'}>
-                <ThingWithConversation talk={talk} subject={subject} thing={thing} short={short} />
-              </VStack>
-            </LayoutContent>
-          ) : (
-            <LayoutContent>
-              <VStack id={BODY_ID}>{thing}</VStack>
-            </LayoutContent>
-          )
-        }
-      />
-    );
-  };
+  /** The header and the body, laid out the same beside the page and in the drawer: the thing alone, in the content's own scroll. */
+  const framed = (frame: PanelFrame | null, inline: boolean) => (
+    <Layout
+      height="fill"
+      padding={6}
+      header={header}
+      content={
+        <LayoutContent>
+          <VStack id={BODY_ID}>{frame?.body(inline, false)}</VStack>
+        </LayoutContent>
+      }
+    />
+  );
   // The handle stands between the page and the panel only while the panel is shown, as Astryx's `ai-chat` template
   // mounts its handle with the open panel. A folded panel has no width to change, and its handle would stand on the
   // window's edge with half of its 16 px grab zone past it: Astryx keeps the whole zone for a folded region, the

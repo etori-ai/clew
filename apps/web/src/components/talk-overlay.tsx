@@ -1,41 +1,28 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useId, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { CommitmentOwner, StaffPerson, TalksResult } from '@clew/contracts';
 import {
   Badge,
   Banner,
-  BottomSheet,
   Button,
   DateInput,
-  Drawer,
-  DrawerHeader,
   EmptyState,
   FormLayout,
   Heading,
   HStack,
-  Icon,
-  IconButton,
-  Layout,
-  LayoutContent,
-  LayoutHeader,
   List,
   ListItem,
   RadioList,
   RadioListItem,
-  StackItem,
   Text,
   TextInput,
   VStack,
-  useMediaQuery,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { api } from '../api';
 import { commitmentsQuery, staffQuery, talksQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { useTalkAction } from '../mutations';
-import { useOverlayTitle } from '../page-title';
-import { talkOf, withTalk, withoutTalk } from '../talk-address';
 import {
   dueText,
   groupCommitments,
@@ -47,11 +34,8 @@ import {
   type CommitmentEntry,
 } from '../talks';
 import { AsyncContent, ContentSkeleton } from './loading';
-import { mobileQuery, shortQuery } from './shell';
 import { DOT } from '../dot';
 
-/** The drawer's desktop width budget: one person's talk, a list of short lines and a three-field form. */
-const TALK_WIDTH = 560;
 /** An action point is one short line (D96 item 4); the contract caps it. */
 const TEXT_MAX = 280;
 
@@ -63,164 +47,64 @@ const responsible = (row: Pick<CommitmentEntry, 'owner' | 'mine' | 'id'>) =>
   row.mine ? 'Du' : row.owner === 'employee' ? 'Medarbetaren' : row.id ? 'Tidigare chef' : 'Chefen';
 
 /**
- * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D111 rule 5):
- * an end `Drawer` on a desktop and a tall `BottomSheet` on a phone, composed as the service catalogue's overlay is
- * (`DrawerHeader` in a `Layout`, the sheet's own heading row with Stäng). Mounted by the pages where its way in is
- * drawn, after their panel so it stacks over a card opened beside them: Personal (a row's menu), a person's page (the
- * talks section) and a unit's page. The address is the page's own with `talk=<personId>` (`talk-address.ts`); the page
- * stays mounted under it. Closing (✕, Esc, the way back) replaces the address with the same one without `talk`, and
- * Astryx gives the focus back to the control that opened the drawer; when nothing opened it (a reload, Back after the
- * list was redrawn) `opener` names the person's own control on the page, else the page's way into this talk.
- *
- * Opened only for Clew's own module (`writable`): when another system answers, the page opens that system instead and
- * the address draws nothing. The talk's state with Markera som hållet and Ångra, the person's action points carried
- * over first, then this round's, then the done ones, and a form to add one while a round is open. Nothing is read
- * until an address names a talk, so a page that can open one asks nothing of the talks system until it does.
+ * One person's utvecklingssamtal (D96 item 7) as the talk's tab on the person's page (D126 rule 3: the drawer that lay
+ * over the page is gone; the talk is where the person is). The address is the person's page with the talk's source as
+ * `section` (`person-address.ts`); an address that laid the drawer over a page (`?talk=<personId>`) leads here. Its
+ * state with Markera som hållet and Ångra, the person's action points carried over first, then this round's, then the
+ * done ones, and a form to add one while a round is open; the round's name under the tab's heading. Opened only for
+ * Clew's own module (`writable`): when another system answers, the tab is that system's row, as any other source's.
+ * Nothing is read until the tab is shown.
  */
-export function TalkOverlay({
-  opener,
-  back,
+export function TalkTab({
+  personId,
+  name,
+  fallback,
 }: {
-  opener?: (personId: string) => HTMLElement | null;
-  /** The words of the way back from a person who is not there, which names the page under the drawer. */
-  back: string;
+  personId: string;
+  name: string;
+  /** The source's own row, drawn when the talk cannot be written here: another system answers, or the person is not on the reader's units. */
+  fallback?: ReactNode;
 }) {
-  const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const [search] = useSearchParams();
-  const mobile = useMediaQuery(mobileQuery);
-  const short = useMediaQuery(shortQuery);
-  const talkId = talkOf(search);
-  // The person shown, kept while the overlay slides away so its content does not blank mid-exit (Astryx Drawer).
-  const [shownId, setShownId] = useState<string | null>(talkId);
-  if (talkId && talkId !== shownId) setShownId(talkId);
-  const wanted = !!(talkId ?? shownId);
-  const staffQ = useQuery({ ...staffQuery, enabled: wanted });
-  const talksQ = useQuery({ ...talksQuery, enabled: wanted });
+  const staffQ = useQuery(staffQuery);
+  const talksQ = useQuery(talksQuery);
   const talks = talksQ.data;
-  const readOnly = talks?.writable === false;
-  const settled = staffQ.data !== undefined && (talksQ.data !== undefined || talksQ.isError);
-  const isOpen = !!talkId && settled && !readOnly;
-  const person = staffQ.data?.units.flatMap(u => u.people).find(p => p.id === shownId) ?? null;
-  const found = !!person && !!talks;
-  const title = talksQ.isError ? 'Samtal' : found ? person.name : 'Samtalet finns inte';
-  const label = found ? `Samtal med ${person.name}` : title;
-  // The open talk names the tab (2.4.2), and the page's own name comes back when it closes; with no drawer to show the
-  // tab is the page's. Focus moving into the drawer says the name.
-  useOverlayTitle(isOpen && found ? label : null);
-
-  const onOpenChange = (open: boolean) => {
-    if (!open) navigate(withoutTalk(pathname, search), { replace: true });
-  };
-  // Astryx returns the focus to the element that opened the overlay. After a reload nothing did, so the focus would
-  // stay on the page's body: the person's own control on the page takes it (`opener`), else the page's own way into this
-  // talk (a section's "Öppna samtalet"), and nothing else is guessed.
-  const page = useRef({ pathname, search: search.toString() });
-  page.current = { pathname, search: search.toString() };
-  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
-  const sheetPanel = useCallback((panel: HTMLDivElement | null) => setDialog(panel?.closest('dialog') ?? null), []);
-  const openRef = useRef(talkId);
-  openRef.current = talkId;
-  const shownRef = useRef(shownId);
-  shownRef.current = shownId;
-  const openerRef = useRef(opener);
-  openerRef.current = opener;
-  useEffect(() => {
-    if (!dialog) return;
-    const closed = () => {
-      const id = shownRef.current;
-      if (!openRef.current) setShownId(null);
-      requestAnimationFrame(() => {
-        const active = document.activeElement;
-        if (!id || (active && active !== document.body)) return;
-        const { pathname, search } = page.current;
-        const way = `a[href="${CSS.escape(withTalk(pathname, search, id))}"]`;
-        (openerRef.current?.(id) ?? document.querySelector<HTMLElement>(way))?.focus();
-      });
-    };
-    dialog.addEventListener('close', closed);
-    return () => dialog.removeEventListener('close', closed);
-  }, [dialog]);
-
-  const header = (subtitle?: string) =>
-    mobile ? (
-      <LayoutHeader>
-        <VStack gap={1}>
-          <HStack justify="between" vAlign="center" gap={2}>
-            <StackItem size="fill">
-              <Heading level={2}>{title}</Heading>
-            </StackItem>
-            <IconButton
-              variant="ghost"
-              label="Stäng"
-              icon={<Icon icon="close" />}
-              onClick={() => onOpenChange(false)}
-            />
-          </HStack>
-          {subtitle && <Text type="supporting">{subtitle}</Text>}
-        </VStack>
-      </LayoutHeader>
-    ) : (
-      <DrawerHeader title={title} {...(subtitle ? { subtitle } : {})} onOpenChange={onOpenChange} />
+  const person = staffQ.data?.units.flatMap(u => u.people).find(p => p.id === personId) ?? null;
+  if (talksQ.isError || staffQ.isError)
+    return (
+      <Banner
+        status="error"
+        title={errorMessage(talksQ.error ?? staffQ.error, 'Samtalet kunde inte hämtas.')}
+        endContent={
+          <Button
+            label="Försök igen"
+            size="sm"
+            variant="secondary"
+            isLoading={talksQ.isFetching || staffQ.isFetching}
+            onClick={() => void (talksQ.isError ? talksQ.refetch() : staffQ.refetch())}
+          />
+        }
+      />
     );
-  const content = !shownId ? null : talksQ.isError ? (
-    <Banner
-      status="error"
-      title={errorMessage(talksQ.error, 'Samtalet kunde inte hämtas.')}
-      endContent={
-        <Button
-          label="Försök igen"
-          size="sm"
-          variant="secondary"
-          isLoading={talksQ.isFetching}
-          onClick={() => void talksQ.refetch()}
-        />
-      }
-    />
-  ) : found ? (
-    <Talk key={person.id} person={person} talks={talks} />
-  ) : (
-    <EmptyState
-      headingLevel={3}
-      title={person ? 'Det finns inga utvecklingssamtal här' : 'Personen finns inte på dina enheter'}
-      description={
-        person
-          ? 'Inget system för utvecklingssamtal svarar för dig.'
-          : 'Adressen pekar på någon som inte finns bland medarbetarna du är chef för.'
-      }
-      actions={<Button label={back} onClick={() => onOpenChange(false)} />}
-    />
-  );
-  const body = shownId ? (
-    <Layout
-      height={short ? 'auto' : 'fill'}
-      header={header(found && talks.round ? talks.round.label : undefined)}
-      content={<LayoutContent>{content}</LayoutContent>}
-    />
-  ) : null;
-  return mobile ? (
-    <BottomSheet
-      ref={sheetPanel}
-      isOpen={isOpen}
-      onOpenChange={onOpenChange}
-      label={label}
-      height="tall"
-      purpose="form"
-    >
-      {body}
-    </BottomSheet>
-  ) : (
-    <Drawer
-      ref={setDialog}
-      isOpen={isOpen}
-      onOpenChange={onOpenChange}
-      label={label}
-      side="end"
-      width={TALK_WIDTH}
-      purpose="form"
-    >
-      {body}
-    </Drawer>
+  if (!talks || !staffQ.data) return <ContentSkeleton label="Hämtar samtalet …" rows={3} heading={false} />;
+  if ((!person || !talks.writable) && fallback) return <>{fallback}</>;
+  if (!person || !talks.writable)
+    return (
+      <EmptyState
+        isCompact
+        headingLevel={3}
+        title={person ? 'Det finns inga utvecklingssamtal här' : `${name} finns inte på dina enheter`}
+        description={
+          person
+            ? 'Inget system för utvecklingssamtal svarar för dig.'
+            : 'Samtalet skrivs av den som är chef för personen.'
+        }
+      />
+    );
+  return (
+    <VStack gap={4}>
+      {talks.round && <Text type="supporting">{talks.round.label}</Text>}
+      <Talk key={person.id} person={person} talks={talks} />
+    </VStack>
   );
 }
 

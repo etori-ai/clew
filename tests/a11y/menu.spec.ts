@@ -5,8 +5,8 @@ import { menuRow, menuRows } from './phonebook';
 /**
  * The rail (D126 rule 7, board Shell): Ny fråga and Sök, then "Mitt arbete" (Hem, Att göra, Kalender), "Min enhet" for a
  * manager (Personal, Läget), "Verktyg" (D40, D112 item 1: the views an administrator chose as tools, the first four,
- * then "Alla verktyg") and "Samtal" (the three newest, then "Alla samtal"). A tool's row leads to the tool's own page
- * (D42), as Kalender does; the page itself is tested in `tools.spec.ts`. The test person is a manager; `staff.spec.ts`
+ * then "Alla verktyg", the page of every tool) and "Samtal" (the three newest, then "Alla samtal"). A tool's row leads to
+ * the tool's own page (D42), as Kalender does; the page itself and Alla verktyg are tested in `tools.spec.ts`. The test person is a manager; `staff.spec.ts`
  * owns Personal. The shared header (D88) marks Start as the current place on every page of Clew, so "the current row" is
  * asked of the rail, where one row is current at a time.
  * The phone book's rows are named by its real manifest; they are in the menu only where a test puts them, as they are in
@@ -33,7 +33,7 @@ test.describe('Verktyg in the menu', () => {
     api.menu = menuRows;
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
-    await expect(section.getByRole('link')).toHaveText(['Mitt team', 'Telefonbok']);
+    await expect(section.getByRole('link')).toHaveText(['Mitt team', 'Telefonbok', 'Alla verktyg']);
     await expect(rail(page).getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
     await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/phonebook.team');
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute(
@@ -118,7 +118,7 @@ test.describe('Verktyg in the menu', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
   });
 
-  test('more than four tools: four show, and Alla verktyg opens the search narrowed to every tool; the one opened from it is marked in the rail', async ({
+  test('more than four tools: four show, and Alla verktyg leads to the page of every tool, marked while it is open; the one opened from it is marked in the rail', async ({
     page,
     api,
   }) => {
@@ -127,24 +127,22 @@ test.describe('Verktyg in the menu', () => {
     );
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
-    await expect(section.getByRole('link')).toHaveText(['Avtal', 'Blanketter', 'Diarium', 'Fordon']);
-    const all = section.getByRole('button', { name: 'Alla verktyg' });
+    await expect(section.getByRole('link')).toHaveText(['Avtal', 'Blanketter', 'Diarium', 'Fordon', 'Alla verktyg']);
+    const all = section.getByRole('link', { name: 'Alla verktyg' });
+    await expect(all).toHaveAttribute('href', '/tools');
     await all.focus();
     await page.keyboard.press('Enter');
-    const palette = page.getByRole('dialog', { name: 'Alla verktyg' });
-    const field = palette.getByRole('combobox', { name: 'Alla verktyg' });
-    await expect(field).toBeFocused();
-    await expect(palette.getByRole('option')).toHaveCount(6);
+    await expect(page).toHaveURL('/tools');
+    await expect(page.getByRole('heading', { level: 1, name: 'Alla verktyg' })).toBeVisible();
+    await expect(all).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // Every tool is a tile, the two the rail does not show among them.
+    const main = page.getByRole('main');
+    await expect(main.getByRole('heading', { level: 3 })).toHaveCount(6);
     await expectNoAxeViolations(page);
-    // Esc gives the focus back to the row that opened it.
-    await page.keyboard.press('Escape');
-    await expect(palette).toHaveCount(0);
-    await expect(all).toBeFocused();
-    await all.click();
-    await page.getByRole('combobox', { name: 'Alla verktyg' }).fill('tele');
-    await expect(page.getByRole('option')).toHaveCount(1);
-    await page.getByRole('option', { name: /Telefonbok/ }).click();
-    await expect(page).toHaveURL(/\/tools\/phonebook\.directory$/);
+    // A tile is pressed where its name is drawn: ClickableCard lays its content over the card's own link.
+    await main.getByRole('heading', { level: 3, name: 'Telefonbok' }).click();
+    await expect(page).toHaveURL('/tools/phonebook.directory?from=%2Ftools');
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
     // The tool open now is a row of the rail while it is open, marked as the current page.
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute('aria-current', 'page');
@@ -223,7 +221,10 @@ test.describe('Verktyg on a phone', () => {
     api.menu = [menuRow];
     await open(page, '/');
     const drawer = await openNav(page);
-    await expect(drawer.getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText(['Telefonbok']);
+    await expect(drawer.getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText([
+      'Telefonbok',
+      'Alla verktyg',
+    ]);
     await expect(drawer.getByRole('link', { name: 'Kalender' })).toBeVisible();
     await expectNoAxeViolations(page);
     await drawer.getByRole('link', { name: 'Telefonbok' }).click();

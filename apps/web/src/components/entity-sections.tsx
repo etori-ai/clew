@@ -24,6 +24,7 @@ import {
   ListItem,
   MetadataList,
   MetadataListItem,
+  MoreMenu,
   Section,
   Skeleton,
   Text,
@@ -34,10 +35,9 @@ import { today } from '@clew/calendar/dates';
 import { entitySectionQuery, threadsQuery, viewQuery } from '../queries';
 import { actionMenuItems, useEntityAction } from '../entity-actions';
 import { useMarks } from '../marks';
-import { pageOnly, withCard } from '../panel-address';
-import { wayBack } from '../person-address';
-import { sourcePageHref } from '../talk-address';
-import { rowFacts } from '../work-items';
+import { pageOnly } from '../panel-address';
+import { sourceWayHref, wayBack } from '../person-address';
+import { itemPageHref, rowFacts } from '../work-items';
 import { DOT } from '../dot';
 import { groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view';
@@ -359,20 +359,19 @@ export function SourceBadge({ source }: { source: EntitySource }) {
 }
 
 /**
- * A source's own page in Clew for the entity (D95, D111 rule 5: "Öppna samtalet" over the page, "Visa i Personal"), the
- * one way into it, at the end of its section's heading line. A link, never an action.
+ * A source's own way in for the entity (D95; "Registrera intyg", "Öppna planen", "Visa i Personal"), the one way into
+ * it, at the end of its section's heading line; a talk and a dialogue are tabs of the entity's page (D126 rule 3,
+ * `sourceWayHref`). A link, never an action.
  */
 export function SourceWay({
   source,
   entity,
 }: {
   source: EntitySource;
-  entity: { key: string; id?: string | undefined };
+  entity: { kind?: 'person' | 'unit'; key: string; id?: string | undefined };
 }) {
   const { pathname, search } = useLocation();
-  const href = source.page
-    ? sourcePageHref(source.page, entity, { pathname, search }, wayBack(pageOnly(pathname, search)))
-    : null;
+  const href = sourceWayHref(source, entity, { pathname, search }, wayBack(pageOnly(pathname, search)));
   return href && source.page ? (
     <Link href={href} weight="semibold" isStandalone>
       {source.page.title}
@@ -436,9 +435,9 @@ export function UnitSourceBody({ answer }: { answer: SectionAnswer }) {
 
 /**
  * "Behöver dig" on a person's or a unit's page (board Person): the reader's work items about them, each the one row a
- * work item has everywhere (`WorkRow`: its state, title, why, when it is due, its source), opening beside the page as a
- * card does (D111 rules 2 and 3), the page's address kept. The row of the item open beside the page is the current one.
- * An item the stream does not hold (not read yet, or past its history) keeps a plain row with its title and source.
+ * work item has everywhere (`WorkRow`: its state, title, why, when it is due, its source), its title the link to the
+ * item's own page with this page as the way back (D126 rule 1). An item the stream does not hold (not read yet, or
+ * past its history) keeps a plain row with its title and source.
  */
 export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
   const { pathname, search } = useLocation();
@@ -454,12 +453,12 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
     );
   const now = new Date().toISOString(),
     day = today();
-  const open = new URLSearchParams(search).get('card');
+  const from = pageOnly(pathname, search);
   return (
     <WorkList label="Behöver dig">
       {cards.map(c => {
         const thread = threads.data?.threads.find(t => t.id === c.threadId);
-        const href = withCard(pathname, search, c.threadId);
+        const href = itemPageHref(c.threadId, from);
         return thread ? (
           <WorkRow
             key={c.threadId}
@@ -467,12 +466,10 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
             facts={rowFacts(thread, now, day)}
             source={marks.ofThread(thread).source}
             href={href}
-            isSelected={open === c.threadId}
           />
         ) : (
           <ListItem
             key={c.threadId}
-            isSelected={open === c.threadId}
             label={
               <Link href={href} weight="semibold" color="primary">
                 {c.title}
@@ -491,55 +488,57 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
 }
 
 /**
- * The opened person's or unit's actions in the page's header (D112 item 5, board Person), every one of them: the first
- * two as buttons, the rest under "Fler" grouped by the system they act in, as the row menu on Personal is (artboard
- * A3). On a phone one button, "Åtgärder", the width of the column, holds them all. An action starts on the server and
- * its work item opens beside the page it was started on (`entity-actions.ts`); a source's refusal is said aloud and
- * stands under the buttons until the next action. They hold what can be done about the entity, never a choice of where
- * Clew shows it, and never a way into a source's page, which is a link in its section.
+ * The opened person's or unit's actions under its name (D126 rule 1, board Person), every one of them: the first as the
+ * primary button, the second as a secondary one, "Fråga Clew" (`ask`) as a ghost after them, and the rest under "Fler
+ * åtgärder", grouped by the system they act in, as the row menu on Personal is (artboard A3). On a phone one button,
+ * "Åtgärder", the width of the column, holds them all, with "Fråga Clew" under it. A propose opens the action dialog,
+ * and nothing is created before its last button; an execute opens its work item with the decision over it
+ * (`entity-actions.ts`). A source's refusal is said aloud and stands under the buttons until the next action. They hold
+ * what can be done about the entity, never a choice of where Clew shows it, and never a way into a source's page, which
+ * is a link in its section.
  */
-export function EntityActions({ detail, mobile }: { detail: EntityDetail; mobile: boolean }) {
+export function EntityActions({ detail, mobile, ask }: { detail: EntityDetail; mobile: boolean; ask?: ReactNode }) {
   const { start, error, dialog } = useEntityAction();
   const { kind, key, name } = detail.entity;
   const actions = detail.actions;
   const run = (a: EntityAction) => start(a, { kind, key, name });
   const refusal = error ? <Text as="p">{error}</Text> : null;
   if (mobile)
-    return actions.length > 0 ? (
+    return (
       <VStack gap={2}>
-        <DropdownMenu
-          renderTrigger={trigger => (
-            <Button
-              {...trigger}
-              variant="secondary"
-              label="Åtgärder"
-              aria-label={`Åtgärder för ${name}`}
-              width="100%"
-            />
-          )}
-          presentation="adaptive"
-          items={actionMenuItems(actions, run)}
-        />
+        {actions.length > 0 && (
+          <DropdownMenu
+            renderTrigger={trigger => (
+              <Button
+                {...trigger}
+                variant="secondary"
+                label="Åtgärder"
+                aria-label={`Åtgärder för ${name}`}
+                width="100%"
+              />
+            )}
+            presentation="adaptive"
+            items={actionMenuItems(actions, run)}
+          />
+        )}
+        {ask && <HStack>{ask}</HStack>}
         {refusal}
         {dialog}
       </VStack>
-    ) : null;
-  const shown = actions.slice(0, 2),
-    rest = actions.slice(2);
-  if (shown.length === 0) return null;
+    );
+  const [first, second] = actions;
+  const rest = actions.slice(2);
   // One shape with or without a refusal, so the button that was pressed keeps the focus when the refusal appears.
   return (
-    <VStack gap={2}>
+    <VStack gap={2} hAlign="end">
       <HStack gap={2} wrap="wrap" vAlign="center">
-        {shown.map(a => (
-          <Button key={a.capability} variant="secondary" label={a.title} onClick={() => run(a)} />
-        ))}
+        {first && <Button variant="primary" label={first.title} onClick={() => run(first)} />}
+        {second && <Button variant="secondary" label={second.title} onClick={() => run(second)} />}
+        {ask}
         {rest.length > 0 && (
-          // The menu is named by its button, which says whose actions they are (Astryx's renderTrigger).
-          <DropdownMenu
-            renderTrigger={trigger => (
-              <Button {...trigger} variant="secondary" label="Fler" aria-label={`Fler åtgärder för ${name}`} />
-            )}
+          <MoreMenu
+            label={`Fler åtgärder för ${name}`}
+            alignment="end"
             presentation="adaptive"
             items={actionMenuItems(rest, run)}
           />

@@ -2,12 +2,12 @@ import { REVIEW_PARAM } from './review-address';
 import { TALK_PARAM } from './talk-address';
 
 /**
- * One unit's follow-up dialogue (D118) lies over the unit's page (D111 rule 5): the page's own address with the unit's
- * key as `dialog`, and everything else in it kept. Closing the drawer is the same address without `dialog`, so the page
- * is as it was under it. A cold `/units/<id>?dialog=<id>` is the unit's page with its dialogue over it.
+ * One unit's follow-up dialogue (D118) lay over the unit's page as a drawer until D126 (rule 3): the page's own address
+ * with the unit's key as `dialog`. The dialogue is the unit's page's tab now (`person-address.ts`, `sourceTab`); `dialog`
+ * remains as an address from before, which leads to that tab (`overlayRedirect`), and as the name the dialogue module's
+ * way in still declares (`?dialog={key}`).
  *
- * One focused overlay at a time: an address that also names a review or a talk draws that one and ignores the dialogue,
- * which opens once the other has closed.
+ * One focused overlay at a time: an address that also names a review or a talk draws that one and ignores the dialogue.
  */
 export const DIALOGUE_PARAM = 'dialog';
 

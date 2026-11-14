@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Ref } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   viewRows,
@@ -17,8 +17,6 @@ import {
   EmptyState,
   HStack,
   Heading,
-  Layout,
-  LayoutContent,
   Link,
   List,
   ListItem,
@@ -26,29 +24,18 @@ import {
   Text,
   Toolbar,
   VStack,
-  useMediaQuery,
 } from '@clew/ui';
 import { api } from '../api';
 import { addHref, adding, addingType, skillHref, skillOf, withoutAdd, withoutSkill } from '../competence-address';
 import { useAdminAction } from '../mutations';
-import { competenceMatrixQuery, competenceOwnQuery, viewQuery } from '../queries';
+import { competenceOwnQuery, viewQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage, refused } from '../query-policy';
-import { usePageTitle } from '../page-title';
-import { useRail } from '../components/nav';
-import { useHeldRelations } from '../capabilities';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { OWN_COMPETENCE, personPageHref } from '../person-address';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { usePagePanel } from '../components/page-panel';
 import { AddOwnHolding, ChangeOwnSkill, levelLabel } from '../components/register-holding';
 import { DeclaredView } from '../components/view';
-import {
-  COMPETENCE_PAGE_TITLES,
-  CompetenceHeader,
-  UNTIL_FURTHER_NOTICE,
-  cellDay,
-  managesFrom,
-} from './competence-parts';
+import { COMPETENCE_PAGE_TITLES, CompetenceHeader, UNTIL_FURTHER_NOTICE, cellDay } from './competence-parts';
 
 /** The read behind the page: `competence.holdings` with no input answers the reader's own (D108, relation `self`). */
 const HOLDINGS = 'competence.holdings';
@@ -56,8 +43,6 @@ const HOLDINGS = 'competence.holdings';
 const AWAITING = 'awaiting-approval';
 /** A row of the reader's own registration their manager rejected: drawn in its own card, with "Ta bort". */
 const REJECTED = 'rejected';
-/** The page's column at its widest: the width every page has (1216 px) less its padding on each side. */
-const COLUMN = 1216 - 2 * 32;
 const TITLE_ID = 'kompetens-rubrik';
 const PENDING_ID = 'kompetens-vantar';
 const REJECTED_ID = 'kompetens-avvisade';
@@ -165,6 +150,7 @@ type SkillOpener = 'name' | 'menu';
 function Skills({
   rows,
   search,
+  base,
   headingRef,
   control,
   onOpen,
@@ -172,6 +158,8 @@ function Skills({
 }: {
   rows: CompetenceOwnSkill[];
   search: URLSearchParams;
+  /** The page the tab is on, whose address names the dialog. */
+  base: string;
   headingRef: Ref<HTMLHeadingElement>;
   control: (holdingId: string, via: SkillOpener) => (el: HTMLAnchorElement | HTMLButtonElement | null) => void;
   onOpen: (via: SkillOpener) => void;
@@ -196,7 +184,7 @@ function Skills({
             label={
               <Link
                 ref={control(row.holdingId, 'name')}
-                href={skillHref(row.holdingId, search)}
+                href={skillHref(row.holdingId, search, base)}
                 weight="semibold"
                 hasUnderline
                 onClick={() => onOpen('name')}
@@ -221,7 +209,7 @@ function Skills({
                       {
                         id: 'change',
                         label: 'Ändra nivå',
-                        href: skillHref(row.holdingId, search),
+                        href: skillHref(row.holdingId, search, base),
                         onClick: () => onOpen('menu'),
                       },
                       { id: 'remove', label: 'Ta bort', onClick: () => onRemove(row) },
@@ -238,11 +226,24 @@ function Skills({
 }
 
 /**
- * Mina kompetenser at `/competence` (D120 item 8), the first page of the place Kompetens in the rail: what the reader
+ * `/competence`, Mina kompetenser before D126: the reader's own competences are a tab of their own page now (rule 7), so
+ * the address leads there, with the dialog it names (`add`, `competence`, `skill`) kept, and is replaced so Back does not
+ * come to it again.
+ */
+export function CompetencePage({ user }: { user: SessionUser; admin: boolean }) {
+  const { search } = useLocation();
+  const q = new URLSearchParams(search);
+  q.delete('section');
+  const page = personPageHref(user.id, { section: OWN_COMPETENCE });
+  const rest = q.toString();
+  return <Navigate replace to={rest ? `${page}&${rest}` : page} />;
+}
+
+/**
+ * Mina kompetenser (D120 item 8), the Kompetens tab of the reader's own page since D126 rule 7: what the reader
  * holds and what their positions, units and manager require of them, a required type they lack as "Saknas", drawn by
  * the one renderer from the module's own declared view (D38), as the person's list is on every other surface. The
- * header holds the place's pages as tabs for someone the server lets read the matrix (anyone with a report, D99), so
- * the matrix is one link away, and "Lägg till" as the page's primary action: the reader registers a certificate of their
+ * tab's heading holds "Lägg till" as its primary action: the reader registers a certificate of their
  * own in a dialog named in the address (`add=new`, D108 item 7), which the manager they report to approves before it
  * counts. What waits for that decision is a card of its own above the list, each row with "Ta tillbaka"; what the manager
  * rejected is another, each row with "Ta bort", seen by the reader alone. The skills the reader holds (D120) are a card
@@ -250,8 +251,7 @@ function Skills({
  * the page), and a menu that changes it too or removes it, asked first in Astryx's confirmation; a skill required of
  * the reader that they hold nothing of stays in the list as "Saknas". With nothing
  * held and nothing required the page says so; with the module off for the reader the read is refused and the page says
- * that instead. It holds the panel beside it as every page with a column does, so a work item opened from the bell
- * lies beside it.
+ * that instead. Every dialog is named on the page the tab is on (`base`).
  *
  * A row of the list is its competence's name, which opens the same dialog with that competence chosen
  * (`&competence=<type id>`, `ADD_FROM_ROW`): an expired or soon expiring certificate is renewed from its row, a missing
@@ -260,22 +260,12 @@ function Skills({
  * gives it to what opened it, the skill's name or its menu (the name when the address did). A row taken back or removed takes its control
  * with it, so the focus goes to its card's heading, or to the page's when the card went with the last row (D83 rule 7).
  */
-export function CompetencePage({ user, admin }: { user: SessionUser; admin: boolean }) {
-  usePageTitle(COMPETENCE_PAGE_TITLES.own);
-  const mobile = useMediaQuery(mobileQuery);
-  const short = useMediaQuery(shortQuery);
-  const nav = useRail({ current: { surface: 'competence' }, admin, manager: user.role === 'manager' });
-  const panel = usePagePanel({ overlayOnly: short });
-  // D121: Kompetenssökning is a page of the place for someone who holds the relation; the server checks every read.
-  const searcher = useHeldRelations().includes('registrar');
+export function OwnCompetence() {
+  const { pathname: base } = useLocation();
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const read = useQuery({ ...viewQuery(HOLDINGS, null), retry: false });
   const off = read.isError && refused(read.error);
-  // Whether the reader has anyone reporting to them is the server's answer to the matrix's read (D99), which the
-  // matrix's page reads the same way, so the tab leads to a page already read; until it answers, the session's role.
-  const matrix = useQuery(competenceMatrixQuery({}));
-  const manages = managesFrom(user, matrix);
   const own = useQuery(competenceOwnQuery);
   const pending = own.data?.pending ?? [];
   const rejected = own.data?.rejected ?? [];
@@ -323,7 +313,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   useEffect(() => {
     if (!changing || !own.isSuccess || changed || off) return;
     setRefusal('Du har ingen sådan färdighet att ändra.');
-    navigate(withoutSkill(search), { replace: true });
+    navigate(withoutSkill(search, base), { replace: true });
   }, [changing, own.isSuccess, changed, off]);
   useEffect(() => {
     if (changed || adding(search)) setRefusal(null);
@@ -334,7 +324,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   >(null);
   // A row's name that opened the dialog for its type: the link the one renderer drew, found by where it leads.
   const rowLink = (typeId: string) => {
-    const href = addHref(search, typeId);
+    const href = addHref(search, typeId, base);
     return [...document.querySelectorAll<HTMLAnchorElement>('a[href]')].find(a => a.getAttribute('href') === href);
   };
   useEffect(() => {
@@ -359,7 +349,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
     view && (view.kind === 'list' || view.kind === 'table') ? { ...view, open: ADD_FROM_ROW } : view;
   const addFor = (ref: ViewRef) => {
     const typeId = ref.input?.competence;
-    return addHref(search, typeof typeId === 'string' ? typeId : undefined);
+    return addHref(search, typeof typeId === 'string' ? typeId : undefined, base);
   };
   const presetType = addingType(search);
 
@@ -412,110 +402,98 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
 
   const actions =
     read.isSuccess && !off ? (
-      <Button ref={addButton} variant="primary" label="Lägg till" href={addHref(search)} />
+      <Button ref={addButton} variant="primary" label="Lägg till" href={addHref(search, undefined, base)} />
     ) : undefined;
   return (
-    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        padding={mobile ? 3 : 8}
-        end={panel.end}
-        content={
-          <LayoutContent isScrollable={!short}>
-            <VStack hAlign="center">
-              <VStack gap={5} width="100%" maxWidth={COLUMN}>
-                <CompetenceHeader
-                  title={COMPETENCE_PAGE_TITLES.own}
-                  titleId={TITLE_ID}
-                  page="own"
-                  hasTabs={manages && !off}
-                  hasSearch={searcher && !off}
-                  {...(actions ? { end: actions } : {})}
+    <>
+      <VStack gap={5} width="100%">
+        <CompetenceHeader
+          title={COMPETENCE_PAGE_TITLES.own}
+          titleId={TITLE_ID}
+          page="own"
+          hasTabs={false}
+          {...(actions ? { end: actions } : {})}
+        />
+        {(withdraw.error ?? remove.error ?? refusal) && (
+          <Text as="p" role="alert" color="accent">
+            {withdraw.error ?? remove.error ?? refusal}
+          </Text>
+        )}
+        {off ? (
+          <Card>
+            <EmptyState
+              headingLevel={2}
+              title="Kompetens är inte påslaget för dig"
+              description="En administratör slår på Kompetens under Anslutna system."
+              actions={<Button label="Till startsidan" href="/" />}
+            />
+          </Card>
+        ) : read.isError ? (
+          <VStack gap={2}>
+            <Text as="p" role="alert">
+              {errorMessage(read.error, 'Dina kompetenser kunde inte läsas.')}
+            </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                isLoading={read.isFetching}
+                onClick={() => void read.refetch()}
+              />
+            </HStack>
+          </VStack>
+        ) : (
+          <AsyncContent pending={read.isPending} fallback={<ContentSkeleton heading={false} />} gap={5}>
+            {pending.length > 0 && (
+              <Pending
+                rows={pending}
+                busy={withdrawing}
+                headingRef={pendingHeading}
+                onWithdraw={row => void takeBack(row)}
+              />
+            )}
+            {rejected.length > 0 && (
+              <Pending
+                rows={rejected}
+                busy={removingRejected}
+                headingRef={rejectedHeading}
+                onWithdraw={row => void dropRejected(row)}
+                title="Avvisade av din chef"
+                id={REJECTED_ID}
+                action="Ta bort"
+              />
+            )}
+            {skills.length > 0 && (
+              <Skills
+                rows={skills}
+                search={search}
+                base={base}
+                headingRef={skillsHeading}
+                control={control}
+                onOpen={via => {
+                  openedVia.current = via;
+                }}
+                onRemove={row => {
+                  remove.reset();
+                  setRemoving(row);
+                }}
+              />
+            )}
+            {view && rows.length > 0 ? (
+              <DeclaredView view={ownView ?? view} output={output} headingLevel={2} hrefFor={addFor} />
+            ) : pending.length === 0 && rejected.length === 0 && skills.length === 0 ? (
+              <Card>
+                <EmptyState
+                  headingLevel={2}
+                  title="Inget registrerat och inget som krävs"
+                  description="Här ser du dina intyg, kompetenser och färdigheter, när de går ut och vad som krävs i ditt arbete. Lägg till ett intyg du har, så godkänner din chef det, eller en färdighet med din egen bedömning."
                 />
-                {(withdraw.error ?? remove.error ?? refusal) && (
-                  <Text as="p" role="alert" color="accent">
-                    {withdraw.error ?? remove.error ?? refusal}
-                  </Text>
-                )}
-                {off ? (
-                  <Card>
-                    <EmptyState
-                      headingLevel={2}
-                      title="Kompetens är inte påslaget för dig"
-                      description="En administratör slår på Kompetens under Anslutna system."
-                      actions={<Button label="Till startsidan" href="/" />}
-                    />
-                  </Card>
-                ) : read.isError ? (
-                  <VStack gap={2}>
-                    <Text as="p" role="alert">
-                      {errorMessage(read.error, 'Dina kompetenser kunde inte läsas.')}
-                    </Text>
-                    <HStack>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        label="Försök igen"
-                        isLoading={read.isFetching}
-                        onClick={() => void read.refetch()}
-                      />
-                    </HStack>
-                  </VStack>
-                ) : (
-                  <AsyncContent pending={read.isPending} fallback={<ContentSkeleton heading={false} />} gap={5}>
-                    {pending.length > 0 && (
-                      <Pending
-                        rows={pending}
-                        busy={withdrawing}
-                        headingRef={pendingHeading}
-                        onWithdraw={row => void takeBack(row)}
-                      />
-                    )}
-                    {rejected.length > 0 && (
-                      <Pending
-                        rows={rejected}
-                        busy={removingRejected}
-                        headingRef={rejectedHeading}
-                        onWithdraw={row => void dropRejected(row)}
-                        title="Avvisade av din chef"
-                        id={REJECTED_ID}
-                        action="Ta bort"
-                      />
-                    )}
-                    {skills.length > 0 && (
-                      <Skills
-                        rows={skills}
-                        search={search}
-                        headingRef={skillsHeading}
-                        control={control}
-                        onOpen={via => {
-                          openedVia.current = via;
-                        }}
-                        onRemove={row => {
-                          remove.reset();
-                          setRemoving(row);
-                        }}
-                      />
-                    )}
-                    {view && rows.length > 0 ? (
-                      <DeclaredView view={ownView ?? view} output={output} headingLevel={2} hrefFor={addFor} />
-                    ) : pending.length === 0 && rejected.length === 0 && skills.length === 0 ? (
-                      <Card>
-                        <EmptyState
-                          headingLevel={2}
-                          title="Inget registrerat och inget som krävs"
-                          description="Här ser du dina intyg, kompetenser och färdigheter, när de går ut och vad som krävs i ditt arbete. Lägg till ett intyg du har, så godkänner din chef det, eller en färdighet med din egen bedömning."
-                        />
-                      </Card>
-                    ) : null}
-                  </AsyncContent>
-                )}
-              </VStack>
-            </VStack>
-          </LayoutContent>
-        }
-      />
-      {panel.overlay}
+              </Card>
+            ) : null}
+          </AsyncContent>
+        )}
+      </VStack>
       {/* Each dialog closes by replacing its address, so Back never opens a write again (D83 rule 8). */}
       <AddOwnHolding
         isOpen={open}
@@ -523,7 +501,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
         held={skills.map(k => k.typeId)}
         preset={presetType}
         onClose={() => {
-          navigate(withoutAdd(search), { replace: true });
+          navigate(withoutAdd(search, base), { replace: true });
           // Opened from a row, its name takes the focus back; from "Lägg till" or an address, the button.
           setFocusAfter(presetType ? { row: presetType } : 'add');
         }}
@@ -531,7 +509,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
       <ChangeOwnSkill
         skill={changed}
         onClose={() => {
-          navigate(withoutSkill(search), { replace: true });
+          navigate(withoutSkill(search, base), { replace: true });
           if (changed) setFocusAfter({ skill: changed.holdingId, via: openedVia.current });
           openedVia.current = 'name';
         }}
@@ -555,6 +533,6 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
         isActionLoading={remove.busy}
         onAction={() => void confirmRemove()}
       />
-    </Shell>
+    </>
   );
 }

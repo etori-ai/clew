@@ -221,8 +221,9 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
     <>
       <AppShell
         height={height}
-        // `section`: Astryx paints the rail and the page on one surface and parts them with a divider (D88).
-        variant="section"
+        // `elevated`, Astryx's own default and what the canvas draws (D126): the rail on the page's ground, the content on
+        // a raised surface beside it. D88 had chosen `section`, one surface parted by a divider.
+        variant="elevated"
         contentPadding={0}
         mobileNav={{ breakpoint: 'md', isOpen: navigationOpen, onOpenChange: changeNavigation }}
         banner={banner}

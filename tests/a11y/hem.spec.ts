@@ -21,10 +21,10 @@ import { menuRows } from './phonebook';
 import { Units } from './unit-data';
 
 /**
- * Hem (D126, board Hem): the greeting and the day, the box once, then "Behöver dig" beside "I dag", "Läget på <enhet>"
- * for a manager and "Nyheter"; the item that asks for a read receipt as one callout above the blocks, and under them
- * what D112 kept. No tool tiles, no digest sentence, no suggestion chips, nothing beside or over the page: every row and
- * tile leads to the page of what it names, with Hem as the way back.
+ * Hem (D126, board Hem): the greeting and the day, the box once, then "Behöver dig" beside "I dag", their cards ending
+ * level, "Läget på <enhet>" for a manager and "Nyheter"; the item that asks for a read receipt as one callout above the
+ * blocks, and under them the person's action points. No tool tiles, no digest sentence, no suggestion chips, nothing
+ * beside or over the page: every row and tile leads to the page of what it names, with Hem as the way back.
  */
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
 const needs = (page: Page) => page.getByRole('region', { name: 'Behöver dig' });
@@ -92,6 +92,12 @@ test.describe('Hem', () => {
     expect(d.x).toBeGreaterThanOrEqual(n.x + n.width);
     expect(l.y).toBeGreaterThan(Math.max(n.y + n.height, d.y + d.height));
     expect(w.y).toBeGreaterThan(l.y + l.height);
+    // The two cards end level, whichever has fewer rows (board Hem).
+    const [nc, dc] = await Promise.all([
+      box(needs(page).locator('.astryx-card').first()),
+      box(today(page).locator('.astryx-card').first()),
+    ]);
+    expect(Math.abs(nc.y + nc.height - (dc.y + dc.height))).toBeLessThan(2);
     // One h1, then the blocks' h2s in the board's order, never a level skipped (the critique found h1 to h3).
     const headings = await headingsOf(page);
     expect(headings[0]).toEqual({ level: 1, text: GREETING });
@@ -103,9 +109,10 @@ test.describe('Hem', () => {
     const order = [at('Behöver dig'), at('I dag'), at(/^Läget på /), at('Nyheter'), at(/^Mina åtgärdspunkter/)];
     expect(order.every(i => i > 0)).toBe(true);
     expect([...order].sort((x, y) => x - y)).toEqual(order);
-    // Gone from Hem (D126 rule 8): the tool tiles, the digest, what the person ordered (a tool in the rail), the chips,
-    // and anything beside the page.
+    // Gone from Hem (D126 rule 8): the tool tiles, the digest, the errands and what the person ordered (tools in the
+    // rail), the chips, and anything beside the page.
     await expect(page.getByRole('region', { name: 'Verktygslådan' })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Mina ärenden' })).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Sedan i går' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Beställningar och felanmälningar' })).toHaveCount(0);
     await expect(page.getByText(/Anpassa startsidan/)).toHaveCount(0);

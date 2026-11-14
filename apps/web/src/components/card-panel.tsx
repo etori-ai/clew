@@ -24,7 +24,7 @@ export interface CardPlace {
 
 /**
  * One work item, drawn the same wherever it is open at its narrow width (D126 rule 2): in Att göra's reading pane,
- * beside a conversation (`page-panel.tsx`) and in a conversation's answer. The items read the same cache (D33), so a
+ * beside a conversation (`pages/conversation.tsx`) and in a conversation's answer. The items read the same cache (D33), so a
  * decision made in one place is the decision made everywhere: the same confirm, the same decision endpoint, the same
  * receipt. The calendar's proposals keep their own card (D27, D112 item 9); every other item is `WorkItem`.
  */

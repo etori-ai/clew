@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useNavigate } from 'react-router';
 import { useIsFetching } from '@tanstack/react-query';
 import {
-  Dialog,
-  DialogHeader,
+  ArrowLeftIcon,
   Divider,
   Heading,
   HStack,
   Icon,
-  IconButton,
   Layout,
   LayoutContent,
   LayoutHeader,
   LayoutPanel,
   Link,
-  ScrollableArea,
   StackItem,
+  Tab,
+  TabList,
+  TabMenu,
   Text,
   VStack,
   useMediaQuery,
@@ -23,18 +24,97 @@ import { mobileQuery, shortQuery } from '../media';
 import { narrowItemQuery } from './work-item';
 
 /**
- * A person's or a unit's page (D112 item 5, board Person): the work item's page shape (`work-item-detail`,
- * `WorkItemPage`) drawn for an entity. The header holds the way back with where the entity stands on the same line, on
- * a phone as on a wide screen (D124 item 6), then the avatar, the name and its line, and the actions with "Fråga Clew"
- * at the end of the name's line (on a phone "Åtgärder" under it, the width of the column). The main column holds every section one under the other, each with its heading, the source's
- * badge on the heading's line and a rule between them; nothing is chosen, so there is no tab strip. The details rail is
- * 340 px beside the column, a named complementary region; at 1024 px and below, and while the page's panel holds
- * something beside it, its content is behind "Visa detaljer" in a fullscreen dialog, as on the work item's page. On a
- * short screen nothing is pinned and the page scrolls as one (1.4.10).
- *
- * The header's controls stay where they are at every width and with the panel open or closed, so a card an action made
- * closes back to the button that started it.
+ * Hem's column (`HEM_WIDTH` in `pages/start.tsx`, board Hem): the product owner decided on 2026-11-14 that every page
+ * shares it, so a register, a person, a unit and a plan sit in the same centred frame as Hem's greeting and blocks, with
+ * the same header and content padding. A shared page frame will own it in a later pass.
  */
+export const PAGE_WIDTH = 1120;
+
+/**
+ * A thing's page for a person, a unit or a plan (D126 rule 1, board Person, the `work-item-detail` composition the work
+ * item's page has, `WorkItemPage`): the way back with where the thing stands on the same line, then the thing's mark (a
+ * person's avatar), its name and its line, and its actions at the end of the name's line (on a phone under it), then
+ * the thing's tabs where it has them, each a link with its own address (D126 rule 9). The column holds the tab's
+ * sections one under the other, each with its heading and a rule between them; the facts are a 340 px end panel, a
+ * named complementary region, and above the read at 1024 px and below, as on the work item's page. Nothing opens over
+ * or beside the page (rule 3). On a short screen nothing is pinned and the page scrolls as one (1.4.10).
+ */
+
+/** One of a thing's tabs (D126 rule 9): its value, its name, its address and what it carries beside its name. */
+export interface ThingTab {
+  value: string;
+  label: string;
+  href: string;
+  /** Beside the name on a wide screen: a count that needs the reader. */
+  badge?: ReactNode;
+  /** The count in words, for the phone's menu, which draws no badge: "Ärenden (2)". */
+  count?: number;
+}
+/**
+ * A thing's tabs, or a register's views (D126 rules 8 and 9), as Astryx's `TabList` of links, each with its own address,
+ * the current one marked. On a phone the first tab stands and the others are under Astryx's `TabMenu` ("Fler"), which
+ * names the current one when it is among them, so the strip fits 320 px without scrolling sideways (1.4.10); choosing
+ * one there navigates to its address. `onPress` hears a tab pressed, for a page that keeps the focus on it across routes.
+ */
+export function ThingTabs({
+  label,
+  value,
+  tabs,
+  onPress,
+  tabRef,
+  hasDivider = false,
+}: {
+  label: string;
+  value: string;
+  tabs: ThingTab[];
+  /** A rule under the strip, where the header above it has none (a register). */
+  hasDivider?: boolean;
+  onPress?: (value: string) => void;
+  /** The current tab's element, for a page that gives it the focus. */
+  tabRef?: (el: HTMLElement | null) => void;
+}) {
+  const mobile = useMediaQuery(mobileQuery);
+  const navigate = useNavigate();
+  const [first, ...rest] = tabs;
+  const tab = (t: ThingTab) => (
+    <Tab
+      key={t.value}
+      value={t.value}
+      label={t.label}
+      href={t.href}
+      {...(t.badge ? { endContent: t.badge } : {})}
+      {...(t.value === value && tabRef ? { ref: tabRef } : {})}
+    />
+  );
+  return (
+    <TabList
+      hasDivider={hasDivider}
+      // The strip meets the header's edges and its labels start on the title's line (the product owner, 2026-11-14:
+      // every page in Hem's column).
+      isFullBleed
+      value={value}
+      onChange={next => {
+        onPress?.(next);
+        // A tab is a link and navigates itself; an option of the phone's menu is not.
+        const option = mobile ? rest.find(t => t.value === next) : undefined;
+        if (option && next !== value) navigate(option.href);
+      }}
+      aria-label={label}
+    >
+      {mobile && first && rest.length > 1 ? (
+        <>
+          {tab(first)}
+          <TabMenu
+            label="Fler"
+            options={rest.map(t => ({ value: t.value, label: t.count ? `${t.label} (${t.count})` : t.label }))}
+          />
+        </>
+      ) : (
+        tabs.map(tab)
+      )}
+    </TabList>
+  );
+}
 
 /** One section of the main column, keyed so a section that leaves (a source with nothing) does not remount the others. */
 export interface PageSectionEntry {
@@ -50,11 +130,11 @@ export function EntityPage({
   title,
   subtitle,
   actions,
+  tabs,
   sections,
   empty,
   details,
   label,
-  panel,
   headingRef,
   meta,
 }: {
@@ -67,42 +147,35 @@ export function EntityPage({
   /** What stands before the name: a person's avatar. */
   icon?: ReactNode;
   title: string;
-  /** The line under the name: a person's title, "Enhet" for a unit. */
+  /** The line under the name: a person's title and unit, "Enhet" for a unit. */
   subtitle?: ReactNode;
   /** The actions about the entity and "Fråga Clew". */
   actions?: ReactNode;
+  /** The thing's tabs (`TabList`), under its name, at the foot of the header. */
+  tabs?: ReactNode;
   sections: PageSectionEntry[];
   /** What the column says when no section has anything. */
   empty?: ReactNode;
-  /** The details rail's content: "Detaljer" and where the entity belongs. */
+  /** The facts: in the end panel, above the read where the window is narrow. */
   details: ReactNode;
   /** The column's scroll area, named while it scrolls. */
   label: string;
-  /** The page's panel (`usePagePanel`), in the end slot after the rail. */
-  panel: { end: ReactNode; occupied: boolean };
   /** The heading, for a page that gives it the focus from a script (a plan just started, D124): never from Tab. */
   headingRef?: Ref<HTMLHeadingElement> | undefined;
   /** Where the thing stands, under the name's line and before the phone's actions: a plan's progress (D124). */
   meta?: ReactNode;
 }) {
   const mobile = useMediaQuery(mobileQuery);
-  const narrowWindow = useMediaQuery(narrowItemQuery);
+  const narrow = useMediaQuery(narrowItemQuery);
   const short = useMediaQuery(shortQuery);
-  // While the panel holds something beside the page the details go behind "Visa detaljer", as in a narrow window, so the
-  // column keeps its width (the work item's page does the same).
-  const narrow = narrowWindow || panel.occupied;
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  // The dialog belongs to the narrow layout: a window widened under it lets go of it, so it does not come back by itself.
-  useEffect(() => {
-    if (!narrow) setDetailsOpen(false);
-  }, [narrow]);
+  const gutter = mobile ? 4 : 6;
   const trail =
     back || crumbs || place ? (
       <HStack gap={3} wrap="wrap" vAlign="center">
         {back && (
           <Link href={back.href} type="supporting" color="secondary">
             <HStack as="span" gap={1} vAlign="center">
-              <Icon icon="chevronLeft" size="sm" />
+              <Icon icon={ArrowLeftIcon} size="sm" />
               {back.label}
             </HStack>
           </Link>
@@ -117,42 +190,30 @@ export function EntityPage({
       </HStack>
     ) : null;
   const header = (
-    <LayoutHeader padding={mobile ? 4 : 6} hasDivider>
-      <VStack gap={mobile ? 3 : 4}>
-        {(trail || narrow) && (
-          <HStack gap={2} vAlign="center">
-            <StackItem size="fill">{trail}</StackItem>
-            {narrow && (
-              <IconButton
-                variant="secondary"
-                label="Visa detaljer"
-                tooltip="Visa detaljer"
-                icon={<Icon icon="info" />}
-                onClick={() => setDetailsOpen(true)}
-              />
-            )}
-          </HStack>
-        )}
-        <HStack gap={4} vAlign="start" wrap="wrap">
-          <StackItem size="fill">
-            <HStack gap={3} vAlign="center">
-              {icon}
-              <VStack gap={0}>
+    <LayoutHeader padding={gutter} paddingBlockEnd={tabs ? 0 : gutter} hasDivider>
+      <VStack gap={tabs ? 3 : 0}>
+        <VStack gap={mobile ? 3 : 4}>
+          {trail}
+          <HStack gap={4} vAlign="center" wrap="wrap">
+            {icon}
+            <StackItem size="fill">
+              <VStack gap={0.5}>
                 <Heading level={1} {...(headingRef ? { ref: headingRef, tabIndex: -1 } : {})}>
                   {title}
                 </Heading>
                 {subtitle && <Text color="secondary">{subtitle}</Text>}
               </VStack>
-            </HStack>
-          </StackItem>
-          {!mobile && actions}
-        </HStack>
-        {meta}
-        {mobile && actions}
+            </StackItem>
+            {!mobile && actions}
+          </HStack>
+          {meta}
+          {mobile && actions}
+        </VStack>
+        {tabs}
       </VStack>
     </LayoutHeader>
   );
-  const column =
+  const read =
     sections.length === 0 ? (
       (empty ?? null)
     ) : (
@@ -165,55 +226,32 @@ export function EntityPage({
         ))}
       </VStack>
     );
-  // The column scrolls in Astryx's ScrollableArea, which takes a tab stop while it scrolls, so a column with nothing
-  // focusable can still be read by keyboard (axe: scrollable-region-focusable). On a short screen the page scrolls as one.
-  // The column stays a scroll container while it still fits (`stickyContainment="always"`): the sections answer one by
-  // one, and a section the address names is scrolled to as they arrive (`useAddressedSection`), which a fitting
-  // ScrollableArea clips until it has seen them overflow.
-  const content = short ? (
-    <LayoutContent padding={mobile ? 4 : 6} isScrollable={false}>
+  // Where the window is narrow the facts stand above the read, as the work item's page draws them.
+  const column = narrow ? (
+    <VStack gap={6}>
+      <VStack as="section" gap={4} aria-label="Uppgifter">
+        {details}
+      </VStack>
+      <Divider />
+      {read}
+    </VStack>
+  ) : (
+    read
+  );
+  // The column scrolls in the Layout's content, named while it scrolls; on a short screen the page scrolls as one.
+  const content = (
+    <LayoutContent padding={gutter} isScrollable={!short} label={label}>
       {column}
     </LayoutContent>
-  ) : (
-    <LayoutContent padding={0} isScrollable={false}>
-      <ScrollableArea label={label} height="100%" padding={mobile ? 4 : 6} stickyContainment="always">
-        {column}
-      </ScrollableArea>
-    </LayoutContent>
   );
+  const end = narrow ? undefined : (
+    <LayoutPanel width={340} padding={6} role="complementary" label="Uppgifter" hasDivider isScrollable={!short}>
+      {details}
+    </LayoutPanel>
+  );
+  // Hem's column (the product owner, 2026-11-14): every page in the same centred frame, the facts' panel inside it.
   return (
-    <>
-      <Layout
-        height={short ? 'auto' : 'fill'}
-        header={header}
-        content={content}
-        end={
-          narrow ? (
-            panel.end
-          ) : (
-            <>
-              <LayoutPanel
-                width={340}
-                padding={6}
-                role="complementary"
-                label="Detaljer"
-                hasDivider
-                isScrollable={!short}
-              >
-                {details}
-              </LayoutPanel>
-              {panel.end}
-            </>
-          )
-        }
-      />
-      <Dialog variant="fullscreen" isOpen={narrow && detailsOpen} onOpenChange={setDetailsOpen}>
-        <Layout
-          header={<DialogHeader title="Detaljer" onOpenChange={setDetailsOpen} />}
-          content={<LayoutContent padding={4}>{details}</LayoutContent>}
-        />
-      </Dialog>
-    </>
+    <Layout height={short ? 'auto' : 'fill'} contentWidth={PAGE_WIDTH} header={header} content={content} end={end} />
   );
 }
 

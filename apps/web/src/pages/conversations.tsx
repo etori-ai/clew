@@ -28,14 +28,22 @@ import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { groupThreads } from '../stream';
 import { conversationState } from '../work-items';
+import { talkingTo, withWords, type Recipient } from '../conversation-about';
 import { DOT } from '../dot';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { useRail } from '../components/nav';
 import { titled, useConversation } from '../components/conversation-context';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { LinkRow } from '../components/work-row';
+import { HEM_WIDTH } from './start';
 
-type Row = { id: string; thread: Thread; state: ReturnType<typeof conversationState> };
+type Row = {
+  id: string;
+  thread: Thread;
+  state: ReturnType<typeof conversationState>;
+  /** Another system's assistant the conversation is with now (D125), or null for Clew. */
+  with: Recipient | null;
+};
 const EMPTY: Thread[] = [];
 
 /** When a conversation last changed: the time today, "i går" and the time, else the day and the time. */
@@ -46,11 +54,12 @@ function lastChanged(at: string, day: string) {
 }
 
 /**
- * Alla samtal (D126 rule 7, the `table-page` composition of board Personal): every conversation the person has had with
- * Clew, the newest first, where the rail's three latest end. The title is the row's link to the conversation (rule 4),
- * then when it last changed and, only where the data says something about it, its state (the answer being written, a
- * draft that waits for the person), as the rail's dot says it. On a phone the rows are a list, each one link. Nothing
- * is stored here: the list is the session's conversations from the same cache as the rail (D33).
+ * Alla samtal (D126 rule 7, the `table-page` composition of board Personal): every conversation the person has had,
+ * the newest first, where the rail's three latest end. The title is the row's link to the conversation (rule 4), then
+ * whom it is with where that is another system's assistant (D125: its name and its system, as the conversation's own
+ * header says it), when it last changed and, only where the data says something about it, its state (the answer being
+ * written, a draft that waits for the person), as the rail's dot says it. On a phone the rows are a list, each one
+ * link. Nothing is stored here: the list is the session's conversations from the same cache as the rail (D33).
  */
 export function ConversationsPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -68,10 +77,12 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
         id: thread.id,
         thread,
         state: conversationState(thread, threads, answering),
+        with: talkingTo(thread),
       })),
     [threads, day, answering],
   );
   const anyState = rows.some(r => r.state);
+  const anyHanded = rows.some(r => r.with);
   const all: TableColumn<Row>[] = [
     {
       key: 'title',
@@ -82,6 +93,13 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
           {titled(r.thread.title)}
         </Link>
       ),
+    },
+    // Drawn only while some conversation is with another system's assistant: a column of "Clew" says nothing.
+    {
+      key: 'with',
+      header: 'Med',
+      width: proportional(1, { minWidth: 160 }),
+      renderCell: r => <Text>{withWords(r.with)}</Text>,
     },
     {
       key: 'updated',
@@ -104,10 +122,10 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
         ) : null,
     },
   ];
-  const columns = all.filter(c => c.key !== 'state' || anyState);
+  const columns = all.filter(c => (c.key !== 'state' || anyState) && (c.key !== 'with' || anyHanded));
   const failed = read.isError && !read.data;
   const list = failed ? (
-    <VStack gap={2} padding={mobile ? 4 : 6}>
+    <VStack gap={2}>
       <Text as="p" role="alert">
         {errorMessage(read.error, 'Samtalen kunde inte hämtas just nu.')}
       </Text>
@@ -129,33 +147,44 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
       actions={<Button label="Ny fråga" href="/" />}
     />
   ) : mobile ? (
-    <VStack padding={4}>
-      <Card padding={0}>
-        <List hasDividers aria-label="Samtal">
-          {rows.map(r => (
-            <LinkRow
-              key={r.id}
-              id={`samtal-${r.id}`}
-              itemKey={r.id}
-              href={`/conversations/${r.id}`}
-              title={titled(r.thread.title)}
-              description={[lastChanged(r.thread.updatedAt, day), r.state?.label].filter(Boolean).join(DOT)}
-              descriptionLines={0}
-            />
-          ))}
-        </List>
-      </Card>
-    </VStack>
+    <Card padding={0}>
+      <List hasDividers aria-label="Samtal">
+        {rows.map(r => (
+          <LinkRow
+            key={r.id}
+            id={`samtal-${r.id}`}
+            itemKey={r.id}
+            href={`/conversations/${r.id}`}
+            title={titled(r.thread.title)}
+            description={[
+              r.with ? `Med ${withWords(r.with)}` : null,
+              lastChanged(r.thread.updatedAt, day),
+              r.state?.label,
+            ]
+              .filter(Boolean)
+              .join(DOT)}
+            descriptionLines={0}
+          />
+        ))}
+      </List>
+    </Card>
   ) : (
-    <Table<Row> data={rows} columns={columns} idKey="id" hasHover />
+    // In the page's column as Hem's lists are: the table in a card (the product owner, 2026-11-14: every page has
+    // Hem's container).
+    <Card padding={0}>
+      <Table<Row> data={rows} columns={columns} idKey="id" hasHover />
+    </Card>
   );
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+      {/* Hem's container (the product owner, 2026-11-14: one container for every page): its column's width, and the
+          header and the content at Hem's padding, so the title starts on the line Hem's greeting starts on. */}
       <Layout
         height={short ? 'auto' : 'fill'}
+        contentWidth={HEM_WIDTH}
         header={
-          <LayoutHeader padding={0}>
-            <HStack gap={3} vAlign="center" wrap="wrap" padding={mobile ? 4 : 6} paddingBlockEnd={3}>
+          <LayoutHeader padding={mobile ? 4 : 6} paddingBlockEnd={0}>
+            <HStack gap={3} vAlign="center" wrap="wrap">
               <StackItem size="fill">
                 <VStack gap={0.5}>
                   <Heading level={1}>Samtal</Heading>
@@ -171,14 +200,10 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
           </LayoutHeader>
         }
         content={
-          <LayoutContent padding={0} isScrollable={!short}>
+          <LayoutContent padding={mobile ? 4 : 6} isScrollable={!short}>
             <AsyncContent
               pending={read.isPending}
-              fallback={
-                <VStack padding={mobile ? 4 : 6}>
-                  <ContentSkeleton label="Hämtar dina samtal …" rows={4} heading={false} />
-                </VStack>
-              }
+              fallback={<ContentSkeleton label="Hämtar dina samtal …" rows={4} heading={false} />}
             >
               {list}
             </AsyncContent>
