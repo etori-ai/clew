@@ -367,7 +367,9 @@ test.describe("the person's model in the box", () => {
     await input.fill('Hur många semesterdagar har jag?');
     await input.press('Enter');
     await expect(page.getByRole('paragraph').filter({ hasText: 'Du har 18 semesterdagar kvar i år.' })).toBeVisible();
-    const answer = page.getByRole('article', { name: 'Assistenten · läste Personalsystemet', exact: true });
-    await expect(answer.getByText('Svar från Kapabel')).toBeVisible();
+    // The answer is Clew's turn (D126 rule 5: what it read stands as its tool calls, not in the turn's name), and the
+    // model that wrote it is named under it.
+    const answer = page.getByRole('article', { name: 'Clew', exact: true });
+    await expect(answer.getByText(/Svar från Kapabel/)).toBeVisible();
   });
 });

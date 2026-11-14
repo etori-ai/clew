@@ -38,7 +38,7 @@ A pass-through integration can still produce persisted card summaries, answers a
 
 ## Presentation belongs to Clew
 
-Connectors declare semantic views: `table`, `list`, `detail` and `text`, with fields, labels and supported controls. Clew renders them consistently on tool pages, in the panel and alongside answers. Menu placement is an administrator choice.
+Connectors declare semantic views: `table`, `list`, `detail` and `text`, with fields, labels and supported controls. Clew renders them consistently on tool pages, beside a conversation and alongside answers. Menu placement is an administrator choice.
 
 Connectors do not deliver HTML apps, component trees, CSS or iframes. When the supported catalogue cannot express a source interaction, link to the source. The model is optional for these views and for human approval.
 

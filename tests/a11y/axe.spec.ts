@@ -57,9 +57,15 @@ for (const [layout, viewport] of [
       await expectNoAxeViolations(page);
     });
 
-    test('the side panel has no axe violations', async ({ page, api: _ }) => {
+    test('an address that opened the side panel leads to the view’s own page, which has no axe violations', async ({
+      page,
+      api: _,
+    }) => {
+      // Nothing opens over a page (D126 rule 3): the view is a page of its own, with Hem as its way back.
       await open(page, '/?open=hr.whoIsOn&open-title=Vem%20%C3%A4r%20p%C3%A5%20plats%3F');
-      await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.whoIsOn\?/);
+      await expect(page.getByRole('heading', { level: 1, name: 'Vem är på plats?' })).toBeVisible();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
       await expectNoAxeViolations(page);
     });
 
@@ -86,9 +92,9 @@ for (const [layout, viewport] of [
     });
 
     test('every work item opened has no axe violations', async ({ page, api: _ }) => {
-      // A pile is a tab of Att göra (D112 item 3): Väntar på andra lists what waits.
+      // A pile is a tab of Att göra (D126 rule 2, the `table-inbox` template): Väntar på andra is a table of what waits.
       await open(page, '/todo?tab=waiting');
-      await expect(page.getByRole('list', { name: 'Väntar på andra' })).toBeVisible();
+      await expect(page.getByRole('table', { name: 'Väntar på andra' })).toBeVisible();
       await expectNoAxeViolations(page);
       // A work item opened from its row: in the reading pane on a desktop, as its page alone on a phone (D112 items 3
       // and 12; the calendar's proposals keep their own card). One of each kind, and the item's own page.

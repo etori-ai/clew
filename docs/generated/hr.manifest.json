@@ -221,6 +221,7 @@
           "entity": "person",
           "key": "person"
         },
+        "byKey": "hr.person",
         "open": {
           "capability": "hr.absencePattern",
           "title": "Mönster",
@@ -656,6 +657,9 @@
                 "ref": {
                   "type": "string"
                 },
+                "person": {
+                  "type": "string"
+                },
                 "name": {
                   "type": "string"
                 },
@@ -698,6 +702,10 @@
         "title": "name",
         "ref": "ref",
         "modelReads": "summary",
+        "subject": {
+          "entity": "person",
+          "key": "person"
+        },
         "noun": {
           "one": "ansökan",
           "other": "ansökningar"
@@ -1874,13 +1882,29 @@
                 },
                 "upcoming": {
                   "type": "string"
+                },
+                "short": {
+                  "type": "integer"
+                },
+                "vab": {
+                  "type": "integer"
+                },
+                "long": {
+                  "type": "integer"
+                },
+                "periods": {
+                  "type": "integer"
                 }
               },
               "required": [
                 "key",
                 "ref",
                 "presence",
-                "today"
+                "today",
+                "short",
+                "vab",
+                "long",
+                "periods"
               ],
               "additionalProperties": false
             }
@@ -1934,6 +1958,43 @@
           {
             "key": "upcoming",
             "label": "Kommande"
+          },
+          {
+            "key": "short",
+            "label": "Korttidsfrånvaro, 6 mån",
+            "format": "number",
+            "unit": {
+              "one": "dag",
+              "other": "dagar"
+            }
+          },
+          {
+            "key": "periods",
+            "label": "Perioder",
+            "format": "number",
+            "unit": {
+              "one": "period",
+              "other": "perioder"
+            },
+            "beside": true
+          },
+          {
+            "key": "vab",
+            "label": "Vab, 6 mån",
+            "format": "number",
+            "unit": {
+              "one": "dag",
+              "other": "dagar"
+            }
+          },
+          {
+            "key": "long",
+            "label": "Långtidsfrånvaro, 6 mån",
+            "format": "number",
+            "unit": {
+              "one": "dag",
+              "other": "dagar"
+            }
           }
         ],
         "open": {

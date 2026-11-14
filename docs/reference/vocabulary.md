@@ -28,14 +28,14 @@ A work item need not contain a proposal or require a source write. An informatio
 flowchart TD
   Work["Work item"] -->|"presented as"| Card["Card or list row"]
   Card -->|"opens"| Detail["Work item detail"]
-  Detail -->|"usually displayed in"| Panel["Side panel"]
+  Detail -->|"displayed as"| Pane["Its page, or a pane beside the queue or a conversation"]
   Work -->|"concerns"| Record["Source records"]
   Work -->|"may contain"| Proposal["Proposal"]
   Conversation["Conversation"] -->|"references through context chips"| Work
   Conversation -->|"can prepare or revise"| Proposal
 ```
 
-The card and list row are presentations of the same work. The detail view is its fuller presentation. The panel is the container that holds it and can also hold other views. On a narrow screen the panel can appear as a drawer; the work item's identity stays the same.
+The card and list row are presentations of the same work. The detail view is its fuller presentation, drawn the same way on its own page and in the two panes that stand beside something: Att göra's reading pane and the pane beside a conversation ([D126](../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md)). Where a pane does not fit, the work item's page takes its place; the work item's identity stays the same.
 
 For example, **arrange 20 development meetings** is one work item shown by one card, containing 20 booking proposals. Approval creates bookings in the calendar source. Clew continues tracking the work while replies arrive; the bookings are source records and the conversation about the plan is a separate concept. See the [calendar obligation decision](../decisions/D30-a-proposal-thread-is-an-obligation-with-four-steps.md) for that flow and its limits.
 
@@ -61,7 +61,7 @@ Within a job, steps are currently independent and prepared from the same fact. T
 
 ## Interface vocabulary
 
-[Interface spaces and navigation](interface-spaces.md) defines placement and return behavior: a page is a destination, a context panel keeps related material beside it, and a focused overlay holds contextual service/review interactions without replacing that destination.
+[Interface spaces and navigation](interface-spaces.md) defines placement and return behavior: a thing has one page, a pane beside the queue or a conversation keeps the chosen thing in view, and a dialog holds one write or one form without replacing the page.
 
 | Term | Meaning |
 |---|---|
@@ -70,15 +70,15 @@ Within a job, steps are currently independent and prepared from the same fact. T
 | Work item detail | The full presentation opened from a work card or row. It shows the relevant items, proposals, actions, status and outcomes. |
 | Page | A navigable destination such as Home, Calendar, a conversation or a tool page. |
 | View | A presentation of information. Connector-declared views have the supported forms `table`, `list`, `detail` and `text`. |
-| Side panel | The container beside the current page for opened work item details or other views. On narrow screens it can be a drawer. |
-| Focused overlay | A temporary interaction above the current page, shown as the existing sidebar Drawer or corresponding mobile sheet. Catalogue drill-in and confirmation retain their parent. |
-| Tab | A choice in a tab strip on a page (Att göra's piles). A person's page has none since D112 item 5: its sections stand one under the other. The panel beside a page has no tabs: it holds one thing (D111, D66 amended). |
+| Pane | The end slot beside Att göra's queue (the chosen work item) or beside a conversation (the thing it is about), drawing the same parts as the thing's page; its title is the link to that page. There is no panel over other pages since D126. |
+| Dialog | A form or a confirmation over the current page: the action dialog, a module's own form, the person's settings. The one remaining drawer over a page is a unit over Administration › Organisation's tree. |
+| Tab | A choice in a tab strip, each a link with its own address: Att göra's piles, a register's views of the same rows (Personal's Medarbetare, lenses, Kompetens, Introduktion och avslut) and a thing's parts (a person's or a unit's Översikt, a tab per source, Ärenden; D126 rules 8 and 9). |
 | Context chip | A visible reference attached to a conversation, identifying the work item, record, proposal or other supported object being discussed. |
 | Tool | A standing entry point in the product to a capability or view, such as the phone book. Qualify an assistant-callable operation as a **model tool**. |
 | Area | A grouping of related capabilities and work available to eligible people. It is not the source record itself. |
 | Object | A generic term for something referenceable in the interface, such as a work item, row, event or proposal. Use its specific name when known. |
 
-Opening a source record directly from a table shows that record's detail view. It need not create a work item. Likewise, the word *view* describes a presentation, while *panel* describes where the presentation is held.
+Opening a source record directly from a table shows that record's detail view. It need not create a work item. Likewise, the word *view* describes a presentation, while *page* and *pane* describe where the presentation is held.
 
 ## Integration vocabulary
 
@@ -120,24 +120,24 @@ A source system owns records. A connector exposes capabilities that read those r
 | Key | Not shown | How an entity is named on the wire: a person's provisioned user name, compared without regard to case and in NFC, or a unit's id. A read or an action about a person is never asked with Clew's own person id; only the talks profile falls back to it, for a person provisioned without a user name. Inside Clew a person is keyed by that id: in the address (`/people/<id>`), on card rows and in started actions ([D122](../decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)). A user name that arrives from a source is resolved to whoever in the reader's organisation holds it then; a name nobody there holds names nobody. |
 | About | Not shown | A capability's declaration of the entity kind its rows concern (`about`). The source says what, never where; Clew places it. |
 | Subject | The name as a link | The entity a card row, a search hit or a view record names, by kind and key. Its name then links to the person or unit. Clew keeps a person subject by the person's id, so a later rename or reuse of the user name moves nothing it kept. |
-| Lens | An item under **Visa** | A read about an entity that an administrator offers on the entity's list. Chosen under "Visa", the list becomes that source's view, sorted by need. "Alla" is the list without a lens. |
-| Mark | A badge under **Just nu** | A value of a lens with a `warn` or `alert` tone, shown on the entity's row on "Alla". "Just nu" also counts the reader's cards about the person ("1 att agera på", "2 förslag"). |
-| Section | **Behöver dig**, on a person **Kontaktuppgifter** and **Anställningar**, then each source's title | One source's part of the opened person or unit, named with its source once ("Clew" for Clew's own domain); the fuller read under it has a small heading of its own. "Behöver dig" is the section of the reader's own cards that name the entity. "Kontaktuppgifter" and "Anställningar" are what the directory pushed about the person and Clew holds ([D114](../decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md)), not a source's part: every active person of the organisation who opens the person sees them, each only when the directory sent something for it. |
-| Column on "Alla" | A column heading with the source under it | One field of a read about an entity, chosen by an administrator under "Kolumn på Alla" and shown to everyone who has the list. At most three per entity kind. |
-| Opened entity | The page's heading, the person's or the unit's name, with every section under it and the details rail beside it (D112 item 5) | A person or a unit as a page ([D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md) rule 3). |
+| Lens | A tab of **Personal** | A read about an entity that an administrator offers on the entity's list. Its tab is that source's view of the same people, sorted by need. "Medarbetare" is the list without a lens. |
+| Mark | A badge under **Just nu** | A value of a lens with a `warn` or `alert` tone, shown on the entity's row on "Medarbetare". "Just nu" also counts the reader's cards about the person ("1 att agera på", "2 förslag"). |
+| Section | On the tab **Översikt**: **Behöver dig**, then each source's title; a tab per source with a row; on the reader's own page **Kompetens** and **Introduktion**; **Ärenden** | One source's part of the opened person or unit, named with its source once ("Clew" for Clew's own domain): its row in short on the overview, its row and fuller read on its own tab (D126 rule 1). "Behöver dig" is the overview's section of the reader's own cards that name the entity, and Ärenden the tab with all of them. The facts in the end panel, **Anställning**, **Kontakt** and **Enhet**, are what the directory pushed about the person and Clew holds ([D114](../decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md)), not a source's part: every active person of the organisation who opens the person sees them, each only when the directory sent something for it. |
+| Column on "Medarbetare" | A column heading with the source under it | One field of a read about an entity, chosen by an administrator under "Kolumn på Alla" and shown to everyone who has the list. At most three per entity kind. |
+| Opened entity | The page's heading, the person's or the unit's name, with its tabs under it and its facts in the end panel (D126 rule 1) | A person or a unit as a page ([D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md) rule 3). |
 
 ## Naming rules
 
 - Say **person** in code, tables and documentation, **användare** in the Swedish interface (the administrator's word; the page is Användare, D62), and **User** only for the SCIM resource at `/scim/v2`. The person is the human; the account is the binding; the User is the standard's name for the person as pushed.
 
-- Use **work item** for the tracked work in specifications and documentation. Use **card**, **row** and **panel** for presentation and layout.
+- Use **work item** for the tracked work in specifications and documentation. Use **card**, **row**, **page** and **pane** for presentation and layout.
 - Name the concrete content in the Swedish interface: **Granska fakturor**, **Visa bokningsförslaget**, **Öppna sjukanmälan**. The internal umbrella term does not require a generic label on every screen.
 - Use **proposal** for suggested changes awaiting review; qualify booking and job proposals when necessary. Work can remain open after its proposals have been approved.
 - Use **conversation** for the exchange with the assistant. Keep **thread** for references to existing implementation names.
 - Reserve **case / ärende** for actual cases from source systems. It is not the generic name for all work in Clew.
 - Say **card item** or **source record** when plain *item* would be ambiguous. A card item can represent a record or explanatory content; not every displayed row is a separate work item.
 
-For a design discussion: **Open the work item from its card and review the proposal in the side panel.**
+For a design discussion: **Open the work item from its row and review the proposal in the reading pane.**
 
 ## Mapping to the current code
 
@@ -152,7 +152,7 @@ These names clarify product language without renaming types, API routes or store
 | Decision, job, step, execution and watch | The [execution model](../../apps/server/src/modules/executions/model.ts) records `decisionId`, `Job`, `JobStep`, `Execution` and watch state. A product term does not imply a separate table of the same name. |
 | Receipt | [`Receipt`](../../packages/contracts/src/index.ts) is the displayed outcome; connector execution results provide the underlying evidence. |
 | Context chip and object | [`Chip` and `ClewObject`](../../packages/contracts/src/index.ts) provide references for conversation context and object selection. |
-| Side panel | [`PanelFrame`](../../apps/web/src/components/panel.tsx) holds the one thing opened. Their existing `card` and `view` names remain implementation identifiers. |
+| Thing's page and pane | [`EntityPage`](../../apps/web/src/components/entity-page.tsx) and [`WorkItemPage`, `WorkItem`](../../apps/web/src/components/work-item.tsx) in the one [`PageFrame`](../../apps/web/src/components/page-frame.tsx); the address names of the pane beside a conversation, `card` and `open`, remain implementation identifiers ([panel-address.ts](../../apps/web/src/panel-address.ts)). |
 | Entity, subject, lens, section and column | [`EntityKind`, `Subject`, `About`, `EntityList`, `EntityDetail`, `EntitySource` and `EntityColumn`](../../packages/contracts/src/index.ts); the use cases in [`modules/entities`](../../apps/server/src/modules/entities/); the index from entity to cards is the table `thread_subject` in [the schema](../../packages/db/src/schema.ts). A capability's lens and column are `lens` and `column` in its stored overrides. |
 | Person, group, assignment and grant | [`auth_person`, `auth_group`, `auth_assignment` and `auth_access_grant`](../../packages/db/src/schema.ts); the SCIM resources `User` and `Group` are drawn from them in [`modules/people/domain.ts`](../../apps/server/src/modules/people/domain.ts). A group's name is `label` in Clew and `displayName` on the wire. |
 

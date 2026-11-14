@@ -249,8 +249,10 @@ test.describe('a conversation about a thing', () => {
     await open(page, '/items/fakturor');
     await page.getByRole('button', { name: 'Fråga Clew' }).first().click();
     await expect(page).toHaveURL(/\/conversations\/new\?card=fakturor$/);
-    await expect(heading(page, 1, 'Nytt samtal')).toBeVisible();
-    await expect(page.getByText(`Samtal med Clew · om ${TITLE}`, { exact: true })).toBeVisible();
+    // The page says what it is before anything is written (the product owner, 2026-11-14): never "Nytt samtal" for a
+    // conversation about a thing.
+    await expect(heading(page, 1, `Fråga om ${TITLE}`)).toBeVisible();
+    await expect(page.getByText('Samtal med Clew', { exact: true })).toBeVisible();
     const pane = page.getByRole('complementary', { name: TITLE });
     // The pane's title is the link to the item's page, the decisions stand under it, and it has no "Fråga Clew".
     await expect(pane.getByRole('link', { name: TITLE })).toHaveAttribute('href', /^\/items\/fakturor\?from=/);
@@ -262,13 +264,15 @@ test.describe('a conversation about a thing', () => {
     await expectNoAxeViolations(page);
     // A reload is the same empty conversation, never Hem.
     await page.reload();
-    await expect(heading(page, 1, 'Nytt samtal')).toBeVisible();
+    await expect(heading(page, 1, `Fråga om ${TITLE}`)).toBeVisible();
     await expect(pane.getByRole('link', { name: TITLE })).toBeVisible();
     // The question goes with the thing, which keeps its place beside the conversation once it has an address.
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
     await expect(page.getByRole('log')).toContainText('Tio personer är på plats i dag.');
     expect(api.asked.at(-1)).toMatchObject({ text: 'Vem är på plats?', chips: [{ ref: 'thread:fakturor' }] });
+    // Once asked, the question is the title and the line under it says what the conversation is about.
+    await expect(page.getByText(`Samtal med Clew\u00a0· om ${TITLE}`, { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/conversations\/konversation\?card=fakturor$/);
     // The thing's chip is not drawn again above the question: it stands beside it.
     await expect(page.getByRole('log').getByText(TITLE)).toHaveCount(0);

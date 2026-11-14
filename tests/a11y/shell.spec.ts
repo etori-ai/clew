@@ -10,7 +10,7 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { NOW } from './data';
+import { NOW, user } from './data';
 
 for (const viewport of [desktop, narrow])
   test(`Påminnelser is a row of the rail under Mitt arbete and works by keyboard at ${viewport.width}px`, async ({
@@ -79,6 +79,53 @@ for (const viewport of [desktop, narrow])
     await page.keyboard.press('Escape');
     await expect(settings).not.toBeVisible();
     await expect(page).toHaveURL('/todo');
+  });
+
+for (const viewport of [desktop, narrow])
+  test(`from the person’s own page Inställningar opens the settings over it, and Esc gives the focus back to the button at ${viewport.width}px`, async ({
+    page,
+    api: _,
+  }) => {
+    // The reader's own page, as the server answers it (relation `self`), with nothing about them from a source.
+    await page.route(
+      url => url.pathname === `/api/entities/person/${user.id}`,
+      route =>
+        route.fulfill({
+          json: {
+            entity: { kind: 'person', key: user.id, sourceKey: 'testa', name: user.name, id: user.id },
+            relation: 'self',
+            actions: [],
+            sections: [],
+            cards: [],
+          },
+        }),
+    );
+    await page.setViewportSize(viewport);
+    await open(page, '/');
+    // The rail's foot row leads to the person's own page (D126 rule 10), where their settings are (D39).
+    const nav = await openNav(page);
+    await nav.getByRole('link', { name: user.name, exact: true }).click();
+    await expect(page).toHaveURL(`/people/${user.id}`);
+    await expect(page.getByRole('heading', { level: 1, name: user.name })).toBeVisible();
+    const main = page.getByRole('main');
+    const button = main
+      .getByRole('link', { name: 'Inställningar', exact: true })
+      .or(main.getByRole('button', { name: 'Inställningar', exact: true }));
+    await expect(button).toBeVisible();
+    await expectNoAxeViolations(page);
+    // By keyboard: the settings open over the page, the page's address with `settings` added.
+    await button.focus();
+    await page.keyboard.press('Enter');
+    const settings = page.getByRole('dialog', { name: user.name, exact: true });
+    await expect(settings).toBeVisible();
+    await expect(page).toHaveURL(`/people/${user.id}?settings=1`);
+    await expect(settings.getByRole('button', { name: 'Logga ut', exact: true })).toBeVisible();
+    await expectNoAxeViolations(page);
+    // Esc closes them, the page keeps its address without them, and the focus is back where they were opened (2.4.3).
+    await page.keyboard.press('Escape');
+    await expect(settings).toBeHidden();
+    await expect(page).toHaveURL(`/people/${user.id}`);
+    await expect(button).toBeFocused();
   });
 
 test('the phone bar holds the heading, and the drawer holds the rail with the reminders and the person at its foot', async ({

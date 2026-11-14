@@ -104,7 +104,7 @@ test('while the session is checked the shell stands in its final shape: the band
   const banner = page.getByRole('banner');
   await expect(banner.getByRole('link', { name: 'Organisation' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toBeVisible();
-  // Dialogstöd's own placeholder, "Att ta upp" and a table, where the page will be.
+  // Läget's own placeholder (D126 rule 10: the units the reader follows up, under Min enhet), where the page will be.
   await expect(page.getByRole('main').getByRole('status').filter({ hasText: 'Hämtar enheterna …' })).toBeAttached();
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);
   // Where the page will start and how tall the band is, before and after: nothing moves when the session arrives.
@@ -114,7 +114,7 @@ test('while the session is checked the shell stands in its final shape: the band
   });
   const before = await place();
   release();
-  await expect(page.getByRole('heading', { level: 1, name: 'Dialogstöd' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Läget' })).toBeVisible();
   expect(await place()).toEqual(before);
 });
 

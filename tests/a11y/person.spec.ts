@@ -310,6 +310,83 @@ test.describe('the person on a phone', () => {
   });
 });
 
+/**
+ * One conversation per person, not one per tab (the product owner, 2026-11-14): "Fråga Clew" on any of a person's tabs
+ * lands on a conversation about the person, titled "Fråga om <name>" before anything is written, with the person beside
+ * it drawn with the page's parts and tabs; the tab it came from is only the pane's first tab. Changing the pane's tab
+ * changes its address and nothing else; Esc in the pane lets go of the person and keeps the conversation.
+ */
+test.describe('a conversation about a person', () => {
+  test.use({ viewport: wide });
+  const box = (page: Page) => page.getByRole('combobox', { name: 'Svara i samtalet' });
+  const pane = (page: Page) => page.getByRole('complementary', { name: 'Johan Byström' });
+
+  test('one subject, two entry tabs: Frånvaro and Kontakt lead to the same person, each first in the pane', async ({
+    page,
+    api,
+  }) => {
+    await new People().route(page);
+    for (const [section, label] of [
+      [PRESENCE_LENS, 'Frånvaro'],
+      [CONTACT, 'Kontakt'],
+    ] as const) {
+      await open(page, `/people/johan?section=${section}&from=%2Fstaff`);
+      await page.getByRole('main').getByRole('button', { name: 'Fråga Clew' }).click();
+      // The address carries the person; the tab only says what the pane shows first.
+      await expect(page).toHaveURL(`/conversations/new?person=johan&section=${section}`);
+      await expect(page.getByRole('heading', { level: 1, name: 'Fråga om Johan Byström' })).toBeVisible();
+      await expect(page).toHaveTitle('Fråga om Johan Byström · Startsidan');
+      await expect(page.getByText('Samtal med Clew', { exact: true })).toBeVisible();
+      await expect(page.getByText('Fråga om Johan', { exact: true })).toBeVisible();
+      await expect(box(page)).toBeFocused();
+      // The pane is the person: the name as the link to their page at the same tab, the line under it, the tabs.
+      await expect(pane(page).getByRole('link', { name: 'Johan Byström' })).toHaveAttribute(
+        'href',
+        new RegExp(`^/people/johan\\?section=${section.replace('.', '\\.')}&from=`),
+      );
+      await expect(pane(page).getByText('Lärare 4–6 · Bergsåkers skola', { exact: true })).toBeVisible();
+      await expect(pane(page).getByRole('navigation', { name: 'Om Johan Byström' })).toBeVisible();
+      await expect(pane(page).getByRole('region', { name: label, exact: true })).toBeVisible();
+      // Only the reads: none of the page's actions.
+      await expect(pane(page).getByRole('button', { name: 'Boka möte' })).toHaveCount(0);
+      await expect(pane(page).getByRole('button', { name: 'Fråga Clew' })).toHaveCount(0);
+    }
+    await expectNoAxeViolations(page);
+    // The pane's Översikt is an address of the same conversation: the subject stays, nothing is asked.
+    await pane(page).getByRole('link', { name: 'Översikt' }).click();
+    await expect(page).toHaveURL('/conversations/new?person=johan');
+    await expect(page.getByRole('heading', { level: 1, name: 'Fråga om Johan Byström' })).toBeVisible();
+    await expect(pane(page).getByRole('region', { name: 'Frånvaro', exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(`/conversations/new?person=johan&section=${CONTACT}`);
+    await expect(pane(page).getByRole('region', { name: 'Kontakt', exact: true })).toBeVisible();
+    expect(api.asked).toHaveLength(0);
+    // Esc in the pane lets go of the person; the conversation stays and the box has the focus.
+    await pane(page).getByRole('link', { name: 'Johan Byström' }).focus();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL('/conversations/new');
+    await expect(page.getByRole('complementary', { name: 'Johan Byström' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Nytt samtal' })).toBeVisible();
+    await expect(box(page)).toBeFocused();
+  });
+
+  test('an address from before, `?person=&section=`, opens the person with that tab first', async ({
+    page,
+    api: _,
+  }) => {
+    await new People().route(page);
+    await open(page, `/conversations/new?person=johan&section=${PRESENCE_LENS}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Fråga om Johan Byström' })).toBeVisible();
+    await expect(pane(page).getByRole('region', { name: 'Frånvaro', exact: true })).toBeVisible();
+    // Tab reaches the pane's tabs from the box.
+    await box(page).focus();
+    const strip = pane(page).getByRole('navigation', { name: 'Om Johan Byström' });
+    for (let i = 0; i < 12 && !(await strip.evaluate(el => el.contains(document.activeElement))); i++)
+      await page.keyboard.press('Tab');
+    expect(await strip.evaluate(el => el.contains(document.activeElement))).toBe(true);
+  });
+});
+
 test.describe('1.4.10 reflow', () => {
   test.use({ viewport: narrow });
   test('the person as a page reflows at 320 px, at the overview and at a tab', async ({ page, api: _ }) => {

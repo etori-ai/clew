@@ -22,7 +22,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await expect(page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
   });
 
-  test('the receipt’s toast stays when the person moves on, and its Visa opens the card over the page they are on (D111)', async ({
+  test('the receipt’s toast stays when the person moves on, and its Visa leads to the item’s page with the page they are on as the way back (D126 rule 1)', async ({
     page,
     api: _,
   }) => {
@@ -38,11 +38,20 @@ test.describe('a decision the card is left waiting on keeps its way back where t
       .getByRole('link', { name: 'Kalender', exact: true })
       .click();
     await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeVisible();
-    await expect(show).toHaveAttribute('href', '/calendar?card=samtal');
+    // Elsewhere nothing opens over the page (D126 rule 3): Visa is the item's own page, Kalender its way back.
+    await expect(show).toHaveAttribute('href', '/items/samtal?from=%2Fcalendar');
     await show.click();
-    await expect(page).toHaveURL('/calendar?card=samtal');
-    await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeAttached();
-    await expect(page.getByRole('dialog', { name: 'Ärende' }).locator('#card-samtal')).toBeVisible();
+    await expect(page).toHaveURL('/items/samtal?from=%2Fcalendar');
+    await expect(page.getByRole('main').locator('#card-samtal')).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(
+      page
+        .getByRole('main')
+        .getByRole('link', { name: /Kalender/ })
+        .first(),
+    ).toHaveAttribute('href', '/calendar');
+    await page.goBack();
+    await expect(page).toHaveURL('/calendar');
   });
 
   test('sending the invitations keeps the row with the receipt and the item with Ångra, the toast says the card is under Väntar på andra, and the item there undoes it', async ({
@@ -55,7 +64,8 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     const card = pane.locator('#card-samtal');
     await card.getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
     // The row keeps its place for a moment with what was done, still the current one, and the item has Ångra allt.
-    const row = page.getByRole('list', { name: 'Behöver dig' }).locator('#work-samtal');
+    // The queue is a table whose piles are tabs (D126 rule 2, the `table-inbox` template).
+    const row = page.getByRole('table', { name: 'Behöver dig' }).locator('#work-samtal');
     await expect(row).toContainText('2 av 2 kalenderändringar är bekräftade');
     await expect(row).toHaveAttribute('aria-current', 'true');
     await expect(card.getByRole('button', { name: /^Ångra allt · / })).toBeVisible();
@@ -72,7 +82,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
       .getByRole('navigation', { name: 'Urval' })
       .getByRole('link', { name: /^Väntar på andra/ })
       .click();
-    const waiting = page.getByRole('list', { name: 'Väntar på andra' }).locator('#work-samtal');
+    const waiting = page.getByRole('table', { name: 'Väntar på andra' }).locator('#work-samtal');
     await expect(waiting).toContainText('kalenderändringar är bekräftade');
     await expect(waiting).toContainText('Väntar på andra\u00a0· ');
     await expectNoAxeViolations(page);
@@ -87,7 +97,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
       .getByRole('navigation', { name: 'Urval' })
       .getByRole('link', { name: /^Behöver dig/ })
       .click();
-    const back = page.getByRole('list', { name: 'Behöver dig' }).locator('#work-samtal');
+    const back = page.getByRole('table', { name: 'Behöver dig' }).locator('#work-samtal');
     await expect(back).toBeVisible();
     await expect(back).not.toContainText('kalenderändringar är bekräftade');
   });

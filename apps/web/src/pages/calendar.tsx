@@ -744,7 +744,6 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         meta={head.meta}
         actions={head.actions}
         actionsOnLine
-        label={capital(title)}
         end={pane}
       >
         <VStack gap={4}>

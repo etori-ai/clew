@@ -46,8 +46,13 @@ test.describe('the work item as a page', () => {
     const levels = await outline(page);
     expect(levels.filter(l => l === 1)).toHaveLength(1);
     for (let i = 1; i < levels.length; i++) expect(levels[i]! - levels[i - 1]!).toBeLessThanOrEqual(1);
-    for (const name of ['Varför ser jag detta?', 'Rader', 'Händelser'])
-      await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
+    // The sections are the outline's second level, drawn at the size the board gives them (board Ärende): the level a
+    // screen reader is told is `aria-level` where the drawn element is a smaller heading.
+    for (const name of ['Varför ser jag detta?', 'Rader', 'Händelser']) {
+      const section = page.getByRole('main').getByRole('heading', { name, exact: true });
+      await expect(section).toBeVisible();
+      expect(await section.evaluate(h => Number(h.getAttribute('aria-level') ?? h.tagName.slice(1))), name).toBe(2);
+    }
     // The status among the facts, in words; the dot beside its word is decoration with no name of its own, so the
     // state is heard once. When it is due is a badge beside the title (board Ärende).
     await expect(page.getByText('Ska göras i dag', { exact: true }).first()).toBeVisible();

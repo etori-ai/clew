@@ -18,14 +18,14 @@ const title = (text: string) => encodeURIComponent(text);
 /** A list or a table is its view's page (D116), opened from Hem with Hem as the way back. */
 const directory = `/tools/phonebook.directory?title=${title('Sök i telefonboken')}&from=%2F`;
 const team = `/tools/phonebook.team?title=${title('Mitt teams kontaktlista')}&from=%2F`;
-/** One thing is a peek beside the page it was opened from. */
+/** An address from before D126 that laid one thing beside the page it was opened from. */
 const card = `/?open=phonebook.person&open-title=Kontaktkort&open-input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1003' }))}`;
 
 /**
  * Declared views (D38): a connector says what its output holds and Startsidan draws it. The phone book is the example:
  * the mocked API is answered by the connector itself, so what is tested is its real manifest drawn by the one renderer.
- * A table or a list is the view's own page, one record lies in the panel beside the page (D116). Everything here works
- * without a model.
+ * A table or a list is the view's own page (D116), and since D126 so is one record. Everything here works without a
+ * model.
  */
 test.describe('a declared table or list on its page', () => {
   test.use({ viewport: desktop });
@@ -69,10 +69,11 @@ test.describe('a declared table or list on its page', () => {
     await panel.getByRole('combobox', { name: 'Sök i', exact: true }).click();
     await page.getByRole('option', { name: 'Min enhet' }).click();
     await expect(panel.getByRole('row')).toHaveCount(6);
-    await expect(page).toHaveURL(url => url.searchParams.get('open-input') === JSON.stringify({ scope: 'unit' }));
+    // A view's page names its input `input` (D116); `open-input` was the panel's, which D126 removed.
+    await expect(page).toHaveURL(url => url.searchParams.get('input') === JSON.stringify({ scope: 'unit' }));
     await field.fill('xyzzy');
     await expect(panel.getByRole('paragraph').filter({ hasText: 'Inga träffar i telefonboken.' })).toBeVisible();
-    const input = new URL(page.url()).searchParams.get('open-input');
+    const input = new URL(page.url()).searchParams.get('input');
     expect(JSON.parse(input ?? '{}')).toEqual({ scope: 'unit', query: 'xyzzy' });
     await expect
       .poll(() => announcements(page))
@@ -83,35 +84,32 @@ test.describe('a declared table or list on its page', () => {
     await expect(page).toHaveURL('/');
   });
 
-  test('a row opens the contact card beside the list, one thing with no way into another, and ✕ returns to the rows as they were', async ({
+  test('a name opens the contact card’s own page with the list as its way back, and Back returns to the rows as they were (D126 rule 1)', async ({
     page,
     api: _,
   }) => {
     await open(page, directory.replace('?', `?input=${encodeURIComponent(JSON.stringify({ query: 'lärare' }))}&`));
-    const panel = page.getByRole('main');
-    await expect(panel.getByRole('searchbox')).toHaveValue('lärare');
-    await panel.getByRole('link', { name: 'Anna Lindqvist' }).click();
-    const contact = page.getByRole('dialog', { name: 'Kontaktkort' });
-    await expect(contact.getByText('Anna Lindqvist')).toBeVisible();
-    // The contact card is one thing beside the list's page (D116): the focus is on its name at the panel's start, which
-    // says it, and there is no "Tillbaka" inside the panel, since the list it came from is the page under it.
-    await expect(contact.getByRole('heading', { level: 2, name: 'Kontaktkort', exact: true })).toBeFocused();
-    await expect(contact.getByRole('navigation')).toHaveCount(0);
-    await expect(contact.getByRole('button', { name: 'Tillbaka' })).toHaveCount(0);
-    await expect(contact.getByText('Rum')).toBeVisible();
-    await expect(contact.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
-    await expect(contact.getByRole('link', { name: /Öppna i telefonboken/ })).toHaveAttribute('target', '_blank');
-    // A contact card is no record: no page of its own, so its name in the panel's header is no link.
-    await expect(
-      contact.getByRole('heading', { level: 2, name: 'Kontaktkort', exact: true }).getByRole('link'),
-    ).toHaveCount(0);
-    await expectNoAxeViolations(page);
-    await page.keyboard.press('Escape');
+    const main = page.getByRole('main');
+    await expect(main.getByRole('searchbox')).toHaveValue('lärare');
+    const name = main.getByRole('link', { name: 'Anna Lindqvist' });
+    await name.focus();
+    await page.keyboard.press('Enter');
+    // One thing is a page of its own (D126 rule 1), nothing over the list: the record's name is its heading, with its
+    // room, its number that calls and its way out to the phone book in a new tab.
+    await expect(page).toHaveURL(/^[^?]*\/tools\/phonebook\.person\?.*from=/);
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(panel.getByRole('row')).toHaveCount(3);
-    await expect(panel.getByRole('searchbox')).toHaveValue('lärare');
+    await expect(main.getByRole('heading', { level: 1, name: 'Anna Lindqvist' })).toBeVisible();
+    await expect(main.getByText('Rum')).toBeVisible();
+    await expect(main.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
+    await expect(main.getByRole('link', { name: /Öppna i telefonboken/ })).toHaveAttribute('target', '_blank');
+    // Its way back is the list as it was, with its question.
+    await expect(main.locator('a[href^="/tools/phonebook.directory?"]').first()).toHaveAttribute('href', /l%C3%A4rare/);
+    await expectNoAxeViolations(page);
+    await page.goBack();
+    await expect(main.getByRole('row')).toHaveCount(3);
+    await expect(main.getByRole('searchbox')).toHaveValue('lärare');
     // Back on the rows, focus is on the name that led away.
-    await expect(panel.getByRole('link', { name: 'Anna Lindqvist' })).toBeFocused();
+    await expect(name).toBeFocused();
   });
 
   test('the keyboard reaches the field, the choice, each name and each number, in the order they are read', async ({
@@ -164,23 +162,25 @@ test.describe('a declared table or list on its page', () => {
     await expect(first).toContainText('Dig');
     await expect(first).toContainText('Ärendesystemet');
     await expect(panel.getByRole('listitem').nth(1)).toContainText('Bygglovssystemet');
-    // A row is a link into the connector it came from, never into the list's own.
+    // A row is a link into the connector it came from, never into the list's own: the errand's own page (D126 rule
+    // 1), with the list as the way back.
     await expect(panel.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' })).toHaveAttribute(
       'href',
-      /open=sm\.errand/,
+      /^\/tools\/sm\.errand\?input=.*&from=%2Ftools%2Fclew\.errands/,
     );
     await expect(panel.getByRole('link', { name: 'BYGG 2026-000317 · Bygglov, Komplettering' })).toHaveAttribute(
       'href',
-      /open=permits\.errand/,
+      /^\/tools\/permits\.errand\?input=.*&from=%2Ftools%2Fclew\.errands/,
     );
     // A short list is never read as the whole truth.
     await expect(panel.getByText('Verksamhetssystemet svarade inte.')).toBeVisible();
     await expectNoAxeViolations(page);
-    // Keyboard: the row's link opens the errand beside the list, read live from its own system.
+    // Keyboard: the row's link opens the errand's page, read live from its own system, and nothing over the list.
     await panel.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' }).focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/^[^?]*\/tools\/clew\.errands\?.*open=sm\.errand/);
-    await expect(page.getByRole('dialog').getByText('Ny medarbetare behöver konto i elevregistret')).toBeVisible();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/sm\.errand\?/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(panel.getByText('Ny medarbetare behöver konto i elevregistret')).toBeVisible();
     await expectNoAxeViolations(page);
   });
 
@@ -207,7 +207,7 @@ test.describe('a declared table or list on its page', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('a name typed in the box finds the person: the hit opens the contact card here, and has no review date to miss', async ({
+  test('a name typed in the box finds the person: the hit opens the contact card’s page, and has no review date to miss', async ({
     page,
     api: _,
   }) => {
@@ -223,20 +223,26 @@ test.describe('a declared table or list on its page', () => {
     await expect(hits.getByText('Granskningsdatum saknas')).toHaveCount(0);
     await expect(hits.getByRole('link', { name: 'Öppna i Telefonboken' })).toBeVisible();
     await expectNoAxeViolations(page);
+    // The contact card is a page of its own (D126 rule 1), with the search as its way back; nothing opens over it.
     await hits.getByRole('link', { name: 'Kontaktkort' }).click();
-    await expect(
-      page.getByRole('dialog', { name: 'Kontaktkort' }).getByRole('link', { name: '0980-319 203' }),
-    ).toBeVisible();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/phonebook\.person\?.*from=%2Ftools%2Fclew\.search/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(hits.getByRole('link', { name: '0980-319 203' })).toBeVisible();
   });
 });
 
-test.describe("the calendar's own reads in the side panel", () => {
+test.describe("the calendar's own reads on their page", () => {
   test.use({ viewport: desktop });
 
-  // D32: a calendar read is drawn by the calendar family, never as label/value pairs. Today is the day strip with its gaps named; the week is the list with a heading per day.
+  // D32: a calendar read is drawn by the calendar family, never as label/value pairs. Today is the day strip with its
+  // gaps named; the week is the list with a heading per day. Each is its own page since D126 rule 3: the address that
+  // laid it beside Hem leads there, with nothing over the page.
   test('Dagens möten is the day strip with the free gaps under it', async ({ page, api: _ }) => {
     await open(page, `/?open=calendar.today&open-title=${title('Dagens möten')}`);
-    const panel = page.getByRole('dialog', { name: 'Dagens möten' });
+    await expect(page).toHaveURL(/^[^?]*\/tools\/calendar\.today\?/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const panel = page.getByRole('main');
+    await expect(panel.getByRole('heading', { level: 1, name: 'Dagens möten' })).toBeVisible();
     await expect(panel.getByText('Du tittar på onsdag 4 november i din kalender.')).toBeVisible();
     await expect(panel.getByRole('group', { name: 'onsdag 4 november' })).toBeVisible();
     await expect(panel.getByText('Rektorsmöte', { exact: true })).toBeVisible();
@@ -248,7 +254,10 @@ test.describe("the calendar's own reads in the side panel", () => {
 
   test('Hela veckan is the list with a heading per day', async ({ page, api: _ }) => {
     await open(page, `/?open=calendar.week&open-title=${title('Hela veckan')}`);
-    const panel = page.getByRole('dialog', { name: 'Hela veckan' });
+    await expect(page).toHaveURL(/^[^?]*\/tools\/calendar\.week\?/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const panel = page.getByRole('main');
+    await expect(panel.getByRole('heading', { level: 1, name: 'Hela veckan' })).toBeVisible();
     await expect(panel.getByRole('group', { name: 'Vecka 45, 2–6 november' })).toBeVisible();
     await expect(panel.getByText('Morgonmöte ledningsgrupp')).toHaveCount(5);
     await expect(panel.getByText('events', { exact: true })).toHaveCount(0);
@@ -393,7 +402,7 @@ test.describe('1.4.10: a declared view at 320 px', () => {
   for (const [name, path, where] of [
     ['the table on its page, drawn as a list', directory, 'main'],
     ['the list on its page', team, 'main'],
-    ['the contact card beside the page', card, 'dialog'],
+    ['the contact card, its own page from an address that laid it beside Hem', card, 'main'],
   ] as const)
     test(`${name} reflows`, async ({ page, api: _ }) => {
       await page.setViewportSize(narrow);
@@ -511,11 +520,12 @@ test.describe('a view row that names a person', () => {
     // The row without the key names nobody: its name is text, and its read is still its own link.
     const nobody = panel.getByRole('row').filter({ hasText: 'Utan användarnamn' });
     await expect(nobody.getByRole('link', { name: 'Utan användarnamn', exact: true })).toHaveCount(0);
-    // A user name nobody holds still opens its read on the name, and has no person's link at the end.
+    // A user name nobody holds names nobody: its name is text, and its read is still its own link, to its page.
     const unheld = panel.getByRole('row').filter({ hasText: 'Bo Ek' });
-    await expect(unheld.getByRole('link', { name: 'Bo Ek', exact: true })).toHaveAttribute(
+    await expect(unheld.getByRole('link', { name: 'Bo Ek', exact: true })).toHaveCount(0);
+    await expect(unheld.getByRole('link', { name: 'Åtgärdspunkter för Bo Ek' })).toHaveAttribute(
       'href',
-      /open=talks\.commitments/,
+      /^\/tools\/talks\.commitments\?input=.*&from=%2Ftools%2Ftalks\.talks/,
     );
     await expect(unheld.getByRole('link', { name: 'Öppna Bo Ek' })).toHaveCount(0);
     await expectNoAxeViolations(page);
@@ -535,12 +545,12 @@ test.describe('a view row that names a person', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('a row whose read is one thing opens it beside the page from its own link, the name still the person’s', async ({
+  test('a row whose read is one thing opens its page from its own link, the name still the person’s', async ({
     page,
     api: _,
   }) => {
     // Absence per person as the HR system declares it (`connectors/hr`): the name names the employee (`subject`), the
-    // row opens the employee's pattern (`open`, a detail, one thing beside the page).
+    // row opens the employee's pattern (`open`, a detail, one thing, its own page since D126 rule 1).
     await page.route('**/api/cap/hr.absenceOverview*', route =>
       route.fulfill({
         json: {
@@ -561,6 +571,8 @@ test.describe('a view row that names a person', () => {
               { key: 'name', label: 'Namn' },
               { key: 'periods', label: 'Perioder', format: 'number' },
             ],
+            // The id of the person the row names, by the user name the source sent (D122).
+            people: { anna: 'anna' },
           },
           output: { rows: [{ ref: 'hr:emp:1', person: 'anna', name: 'Anna Lindqvist', periods: 3 }] },
         },
@@ -574,13 +586,18 @@ test.describe('a view row that names a person', () => {
       /^\/people\/anna\?from=%2Ftools%2Fhr\.absenceOverview/,
     );
     const pattern = anna.getByRole('link', { name: 'Mönster för Anna Lindqvist' });
-    await expect(pattern).toHaveAttribute('href', /[?&]open=hr\.absencePattern/);
+    await expect(pattern).toHaveAttribute(
+      'href',
+      /^\/tools\/hr\.absencePattern\?input=.*&from=%2Ftools%2Fhr\.absenceOverview/,
+    );
     // A connector outside Clew: what it shows is not stored in Clew, and the page says so.
     await expect(main.getByText(/Inget av det sparas på Startsidan\./)).toBeVisible();
     await expectNoAxeViolations(page);
   });
 
-  test("a detail's heading is the link to the person it names", async ({ page, api: _ }) => {
+  test("a detail's page names the person it is about with a link to them", async ({ page, api }) => {
+    // A read the person may open (D116); one that is not in their list of views has no page.
+    api.views.push({ capability: 'hr.employee', title: 'Anställning', kind: 'detail' });
     await page.route('**/api/cap/hr.employee*', route =>
       route.fulfill({
         json: {
@@ -600,10 +617,13 @@ test.describe('a view row that names a person', () => {
         },
       }),
     );
+    // An address that laid the record beside Hem is the record's page (D126 rule 3), with Hem as its way back.
     await open(page, `/?open=hr.employee&open-title=${title('Anställning')}`);
-    const panel = page.getByRole('dialog', { name: 'Anställning' });
-    const name = panel.getByRole('heading', { name: 'Anna Lindqvist' }).getByRole('link', { name: 'Anna Lindqvist' });
-    await expect(name).toHaveAttribute('href', /^\/people\/anna\?from=%2F%3Fopen%3Dhr\.employee/);
+    await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.employee\?/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const panel = page.getByRole('main');
+    const name = panel.getByRole('link', { name: 'Anna Lindqvist', exact: true });
+    await expect(name).toHaveAttribute('href', /^\/people\/anna\?from=%2Ftools%2Fhr\.employee/);
     await expect(panel.getByText('Lärare F–3')).toBeVisible();
     await expectNoAxeViolations(page);
   });

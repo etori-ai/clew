@@ -433,7 +433,7 @@ function tied(api: MockApi) {
 test.describe('what an item is done with', () => {
   test.use({ viewport: wide });
 
-  test('by keyboard: an order about the person opens its work item beside the plan with the dialog over it, the preset chosen; Esc sends nothing; the last button places it and the item stays to do', async ({
+  test('by keyboard: an order about the person opens the dialog with the preset chosen and nothing made; Esc gives the focus back; the last button places it, its item opens on its page, and the plan’s item stays to do', async ({
     page,
     api,
   }) => {
@@ -453,21 +453,21 @@ test.describe('what an item is done with', () => {
 
     await order.focus();
     await page.keyboard.press('Enter');
-    // The same path a person's page starts on: the work item first, without the answers, on its own page (D126 rule 1).
-    await expect(page).toHaveURL(/\/items\/entity-servicedesk-order-anna\?from=/);
-    expect(api.entityStarts).toEqual([{ key: ANNA, capability: 'servicedesk.order' }]);
+    // The same path a person's page starts on (D126 item 7): the dialog first, and nothing exists before its last button.
     const dialog = page.getByRole('dialog', { name: 'Beställ från IT-servicedesken' });
     await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(PAGE);
+    expect(api.entityStarts).toEqual([]);
+    expect(api.entityDecides).toEqual([]);
     await expect(dialog.getByRole('radio', { name: 'Passerkort' })).toBeChecked();
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    const panel = page.getByRole('main');
-    const decide = panel.getByRole('button', { name: 'Beställ från IT-servicedesken' });
-    await expect(decide).toBeFocused();
-    expect(api.acted).toEqual([]);
+    // Esc sends nothing and gives the focus back to the row's button that opened it.
+    await expect(order).toBeFocused();
+    expect(api.entityDecides).toEqual([]);
 
-    // Its own button opens the dialog again with the answer kept; the last button is the only thing that sends.
+    // The same button opens the dialog again with the answer kept; the last button is the only thing that sends.
     await page.keyboard.press('Enter');
     await expect(dialog.getByRole('radio', { name: 'Passerkort' })).toBeChecked();
     await dialog.getByRole('button', { name: 'Nästa' }).focus();
@@ -476,10 +476,16 @@ test.describe('what an item is done with', () => {
     await dialog.getByRole('button', { name: 'Beställ från IT-servicedesken' }).focus();
     await page.keyboard.press('Enter');
     await expect(dialog).toBeHidden();
-    await expect
-      .poll(() => api.acted.map(a => a.body))
-      .toEqual([{ actionId: 'decide', values: { item: 'access-card' } }]);
-    await expect(panel.getByText('Beställningen är lagd hos IT-servicedesken.')).toBeVisible();
+    // An execute: its work item is made with the decision in it, and opens on its own page with the plan as the way
+    // back, which has none of its own.
+    expect(api.entityStarts).toEqual([]);
+    expect(api.entityDecides).toEqual([
+      { key: ANNA, capability: 'servicedesk.order', values: { item: 'access-card' } },
+    ]);
+    await expect(page).toHaveURL(
+      `/items/entity-servicedesk-order-anna?from=${encodeURIComponent(`/boarding/${ANNA}`)}`,
+    );
+    await expect(page.getByRole('main').getByText('Beställningen är lagd hos IT-servicedesken.')).toBeVisible();
     await expectNoAxeViolations(page);
     // Back leaves the work item for the plan as it was; the plan holds the item, never the order: it is not ticked by it.
     await page.goBack();
