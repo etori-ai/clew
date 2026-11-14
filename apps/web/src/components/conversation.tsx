@@ -552,6 +552,7 @@ function ViewEmbed({
       view={read.data.view}
       output={read.data.output}
       {...(marks ? { only: marks } : { limit: EMBED_ROWS })}
+      heading={view.title}
       onShowAll={onShowAll}
       showAllHref={hrefFor?.(view)}
       {...(hrefFor ? { hrefFor } : {})}

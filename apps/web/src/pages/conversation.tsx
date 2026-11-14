@@ -18,6 +18,7 @@ import {
   Text,
   VStack,
   VisuallyHidden,
+  XMarkIcon,
   useMediaQuery,
   type AgendaItem,
 } from '@clew/ui';
@@ -297,7 +298,12 @@ function useAbout({
     );
     const close = (
       <HStack justify="end">
-        <IconButton variant="ghost" size="sm" label="Stäng ärendet" icon={<Icon icon="close" />} onClick={closePane} />
+        <IconButton
+          variant="ghost"
+          label="Stäng ärendet"
+          icon={<Icon icon={XMarkIcon} size="sm" />}
+          onClick={closePane}
+        />
       </HStack>
     );
     // The same parts as Att göra's reading pane (D126 rule 2): the work item at its narrow width, its ✕ in its own title
@@ -342,7 +348,7 @@ function useAbout({
               </Heading>
             </VStack>
           </StackItem>
-          <IconButton label="Stäng" variant="ghost" size="sm" icon={<Icon icon="close" />} onClick={closePane} />
+          <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={closePane} />
         </HStack>
         <Divider />
         {shown ? (
@@ -393,7 +399,7 @@ function useAbout({
               </Heading>
             </VStack>
           </StackItem>
-          <IconButton label="Stäng" variant="ghost" size="sm" icon={<Icon icon="close" />} onClick={closePane} />
+          <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={closePane} />
         </HStack>
         <Divider />
         <PersonSourceBody answer={answer} tableQuery="(min-width: 99999px)" about={who} />

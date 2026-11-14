@@ -33,6 +33,7 @@ import {
   Token,
   VStack,
   VisuallyHidden,
+  XMarkIcon,
   pixel,
   proportional,
   useAnnounce,
@@ -592,7 +593,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   );
   const closeItem = (
     <HStack justify="end">
-      <IconButton variant="ghost" size="sm" label="Stäng ärendet" icon={<Icon icon="close" />} onClick={close} />
+      <IconButton variant="ghost" label="Stäng ärendet" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={close} />
     </HStack>
   );
   /**

@@ -113,6 +113,11 @@ export interface DeclaredViewProps {
    */
   section?: { title: string; about?: string | undefined } | undefined;
   /**
+   * Under an answer (D126 item 5, board SamtalVerktyg): the read's own name, which heads the card in semibold with its
+   * system and its count under it and "Visa allt" as a link at the end of the line, in place of the mark row.
+   */
+  heading?: string | undefined;
+  /**
    * One thing on its own page (D126 rule 1, the `work-item-detail` template): the page draws the way back and the title,
    * and the view only a part of the read. `facts` is a record's or a detail's facts (the end panel); `body` is what is
    * read in the column (a record's document, its rows, its figures; a text; a document). Lists and tables ignore it.
@@ -201,6 +206,38 @@ function ViewHeader({ view, count, end }: { view: PanelViewSpec; count: number |
   return (
     <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
       <MarkRow view={view} count={count} />
+      {end}
+    </HStack>
+  );
+}
+/**
+ * The head of a read's card under an answer (board SamtalVerktyg): the read's name in semibold, the system and the count
+ * in supporting text under it, and the way to the whole read at the end of the line.
+ */
+function EmbedHeader({
+  view,
+  heading,
+  count,
+  end,
+}: {
+  view: PanelViewSpec;
+  heading: string;
+  count: number | null;
+  end?: ReactNode;
+}) {
+  const mark = useMarks().ofCapability(view.capability, view.connector, view.source);
+  const noun = view.kind === 'table' || view.kind === 'list' ? view.noun : undefined;
+  const line = [mark.source || view.source, count === null ? '' : counted(count, noun)].filter(Boolean).join(DOT);
+  return (
+    <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
+      <VStack gap={0}>
+        <Text weight="semibold">{heading}</Text>
+        {line && (
+          <Text type="supporting" color="secondary">
+            {line}
+          </Text>
+        )}
+      </VStack>
       {end}
     </HStack>
   );
@@ -757,6 +794,7 @@ export function DeclaredView({
   isOpen,
   section,
   part,
+  heading,
 }: DeclaredViewProps) {
   const sectionId = useId();
   const wide = useMediaQuery(tableQuery);
@@ -819,6 +857,13 @@ export function DeclaredView({
     <Heading level={4} accessibilityLevel={headingLevel} id={sectionId}>
       {section.title}
     </Heading>
+  ) : heading && !controls ? (
+    <EmbedHeader
+      view={view}
+      heading={heading}
+      count={count}
+      end={showAllHref ? <Link href={showAllHref}>Visa allt</Link> : end}
+    />
   ) : (
     <ViewHeader view={view} count={count} end={end} />
   );

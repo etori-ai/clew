@@ -177,7 +177,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day and the model's status are extras.
   const failed = [threadsQ, areasQ].find(q => q.isError && q.data === undefined);
   const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.') : null;
-  const railCurrent: RailCurrent = { surface: 'start', conversationId };
+  const railCurrent: RailCurrent = { surface: 'start', conversationId, conversation: talk.open };
   // A conversation is named by its question; the log speaks its answers and the box keeps the focus, so the change of
   // title is not spoken as Hem's is.
   const pageTitle = talk.open ? conversationTitle(talk) : 'Hem';

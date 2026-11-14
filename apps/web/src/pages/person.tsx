@@ -37,7 +37,6 @@ import {
 import { TALK_PARAM } from '../talk-address';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell';
-import { FieldValue } from '../components/view';
 import { ContentSkeleton } from '../components/loading';
 import { AskClew } from '../components/thing-panel';
 import { TalkTab } from '../components/talk-overlay';
@@ -173,9 +172,10 @@ function PersonFacts({ detail, from }: { detail: EntityDetail; from: string | nu
       )}
       <RailSection title="Kontakt">
         <MetadataList label={mobile ? LABELS_ABOVE : SECTION_LABELS}>
+          {/* The address is the fact's one link and the number its text, as the board draws Kontakt. */}
           {profile?.email && (
             <MetadataListItem label="E-post">
-              <FieldValue field={{ key: 'email', label: 'E-post', format: 'email' }} value={profile.email} />
+              <Link href={`mailto:${profile.email}`}>{profile.email}</Link>
             </MetadataListItem>
           )}
           {profile?.phoneNumbers.map(phone => (
@@ -183,10 +183,7 @@ function PersonFacts({ detail, from }: { detail: EntityDetail; from: string | nu
               key={JSON.stringify([phone.type, phone.value])}
               label={phoneLabel.get(phone.type) ?? phone.type}
             >
-              <FieldValue
-                field={{ key: 'phone', label: 'Telefon', format: 'phone' }}
-                value={phone.value.replace(/^tel:/i, '')}
-              />
+              <Text>{phone.value.replace(/^tel:/i, '')}</Text>
             </MetadataListItem>
           ))}
           <MetadataListItem label="Användarnamn">

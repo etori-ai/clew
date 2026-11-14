@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { daysUntil, sameSubject, snoozeWhen, stockholmDate, type ItemEvent, type Thread } from '@clew/contracts';
 import {
-  Avatar,
   Badge,
   Banner,
   Button,
@@ -27,6 +26,7 @@ import {
   StatusDot,
   Text,
   VStack,
+  XMarkIcon,
   useMediaQuery,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
@@ -434,11 +434,10 @@ function Events({ thread }: { thread: Thread }) {
         </HStack>
       </VStack>
     );
+  // Who did it is the first word of the row (board Ärende's Händelser), with no mark before it.
   const row = (key: string, by: 'you' | 'clew', words: string, when: string) => (
     <ListItem
       key={key}
-      align="first-line"
-      startContent={<Avatar name={by === 'you' ? 'Du' : 'Clew'} size="xsm" tooltip={false} aria-hidden />}
       // As Text, which wraps: a label given as a string is cut to one line, and what is cut cannot be read (1.4.10).
       label={<Text>{`${by === 'you' ? 'Du' : 'Clew'} ${words}`}</Text>}
       description={<Text type="supporting">{when}</Text>}
@@ -545,6 +544,7 @@ function Read({
   visual,
   idBase,
   facts,
+  gap = 6,
 }: {
   thread: Thread;
   item: ItemState;
@@ -554,12 +554,14 @@ function Read({
   idBase: string;
   /** The facts, where they stand in the read's flow (the pane, a narrow page): first, with a rule under them. */
   facts?: ReactNode;
+  /** The space between the sections: the pane's step (board Att göra), or the page's wider one (board Ärende). */
+  gap?: 6 | 8;
 }) {
   const receipt = thread.receipt;
   const documents = reviewedAction(thread)?.preview ? thread.items.some(i => i.selectable) : false;
   const id = (part: string) => `${idBase}-${thread.id}-${part}`;
   return (
-    <VStack gap={6}>
+    <VStack gap={gap}>
       {receipt && <Receipt thread={thread} actions={item.actions} systems={item.systems} />}
       {facts}
       <Lead thread={thread} item={item} />
@@ -680,7 +682,12 @@ export function WorkItem({
           </VStack>
         </StackItem>
         {onClose && (
-          <IconButton variant="ghost" size="sm" label="Stäng ärendet" icon={<Icon icon="close" />} onClick={onClose} />
+          <IconButton
+            variant="ghost"
+            label="Stäng ärendet"
+            icon={<Icon icon={XMarkIcon} size="sm" />}
+            onClick={onClose}
+          />
         )}
       </HStack>
       <ActionRow thread={thread} actions={item.actions} readHref={item.readHref} omit={item.omit} ask={ask} />
@@ -794,7 +801,8 @@ export function WorkItemPage({
       }
       factsAbove={false}
     >
-      <Read thread={thread} item={item} level={2} visual={2} idBase="item" facts={narrow ? facts : undefined} />
+      {/* The sections are the page's second level, drawn at the size the board gives them (board Ärende). */}
+      <Read thread={thread} item={item} level={2} visual={3} gap={8} idBase="item" facts={narrow ? facts : undefined} />
     </PageFrame>
   );
 }

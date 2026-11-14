@@ -180,6 +180,7 @@ export {
   Squares2X2Icon,
   UserCircleIcon,
   UsersIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 // The area mark (D71): the system's hue in registration order, the area's icon, the word always beside them.

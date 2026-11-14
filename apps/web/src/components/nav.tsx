@@ -93,6 +93,11 @@ export interface RailCurrent {
     | 'admin';
   conversationId?: string | null;
   /**
+   * A conversation takes the start page's column, a new one (`/conversations/new`) included: Hem is not the place, and
+   * a conversation the rail does not list marks "Alla samtal" (board Samtal's rail).
+   */
+  conversation?: boolean;
+  /**
    * The capability whose tool page is open (D42), so its row under Verktyg is marked; null on a tool's page that does not
    * know it is a tool, where the rail marks the tool whose page the address is.
    */
@@ -285,7 +290,7 @@ export function useRail({
             label="Hem"
             icon={HomeIcon}
             href="/"
-            isSelected={current.surface === 'start' && !current.conversationId}
+            isSelected={current.surface === 'start' && !current.conversationId && !current.conversation}
           />
           {/* Att göra (D112 item 3) with how much needs the person: the count Behöver dig has in the queue. */}
           <SideNavItem
@@ -360,7 +365,10 @@ export function useRail({
               label="Alla samtal"
               icon={ChatBubbleLeftRightIcon}
               href="/conversations"
-              isSelected={current.surface === 'conversations'}
+              isSelected={
+                current.surface === 'conversations' ||
+                (!!current.conversation && !conversations.some(t => t.id === current.conversationId))
+              }
             />
           </SideNavSection>
         )}

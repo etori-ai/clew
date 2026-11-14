@@ -1,6 +1,6 @@
 import { useId, type ReactNode, type Ref } from 'react';
 import { useNavigate } from 'react-router';
-import { Divider, Heading, HStack, StackItem, Tab, TabList, TabMenu, Text, VStack, useMediaQuery } from '@clew/ui';
+import { Heading, HStack, StackItem, Tab, TabList, TabMenu, Text, VStack, useMediaQuery } from '@clew/ui';
 import { mobileQuery } from '../media';
 import { PageFrame } from './page-frame';
 
@@ -9,7 +9,7 @@ import { PageFrame } from './page-frame';
  * item's page has, `WorkItemPage`): the way back with where the thing stands on the same line, then the thing's mark (a
  * person's avatar), its name and its line, and its actions at the end of the name's line (on a phone under it), then
  * the thing's tabs where it has them, each a link with its own address (D126 rule 9). The column holds the tab's
- * sections one under the other, each with its heading and a rule between them; the facts are a 340 px end panel, a
+ * sections one under the other, each with its heading, a wide step apart; the facts are a 340 px end panel, a
  * named complementary region, and above the read at 1024 px and below, as on the work item's page. Nothing opens over
  * or beside the page (rule 3). On a short screen nothing is pinned and the page scrolls as one (1.4.10).
  */
@@ -136,16 +136,14 @@ export function EntityPage({
   /** Where the thing stands, under the name's line and before the phone's actions: a plan's progress (D124). */
   meta?: ReactNode;
 }) {
+  // The sections one under the other a wide step apart, with no rule between them (board Person).
   const read =
     sections.length === 0 ? (
       (empty ?? null)
     ) : (
-      <VStack gap={6}>
-        {sections.map((s, i) => (
-          <VStack key={s.key} gap={6}>
-            {i > 0 && <Divider />}
-            {s.node}
-          </VStack>
+      <VStack gap={8}>
+        {sections.map(s => (
+          <VStack key={s.key}>{s.node}</VStack>
         ))}
       </VStack>
     );
@@ -203,7 +201,7 @@ export function PageSection({
 }) {
   const id = useId();
   return (
-    <VStack as="section" gap={3} aria-labelledby={id}>
+    <VStack as="section" gap={2} aria-labelledby={id}>
       <HStack gap={2} vAlign="center" wrap="wrap">
         <StackItem size="fill">
           <Heading id={id} ref={headingRef} tabIndex={-1} level={2}>

@@ -22,6 +22,7 @@ export function LinkRow({
   endContent,
   isSelected = false,
   isExternal = false,
+  align,
 }: {
   id: string;
   itemKey: string;
@@ -40,6 +41,11 @@ export function LinkRow({
   isSelected?: boolean;
   /** The link leaves Clew: it opens in a new tab and says so. */
   isExternal?: boolean;
+  /**
+   * Where the start and end content stand: centred on the row as the boards draw Hem's rows (the default), or on the
+   * title's first line where the end holds two lines and the start a state dot (`WorkRow`).
+   */
+  align?: 'first-line' | undefined;
 }) {
   const link = useRef<HTMLAnchorElement>(null);
   return (
@@ -48,7 +54,7 @@ export function LinkRow({
       itemKey={itemKey}
       interactiveRef={link}
       isSelected={isSelected}
-      align="first-line"
+      {...(align ? { align } : {})}
       {...(startContent ? { startContent } : {})}
       label={
         <Link
@@ -106,6 +112,7 @@ export function WorkRow({
       href={href}
       title={thread.title}
       isSelected={isSelected}
+      align="first-line"
       startContent={<StatusDot variant={facts.state.variant} label={facts.state.label} aria-hidden />}
       description={rowLine(stale ? { ...facts, why: staleWhy(facts.why) } : facts)}
       descriptionLines={0}

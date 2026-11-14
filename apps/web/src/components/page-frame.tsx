@@ -29,6 +29,11 @@ export const PAGE_WIDTH = 1120;
 export const narrowPageQuery = '(max-width: 1024px)';
 /** The facts' end panel beside the column (board Person, board Ärende). */
 const FACTS_WIDTH = 340;
+/**
+ * The boards keep the page's 24 px inset on a phone (Hem, Att göra and Ärende at 390 px); only the narrowest screens,
+ * where 1.4.10 asks for 320 px, take the tighter 16 px.
+ */
+const tightQuery = '(max-width: 359px)';
 
 export type EntryStyle = NonNullable<ReturnType<typeof useEntryAnimation>> | undefined;
 /** Where a page's way back leads, by the name of the place (D116): "Personal", "Att göra", "Alla verktyg". */
@@ -150,8 +155,9 @@ export function PageFrame({
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
   const narrow = useMediaQuery(narrowPageQuery);
+  const tight = useMediaQuery(tightQuery);
   const pin = pinned ?? !short;
-  const gutter = mobile ? 4 : 6;
+  const gutter = tight ? 4 : 6;
   const metaLine =
     typeof meta === 'string' ? (
       <Text type="supporting" color="secondary">
@@ -166,11 +172,11 @@ export function PageFrame({
         {title}
       </Heading>
     );
+  // The way back and what stands beside it, a step apart with no rule between them (board Ärende).
   const wayLine =
     back || trail ? (
-      <HStack gap={3} wrap="wrap" vAlign="center">
+      <HStack gap={4} wrap="wrap" vAlign="center">
         {back && <WayBack back={back} />}
-        {back && trail && <Divider orientation="vertical" />}
         {trail}
       </HStack>
     ) : null;
@@ -179,7 +185,8 @@ export function PageFrame({
       <HStack gap={4} vAlign="center" wrap="wrap">
         {icon}
         <StackItem size="fill">
-          <VStack gap={0.5}>
+          {/* Hem's greeting stands a step further from its day line than a page's title from its facts (board Hem). */}
+          <VStack gap={plain ? 1 : 0.5}>
             {status ? (
               <HStack gap={3} vAlign="center" wrap="wrap">
                 {heading}
@@ -200,9 +207,17 @@ export function PageFrame({
   const header = hasHeader ? (
     <LayoutHeader padding={gutter} paddingBlockEnd={plain || tabs ? 0 : gutter} hasDivider={!plain}>
       <VStack gap={tabs ? 3 : 0}>
-        <VStack gap={mobile ? 3 : 4}>
-          {wayLine}
-          {titleLine}
+        <VStack gap={4}>
+          {/* The way back stands close over a title (board Ärende) and a full step over a title with an avatar or a
+              swatch before it (board Person). */}
+          {wayLine && titleLine ? (
+            <VStack gap={icon ? 4 : 2}>
+              {wayLine}
+              {titleLine}
+            </VStack>
+          ) : (
+            (wayLine ?? titleLine)
+          )}
           {mobile && !actionsOnLine && actions}
           {below}
         </VStack>
@@ -230,10 +245,13 @@ export function PageFrame({
       {children}
     </LayoutContent>
   ) : scrollTabStop && pin ? (
-    <LayoutContent padding={gutter} isScrollable={false}>
-      {/* Full bleed across the column so its scrollbar is the column's edge, inset back to the column's line; the frame's
-          own padding keeps the gap under the header. */}
-      <ScrollableArea label={label ?? 'Innehåll'} height="100%" isFullBleed paddingInline={gutter}>
+    // The scroller fills the column and publishes the frame's inset on every side as its own content padding, so the
+    // read starts a full step under the header's rule (board Ärende) and scrolls to the window's foot. The content keeps
+    // the least inset Astryx has (0 is full bleed and leaves the centred column), which the scroller's bleed takes back:
+    // a ScrollableArea is never taller than its box, so a bleed over the frame's whole inset stopped the read 48 px
+    // short of the foot (Astryx gap: ScrollableArea has no `maxHeight` to lift its 100% cap).
+    <LayoutContent padding={0.5} isScrollable={false}>
+      <ScrollableArea label={label ?? 'Innehåll'} height="100%" isFullBleed padding={gutter}>
         {column}
       </ScrollableArea>
     </LayoutContent>

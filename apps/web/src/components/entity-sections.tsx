@@ -14,6 +14,7 @@ import {
 } from '@clew/contracts';
 import {
   AreaChip,
+  Badge,
   Button,
   Card,
   DropdownMenu,
@@ -41,7 +42,8 @@ import { itemPageHref, rowFacts } from '../work-items';
 import { DOT } from '../dot';
 import { groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view';
-import { WorkList, WorkRow } from './work-row';
+import { LinkRow } from './work-row';
+import { staleWhy, useSilentSources } from './silent-sources';
 
 /**
  * The opened person's or unit's content (D97 item 5, D112 item 5, board Person): "Behöver dig" with the reader's work
@@ -352,10 +354,14 @@ export function personTitle(entity: EntityDetail['entity']): string | undefined 
   return detail.endsWith(suffix) ? detail.slice(0, -suffix.length) : detail;
 }
 
-/** Whose a section is (board Person): the source's name as a badge in the system's hue, Clew's own domain as Clew. */
+/**
+ * Whose a section is (board Person): the source's name as a badge in the system's hue. A section of Clew's own domain
+ * names no source (the product owner, 2026-11-14: what comes from Clew itself does not have to say "Clew").
+ */
 export function SourceBadge({ source }: { source: EntitySource }) {
   const ordinal = useMarks().system(source.connector)?.ordinal ?? null;
-  return <AreaChip ordinal={source.own ? null : ordinal} label={sourceCaption(source)} />;
+  if (source.own) return null;
+  return <AreaChip ordinal={ordinal} label={sourceCaption(source)} />;
 }
 
 /**
@@ -434,15 +440,16 @@ export function UnitSourceBody({ answer }: { answer: SectionAnswer }) {
 }
 
 /**
- * "Behöver dig" on a person's or a unit's page (board Person): the reader's work items about them, each the one row a
- * work item has everywhere (`WorkRow`: its state, title, why, when it is due, its source), its title the link to the
- * item's own page with this page as the way back (D126 rule 1). An item the stream does not hold (not read yet, or
- * past its history) keeps a plain row with its title and source.
+ * "Behöver dig" on a person's or a unit's page (board Person): the reader's work items about them as rows in a card,
+ * the row Hem draws (`LinkRow`): the title the link to the item's own page with this page as the way back (D126 rule
+ * 1), the system it comes from and why it is here under it, and when it is due as the badge at its end. An item the
+ * stream does not hold (not read yet, or past its history) keeps its title and its source.
  */
 export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
   const { pathname, search } = useLocation();
   const threads = useQuery(threadsQuery);
   const marks = useMarks();
+  const silent = useSilentSources();
   if (threads.isPending)
     return (
       <VStack gap={2}>
@@ -455,35 +462,45 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
     day = today();
   const from = pageOnly(pathname, search);
   return (
-    <WorkList label="Behöver dig">
-      {cards.map(c => {
-        const thread = threads.data?.threads.find(t => t.id === c.threadId);
-        const href = itemPageHref(c.threadId, from);
-        return thread ? (
-          <WorkRow
-            key={c.threadId}
-            thread={thread}
-            facts={rowFacts(thread, now, day)}
-            source={marks.ofThread(thread).source}
-            href={href}
-          />
-        ) : (
-          <ListItem
-            key={c.threadId}
-            label={
-              <Link href={href} weight="semibold" color="primary">
-                {c.title}
-              </Link>
-            }
-            endContent={
-              <Text type="supporting" color="secondary" textWrap="nowrap">
-                {c.source}
-              </Text>
-            }
-          />
-        );
-      })}
-    </WorkList>
+    <Card padding={0}>
+      <List hasDividers aria-label="Behöver dig">
+        {cards.map(c => {
+          const thread = threads.data?.threads.find(t => t.id === c.threadId);
+          const href = itemPageHref(c.threadId, from);
+          if (!thread)
+            return (
+              <LinkRow
+                key={c.threadId}
+                id={`work-${c.threadId}`}
+                itemKey={c.threadId}
+                href={href}
+                title={c.title}
+                description={c.source}
+              />
+            );
+          const facts = rowFacts(thread, now, day);
+          const mark = marks.ofThread(thread);
+          // A system of Clew's own is not named (the page is Clew's); an open item whose system does not answer says
+          // that it may be old, as Hem's rows do.
+          const own = !!marks.system(mark.connector) && mark.ordinal === null;
+          const stale = thread.state === 'open' && !!silent.of(thread.connector);
+          return (
+            <LinkRow
+              key={c.threadId}
+              id={`work-${c.threadId}`}
+              itemKey={c.threadId}
+              href={href}
+              title={thread.title}
+              description={[own ? null : mark.source, stale ? staleWhy(facts.why) : facts.why]
+                .filter(Boolean)
+                .join(DOT)}
+              descriptionLines={0}
+              endContent={facts.due ? <Badge variant={facts.due.variant} label={facts.due.label} /> : undefined}
+            />
+          );
+        })}
+      </List>
+    </Card>
   );
 }
 

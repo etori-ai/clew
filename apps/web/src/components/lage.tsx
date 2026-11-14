@@ -76,7 +76,8 @@ function Tile({ area, href }: { area: Area; href: string | null }) {
  * "Läget på <enhet>" on Hem (D54; D126, board Hem): a manager's unit at a glance in one row, at most four figures, the
  * worst status first (`lageOnHem`); a figure with nothing to show (an empty state, a source that does not answer) is
  * not drawn here. The unit's page holds every figure: the link at the end of the heading's line reads "Visa alla (N)"
- * when there are more than the row shows, else "Enhetens sida". The figure is the connector's and the drawing Clew's.
+ * when there are more than the row shows (the product owner, 2026-11-14: a person must see that the row is a
+ * selection), else "Enhetens sida" as the board draws it. The figure is the connector's and the drawing Clew's.
  */
 export function Lage({ areas, loading, unitLabel, unitId, tileHref }: Props) {
   const { pathname, search } = useLocation();
