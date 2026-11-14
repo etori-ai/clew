@@ -3371,6 +3371,18 @@ export const MessageMetaSchema = object({
       name: HandoverAssistantSchema.properties.name,
       source: HandoverAssistantSchema.properties.source,
       with: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 8 })),
+      /** Clew's own assistant chose where the question went (D125 item 11); absent when the person picked. */
+      routed: Type.Optional(Type.Literal(true)),
+      /** The assistant did not take the question (D125 item 12): the answer under it is Clew's own. */
+      declined: Type.Optional(Type.Literal(true)),
+    }),
+  ),
+  /** On Clew's own answer to a question another system's assistant handed back (D125 item 12): which assistant did. */
+  handedBack: Type.Optional(
+    object({
+      assistant: HandoverAssistantSchema.properties.id,
+      name: HandoverAssistantSchema.properties.name,
+      source: HandoverAssistantSchema.properties.source,
     }),
   ),
   /**
@@ -3387,6 +3399,8 @@ export const MessageMetaSchema = object({
       cites: Type.Optional(Type.Array(AssistantAskSourceSchema, { maxItems: ASK_SOURCES_MAX })),
       failed: Type.Optional(Type.Literal(true)),
       cut: Type.Optional(Type.Literal(true)),
+      /** The assistant considered the matter done and returned the conversation to Clew with this answer (D125 item 12). */
+      returned: Type.Optional(Type.Literal(true)),
     }),
   ),
 });
@@ -4646,6 +4660,15 @@ export const ConversationInput = object({
    * `chips` are then what the person chose to send with it, each checked on the server before anything leaves.
    */
   assistant: Type.Optional(HandoverAssistantSchema.properties.id),
+  /** With `assistant`: Clew's own assistant suggested it and the person said yes (D125 item 11). Recorded, never trusted for access. */
+  suggested: Type.Optional(Type.Literal(true)),
+  /** The person chose to let Clew answer: this turn is not offered to another system's assistant. */
+  own: Type.Optional(Type.Literal(true)),
+  /**
+   * With `assistant`: Clew held the question because it names someone the person manages or one of their cards, and
+   * the person chose to send it anyway (D125 item 13). Recorded with the turn.
+   */
+  confirmed: Type.Optional(Type.Literal(true)),
 });
 export type ConversationInput = Static<typeof ConversationInput>;
 /** One turn's answer: its shape, where it came from, and what it produced for the page. */
@@ -4692,12 +4715,43 @@ export type TurnStep = Static<typeof TurnStepSchema>;
 export const TurnEventSchema = Type.Union([
   object({ type: Type.Literal('step'), step: TurnStepSchema }),
   object({ type: Type.Literal('text'), delta: Type.String(), reset: Type.Optional(Type.Boolean()) }),
+  // The turn went to another system's assistant (D125): the text that follows is that assistant's, and is drawn as such from its first word.
+  object({
+    type: Type.Literal('handed'),
+    assistant: object({
+      id: HandoverAssistantSchema.properties.id,
+      name: HandoverAssistantSchema.properties.name,
+      source: HandoverAssistantSchema.properties.source,
+    }),
+  }),
+  // That assistant handed the question back (D125 item 12): what follows is Clew's own answer to it, and the listener
+  // says so before the first word of it.
+  object({
+    type: Type.Literal('handedBack'),
+    assistant: object({
+      id: HandoverAssistantSchema.properties.id,
+      name: HandoverAssistantSchema.properties.name,
+      source: HandoverAssistantSchema.properties.source,
+    }),
+  }),
 ]);
 export type TurnEvent = Static<typeof TurnEventSchema>;
 /** One server-sent event of `POST /api/conversation/stream` (D36): the turn's events, then the finished turn or the Swedish error. */
 export const ConversationEventSchema = Type.Union([
   TurnEventSchema,
   object({ type: Type.Literal('done'), response: ConversationResponseSchema }),
+  // Clew's own assistant suggests another system's assistant for the question (D125 item 11). Nothing has left Clew and
+  // nothing is saved: the person says yes (the question is sent again with `assistant` and `suggested`) or lets Clew
+  // answer (sent again with `own`).
+  object({ type: Type.Literal('offer'), assistant: HandoverAssistantSchema }),
+  // A question on its way to another system's assistant is held (D125 item 13): it names someone the person manages or
+  // one of their open cards. Nothing has left Clew and nothing is saved; the person lets Clew answer (sent again with
+  // `own`) or sends it anyway (sent again with `assistant` and `confirmed`).
+  object({
+    type: Type.Literal('hold'),
+    assistant: HandoverAssistantSchema,
+    about: Type.Union([Type.Literal('person'), Type.Literal('card')]),
+  }),
   object({ type: Type.Literal('error'), message: Type.String() }),
 ]);
 export type ConversationEvent = Static<typeof ConversationEventSchema>;

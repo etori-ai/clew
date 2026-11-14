@@ -175,7 +175,7 @@ async function converseStream(
   input: ConversationInput,
   onEvent: (event: TurnEvent) => void,
   signal?: AbortSignal,
-): Promise<ConversationResponse> {
+): Promise<ConversationResponse | { offer: HandoverAssistant; held?: 'person' | 'card' }> {
   const response = await sessionFetch('/api/conversation/stream', {
     method: 'POST',
     body: JSON.stringify(input),
@@ -215,6 +215,16 @@ async function converseStream(
       if (event.type === 'done') {
         void reader.cancel();
         return event.response;
+      }
+      // Clew's assistant suggests another system's assistant: nothing was sent or saved, and the person is asked.
+      if (event.type === 'offer') {
+        void reader.cancel();
+        return { offer: event.assistant };
+      }
+      // Clew held a question on its way to another system's assistant: it names the person's staff or one of their cards.
+      if (event.type === 'hold') {
+        void reader.cancel();
+        return { offer: event.assistant, held: event.about };
       }
       if (event.type === 'error') {
         void reader.cancel();

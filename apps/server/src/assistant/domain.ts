@@ -46,3 +46,29 @@ export class TurnStopped extends Error {
     this.name = 'TurnStopped';
   }
 }
+
+/**
+ * Clew's own assistant suggests handing the question to another system's assistant (D125 item 11). Nothing has left
+ * Clew and nothing was saved: the person is asked first. Carries only what the box needs to ask them.
+ */
+export class HandoverOffered extends Error {
+  constructor(readonly assistant: { id: string; name: string; description?: string; source: string }) {
+    super('Frågan kan lämnas till en assistent i ett annat system.');
+    this.name = 'HandoverOffered';
+  }
+}
+
+/**
+ * A question on its way to another system's assistant is held (D125 item 13): it names someone the person manages or
+ * one of their open cards. Nothing has left Clew and nothing was saved: the person is asked first. It says which kind
+ * of thing the question names, never which person or card.
+ */
+export class HandoverHeld extends Error {
+  constructor(
+    readonly assistant: { id: string; name: string; description?: string; source: string },
+    readonly about: 'person' | 'card',
+  ) {
+    super('Frågan nämner något som hör hemma i Clew.');
+    this.name = 'HandoverHeld';
+  }
+}

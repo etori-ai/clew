@@ -1,5 +1,11 @@
 # The Eneo connector
 
+> **To be retired.** The product owner decided on 2026-11-14 that Eneo serves Clew's connector protocol from its own
+> backend ([D125](../../docs/decisions/D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md)
+> item 9). This adapter stays until that native connector passes `scripts/connector-check.ts`; it is the reference
+> for what the native one must declare and how Eneo's answer stream maps to the protocol's events. Nothing new is
+> built here.
+
 Eneo's retrieval over the person's knowledge bases as a search source for Clew (D14, D26). Clew's composite search asks
 it beside every other source; the person sees Eneo's passages as citations and in the sources view, and nothing of the
 source document is indexed in Clew. It also carries the assistants profile (D125): the assistants an owner in Eneo made available to other clients can be picked in Clew's box, and a question then goes to the whole assistant in Eneo. The connector uses Node and the companion protocol 3 verifier, in the same service shape as [hello](../hello/README.md). Start with the [integrator guide](../../docs/guides/creating-a-connector.md) and [authorization](../../docs/guides/authorization.md).

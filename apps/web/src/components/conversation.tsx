@@ -1,6 +1,7 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type {
+  HandoverAssistant,
   CalendarEvent,
   Draft,
   MessageMeta,
@@ -11,7 +12,9 @@ import type {
   ViewRef,
 } from '@clew/contracts';
 import {
+  AreaChip,
   AreaGlyph,
+  Avatar,
   Badge,
   Button,
   Card,
@@ -41,6 +44,7 @@ import {
   VStack,
   agendaItems,
   useAnimatedLayout,
+  useEntryAnimation,
   useStreamingText,
   type AnimatedLayout,
   type ChatToolCallItem,
@@ -52,7 +56,7 @@ import { calendarWeekQuery, threadQuery, viewQuery } from '../queries';
 import { DeclaredView } from './view';
 import { useConversation } from './conversation-context';
 import { reviewLabel, staleLabel } from './panel-labels';
-import { useObjectMark } from '../marks';
+import { useMarks, useObjectMark } from '../marks';
 import { FigureLines } from './figure-line';
 import { requestAction } from '../action-requests';
 import { valueText, type ActionStep } from '../action-path';
@@ -152,6 +156,192 @@ function ActionDraftCard({
   );
 }
 
+/**
+ * Another assistant's answer with its lines kept: it is drawn as Markdown, where a single line break joins two lines,
+ * and an assistant that was not written for Clew puts one thing per line. Each such break becomes a hard one; blank
+ * lines, which already part paragraphs, are left.
+ */
+export const keepLines = (body: string) => body.replace(/([^\n])\n(?=[^\n])/g, '$1  \n');
+/** The other system's assistant that wrote an answer, or undefined: Clew's own answers, and Clew's words about one that failed. */
+const answeredBy = (m: ThreadMessage) => (m.meta?.handover && !m.meta.handover.failed ? m.meta.handover : undefined);
+/** Whom a question went to: another system's assistant, or null for Clew. */
+const askedOf = (m: ThreadMessage) => m.meta?.handed ?? null;
+const lastQuestion = (messages: ThreadMessage[]) => [...messages].reverse().find(x => x.role === 'user');
+/** A line in the transcript where whom the person talks to changes: its words, and the system it turns to, if any. */
+interface TurnLineContent {
+  text: string;
+  /** The other system the conversation turns to: its connector, for the colour of its mark, and its word. Absent for Clew. */
+  system?: { connector: string; source: string };
+}
+const connectorOf = (assistant: string) => assistant.slice(0, assistant.indexOf(':'));
+const toAssistant = (to: { assistant: string; name: string; source: string }): TurnLineContent => ({
+  text: `Du pratar med ${to.name}`,
+  system: { connector: connectorOf(to.assistant), source: to.source },
+});
+const toClew = (text: string): TurnLineContent => ({ text });
+/**
+ * The line drawn above a question where the recipient changed: the first question to another assistant, a question to
+ * Clew after one, or to another assistant after Clew. Nothing where the conversation went on with the same one, and
+ * nothing above a conversation that starts with Clew.
+ */
+function switchLine(messages: ThreadMessage[], i: number): TurnLineContent | undefined {
+  const m = messages[i]!;
+  if (m.role !== 'user') return undefined;
+  const before = lastQuestion(messages.slice(0, i));
+  const to = askedOf(m);
+  const from = before ? recipientAfter(messages.slice(0, i)) : null;
+  if ((to?.assistant ?? null) === (from?.assistant ?? null)) return undefined;
+  return to ? toAssistant(to) : toClew('Du pratar med Clew igen');
+}
+/**
+ * Whom the conversation was with once its turns so far had ended: the assistant of the last question, unless that
+ * assistant handed the question back or answered and returned the conversation (D125 item 12), which has its own line.
+ */
+function recipientAfter(messages: ThreadMessage[]) {
+  const question = lastQuestion(messages);
+  const answer = [...messages].reverse().find(x => x.role === 'assistant');
+  if (!question || answer?.meta?.handedBack || answer?.meta?.handover?.returned) return null;
+  return askedOf(question);
+}
+/** The line under a turn in which the assistant returned the conversation: it is done. */
+function returnLine(m: ThreadMessage): TurnLineContent | undefined {
+  return m.role === 'assistant' && m.meta?.handover?.returned
+    ? toClew(`${m.meta.handover.name} är klar · du pratar med Clew igen`)
+    : undefined;
+}
+/** The words above Clew's own answer to a question another assistant handed back. */
+const handedBackText = (name: string) => `${name} lämnade tillbaka frågan · Clew svarar`;
+function handedBackLine(m: ThreadMessage): TurnLineContent | undefined {
+  return m.role === 'assistant' && m.meta?.handedBack ? toClew(handedBackText(m.meta.handedBack.name)) : undefined;
+}
+/** The same line for the question on its way. */
+function pendingSwitch(
+  messages: ThreadMessage[],
+  pending: { handed?: { id: string; name: string; source: string } },
+): TurnLineContent | undefined {
+  const from = recipientAfter(messages);
+  const to = pending.handed ?? null;
+  if ((to?.id ?? null) === (from?.assistant ?? null)) return undefined;
+  return to ? toAssistant({ assistant: to.id, name: to.name, source: to.source }) : toClew('Du pratar med Clew igen');
+}
+/**
+ * A line in the transcript where whom the person talks to changes (D125 items 5 and 12): Astryx's system message, with
+ * the words in the interface's strong weight and, before them, the mark of who answers from here on: the other system's, in
+ * its own colour and with its word, or Clew's own. It enters on Astryx's entry motion when it appears in a conversation
+ * already on the page, so a change that takes a moment (an assistant handing a question back) is seen as it happens;
+ * nothing moves when the conversation is opened with the line already in it, or under reduced motion.
+ */
+function TurnLine({ line }: { line: TurnLineContent }) {
+  const marks = useMarks();
+  const entry = useEntryAnimation('slideDown');
+  // The status row, not the ruled divider: its content wraps, which a mark and a sentence need at 320 px (1.4.10).
+  return (
+    <ChatSystemMessage xstyle={entry ?? undefined}>
+      <HStack gap={2} vAlign="center" hAlign="center" wrap="wrap">
+        {line.system ? (
+          <AreaChip ordinal={marks.system(line.system.connector)?.ordinal ?? null} label={line.system.source} />
+        ) : (
+          <Icon icon={SparklesIcon} size="sm" color="accent" />
+        )}
+        <Text weight="semibold" color="primary">
+          {line.text}
+        </Text>
+      </HStack>
+    </ChatSystemMessage>
+  );
+}
+/** The mark of another system's assistant beside what it wrote: its initials on a rounded tile, as a person's are on a round one. */
+function AssistantMark({ name }: { name: string }) {
+  return <Avatar name={name} size="sm" shape="rounded" tooltip={false} />;
+}
+/**
+ * Above what another system's assistant wrote: its name, and the mark of the system it lives in, in that system's own
+ * colour (D71) with the system's word on it, so the colour never stands alone. With the surface under it and the
+ * assistant's initials beside it, that says whose answer this is without saying whose it is not.
+ */
+function AssistantName({ assistant, name, source }: { assistant: string; name: string; source: string }) {
+  const marks = useMarks();
+  return (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      <Text weight="semibold">{name}</Text>
+      <AreaChip ordinal={marks.system(assistant.slice(0, assistant.indexOf(':')))?.ordinal ?? null} label={source} />
+    </HStack>
+  );
+}
+/**
+ * Clew's suggestion to hand the question to another system's assistant, and the person's two answers to it. The first
+ * button takes the focus when it appears, since the turn waits for this choice; either button sends the question as it
+ * was written, to that assistant or to Clew.
+ */
+function HandoverOffer({
+  offer,
+  held,
+  isDisabled,
+}: {
+  offer: HandoverAssistant;
+  held?: 'person' | 'card' | undefined;
+  isDisabled: boolean;
+}) {
+  const talk = useConversation();
+  const first = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    first.current?.focus();
+  }, [offer.id, held]);
+  // A question Clew held on its way out (D125 item 13): the safe answer comes first and takes the focus.
+  if (held)
+    return (
+      <VStack gap={3}>
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Inte skickad" />
+          <Text>
+            {`Frågan ser ut att gälla ${held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Skickar du den till `}
+            <Text as="span" weight="semibold">
+              {offer.name}
+            </Text>
+            {` lämnar den Clew och hamnar i ${offer.source}.`}
+          </Text>
+        </HStack>
+        <HStack gap={2} wrap="wrap">
+          <Button
+            ref={first}
+            size="sm"
+            variant="primary"
+            label="Låt Clew svara"
+            isDisabled={isDisabled}
+            onClick={talk.declineOffer}
+          />
+          <Button
+            size="sm"
+            label={`Skicka till ${offer.name} ändå`}
+            isDisabled={isDisabled}
+            onClick={talk.acceptOffer}
+          />
+        </HStack>
+      </VStack>
+    );
+  return (
+    <VStack gap={3}>
+      <Text>
+        <Text as="span" weight="semibold">
+          {offer.name}
+        </Text>
+        {` i ${offer.source} kan svara på det här. Väljer du det skickas din fråga dit, precis som du skrev den, och inget annat från samtalet.`}
+      </Text>
+      {offer.description && <Text type="supporting">{offer.description}</Text>}
+      <HStack gap={2} wrap="wrap">
+        <Button
+          ref={first}
+          size="sm"
+          variant="primary"
+          label={`Fråga ${offer.name}`}
+          isDisabled={isDisabled}
+          onClick={talk.acceptOffer}
+        />
+        <Button size="sm" label="Låt Clew svara" isDisabled={isDisabled} onClick={talk.declineOffer} />
+      </HStack>
+    </VStack>
+  );
+}
 /**
  * Under an answer another system's assistant wrote: the sources it cites, as that system named them, each a link when
  * it has an address; that the answer was longer than Clew keeps, when it was; and the way to the same conversation in
@@ -463,6 +653,8 @@ export function Transcript({
   // the person unfolds it, so a long conversation opened again reads one view.
   const cardOf = (i: number, m: ThreadMessage) =>
     m.role === 'assistant' ? answerCard(m.meta, i === n - 1 && !pending) : undefined;
+  // Another system's assistant has answered in this conversation: then every answer says whose it is.
+  const mixed = messages.some(m => !!m.meta?.handover || !!m.meta?.handed || !!m.meta?.handedBack) || !!pending?.handed;
   const panel = place === 'panel';
   // The thing the panel is about is named in its header: its chip is not repeated above every question.
   const tokens = (chips: { ref: string; label: string }[] | undefined) =>
@@ -481,24 +673,41 @@ export function Transcript({
     <VStack gap={3} ref={transcriptArea}>
       <ChatMessageList density={panel ? 'compact' : 'balanced'} align={panel ? 'top' : 'bottom'} isStreaming={busy}>
         {[
-          ...messages.map((m, i) => (
+          ...messages.flatMap((m, i) => [
+            // Where the person turned to another system's assistant, or back to Clew, the transcript says so once.
+            ...(switchLine(messages, i) || handedBackLine(m)
+              ? [<TurnLine key={`switch-${i}`} line={(switchLine(messages, i) ?? handedBackLine(m))!} />]
+              : []),
             <ChatMessage
               key={`turn-${i}`}
               sender={m.role}
+              /* An answer another system's assistant wrote carries that assistant's mark beside it; Clew's own has none. */
+              avatar={
+                m.role === 'assistant' && answeredBy(m) ? <AssistantMark name={answeredBy(m)!.name} /> : undefined
+              }
               /* The assistant's turn names itself and what it read (artboard G: "Assistenten · läste Mitt team"); the person's turn is theirs. */
               name={
                 m.role === 'user' ? (
                   <VisuallyHidden>Du</VisuallyHidden>
+                ) : answeredBy(m) ? (
+                  <AssistantName
+                    assistant={answeredBy(m)!.assistant}
+                    name={answeredBy(m)!.name}
+                    source={answeredBy(m)!.source}
+                  />
                 ) : (
                   <HStack gap={1} vAlign="center">
-                    <Icon icon={SparklesIcon} size="sm" color="accent" />
+                    <Icon
+                      icon={m.meta?.handover?.failed ? 'warning' : SparklesIcon}
+                      size="sm"
+                      color={m.meta?.handover?.failed ? 'warning' : 'accent'}
+                    />
                     <Text type="supporting">
                       {m.meta?.handover
-                        ? // Another system's assistant wrote this, or did not answer: its name and its system, never "Assistenten".
-                          m.meta.handover.failed
-                          ? `Clew\u00a0· ${m.meta.handover.name} svarade inte`
-                          : `${m.meta.handover.name}\u00a0· ${m.meta.handover.source}`
-                        : `Assistenten${
+                        ? // The other system did not answer: these are Clew's words, never under the assistant's name.
+                          `Clew\u00a0· ${m.meta.handover.name} svarade inte`
+                        : // Beside another assistant's answers, Clew's own are named as Clew's.
+                          `${mixed ? 'Clew' : 'Assistenten'}${
                             m.meta?.view
                               ? `\u00a0· läste ${m.meta.view.title}`
                               : m.meta?.source && m.meta.source !== 'Assistenten'
@@ -518,7 +727,9 @@ export function Transcript({
                 </HStack>
               )}
               <ChatMessageBubble
-                variant={m.role === 'assistant' ? 'ghost' : 'filled'}
+                /* Clew's answers are on the page itself; another assistant's answer is on a surface of its own, with its
+                   sources and the way on inside it, so everything on that surface is visibly that assistant's. */
+                variant={m.role === 'assistant' && !answeredBy(m) ? 'ghost' : 'filled'}
                 width={m.role === 'assistant' ? '100%' : undefined}
                 metadata={
                   <ChatMessageMetadata
@@ -527,7 +738,10 @@ export function Transcript({
                       m.role === 'assistant'
                         ? answerFooter(m.meta)
                         : m.meta?.handed
-                          ? `Skickat till ${m.meta.handed.name}`
+                          ? // Who sent it on: the person by their own choice, or Clew's assistant for them.
+                            m.meta.handed.routed
+                            ? `Clew skickade frågan till ${m.meta.handed.name}`
+                            : `Skickat till ${m.meta.handed.name}`
                           : undefined
                     }
                   />
@@ -542,7 +756,7 @@ export function Transcript({
                         ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const }
                         : {})}
                     >
-                      {m.body}
+                      {answeredBy(m) ? keepLines(m.body) : m.body}
                     </Markdown>
                     {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
                     {m.meta?.handover && !m.meta.handover.failed && <HandoverFoot handover={m.meta.handover} />}
@@ -596,12 +810,16 @@ export function Transcript({
                   </ChatSystemMessage>
                 )
               )}
-            </ChatMessage>
-          )),
+            </ChatMessage>,
+            ...(returnLine(m) ? [<TurnLine key={`return-${i}`} line={returnLine(m)!} />] : []),
+          ]),
           // The question on its way (D36): drawn at once as the person sent it, the answer under it pending. Skeleton lines
           // until something is known, the capabilities it reads as calls with a spinner and then their time, then the text.
           ...(pending
             ? [
+                ...(pendingSwitch(messages, pending) && !pending.back
+                  ? [<TurnLine key={`switch-${n}`} line={pendingSwitch(messages, pending)!} />]
+                  : []),
                 <ChatMessage key={`turn-${n}`} sender="user" name={<VisuallyHidden>Du</VisuallyHidden>}>
                   {tokens(pending.chips).length > 0 && (
                     <HStack gap={1} wrap="wrap">
@@ -621,36 +839,71 @@ export function Transcript({
                     {pending.text}
                   </ChatMessageBubble>
                 </ChatMessage>,
-                <ChatMessage
-                  key={`turn-${n + 1}`}
-                  sender="assistant"
-                  name={
-                    pending.handed ? (
+                // The assistant handed the question back while the turn runs: the line says so at once, and what is
+                // written under it is Clew's own answer.
+                ...(pending.back
+                  ? [<TurnLine key={`back-${n}`} line={toClew(handedBackText(pending.back.name))} />]
+                  : []),
+                pending.offer ? (
+                  <ChatMessage
+                    key={`turn-${n + 1}`}
+                    sender="assistant"
+                    name={
                       <HStack gap={1} vAlign="center">
                         <Icon icon={SparklesIcon} size="sm" color="accent" />
-                        <Text type="supporting">{`${pending.handed.name}\u00a0· ${pending.handed.source}`}</Text>
+                        <Text type="supporting">Clew</Text>
                       </HStack>
-                    ) : (
-                      <VisuallyHidden>Assistenten</VisuallyHidden>
-                    )
-                  }
-                >
-                  <ChatMessageBubble variant="ghost" width="100%">
-                    <VStack gap={2}>
-                      {pending.steps.length > 0 && (
-                        <ChatToolCalls calls={pending.steps.map(stepCall)} label={`${pending.steps.length} uppslag`} />
-                      )}
-                      {pending.answer ? (
-                        <StreamingAnswer text={pending.answer} />
+                    }
+                  >
+                    {/* Clew asks before anything leaves it (D125 item 11): the question stays as written above, and
+                        the person says where it goes. */}
+                    <ChatMessageBubble variant="ghost" width="100%">
+                      <HandoverOffer offer={pending.offer} held={pending.held} isDisabled={busy} />
+                    </ChatMessageBubble>
+                  </ChatMessage>
+                ) : (
+                  <ChatMessage
+                    key={`turn-${n + 1}`}
+                    sender="assistant"
+                    avatar={pending.handed ? <AssistantMark name={pending.handed.name} /> : undefined}
+                    name={
+                      pending.handed ? (
+                        <AssistantName
+                          assistant={pending.handed.id}
+                          name={pending.handed.name}
+                          source={pending.handed.source}
+                        />
+                      ) : pending.back ? (
+                        // Handed back: the answer on its way is Clew's own, and says so from the start.
+                        <HStack gap={1} vAlign="center">
+                          <Icon icon={SparklesIcon} size="sm" color="accent" />
+                          <Text type="supporting">Clew</Text>
+                        </HStack>
                       ) : (
-                        <VStack gap={2}>
-                          <Skeleton height={16} width="85%" />
-                          <Skeleton height={16} width="55%" index={1} />
-                        </VStack>
-                      )}
-                    </VStack>
-                  </ChatMessageBubble>
-                </ChatMessage>,
+                        <VisuallyHidden>Assistenten</VisuallyHidden>
+                      )
+                    }
+                  >
+                    <ChatMessageBubble variant={pending.handed ? 'filled' : 'ghost'} width="100%">
+                      <VStack gap={2}>
+                        {pending.steps.length > 0 && (
+                          <ChatToolCalls
+                            calls={pending.steps.map(stepCall)}
+                            label={`${pending.steps.length} uppslag`}
+                          />
+                        )}
+                        {pending.answer ? (
+                          <StreamingAnswer text={pending.handed ? keepLines(pending.answer) : pending.answer} />
+                        ) : (
+                          <VStack gap={2}>
+                            <Skeleton height={16} width="85%" />
+                            <Skeleton height={16} width="55%" index={1} />
+                          </VStack>
+                        )}
+                      </VStack>
+                    </ChatMessageBubble>
+                  </ChatMessage>
+                ),
               ]
             : []),
         ]}

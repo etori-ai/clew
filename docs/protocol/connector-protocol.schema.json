@@ -3568,6 +3568,46 @@
           "type": "object",
           "required": [
             "type",
+            "reason"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "handback"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "declined"
+                },
+                {
+                  "type": "string",
+                  "const": "completed"
+                }
+              ],
+              "description": "`declined`: the question is not this assistant's to answer; Clew answers it itself, with the person's own words. `completed`: the assistant has answered and expects nothing more; its answer stands and what the person writes next goes to Clew."
+            },
+            "session": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+              "description": "The source's own key for the conversation it keeps with the person. Opaque to Clew, which sends it back unchanged with a follow-up."
+            },
+            "link": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "pattern": "^https://[^\\s\\\\]+$"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
             "code"
           ],
           "properties": {
@@ -3599,7 +3639,7 @@
           "additionalProperties": false
         }
       ],
-      "description": "One server-sent event of `POST /clew/ask`, as the JSON of an SSE `data:` line. `error.code` is the protocol's: `denied` the person may not ask this assistant, `not-found` the assistant or the session is gone, `unavailable` the source or its model does not answer."
+      "description": "One server-sent event of `POST /clew/ask`, as the JSON of an SSE `data:` line. The stream ends with exactly one `done`, `handback` or `error`. `handback` returns the conversation to Clew (D125 item 12) and is never read as an instruction. `error.code` is the protocol's: `denied` the person may not ask this assistant, `not-found` the assistant or the session is gone, `unavailable` the source or its model does not answer."
     },
     "SourceAssistantsOutput": {
       "type": "object",

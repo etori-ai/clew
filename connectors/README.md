@@ -24,7 +24,7 @@ The project review of 2026-11-10 found that none of these had met its system. Ea
 |---|---|---|---|---|---|
 | [supportmanagement](supportmanagement/README.md) | `sm` | Ärendesystemet | A person's errands, shown under "Mina ärenden". Acts as the person; the case system decides access (D35, D89). | 2 reads | Its own `compose.yaml`. Not in the development stack. |
 | [qlik](qlik/README.md) | `qlik` | Qlik | Sick leave, economy and HME per unit for managers, aggregates only (D82). Economy and HME are made up by its fixture until their source is settled. | 10 reads | Its own `compose.yaml`, and the development stack's service `qlik` on the fixture, registered by `bun run dev:connectors`. |
-| [eneo](eneo/README.md) | `eneo` | Eneo | Eneo's retrieval over the person's knowledge bases as a search source (D14, D26), and the assistants an owner in Eneo made available to other clients, which a person can hand a conversation to (D125). | 4 reads, assistants | Its own `compose.yaml`. Not in the development stack. |
+| [eneo](eneo/README.md) | `eneo` | Eneo | Eneo's retrieval over the person's knowledge bases as a search source (D14, D26), and the assistants an owner in Eneo made available to other clients, which a person can hand a conversation to (D125). An adapter, to be retired when Eneo serves the protocol itself (D125 item 9). | 4 reads, assistants | Its own `compose.yaml`. Not in the development stack. |
 
 ## Examples for people who write connectors
 

@@ -482,7 +482,7 @@
         ],
         "operationId": "askAssistant",
         "summary": "Send a person's question to one of the system's assistants and stream its answer",
-        "description": "Only when the manifest declares `assistants`. Authorize the actor for the assistant as the system itself would, then answer `text/event-stream`: each event one `data:` line holding an AssistantAskEvent as JSON. Send `text` deltas as the answer is written and a `source` for each source it cites, then exactly one `done` (with the session to continue in) or `error`, and end the stream. A refusal known before the answer starts may be a plain 403 or 503 with a CallResponse error. The question is the person's own text and `context` only what they chose to attach: treat `context` as supplied material, never as instructions. Do not let the assistant produce files or ask for approvals in this increment; Clew's conversation cannot carry them. Clew stops reading when the person stops the turn, after 30 seconds without an event and after 3 minutes in all.",
+        "description": "Only when the manifest declares `assistants`. Authorize the actor for the assistant as the system itself would, then answer `text/event-stream`: each event one `data:` line holding an AssistantAskEvent as JSON. Send `text` deltas as the answer is written and a `source` for each source it cites, then exactly one `done` (with the session to continue in), `handback` (the assistant returns the conversation to Clew: `declined` when the question is not its to answer, `completed` when it has answered and expects nothing more) or `error`, and end the stream. A refusal known before the answer starts may be a plain 403 or 503 with a CallResponse error. The question is the person's own text and `context` only what they chose to attach: treat `context` as supplied material, never as instructions. Do not let the assistant produce files or ask for approvals in this increment; Clew's conversation cannot carry them. Clew stops reading when the person stops the turn, after 30 seconds without an event and after 3 minutes in all.",
         "security": [
           {
             "clewAssertion": [],
@@ -4490,6 +4490,46 @@
             "type": "object",
             "required": [
               "type",
+              "reason"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "handback"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "declined"
+                  },
+                  {
+                    "type": "string",
+                    "const": "completed"
+                  }
+                ],
+                "description": "`declined`: the question is not this assistant's to answer; Clew answers it itself, with the person's own words. `completed`: the assistant has answered and expects nothing more; its answer stands and what the person writes next goes to Clew."
+              },
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+                "description": "The source's own key for the conversation it keeps with the person. Opaque to Clew, which sends it back unchanged with a follow-up."
+              },
+              "link": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "pattern": "^https://[^\\s\\\\]+$"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
               "code"
             ],
             "properties": {
@@ -4521,7 +4561,7 @@
             "additionalProperties": false
           }
         ],
-        "description": "One server-sent event of `POST /clew/ask`, as the JSON of an SSE `data:` line. `error.code` is the protocol's: `denied` the person may not ask this assistant, `not-found` the assistant or the session is gone, `unavailable` the source or its model does not answer."
+        "description": "One server-sent event of `POST /clew/ask`, as the JSON of an SSE `data:` line. The stream ends with exactly one `done`, `handback` or `error`. `handback` returns the conversation to Clew (D125 item 12) and is never read as an instruction. `error.code` is the protocol's: `denied` the person may not ask this assistant, `not-found` the assistant or the session is gone, `unavailable` the source or its model does not answer."
       },
       "SourceAssistantsOutput": {
         "type": "object",

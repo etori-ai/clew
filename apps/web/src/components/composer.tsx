@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClewObject } from '@clew/contracts';
 import {
+  AreaChip,
   AreaGlyph,
   Button,
   ChatComposer,
@@ -9,12 +10,14 @@ import {
   ChatComposerInput,
   ChatDictationButton,
   DropdownMenu,
-  DropdownMenuDivider,
+  DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   HStack,
   Link,
   Text,
+  TextInput,
   Token,
   TypeaheadItem,
   VisuallyHidden,
@@ -27,28 +30,22 @@ import {
 } from '@clew/ui';
 import { mobileQuery } from './shell';
 import { api } from '../api';
-import { assistantQuery, handoverAssistantsQuery } from '../queries';
+import { assistantQuery, handoverAssistantsQuery, threadsQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { tokenValue, useClaimBox, useConversation, type AskFrom, type Handed } from './conversation-context';
-import { useObjectMark } from '../marks';
+import { useMarks, useObjectMark } from '../marks';
 
-/** What Clew's own side of the menu is called when no model is configured: the router answers (D8). */
-const CLEW = 'clew';
 /**
- * Who answers the next question, in the composer's footer slot that Astryx keeps for a model selector: Clew's own
- * models with what each is good for (D24), and under them the assistants of other systems the person may hand the
- * conversation to (the assistants profile). It is there whenever there is something to say: a model answers, also when
- * there is only one, so the box always says which model the next question goes to (D36), or another system's assistant
- * can be picked. Choosing a model saves the person's own preference on the server, which resolves the model on every
- * question. Choosing an assistant of another system saves nothing: from then on what the person writes in this box goes
- * to it, and the box says so above the field until they go back to Clew. A conversation is handed to one assistant, so
- * once it is, the menu offers that one only.
+ * The model choice (D24), in the composer's footer slot that Astryx keeps for a model selector: the person's models
+ * with what each is good for. It is there whenever one of Clew's models answers, also when there is only one, so the
+ * box always says which model the next question goes to (D36); without a model the router answers and there is nothing
+ * to choose. Choosing saves their own preference on the server, which resolves the model on every question; the toast
+ * says which one the next question uses. While the box talks to another system's assistant it is not drawn: no model
+ * of Clew's answers then.
  */
-function AnswerMenu({ isDisabled }: { isDisabled: boolean }) {
-  const talk = useConversation();
+function ModelMenu({ isDisabled }: { isDisabled: boolean }) {
   const status = useQuery(assistantQuery).data;
-  const listed = useQuery(handoverAssistantsQuery).data ?? [];
   const client = useQueryClient();
   const toast = useToast();
   const choose = useMutation({
@@ -63,24 +60,13 @@ function AnswerMenu({ isDisabled }: { isDisabled: boolean }) {
     onError: e =>
       toast({ body: errorMessage(e, 'Modellen kunde inte väljas.'), isAutoHide: false, uniqueID: 'model-choice' }),
   });
-  const kept = talk.conversation?.handover;
-  const assistants: Handed[] = kept
-    ? [{ id: kept.assistant, name: kept.name, source: kept.source }]
-    : listed.map(a => ({ id: a.id, name: a.name, source: a.source }));
-  const described = new Map(listed.map(a => [a.id, a.description]));
-  const current = status?.current;
-  if (!current && assistants.length === 0) return null;
-  const handed = talk.handed;
-  const title = handed?.name ?? current?.title ?? 'Clew';
+  if (!status?.current) return null;
+  const current = status.current;
   return (
     <DropdownMenu
       button={{
-        label: handed
-          ? `Svarar: ${handed.name} i ${handed.source}`
-          : current
-            ? `Modell: ${current.title}`
-            : 'Svarar: Clew',
-        children: title,
+        label: `Modell: ${current.title}`,
+        children: current.title,
         variant: 'ghost',
         size: 'sm',
         isDisabled: isDisabled || choose.isPending,
@@ -88,47 +74,149 @@ function AnswerMenu({ isDisabled }: { isDisabled: boolean }) {
       menuWidth={280}
     >
       <DropdownMenuRadioGroup
-        label={current ? 'Modell' : 'Clew'}
-        value={handed ? undefined : (current?.id ?? CLEW)}
+        label="Modell"
+        value={current.id}
         onChange={id => {
-          if (handed) talk.leaveHandover();
-          if (current && id !== current.id) choose.mutate(id);
+          if (id !== current.id) choose.mutate(id);
         }}
       >
-        {current ? (
-          status.choices.map(c => (
-            <DropdownMenuRadioItem
-              key={c.id}
-              value={c.id}
-              label={c.isDefault ? `${c.title} (standard)` : c.title}
-              description={c.description || undefined}
-            />
-          ))
-        ) : (
-          <DropdownMenuRadioItem value={CLEW} label="Clew" />
-        )}
+        {status.choices.map(c => (
+          <DropdownMenuRadioItem
+            key={c.id}
+            value={c.id}
+            label={c.isDefault ? `${c.title} (standard)` : c.title}
+            description={c.description || undefined}
+          />
+        ))}
       </DropdownMenuRadioGroup>
-      {assistants.length > 0 && <DropdownMenuDivider />}
-      {assistants.length > 0 && (
-        <DropdownMenuRadioGroup
-          label="Assistenter i andra system"
-          value={handed?.id}
-          onChange={id => {
-            const picked = assistants.find(a => a.id === id);
-            if (picked && picked.id !== handed?.id) talk.handTo(picked);
-          }}
-        >
-          {assistants.map(a => (
-            <DropdownMenuRadioItem
-              key={a.id}
-              value={a.id}
-              label={`${a.name} · ${a.source}`}
-              description={described.get(a.id) || undefined}
-            />
-          ))}
-        </DropdownMenuRadioGroup>
-      )}
     </DropdownMenu>
+  );
+}
+
+/** The value that stands for Clew's own assistant in the recipient menu. */
+const CLEW = 'clew';
+/** With more assistants than this the menu gets a field to narrow them by. */
+const FILTER_FROM = 7;
+/** The most assistants listed under "Senast". */
+const RECENT_MAX = 2;
+/**
+ * Whom the box talks to (D125 item 5), above the field where the person sees it before they write: a button that names
+ * the recipient ("Till: Clew", "Till: HR-assistenten") and opens the list. Astryx's DropdownMenu, since the list can be
+ * long: Clew first, always; the assistants of the conversations the person had last ("Senast"); then every assistant
+ * they may ask, grouped under the system it lives in, each with what it is for. With many, a field in the menu's header
+ * narrows them by name or description. What is selected gets the next message and every one after it, until the person
+ * selects another; "Tillbaka till Clew" beside the button is the one-press way back. A conversation is handed to one
+ * assistant, so once it is, the list is Clew and that assistant. Nothing is drawn when the person has no assistant to
+ * ask: the box is Clew's as before.
+ */
+function Recipient({ isDisabled }: { isDisabled: boolean }) {
+  const talk = useConversation();
+  const listed = useQuery(handoverAssistantsQuery).data ?? [];
+  const threads = useQuery(threadsQuery).data?.threads;
+  const [filter, setFilter] = useState('');
+  const marks = useMarks();
+  const kept = talk.conversation?.handover;
+  const handed = talk.handed;
+  const all: (Handed & { description?: string })[] = kept
+    ? [{ id: kept.assistant, name: kept.name, source: kept.source }]
+    : listed.map(a => ({
+        id: a.id,
+        name: a.name,
+        source: a.source,
+        ...(a.description ? { description: a.description } : {}),
+      }));
+  // The assistants of the person's latest handed-over conversations, newest first, among those they may still ask.
+  const recent = useMemo(() => {
+    if (kept || all.length <= RECENT_MAX) return [];
+    const ids = [...(threads ?? [])]
+      .filter(t => t.handover)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map(t => t.handover!.assistant);
+    return [...new Set(ids)]
+      .map(id => all.find(a => a.id === id))
+      .filter((a): a is (typeof all)[number] => !!a)
+      .slice(0, RECENT_MAX);
+  }, [threads, kept, all.map(a => a.id).join(' ')]);
+  if (all.length === 0) return null;
+  const needle = filter.trim().toLocaleLowerCase('sv-SE');
+  const matches = (a: (typeof all)[number]) =>
+    !needle || `${a.name} ${a.description ?? ''} ${a.source}`.toLocaleLowerCase('sv-SE').includes(needle);
+  const shown = all.filter(matches);
+  const sources = [...new Set(shown.map(a => a.source))];
+  const pick = (id: string) => {
+    setFilter('');
+    if (id === CLEW) {
+      if (handed) talk.leaveHandover();
+      return;
+    }
+    const picked = all.find(a => a.id === id);
+    if (picked && picked.id !== handed?.id) talk.handTo(picked);
+  };
+  const row = (a: (typeof all)[number]) => (
+    <DropdownMenuRadioItem key={a.id} value={a.id} label={a.name} description={a.description} />
+  );
+  const to = handed ? handed.name : 'Clew';
+  return (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      <DropdownMenu
+        button={{
+          label: `Till: ${to}`,
+          children: `Till: ${to}`,
+          variant: 'secondary',
+          size: 'sm',
+          isDisabled,
+        }}
+        menuWidth={340}
+        menuMaxHeight={460}
+        onOpenChange={open => {
+          if (!open) setFilter('');
+        }}
+        {...(all.length >= FILTER_FROM
+          ? {
+              header: (
+                <TextInput
+                  label="Sök assistent"
+                  isLabelHidden
+                  size="sm"
+                  placeholder={`Sök bland ${all.length} assistenter …`}
+                  value={filter}
+                  onChange={setFilter}
+                />
+              ),
+            }
+          : {})}
+      >
+        {(!needle || 'clew'.includes(needle)) && (
+          <DropdownMenuRadioGroup label="Clew" value={handed ? undefined : CLEW} onChange={pick}>
+            <DropdownMenuRadioItem value={CLEW} label="Clew" description="Dina ärenden, din kalender och dina system" />
+          </DropdownMenuRadioGroup>
+        )}
+        {!needle && recent.length > 0 && (
+          <DropdownMenuGroup title="Senast">
+            <DropdownMenuRadioGroup label="Senast" value={handed?.id} onChange={pick}>
+              {recent.map(row)}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuGroup>
+        )}
+        {sources.map(source => (
+          <DropdownMenuGroup key={source} title={source}>
+            <DropdownMenuRadioGroup label={`Assistenter i ${source}`} value={handed?.id} onChange={pick}>
+              {shown.filter(a => a.source === source).map(row)}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuGroup>
+        ))}
+        {needle && shown.length === 0 && !'clew'.includes(needle) && (
+          <DropdownMenuItem label="Ingen assistent matchar" isDisabled />
+        )}
+      </DropdownMenu>
+      {handed && <Button size="sm" variant="ghost" label="Tillbaka till Clew" onClick={() => talk.leaveHandover()} />}
+      {handed && (
+        <AreaChip
+          ordinal={marks.system(handed.id.slice(0, handed.id.indexOf(':')))?.ordinal ?? null}
+          label={handed.source}
+        />
+      )}
+    </HStack>
   );
 }
 
@@ -260,7 +348,7 @@ export function Composer({
       },
     };
   }, [talk.rememberObject, markOf]);
-  // Handed to another system's assistant: the box says whom it talks to, takes no chips and no `@`, and offers the way back.
+  // Handed to another system's assistant: the box says whom it talks to and takes no chips and no `@`.
   const handed = thing ? null : talk.handed;
   const placeholder = handed
     ? `Fråga ${handed.name} …`
@@ -277,14 +365,13 @@ export function Composer({
   const announced = useAddedAnnouncement(talk.chips);
   const mobile = useMediaQuery(mobileQuery);
   // The scope line (H3.3): in a conversation, the conversation. Hem's box has none, also with a card open beside it.
-  const scope = handed ? (
-    <Text type="supporting">
-      <Text as="span" weight="semibold" color="primary">
-        Du pratar med {handed.name}
-      </Text>
-      {`\u00a0· ${handed.source}`}
-      {mobile ? '' : '. Det du skriver skickas dit, inget annat från samtalet.'}
-    </Text>
+  // Above the field: whom the box talks to, when the person has another system's assistant to ask (D125 item 5), and
+  // otherwise the scope line (H3.3): in a conversation, the conversation. Hem's box has none without an assistant.
+  const recipients = !thing && place !== 'page';
+  const assistants = useQuery({ ...handoverAssistantsQuery, enabled: recipients }).data ?? [];
+  const choosable = recipients && (assistants.length > 0 || !!talk.conversation?.handover);
+  const scope = choosable ? (
+    <Recipient isDisabled={talk.busy} />
   ) : place === 'conversation' ? (
     <Text type="supporting">
       <Text as="span" weight="semibold" color="primary">
@@ -302,7 +389,8 @@ export function Composer({
       onChange={talk.setValue}
       onSubmit={text => void talk.submit(text, from)}
       isDisabled={talk.busy && !talk.pending}
-      isStopShown={!!talk.pending}
+      /* A suggestion waiting for the person's answer is no turn to stop. */
+      isStopShown={!!talk.pending && !talk.pending.offer}
       onStop={talk.stop}
       density={place === 'landing' ? 'balanced' : 'compact'}
       placeholder={placeholder}
@@ -352,31 +440,16 @@ export function Composer({
       }
       headerActions={scope}
       headerContext={
-        handed || place === 'conversation' ? (
-          <HStack gap={3} wrap="wrap">
-            {handed && (
-              <Link
-                href="/"
-                onClick={e => {
-                  e.preventDefault();
-                  talk.leaveHandover();
-                }}
-              >
-                Tillbaka till Clew
-              </Link>
-            )}
-            {place === 'conversation' && (
-              <Link
-                href="/"
-                onClick={e => {
-                  e.preventDefault();
-                  talk.newConversation();
-                }}
-              >
-                Ny fråga i stället
-              </Link>
-            )}
-          </HStack>
+        place === 'conversation' ? (
+          <Link
+            href="/"
+            onClick={e => {
+              e.preventDefault();
+              talk.newConversation();
+            }}
+          >
+            Ny fråga i stället
+          </Link>
         ) : undefined
       }
       footerActions={
@@ -397,12 +470,21 @@ export function Composer({
               ))}
             </HStack>
           )}
-          {place !== 'page' && !thing && <AnswerMenu isDisabled={talk.busy} />}
+          {place !== 'page' && !thing && !handed && <ModelMenu isDisabled={talk.busy} />}
           <VisuallyHidden role="status">{announced}</VisuallyHidden>
         </HStack>
       }
       sendActions={<Dictation onResult={text => talk.setValue((talk.value + ' ' + text).trim())} />}
-      status={talk.error ? { type: 'error', message: talk.error } : undefined}
+      /* While the box talks to another system's assistant it says so in the composer's own status line, above the
+         field where it is read before the first word is written (D125 item 13); an error takes its place. */
+      status={
+        talk.error
+          ? { type: 'error', message: talk.error }
+          : handed
+            ? { type: 'warning', message: `Du skriver till ${handed.name} i ${handed.source}, inte till Clew.` }
+            : undefined
+      }
+      statusPosition={!talk.error && handed ? 'top' : 'bottom'}
     />
   );
 }

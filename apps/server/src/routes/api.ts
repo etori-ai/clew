@@ -30,7 +30,7 @@ import type {
 } from '@clew/contracts';
 import type { ConversationEvent, ConversationInput as ConversationInputType } from '@clew/contracts';
 import { CalendarError } from '@clew/calendar/model';
-import { TurnStopped } from '../assistant';
+import { HandoverHeld, HandoverOffered, TurnStopped } from '../assistant';
 import type { ActInput as ActInputType, EffectInput as EffectInputType } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
 import { verbsFor } from '../assistant/verbs';
@@ -472,10 +472,23 @@ api.post('/conversation/stream', async c => {
     stream.onAbort(() => stop.abort());
     const send = (event: ConversationEvent) => stream.writeSSE({ data: JSON.stringify(event) }).catch(() => undefined);
     try {
-      const response = await converse(persona, input, { emit: event => void send(event), signal: stop.signal });
+      const response = await converse(persona, input, {
+        emit: event => void send(event),
+        signal: stop.signal,
+        // This caller can ask the person: Clew's assistant may suggest another system's assistant (D125 item 11).
+        offers: true,
+      });
       await send({ type: 'done', response });
     } catch (error) {
       if (error instanceof TurnStopped || stop.signal.aborted) return;
+      if (error instanceof HandoverOffered) {
+        await send({ type: 'offer', assistant: error.assistant });
+        return;
+      }
+      if (error instanceof HandoverHeld) {
+        await send({ type: 'hold', assistant: error.assistant, about: error.about });
+        return;
+      }
       if (!(error instanceof InputError || error instanceof CalendarError))
         logger.error({ scope: 'assistant', error }, 'conversation turn failed');
       await send({

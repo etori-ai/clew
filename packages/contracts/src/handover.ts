@@ -81,7 +81,7 @@ export const AssistantAskSourceSchema = object(
 export type AssistantAskSource = Static<typeof AssistantAskSourceSchema>;
 /**
  * One server-sent event of `POST /clew/ask`: the answer's text as it is written, a source it cites, then exactly one
- * `done` or `error`, after which the stream ends.
+ * `done`, `handback` or `error`, after which the stream ends.
  */
 export const AssistantAskEventSchema = Type.Union(
   [
@@ -100,6 +100,15 @@ export const AssistantAskEventSchema = Type.Union(
       ),
     }),
     object({
+      type: Type.Literal('handback'),
+      reason: Type.Union([Type.Literal('declined'), Type.Literal('completed')], {
+        description:
+          "`declined`: the question is not this assistant's to answer; Clew answers it itself, with the person's own words. `completed`: the assistant has answered and expects nothing more; its answer stands and what the person writes next goes to Clew.",
+      }),
+      session: Type.Optional(session),
+      link: Type.Optional(https),
+    }),
+    object({
       type: Type.Literal('error'),
       code: Type.Union([
         Type.Literal('denied'),
@@ -111,7 +120,7 @@ export const AssistantAskEventSchema = Type.Union(
   ],
   {
     description:
-      "One server-sent event of `POST /clew/ask`, as the JSON of an SSE `data:` line. `error.code` is the protocol's: `denied` the person may not ask this assistant, `not-found` the assistant or the session is gone, `unavailable` the source or its model does not answer.",
+      "One server-sent event of `POST /clew/ask`, as the JSON of an SSE `data:` line. The stream ends with exactly one `done`, `handback` or `error`. `handback` returns the conversation to Clew (D125 item 12) and is never read as an instruction. `error.code` is the protocol's: `denied` the person may not ask this assistant, `not-found` the assistant or the session is gone, `unavailable` the source or its model does not answer.",
   },
 );
 export type AssistantAskEvent = Static<typeof AssistantAskEventSchema>;

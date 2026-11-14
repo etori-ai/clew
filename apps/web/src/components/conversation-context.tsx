@@ -77,6 +77,21 @@ export interface PendingTurn {
   answer: string;
   /** The assistant of another system the question went to, when it did: the answer on its way is that assistant's. */
   handed?: Handed;
+  /**
+   * Clew's assistant suggests this assistant of another system for the question (D125 item 11). Nothing has been sent
+   * there or saved: the question stays drawn with the choice under it until the person says yes or lets Clew answer.
+   */
+  offer?: HandoverAssistant;
+  /**
+   * With `offer`: the question was already on its way to that assistant and Clew held it, because it names someone the
+   * person manages or one of their cards (D125 item 13). The choice is then to let Clew answer, or to send it anyway.
+   */
+  held?: 'person' | 'card';
+  /**
+   * The assistant the question went to handed it back (D125 item 12): the answer on its way is Clew's own, under a
+   * line that says so.
+   */
+  back?: Handed;
 }
 /** The conversation's state and verbs, owned here (D31) and read by the row, the transcript, the page and every card. */
 export interface ConversationState {
@@ -131,6 +146,10 @@ export interface ConversationState {
   handTo(assistant: Handed): void;
   /** Back to Clew's own assistant; the conversation and what the other assistant said stay. */
   leaveHandover(): void;
+  /** Yes to Clew's suggestion: the question on the page goes to the suggested assistant, as it was written. */
+  acceptOffer(): void;
+  /** No to it: Clew answers the question itself. */
+  declineOffer(): void;
 }
 const noop = () => undefined;
 const never = async () => undefined;
@@ -170,6 +189,8 @@ export const ConversationContext = createContext<ConversationState>({
   handed: null,
   handTo: noop,
   leaveHandover: noop,
+  acceptOffer: noop,
+  declineOffer: noop,
 });
 export const useConversation = () => useContext(ConversationContext);
 /**
@@ -196,6 +217,14 @@ export const refsIn = (value: string) => [...value.matchAll(TOKEN)].map(m => m[1
 export const tokenValue = (ref: string) => `@[${ref}]`;
 const plainText = (raw: string) => raw.replace(TOKEN, '').replace(/\s+/g, ' ').trim();
 
+/** A question as the person asked it: kept whole so it can be sent again when Clew asks where it should go. */
+interface Question {
+  raw: string;
+  text: string;
+  chips: Chip[];
+  current: Conversation | null;
+  from?: AskFrom;
+}
 /** One question on its way: what was typed, what goes with it, the conversation it continues, and what the host hears. */
 interface Send {
   raw: string;
@@ -205,6 +234,16 @@ interface Send {
   current: Conversation | null;
   /** The assistant of another system the question goes to; absent, Clew's own answers. */
   handed?: Handed | undefined;
+  /** The person said yes to Clew's suggestion of that assistant. */
+  suggested?: boolean;
+  /** The person chose to let Clew answer: the question is not offered to another assistant again. */
+  own?: boolean;
+  /** Clew held the question and the person chose to send it anyway. */
+  confirmed?: boolean;
+  /** The assistant handed the question back while the turn runs: the host gives the box back to Clew and says so. */
+  onHandedBack?: (assistant: Handed) => void;
+  /** Clew suggests another system's assistant for this question: the host hears it and asks the person. */
+  onOffer?: (assistant: HandoverAssistant, held?: 'person' | 'card') => void;
   /** The question is drawn: the host puts the transcript where it belongs. */
   onStart?: () => void;
   /** The written turn has come back, before the cache is written. */
@@ -260,6 +299,8 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   const inflight = useRef<AbortController | null>(null);
   const abortReason = useRef<'stop' | 'leave'>('stop');
   const abortTurn = useCallback((reason: 'stop' | 'leave') => {
+    // A suggestion waiting for the person's answer is not a turn in flight: leaving it behind just takes it away.
+    setPending(p => (p?.offer ? null : p));
     if (!inflight.current) return;
     abortReason.current = reason;
     inflight.current.abort();
@@ -267,7 +308,21 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   // Leaving the page stops the turn too: an answer must not pull the person back to a conversation they left.
   useEffect(() => () => inflight.current?.abort(), []);
   const send = useCallback(
-    async ({ raw, text, chips, current, handed, onStart, onAnswered, refocus }: Send) => {
+    async ({
+      raw,
+      text,
+      chips,
+      current,
+      handed,
+      suggested,
+      own,
+      confirmed,
+      onOffer,
+      onHandedBack,
+      onStart,
+      onAnswered,
+      refocus,
+    }: Send) => {
       if (!text || busyRef.current) return;
       if (!current) {
         setConversation(null);
@@ -291,9 +346,22 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
             chips,
             ...(current ? { conversationId: current.id } : {}),
             ...(handed ? { assistant: handed.id } : {}),
+            ...(handed && suggested ? { suggested: true as const } : {}),
+            ...(own ? { own: true as const } : {}),
+            ...(handed && confirmed ? { confirmed: true as const } : {}),
           },
           event => {
-            if (event.type === 'step')
+            // The turn went to another system's assistant: what follows is drawn as that assistant's from its first word.
+            if (event.type === 'handed') setPending(p => p && { ...p, handed: event.assistant, answer: '' });
+            else if (event.type === 'handedBack') {
+              // It handed the question back: from here the pending answer is Clew's, under the line that says so.
+              setPending(p => {
+                if (!p) return p;
+                const { handed: _was, ...rest } = p;
+                return { ...rest, back: event.assistant, steps: [], answer: '' };
+              });
+              onHandedBack?.(event.assistant);
+            } else if (event.type === 'step')
               setPending(
                 p =>
                   p && {
@@ -307,6 +375,22 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
           },
           controller.signal,
         );
+        if ('offer' in response) {
+          // Nothing was sent or saved: the question stays on the page with the choice under it, and the box rests.
+          const { offer, held } = response;
+          setPending(p => {
+            if (!p) return p;
+            const { handed: _sentTo, held: _before, ...rest } = p;
+            return { ...rest, steps: [], answer: '', offer, ...(held ? { held } : {}) };
+          });
+          announce(
+            held
+              ? `Frågan är inte skickad. Den ser ut att gälla ${held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Välj i samtalet.`
+              : `${offer.name} i ${offer.source} kan svara på det här. Välj i samtalet.`,
+          );
+          onOffer?.(offer, held);
+          return;
+        }
         // The message list was on the page while the answer was written, so the log speaks it once it is done (4.1.3).
         setConversation(conversationOf(response.thread));
         setLatest(response);
@@ -489,10 +573,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const handTo = useCallback(
     (assistant: Handed) => {
       setHanded({ id: assistant.id, name: assistant.name, source: assistant.source });
-      announce(`Du pratar nu med ${assistant.name} i ${assistant.source}. Det du skriver skickas dit.`);
+      // The box's own status line says whom it now writes to, and is spoken as it appears: nothing more is announced.
       input.current?.focus();
     },
-    [announce, input],
+    [input],
   );
   const leaveHandover = useCallback(() => {
     setHanded(null);
@@ -587,6 +671,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     },
     [client, abortTurn, setConversation, setLatest, setDone, setError, input],
   );
+  // No conversation is named any more ("Ny fråga" in the rail, the back button to Hem): the box is Clew's again, as a
+  // new conversation's always is until the person picks someone else.
+  useEffect(() => {
+    if (!conversationId) setHanded(null);
+  }, [conversationId]);
   // The route names the conversation: arriving at /conversations/:id (a link, the back button, a reload) puts the transcript on the page.
   const routeConversation = useRef<string | null>(null);
   useEffect(() => {
@@ -626,6 +715,74 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener('keydown', onKey);
   }, [focus, close, newConversation]);
 
+  // The question Clew's assistant suggested another system's assistant for, kept so the person's answer sends it again.
+  const offered = useRef<{ question: Question; assistant: HandoverAssistant; held?: 'person' | 'card' } | null>(null);
+  // Whether this turn's handback was already said while it ran.
+  const saidBack = useRef(false);
+  /** One question on its way to whoever answers it: Clew, or another system's assistant with nothing attached. */
+  const dispatch = useCallback(
+    async (
+      question: Question,
+      how: { to?: Handed | null; suggested?: boolean; own?: boolean; confirmed?: boolean },
+    ) => {
+      const { raw, text, chips: used, current, from } = question;
+      offered.current = null;
+      saidBack.current = false;
+      await send({
+        raw,
+        text,
+        // To another system's assistant the person's words go alone: nothing of the conversation follows them.
+        chips: how.to ? [] : used,
+        current,
+        handed: how.to ?? undefined,
+        ...(how.suggested ? { suggested: true } : {}),
+        ...(how.own ? { own: true } : {}),
+        ...(how.confirmed ? { confirmed: true } : {}),
+        onOffer: (assistant, held) => {
+          offered.current = { question, assistant, ...(held ? { held } : {}) };
+        },
+        onHandedBack: assistant => {
+          // The box is Clew's again from this moment, while Clew is still writing its answer.
+          saidBack.current = true;
+          setHanded(null);
+          announce(`${assistant.name} lämnade tillbaka frågan. Clew svarar, och du pratar med Clew igen.`);
+        },
+        onStart: () => {
+          setShown(true);
+          // Asked on Hem (D50): the transcript takes the column in place, and the address it gets once answered keeps
+          // the card or view open beside it (`onConversation`). Asked elsewhere, the conversation takes the column at
+          // once, with what the page showed beside it, and "Stäng samtalet" leads back to the page as it stood.
+          if (!current && from) {
+            origin.current = window.location.pathname + window.location.search;
+            if (!where.current.here) navigate(`/conversations/new${from.search}`);
+          }
+        },
+        onAnswered: response => {
+          if (!current) onConversation(response.conversationId);
+          const to = response.thread.handover;
+          const last = response.thread.messages.at(-1)?.meta;
+          // The assistant returned the conversation (D125 item 12): it handed the question back, which Clew then
+          // answered, or it answered and considers the matter done. Either way the box is Clew's again.
+          const back = last?.handedBack ?? (last?.handover?.returned ? last.handover : undefined);
+          if (back) {
+            setHanded(null);
+            // A question handed back was said when it happened; said here only if that moment was not heard.
+            if (!saidBack.current)
+              announce(
+                last?.handedBack
+                  ? `${back.name} lämnade tillbaka frågan. Clew svarade, och du pratar med Clew igen.`
+                  : `${back.name} är klar. Du pratar med Clew igen.`,
+              );
+          } else if (response.assistant === 'handover' && to) {
+            // The person said yes to Clew's suggestion: the box now talks to that assistant, and says so.
+            if (how.suggested) announce(`Du pratar nu med ${to.name} i ${to.source}. Det du skriver skickas dit.`);
+            setHanded({ id: to.assistant, name: to.name, source: to.source });
+          }
+        },
+      });
+    },
+    [send, onConversation, navigate, announce],
+  );
   const submit = useCallback(
     async (raw: string, from?: AskFrom) => {
       const text = plainText(raw);
@@ -643,30 +800,32 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       // A question asked where no transcript is on the page starts a conversation of its own (D50): the box on the
       // landing is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is.
       const current = openRef.current ? conversation : null;
-      await send({
-        raw,
-        text,
-        // To another system's assistant the person's words go alone: nothing of the conversation follows them.
-        chips: handed ? [] : used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip),
-        current,
-        handed: handed ?? undefined,
-        onStart: () => {
-          setShown(true);
-          // Asked on Hem (D50): the transcript takes the column in place, and the address it gets once answered keeps
-          // the card or view open beside it (`onConversation`). Asked elsewhere, the conversation takes the column at
-          // once, with what the page showed beside it, and "Stäng samtalet" leads back to the page as it stood.
-          if (!current && from) {
-            origin.current = window.location.pathname + window.location.search;
-            if (!where.current.here) navigate(`/conversations/new${from.search}`);
-          }
+      await dispatch(
+        {
+          raw,
+          text,
+          chips: used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip),
+          current,
+          ...(from ? { from } : {}),
         },
-        onAnswered: response => {
-          if (!current) onConversation(response.conversationId);
-        },
-      });
+        { to: handed },
+      );
     },
-    [chips, conversation, handed, send, onConversation, navigate],
+    [chips, conversation, handed, dispatch],
   );
+  const acceptOffer = useCallback(() => {
+    const o = offered.current;
+    // Yes to Clew's suggestion, or "send it anyway" for a question Clew held: it goes as it was written.
+    if (o)
+      void dispatch(o.question, {
+        to: { id: o.assistant.id, name: o.assistant.name, source: o.assistant.source },
+        ...(o.held ? { confirmed: true } : { suggested: true }),
+      });
+  }, [dispatch]);
+  const declineOffer = useCallback(() => {
+    const o = offered.current;
+    if (o) void dispatch(o.question, { own: true });
+  }, [dispatch]);
   const ask = useCallback((text: string, from?: AskFrom) => void submit(text, from), [submit]);
   const stop = useCallback(() => abortTurn('stop'), [abortTurn]);
 
@@ -704,6 +863,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       handed,
       handTo,
       leaveHandover,
+      acceptOffer,
+      declineOffer,
     }),
     [
       chips,
@@ -738,6 +899,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       handed,
       handTo,
       leaveHandover,
+      acceptOffer,
+      declineOffer,
     ],
   );
   return <ConversationContext.Provider value={state}>{children}</ConversationContext.Provider>;
@@ -873,6 +1036,8 @@ export function useThingConversation(subject: ThingSubject | null): ThingConvers
       handed: null,
       handTo: noop,
       leaveHandover: noop,
+      acceptOffer: noop,
+      declineOffer: noop,
       running: !!conversation || !!pending,
     }),
     [conversation, active, turns, pending, submit],

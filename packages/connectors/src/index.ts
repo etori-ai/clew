@@ -1676,8 +1676,9 @@ export class Registry implements HoldingsReader {
    * source lists for them now, read again for this question, so an assistant withdrawn in the source cannot be asked
    * by its old key. Events out of the profile's shape are the source's failure. The governance and the authority are
    * read again before the final event is released, so a turn whose permission ended while it was answered is refused
-   * and its caller stores nothing. Yields `text` and `source` events and ends with exactly one `done`; an `error`
-   * event, or a stream that ends without one, is thrown as a `CapabilityError` with the protocol's code.
+   * and its caller stores nothing. Yields `text` and `source` events and ends with exactly one `done` or `handback`
+   * (the assistant returning the conversation, D125 item 12); an `error` event, or a stream that ends without one, is
+   * thrown as a `CapabilityError` with the protocol's code.
    */
   async *ask(
     actor: AudiencedActor,
@@ -1702,7 +1703,7 @@ export class Registry implements HoldingsReader {
         throw new CapabilityError('Källans svar kunde inte verifieras.', 'unavailable');
       }
       if (event.type === 'error') throw new CapabilityError(askRefusal(event.code, holder.source), event.code);
-      if (event.type === 'done') {
+      if (event.type === 'done' || event.type === 'handback') {
         await this.refresh();
         if (context.authorize) await context.authorize();
         if (this.assistantsHolder(actor, holder.id) !== holder) throw unknownCapability();

@@ -633,7 +633,11 @@ describe('a turn heard while it runs (D36)', () => {
     expect(turn.assistant).toBe('unavailable');
     expect(
       events.map(e =>
-        e.type === 'text' ? `text:${e.reset ? 'reset:' : ''}${e.delta}` : `step:${e.step.capability}:${e.step.status}`,
+        e.type === 'text'
+          ? `text:${e.reset ? 'reset:' : ''}${e.delta}`
+          : e.type === 'step'
+            ? `step:${e.step.capability}:${e.step.status}`
+            : e.type,
       ),
     ).toEqual(['text:Fakturorna', 'text:reset:', 'step:finance.invoices:running', 'step:finance.invoices:complete']);
     expect(w.store.audit.at(-1)).toMatchObject({
