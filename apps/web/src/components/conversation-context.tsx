@@ -596,6 +596,18 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const hasBox = boxes > 0;
   const known = useRef(new Map<string, ChipRef>());
   const [chips, setChips] = useState<ChipRef[]>([]);
+  // A conversation opened again (a reload, a row in the rail) gets back the list its last question pointed at (the
+  // product owner, 2026-11-16): the drawer is the browser's, so "Att göra" was gone after a reload and a follow-up
+  // had no card. Once per conversation, and only into an empty drawer, so a chip the person removed stays removed.
+  const seeded = useRef<string | null>(null);
+  useEffect(() => {
+    if (!conversation || seeded.current === conversation.id) return;
+    seeded.current = conversation.id;
+    const last = conversation.messages.filter(m => m.role === 'user').at(-1);
+    const lists = (last?.meta?.chips ?? []).filter(c => c.kind === 'capability');
+    if (lists.length)
+      setChips(list => (list.length ? list : lists.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }))));
+  }, [conversation]);
   const announce = useAnnounce();
   const [shown, setShown] = useState(false);
   const inline = useMemo(() => refsIn(value), [value]);
