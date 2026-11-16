@@ -234,9 +234,9 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
     <>
       <AppShell
         height={height}
-        // `elevated`, Astryx's own default and what the canvas draws (D126): the rail on the page's ground, the content on
-        // a raised surface beside it. D88 had chosen `section`, one surface parted by a divider.
-        variant="elevated"
+        // `wash` (D126, amended 2026-11-16): the rail and the page stand on one ground, and the page is a sheet on it,
+        // drawn by `PageFrame`. D88 had chosen `section`, one surface parted by a divider.
+        variant="wash"
         contentPadding={0}
         mobileNav={{ breakpoint: 'md', isOpen: navigationOpen, onOpenChange: changeNavigation }}
         banner={banner}

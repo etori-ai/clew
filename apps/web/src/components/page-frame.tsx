@@ -1,5 +1,7 @@
 import type { ReactNode, Ref } from 'react';
 import {
+  Card,
+  Center,
   ArrowLeftIcon,
   Divider,
   Heading,
@@ -260,12 +262,11 @@ export function PageFrame({
       {column}
     </LayoutContent>
   );
-  return (
+  const layout = (
     <Layout
       {...(layoutRef ? { ref: layoutRef } : {})}
       {...(entry ? { xstyle: entry } : {})}
       height={pin ? 'fill' : 'auto'}
-      contentWidth={width}
       header={header}
       start={start}
       content={content}
@@ -287,5 +288,16 @@ export function PageFrame({
         )
       }
     />
+  );
+  // On a phone the page is the window. Elsewhere it is a sheet (D126, amended 2026-11-16): the column on a surface of its
+  // own, as wide as Hem's, standing on the ground the rail stands on, so a pane's edge is the sheet's edge and the room
+  // beside the column on a wide screen reads as ground, not as an empty page.
+  if (mobile) return layout;
+  return (
+    <Center axis="horizontal" height={pin ? '100%' : undefined} paddingBlock={3} paddingInline={3}>
+      <Card padding={0} width="100%" maxWidth={width} height={pin ? '100%' : undefined}>
+        {layout}
+      </Card>
+    </Center>
   );
 }
