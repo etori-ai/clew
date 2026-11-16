@@ -36,7 +36,7 @@ import { DOT } from '../dot';
 import { useConversation, type AskFrom } from '../components/conversation-context';
 import { ConversationPage } from './conversation';
 import { NewQuestionPage } from './new-question';
-import { asksAbout } from '../conversation-about';
+import { ASSISTANT_PARAM, asksAbout } from '../conversation-about';
 
 /**
  * The column fades in when it changes hands (D92): the conversation taking Hem's place when a question is sent, and Hem
@@ -124,7 +124,13 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // a page of its own. Once the first question is sent the transcript takes its place, and its address the page's.
   const { search } = useLocation();
   const fresh =
-    params.conversationId === 'new' && !asksAbout(search) && !talk.conversation && !talk.pending && !talk.error;
+    params.conversationId === 'new' &&
+    !asksAbout(search) &&
+    // An assistant of another system beside a conversation not asked yet: the conversation's page, with its panel.
+    !new URLSearchParams(search).get(ASSISTANT_PARAM) &&
+    !talk.conversation &&
+    !talk.pending &&
+    !talk.error;
   /**
    * Where a view named on Hem leads (D126 rule 1): the page Clew's own read declares for its rows, else the view's own
    * page, with Hem as the way back.

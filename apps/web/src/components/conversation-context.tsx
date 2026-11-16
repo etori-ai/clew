@@ -155,15 +155,6 @@ export interface ConversationState {
   /** The page that shows cards hears of a thread the conversation changed before the cache is written, to hand the focus on (2.4.3). */
   setThreadListener(listener: ((thread: Thread) => void) | null): void;
   /**
-   * The assistant of another system the box talks to, or null for Clew's own. Sticky: once the person picks one, every
-   * question goes to it, unchanged and alone, until they leave it or start a new conversation.
-   */
-  handed: Handed | null;
-  /** The person picked an assistant of another system in the box's menu. */
-  handTo(assistant: Handed): void;
-  /** Back to Clew's own assistant; the conversation and what the other assistant said stay. */
-  leaveHandover(): void;
-  /**
    * The question on its way in the panel beside the conversation, to another system's assistant; null when none is.
    */
   aside: AsideTurn | null;
@@ -231,9 +222,6 @@ export const ConversationContext = createContext<ConversationState>({
   askAside: async () => false,
   dropAside: noop,
   askClew: noop,
-  handed: null,
-  handTo: noop,
-  leaveHandover: noop,
   acceptOffer: noop,
   declineOffer: noop,
 });
@@ -628,21 +616,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const hasBox = boxes > 0;
   const known = useRef(new Map<string, ChipRef>());
   const [chips, setChips] = useState<ChipRef[]>([]);
-  const [handed, setHanded] = useState<Handed | null>(null);
   const announce = useAnnounce();
-  const handTo = useCallback(
-    (assistant: Handed) => {
-      setHanded({ id: assistant.id, name: assistant.name, source: assistant.source });
-      // The box's own status line says whom it now writes to, and is spoken as it appears: nothing more is announced.
-      input.current?.focus();
-    },
-    [input],
-  );
-  const leaveHandover = useCallback(() => {
-    setHanded(null);
-    announce('Du pratar med Clew igen.');
-    input.current?.focus();
-  }, [announce, input]);
   const [shown, setShown] = useState(false);
   const inline = useMemo(() => refsIn(value), [value]);
   const chipped = useMemo(() => [...new Set([...chips.map(c => c.ref), ...inline])], [chips, inline]);
@@ -703,8 +677,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const newConversation = useCallback(
     (options?: { from?: string; stay?: boolean }) => {
       abortTurn('leave');
-      // A new conversation is with Clew's own assistant until the person picks another, and has nothing in its drawer.
-      setHanded(null);
+      // A new conversation has nothing in its drawer.
       setConversation(null);
       setLatest(null);
       setDone(null);
@@ -725,10 +698,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       try {
         const t = await client.query(threadQuery(threadId));
         setConversation(conversationOf(t));
-        // A conversation that was handed to another system's assistant opens still talking to it, and says so, unless
-        // that assistant handed it back or returned it (D125 item 12).
-        // The box under the transcript is Clew's, always: another system's assistant is talked to beside it.
-        setHanded(null);
         setLatest(null);
         setDone(null);
         setShown(true);
@@ -739,11 +708,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     },
     [client, abortTurn, setConversation, setLatest, setDone, setError, input],
   );
-  // No conversation is named any more ("Ny fråga" in the rail, the back button to Hem): the box is Clew's again, as a
-  // new conversation's always is until the person picks someone else.
-  useEffect(() => {
-    if (!conversationId) setHanded(null);
-  }, [conversationId]);
   // The route names the conversation: arriving at /conversations/:id (a link, the back button, a reload) puts the
   // transcript on the page. Arriving at /conversations/new is a conversation not asked yet: whatever conversation was
   // held before is let go of, unless a question is on its way from Hem to this address.
@@ -817,10 +781,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           offered.current = { question, assistant, ...(held ? { held } : {}) };
         },
         onHandedBack: assistant => {
-          // The box is Clew's again from this moment, while Clew is still writing its answer.
           saidBack.current = true;
-          setHanded(null);
-          announce(`${assistant.name} lämnade tillbaka frågan. Clew svarar, och du pratar med Clew igen.`);
+          announce(`${assistant.name} lämnade tillbaka frågan. Clew svarar.`);
         },
         onStart: () => {
           setShown(true);
@@ -836,22 +798,13 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           if (!current) onConversation(response.conversationId);
           const to = response.thread.handover;
           const last = response.thread.messages.at(-1)?.meta;
-          // The assistant returned the conversation (D125 item 12): it handed the question back, which Clew then
-          // answered, or it answered and considers the matter done. Either way the box is Clew's again.
-          const back = last?.handedBack ?? (last?.handover?.returned ? last.handover : undefined);
-          if (back) {
-            setHanded(null);
-            // A question handed back was said when it happened; said here only if that moment was not heard.
-            if (!saidBack.current)
-              announce(
-                last?.handedBack
-                  ? `${back.name} lämnade tillbaka frågan. Clew svarade, och du pratar med Clew igen.`
-                  : `${back.name} är klar. Du pratar med Clew igen.`,
-              );
+          // The assistant handed the question back and Clew answered it (D125 item 12): said when it happened, and
+          // here only if that moment was not heard.
+          if (last?.handedBack) {
+            if (!saidBack.current) announce(`${last.handedBack.name} lämnade tillbaka frågan. Clew svarade.`);
           } else if (response.assistant === 'handover' && to) {
             // The answer is that assistant's; the box stays Clew's, and the way on with the assistant is beside it.
             announce(`${to.name} i ${to.source} har svarat. Rutan skriver fortfarande till Clew.`);
-            setHanded(null);
           }
         },
       });
@@ -884,10 +837,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           current,
           ...(from ? { from } : {}),
         },
-        { to: handed },
+        {},
       );
     },
-    [chips, conversation, handed, dispatch],
+    [chips, conversation, dispatch],
   );
   const acceptOffer = useCallback(() => {
     const o = offered.current;
@@ -1012,9 +965,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       askAside,
       dropAside,
       askClew,
-      handed,
-      handTo,
-      leaveHandover,
       acceptOffer,
       declineOffer,
     }),
@@ -1053,9 +1003,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       askAside,
       dropAside,
       askClew,
-      handed,
-      handTo,
-      leaveHandover,
       acceptOffer,
       declineOffer,
     ],

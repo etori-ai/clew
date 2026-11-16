@@ -21,6 +21,7 @@ import { useBranding } from '../branding';
 import { groupThreads } from '../stream';
 import { usePageTitle } from '../page-title';
 import { whenWord } from '../when-word';
+import { assistantHref } from '../conversation-about';
 import { Composer } from '../components/composer';
 import { titled, useConversation } from '../components/conversation-context';
 import { InstallationLogo } from '../components/shell';
@@ -48,19 +49,6 @@ export function NewQuestionPage({ greeting, entry }: { greeting: string; entry: 
     const frame = requestAnimationFrame(() => talk.focus());
     return () => cancelAnimationFrame(frame);
   }, []);
-  // "Visa alla" opens the box's own "Till:" menu, where every assistant is, with the focus on its chosen row as when the
-  // menu's own button opens it: Esc then closes the menu and gives the focus to that button (2.4.3), never the page.
-  const [menuOpen, setMenuOpen] = useState(false);
-  const showAll = () => {
-    setMenuOpen(true);
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() =>
-        document
-          .querySelector<HTMLElement>('[role="menu"] [aria-checked="true"], [role="menu"] [role^="menuitem"]')
-          ?.focus(),
-      ),
-    );
-  };
   return (
     <PageFrame entry={entry} label="Ny fråga">
       <Center minHeight="100%">
@@ -74,8 +62,8 @@ export function NewQuestionPage({ greeting, entry }: { greeting: string; entry: 
               Vad vill du ha hjälp med?
             </Text>
           </VStack>
-          <Composer place="landing" recipientMenu={{ isOpen: menuOpen, onOpenChange: setMenuOpen }} />
-          <UnderTheBox onShowAll={showAll} />
+          <Composer place="landing" />
+          <UnderTheBox />
         </VStack>
       </Center>
     </PageFrame>
@@ -85,17 +73,17 @@ export function NewQuestionPage({ greeting, entry }: { greeting: string; entry: 
 /**
  * What stands under the box (the product owner, 2026-11-16: board NyFraga variant b): "Fortsätt", the person's latest
  * conversations as the rail's Samtal lists them, each the link to the conversation with when it was last active; and
- * "Fråga någon annan", the other systems' assistants the box's "Till:" menu lists (D125), at most three, each a row that
- * makes that assistant the box's recipient exactly as the menu does, sending nothing. A block with nothing to list is
- * not drawn.
+ * "Fråga någon annan", the other systems' assistants the person may ask (D125), three until "Visa alla" is pressed.
+ * The box above only ever goes to Clew, so a row is a link: it opens a new conversation with that assistant's exchange
+ * beside it, where its own box is, and sends nothing. A block with nothing to list is not drawn.
  */
-function UnderTheBox({ onShowAll }: { onShowAll: () => void }) {
-  const talk = useConversation();
+function UnderTheBox() {
+  const [all, setAll] = useState(false);
   const threads = useQuery(threadsQuery).data?.threads ?? EMPTY_THREADS;
   const now = new Date().toISOString();
   const latest = groupThreads(threads, now, now.slice(0, 10)).questions.slice(0, SHOWN);
   const assistants = useQuery(handoverAssistantsQuery).data ?? [];
-  const shown = assistants.slice(0, SHOWN);
+  const shown = all ? assistants : assistants.slice(0, SHOWN);
   if (!latest.length && !shown.length) return null;
   return (
     <Grid columns={{ minWidth: 300, max: 2 }} gap={8}>
@@ -129,7 +117,9 @@ function UnderTheBox({ onShowAll }: { onShowAll: () => void }) {
             <Heading id="fraga-nagon-annan" level={2}>
               Fråga någon annan
             </Heading>
-            <Button size="sm" variant="ghost" label="Visa alla" onClick={onShowAll} />
+            {assistants.length > SHOWN && !all && (
+              <Button size="sm" variant="ghost" label="Visa alla" onClick={() => setAll(true)} />
+            )}
           </HStack>
           <List hasDividers aria-label="Andra systems assistenter">
             {shown.map(a => (
@@ -137,12 +127,12 @@ function UnderTheBox({ onShowAll }: { onShowAll: () => void }) {
                 key={a.id}
                 startContent={<Avatar name={a.name} size="sm" shape="square" tooltip={false} />}
                 // As Text, which wraps: a line given as a string is cut, and what is cut cannot be read (1.4.10).
-                label={<Text>{a.name}</Text>}
+                label={
+                  <Link href={assistantHref('/conversations/new', '', a.id)} color="primary">
+                    {a.name}
+                  </Link>
+                }
                 description={<Text type="supporting">{[a.source, a.description].filter(Boolean).join(' · ')}</Text>}
-                isSelected={talk.handed?.id === a.id}
-                onClick={() => {
-                  if (talk.handed?.id !== a.id) talk.handTo({ id: a.id, name: a.name, source: a.source });
-                }}
               />
             ))}
           </List>
