@@ -532,8 +532,37 @@ export function assistantUsecases(deps: AssistantDeps) {
       // The card draws the rows of its read that the answer is about (`cardRows`), worked out from the output as the
       // registry answered it and the answer as the person reads it.
       const declaredView = view?.declared ? tools.find(t => t.name === view.capability)?.view : undefined;
-      const shownRows =
+      const namedRows =
         view && declaredView ? cardRows(declaredView, view.input, answer.viewOutput, parsed.body) : undefined;
+      // The read the person pointed at with a chip is what the turn is about (the product owner, 2026-11-16): its card
+      // is drawn with the read's first rows whatever the answer's wording, since which rows a sentence happens to name
+      // or count is the model's phrasing and not the person's question. And when the model answered without reading
+      // anything that has a card, as it may from what an earlier turn said, the pointed read is made here, as the
+      // person, so the card under the answer is still the thing they asked about, as it is now.
+      const pointedTool = chips.objects
+        .flatMap(o => (o.kind === 'capability' ? [tools.find(t => t.name === o.name)] : []))
+        .find(t => t?.view && (t.view.kind === 'list' || t.view.kind === 'table'));
+      let card = view;
+      let shownRows = namedRows;
+      if (pointedTool?.view && view?.capability === pointedTool.name) {
+        if (namedRows) shownRows = { count: namedRows.count, show: 'all' };
+      } else if (pointedTool?.view && !view) {
+        try {
+          const rows = viewRows(pointedTool.view, await turn.run(pointedTool.name, {}));
+          if (rows) {
+            card = {
+              capability: pointedTool.name,
+              input: {},
+              title: pointedTool.title,
+              source: pointedTool.source,
+              declared: true,
+            };
+            shownRows = { count: rows.length, show: 'all' };
+          }
+        } catch {
+          // A read that takes an input, or a source that does not answer: the answer stands without a card.
+        }
+      }
       const followUps = parsed.followUps.length
         ? parsed.followUps
         : searched
@@ -556,7 +585,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         clewActions: [],
         toolCalls: reads,
         followUps,
-        ...(view ? { view } : {}),
+        ...(card ? { view: card } : {}),
         ...(shownRows ? { viewRows: shownRows } : {}),
         ...(sources?.length ? { sources } : {}),
         ...(draft && subject

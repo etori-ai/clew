@@ -282,8 +282,17 @@ async function world(script: Script = [], options: { brandskydd?: boolean } = {}
   };
   const assistant = assistantUsecases(deps);
   /** One question as this person, in a conversation of its own or one going on; the turn, its audit row and its message. */
-  const ask = async (who: string, text: string, conversationId?: string) => {
-    const turn = await assistant.converse(d.persona(who), { text, ...(conversationId ? { conversationId } : {}) });
+  const ask = async (
+    who: string,
+    text: string,
+    conversationId?: string,
+    chips?: { ref: string; kind: 'capability'; label: string }[],
+  ) => {
+    const turn = await assistant.converse(d.persona(who), {
+      text,
+      ...(conversationId ? { conversationId } : {}),
+      ...(chips ? { chips } : {}),
+    });
     return {
       turn,
       audit: threads.audit.at(-1)!,
@@ -663,6 +672,26 @@ describe('the card under an answer is the read it rests on, and the rows it is a
     // A later turn that points at the view, as a model told a read is shown says, carries the whole read as its card.
     w.model.turn.text = 'Uppgifterna finns i vyn.';
     expect((await w.ask('hillevi', 'Och vad behöver göras?')).meta.viewRows).toEqual({ count: 4, show: 'all' });
+  });
+  test('a read the person pointed at with a chip is the card with its first rows, whatever the answer names, and is read for the card when the model read nothing', async () => {
+    const chip = { ref: 'capability:competence.attention', kind: 'capability' as const, label: 'Att bevaka' };
+    // The answer names none of the rows: asked without the chip the card draws none (the case above).
+    const w = await world([['competence__attention', {}]], { brandskydd: true });
+    w.model.turn.text = 'Ingen av dina medarbetare saknar truckkort.';
+    const read = await w.ask('hillevi', 'Vem saknar truckkort?', undefined, [chip]);
+    expect(read.meta.view).toMatchObject({ capability: 'competence.attention', input: {} });
+    expect(read.meta.viewRows).toEqual({ count: 4, show: 'all' });
+    // The model answers from what was said before and reads nothing: the pointed read is made for the card.
+    const quiet = await world([], { brandskydd: true });
+    quiet.model.turn.text = 'Som jag sa: ingen saknar truckkort.';
+    const unread = await quiet.ask('hillevi', 'Och truckkort?', undefined, [chip]);
+    expect(unread.meta.view).toMatchObject({ capability: 'competence.attention', input: {}, declared: true });
+    expect(unread.meta.viewRows).toEqual({ count: 4, show: 'all' });
+    expect(unread.audit.details).toMatchObject({ view: 'competence.attention' });
+    // Without the chip, an answer that reads nothing has no card.
+    const plain = await world([], { brandskydd: true });
+    plain.model.turn.text = 'Som jag sa: ingen saknar truckkort.';
+    expect((await plain.ask('hillevi', 'Och truckkort?')).meta.view).toBeUndefined();
   });
   test('competence: a read the model narrowed with its input is the card, with that input', async () => {
     const w = await world([['competence__holdings', { person: 'anna' }]], { brandskydd: true });
