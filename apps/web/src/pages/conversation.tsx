@@ -183,6 +183,13 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       }}
       asideHref={id => assistantHref(pathname, search, id)}
       asideOpen={asideId}
+      // A row of several items opens its item beside the transcript, in the place of an assistant's exchange if one
+      // stands there: one panel holds one thing.
+      cardHref={id => {
+        const q = new URLSearchParams(search);
+        q.delete(ASSISTANT_PARAM);
+        return withCard(pathname, q, id);
+      }}
     />
   );
   // Opened from its address, a conversation is read before it is drawn: its shape meanwhile, never an empty page. On

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { stockholmDate } from '@clew/contracts';
 import type {
   HandoverAssistant,
   CalendarEvent,
@@ -64,6 +65,7 @@ import { executionStatus } from '../execution-status';
 import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../answer-card';
 import { isSide, sentWords, sideCount, suggestedWords } from '../conversation-about';
 import { DOT } from '../dot';
+import { itemPageHref, rowFacts, rowLine } from '../work-items';
 
 /** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
 export type ActionDraftRef = Draft & { kind: 'action'; actionId: string };
@@ -516,6 +518,42 @@ function TurnCard({ id, render }: { id: string; render: (thread: Thread) => Reac
  * whole view can still be opened. A figure is drawn above it only where the figure belongs to this read (`opens`) and
  * the card is the read as a whole (D54).
  */
+/**
+ * Several work items a turn is about (the product owner, 2026-11-16): one card of rows, not a whole item each. A whole
+ * item carries its buttons, its facts and its events, and three of them push the answer off the screen; a row is the
+ * item's name as the link to it, the system it comes from and the line Att göra's row says about it. The item opens
+ * beside the conversation, where its buttons are. One item alone is still drawn whole (`TurnCard`): it is the thing the
+ * turn is about. Read from the same cache as the page, so a row is the item as it is now.
+ */
+function TurnCardRow({ id, href }: { id: string; href: string }) {
+  const card = useQuery(threadQuery(id));
+  const t = card.data;
+  if (!t) return null;
+  const now = new Date().toISOString();
+  return (
+    <ListItem
+      label={
+        <Link href={href} color="primary">
+          {t.title}
+        </Link>
+      }
+      description={
+        <Text type="supporting">{`${t.trigger.source}${DOT}${rowLine(rowFacts(t, now, stockholmDate(now)))}`}</Text>
+      }
+    />
+  );
+}
+function TurnCardRows({ ids, hrefFor }: { ids: string[]; hrefFor: (id: string) => string }) {
+  return (
+    <Card padding={0}>
+      <List hasDividers density="compact" aria-label="Ärenden i svaret">
+        {ids.map(id => (
+          <TurnCardRow key={id} id={id} href={hrefFor(id)} />
+        ))}
+      </List>
+    </Card>
+  );
+}
 const EMBED_ROWS = 3;
 function ViewEmbed({
   view,
@@ -681,6 +719,7 @@ export function Transcript({
   onDraft,
   asideHref,
   asideOpen,
+  cardHref,
 }: {
   onOpenView: (view: ViewRef) => void;
   renderCard: (thread: Thread) => ReactNode;
@@ -704,6 +743,8 @@ export function Transcript({
   asideHref?: ((assistant: string) => string) | undefined;
   /** The assistant whose exchange stands beside the transcript now. */
   asideOpen?: string | null | undefined;
+  /** The address that puts a work item beside the transcript: where a row of several items leads. */
+  cardHref?: ((threadId: string) => string) | undefined;
 }) {
   const talk = useConversation();
   const markOf = useObjectMark();
@@ -893,9 +934,14 @@ export function Transcript({
               {m.body}
             </Markdown>
             {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
-            {m.meta?.cards?.map(id => (
-              <TurnCard key={id} id={id} render={renderCard} />
-            ))}
+            {m.meta?.cards && m.meta.cards.length > 1 ? (
+              <TurnCardRows
+                ids={m.meta.cards}
+                hrefFor={id => cardHref?.(id) ?? itemPageHref(id, window.location.pathname + window.location.search)}
+              />
+            ) : (
+              m.meta?.cards?.map(id => <TurnCard key={id} id={id} render={renderCard} />)
+            )}
             <AnswerView
               card={card}
               at={m.createdAt}

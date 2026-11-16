@@ -24,10 +24,10 @@ const readingPane = (page: Page) => page.getByRole('complementary', { name: 'Val
  * rule 2, the board's MoreMenu), its rows saying when the item comes back.
  */
 async function openInteNu(page: Page) {
-  // The pane puts the focus on the item's heading once it is drawn, and its Händelser arrive after it; the menu is
-  // reached once the item has settled.
+  // The pane puts the focus on the item's heading once it is drawn, and its Händelser arrive after it, folded (D126
+  // item 13): their section's button is what shows they have. The menu is reached once the item has settled.
   await expect(readingPane(page).locator(':focus')).toHaveCount(1);
-  await expect(readingPane(page).getByRole('list', { name: 'Händelser, de senaste först' })).toBeVisible();
+  await expect(readingPane(page).getByRole('button', { name: /^Händelser/ })).toBeVisible();
   await readingPane(page).getByRole('button', { name: 'Fler åtgärder' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menu', { name: 'Fler åtgärder' })).toBeVisible();
