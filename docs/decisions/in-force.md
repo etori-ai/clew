@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**130 in force**: 97 accepted and 33 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**131 in force**: 97 accepted and 34 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -160,13 +160,14 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
 | [D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) | 2026-11-13 | provisional |  |
 | [D126 · One page per thing, and one Astryx template per page type](D126-one-page-per-thing-one-astryx-template-per-page-type.md) | 2026-11-14 | provisional |  |
+| [D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) | 2026-11-16 | provisional |  |
 
 ## Assistant
 
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
 | [D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it](D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md) | 2026-11-13 | provisional |  |
-| [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional |  |
+| [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional | [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) |
 
 ## Proposed, not decided
 
