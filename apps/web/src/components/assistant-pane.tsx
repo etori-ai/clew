@@ -27,6 +27,7 @@ import {
   Link,
   Markdown,
   Skeleton,
+  StackItem,
   Text,
   Timestamp,
   VStack,
@@ -109,9 +110,8 @@ export function AssistantsMenu({ open, hrefFor }: { open: string | null; hrefFor
  * it are Clew's, always, and an assistant of another system is talked to here, in a panel of its own with a box of its
  * own. Where a message goes is which box it is typed in. The panel draws that assistant's whole exchange in this
  * conversation: the question Clew sent on, on the person's yes, and everything asked here since. What is typed here
- * goes to that system, unchanged and alone (D125 item 4). Under every answer here, and under one that did not
- * come, the same words can be put to Clew by the person's own press; nothing is routed for them, and an assistant
- * does not hand a question back. The whole assistant, with its files
+ * goes to that system, unchanged and alone (D125 item 4). Nothing goes from here to Clew: an assistant does not hand a
+ * question back, and a question for Clew is typed in Clew's box. The whole assistant, with its files
  * and its own history, is in its own system: the header links there.
  */
 export function AssistantPane({
@@ -191,20 +191,6 @@ export function AssistantPane({
   const theirs = <VisuallyHidden>{who.name}</VisuallyHidden>;
   const answered = (m: ThreadMessage, i: number) => {
     const meta = m.meta?.handover;
-    const question = [...messages.slice(0, i)].reverse().find(x => x.role === 'user')?.body ?? '';
-    // The way to Clew never hangs on the assistant: under every answer, and under one that did not come, the same
-    // words can be put to Clew by the person's own press.
-    const toClew = question ? (
-      <HStack>
-        <Button
-          size="sm"
-          variant="ghost"
-          label="Fråga Clew samma sak"
-          isDisabled={talk.busy}
-          onClick={() => talk.askClew(question)}
-        />
-      </HStack>
-    ) : null;
     // No answer: the system did not answer, or the assistant wrote nothing; said in Clew's words, never in its name.
     if (meta?.failed || meta?.declined)
       return (
@@ -215,7 +201,6 @@ export function AssistantPane({
                 <Icon icon="warning" size="sm" color="warning" />
                 <Text>{m.body || `${who.name} svarade inte på frågan.`}</Text>
               </HStack>
-              {meta.side && toClew}
             </VStack>
           </ChatMessageBubble>
         </ChatMessage>
@@ -245,7 +230,6 @@ export function AssistantPane({
               </HStack>
             )}
             {meta?.cut && <Text type="supporting">Svaret var längre än Clew visar.</Text>}
-            {meta?.side && toClew}
           </VStack>
         </ChatMessageBubble>
       </ChatMessage>
@@ -270,6 +254,10 @@ export function AssistantPane({
                 {who.description}
               </Text>
             )}
+            {/* What leaves Clew (D125 item 4), said once at the head of the panel so that the box itself stays low. */}
+            <Text type="supporting" color="secondary">
+              {`Det du skriver här skickas till ${who.source}. Inget annat ur samtalet följer med.`}
+            </Text>
           </VStack>
         </HStack>
         <HStack gap={2} vAlign="center">
@@ -282,7 +270,8 @@ export function AssistantPane({
         </HStack>
       </HStack>
       <Divider />
-      <VStack height="100%">
+      {/* The exchange takes what the head leaves, so the box stays docked at the panel's foot. */}
+      <StackItem size="fill">
         <ChatLayout
           composer={
             <ChatComposer
@@ -296,13 +285,8 @@ export function AssistantPane({
                   label={`Skriv till ${who.name} i ${who.source}`}
                   maxRows={3}
                   hasHistory={false}
-                  placeholder={`Skriv till ${who.name}`}
+                  placeholder={`Skriv till ${who.name} i ${who.source}`}
                 />
-              }
-              headerContext={
-                <Text type="supporting" color="secondary">
-                  {`Skickas till ${who.source}. Inget annat ur samtalet följer med.`}
-                </Text>
               }
               onSubmit={text => {
                 const sent = text;
@@ -369,7 +353,7 @@ export function AssistantPane({
             ]}
           </ChatMessageList>
         </ChatLayout>
-      </VStack>
+      </StackItem>
     </VStack>
   );
 }

@@ -44,9 +44,9 @@ answered by which box it is typed in.
    after a test run in which the assistant handed back a question Clew had suggested it for, declined a follow-up it
    should have taken, and wrote a refusal as text without handing back). Clew does not act on `handback`: the text an
    assistant wrote stands as its answer, on a question Clew sent on and on one asked in the panel alike, and Clew
-   never answers in its place unasked. An assistant that cannot answer says so in its own words. Under every answer
-   in the panel, and under one that did not come, "Fråga Clew samma sak" puts the same words to Clew by the person's
-   press. A source may still end an answer with `handback`: it is read as `done`, and with no text the turn is said
+   never answers in its place unasked. An assistant that cannot answer says so in its own words. Nothing goes from
+   the panel to Clew: a button that put a side question to Clew ("Fråga Clew samma sak") was built and removed the
+   same day, since a question for Clew is typed in Clew's box, which is always beside the panel. A source may still end an answer with `handback`: it is read as `done`, and with no text the turn is said
    in Clew's words as not answered. Eneo no longer offers its assistants the hand-back tool. This replaces D125 item
    12.
 8. **Clew hears every exchange of the conversation; nothing goes the other way** (D125 items 4 and 8). The side

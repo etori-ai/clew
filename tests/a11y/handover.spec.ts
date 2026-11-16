@@ -73,7 +73,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     await expect(panel(page).getByRole('heading', { name: 'HR-assistenten', exact: true })).toBeVisible();
     await expect(panel(page).getByText('Svarar på frågor om anställning och ledighet.')).toBeVisible();
     await expect(
-      panel(page).getByText('Skickas till Kunskapsbanken. Inget annat ur samtalet följer med.'),
+      panel(page).getByText('Det du skriver här skickas till Kunskapsbanken. Inget annat ur samtalet följer med.'),
     ).toBeVisible();
     await expect(sideBox(page)).toBeFocused();
     // Nothing was sent by opening it, and the box under the transcript is still Clew's.
@@ -171,7 +171,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     await expect(panel(page).getByRole('log').getByRole('link')).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
-  test('under an answer in the panel, and under one that did not come, the same words can be put to Clew by the person’s press', async ({
+  test('nothing goes from the panel to Clew: no button under an answer puts a question to Clew, and Clew’s box is where Clew is asked', async ({
     page,
     api,
   }) => {
@@ -179,27 +179,18 @@ test.describe('another system’s assistant beside the conversation', () => {
     await openBeside(page);
     await askBeside(page, QUESTION);
     await expect(panel(page).getByText('25 semesterdagar')).toBeVisible();
-    // Clew was not asked: nothing is routed for the person, and no assistant hands a question back.
+    // Clew was not asked, and the panel offers no way to ask it.
     expect(api.asked).toHaveLength(1);
-    const toClew = panel(page).getByRole('button', { name: 'Fråga Clew samma sak', exact: true });
-    await expect(toClew).toHaveCount(1);
-    await expect(panel(page).getByRole('button', { name: 'Fråga Clew i stället' })).toHaveCount(0);
-    await toClew.click();
-    await expect
-      .poll(() => api.asked.at(-1))
-      .toEqual({ text: QUESTION, chips: [], conversationId: 'overlamnad', own: true });
-    // The question now stands in the transcript, and Clew answers it there.
-    await expect(transcript(page).getByText(QUESTION, { exact: true })).toHaveCount(1);
-    await expect(page.getByRole('article', { name: 'Clew', exact: true })).toBeVisible();
+    await expect(panel(page).getByRole('button', { name: /Fråga Clew/ })).toHaveCount(0);
+    // The panel's box is one row, with what leaves Clew said once at the panel's head.
+    await expect(
+      panel(page).getByText('Det du skriver här skickas till Kunskapsbanken. Inget annat ur samtalet följer med.'),
+    ).toBeVisible();
+    await composer(page).fill(QUESTION);
+    await composer(page).press('Enter');
+    await expect.poll(() => api.asked.at(-1)).toMatchObject({ text: QUESTION, conversationId: 'overlamnad' });
+    expect(api.asked.at(-1)).not.toHaveProperty('assistant');
     await expectNoAxeViolations(page);
-    // A system that did not answer leaves the same way to Clew under what Clew says about it.
-    api.handoverFails = true;
-    await askBeside(page, 'Och om jag är över 40?');
-    await expect(panel(page).getByText('Kunskapsbanken svarar inte just nu.')).toBeVisible();
-    await expect(panel(page).getByRole('button', { name: 'Fråga Clew samma sak', exact: true })).toHaveCount(2);
-    await expect
-      .poll(() => announcements(page))
-      .toContainEqual(expect.stringContaining('HR-assistenten svarade inte. Du kan fråga Clew samma sak.'));
   });
   test('Clew’s own assistant suggests an assistant and asks first: yes sends the question as written, it stands once marked as sent on, and the box stays Clew’s', async ({
     page,
