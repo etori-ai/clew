@@ -489,6 +489,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         onText,
         ...(turn.signal ? { signal: turn.signal } : {}),
         ...(own.length ? { own } : {}),
+        pointed: chips.objects.flatMap(o => (o.kind === 'capability' ? [o.name] : [])),
       });
       if (handTo.assistant) {
         models.health.mark(model.providerId, true, clock().toISOString());

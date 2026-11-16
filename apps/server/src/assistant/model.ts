@@ -269,8 +269,9 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
  */
 export type ReadRecord = { capability: string; input: Record<string, unknown>; output?: unknown; failed?: true };
 /**
- * Ask the model. The answer is its text; the last read with a declared view (D38), else the first read whose output has
- * rows, is offered as a view, with the input the model gave it and the output it answered (`viewOutput`, from which the
+ * Ask the model. The answer is its text; the read the person pointed at with a chip, when the turn made it (`pointed`:
+ * asked about Att göra, the card under the answer is Att göra, whatever else the turn read), else the last read with a
+ * declared view (D38), else the first read whose output has rows, is offered as a view, with the input the model gave it and the output it answered (`viewOutput`, from which the
  * caller works out which rows the card draws). Any failure becomes ModelUnavailable.
  */
 export async function modelAnswer(args: {
@@ -285,6 +286,8 @@ export async function modelAnswer(args: {
   signal?: AbortSignal;
   /** Clew's own tools for this turn (the draft of an action, D112 item 8); their calls are in `toolCalls` by name. */
   own?: ClewTool[];
+  /** The reads the person pointed at with a chip, by capability name. */
+  pointed?: string[];
 }): Promise<{
   body: string;
   view?: ViewRef;
@@ -333,7 +336,9 @@ export async function modelAnswer(args: {
         .filter(c => !(isRecord(c.output) && 'error' in c.output))
         .map(c => ({ capability: c.capability, input: c.input, output: c.output }));
   const toolOf = (r: ReadRecord) => args.tools.find(t => t.name === r.capability);
-  const declared = [...answered].reverse().find(r => toolOf(r)?.view);
+  const latest = [...answered].reverse();
+  const declared =
+    latest.find(r => args.pointed?.includes(r.capability) && toolOf(r)?.view) ?? latest.find(r => toolOf(r)?.view);
   const shown = declared ?? answered.find(r => isRecord(r.output) && Array.isArray(r.output.rows));
   const info = shown ? toolOf(shown) : undefined;
   return {

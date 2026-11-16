@@ -85,6 +85,10 @@ export function cardRows(
   if (!rows) return undefined;
   const count = rows.length;
   if (readsSummary(view) || count === 0) return { count, show: 'all' };
+  // An answer that says how many rows the read answered speaks of the read as a whole: the rows it also names are
+  // examples, and the card draws the read's first few with their count, not the one or two it happened to name (the
+  // product owner, 2026-11-16: nine items, and one in the card).
+  if (count > 1 && aboutTheWhole(answer, count)) return { count, show: 'all' };
   const named = namedRows(view, rows, answer);
   if (named.length)
     return named.length <= CARD_MARKS_MAX

@@ -554,7 +554,7 @@ function TurnCardRows({ ids, hrefFor }: { ids: string[]; hrefFor: (id: string) =
     </Card>
   );
 }
-const EMBED_ROWS = 3;
+const EMBED_ROWS = 5;
 function ViewEmbed({
   view,
   rows,

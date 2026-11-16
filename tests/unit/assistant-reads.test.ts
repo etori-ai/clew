@@ -641,6 +641,19 @@ describe('the card under an answer is the read it rests on, and the rows it is a
       show: 'none',
     });
   });
+  test('an answer that says how many rows the read answered is about the whole read, though it names one of them', () => {
+    const rows = Array.from({ length: 9 }, (_, i) => ({
+      name: `Person ${i}`,
+      competence: i === 0 ? 'Heta arbeten' : 'HLR',
+    }));
+    // The count in words or digits: the names it also mentions are examples, and the card draws the read's first few.
+    expect(cardRows(attentionView, {}, { rows }, 'Nio saknar något, bland annat Heta arbeten.')).toEqual({
+      count: 9,
+      show: 'all',
+    });
+    // Without the count, the row it names is the card.
+    expect(cardRows(attentionView, {}, { rows }, 'En saknar Heta arbeten.')).toMatchObject({ count: 9, show: 'named' });
+  });
   test('competence: an answer that names none of the rows of a read it did not narrow draws no rows, only the way to the whole read', async () => {
     const w = await world([['competence__attention', {}]], { brandskydd: true });
     w.model.turn.text = 'Ingen av dina medarbetare saknar truckkort.';
