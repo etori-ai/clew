@@ -1078,20 +1078,8 @@ export function Transcript({
           </ChatSystemMessage>
         )}
       </ChatMessageList>
-      {!pending && latest && latest.followUps.length > 0 && (
-        <HStack gap={1} wrap="wrap" role="group" aria-label="Följdfrågor">
-          {latest.followUps.map(f => (
-            <Button
-              key={f}
-              size="sm"
-              variant="secondary"
-              label={f}
-              isDisabled={busy}
-              onClick={() => talk.ask(f, undefined, about)}
-            />
-          ))}
-        </HStack>
-      )}
+      {/* No suggested follow-up questions under an answer (D126 rule 8; the product owner, 2026-11-16: they add no
+          value). What the server suggests is not drawn. */}
     </VStack>
   );
 }

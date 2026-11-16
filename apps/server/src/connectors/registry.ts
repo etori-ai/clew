@@ -1,6 +1,6 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import type { AuthenticatedContext } from '@clew/contracts';
+import type { AuthenticatedContext, Thread } from '@clew/contracts';
 import {
   audiencedActorOf,
   BOARDING_CONNECTOR,
@@ -23,6 +23,7 @@ import { errandUsecases } from '../modules/errands/usecases';
 import { requestCapabilities } from '../modules/requests/capabilities';
 import { requestUsecases } from '../modules/requests/usecases';
 import { newsCapabilities } from '../modules/news/capabilities';
+import { workCapabilities } from '../modules/work/capabilities';
 import { newsUsecases } from '../modules/news/usecases';
 import { talksConnector } from '../modules/talks/capabilities';
 import { talkSeamCapabilities } from '../modules/talk-seam/capabilities';
@@ -84,6 +85,15 @@ const talkSeam = talkSeamUsecases({
  * read, the talks seam its two reads. The modules never import each other (D20).
  */
 const core = searchConnector(search, answerCards);
+/**
+ * A person's work items as a read (`clew.work`): the stream owns the items and is built over this registry, so the
+ * composition root fills this slot with the stream's own read boundary, as it fills `answerCards`.
+ */
+export const workItems: { list?: (actor: Parameters<Registry['visible']>[0], now: string) => Promise<Thread[]> } = {};
+const workPart = workCapabilities({
+  list: async (actor, now) => (await workItems.list?.(actor, now)) ?? [],
+  clock,
+});
 const errandPart = errandCapabilities(errands, actor => registry.errandSources(actor).length > 0);
 const requestPart = requestCapabilities(requests, actor => registry.requestSources(actor).length > 0);
 const newsPart = newsCapabilities(news, actor => registry.newsSources(actor).length > 0);
@@ -96,6 +106,7 @@ const clewConnector = {
     ...errandPart.capabilities,
     ...requestPart.capabilities,
     ...newsPart.capabilities,
+    ...workPart.capabilities,
     ...talkPart.capabilities,
   ],
 };

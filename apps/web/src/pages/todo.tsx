@@ -398,13 +398,13 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     </HStack>
   );
 
-  // "Fråga Clew" about the pile (D126 rule 5): a list is no thing beside the conversation, so it goes as its chips.
+  // "Fråga Clew" about the pile (D126 rule 5): a list is no thing beside the conversation, so it goes as one chip, the
+  // read of Att göra (`clew.work`). A reference, not a copy of the rows: Clew reads the pile as it is when it answers,
+  // however many items it holds (a chip per card took the first eight and dropped the rest).
   const queueSubject: ThingSubject = {
     key: `todo:${tab}`,
     label: 'ärendena',
-    chips: rows
-      .slice(0, 8)
-      .map(t => ({ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title, threadId: t.id })),
+    chips: [{ ref: 'capability:clew.work', kind: 'capability' as const, label: 'Att göra' }],
     search: '',
   };
 

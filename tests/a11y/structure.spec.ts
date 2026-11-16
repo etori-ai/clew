@@ -330,9 +330,9 @@ test.describe('D26 questions answered from documents', () => {
       'href',
       /^\/conversations\/[^?]+\?open=clew\.search&open-title=K%C3%A4llor&open-input=/,
     );
-    await expect(
-      page.getByRole('group', { name: 'Följdfrågor' }).getByRole('button', { name: 'Och om hen slagit i huvudet?' }),
-    ).toBeVisible();
+    // No suggested follow-up questions are drawn under an answer (D126 rule 8), though the answer carries some.
+    await expect(page.getByRole('group', { name: 'Följdfrågor' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Och om hen slagit i huvudet?' })).toHaveCount(0);
     // "Lägg under Behöver dig" proposes; the answer executes nothing. What happened is said in the transcript.
     await bubble.getByRole('button', { name: 'Lägg under Behöver dig' }).click();
     await expect(
