@@ -215,4 +215,17 @@ export interface AssistantDeps {
       signal?: AbortSignal,
     ) => AsyncIterable<AssistantAskEvent>;
   };
+  /**
+   * Start a work item from a propose the person asked the assistant for: the stream's `startCard`, so the propose runs
+   * as the person, its draft becomes the item, and the item and its audit row commit together. Nothing is sent to a
+   * source: the item's execute runs only through the human decision. `same: 'topic'` makes the propose's own topic
+   * the item's identity, so what the model happened to pass does not make a second item while the first is open.
+   * Absent, a propose the model calls is run as any capability and makes no work item.
+   */
+  start?: (
+    persona: AuthenticatedContext,
+    capability: string,
+    input: Record<string, unknown>,
+    context: { reason: string; same?: 'topic' },
+  ) => Promise<{ threadId: string }>;
 }

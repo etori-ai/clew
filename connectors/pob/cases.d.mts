@@ -1,0 +1,65 @@
+import type { StatusKind } from './connector.mjs';
+export type Relation = 'assigned' | 'group' | 'reported';
+export interface SourceCase {
+  id: string;
+  number: string;
+  caseType: string;
+  type: string;
+  status: string;
+  statusLabel: string;
+  closed: boolean;
+  since: string;
+  category?: string;
+  handlerId?: string;
+  groupId?: string;
+  group?: string;
+  customerId?: string;
+  title?: string;
+  suspendedTo?: string;
+  /** When the errand was reported, where the source says it. */
+  created?: string;
+}
+export type Match = { status: 'none' } | { status: 'ambiguous' } | { status: 'one'; id: string; groups?: string[] };
+export interface Found {
+  handler: Match;
+  customer: Match;
+}
+export interface Person {
+  handler?: { id: string; groups: string[] };
+  customer?: { id: string };
+}
+export interface Memo {
+  text: string;
+  extension?: string;
+}
+export interface CaseSource {
+  person(account: string): Promise<Found>;
+  list(person: Person, relation: Relation, caseTypes: string[]): Promise<{ cases: unknown[]; complete: boolean }>;
+  one(id: string): Promise<unknown>;
+  memo(id: string, type: string): Promise<Memo | null>;
+  create?(fault: Fault, operationId?: string): Promise<unknown>;
+}
+export interface Fault {
+  customerId: string;
+  title: string;
+  description: string;
+  caseType: string;
+  category: string;
+  groupId: string;
+}
+export declare class SourceUnavailable extends Error {}
+export declare const RELATIONS: Relation[];
+export declare function toSourceCase(raw: unknown): SourceCase | null;
+export declare function resolved(found: Found): Person;
+export declare function holds(errand: SourceCase, person: Person, relation: Relation): boolean;
+export declare function relationOf(errand: SourceCase, person: Person): Relation | undefined;
+export declare function plainText(memo: Memo | null | undefined): string | undefined;
+export declare const fixtureStatusKinds: Record<string, StatusKind>;
+export declare const fixtureCaseTypes: string[];
+export declare const FIXTURE_PROBLEM_MEMO: string;
+export declare const fixtureCreate: { caseType: string; category: string; groupId: string };
+export declare const fixturePeople: {
+  users: Array<{ id: string; account: string; groups: string[] }>;
+  customers: Array<{ id: string; account: string }>;
+};
+export declare function createFixtureCases(options?: { people?: typeof fixturePeople; now?: () => number }): CaseSource;

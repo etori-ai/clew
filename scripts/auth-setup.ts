@@ -186,6 +186,9 @@ await enableTokenExchange('clew-web');
 await audienceClient('eneo');
 // The SupportManagement connector acts as the person too (D89); its fixture reads this audience.
 await audienceClient('supportmanagement');
+// The POB connector checks the person's token for this audience itself, against this realm's keys: POB cannot take a
+// person's token, so the connector is where it is validated (connectors/pob/README.md).
+await audienceClient('pob');
 // Nextcloud's Approval app (D101) is called as the person too: the development Nextcloud's user_oidc provider has this
 // client id, accepts a bearer token whose `aud` holds it, and maps `preferred_username` to the existing account
 // (`sh scripts/calendar.sh seed`).
