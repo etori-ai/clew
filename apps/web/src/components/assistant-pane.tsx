@@ -273,92 +273,98 @@ export function AssistantPane({
       <Divider />
       {/* The exchange takes what the head leaves, so the box stays docked at the panel's foot. */}
       <StackItem size="fill">
-        <ChatLayout
-          composer={
-            <ChatComposer
-              density="compact"
-              value={value}
-              onChange={setValue}
-              isDisabled={busy}
-              input={
-                <ChatComposerInput
-                  handleRef={field}
-                  label={`Skriv till ${who.name} i ${who.source}`}
-                  maxRows={3}
-                  hasHistory={false}
-                  placeholder={`Skriv till ${who.name} i ${who.source}`}
-                />
-              }
-              onSubmit={text => {
-                const sent = text;
-                setValue('');
-                void talk.askAside(who, sent).then(ok => {
-                  if (!ok) setValue(v => v || sent);
-                });
-              }}
-              {...(talk.asideError ? { status: { type: 'error' as const, message: talk.asideError } } : {})}
-            />
-          }
-        >
-          <ChatMessageList density="compact" align="bottom" isStreaming={!!pending && !pending.held}>
-            {[
-              ...messages.map((m, i) =>
-                m.role === 'user'
-                  ? asked(
-                      `side-${i}`,
-                      m.body,
-                      m.createdAt,
-                      m.meta?.handed?.side ? undefined : 'Från samtalet med assistenten',
-                    )
-                  : answered(m, i),
-              ),
-              ...(pending
-                ? [
-                    asked(`side-${n}`, pending.text, pending.at),
-                    <ChatMessage
-                      key={`side-${n + 1}`}
-                      sender="assistant"
-                      name={pending.held ? <VisuallyHidden>Assistenten</VisuallyHidden> : theirs}
-                    >
-                      <ChatMessageBubble variant="ghost" width="100%">
-                        {pending.held ? (
-                          <VStack gap={3}>
-                            <HStack gap={2} vAlign="center" wrap="wrap">
-                              <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Inte skickad" />
-                              <Text>
-                                {`Frågan ser ut att gälla ${pending.held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Skickar du den hamnar den i ${who.source}.`}
-                              </Text>
-                            </HStack>
-                            <HStack gap={2} wrap="wrap">
-                              <Button
-                                ref={stay}
-                                size="sm"
-                                variant="primary"
-                                label="Låt assistenten svara"
-                                onClick={() => talk.askClew(pending.text)}
-                              />
-                              <Button
-                                size="sm"
-                                label={`Skicka till ${who.name} ändå`}
-                                onClick={() => void talk.askAside(who, pending.text, true)}
-                              />
-                            </HStack>
-                          </VStack>
-                        ) : pending.answer ? (
-                          <StreamingAnswer text={keepLines(pending.answer)} />
-                        ) : (
-                          <VStack gap={2}>
-                            <Skeleton width={220} height={14} />
-                            <Skeleton width={150} height={14} index={1} />
-                          </VStack>
-                        )}
-                      </ChatMessageBubble>
-                    </ChatMessage>,
-                  ]
-                : []),
-            ]}
-          </ChatMessageList>
-        </ChatLayout>
+        <VStack height="100%">
+          <ChatLayout
+            composer={
+              <ChatComposer
+                density="compact"
+                value={value}
+                onChange={setValue}
+                isDisabled={busy}
+                input={
+                  <ChatComposerInput
+                    handleRef={field}
+                    label={`Skriv till ${who.name} i ${who.source}`}
+                    maxRows={3}
+                    hasHistory={false}
+                    placeholder={`Skriv till ${who.name} i ${who.source}`}
+                  />
+                }
+                onSubmit={text => {
+                  const sent = text;
+                  setValue('');
+                  void talk.askAside(who, sent).then(ok => {
+                    if (!ok) setValue(v => v || sent);
+                  });
+                }}
+                {...(talk.asideError ? { status: { type: 'error' as const, message: talk.asideError } } : {})}
+              />
+            }
+          >
+            <ChatMessageList density="compact" align="bottom" isStreaming={!!pending && !pending.held}>
+              {[
+                ...messages.map((m, i) =>
+                  m.role === 'user'
+                    ? asked(
+                        `side-${i}`,
+                        m.body,
+                        m.createdAt,
+                        m.meta?.handed?.side ? undefined : 'Från samtalet med assistenten',
+                      )
+                    : answered(m, i),
+                ),
+                ...(pending
+                  ? [
+                      asked(`side-${n}`, pending.text, pending.at),
+                      <ChatMessage
+                        key={`side-${n + 1}`}
+                        sender="assistant"
+                        name={pending.held ? <VisuallyHidden>Assistenten</VisuallyHidden> : theirs}
+                      >
+                        <ChatMessageBubble variant="ghost" width="100%">
+                          {pending.held ? (
+                            <VStack gap={3}>
+                              <HStack gap={2} vAlign="center" wrap="wrap">
+                                <Badge
+                                  variant="warning"
+                                  icon={<Icon icon="warning" size="sm" />}
+                                  label="Inte skickad"
+                                />
+                                <Text>
+                                  {`Frågan ser ut att gälla ${pending.held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Skickar du den hamnar den i ${who.source}.`}
+                                </Text>
+                              </HStack>
+                              <HStack gap={2} wrap="wrap">
+                                <Button
+                                  ref={stay}
+                                  size="sm"
+                                  variant="primary"
+                                  label="Låt assistenten svara"
+                                  onClick={() => talk.askClew(pending.text)}
+                                />
+                                <Button
+                                  size="sm"
+                                  label={`Skicka till ${who.name} ändå`}
+                                  onClick={() => void talk.askAside(who, pending.text, true)}
+                                />
+                              </HStack>
+                            </VStack>
+                          ) : pending.answer ? (
+                            <StreamingAnswer text={keepLines(pending.answer)} />
+                          ) : (
+                            <VStack gap={2}>
+                              <Skeleton width={220} height={14} />
+                              <Skeleton width={150} height={14} index={1} />
+                            </VStack>
+                          )}
+                        </ChatMessageBubble>
+                      </ChatMessage>,
+                    ]
+                  : []),
+              ]}
+            </ChatMessageList>
+          </ChatLayout>
+        </VStack>
       </StackItem>
     </VStack>
   );

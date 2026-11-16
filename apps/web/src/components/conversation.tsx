@@ -53,7 +53,7 @@ import {
 } from '@clew/ui';
 import { mobileQuery } from '../media';
 import { weekNumber } from '@clew/calendar/dates';
-import { areasQuery, calendarWeekQuery, threadQuery, viewQuery } from '../queries';
+import { areasQuery, calendarWeekQuery, entityDetailQuery, threadQuery, viewQuery } from '../queries';
 import { DeclaredView } from './view';
 import { useConversation, type ChipRef } from './conversation-context';
 import { reviewLabel, staleLabel } from './panel-labels';
@@ -533,8 +533,22 @@ function TurnCard({ id, render }: { id: string; render: (thread: Thread) => Reac
 function TurnCardRow({ id, href }: { id: string; href: string }) {
   const card = useQuery(threadQuery(id));
   const t = card.data;
+  // Whom the item concerns, by name, and what its first row says (the period of a leave, an amount): read by the
+  // browser as the person, from the item and from the person's own page. None of it is the model's: the model is not
+  // given a name or a source's words about a person (D97 item 7, D115), and the row shows them all the same, since
+  // the person asking may see them (the product owner, 2026-11-16).
+  const about = t
+    ? [...(t.subjects ?? []), ...t.items.map(i => i.subject)].find(x => x?.entity === 'person')
+    : undefined;
+  const who = useQuery({ ...entityDetailQuery('person', about?.key ?? ''), enabled: !!about });
   if (!t) return null;
   const now = new Date().toISOString();
+  const facts = [
+    who.data?.entity.name,
+    t.items[0]?.detail,
+    t.trigger.source,
+    rowLine(rowFacts(t, now, stockholmDate(now))),
+  ].filter(Boolean);
   return (
     <ListItem
       label={
@@ -542,9 +556,7 @@ function TurnCardRow({ id, href }: { id: string; href: string }) {
           {t.title}
         </Link>
       }
-      description={
-        <Text type="supporting">{`${t.trigger.source}${DOT}${rowLine(rowFacts(t, now, stockholmDate(now)))}`}</Text>
-      }
+      description={<Text type="supporting">{facts.join(DOT)}</Text>}
     />
   );
 }
