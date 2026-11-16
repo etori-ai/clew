@@ -135,15 +135,41 @@ export const HandoverAssistantSchema = object({
   source: Type.String({ minLength: 1, maxLength: 200 }),
 });
 export type HandoverAssistant = Static<typeof HandoverAssistantSchema>;
-/**
- * What a conversation remembers of the assistant it was handed to: which one, what it was called then, the source's
- * key for the conversation there and where it continues in the source. One per conversation.
- */
-export const HandoverSchema = object({
+/** The most assistants of other systems one conversation keeps an exchange with. */
+export const HANDOVERS_MAX = 12;
+const handoverEntry = {
   assistant: HandoverAssistantSchema.properties.id,
   name: HandoverAssistantSchema.properties.name,
   source: HandoverAssistantSchema.properties.source,
   session: Type.Optional(session),
   link: Type.Optional(https),
+};
+/**
+ * What a conversation remembers of one assistant it has an exchange with: which one, what it was called then, the
+ * source's key for the conversation there and where it continues in the source.
+ */
+export const HandoverEntrySchema = object(handoverEntry);
+export type HandoverEntry = Static<typeof HandoverEntrySchema>;
+/**
+ * What a conversation remembers of the assistants of other systems it has an exchange with: the one asked last, and
+ * under `others` the ones asked before it, each with its own conversation in its source. One exchange per assistant: a
+ * question to an assistant asked before continues the conversation the source keeps with it.
+ */
+export const HandoverSchema = object({
+  ...handoverEntry,
+  others: Type.Optional(Type.Array(HandoverEntrySchema, { maxItems: HANDOVERS_MAX - 1 })),
 });
 export type Handover = Static<typeof HandoverSchema>;
+/** Every assistant a conversation has an exchange with, the one asked last first. */
+export const handoversOf = (handover: Handover | undefined | null): HandoverEntry[] => {
+  if (!handover) return [];
+  const { others, ...last } = handover;
+  return [last, ...(others ?? [])];
+};
+/** The conversation's memory once `asked` was asked: it is the last, and every other assistant keeps its own state. */
+export const withHandover = (handover: Handover | undefined | null, asked: HandoverEntry): Handover => {
+  const others = handoversOf(handover)
+    .filter(h => h.assistant !== asked.assistant)
+    .slice(0, HANDOVERS_MAX - 1);
+  return { ...asked, ...(others.length ? { others } : {}) };
+};

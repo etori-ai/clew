@@ -747,6 +747,51 @@ describe('an assistant hands the conversation back (D125 item 12)', () => {
     expect(own.thread.messages.at(-1)!.meta!.handover).toBeUndefined();
     expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.replied', details: { fromSide: HR } });
   });
+  test('a conversation keeps one exchange with each assistant asked in it, and a question to one asked before continues its own', async () => {
+    const w = world({
+      extra: [
+        scripted([
+          [
+            { type: 'text', delta: 'Du har 25 dagar.' },
+            { type: 'done', session: 's-1', link: 'https://kunskap.example/s/1' },
+          ],
+          [
+            { type: 'text', delta: 'Ja, även på deltid.' },
+            { type: 'done', session: 's-1' },
+          ],
+        ]),
+      ],
+    });
+    const first = await w.assistant.converse(hillevi, { text: 'Hur många semesterdagar?', assistant: HR });
+    const second = await w.assistant.converse(hillevi, {
+      text: 'Hej',
+      assistant: GUIDE,
+      side: true,
+      conversationId: first.conversationId,
+    });
+    // The other assistant starts a conversation of its own in its source, and the first keeps its state.
+    expect(asks(w)).toHaveLength(1);
+    expect(asks(w)[0].session).toBeUndefined();
+    expect(second.thread.handover).toMatchObject({
+      assistant: GUIDE,
+      others: [{ assistant: HR, session: 's-1', link: 'https://kunskap.example/s/1' }],
+    });
+    const third = await w.assistant.converse(hillevi, {
+      text: 'Gäller det på deltid?',
+      assistant: HR,
+      side: true,
+      conversationId: first.conversationId,
+    });
+    expect(third.thread.handover).toMatchObject({
+      assistant: HR,
+      session: 's-1',
+      link: 'https://kunskap.example/s/1',
+      others: [{ assistant: GUIDE }],
+    });
+    expect(third.thread.handover!.others).toHaveLength(1);
+    expect(w.store.audit.at(-1)).toMatchObject({ details: { assistant: HR, session: 'continued', side: true } });
+    expect(w.store.audit.at(-2)).toMatchObject({ details: { assistant: GUIDE, session: 'new', side: true } });
+  });
   test('an assistant the conversation is not with is not believed to have returned a question', async () => {
     const w = world({
       generate: async () => ({ text: 'Svar.', toolCalls: [] }),

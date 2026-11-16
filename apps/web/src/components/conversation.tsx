@@ -727,6 +727,30 @@ export function Transcript({
   // What was said in the panel beside the conversation is drawn there: the transcript is Clew's.
   const everything = conversation?.messages ?? [];
   const messages = everything.filter(m => !isSide(m));
+  // An assistant the person turned to in the panel without Clew sending a question on has no card in the transcript:
+  // one line stands where it first was asked, so the transcript shows that the exchange exists when it is read later.
+  const joined = new Map<number, NonNullable<NonNullable<ThreadMessage['meta']>['handed']>[]>();
+  everything.forEach((m, at) => {
+    const handed = m.role === 'user' ? m.meta?.handed : undefined;
+    if (!handed?.side) return;
+    if (everything.slice(0, at).some(x => x.meta?.handed?.side && x.meta.handed.assistant === handed.assistant)) return;
+    // Its answer in the transcript already leads to the panel and counts what was asked there.
+    if (everything.some(x => !isSide(x) && answeredBy(x)?.assistant === handed.assistant)) return;
+    const before = everything.slice(0, at).filter(x => !isSide(x)).length;
+    joined.set(before, [...(joined.get(before) ?? []), handed]);
+  });
+  const joinedLines = (i: number) =>
+    (joined.get(i) ?? []).map(h => (
+      <ChatSystemMessage key={`joined-${h.assistant}`}>
+        <HStack gap={2} vAlign="center" hAlign="center" wrap="wrap">
+          <AreaChip ordinal={marks.system(connectorOf(h.assistant))?.ordinal ?? null} label={h.source} />
+          <Text weight="semibold" color="primary">{`Du frågade ${h.name} i sidofältet`}</Text>
+          {asideHref && asideOpen !== h.assistant && (
+            <Button size="sm" variant="ghost" label="Visa" href={asideHref(h.assistant)} />
+          )}
+        </HStack>
+      </ChatSystemMessage>
+    ));
   // Rows are keyed by position, so the pending question and answer become the written ones in place: the log (aria-busy
   // while the answer is written) speaks the answer once, and never the question twice (D36, 4.1.3).
   const n = messages.length;
@@ -928,11 +952,13 @@ export function Transcript({
             const routed = m.role === 'user' && m.meta?.handed?.routed ? m.meta.handed : null;
             const line = routed ? undefined : (switchLine(messages, i) ?? handedBackLine(m));
             return [
+              ...joinedLines(i),
               ...(line ? [<TurnLine key={`switch-${i}`} line={line} />] : []),
               written(m, i),
               ...(routed ? [<SuggestedLine key={`suggested-${i}`} name={routed.name} source={routed.source} />] : []),
             ];
           }),
+          ...joinedLines(n),
           // The question on its way (D36): drawn at once as the person sent it, the answer under it pending: its place
           // held until something is known, the capabilities it reads as calls with their status, then the text.
           ...(pending

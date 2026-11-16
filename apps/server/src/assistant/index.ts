@@ -17,7 +17,7 @@ import type {
   View,
   ViewRef,
 } from '@clew/contracts';
-import { viewRows } from '@clew/contracts';
+import { handoversOf, viewRows, withHandover } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import { audiencedActorOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
@@ -641,8 +641,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     let fallbackReason: string | undefined;
     if (!produced && model) {
       // The assistants the model may hand this question to (D125 item 11): only a question with nothing attached and
-      // no card named, since nothing of the conversation may follow it, and in a conversation already handed to one
-      // assistant only that one. A source that does not answer in time offers none, and Clew answers.
+      // no card named, since nothing of the conversation may follow it. A conversation may have an exchange with more
+      // than one of them. A source that does not answer in time offers none, and Clew answers.
       const routable =
         observer.offers &&
         !input.own &&
@@ -653,9 +653,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         !chips.length &&
         !named.length &&
         !people.named.length
-          ? (await deps.handover.list(persona).catch(() => []))
-              .filter(a => !existing?.handover || existing.handover.assistant === a.id)
-              .slice(0, ROUTABLE_MAX)
+          ? (await deps.handover.list(persona).catch(() => [])).slice(0, ROUTABLE_MAX)
           : [];
       const outcome = await modelPath(persona, input.text, history, context, model, turn, people, routable);
       // The model suggests an assistant of another system: the person is asked before anything leaves Clew, and the
@@ -733,8 +731,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     // The person put a question to Clew that the conversation's assistant could not answer in the panel: the question
     // says where it came from. Only the assistant the conversation is with is believed.
     const fromSide =
-      !declined && input.returnedBy && existing?.handover?.assistant === input.returnedBy
-        ? existing.handover
+      !declined && input.returnedBy
+        ? handoversOf(existing?.handover).find(h => h.assistant === input.returnedBy)
         : undefined;
     const askedMeta: MessageMeta = {
       ...(chips.length ? { chips, refs } : {}),
@@ -774,7 +772,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           connector: 'clew',
           area: 'fragor',
           summary: produced!.body,
-          ...(declined ? { handover: declined.handedBack } : {}),
+          ...(declined ? { handover: withHandover(undefined, declined.handedBack) } : {}),
           items: [],
           actions: [],
           waitingOn: null,
@@ -787,7 +785,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         await tx.updateThread(conversationId, {
           summary: produced!.body,
           updatedAt: at,
-          ...(declined ? { handover: declined.handedBack } : {}),
+          ...(declined ? { handover: withHandover(existing.handover, declined.handedBack) } : {}),
         });
       }
       await tx.addMessage(conversationId, {

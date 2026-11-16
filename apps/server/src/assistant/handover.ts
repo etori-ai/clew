@@ -10,6 +10,8 @@ import {
   type MessageMeta,
   type TurnEvent,
   type TurnStep,
+  handoversOf,
+  withHandover,
 } from '@clew/contracts';
 import { CapabilityError } from '@clew/connectors';
 import { InputError } from '../context';
@@ -111,13 +113,14 @@ export function handoverPath(deps: AssistantDeps) {
     const existing = input.conversationId ? await access.read(persona, input.conversationId) : undefined;
     if (input.conversationId && (!existing || existing.kind !== 'question'))
       throw new InputError('Samtalet finns inte.');
-    if (existing?.handover && existing.handover.assistant !== picked)
-      throw new InputError('Samtalet är lämnat till en annan assistent. Börja ett nytt samtal för att byta.');
-    // Whom the person is asking, as the source names it now; a conversation already handed over keeps the name it had
-    // if the source cannot be listed this moment, and the registry still checks the assistant before the question goes.
+    // A conversation keeps one exchange with each assistant asked in it: a question to one asked before continues the
+    // conversation its source keeps, and another assistant starts its own.
+    const mine = handoversOf(existing?.handover).find(h => h.assistant === picked);
+    // Whom the person is asking, as the source names it now; an assistant already asked here keeps the name it had if
+    // the source cannot be listed this moment, and the registry still checks the assistant before the question goes.
     const listed: HandoverAssistant | undefined =
       (await outside.list(persona)).find(a => a.id === picked) ??
-      (existing?.handover ? { id: picked, name: existing.handover.name, source: existing.handover.source } : undefined);
+      (mine ? { id: picked, name: mine.name, source: mine.source } : undefined);
     if (!listed) throw new InputError('Assistenten finns inte längre.');
     // Before the words leave Clew (D125 item 13): a question that names someone the person manages, or one of their
     // open cards, is most likely meant for Clew, and what it says is not another system's to have by mistake. It is
@@ -155,12 +158,12 @@ export function handoverPath(deps: AssistantDeps) {
     // From here what is heard is the other assistant's: the listener draws it as such from its first word.
     emit({ type: 'handed', assistant: { id: picked, name: listed.name, source: listed.source } });
     emit({ type: 'step', step: { ...step, status: 'running' } });
-    const continued = existing?.handover?.session;
+    const continued = mine?.session;
     let body = '';
     let cut = false;
     const cites: AssistantAskSource[] = [];
     let session = continued;
-    let link = existing?.handover?.link;
+    let link = mine?.link;
     let failed: CapabilityError['code'] | undefined;
     // How the assistant returned the conversation, if it did (D125 item 12).
     let returned: 'declined' | 'completed' | undefined;
@@ -230,13 +233,13 @@ export function handoverPath(deps: AssistantDeps) {
     const at = clock().toISOString();
     const conversationId = existing?.id ?? ids();
     const connector = connectorOf(picked);
-    const state: Handover = {
+    const state: Handover = withHandover(existing?.handover, {
       assistant: picked,
       name: listed.name,
       source: listed.source,
       ...(session ? { session } : {}),
       ...(link ? { link } : {}),
-    };
+    });
     const who = { assistant: picked, name: listed.name, source: listed.source };
     const asked = { ...who, ...(routed ? { routed: true as const } : {}), ...(side ? { side: true as const } : {}) };
     const declinedAtSide = side && returned === 'declined' && !failed;

@@ -46,7 +46,7 @@ import {
 import { mobileQuery, shortQuery } from '../components/shell';
 import { Composer } from '../components/composer';
 import { Transcript } from '../components/conversation';
-import { AssistantPane } from '../components/assistant-pane';
+import { AssistantPane, AssistantsMenu } from '../components/assistant-pane';
 import { titled, useConversation, type ChipRef } from '../components/conversation-context';
 import { drawn } from '../components/thing-panel';
 import { cardBody } from '../components/card-panel';
@@ -148,6 +148,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
     navigate(assistantHref(pathname, search, null));
     requestAnimationFrame(() => talk.focus());
   }, [navigate, pathname, search, talk]);
+  const assistants = <AssistantsMenu open={asideId} hrefFor={id => assistantHref(pathname, search, id)} />;
   const aside = asideId ? (
     <AssistantPane
       assistant={asideId}
@@ -249,7 +250,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   if (short)
     return (
       <>
-        <PageFrame entry={entry} title={heading} titleId="samtal" meta={meta} label="Samtalet">
+        <PageFrame entry={entry} title={heading} titleId="samtal" meta={meta} actions={assistants} label="Samtalet">
           {aside ?? (
             <VStack gap={4}>
               {body}
@@ -267,6 +268,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
         title={heading}
         titleId="samtal"
         meta={meta}
+        actions={assistants}
         label="Samtalet"
         bare
         end={

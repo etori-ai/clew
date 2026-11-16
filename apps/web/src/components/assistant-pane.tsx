@@ -1,17 +1,24 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { ThreadMessage } from '@clew/contracts';
+import { handoversOf, type ThreadMessage } from '@clew/contracts';
+import { useNavigate } from 'react-router';
 import {
   AreaChip,
   Badge,
   Button,
   ChatComposer,
+  ChatComposerInput,
   ChatLayout,
+  type ChatComposerInputHandle,
   ChatMessage,
   ChatMessageBubble,
   ChatMessageList,
   ChatMessageMetadata,
   Divider,
+  DropdownMenu,
+  DropdownMenuGroup,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   EmptyState,
   Heading,
   HStack,
@@ -29,8 +36,72 @@ import {
 import { handoverAssistantsQuery } from '../queries';
 import { useMarks } from '../marks';
 import { sideMessages } from '../conversation-about';
+import { DOT } from '../dot';
 import { useConversation } from './conversation-context';
 import { AssistantMark, StreamingAnswer, keepLines } from './conversation';
+
+/**
+ * The way to any assistant of another system from a conversation, in the page's header and always there: the ones this
+ * conversation already has an exchange with first, each with how much was asked of it, then every other assistant the
+ * person may ask. Picking one puts its exchange beside the transcript, where its own box is. The box under the
+ * transcript takes no `@` or `/` for an assistant: it only ever goes to Clew. Nothing is drawn for a person with no
+ * assistant to ask.
+ */
+export function AssistantsMenu({ open, hrefFor }: { open: string | null; hrefFor: (assistant: string) => string }) {
+  const talk = useConversation();
+  const navigate = useNavigate();
+  const listed = useQuery(handoverAssistantsQuery).data ?? [];
+  const here = handoversOf(talk.conversation?.handover);
+  if (listed.length === 0 && here.length === 0) return null;
+  const all = talk.conversation?.messages ?? [];
+  const more = listed.filter(a => !here.some(h => h.assistant === a.id));
+  const asked = (assistant: string) => {
+    const n = sideMessages(all, assistant).filter(m => m.role === 'user').length;
+    return n === 0 ? '' : `${DOT}${n === 1 ? '1 fråga' : `${n} frågor`}`;
+  };
+  const pick = (assistant: string) => navigate(hrefFor(assistant));
+  return (
+    <DropdownMenu
+      button={{
+        label: 'Assistenter',
+        children: here.length > 0 ? `Assistenter${DOT}${here.length}` : 'Assistenter',
+        variant: 'secondary',
+        size: 'sm',
+      }}
+      menuWidth={360}
+      menuMaxHeight={460}
+    >
+      {here.length > 0 && (
+        <DropdownMenuGroup title="I det här samtalet">
+          <DropdownMenuRadioGroup label="I det här samtalet" value={open ?? undefined} onChange={pick}>
+            {here.map(h => (
+              <DropdownMenuRadioItem
+                key={h.assistant}
+                value={h.assistant}
+                label={h.name}
+                description={`${h.source}${asked(h.assistant)}`}
+              />
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      )}
+      {more.length > 0 && (
+        <DropdownMenuGroup title={here.length > 0 ? 'Fler du kan fråga' : 'Du kan fråga'}>
+          <DropdownMenuRadioGroup label="Assistenter du kan fråga" value={open ?? undefined} onChange={pick}>
+            {more.map(a => (
+              <DropdownMenuRadioItem
+                key={a.id}
+                value={a.id}
+                label={a.name}
+                description={a.description ? `${a.source}${DOT}${a.description}` : a.source}
+              />
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      )}
+    </DropdownMenu>
+  );
+}
 
 /**
  * Another system's assistant beside the conversation (the product owner, 2026-11-16): the transcript and the box under
@@ -54,7 +125,12 @@ export function AssistantPane({
   const marks = useMarks();
   const listed = useQuery(handoverAssistantsQuery).data;
   const [value, setValue] = useState('');
-  const kept = talk.conversation?.handover?.assistant === assistant ? talk.conversation.handover : undefined;
+  // Opening the panel is the person turning to this assistant: its box takes the focus, as a dialog's first field does.
+  const field = useRef<ChatComposerInputHandle>(null);
+  useEffect(() => {
+    field.current?.focus();
+  }, [assistant]);
+  const kept = handoversOf(talk.conversation?.handover).find(h => h.assistant === assistant);
   const found = listed?.find(a => a.id === assistant);
   const who = kept
     ? { id: assistant, name: kept.name, source: kept.source, description: found?.description }
@@ -206,7 +282,15 @@ export function AssistantPane({
               value={value}
               onChange={setValue}
               isDisabled={busy}
-              placeholder={`Skriv till ${who.name}`}
+              input={
+                <ChatComposerInput
+                  handleRef={field}
+                  label={`Skriv till ${who.name} i ${who.source}`}
+                  maxRows={3}
+                  hasHistory={false}
+                  placeholder={`Skriv till ${who.name}`}
+                />
+              }
               headerContext={
                 <Text type="supporting" color="secondary">
                   {`Skickas till ${who.source}. Inget annat ur samtalet följer med.`}

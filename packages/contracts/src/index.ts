@@ -3601,7 +3601,7 @@ export const ThreadSchema = object({
   area: Type.String(),
   /** One sentence the card leads with. */
   summary: Type.String(),
-  /** The source's assistant a question conversation was handed to, if it was: one per conversation. */
+  /** The assistants of other systems a question conversation has an exchange with, the one asked last first. */
   handover: Type.Optional(HandoverSchema),
   items: Type.Array(ThreadItemSchema),
   /**
@@ -4992,14 +4992,18 @@ export {
   ASK_CONTEXT_MAX,
   ASK_CONTEXT_TEXT_MAX,
   ASK_SOURCES_MAX,
+  HANDOVERS_MAX,
   SOURCE_ASSISTANTS_MAX,
   AssistantAskContextItemSchema,
   AssistantAskEventSchema,
   AssistantAskSchema,
   AssistantAskSourceSchema,
   HandoverAssistantSchema,
+  HandoverEntrySchema,
   HandoverSchema,
   SourceAssistantSchema,
+  handoversOf,
+  withHandover,
   SourceAssistantsOutputSchema,
   type AssistantAsk,
   type AssistantAskContextItem,
@@ -5007,6 +5011,7 @@ export {
   type AssistantAskSource,
   type Handover,
   type HandoverAssistant,
+  type HandoverEntry,
   type SourceAssistant,
   type SourceAssistantsOutput,
 } from './handover';
