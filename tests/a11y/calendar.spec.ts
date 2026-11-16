@@ -313,7 +313,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(page).not.toHaveURL(/entry=/);
     await expect(block).toBeFocused();
   });
-  test('a meeting someone else organises says so and has no organiser’s buttons; Fråga Clew asks about it in a conversation (D126 rule 5)', async ({
+  test('a meeting someone else organises says so and has no organiser’s buttons; Fråga assistenten asks about it in a conversation (D126 rule 5)', async ({
     page,
     api,
   }) => {
@@ -354,13 +354,13 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(panel.getByText('Skolchefen', { exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Flytta …' })).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Ställ in …' })).toHaveCount(0);
-    // No box in the pane: "Fråga Clew" leaves for a conversation with the meeting's chip in the box.
+    // No box in the pane: "Fråga assistenten" leaves for a conversation with the meeting's chip in the box.
     await expect(panel.getByRole('textbox')).toHaveCount(0);
     await expectNoAxeViolations(page);
-    await panel.getByRole('button', { name: 'Fråga Clew' }).click();
+    await panel.getByRole('button', { name: 'Fråga assistenten' }).click();
     await expect(page).not.toHaveURL(/\/calendar/);
     // The box is the one in the assistant's home: a combobox where `@` offers things, a textbox where it does not.
-    const named = { name: /^(Vad vill du göra|Svara i samtalet|Fråga Clew)$/ };
+    const named = { name: /^(Vad vill du göra|Svara i samtalet|Fråga assistenten)$/ };
     const box = page.getByRole('combobox', named).or(page.getByRole('textbox', named));
     await expect(page.getByRole('button', { name: 'Ta bort Rektorsmöte' })).toBeVisible();
     await box.fill('Vad står på agendan?');
@@ -433,8 +433,8 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await page.keyboard.press('Enter');
     const drawer = page.getByRole('dialog', { name: 'Morgonmöte ledningsgrupp' });
     await expect(drawer.getByRole('button', { name: 'Flytta …' })).toBeVisible();
-    // The same pane as beside the grid: its buttons, "Fråga Clew" among them, and no box (D126 rule 5).
-    await expect(drawer.getByRole('button', { name: 'Fråga Clew' })).toBeVisible();
+    // The same pane as beside the grid: its buttons, "Fråga assistenten" among them, and no box (D126 rule 5).
+    await expect(drawer.getByRole('button', { name: 'Fråga assistenten' })).toBeVisible();
     await expect(drawer.getByRole('textbox')).toHaveCount(0);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');

@@ -10,6 +10,8 @@ import {
   type MessageMeta,
   type TurnEvent,
   type TurnStep,
+  handoversOf,
+  withHandover,
 } from '@clew/contracts';
 import { CapabilityError } from '@clew/connectors';
 import { InputError } from '../context';
@@ -23,15 +25,6 @@ import type { AssistantDeps } from './ports';
 /** The step a handed-over turn shows while the other system's assistant answers; no capability of that name exists. */
 export const HANDOVER_STEP = 'clew.handover';
 const connectorOf = (assistant: string) => assistant.slice(0, assistant.indexOf(':'));
-/**
- * A question another system's assistant handed back without answering (D125 item 12): which assistant, the
- * conversation's state there, whether Clew's own model had chosen it, and how long it took. The caller answers.
- */
-export interface HandedBack {
-  handedBack: Handover;
-  routed?: true;
-  ms: number;
-}
 /** The tool Clew's own model hands a question over with (D125 item 11). Clew's own, never a capability. */
 export const HANDOVER_TOOL = 'clew.handOver';
 /** The most assistants Clew's model is told of in one turn; with more, the source's own finding read is the way. */
@@ -97,9 +90,11 @@ export function handoverPath(deps: AssistantDeps) {
     persona: AuthenticatedContext,
     input: ConversationInput,
     observer: { emit?: (event: TurnEvent) => void; signal?: AbortSignal; offers?: boolean } = {},
-  ): Promise<ConversationResponse | HandedBack> {
+  ): Promise<ConversationResponse> {
     // Clew's own assistant suggested this assistant and the person said yes (D125 item 11): the turn says so.
     const routed = input.suggested === true;
+    // Asked in the panel beside the conversation: the exchange is drawn there.
+    const side = input.side === true;
     const outside = deps.handover;
     const picked = input.assistant;
     if (!outside || !picked) throw new InputError('Det finns ingen assistent att lämna frågan till.');
@@ -108,13 +103,14 @@ export function handoverPath(deps: AssistantDeps) {
     const existing = input.conversationId ? await access.read(persona, input.conversationId) : undefined;
     if (input.conversationId && (!existing || existing.kind !== 'question'))
       throw new InputError('Samtalet finns inte.');
-    if (existing?.handover && existing.handover.assistant !== picked)
-      throw new InputError('Samtalet är lämnat till en annan assistent. Börja ett nytt samtal för att byta.');
-    // Whom the person is asking, as the source names it now; a conversation already handed over keeps the name it had
-    // if the source cannot be listed this moment, and the registry still checks the assistant before the question goes.
+    // A conversation keeps one exchange with each assistant asked in it: a question to one asked before continues the
+    // conversation its source keeps, and another assistant starts its own.
+    const mine = handoversOf(existing?.handover).find(h => h.assistant === picked);
+    // Whom the person is asking, as the source names it now; an assistant already asked here keeps the name it had if
+    // the source cannot be listed this moment, and the registry still checks the assistant before the question goes.
     const listed: HandoverAssistant | undefined =
       (await outside.list(persona)).find(a => a.id === picked) ??
-      (existing?.handover ? { id: picked, name: existing.handover.name, source: existing.handover.source } : undefined);
+      (mine ? { id: picked, name: mine.name, source: mine.source } : undefined);
     if (!listed) throw new InputError('Assistenten finns inte längre.');
     // Before the words leave Clew (D125 item 13): a question that names someone the person manages, or one of their
     // open cards, is most likely meant for Clew, and what it says is not another system's to have by mistake. It is
@@ -129,8 +125,7 @@ export function handoverPath(deps: AssistantDeps) {
           (await access.list(persona, clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed'),
         ).length > 0;
       if (named || carded) {
-        if (!observer.offers)
-          throw new InputError('Frågan nämner något som hör hemma i Clew och skickas inte vidare härifrån.');
+        if (!observer.offers) throw new InputError('Frågan nämner något som hör hemma här och skickas inte vidare.');
         throw new HandoverHeld(listed, named ? 'person' : 'card');
       }
     }
@@ -152,15 +147,16 @@ export function handoverPath(deps: AssistantDeps) {
     // From here what is heard is the other assistant's: the listener draws it as such from its first word.
     emit({ type: 'handed', assistant: { id: picked, name: listed.name, source: listed.source } });
     emit({ type: 'step', step: { ...step, status: 'running' } });
-    const continued = existing?.handover?.session;
+    const continued = mine?.session;
     let body = '';
     let cut = false;
     const cites: AssistantAskSource[] = [];
     let session = continued;
-    let link = existing?.handover?.link;
+    let link = mine?.link;
     let failed: CapabilityError['code'] | undefined;
-    // How the assistant returned the conversation, if it did (D125 item 12).
-    let returned: 'declined' | 'completed' | undefined;
+    // A source may still end its answer with `handback` (D125 item 12). Clew no longer acts on it (the product owner,
+    // 2026-11-16): the answer stands as any other, and an assistant that declined without a word did not answer.
+    let silent = false;
     try {
       for await (const event of outside.ask(
         persona,
@@ -186,14 +182,17 @@ export function handoverPath(deps: AssistantDeps) {
           session = event.session;
           link = event.link ?? link;
         } else if (event.type === 'handback') {
-          returned = event.reason;
+          silent = event.reason === 'declined';
           session = event.session ?? session;
           link = event.link ?? link;
         }
       }
-      // An answer without a word is the source failing, not an answer; a question handed back needs none.
-      if (!body.trim() && returned !== 'declined')
-        throw new CapabilityError(`${listed.source} svarar inte just nu.`, 'unavailable');
+      // An answer without a word is no answer: the source failing, or an assistant that declined and wrote nothing.
+      if (!body.trim())
+        throw new CapabilityError(
+          silent ? `${listed.name} svarade inte på frågan.` : `${listed.source} svarar inte just nu.`,
+          'unavailable',
+        );
     } catch (error) {
       if (observer.signal?.aborted) throw new TurnStopped();
       if (!(error instanceof CapabilityError)) throw error;
@@ -205,37 +204,18 @@ export function handoverPath(deps: AssistantDeps) {
     }
     if (observer.signal?.aborted) throw new TurnStopped();
     emit({ type: 'step', step: { ...step, status: failed ? 'error' : 'complete', ms: took() } });
-    if (returned === 'declined' && !failed) {
-      // The question is not that assistant's: nothing it wrote stands, nothing is stored here, and the caller answers
-      // the person's same words itself. What the caller is told is who handed back and where the conversation there
-      // is, never a word of the other system's.
-      if (body) emit({ type: 'text', delta: '', reset: true });
-      // The listener hears it now, before Clew starts on its own answer, so the change is seen as it happens.
-      emit({ type: 'handedBack', assistant: { id: picked, name: listed.name, source: listed.source } });
-      return {
-        handedBack: {
-          assistant: picked,
-          name: listed.name,
-          source: listed.source,
-          ...(session ? { session } : {}),
-          ...(link ? { link } : {}),
-        },
-        ...(routed ? { routed: true as const } : {}),
-        ms: took(),
-      };
-    }
     const at = clock().toISOString();
     const conversationId = existing?.id ?? ids();
     const connector = connectorOf(picked);
-    const state: Handover = {
+    const state: Handover = withHandover(existing?.handover, {
       assistant: picked,
       name: listed.name,
       source: listed.source,
       ...(session ? { session } : {}),
       ...(link ? { link } : {}),
-    };
+    });
     const who = { assistant: picked, name: listed.name, source: listed.source };
-    const asked = { ...who, ...(routed ? { routed: true as const } : {}) };
+    const asked = { ...who, ...(routed ? { routed: true as const } : {}), ...(side ? { side: true as const } : {}) };
     const answerMeta: MessageMeta = {
       shape: 'svar',
       assistant: 'handover',
@@ -252,7 +232,7 @@ export function handoverPath(deps: AssistantDeps) {
         ...(cites.length ? { cites } : {}),
         ...(failed ? { failed: true as const } : {}),
         ...(cut ? { cut: true as const } : {}),
-        ...(returned === 'completed' && !failed ? { returned: true as const } : {}),
+        ...(side ? { side: true as const } : {}),
       },
     };
     await store.transaction(async tx => {
@@ -267,7 +247,7 @@ export function handoverPath(deps: AssistantDeps) {
           week: null,
           connector: 'clew',
           area: 'fragor',
-          summary: body,
+          summary: body || input.text.slice(0, 200),
           handover: state,
           items: [],
           actions: [],
@@ -278,7 +258,8 @@ export function handoverPath(deps: AssistantDeps) {
           updatedAt: at,
         });
       } else {
-        await tx.updateThread(conversationId, { summary: body, updatedAt: at, handover: state });
+        // What is said at the side does not become the conversation's summary: that stays the transcript's.
+        await tx.updateThread(conversationId, { ...(side ? {} : { summary: body }), updatedAt: at, handover: state });
       }
       await tx.addMessage(conversationId, { role: 'user', body: input.text, at, meta: { handed: asked } });
       await tx.addMessage(conversationId, { role: 'assistant', body, at, meta: answerMeta });
@@ -297,7 +278,7 @@ export function handoverPath(deps: AssistantDeps) {
           ms: took(),
           ...(cut ? { cut: true } : {}),
           ...(failed ? { failed } : {}),
-          ...(returned === 'completed' && !failed ? { returned: 'completed' } : {}),
+          ...(side ? { side: true } : {}),
           // How the assistant was chosen: by the person in the list above the field, or on Clew's suggestion.
           ...(routed ? { routed: 'suggested' } : {}),
           // The question was held for naming a person or a card of the asker's, and they sent it anyway.

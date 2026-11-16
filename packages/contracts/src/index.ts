@@ -3367,6 +3367,11 @@ export const MessageMetaSchema = object({
   followUps: Type.Optional(Type.Array(Type.String(), { maxItems: 3 })),
   /** The open cards an answer is about (D34, the canvas's H1): the transcript draws them in the turn, live, from the same cache as the page. */
   cards: Type.Optional(Type.Array(id, { maxItems: 3 })),
+  /**
+   * `rows`: the cards are the asker's open work about a person the question names, found without a model, which cannot
+   * tell whether the question is about them. They are drawn as quiet rows, never as whole items.
+   */
+  cardsAs: Type.Optional(Type.Literal('rows')),
   /** The model that wrote this answer (D24); absent when the router answered. */
   model: Type.Optional(ModelRefSchema),
   /** The model turn's cost and trace (D91); absent when the router answered. */
@@ -3387,6 +3392,13 @@ export const MessageMetaSchema = object({
       routed: Type.Optional(Type.Literal(true)),
       /** The assistant did not take the question (D125 item 12): the answer under it is Clew's own. */
       declined: Type.Optional(Type.Literal(true)),
+      /** Asked in the panel beside the conversation: the question and its answer are drawn there, not in the transcript. */
+      side: Type.Optional(Type.Literal(true)),
+      /**
+       * With `declined`: the question was asked in the panel, the assistant could not answer it, and the person chose
+       * to put it to Clew. It stands in the transcript and says where it came from.
+       */
+      fromSide: Type.Optional(Type.Literal(true)),
     }),
   ),
   /** On Clew's own answer to a question another system's assistant handed back (D125 item 12): which assistant did. */
@@ -3413,6 +3425,13 @@ export const MessageMetaSchema = object({
       cut: Type.Optional(Type.Literal(true)),
       /** The assistant considered the matter done and returned the conversation to Clew with this answer (D125 item 12). */
       returned: Type.Optional(Type.Literal(true)),
+      /** The answer to a question asked in the panel beside the conversation: drawn there, not in the transcript. */
+      side: Type.Optional(Type.Literal(true)),
+      /**
+       * With `side`: the assistant did not take the question. The body is empty; the panel says so and offers to put
+       * the question to Clew, which is the person's own press.
+       */
+      declined: Type.Optional(Type.Literal(true)),
     }),
   ),
 });
@@ -3587,7 +3606,7 @@ export const ThreadSchema = object({
   area: Type.String(),
   /** One sentence the card leads with. */
   summary: Type.String(),
-  /** The source's assistant a question conversation was handed to, if it was: one per conversation. */
+  /** The assistants of other systems a question conversation has an exchange with, the one asked last first. */
   handover: Type.Optional(HandoverSchema),
   items: Type.Array(ThreadItemSchema),
   /**
@@ -4681,6 +4700,11 @@ export const ConversationInput = object({
    * the person chose to send it anyway (D125 item 13). Recorded with the turn.
    */
   confirmed: Type.Optional(Type.Literal(true)),
+  /**
+   * With `assistant`: the question is asked in the panel beside the conversation, where that assistant's own exchange
+   * is drawn.
+   */
+  side: Type.Optional(Type.Literal(true)),
 });
 export type ConversationInput = Static<typeof ConversationInput>;
 /** One turn's answer: its shape, where it came from, and what it produced for the page. */
@@ -4730,16 +4754,6 @@ export const TurnEventSchema = Type.Union([
   // The turn went to another system's assistant (D125): the text that follows is that assistant's, and is drawn as such from its first word.
   object({
     type: Type.Literal('handed'),
-    assistant: object({
-      id: HandoverAssistantSchema.properties.id,
-      name: HandoverAssistantSchema.properties.name,
-      source: HandoverAssistantSchema.properties.source,
-    }),
-  }),
-  // That assistant handed the question back (D125 item 12): what follows is Clew's own answer to it, and the listener
-  // says so before the first word of it.
-  object({
-    type: Type.Literal('handedBack'),
     assistant: object({
       id: HandoverAssistantSchema.properties.id,
       name: HandoverAssistantSchema.properties.name,
@@ -4968,14 +4982,18 @@ export {
   ASK_CONTEXT_MAX,
   ASK_CONTEXT_TEXT_MAX,
   ASK_SOURCES_MAX,
+  HANDOVERS_MAX,
   SOURCE_ASSISTANTS_MAX,
   AssistantAskContextItemSchema,
   AssistantAskEventSchema,
   AssistantAskSchema,
   AssistantAskSourceSchema,
   HandoverAssistantSchema,
+  HandoverEntrySchema,
   HandoverSchema,
   SourceAssistantSchema,
+  handoversOf,
+  withHandover,
   SourceAssistantsOutputSchema,
   type AssistantAsk,
   type AssistantAskContextItem,
@@ -4983,6 +5001,7 @@ export {
   type AssistantAskSource,
   type Handover,
   type HandoverAssistant,
+  type HandoverEntry,
   type SourceAssistant,
   type SourceAssistantsOutput,
 } from './handover';

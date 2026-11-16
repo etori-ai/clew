@@ -1,4 +1,4 @@
-import { desktop, expect, expectNoAxeViolations, narrow, open, reflowProblems, test } from './support';
+import { announcements, desktop, expect, expectNoAxeViolations, narrow, open, reflowProblems, test } from './support';
 
 for (const [layout, viewport] of [
   ['desktop', desktop],
@@ -20,10 +20,15 @@ for (const [layout, viewport] of [
         api.threads = [card];
         // The work item in Att göra (D112): beside the queue on a desktop, whose row says where it stands, alone at 320 px.
         await open(page, '/todo?item=fakturor');
+        // The row and the item's notice say the state in one word (D126 item 13), and the notice says why.
         if (layout === 'desktop')
-          await expect(page.locator('#work-fakturor')).toContainText(
-            state === 'unknown' ? 'Behöver kontrolleras · ' : 'Väntar på källan · ',
-          );
+          await expect(page.locator('#work-fakturor')).toContainText(state === 'unknown' ? 'Obekräftat' : 'Skickas');
+        await expect(
+          page.getByText(
+            state === 'unknown' ? 'Utfallet är inte bekräftat' : 'Skickar ditt beslut till Ekonomisystemet',
+            { exact: true },
+          ),
+        ).toBeVisible();
         const check = page.getByRole('button', { name: 'Kontrollera status' });
         await expect(check).toBeVisible();
         await expect(page.getByRole('button', { name: /^Attestera ·/ })).toHaveCount(0);
@@ -90,10 +95,12 @@ for (const [layout, viewport] of [
       });
       api.threads = [card];
       await open(page, '/todo?item=fakturor');
+      // The notice: what (nothing was sent), why, and the decision again as its one move (D126 item 13).
+      await expect(page.getByText('Inget skickades', { exact: true })).toBeVisible();
       await expect(
-        page.getByText(
-          'Personen har inte längre det användarnamn som beslutet gällde. Inget skickades. Fatta beslutet igen.',
-        ),
+        page.getByText('Personen har inte längre det användarnamn som beslutet gällde. Fatta beslutet igen.', {
+          exact: true,
+        }),
       ).toBeVisible();
       // Nothing was sent, so there is nothing to check: the way on is the decision, on the name Anna has now.
       await expect(page.getByRole('button', { name: 'Kontrollera status' })).toHaveCount(0);
@@ -107,6 +114,31 @@ for (const [layout, viewport] of [
       await expect.poll(() => api.acted.map(a => [a.threadId, a.body.actionId])).toEqual([['fakturor', 'decide']]);
     });
   });
+
+/**
+ * Once the person has decided, the item's buttons give way to its status notice (D126 item 13): what came of it, why
+ * and since when, and the one move the state calls for. The button that had the focus is gone, so the focus goes to the
+ * item's title, which the notice stands under, and the notice is said aloud, since a Banner is no live region.
+ */
+test('a decision replaced by its notice: the focus goes to the item’s title and the notice is announced', async ({
+  page,
+  api: _,
+}) => {
+  await page.setViewportSize(desktop);
+  await open(page, '/todo?item=fakturor');
+  const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+  const decide = pane.getByRole('button', { name: 'Attestera 2 valda' });
+  await decide.focus();
+  await page.keyboard.press('Enter');
+  await expect(pane.getByText('2 fakturor attesterade', { exact: true })).toBeVisible();
+  await expect(decide).toHaveCount(0);
+  await expect(pane.getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeFocused();
+  // The receipt's words are said as it arrives (the notice's title is its headline).
+  await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 fakturor attesterade'));
+  // The row says the same word as the notice.
+  await expect(page.locator('#work-fakturor')).toContainText('Klart');
+  await expectNoAxeViolations(page);
+});
 
 test('a policy update removes retained source content without a page reload', async ({ page, api }) => {
   await page.addInitScript(() => {

@@ -25,7 +25,8 @@ export const CARD_MARKS_MAX = 50;
 type Row = Record<string, unknown>;
 type RowsView = Extract<View, { kind: 'table' | 'list' }>;
 
-const fold = (text: string) => text.normalize('NFC').toLocaleLowerCase('sv');
+/** Lower case, and every kind of space as one plain space: a source writes "37\u00a0050 kr", an answer "37 050 kr". */
+const fold = (text: string) => text.normalize('NFC').replace(/\s+/gu, ' ').toLocaleLowerCase('sv');
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Whether a text writes a phrase as words of its own: "Anna" in "Annas HLR", not in "Annika"; "HLR" in "HLR-intyget". */
 function writes(text: string, phrase: string, number = false): boolean {
@@ -44,6 +45,7 @@ export function namedRows(view: RowsView, rows: readonly Row[], answer: string):
   const personTitle = view.subject?.entity === 'person';
   const scored = rows.map(row => {
     let score = 0;
+    let titled = false;
     for (const f of fields) {
       const value = row[f.key];
       if (typeof value !== 'string') continue;
@@ -56,11 +58,14 @@ export function namedRows(view: RowsView, rows: readonly Row[], answer: string):
           [...first].length >= 3 &&
           writes(text, first));
       if (named) score++;
+      if (named && f.key === view.title && rows.filter(r => r[f.key] === value).length === 1) titled = true;
     }
-    return { row, score };
+    return { row, score, titled };
   });
   const best = Math.max(0, ...scored.map(s => s.score));
-  return best ? scored.filter(s => s.score === best).map(s => s.row) : [];
+  // A row the answer writes the title of, when no other row has that title, is named, however many of another row's other values it also wrote (the
+  // product owner, 2026-11-16: two late items named by title, and only the one whose detail was repeated was drawn).
+  return best ? scored.filter(s => s.score === best || s.titled).map(s => s.row) : [];
 }
 /** Swedish numbers as an answer writes them in words, two to twelve ("en" and "ett" are articles as often as numbers). */
 const NUMBER_WORDS = ['två', 'tre', 'fyra', 'fem', 'sex', 'sju', 'åtta', 'nio', 'tio', 'elva', 'tolv'];
@@ -85,6 +90,10 @@ export function cardRows(
   if (!rows) return undefined;
   const count = rows.length;
   if (readsSummary(view) || count === 0) return { count, show: 'all' };
+  // An answer that says how many rows the read answered speaks of the read as a whole: the rows it also names are
+  // examples, and the card draws the read's first few with their count, not the one or two it happened to name (the
+  // product owner, 2026-11-16: nine items, and one in the card).
+  if (count > 1 && aboutTheWhole(answer, count)) return { count, show: 'all' };
   const named = namedRows(view, rows, answer);
   if (named.length)
     return named.length <= CARD_MARKS_MAX

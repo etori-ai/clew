@@ -57,6 +57,8 @@ import { PageHeader } from './page-header';
 import { DocumentReader } from './document-reader';
 import { useLocation } from 'react-router';
 import { entityHref, recordSubject } from '../person-address';
+import { withCard } from '../panel-address';
+import { ASSISTANT_PARAM } from '../conversation-about';
 
 /**
  * A declared view (D38): the connector says what the output holds (a table, a list, one record, a text, and which
@@ -99,7 +101,7 @@ export interface DeclaredViewProps {
   onShowAll?: () => void;
   /** Where "Visa allt" leads, as a link (a list's own page, D116); with it `onShowAll` is not needed. */
   showAllHref?: string | undefined;
-  /** A tool page's own control after the view's (D112 item 7: "Fråga Clew"), at the end of the title's line. */
+  /** A tool page's own control after the view's (D112 item 7: "Fråga assistenten"), at the end of the title's line. */
   pageAction?: ReactNode;
   /**
    * Whether a row's own read is the one open beside the page (D112 item 6, board Tool: the inspector): that row is the
@@ -566,8 +568,20 @@ function Rows({
    */
   const named = !!view.subject;
   const label = (row: Row) => (empty(row[view.title]) ? '–' : String(row[view.title]));
+  /**
+   * A row that is one of the person's own work items (its `ref` is the item's, `thread:<id>`, as Att göra's read gives
+   * it): the name leads to the item, beside a conversation or on its own page with this one as the way back.
+   */
+  const itemOf = (row: Row) => {
+    const ref = view.ref ? row[view.ref] : undefined;
+    if (typeof ref !== 'string' || !ref.startsWith('thread:')) return undefined;
+    // One panel holds one thing: the item takes the place of an assistant's exchange beside a conversation.
+    const q = new URLSearchParams(search);
+    q.delete(ASSISTANT_PARAM);
+    return withCard(pathname, q, ref.slice('thread:'.length));
+  };
   const name = (row: Row) => {
-    const href = named ? entityOf(row) : opens(row);
+    const href = named ? entityOf(row) : (opens(row) ?? itemOf(row));
     return href ? (
       <Link href={href} weight="semibold" hasUnderline aria-current={!named && current(row) ? 'true' : undefined}>
         {label(row)}

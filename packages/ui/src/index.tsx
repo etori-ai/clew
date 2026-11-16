@@ -8,6 +8,19 @@ export { DocumentSurface } from './document';
 export type { DocumentPosition } from './document';
 export { MetricView, SeriesView, ActivityView } from './presentation';
 export { CompletionMark, CompletionFeedback } from './completion';
+// One status vocabulary (D126 item 13): the mark in a row, the badge beside a title, the notice under one.
+export {
+  STATUS,
+  StatusBadge,
+  StatusMark,
+  StatusNotice,
+  statusDot,
+  statusText,
+  type StatusKind,
+  type StatusMove,
+  type StatusTone,
+  type StatusWords,
+} from './status';
 
 // Strictly Astryx: this package re-exports the components the app composes with and owns the shared providers.
 export { Button } from '@astryxdesign/core/Button';
@@ -158,11 +171,13 @@ export {
   ArrowDownTrayIcon,
   ArrowLeftIcon,
   ArrowPathIcon,
+  ArrowRightIcon,
   ArrowsPointingOutIcon,
   AtSymbolIcon,
   BellIcon,
   BookOpenIcon,
   ChartBarIcon,
+  ChatBubbleLeftIcon,
   ChatBubbleLeftRightIcon,
   CheckCircleIcon,
   ClipboardDocumentCheckIcon,

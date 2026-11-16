@@ -124,7 +124,7 @@ describe('the addresses from before that still mean something', () => {
     );
     expect(withoutPanel('/calendar', '?date=2026-11-09&entry=p1')).toBe('/calendar?date=2026-11-09');
   });
-  test('the page’s own address keeps nothing of what lay beside or over it, nor "Fråga Clew" from before', () => {
+  test('the page’s own address keeps nothing of what lay beside or over it, nor "Fråga assistenten" from before', () => {
     expect(pageOnly('/staff', '?show=x&card=t1&open-card=t1&open-action=pattern')).toBe('/staff?show=x');
     expect(pageOnly('/', '?tab=done&card=f&review=f&step=2')).toBe('/?tab=done');
     expect(pageOnly('/calendar', '?date=2026-11-09&entry=p1&ask=1')).toBe('/calendar?date=2026-11-09');

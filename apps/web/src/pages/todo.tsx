@@ -25,6 +25,7 @@ import {
   LayoutPanel,
   Link,
   ResizeHandle,
+  StatusMark,
   Tab,
   Table,
   TabList,
@@ -57,7 +58,6 @@ import {
   itemPageHref,
   needsYouOf,
   rowFacts,
-  rowLine,
   sourcesNotice,
   tabOf,
   tabTitle,
@@ -74,12 +74,15 @@ import { silentLine, staleWhy, useSilentSources } from '../components/silent-sou
 import { BriefSkeleton } from '../components/brief';
 import { AsyncContent } from '../components/loading';
 import { cardBody } from '../components/card-panel';
-import { whenWord } from '../components/work-item';
+import { whenWord } from '../when-word';
+import { DOT } from '../dot';
+import { statusOf, type ItemStatus } from '../status-of';
+import { reviewedAction } from '../components/card';
 import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
 import { itemSubject } from '../components/view-read';
 import { AskClew } from '../components/thing-panel';
 import type { ThingSubject } from '../components/conversation-context';
-import { PAGE_WIDTH, PageFrame } from '../components/page-frame';
+import { PageFrame } from '../components/page-frame';
 
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
@@ -97,12 +100,6 @@ const INTERACTIVE_WITHIN_ROW =
  * surface, as the board draws the list and the pane at about 45 and 55.
  */
 const SINGLE_SURFACE_BELOW = 900;
-/**
- * Att göra's column, the one page that may be wider than the page frame's (D126): the queue and its reading pane side by
- * side in Hem's 1120 px left the item's name 305 px at a 1470 px window, under the 320 px a name reads in; 1160 px is
- * the narrowest column that gives it that. Pending the product owner's decision (2026-11-14).
- */
-const TODO_WIDTH = PAGE_WIDTH + 40;
 const PANE_MIN = 440;
 const LIST_MIN = 300;
 const PANE_SHARE = 0.55;
@@ -141,6 +138,8 @@ interface QueueRow extends Record<string, unknown> {
   id: string;
   thread: Thread;
   facts: RowFacts;
+  /** Its state in the one vocabulary (D126 item 13): the word the item's own notice says. */
+  status: ItemStatus;
   href: string;
 }
 
@@ -243,8 +242,8 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
 
   // The template's measure: the page's own box decides whether the pane stands beside the list.
   const [surfaceRef, pageWidth] = useSurfaceWidth();
-  // The list and the pane share the page's column (D126), so the column, not the page's box, is what they divide.
-  const surfaceWidth = Math.min(pageWidth, TODO_WIDTH);
+  // The sheet fills what the rail leaves (D126 item 12), so the page's own box is what the list and the pane divide.
+  const surfaceWidth = pageWidth;
   const isMeasured = surfaceWidth > 0;
   const single = isMeasured ? surfaceWidth < SINGLE_SURFACE_BELOW : mobile;
   const moved = useRef(false),
@@ -399,13 +398,13 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     </HStack>
   );
 
-  // "Fråga Clew" about the pile (D126 rule 5): a list is no thing beside the conversation, so it goes as its chips.
+  // "Fråga assistenten" about the pile (D126 rule 5): a list is no thing beside the conversation, so it goes as one chip, the
+  // read of Att göra (`clew.work`). A reference, not a copy of the rows: Clew reads the pile as it is when it answers,
+  // however many items it holds (a chip per card took the first eight and dropped the rest).
   const queueSubject: ThingSubject = {
     key: `todo:${tab}`,
     label: 'ärendena',
-    chips: rows
-      .slice(0, 8)
-      .map(t => ({ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title, threadId: t.id })),
+    chips: [{ ref: 'capability:clew.work', kind: 'capability' as const, label: 'Att göra' }],
     search: '',
   };
 
@@ -414,23 +413,34 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     waiting: 'Inget väntar. Det som väntar på andra, eller som du lagt åt sidan, kommer tillbaka av sig självt.',
     done: 'Inget är klart ännu.',
   };
-  const tableRows: QueueRow[] = rows.map(t => ({
-    id: t.id,
-    thread: t,
-    facts: rowFacts(t, now, todayDate),
-    href: rowHref(t),
-  }));
+  const tableRows: QueueRow[] = rows.map(t => {
+    const quiet = silent.of(t.connector);
+    return {
+      id: t.id,
+      thread: t,
+      facts: rowFacts(t, now, todayDate),
+      status: statusOf(t, {
+        now,
+        today: todayDate,
+        when: instant => whenWord(instant),
+        silent: quiet ? silentLine(quiet) : null,
+        reviewed: !!reviewedAction(t),
+      }),
+      href: rowHref(t),
+    };
+  });
   /**
-   * Under the name: whom it is about (board Att göra); in the other piles also where it stands and why, in words (1.4.1),
-   * and under Klart with what outcome ("Klart · Ledigheten är beviljad", "Avfärdat · …").
+   * Under the name: whom it is about (board Att göra); in the other piles, and where it names nobody, why it is here,
+   * what it waits on or what came of it ("Ledigheten är beviljad"). Where it stands is the Status column's word, the
+   * word its notice says in the pane (D126 item 13), so the line never says it again.
    */
   const aboutLine = (r: QueueRow) => {
     const t = r.thread;
     const stale = t.state === 'open' && !!silent.of(t.connector);
     const about = aboutOf(t);
-    const why = tab !== 'needs-you' || !about ? rowLine(r.facts) : null;
-    const words = [about, why && stale ? staleWhy(why) : why].filter(Boolean).join(' · ');
-    return stale && !why ? staleWhy(words) : words;
+    const why = tab !== 'needs-you' || !about ? r.facts.why : null;
+    const words = [about, why].filter(Boolean).join(DOT);
+    return stale ? (words ? staleWhy(words) : 'Kan vara gammal') : words;
   };
   const columns: TableColumn<QueueRow>[] = [
     {
@@ -463,26 +473,23 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           <Token size="sm" label={marks.ofThread(r.thread).source} />
         ),
     },
-    tab === 'done'
-      ? {
-          key: 'done',
-          header: 'Klart',
-          width: pixel(130),
-          align: 'end',
-          renderCell: r =>
-            r.thread.handledAt ? (
-              <Text type="supporting" color="secondary" textWrap="nowrap">
-                {whenWord(r.thread.handledAt)}
-              </Text>
-            ) : null,
-        }
-      : {
-          key: 'due',
-          header: 'Senast',
-          width: pixel(120),
-          align: 'end',
-          renderCell: r => (r.facts.due ? <Badge variant={r.facts.due.variant} label={r.facts.due.label} /> : null),
-        },
+    // Where it stands (board StatusPanel's queue): the state's mark and what it concerns ("Obekräftat · 1 av 3",
+    // "Behöver dig · försenad", "Klart · i dag 08.13"), the same word the item's notice says in the pane. Under the tab
+    // Behöver dig that word is the tab's name, so a row that needs the person shows only what it concerns ("försenad")
+    // beside the dot, or the dot alone, whose name still says it in full.
+    {
+      key: 'status',
+      header: 'Status',
+      // On a phone the mark wraps under its dot rather than push the table past the screen (1.4.10).
+      width: pixel(mobile ? 120 : 180),
+      renderCell: r => (
+        <StatusMark
+          kind={r.status.kind}
+          detail={r.status.detail}
+          isWordHidden={tab === 'needs-you' && r.status.kind === 'needs-you'}
+        />
+      ),
+    },
   ];
   // Beside the pane, or on a phone, the system's column gives way (the template drops its tags while the pane is open).
   const shownColumns = single || (itemId && surfaceWidth < 1200) ? columns.filter(c => c.key !== 'source') : columns;
@@ -624,7 +631,6 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           its reading pane side by side inside the same column, the list in a card as Hem's lists are. */}
       <PageFrame
         layoutRef={surfaceRef}
-        width={TODO_WIDTH}
         title="Att göra"
         titleId="att-gora"
         meta={countsLine ?? undefined}

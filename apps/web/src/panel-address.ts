@@ -26,7 +26,7 @@ export interface ReadRef {
 const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via'];
 const READ_KEYS = ['open-card', 'open-action'];
 /**
- * A page's own things beside it: Kalender's entry (D112 item 9), and "Fråga Clew" from before D126 (`ask=1`), which no
+ * A page's own things beside it: Kalender's entry (D112 item 9), and "Fråga assistenten" from before D126 (`ask=1`), which no
  * longer opens anything and is dropped wherever a page's own address is taken. Anything opened takes their place.
  */
 export const ENTRY_PARAM = 'entry';

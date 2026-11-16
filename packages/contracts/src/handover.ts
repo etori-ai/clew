@@ -103,7 +103,7 @@ export const AssistantAskEventSchema = Type.Union(
       type: Type.Literal('handback'),
       reason: Type.Union([Type.Literal('declined'), Type.Literal('completed')], {
         description:
-          "`declined`: the question is not this assistant's to answer; Clew answers it itself, with the person's own words. `completed`: the assistant has answered and expects nothing more; its answer stands and what the person writes next goes to Clew.",
+          "Kept so that a connector that sends it is still read. Clew does not act on the reason (D128): the text sent before it stands as the assistant's answer, and with no text the turn is said as not answered.",
       }),
       session: Type.Optional(session),
       link: Type.Optional(https),
@@ -120,7 +120,7 @@ export const AssistantAskEventSchema = Type.Union(
   ],
   {
     description:
-      "One server-sent event of `POST /clew/ask`, as the JSON of an SSE `data:` line. The stream ends with exactly one `done`, `handback` or `error`. `handback` returns the conversation to Clew (D125 item 12) and is never read as an instruction. `error.code` is the protocol's: `denied` the person may not ask this assistant, `not-found` the assistant or the session is gone, `unavailable` the source or its model does not answer.",
+      "One server-sent event of `POST /clew/ask`, as the JSON of an SSE `data:` line. The stream ends with exactly one `done`, `handback` or `error`. `handback` ends the answer as `done` does: Clew no longer acts on it (D128), so a connector has no reason to send it, and it is never read as an instruction. `error.code` is the protocol's: `denied` the person may not ask this assistant, `not-found` the assistant or the session is gone, `unavailable` the source or its model does not answer.",
   },
 );
 export type AssistantAskEvent = Static<typeof AssistantAskEventSchema>;
@@ -135,15 +135,41 @@ export const HandoverAssistantSchema = object({
   source: Type.String({ minLength: 1, maxLength: 200 }),
 });
 export type HandoverAssistant = Static<typeof HandoverAssistantSchema>;
-/**
- * What a conversation remembers of the assistant it was handed to: which one, what it was called then, the source's
- * key for the conversation there and where it continues in the source. One per conversation.
- */
-export const HandoverSchema = object({
+/** The most assistants of other systems one conversation keeps an exchange with. */
+export const HANDOVERS_MAX = 12;
+const handoverEntry = {
   assistant: HandoverAssistantSchema.properties.id,
   name: HandoverAssistantSchema.properties.name,
   source: HandoverAssistantSchema.properties.source,
   session: Type.Optional(session),
   link: Type.Optional(https),
+};
+/**
+ * What a conversation remembers of one assistant it has an exchange with: which one, what it was called then, the
+ * source's key for the conversation there and where it continues in the source.
+ */
+export const HandoverEntrySchema = object(handoverEntry);
+export type HandoverEntry = Static<typeof HandoverEntrySchema>;
+/**
+ * What a conversation remembers of the assistants of other systems it has an exchange with: the one asked last, and
+ * under `others` the ones asked before it, each with its own conversation in its source. One exchange per assistant: a
+ * question to an assistant asked before continues the conversation the source keeps with it.
+ */
+export const HandoverSchema = object({
+  ...handoverEntry,
+  others: Type.Optional(Type.Array(HandoverEntrySchema, { maxItems: HANDOVERS_MAX - 1 })),
 });
 export type Handover = Static<typeof HandoverSchema>;
+/** Every assistant a conversation has an exchange with, the one asked last first. */
+export const handoversOf = (handover: Handover | undefined | null): HandoverEntry[] => {
+  if (!handover) return [];
+  const { others, ...last } = handover;
+  return [last, ...(others ?? [])];
+};
+/** The conversation's memory once `asked` was asked: it is the last, and every other assistant keeps its own state. */
+export const withHandover = (handover: Handover | undefined | null, asked: HandoverEntry): Handover => {
+  const others = handoversOf(handover)
+    .filter(h => h.assistant !== asked.assistant)
+    .slice(0, HANDOVERS_MAX - 1);
+  return { ...asked, ...(others.length ? { others } : {}) };
+};

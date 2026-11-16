@@ -3,9 +3,10 @@ import { desktop, expect, expectNoAxeViolations, narrow, open, openNav, phone, r
 import { menuRow, menuRows } from './phonebook';
 
 /**
- * The rail (D126 rule 7, board Shell): Ny fråga and Sök, then "Mitt arbete" (Hem, Att göra, Kalender), "Min enhet" for a
- * manager (Personal, Läget), "Verktyg" (D40, D112 item 1: the views an administrator chose as tools, the first four,
- * then "Alla verktyg", the page of every tool) and "Samtal" (the three newest, then "Alla samtal"). A tool's row leads to
+ * The rail (D126 item 10, board RailOrder variant b, "Arbetet först"): Sök alone at the top, then "Mitt arbete" (Hem,
+ * Att göra, Kalender), "Min enhet" for a manager (Personal, Läget), "Verktyg" (D40, D112 item 1: the views an
+ * administrator chose as tools, the first four, then "Alla verktyg", the page of every tool) and "Fråga assistenten" (Ny fråga
+ * first, the three newest conversations, then "Alla samtal"). A tool's row leads to
  * the tool's own page (D42), as Kalender does; the page itself and Alla verktyg are tested in `tools.spec.ts`. The test person is a manager; `staff.spec.ts`
  * owns Personal. The shared header (D88) marks Start as the current place on every page of Clew, so "the current row" is
  * asked of the rail, where one row is current at a time.
@@ -20,6 +21,54 @@ const tool = (label: string, n: number): MenuEntry => ({
   title: label,
   label,
   icon: (['book', 'document', 'chart', 'people', 'clock', 'link', 'search'] as const)[n % 7]!,
+});
+
+test.describe('the rail’s order', () => {
+  test.use({ viewport: desktop });
+
+  test('the work first: Sök alone at the top, then Mitt arbete, Min enhet, Verktyg and Fråga assistenten with Ny fråga first, each a named group in one navigation landmark, and the keyboard follows the same order', async ({
+    page,
+    api,
+  }) => {
+    api.menu = [menuRow];
+    await open(page, '/');
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(1);
+    const nav = rail(page);
+    // The groups stand in this order, each named; the first holds Sök and nothing else.
+    const names = ['Börja', 'Mitt arbete', 'Min enhet', 'Verktyg', 'Fråga assistenten'];
+    const tops: number[] = [];
+    for (const name of names) tops.push((await nav.getByRole('group', { name, exact: true }).boundingBox())!.y);
+    expect(tops).toEqual([...tops].sort((a, b) => a - b));
+    const first = nav.getByRole('group', { name: 'Börja', exact: true });
+    await expect(first.getByRole('button')).toHaveText(['Sök']);
+    await expect(first.getByRole('link')).toHaveCount(0);
+    // Ny fråga heads the conversations it starts, and "Samtal" is no longer a group of its own.
+    const ask = nav.getByRole('group', { name: 'Fråga assistenten', exact: true });
+    await expect(ask.getByRole('link')).toHaveText(['Ny fråga', 'Vem är på plats i dag?', 'Alla samtal']);
+    await expect(ask.getByRole('link', { name: 'Ny fråga' })).toHaveAttribute('href', '/conversations/new');
+    await expect(nav.getByRole('group', { name: 'Samtal', exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // From Sök the keyboard reaches every row in the order the rail draws them, top to bottom.
+    const drawn = await nav.locator('a[href], button').evaluateAll(list =>
+      list
+        .filter(el => (el as HTMLElement).checkVisibility())
+        .sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y)
+        .map(el => el.getAttribute('aria-label') ?? (el.textContent ?? '').replace(/\s+/g, ' ').trim()),
+    );
+    const order = drawn.slice(drawn.indexOf('Sök'));
+    await nav.getByRole('button', { name: 'Sök', exact: true }).focus();
+    const reached: string[] = [];
+    for (let i = 0; i < order.length; i++) {
+      reached.push(
+        await page.evaluate(() => {
+          const el = document.activeElement!;
+          return el.getAttribute('aria-label') ?? (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+        }),
+      );
+      await page.keyboard.press('Tab');
+    }
+    expect(reached).toEqual(order);
+  });
 });
 
 test.describe('Verktyg in the menu', () => {
@@ -150,10 +199,10 @@ test.describe('Verktyg in the menu', () => {
 });
 
 /**
- * Samtal in the rail (D126 rule 7): the three newest conversations, the open one marked, and "Alla samtal", the
- * register of every conversation, where each title is the link to it.
+ * Fråga assistenten in the rail (D126 item 10): Ny fråga, the three newest conversations, the open one marked, and "Alla
+ * samtal", the register of every conversation, where each title is the link to it.
  */
-test.describe('Samtal in the rail and Alla samtal', () => {
+test.describe('Fråga assistenten in the rail and Alla samtal', () => {
   const conversations = (base: Thread): Thread[] =>
     ['Första frågan', 'Andra frågan', 'Tredje frågan', 'Fjärde frågan'].map((title, i) => ({
       ...base,
@@ -163,7 +212,7 @@ test.describe('Samtal in the rail and Alla samtal', () => {
       updatedAt: `2026-11-0${4 - i}T07:00:00.000Z`,
     }));
 
-  test('the three newest and Alla samtal; the register lists every one, each title its link, with no axe violations', async ({
+  test('Ny fråga, the three newest and Alla samtal; the register lists every one, each title its link, with no axe violations', async ({
     page,
     api,
   }) => {
@@ -171,8 +220,9 @@ test.describe('Samtal in the rail and Alla samtal', () => {
     const base = api.threads.find(t => t.kind === 'question')!;
     api.threads = [...api.threads.filter(t => t.kind !== 'question'), ...conversations(base)];
     await open(page, '/');
-    const section = rail(page).getByRole('group', { name: 'Samtal' });
+    const section = rail(page).getByRole('group', { name: 'Fråga assistenten' });
     await expect(section.getByRole('link')).toHaveText([
+      'Ny fråga',
       'Första frågan',
       'Andra frågan',
       'Tredje frågan',
@@ -195,6 +245,7 @@ test.describe('Samtal in the rail and Alla samtal', () => {
     await expect(page).toHaveURL('/conversations/samtal-4');
     await expect(section.getByRole('link', { name: 'Fjärde frågan' })).toHaveAttribute('aria-current', 'page');
     await expect(section.getByRole('link')).toHaveText([
+      'Ny fråga',
       'Fjärde frågan',
       'Första frågan',
       'Andra frågan',

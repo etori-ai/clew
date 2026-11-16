@@ -1,6 +1,7 @@
 import {
   acceptsEmptyInput,
   answerCards,
+  workItems,
   bundledIds,
   holdingsReader,
   internalIds,
@@ -64,7 +65,7 @@ import { askUsecases } from '../threads/usecases/asks';
 import { createHash } from 'node:crypto';
 import { executions } from './executions';
 import { reviewDocuments } from './documents';
-import { visibleThread } from '../threads/access';
+import { threadAccess, visibleThread } from '../threads/access';
 import { refresh } from './refresh';
 import { personKeys } from './person-keys';
 import { postgresAttention } from '../threads/adapters/attention-postgres';
@@ -297,6 +298,13 @@ holdingsPort.admitted = async (connectorId, personIds) => {
 };
 holdingsPort.reaches = (connectorId, organisationId) =>
   organisationInAudiences(organisationId, copyAudiences(connectorId));
+// A person's work items as a read (`clew.work`): what the stream's read boundary lets them see today. A capability's
+// actor does not carry the version of the person's authority, which an item from a source is checked against, so the
+// person is read again with their current grant, as for an answer's card below.
+workItems.list = async (actor, now) => {
+  const persona = await systemContext(actor.id, 'system:work-list');
+  return persona ? threadAccess(store, registry).list(persona, now) : [];
+};
 // A cited answer becomes a card (D26) through the search connector's propose; the stream owns the card, so the slot is filled here.
 answerCards.create = async (actorId, input) => {
   const persona = await systemContext(actorId, 'system:answer-card');

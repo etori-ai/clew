@@ -112,7 +112,7 @@ export function systemPrompt(ctx: PromptContext): string {
     `Du är assistenten på Startsidan, Sundsvalls kommuns startsida för medarbetare. Du hjälper ${ctx.name}, ${ctx.role === 'manager' ? 'chef' : 'medarbetare'} på ${ctx.unitLabel}.`,
     `I dag är det ${date}, klockan ${time}, vecka ${ctx.week}.`,
     'Regler:',
-    '- Svara på svenska med en eller två meningar.',
+    '- Svara på svenska och kort: en eller två meningar räcker oftast. Räknar du upp tre eller fler saker, skriv dem som en punktlista, en sak per rad.',
     '- Du kan bara läsa. Använd verktygen för att hämta aktuella uppgifter innan du svarar; gissa aldrig siffror.',
     '- Uppgifter ur ett system läser du med verktygen i den här frågan, också när samma sak besvarades tidigare i samtalet: det som lästes då finns inte kvar hos dig och kan ha ändrats. Svara aldrig med uppgifter ur ett tidigare svar.',
     '- Gäller frågan inte uppgifter, till exempel att förklara ett tidigare svar enklare, svarar du utan verktyg.',
@@ -122,7 +122,8 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Nämn bara knappar som står under "Knappar i ärendet nu". Är ärendet redan hanterat, säg det först och vad som går nu, till exempel att Ångra måste tryckas innan ärendets egna knappar kommer tillbaka.',
     '- Nämn inte enskilda medarbetares namn om personen inte själv använde dem.',
     '- När ett verktyg svarar att resultatet visas i en vy: säg kort att uppgifterna finns i vyn och hur många rader den har. Återge eller gissa aldrig innehållet.',
-    '- Svara i ren text utan rubriker, listor eller markdown.',
+    '- Formatera med markdown, sparsamt: fetstil för det viktigaste i svaret (ett antal, ett belopp, ett datum, namnet på ett ärende), punktlistor för uppräkningar och numrerade steg för en ordning. Inga rubriker och inga tabeller: rader ur ett system visas i kortet under svaret, så skriv aldrig av dem som en tabell.',
+    '- Har du läst en lista med fler än tre rader och frågan gäller hela listan: räkna inte upp raderna, de står i kortet under svaret. Säg hur många de är och det som sticker ut (vad som är försenat, vad som brådskar). Gäller frågan några av raderna, nämn just dem vid namn.',
     'När svaret bygger på sökverktyget (rutiner och dokument):',
     '- Svara bara utifrån de avsnitt som kom tillbaka och hitta aldrig på mer. Om avsnitten inte räcker, säg det.',
     '- Markera varje påstående med avsnittets nummer i hakparentes, till exempel [1]. Nämn dokumentets namn, vem som äger det och när det senast granskades.',
@@ -269,8 +270,9 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
  */
 export type ReadRecord = { capability: string; input: Record<string, unknown>; output?: unknown; failed?: true };
 /**
- * Ask the model. The answer is its text; the last read with a declared view (D38), else the first read whose output has
- * rows, is offered as a view, with the input the model gave it and the output it answered (`viewOutput`, from which the
+ * Ask the model. The answer is its text; the read the person pointed at with a chip, when the turn made it (`pointed`:
+ * asked about Att göra, the card under the answer is Att göra, whatever else the turn read), else the last read with a
+ * declared view (D38), else the first read whose output has rows, is offered as a view, with the input the model gave it and the output it answered (`viewOutput`, from which the
  * caller works out which rows the card draws). Any failure becomes ModelUnavailable.
  */
 export async function modelAnswer(args: {
@@ -285,6 +287,8 @@ export async function modelAnswer(args: {
   signal?: AbortSignal;
   /** Clew's own tools for this turn (the draft of an action, D112 item 8); their calls are in `toolCalls` by name. */
   own?: ClewTool[];
+  /** The reads the person pointed at with a chip, by capability name. */
+  pointed?: string[];
 }): Promise<{
   body: string;
   view?: ViewRef;
@@ -333,7 +337,9 @@ export async function modelAnswer(args: {
         .filter(c => !(isRecord(c.output) && 'error' in c.output))
         .map(c => ({ capability: c.capability, input: c.input, output: c.output }));
   const toolOf = (r: ReadRecord) => args.tools.find(t => t.name === r.capability);
-  const declared = [...answered].reverse().find(r => toolOf(r)?.view);
+  const latest = [...answered].reverse();
+  const declared =
+    latest.find(r => args.pointed?.includes(r.capability) && toolOf(r)?.view) ?? latest.find(r => toolOf(r)?.view);
   const shown = declared ?? answered.find(r => isRecord(r.output) && Array.isArray(r.output.rows));
   const info = shown ? toolOf(shown) : undefined;
   return {

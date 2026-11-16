@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser, ViewRef } from '@clew/contracts';
 import type { PanelViewSpec } from '@clew/contracts';
-import { Banner, Button, EmptyState, Heading, HStack, Skeleton, Text, VStack, useMediaQuery } from '@clew/ui';
+import { Button, EmptyState, Heading, HStack, Skeleton, StatusNotice, Text, VStack, useMediaQuery } from '@clew/ui';
 import { areasQuery, entityDetailQuery } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
@@ -70,10 +70,10 @@ function placeOf(from: string | null): RailCurrent {
  * stands when the view is no tool of its own. A read the person may not open, and one that does not exist, both say
  * "Verktyget finns inte" and nothing else, and are not asked for.
  * A list or a table is a register (D126 rule 8, board Personal, the `table-page` template): the name as the heading
- * with the system's badge and "Fråga Clew" on its line, the view's own search field and choice and the count under it,
+ * with the system's badge and "Fråga assistenten" on its line, the view's own search field and choice and the count under it,
  * then the rows. The name in a row is the link to the row's own read, its page (rule 4); a row never opens a panel.
  * One thing (a record, a contact card, a text, a document) is a thing's page (rule 1, the `work-item-detail`
- * template): the way back and the title, "Fråga Clew" under it, the read in the column and a record's facts in the end
+ * template): the way back and the title, "Fråga assistenten" under it, the read in the column and a record's facts in the end
  * panel, above the read where the window is narrow. The view is drawn by the one renderer (D38).
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -134,7 +134,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     manager: user.role === 'manager',
   });
   const tool = main.shown?.capability === capability ? main.shown : null;
-  // "Fråga Clew" (D126 rule 5): a new conversation about the view as it stands; a list goes as its chip alone, one
+  // "Fråga assistenten" (D126 rule 5): a new conversation about the view as it stands; a list goes as its chip alone, one
   // thing stands beside the conversation.
   const subject =
     ready && title
@@ -173,15 +173,10 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       <WayBack back={back} />
     </HStack>
   );
-  // "Försök igen" stands in the banner, never behind its "Expandera" (errands.spec, requests.spec).
+  // The status vocabulary's notice (D126 item 13): the read failed, and its one move, "Försök igen", stands in it,
+  // never behind an "Expandera" (errands.spec, requests.spec).
   const banner = failed && (
-    <Banner
-      status="error"
-      container="section"
-      collapsible={false}
-      title={failed.message}
-      endContent={<Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />}
-    />
+    <StatusNotice kind="failed" title={failed.message} action={{ label: 'Försök igen', clickAction: failed.retry }} />
   );
   // One thing (D126 rule 1): the thing's page, as a work item's is drawn.
   const thing = tool?.spec && ONE_THING.has(tool.spec.kind) ? tool : null;

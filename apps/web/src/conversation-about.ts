@@ -25,22 +25,63 @@ export function talkingTo(thread: Pick<Thread, 'handover' | 'messages'>): Recipi
 
 /** Whom, in the line under a conversation's title and on Alla samtal: "Clew", "HR-assistenten i Eneo". */
 export const withWords = (recipient: Pick<Recipient, 'name' | 'source'> | null): string =>
-  recipient ? `${recipient.name} i ${recipient.source}` : 'Clew';
+  recipient ? `${recipient.name} i ${recipient.source}` : 'assistenten';
 
 /**
  * Under a question that went to another system's assistant (D126 item 6): sent on, when Clew suggested the assistant
  * and the person chose it; sent to, when the person had picked it themself.
  */
-export const sentWords = (handed: { name: string; source: string; routed?: true | undefined }): string =>
-  handed.routed ? `Skickad vidare till ${handed.name} i ${handed.source}` : `Skickat till ${handed.name}`;
+export const sentWords = (handed: {
+  name: string;
+  source: string;
+  routed?: true | undefined;
+  fromSide?: true | undefined;
+}): string =>
+  handed.fromSide
+    ? `Från sidofältet · ${handed.name} kunde inte svara`
+    : handed.routed
+      ? `Skickad vidare till ${handed.name} i ${handed.source}`
+      : `Skickat till ${handed.name} i ${handed.source}`;
+
+type Said = Thread['messages'][number];
+/**
+ * Asked or answered in the panel beside the conversation: drawn there and not in the transcript, which stays Clew's.
+ */
+export const isSide = (m: Said): boolean => !!(m.meta?.handed?.side || m.meta?.handover?.side);
+/**
+ * One assistant's own exchange in a conversation, as the panel beside it draws it: every question that went to that
+ * assistant, from the transcript or from the panel, and what it answered. A question the person brought to Clew from
+ * the panel is Clew's and is not among them.
+ */
+export const sideMessages = (messages: Said[], assistant: string): Said[] =>
+  messages.filter(m =>
+    m.role === 'user'
+      ? m.meta?.handed?.assistant === assistant &&
+        !m.meta.handed.fromSide &&
+        !(m.meta.handed.declined && !m.meta.handed.side)
+      : m.meta?.handover?.assistant === assistant,
+  );
+/** How many questions were asked of an assistant in the panel. */
+export const sideCount = (messages: Said[], assistant: string): number =>
+  messages.filter(m => m.role === 'user' && m.meta?.handed?.side && m.meta.handed.assistant === assistant).length;
+/** The conversation's address with that assistant's exchange beside it, or with none. */
+export function assistantHref(pathname: string, search: URLSearchParams | string, assistant: string | null): string {
+  const q = new URLSearchParams(search);
+  if (assistant) q.set(ASSISTANT_PARAM, assistant);
+  else q.delete(ASSISTANT_PARAM);
+  const s = q.toString();
+  return s ? `${pathname}?${s}` : pathname;
+}
+/** The name the address gives the assistant whose exchange stands beside the conversation. */
+export const ASSISTANT_PARAM = 'assistant';
 
 /** The one line that takes the place of Clew's suggestion once the person has chosen the assistant (D126 item 6). */
 export const suggestedWords = (handed: { name: string; source: string }): string =>
-  `Clew föreslog ${handed.name} i ${handed.source} · du valde att fråga den`;
+  `Assistenten föreslog ${handed.name} i ${handed.source} · du valde att fråga den`;
 
 /**
  * The chips the conversation's page takes from its own address (`?card=` a work item, `?open=` a view): what stands
- * beside the transcript is what every question there is about, so "Fråga Clew" never puts these in the drawer too.
+ * beside the transcript is what every question there is about, so "Fråga assistenten" never puts these in the drawer too.
  */
 export function addressChipRefs(search: URLSearchParams | string): string[] {
   const q = new URLSearchParams(search);
@@ -52,7 +93,7 @@ export function addressChipRefs(search: URLSearchParams | string): string[] {
 /** A person or a unit, the two things with tabs of their own that a conversation can be about. */
 export type EntitySubjectKind = 'person' | 'unit';
 /**
- * What "Fråga Clew" on a person's or a unit's page asks about (D126 rule 5; the product owner, 2026-11-14: one
+ * What "Fråga assistenten" on a person's or a unit's page asks about (D126 rule 5; the product owner, 2026-11-14: one
  * conversation per person, not one per tab): the person or the unit, the same subject whichever of their tabs it was
  * pressed on. The tab only says what the pane beside the transcript shows first (`section`, the page's own name for a
  * tab), never what the conversation is about. Nothing about them goes with the question as a chip: what a source says
@@ -91,6 +132,14 @@ export function paneTabHref(pathname: string, search: URLSearchParams | string, 
   else q.delete('section');
   const s = q.toString();
   return s ? `${pathname}?${s}` : pathname;
+}
+/**
+ * Whether a new conversation's address names anything to ask about (D126 rule 2): a work item or a view beside it, a
+ * person, a unit or a lens of Personal. `/conversations/new` naming nothing is Ny fråga's own page (D126 item 14).
+ */
+export function asksAbout(search: URLSearchParams | string): boolean {
+  const q = new URLSearchParams(search);
+  return ['card', 'open', 'person', 'unit', 'lens'].some(key => !!q.get(key));
 }
 /** Every name a conversation's address gives a person, a unit or a lens of Personal, and the pane's tab. */
 const SUBJECT_KEYS = ['person', 'unit', 'section', 'lens'];

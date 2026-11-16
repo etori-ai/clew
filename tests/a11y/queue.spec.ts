@@ -57,11 +57,25 @@ test.describe('Att göra: the piles', () => {
     const all = rows(page);
     await expect(all).toHaveCount(6);
     await expect(all.first()).toContainText('Attestera 3 fakturor, 48 200 kr');
-    await expect(all.first()).toContainText('I dag');
     await expect(all.first()).toContainText('Ekonomisystemet');
-    // An item about nobody in particular says its state in words and why it is here (1.4.1).
-    await expect(all.first()).toHaveText(/Ska göras i dag\u00a0· Fakturorna förfaller i veckan/);
-    await expect(all.first().getByRole('img')).toHaveCount(0);
+    // An item about nobody in particular says why it is here, and its state in the Status column (1.4.1, D126 item 13).
+    // Under Behöver dig the state's word is the tab's name, so the row draws only what it concerns beside the dot, and
+    // the dot's name says the whole mark, heard once; a row with nothing more to say draws the dot alone.
+    await expect(queue(page).getByRole('columnheader', { name: 'Status' })).toBeVisible();
+    await expect(all.first()).toHaveText(/Fakturorna förfaller i veckan.*i dag$/);
+    await expect(all.first()).not.toContainText('Behöver dig');
+    await expect(all.first().getByRole('img')).toHaveAccessibleName('Behöver dig, i dag');
+    let quiet = 0;
+    for (const r of await all.all()) {
+      const mark = r.getByRole('img', { name: /^Behöver dig/ });
+      if ((await mark.count()) === 0) continue;
+      quiet++;
+      const name = (await mark.getAttribute('aria-label'))!;
+      await expect(r.getByRole('cell').last()).toHaveText(
+        name === 'Behöver dig' ? '' : name.slice('Behöver dig, '.length),
+      );
+    }
+    expect(quiet).toBeGreaterThan(0);
     await expectNoAxeViolations(page);
     // Väntar på andra holds what waits on others and what the person set aside, which says when it comes back.
     await tabs.getByRole('link', { name: /^Väntar på andra/ }).focus();
@@ -74,7 +88,8 @@ test.describe('Att göra: the piles', () => {
     await expect(waiting.locator('#work-tillbud')).toContainText('Väntar på skyddsombudet');
     await expect(waiting.locator('#work-tillbud')).not.toContainText('Väntar på andra');
     const snoozed = rows(page, 'Väntar på andra').filter({ hasText: 'Brandskyddsrond i oktober saknar protokoll' });
-    await expect(snoozed).toContainText('Inte nu · Tillbaka i morgon 06:00');
+    await expect(snoozed).toContainText('Tillbaka i morgon 06:00');
+    await expect(snoozed).toContainText('Väntar\u00a0· inte nu');
     await tabs.getByRole('link', { name: 'Klart', exact: true }).click();
     await expect(page).toHaveURL(/\/todo\?tab=done$/);
     await expect(rows(page, 'Klart')).toHaveCount(2);
@@ -131,7 +146,7 @@ test.describe('Att göra: the reading pane', () => {
     // The decision stands directly under the title, before the facts (D126 rule 2).
     const y = async (l: import('@playwright/test').Locator) => (await l.boundingBox())!.y;
     expect(await y(pane.getByRole('button', { name: 'Attestera 2 valda' }))).toBeLessThan(
-      await y(pane.getByText('Status', { exact: true })),
+      await y(pane.getByRole('heading', { name: 'Uppgifter' })),
     );
     await expect(rows(page)).toHaveCount(6);
     await expectNoAxeViolations(page);
@@ -169,8 +184,8 @@ test.describe('Att göra: the reading pane', () => {
     for (let i = 0; i < (await all.count()); i++) await expect(all.nth(i).getByRole('link')).toHaveCount(1);
     const fakturor = page.locator('#work-fakturor');
     await expect(fakturor.getByRole('link')).toHaveAccessibleName('Attestera 3 fakturor, 48 200 kr');
-    // The badge and the source are read in the row, beside its link.
-    await expect(fakturor).toContainText('I dag');
+    // The state and the source are read in the row, beside its link: under Behöver dig the dot names the whole mark.
+    await expect(fakturor.getByRole('img', { name: 'Behöver dig, i dag' })).toBeVisible();
     // The row names its system, as the same row on Hem does.
     await expect(fakturor).toContainText('Ekonomisystemet');
     expect((await fakturor.boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -225,7 +240,7 @@ test.describe('Att göra where the pane does not fit', () => {
     await expect(queue(page)).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Ledighetsansökan från Johan Byström' })).toBeFocused();
     await expect(page).toHaveTitle('Ledighetsansökan från Johan Byström · Startsidan');
-    await expect(page.getByRole('main').getByText('Status', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('heading', { name: 'Uppgifter' })).toBeVisible();
     await expectNoAxeViolations(page);
     await page.getByRole('main').getByRole('link', { name: 'Att göra', exact: true }).click();
     await expect(page).toHaveURL(/\/todo$/);
@@ -356,13 +371,17 @@ test.describe('Att göra: a notice in the reading pane', () => {
     await expect(whole).toBeFocused();
     for (let i = 0; i < steps; i++) await page.keyboard.press('Shift+Tab');
     await expect(ack).toBeFocused();
-    // An item that is not a notice leads its read with its own words, above Varför ser jag detta?, and keeps its rows;
-    // its link out to the source is under ⋯, marked as leaving Clew.
+    // An item that is not a notice says its own words under Varför ser jag detta?, where no sentence of it stands without
+    // a heading (D126 item 13), and keeps its rows above it; its link out to the source is under ⋯, marked as leaving Clew.
     await open(page, '/todo?item=fakturor');
     const invoices = pane.locator('#card-fakturor');
-    const lead = invoices.getByText('Alla matchar sina beställningar och ryms i budgeten.', { exact: false });
-    expect(await y(lead)).toBeLessThan(await y(invoices.getByRole('region', { name: 'Varför ser jag detta?' })));
+    await expect(invoices.getByRole('region', { name: 'Varför ser jag detta?' })).toContainText(
+      'Alla matchar sina beställningar och ryms i budgeten.',
+    );
     await expect(invoices.getByRole('heading', { name: 'Rader' })).toBeVisible();
+    expect(await y(invoices.getByRole('heading', { name: 'Rader' }))).toBeLessThan(
+      await y(invoices.getByRole('region', { name: 'Varför ser jag detta?' })),
+    );
     await invoices.getByRole('button', { name: 'Fler åtgärder' }).click();
     await expect(page.getByRole('menuitem', { name: /^Öppna i ekonomisystemet/ })).toHaveCount(1);
   });

@@ -11,7 +11,9 @@ import {
   type Thread,
 } from '@clew/contracts';
 import { weekNumber } from '@clew/calendar/dates';
+import { STATUS, statusDot } from '@clew/ui/status-words';
 import type { Groups } from './stream';
+import { executionKind } from './execution-status';
 import { DOT } from './dot';
 import { settlingUntil } from './mutations';
 import { wayBack } from './person-address';
@@ -182,13 +184,13 @@ export function dueOf(thread: Thread, today: string): RowFacts['due'] {
 const WAITS_ON = 'Väntar på';
 const WAITING_ON_OTHERS = `${WAITS_ON} andra`;
 
-/** Where the item stands: an action on its way or in doubt first, then the pile, then what kind of thing it is (D34). */
+/**
+ * Where the item stands: an action on its way or in doubt first, in the status vocabulary's word (D126 item 13), so a
+ * row on Hem says what the item's notice says; then the pile, then what kind of thing it is (D34).
+ */
 export function stateOf(thread: Thread, now: string, today: string): RowFacts['state'] {
-  const execution = thread.execution;
-  if (execution && unresolvedExecution(thread))
-    return ['pending', 'running'].includes(execution.state)
-      ? { variant: 'accent', label: 'Väntar på källan' }
-      : { variant: 'error', label: 'Behöver kontrolleras' };
+  const executed = executionKind(thread.execution);
+  if (executed && unresolvedExecution(thread)) return { variant: statusDot(executed), label: STATUS[executed].word };
   if (thread.state === 'handled') return { variant: 'success', label: 'Klart' };
   if (thread.state === 'dismissed') return { variant: 'neutral', label: 'Avfärdat' };
   // A reminder that was stopped needs a hand (reliability roadmap, phase 5A): said on the row, as the card says it.

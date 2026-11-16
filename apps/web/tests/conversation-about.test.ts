@@ -31,9 +31,9 @@ const answer = (meta?: Thread['messages'][number]['meta']) =>
 const who = { assistant: handover.assistant, name: handover.name, source: handover.source };
 
 describe('whom a conversation is with (D125, D126)', () => {
-  test('a conversation never handed over is with Clew', () => {
+  test('a conversation never handed over is with the assistant', () => {
     expect(talkingTo({ messages: [question(), answer()] })).toBeNull();
-    expect(withWords(null)).toBe('Clew');
+    expect(withWords(null)).toBe('assistenten');
   });
   test('a conversation handed to another system’s assistant is with it, named with its system', () => {
     const with_ = talkingTo({ handover, messages: [question({ handed: who }), answer({ handover: who })] });
@@ -58,11 +58,17 @@ describe('a question handed on stands once (D126 item 6)', () => {
     expect(sentWords({ name: 'HR-assistenten', source: 'Eneo', routed: true })).toBe(
       'Skickad vidare till HR-assistenten i Eneo',
     );
-    expect(sentWords({ name: 'HR-assistenten', source: 'Eneo' })).toBe('Skickat till HR-assistenten');
+    // The system is always named: an assistant's own name can read like Clew's.
+    expect(sentWords({ name: 'HR-assistenten', source: 'Eneo' })).toBe('Skickat till HR-assistenten i Eneo');
+  });
+  test('a question the person brought to Clew from the panel says where it came from', () => {
+    expect(sentWords({ name: 'HR-assistenten', source: 'Eneo', fromSide: true })).toBe(
+      'Från sidofältet · HR-assistenten kunde inte svara',
+    );
   });
   test('the suggestion becomes one line', () => {
     expect(suggestedWords({ name: 'HR-assistenten', source: 'Eneo' })).toBe(
-      'Clew föreslog HR-assistenten i Eneo · du valde att fråga den',
+      'Assistenten föreslog HR-assistenten i Eneo · du valde att fråga den',
     );
   });
 });
@@ -79,7 +85,7 @@ describe('what a conversation’s page is about, by its address (D126 rule 2)', 
 });
 
 describe('one conversation per person, not one per tab (the product owner, 2026-11-14)', () => {
-  test('"Fråga Clew" on two of a person’s tabs is one subject, with a different first tab in the pane', () => {
+  test('"Fråga assistenten" on two of a person’s tabs is one subject, with a different first tab in the pane', () => {
     const fromAbsence = entitySubject('person', 'johan', 'hr.person');
     const fromEquipment = entitySubject('person', 'johan', 'servicedesk.person');
     expect(fromAbsence.key).toBe('person:johan');

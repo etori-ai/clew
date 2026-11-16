@@ -100,7 +100,8 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
     await expect(page).toHaveURL('/todo?item=fakturor');
     expect(api.acted.at(-1)?.body.refs).toEqual(['finance:inv:1', 'finance:inv:3']);
     const row = page.getByRole('table', { name: 'Behöver dig' }).locator('#work-fakturor');
-    await expect(row).toContainText('Klart · 2 fakturor attesterade');
+    await expect(row).toContainText('2 fakturor attesterade');
+    await expect(row).toContainText('Klart\u00a0· ');
     await expect(pane(page).getByRole('button', { name: /^Ångra · \d+ min kvar$/ })).toBeVisible();
     await expect(pane(page).getByRole('list', { name: 'Kvitto, rad för rad' }).getByRole('listitem')).toHaveCount(2);
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
@@ -220,7 +221,7 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
     expect(await draftOf(page)).toBeNull();
   });
 
-  test('Back from the page gives the focus to the control that was pressed: Granska N in Att göra, a row under Dokument on the item’s page', async ({
+  test('Back from the page gives the focus to the control that was pressed: Granska N in Att göra, a row under Rader on the item’s page', async ({
     page,
     api,
   }) => {
@@ -233,10 +234,10 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
     await page.goBack();
     await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(granska).toBeFocused();
-    // On the item's page, from a row under Dokument: the page at that row, its way back the item's page by its title.
+    // On the item's page, from a row's document under Rader: the page at that row, its way back the item's page by its title.
     await open(page, '/items/fakturor');
     const document = page
-      .getByRole('region', { name: 'Dokument' })
+      .getByRole('region', { name: 'Rader' })
       .getByRole('link', { name: `Öppna underlaget för ${ROWS[1]}` });
     await document.focus();
     await page.keyboard.press('Enter');

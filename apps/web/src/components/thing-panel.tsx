@@ -5,12 +5,12 @@ import { addressChipRefs } from '../conversation-about';
 import { useConversation, useModelConfigured, type ThingSubject } from './conversation-context';
 
 /**
- * Where "Fråga Clew" leads (D126 rule 5): a new conversation's page with the thing beside it (its part of the address,
+ * Where "Fråga assistenten" leads (D126 rule 5): a new conversation's page with the thing beside it (its part of the address,
  * `subject.search`). Nothing is asked there until the person writes.
  */
 export const askAboutHref = (subject: ThingSubject): string => `/conversations/new${subject.search}`;
 /**
- * "Fråga Clew" as a verb (D126 rule 5): a new conversation, its page with the thing beside it, and the page it was
+ * "Fråga assistenten" as a verb (D126 rule 5): a new conversation, its page with the thing beside it, and the page it was
  * pressed on as where Esc leads back to. The thing beside the transcript goes with every question by its address; a
  * subject with nothing beside it (the queue's rows, a meeting) goes as chips in the box's drawer. Nothing is asked until
  * the person writes and sends (D111 rule 9: opening never asks the model).
@@ -31,13 +31,13 @@ export function useAskAbout(): (subject: ThingSubject, options?: { replace?: boo
 }
 
 /**
- * "Fråga Clew" (D126 rule 5, boards Ärende and Person): the one button every page uses to ask about its thing, a ghost
+ * "Fråga assistenten" (D126 rule 5, boards Ärende and Person): the one button every page uses to ask about its thing, a ghost
  * with the sparkles among the thing's actions, leading to a new conversation with that thing beside it
  * (`useAskAbout`). Nothing is asked until the person writes. Until the page knows its thing, and without a model to ask
  * (D8), the button is not drawn. `onAsk` replaces the whole verb, for a page that asks otherwise.
  */
 export function AskClew({
-  label = 'Fråga Clew',
+  label = 'Fråga assistenten',
   onAsk,
   subject,
   size = 'md',

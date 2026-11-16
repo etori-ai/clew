@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { stockholmDate } from '@clew/contracts';
 import type {
   HandoverAssistant,
   CalendarEvent,
@@ -52,7 +53,7 @@ import {
 } from '@clew/ui';
 import { mobileQuery } from '../media';
 import { weekNumber } from '@clew/calendar/dates';
-import { areasQuery, calendarWeekQuery, threadQuery, viewQuery } from '../queries';
+import { areasQuery, calendarWeekQuery, entityDetailQuery, threadQuery, viewQuery } from '../queries';
 import { DeclaredView } from './view';
 import { useConversation, type ChipRef } from './conversation-context';
 import { reviewLabel, staleLabel } from './panel-labels';
@@ -62,8 +63,9 @@ import { requestAction } from '../action-requests';
 import { valueText, type ActionStep } from '../action-path';
 import { executionStatus } from '../execution-status';
 import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../answer-card';
-import { sentWords, suggestedWords } from '../conversation-about';
+import { isSide, sentWords, sideCount, suggestedWords } from '../conversation-about';
 import { DOT } from '../dot';
+import { itemPageHref, rowFacts, rowLine } from '../work-items';
 
 /** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
 export type ActionDraftRef = Draft & { kind: 'action'; actionId: string };
@@ -167,7 +169,7 @@ export const keepLines = (body: string) => body.replace(/([^\n])\n(?=[^\n])/g, '
 /** The other system's assistant that wrote an answer, or undefined: Clew's own answers, and Clew's words about one that failed. */
 const answeredBy = (m: ThreadMessage) => (m.meta?.handover && !m.meta.handover.failed ? m.meta.handover : undefined);
 /** Whom a question went to: another system's assistant, or null for Clew. */
-const askedOf = (m: ThreadMessage) => m.meta?.handed ?? null;
+const askedOf = (m: ThreadMessage) => (m.meta?.handed && !m.meta.handed.declined ? m.meta.handed : null);
 const lastQuestion = (messages: ThreadMessage[]) => [...messages].reverse().find(x => x.role === 'user');
 /** A line in the transcript where whom the person talks to changes: its words, and the system it turns to, if any. */
 interface TurnLineContent {
@@ -193,7 +195,8 @@ function switchLine(messages: ThreadMessage[], i: number): TurnLineContent | und
   const to = askedOf(m);
   const from = before ? recipientAfter(messages.slice(0, i)) : null;
   if ((to?.assistant ?? null) === (from?.assistant ?? null)) return undefined;
-  return to ? toAssistant(to) : toClew('Du pratar med Clew igen');
+  // The box under the transcript is Clew's, always: a question to Clew needs no line saying so.
+  return to ? toAssistant(to) : undefined;
 }
 /**
  * Whom the conversation was with once its turns so far had ended: the assistant of the last question, unless that
@@ -205,14 +208,11 @@ function recipientAfter(messages: ThreadMessage[]) {
   if (!question || answer?.meta?.handedBack || answer?.meta?.handover?.returned) return null;
   return askedOf(question);
 }
-/** The line under a turn in which the assistant returned the conversation: it is done. */
-function returnLine(m: ThreadMessage): TurnLineContent | undefined {
-  return m.role === 'assistant' && m.meta?.handover?.returned
-    ? toClew(`${m.meta.handover.name} är klar · du pratar med Clew igen`)
-    : undefined;
-}
-/** The words above Clew's own answer to a question another assistant handed back. */
-const handedBackText = (name: string) => `${name} lämnade tillbaka frågan · Clew svarar`;
+/**
+ * The words above Clew's own answer to a question another assistant handed back, in a conversation from before
+ * 2026-11-16: an assistant no longer hands a question back, and Clew no longer answers in its place unasked.
+ */
+const handedBackText = (name: string) => `${name} lämnade tillbaka frågan · assistenten svarar`;
 function handedBackLine(m: ThreadMessage): TurnLineContent | undefined {
   return m.role === 'assistant' && m.meta?.handedBack ? toClew(handedBackText(m.meta.handedBack.name)) : undefined;
 }
@@ -224,7 +224,7 @@ function pendingSwitch(
   const from = recipientAfter(messages);
   const to = pending.handed ?? null;
   if ((to?.id ?? null) === (from?.assistant ?? null)) return undefined;
-  return to ? toAssistant({ assistant: to.id, name: to.name, source: to.source }) : toClew('Du pratar med Clew igen');
+  return to ? toAssistant({ assistant: to.id, name: to.name, source: to.source }) : undefined;
 }
 /**
  * A line in the transcript where whom the person talks to changes (D125 items 5 and 12): Astryx's system message, with
@@ -253,7 +253,7 @@ function TurnLine({ line }: { line: TurnLineContent }) {
   );
 }
 /** The mark of another system's assistant beside what it wrote (board SamtalEneo): its initials on a square tile, as a person's are on a round one. */
-function AssistantMark({ name }: { name: string }) {
+export function AssistantMark({ name }: { name: string }) {
   return <Avatar name={name} size="sm" shape="square" tooltip={false} />;
 }
 /**
@@ -313,7 +313,7 @@ function HandoverOffer({
             <Text as="span" weight="semibold">
               {offer.name}
             </Text>
-            {` lämnar den Clew och hamnar i ${offer.source}.`}
+            {` hamnar den i ${offer.source}.`}
           </Text>
         </HStack>
         <HStack gap={2} wrap="wrap">
@@ -321,7 +321,7 @@ function HandoverOffer({
             ref={first}
             size="sm"
             variant="primary"
-            label="Låt Clew svara"
+            label="Låt assistenten svara"
             isDisabled={isDisabled}
             onClick={talk.declineOffer}
           />
@@ -351,7 +351,7 @@ function HandoverOffer({
           isDisabled={isDisabled}
           onClick={talk.acceptOffer}
         />
-        <Button variant="secondary" label="Svara själv, Clew" isDisabled={isDisabled} onClick={talk.declineOffer} />
+        <Button variant="secondary" label="Svara själv" isDisabled={isDisabled} onClick={talk.declineOffer} />
       </HStack>
     </VStack>
   );
@@ -362,10 +362,19 @@ function HandoverOffer({
  * Clew keeps when it was, and the way to the same conversation in the system itself, where it continues with everything
  * that assistant can do. Everything on the surface is that assistant's; Clew offers nothing of its own under it.
  */
-function AssistantAnswer({ handover, children }: { handover: HandoverMeta; children: ReactNode }) {
+function AssistantAnswer({
+  handover,
+  isHeld,
+  children,
+}: {
+  handover: HandoverMeta;
+  /** Nothing of the answer is written yet: the surface takes a width of its own, since the placeholder's is a share of it. */
+  isHeld?: boolean;
+  children: ReactNode;
+}) {
   const cites = handover.cites ?? [];
   return (
-    <Card variant="muted" padding={4}>
+    <Card variant="muted" padding={4} {...(isHeld ? { width: '100%', maxWidth: 360 } : {})}>
       <VStack gap={3}>
         {children}
         {cites.length > 0 && (
@@ -387,7 +396,7 @@ function AssistantAnswer({ handover, children }: { handover: HandoverMeta; child
             </MetadataListItem>
           </MetadataList>
         )}
-        {handover.cut && <Text type="supporting">Svaret var längre än Clew visar.</Text>}
+        {handover.cut && <Text type="supporting">Svaret var längre än det som visas här.</Text>}
         {handover.link && (
           <Link href={handover.link} target="_blank" rel="noreferrer">
             {`Fortsätt samtalet i ${handover.source}`}
@@ -468,10 +477,12 @@ const stepCall = (s: TurnStep): ChatToolCallItem => ({
   ...(s.ms !== undefined && s.status !== 'running' ? { duration: seconds(s.ms) } : {}),
 });
 /** The model's text as it is written (D36), revealed at a steady pace by Astryx's hook; with reduced motion it shows whole. */
-function StreamingAnswer({ text }: { text: string }) {
+export function StreamingAnswer({ text }: { text: string }) {
   const shown = useStreamingText(text, true);
+  // Astryx parses what has arrived so far and fades each piece in, so a list or bold text half written is drawn as
+  // what it is becoming, not as stray asterisks.
   return (
-    <Markdown density="compact" headingLevelStart={2}>
+    <Markdown density="compact" headingLevelStart={2} isStreaming>
       {shown}
     </Markdown>
   );
@@ -482,7 +493,7 @@ function ProposalWeek({ thread }: { thread: Thread }) {
   const events = week.data?.events ?? EMPTY_EVENTS;
   if (!thread.week) return null;
   return (
-    <ChatMessage sender="assistant" name={<VisuallyHidden>Clew</VisuallyHidden>}>
+    <ChatMessage sender="assistant" name={<VisuallyHidden>Assistenten</VisuallyHidden>}>
       <ChatMessageBubble variant="ghost" width="100%">
         <EventList
           from={thread.week}
@@ -512,7 +523,55 @@ function TurnCard({ id, render }: { id: string; render: (thread: Thread) => Reac
  * whole view can still be opened. A figure is drawn above it only where the figure belongs to this read (`opens`) and
  * the card is the read as a whole (D54).
  */
-const EMBED_ROWS = 3;
+/**
+ * Several work items a turn is about (the product owner, 2026-11-16): one card of rows, not a whole item each. A whole
+ * item carries its buttons, its facts and its events, and three of them push the answer off the screen; a row is the
+ * item's name as the link to it, the system it comes from and the line Att göra's row says about it. The item opens
+ * beside the conversation, where its buttons are. One item alone is still drawn whole (`TurnCard`): it is the thing the
+ * turn is about. Read from the same cache as the page, so a row is the item as it is now.
+ */
+function TurnCardRow({ id, href }: { id: string; href: string }) {
+  const card = useQuery(threadQuery(id));
+  const t = card.data;
+  // Whom the item concerns, by name, and what its first row says (the period of a leave, an amount): read by the
+  // browser as the person, from the item and from the person's own page. None of it is the model's: the model is not
+  // given a name or a source's words about a person (D97 item 7, D115), and the row shows them all the same, since
+  // the person asking may see them (the product owner, 2026-11-16).
+  const about = t
+    ? [...(t.subjects ?? []), ...t.items.map(i => i.subject)].find(x => x?.entity === 'person')
+    : undefined;
+  const who = useQuery({ ...entityDetailQuery('person', about?.key ?? ''), enabled: !!about });
+  if (!t) return null;
+  const now = new Date().toISOString();
+  const facts = [
+    who.data?.entity.name,
+    t.items[0]?.detail,
+    t.trigger.source,
+    rowLine(rowFacts(t, now, stockholmDate(now))),
+  ].filter(Boolean);
+  return (
+    <ListItem
+      label={
+        <Link href={href} color="primary">
+          {t.title}
+        </Link>
+      }
+      description={<Text type="supporting">{facts.join(DOT)}</Text>}
+    />
+  );
+}
+function TurnCardRows({ ids, hrefFor }: { ids: string[]; hrefFor: (id: string) => string }) {
+  return (
+    <Card padding={0}>
+      <List hasDividers density="compact" aria-label="Ärenden i svaret">
+        {ids.map(id => (
+          <TurnCardRow key={id} id={id} href={hrefFor(id)} />
+        ))}
+      </List>
+    </Card>
+  );
+}
+const EMBED_ROWS = 5;
 function ViewEmbed({
   view,
   rows,
@@ -536,6 +595,9 @@ function ViewEmbed({
     retry: false,
   });
   const figure = figureBelongs(view, rows);
+  // A cut list unfolds in the card on the person's own press (the product owner, 2026-11-16): the answer no longer
+  // repeats the rows, so the card is where all of them are read.
+  const [whole, setWhole] = useState(false);
   if (read.isPending) return null;
   if (!read.data?.view)
     return (
@@ -552,18 +614,29 @@ function ViewEmbed({
     <DeclaredView
       view={read.data.view}
       output={read.data.output}
-      {...(marks ? { only: marks } : { limit: EMBED_ROWS })}
+      {...(marks ? { only: marks } : whole ? {} : { limit: EMBED_ROWS })}
       heading={view.title}
       onShowAll={onShowAll}
       showAllHref={hrefFor?.(view)}
       {...(hrefFor ? { hrefFor } : {})}
     />
   );
+  const more = !marks && !whole && (rows?.count ?? 0) > EMBED_ROWS;
+  const body = more ? (
+    <VStack gap={2}>
+      {drawn}
+      <HStack>
+        <Button size="sm" variant="secondary" label={`Visa alla ${rows!.count}`} onClick={() => setWhole(true)} />
+      </HStack>
+    </VStack>
+  ) : (
+    drawn
+  );
   return (
     <VStack gap={3}>
       {/* The figure that belongs to this read is said as a line above it (D54, artboard 3), as the tile on Hem says it. */}
       {figure && <FigureLines select={figure} now={at} />}
-      {framed ? <Card>{drawn}</Card> : drawn}
+      {framed ? <Card>{body}</Card> : body}
     </VStack>
   );
 }
@@ -657,7 +730,7 @@ function readCalls(
   });
 }
 /** Clew's own turn names itself (boards Samtal and SamtalVerktyg); what it read is said by its calls. */
-const CLEW = 'Clew';
+const CLEW = 'Assistenten';
 /**
  * The transcript (D31; D126, boards Samtal, SamtalVerktyg, SamtalEneoFraga and SamtalEneo): the conversation in the
  * `ai-chat` template's message list. The person's chips sit above their bubble as tokens, except the thing the
@@ -675,6 +748,9 @@ export function Transcript({
   about,
   firstLine,
   onDraft,
+  asideHref,
+  asideOpen,
+  cardHref,
 }: {
   onOpenView: (view: ViewRef) => void;
   renderCard: (thread: Thread) => ReactNode;
@@ -691,6 +767,15 @@ export function Transcript({
   firstLine?: string | undefined;
   /** A draft's button was pressed: the host makes sure the work item is drawn, so its dialog can open (D112 item 8). */
   onDraft?: (draft: ActionDraftRef) => void;
+  /**
+   * The address that puts an assistant's own exchange beside the transcript: the way on with another system's
+   * assistant under its answer. Absent where nothing can stand beside the transcript.
+   */
+  asideHref?: ((assistant: string) => string) | undefined;
+  /** The assistant whose exchange stands beside the transcript now. */
+  asideOpen?: string | null | undefined;
+  /** The address that puts a work item beside the transcript: where a row of several items leads. */
+  cardHref?: ((threadId: string) => string) | undefined;
 }) {
   const talk = useConversation();
   const markOf = useObjectMark();
@@ -711,7 +796,33 @@ export function Transcript({
   const transcriptArea = useRef<HTMLDivElement>(null);
   const animatedLayout = useAnimatedLayout({ containerRef: transcriptArea });
   if (!conversation && !pending) return null;
-  const messages = conversation?.messages ?? [];
+  // What was said in the panel beside the conversation is drawn there: the transcript is Clew's.
+  const everything = conversation?.messages ?? [];
+  const messages = everything.filter(m => !isSide(m));
+  // An assistant the person turned to in the panel without Clew sending a question on has no card in the transcript:
+  // one line stands where it first was asked, so the transcript shows that the exchange exists when it is read later.
+  const joined = new Map<number, NonNullable<NonNullable<ThreadMessage['meta']>['handed']>[]>();
+  everything.forEach((m, at) => {
+    const handed = m.role === 'user' ? m.meta?.handed : undefined;
+    if (!handed?.side) return;
+    if (everything.slice(0, at).some(x => x.meta?.handed?.side && x.meta.handed.assistant === handed.assistant)) return;
+    // Its answer in the transcript already leads to the panel and counts what was asked there.
+    if (everything.some(x => !isSide(x) && answeredBy(x)?.assistant === handed.assistant)) return;
+    const before = everything.slice(0, at).filter(x => !isSide(x)).length;
+    joined.set(before, [...(joined.get(before) ?? []), handed]);
+  });
+  const joinedLines = (i: number) =>
+    (joined.get(i) ?? []).map(h => (
+      <ChatSystemMessage key={`joined-${h.assistant}`}>
+        <HStack gap={2} vAlign="center" hAlign="center" wrap="wrap">
+          <AreaChip ordinal={marks.system(connectorOf(h.assistant))?.ordinal ?? null} label={h.source} />
+          <Text weight="semibold" color="primary">{`Du frågade ${h.name} i sidofältet`}</Text>
+          {asideHref && asideOpen !== h.assistant && (
+            <Button size="sm" variant="ghost" label="Visa" href={asideHref(h.assistant)} />
+          )}
+        </HStack>
+      </ChatSystemMessage>
+    ));
   // Rows are keyed by position, so the pending question and answer become the written ones in place: the log (aria-busy
   // while the answer is written) speaks the answer once, and never the question twice (D36, 4.1.3).
   const n = messages.length;
@@ -817,6 +928,24 @@ export function Transcript({
               {keepLines(m.body)}
             </Markdown>
           </AssistantAnswer>
+          {asideHref && (
+            <HStack gap={3} vAlign="center" wrap="wrap">
+              <Button
+                size="sm"
+                variant="secondary"
+                label={`Fortsätt med ${other.name}`}
+                isDisabled={asideOpen === other.assistant}
+                href={asideHref(other.assistant)}
+              />
+              {sideCount(everything, other.assistant) > 0 && (
+                <Text type="supporting">
+                  {sideCount(everything, other.assistant) === 1
+                    ? '1 fråga i sidofältet'
+                    : `${sideCount(everything, other.assistant)} frågor i sidofältet`}
+                </Text>
+              )}
+            </HStack>
+          )}
         </ChatMessage>
       );
     const calls = readCalls(m, titleOf, systemOf);
@@ -836,9 +965,14 @@ export function Transcript({
               {m.body}
             </Markdown>
             {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
-            {m.meta?.cards?.map(id => (
-              <TurnCard key={id} id={id} render={renderCard} />
-            ))}
+            {m.meta?.cards && (m.meta.cards.length > 1 || m.meta.cardsAs === 'rows') ? (
+              <TurnCardRows
+                ids={m.meta.cards}
+                hrefFor={id => cardHref?.(id) ?? itemPageHref(id, window.location.pathname + window.location.search)}
+              />
+            ) : (
+              m.meta?.cards?.map(id => <TurnCard key={id} id={id} render={renderCard} />)
+            )}
             <AnswerView
               card={card}
               at={m.createdAt}
@@ -894,19 +1028,19 @@ export function Transcript({
             // system's assistant, or back to Clew, the transcript says so once, above the question (D125 item 5).
             const routed = m.role === 'user' && m.meta?.handed?.routed ? m.meta.handed : null;
             const line = routed ? undefined : (switchLine(messages, i) ?? handedBackLine(m));
-            const back = returnLine(m);
             return [
+              ...joinedLines(i),
               ...(line ? [<TurnLine key={`switch-${i}`} line={line} />] : []),
               written(m, i),
               ...(routed ? [<SuggestedLine key={`suggested-${i}`} name={routed.name} source={routed.source} />] : []),
-              ...(back ? [<TurnLine key={`return-${i}`} line={back} />] : []),
             ];
           }),
+          ...joinedLines(n),
           // The question on its way (D36): drawn at once as the person sent it, the answer under it pending: its place
           // held until something is known, the capabilities it reads as calls with their status, then the text.
           ...(pending
             ? [
-                ...(!pending.suggested && !pending.back && pendingSwitch(messages, pending)
+                ...(!pending.suggested && pendingSwitch(messages, pending)
                   ? [<TurnLine key={`switch-${n}`} line={pendingSwitch(messages, pending)!} />]
                   : []),
                 question(
@@ -918,11 +1052,6 @@ export function Transcript({
                 ),
                 ...(pending.handed && pending.suggested
                   ? [<SuggestedLine key={`suggested-${n}`} name={pending.handed.name} source={pending.handed.source} />]
-                  : []),
-                // The assistant handed the question back while the turn runs: the line says so at once, and what is
-                // written under it is Clew's own answer.
-                ...(pending.back
-                  ? [<TurnLine key={`back-${n}`} line={toClew(handedBackText(pending.back.name))} />]
                   : []),
                 pending.offer ? (
                   <ChatMessage key={`turn-${n + 1}`} sender="assistant" name={CLEW}>
@@ -951,11 +1080,11 @@ export function Transcript({
                       <ChatToolCalls
                         calls={pending.steps.map(stepCall)}
                         defaultIsExpanded
-                        label={`Clew arbetar · ${pending.steps.length} steg`}
+                        label={`Assistenten arbetar · ${pending.steps.length} steg`}
                       />
                     )}
                     {pending.handed ? (
-                      <AssistantAnswer handover={{ source: pending.handed.source }}>
+                      <AssistantAnswer handover={{ source: pending.handed.source }} isHeld={!pending.answer}>
                         {pending.answer ? <StreamingAnswer text={keepLines(pending.answer)} /> : held}
                       </AssistantAnswer>
                     ) : (
@@ -1021,20 +1150,8 @@ export function Transcript({
           </ChatSystemMessage>
         )}
       </ChatMessageList>
-      {!pending && latest && latest.followUps.length > 0 && (
-        <HStack gap={1} wrap="wrap" role="group" aria-label="Följdfrågor">
-          {latest.followUps.map(f => (
-            <Button
-              key={f}
-              size="sm"
-              variant="secondary"
-              label={f}
-              isDisabled={busy}
-              onClick={() => talk.ask(f, undefined, about)}
-            />
-          ))}
-        </HStack>
-      )}
+      {/* No suggested follow-up questions under an answer (D126 rule 8; the product owner, 2026-11-16: they add no
+          value). What the server suggests is not drawn. */}
     </VStack>
   );
 }

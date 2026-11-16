@@ -137,7 +137,7 @@ export function EntityPage({
   title: string;
   /** The line under the name: a person's title and unit, "Enhet" for a unit. */
   subtitle?: ReactNode;
-  /** The actions about the entity and "Fråga Clew". */
+  /** The actions about the entity and "Fråga assistenten". */
   actions?: ReactNode;
   /** The thing's tabs (`TabList`), under its name, at the foot of the header. */
   tabs?: ReactNode;

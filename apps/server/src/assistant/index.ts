@@ -49,6 +49,7 @@ import {
   personAnswer,
   personSubject,
   personTool,
+  speaksOf,
   type ManagedPerson,
   type PeopleInTurn,
 } from './people';
@@ -56,7 +57,7 @@ import type { AssistantDeps, ResolvedModel } from './ports';
 import { draftSelection, parseVerb, verbsFor } from './verbs';
 import { threadAccess } from '../threads/access';
 import { HandoverOffered, TurnStopped } from './domain';
-import { assistantLine, handoverPath, handoverTool, ROUTABLE_MAX, type HandedBack } from './handover';
+import { assistantLine, handoverPath, handoverTool, ROUTABLE_MAX } from './handover';
 
 export { HandoverHeld, HandoverOffered, TurnStopped } from './domain';
 export type { AssistantDeps, ModelResolver } from './ports';
@@ -135,9 +136,11 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
  * never as its own answer or its own read. A turn the other system failed to answer is Clew's own words already.
  */
 export const heardBody = (m: Pick<Thread['messages'][number], 'role' | 'body' | 'meta'>): string => {
-  if (m.role === 'user' && m.meta?.handed)
+  // A question the person brought to Clew from the panel is a question to Clew.
+  if (m.role === 'user' && m.meta?.handed && !m.meta.handed.fromSide)
     return `(Frågan ställdes till ${m.meta.handed.name} i ${m.meta.handed.source}.) ${m.body}`;
   const handover = m.role === 'assistant' ? m.meta?.handover : undefined;
+  if (handover?.declined) return `(${handover.name} i ${handover.source} svarade inte på frågan.)`;
   if (handover && !handover.failed)
     return `(Det här svarade ${handover.name} i ${handover.source}, inte du. Det är inget du själv har läst.) ${m.body}`;
   return m.body;
@@ -577,6 +580,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         onText,
         ...(turn.signal ? { signal: turn.signal } : {}),
         ...(own.length ? { own } : {}),
+        pointed: chips.objects.flatMap(o => (o.kind === 'capability' ? [o.name] : [])),
       });
       if (handTo.assistant) {
         models.health.mark(model.providerId, true, clock().toISOString());
@@ -622,15 +626,53 @@ export function assistantUsecases(deps: AssistantDeps) {
       // The card draws the rows of its read that the answer is about (`cardRows`), worked out from the output as the
       // registry answered it and the answer as the person reads it.
       const declaredView = view?.declared ? tools.find(t => t.name === view.capability)?.view : undefined;
-      const shownRows =
+      const namedRows =
         view && declaredView ? cardRows(declaredView, view.input, answer.viewOutput, parsed.body) : undefined;
+      // The read the person pointed at with a chip is what the turn is about (the product owner, 2026-11-16): its card
+      // is drawn with the read's first rows whatever the answer's wording, since which rows a sentence happens to name
+      // or count is the model's phrasing and not the person's question. And when the model answered without reading
+      // anything that has a card, as it may from what an earlier turn said, the pointed read is made here, as the
+      // person, so the card under the answer is still the thing they asked about, as it is now.
+      const pointedTool = chips.objects
+        .flatMap(o => (o.kind === 'capability' ? [tools.find(t => t.name === o.name)] : []))
+        .find(t => t?.view && (t.view.kind === 'list' || t.view.kind === 'table'));
+      let card = view;
+      let shownRows = namedRows;
+      if (pointedTool?.view && view?.capability === pointedTool.name) {
+        // An answer that names some of the rows (the late ones, the invoices) keeps the card on those rows.
+        if (namedRows?.show === 'none') shownRows = { count: namedRows.count, show: 'all' };
+      } else if (pointedTool?.view && !view) {
+        // Only the read the person pointed at is made for a card. A follow-up without a chip that the model answers
+        // from what was said is not read again here: such a turn makes no read (a logged read least of all).
+        try {
+          const rows = cardRows(pointedTool.view, {}, await turn.run(pointedTool.name, {}), parsed.body);
+          if (rows) {
+            card = {
+              capability: pointedTool.name,
+              input: {},
+              title: pointedTool.title,
+              source: pointedTool.source,
+              declared: true,
+            };
+            shownRows = rows.show === 'none' ? { count: rows.count, show: 'all' } : rows;
+          }
+        } catch {
+          // A read that takes an input, or a source that does not answer: the answer stands without a card.
+        }
+      }
       const followUps = parsed.followUps.length
         ? parsed.followUps
         : searched
           ? headingFollowUps((searched.output as SearchResult).rows)
           : nearest(text, tools).map(t => t.title);
       const draft = drafts.last;
-      const found = [...lookedUp.values()].flatMap(p => people.work(p).map(t => t.id));
+      // Open work about a person the model looked up is drawn only when the answer speaks of it.
+      const found = [...lookedUp.values()].flatMap(p =>
+        people
+          .work(p)
+          .filter(t => speaksOf(parsed.body, t.title))
+          .map(t => t.id),
+      );
       const shape: Produced['shape'] = draft || turn.started ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
       return {
         body: parsed.body,
@@ -640,7 +682,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         clewActions: [],
         toolCalls: reads,
         followUps,
-        ...(view ? { view } : {}),
+        ...(card ? { view: card } : {}),
         ...(shownRows ? { viewRows: shownRows } : {}),
         ...(sources?.length ? { sources } : {}),
         ...(draft && subject
@@ -685,13 +727,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     observer: TurnObserver = {},
   ): Promise<ConversationResponse> {
     // Handed to an assistant of another system: the person's words go there unchanged and Clew's own model is not
-    // asked, unless that assistant hands the question back (D125 item 12): then Clew answers it, as below.
-    let declined: HandedBack | undefined;
-    if (input.assistant) {
-      const handed = await handOver(persona, input, observer);
-      if (!('handedBack' in handed)) return handed;
-      declined = handed;
-    }
+    // asked. Its answer stands as its own; Clew never answers in its place unasked.
+    if (input.assistant) return handOver(persona, input, observer);
     const turn = turnFor(persona, observer);
     const chips: Chip[] = input.chips ?? [];
     const resolved = await resolveChips(deps, persona, chips);
@@ -734,20 +771,17 @@ export function assistantUsecases(deps: AssistantDeps) {
     let fallbackReason: string | undefined;
     if (!produced && model) {
       // The assistants the model may hand this question to (D125 item 11): only a question with nothing attached and
-      // no card named, since nothing of the conversation may follow it, and in a conversation already handed to one
-      // assistant only that one. A source that does not answer in time offers none, and Clew answers.
+      // no card named, since nothing of the conversation may follow it. A conversation may have an exchange with more
+      // than one of them. A source that does not answer in time offers none, and Clew answers.
       const routable =
         observer.offers &&
         !input.own &&
-        !declined &&
         model.tools &&
         deps.handover &&
         !chips.length &&
         !named.length &&
         !people.named.length
-          ? (await deps.handover.list(persona).catch(() => []))
-              .filter(a => !existing?.handover || existing.handover.assistant === a.id)
-              .slice(0, ROUTABLE_MAX)
+          ? (await deps.handover.list(persona).catch(() => [])).slice(0, ROUTABLE_MAX)
           : [];
       const outcome = await modelPath(persona, input.text, history, context, model, turn, people, routable);
       // The model suggests an assistant of another system: the person is asked before anything leaves Clew, and the
@@ -767,15 +801,23 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (!produced) produced = await routerPath(persona, input.text, fallback, turn, people);
     if (observer.signal?.aborted) throw new TurnStopped();
     // Drawn in the turn: the chipped or named cards, then the asker's work about the people the question names or the
-    // model looked up (D115), each once, three at most.
-    const cards = [
-      ...new Set([...[...chippedCards, ...named, ...namedWork(people)].map(t => t.id), ...(produced.cards ?? [])]),
-    ]
+    // model looked up (D115), each once, three at most. Under a model's answer, work about a named person is drawn
+    // only when the answer speaks of it: the model is told of that work and points at it when the question is about
+    // it. Without a model nothing can tell, so it is kept and drawn as quiet rows (`cardsAs`).
+    const byModel = produced.assistant === 'model';
+    const answered = produced.body;
+    const pointed = [...chippedCards, ...named].map(t => t.id);
+    const about = namedWork(people)
+      .filter(t => !byModel || speaksOf(answered, t.title))
+      .map(t => t.id);
+    const cards = [...new Set([...pointed, ...about, ...(produced.cards ?? [])])]
       .filter(id => !shown.has(id))
       .slice(0, 3);
     // A work item this turn started is drawn in the turn, also under a draft of its action: the draft's buttons open
     // the action's own dialog, and that dialog is the item's.
     if (turn.started && !cards.includes(turn.started.threadId)) cards.unshift(turn.started.threadId);
+    const asRows =
+      !byModel && cards.length > 0 && !cards.some(id => pointed.includes(id) || id === turn.started?.threadId);
     const at = clock().toISOString();
     const conversationId = existing?.id ?? ids();
     const refs = chips.map(c => c.ref);
@@ -814,33 +856,13 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(produced.sources?.length ? { sources: produced.sources } : {}),
       ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}),
       ...(cards.length ? { cards } : {}),
+      ...(asRows ? { cardsAs: 'rows' as const } : {}),
       ...(produced.model ? { model: produced.model } : {}),
       ...(produced.modelCall ? { modelCall: produced.modelCall } : {}),
       ...(fallbackReason ? { fallbackReason } : {}),
-      ...(declined
-        ? {
-            handedBack: {
-              assistant: declined.handedBack.assistant,
-              name: declined.handedBack.name,
-              source: declined.handedBack.source,
-            },
-          }
-        : {}),
     };
-    // A question that went to another system's assistant and came back says where it went (D125 item 12).
     const askedMeta: MessageMeta = {
       ...(chips.length ? { chips, refs } : {}),
-      ...(declined
-        ? {
-            handed: {
-              assistant: declined.handedBack.assistant,
-              name: declined.handedBack.name,
-              source: declined.handedBack.source,
-              ...(declined.routed ? { routed: true as const } : {}),
-              declined: true as const,
-            },
-          }
-        : {}),
     };
     await store.transaction(async tx => {
       if (!existing) {
@@ -855,7 +877,6 @@ export function assistantUsecases(deps: AssistantDeps) {
           connector: 'clew',
           area: 'fragor',
           summary: produced!.body,
-          ...(declined ? { handover: declined.handedBack } : {}),
           items: [],
           actions: [],
           waitingOn: null,
@@ -868,7 +889,6 @@ export function assistantUsecases(deps: AssistantDeps) {
         await tx.updateThread(conversationId, {
           summary: produced!.body,
           updatedAt: at,
-          ...(declined ? { handover: declined.handedBack } : {}),
         });
       }
       await tx.addMessage(conversationId, {
@@ -908,10 +928,6 @@ export function assistantUsecases(deps: AssistantDeps) {
           // The audit row finds the turn's trace and cost (D91); the text stays in the message, never here.
           ...(produced!.modelCall ? { modelCall: produced!.modelCall } : {}),
           ...(fallbackReason ? { fallbackReason } : {}),
-          // The question went to another system's assistant first, which handed it back: which one, and who chose it.
-          ...(declined
-            ? { handedBack: declined.handedBack.assistant, ...(declined.routed ? { routed: 'suggested' } : {}) }
-            : {}),
         },
       });
     });

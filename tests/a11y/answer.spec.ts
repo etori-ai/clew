@@ -6,6 +6,7 @@ import {
   expect,
   expectNoAxeViolations,
   heading,
+  hemLine,
   narrow,
   open,
   reflowProblems,
@@ -70,12 +71,13 @@ test.describe('the answer on its way', () => {
     await page.getByRole('button', { name: 'Stoppa' }).click();
     await expect(page.getByRole('log')).toHaveCount(0);
     await expect(heading(page, 1, GREETING)).toBeVisible();
-    await expect(composer(page)).toHaveText('Vem är på plats?');
+    // Back on Hem, the question stands in Hem's line, a plain field whose value it is.
+    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Frågan avbröts'));
     await page.waitForTimeout(api.answerDelay + 500);
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole('log')).toHaveCount(0);
-    await expect(composer(page)).toHaveText('Vem är på plats?');
+    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
   });
 
   // D92: the conversation takes Hem's place with Astryx's fade and Hem comes back with one; under reduced motion both are
@@ -231,7 +233,7 @@ test.describe('the cards in a conversation', () => {
 });
 
 /**
- * A conversation about a thing (D126 rules 2 and 5, board Samtal): "Fråga Clew" on a thing's page lands on a new
+ * A conversation about a thing (D126 rules 2 and 5, board Samtal): "Fråga assistenten" on a thing's page lands on a new
  * conversation's page, `/conversations/new` with the thing in its address. The header names the thing, the thing stands
  * beside the transcript drawn with the queue's pane's parts, the box has the focus and nothing is sent until the person
  * writes; the question then goes with the thing. ✕ lets go of the thing and keeps the conversation. Narrower, the thing
@@ -239,7 +241,7 @@ test.describe('the cards in a conversation', () => {
  */
 test.describe('a conversation about a thing', () => {
   const TITLE = 'Attestera 3 fakturor, 48 200 kr';
-  test('"Fråga Clew" lands on an empty conversation with the thing beside it, and nothing is sent until the person writes', async ({
+  test('"Fråga assistenten" lands on an empty conversation with the thing beside it, and nothing is sent until the person writes', async ({
     page,
     api,
   }) => {
@@ -247,16 +249,16 @@ test.describe('a conversation about a thing', () => {
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     await open(page, '/items/fakturor');
-    await page.getByRole('button', { name: 'Fråga Clew' }).first().click();
+    await page.getByRole('button', { name: 'Fråga assistenten' }).first().click();
     await expect(page).toHaveURL(/\/conversations\/new\?card=fakturor$/);
     // The page says what it is before anything is written (the product owner, 2026-11-14): never "Nytt samtal" for a
     // conversation about a thing.
     await expect(heading(page, 1, `Fråga om ${TITLE}`)).toBeVisible();
-    await expect(page.getByText('Samtal med Clew', { exact: true })).toBeVisible();
+    await expect(page.getByText('Samtal med assistenten', { exact: true })).toBeVisible();
     const pane = page.getByRole('complementary', { name: TITLE });
-    // The pane's title is the link to the item's page, the decisions stand under it, and it has no "Fråga Clew".
+    // The pane's title is the link to the item's page, the decisions stand under it, and it has no "Fråga assistenten".
     await expect(pane.getByRole('link', { name: TITLE })).toHaveAttribute('href', /^\/items\/fakturor\?from=/);
-    await expect(pane.getByRole('button', { name: 'Fråga Clew' })).toHaveCount(0);
+    await expect(pane.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     await expect(composer(page)).toBeFocused();
     await expect(page.getByRole('log')).toHaveCount(0);
     expect(api.asked).toHaveLength(0);
@@ -272,7 +274,7 @@ test.describe('a conversation about a thing', () => {
     await expect(page.getByRole('log')).toContainText('Tio personer är på plats i dag.');
     expect(api.asked.at(-1)).toMatchObject({ text: 'Vem är på plats?', chips: [{ ref: 'thread:fakturor' }] });
     // Once asked, the question is the title and the line under it says what the conversation is about.
-    await expect(page.getByText(`Samtal med Clew\u00a0· om ${TITLE}`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`Samtal med assistenten\u00a0· om ${TITLE}`, { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/conversations\/konversation\?card=fakturor$/);
     // The thing's chip is not drawn again above the question: it stands beside it.
     await expect(page.getByRole('log').getByText(TITLE)).toHaveCount(0);
@@ -287,7 +289,7 @@ test.describe('a conversation about a thing', () => {
     api: _,
   }) => {
     await open(page, '/items/fakturor');
-    await page.getByRole('button', { name: 'Fråga Clew' }).first().click();
+    await page.getByRole('button', { name: 'Fråga assistenten' }).first().click();
     const pane = page.getByRole('complementary', { name: TITLE });
     await pane.getByRole('link', { name: TITLE }).focus();
     await page.keyboard.press('Escape');

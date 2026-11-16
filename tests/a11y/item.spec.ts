@@ -5,9 +5,10 @@ import { NOTICE_REASON, NOTICE_TEXT, NOW, asNotice } from './data';
 /**
  * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`, the `work-item-detail` template): reached by
  * its name in every row and by its title in Att göra's reading pane, with `from` as the way back. The page is the
- * header (the way back with the source, the title with when it is due, the buttons directly under it), the read in the
- * column (the item's own words, Varför ser jag detta?, the rows, Dokument, Händelser) and the facts under "Uppgifter"
- * in the end panel; at 1024 px and below the facts stand above the read.
+ * header (the way back with the source, the title with when it is due, the buttons or the status notice directly under
+ * it), the read in the column as named sections in one order (the rows, which are also the documents where each has
+ * one, Varför ser jag detta?, Händelser folded; D126 item 13) and the facts under "Uppgifter" in the end panel; at
+ * 1024 px and below the facts are the read's first section.
  */
 const wide = { width: 1440, height: 900 };
 const tablet = { width: 1024, height: 768 };
@@ -48,16 +49,21 @@ test.describe('the work item as a page', () => {
     for (let i = 1; i < levels.length; i++) expect(levels[i]! - levels[i - 1]!).toBeLessThanOrEqual(1);
     // The sections are the outline's second level, drawn at the size the board gives them (board Ärende): the level a
     // screen reader is told is `aria-level` where the drawn element is a smaller heading.
-    for (const name of ['Varför ser jag detta?', 'Rader', 'Händelser']) {
+    for (const name of ['Rader', 'Varför ser jag detta?']) {
       const section = page.getByRole('main').getByRole('heading', { name, exact: true });
       await expect(section).toBeVisible();
       expect(await section.evaluate(h => Number(h.getAttribute('aria-level') ?? h.tagName.slice(1))), name).toBe(2);
     }
-    // The status among the facts, in words; the dot beside its word is decoration with no name of its own, so the
-    // state is heard once. When it is due is a badge beside the title (board Ärende).
-    await expect(page.getByText('Ska göras i dag', { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('img', { name: 'Ska göras i dag' })).toHaveCount(0);
+    // A plain to-do has no notice and no state among its facts (D126 item 13): its title and its buttons say what is
+    // expected. When it is due is a badge beside the title (board Ärende).
     await expect(page.getByText('Svara i dag', { exact: true })).toBeVisible();
+    // Händelser is folded: a button that says it is closed, reached by Tab, opened by Enter, in a region of its name.
+    const folded = page.getByRole('main').getByRole('region', { name: 'Händelser' });
+    const unfold = folded.getByRole('button', { name: /^Händelser/ });
+    await expect(unfold).toHaveAttribute('aria-expanded', 'false');
+    await unfold.focus();
+    await page.keyboard.press('Enter');
+    await expect(unfold).toHaveAttribute('aria-expanded', 'true');
     // The rows are a checklist with how many are chosen, the action's label counting them.
     await expect(page.getByText('2 av 3 valda', { exact: true })).toBeVisible();
     await expect(page.getByRole('checkbox', { name: /Energibolaget AB/ })).toBeChecked();
@@ -69,7 +75,8 @@ test.describe('the work item as a page', () => {
     // The facts under Uppgifter in the end panel (board Ärende).
     const details = page.getByRole('complementary', { name: 'Uppgifter' });
     await expect(details.locator('[aria-level="2"]').filter({ hasText: /^Uppgifter$/ })).toBeVisible();
-    for (const term of ['Status', 'Källa', 'Svara senast', 'Kom']) await expect(details).toContainText(term);
+    for (const term of ['Källa', 'Svara senast', 'Kom']) await expect(details).toContainText(term);
+    await expect(details).not.toContainText('Status');
     // The way out to the source is under ⋯, marked as leaving Clew (D111 rule 8).
     await page.getByRole('main').getByRole('button', { name: 'Fler åtgärder' }).click();
     await expect(
@@ -129,10 +136,14 @@ test.describe('the work item as a page', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Attesterade fakturor' })).toBeVisible();
     const receipt = page.getByRole('list', { name: 'Kvitto, rad för rad' });
     await expect(receipt.getByRole('listitem')).toHaveCount(2);
-    await expect(receipt.getByRole('img', { name: 'Okänt' })).toBeVisible();
-    await expect(page.getByText('2 fakturor attesterade', { exact: true })).toBeVisible();
+    // The row in doubt first, with its state in the vocabulary's word, and the notice under the title says which and why.
+    await expect(receipt.getByRole('listitem').first()).toContainText('Obekräftat');
+    await expect(page.getByRole('main')).toContainText(
+      '2 fakturor attesterade, men Ekonomisystemet gav inget säkert besked',
+    );
     // A row the source did not confirm leaves no way back to undo: Ångra waits for the source's answer.
     await expect(page.getByRole('button', { name: /^Ångra/ })).toHaveCount(0);
+    await page.getByRole('button', { name: /^Händelser/ }).click();
     await expect(page.getByRole('list', { name: 'Händelser, de senaste först' })).toContainText(
       'fick inget säkert besked från Ekonomisystemet',
     );
@@ -170,28 +181,30 @@ test.describe('the work item as a page', () => {
     // The receipt: the source's answer on the item, and the text still there to read again.
     await ack.focus();
     await page.keyboard.press('Enter');
-    await expect(main.getByText('Läskvittot är registrerat.', { exact: true })).toBeVisible();
+    // The notice under the title says what came of it; the text and why it came stay (board StatusPanel).
+    await expect(main.getByText('Läskvittot är registrerat', { exact: true })).toBeVisible();
     await expect(first).toBeVisible();
-    await expect(why).toHaveCount(0);
+    await expect(why).toBeVisible();
     await expectNoAxeViolations(page);
   });
 
-  test('an item reminded today that has no day says Påminnelse as its state, with no badge that repeats it', async ({
+  test('an item reminded today that has no day says so on its row, and no badge says it again', async ({
     page,
     api,
   }) => {
     const card = api.threads.find(t => t.id === 'ledighet')!;
     card.deadline = null;
     card.remindedAt = NOW;
-    // The row: the state begins its line, and no badge says the same word at its end.
+    // The row: why it is here, and in its Status column what the state concerns, the reminder; under Behöver dig the
+    // state's word is the tab's, said by the dot's name.
     await open(page, '/todo');
     const row = page.getByRole('main').locator('#work-ledighet');
-    await expect(row).toContainText('Påminnelse\u00a0· Ansökan väntar på beslut');
-    await expect(row.getByText('Påminnelse', { exact: true })).toHaveCount(0);
-    // The page: the word as its status among the facts, and no badge that says the word again.
+    await expect(row).toContainText('Ansökan väntar på beslut');
+    await expect(row).toContainText('påminnelse');
+    await expect(row.getByRole('img', { name: 'Behöver dig, påminnelse' })).toBeVisible();
+    // The page: a plain to-do, so no notice, and no badge that says the word beside the title.
     await open(page, '/items/ledighet');
     await expect(page.getByRole('heading', { level: 1, name: card.title })).toBeVisible();
-    await expect(page.getByText('Påminnelse', { exact: true }).first()).toBeVisible();
     await expect(page.locator('.astryx-badge').filter({ hasText: 'Påminnelse' })).toHaveCount(0);
   });
 
@@ -209,6 +222,7 @@ test.describe('the work item as a page', () => {
     api.itemEventsFail = true;
     await open(page, '/items/omtanke');
     const events = page.getByRole('region', { name: 'Händelser' });
+    await events.getByRole('button', { name: /^Händelser/ }).click();
     await expect(events.getByText('Källan svarade inte.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
     api.itemEventsFail = false;
@@ -224,9 +238,9 @@ test.describe('the work item page where the end panel does not fit', () => {
     await open(page, '/items/fakturor');
     await expect(page.getByRole('complementary', { name: 'Uppgifter' })).toHaveCount(0);
     const main = page.getByRole('main');
-    for (const term of ['Status', 'Källa', 'Svara senast', 'Kom']) await expect(main).toContainText(term);
+    for (const term of ['Källa', 'Svara senast', 'Kom']) await expect(main).toContainText(term);
     const y = async (l: Locator) => (await l.boundingBox())!.y;
-    expect(await y(main.getByText('Status', { exact: true }))).toBeLessThan(
+    expect(await y(main.getByRole('heading', { name: 'Uppgifter' }))).toBeLessThan(
       await y(main.getByRole('heading', { name: 'Varför ser jag detta?' })),
     );
     await expect(page.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
@@ -249,7 +263,7 @@ test.describe('the work item page on a phone', () => {
     await expect(page.getByRole('menuitem', { name: 'Inte nu' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('main').getByText('Status', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('heading', { name: 'Uppgifter' })).toBeVisible();
     await expectNoAxeViolations(page);
   });
 });
@@ -266,7 +280,7 @@ test.describe('the work item page at 320 px and on a short screen', () => {
       expect(await reflowProblems(page)).toEqual([]);
     });
 
-  test('on a desktop a row under Dokument leads to the review’s page at that row, and Back to the row', async ({
+  test('on a desktop a row under Rader leads to its document on the review’s page, and Back to the row', async ({
     page,
     api,
   }) => {
@@ -276,8 +290,10 @@ test.describe('the work item page at 320 px and on a short screen', () => {
       a.id === 'approve' ? { ...a, review: 'each' as const, preview: 'finance.preview' } : a,
     );
     await open(page, '/items/fakturor');
-    // Dokument: each row's document leads to the review's page at that row (D73, amended 2026-11-12).
-    const documents = page.getByRole('region', { name: 'Dokument' });
+    // The rows and their documents are one list (D126 item 13): each row's name leads to the review's page at that row
+    // (D73, amended 2026-11-12), and there is no second list of the same things.
+    const documents = page.getByRole('region', { name: 'Rader' });
+    await expect(page.getByRole('region', { name: 'Dokument' })).toHaveCount(0);
     const row = documents.getByRole('link', { name: 'Öppna underlaget för Skolmaterial Norrland AB · 18 300 kr' });
     await row.focus();
     await page.keyboard.press('Enter');

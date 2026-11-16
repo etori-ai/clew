@@ -153,7 +153,7 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
       headingLevel={2}
       title="Inga samtal än"
       description="När du frågar Clew något finns samtalet här."
-      actions={<Button label="Ny fråga" href="/" />}
+      actions={<Button label="Ny fråga" href="/conversations/new" />}
     />
   ) : mobile ? (
     <Card padding={0}>
@@ -190,7 +190,7 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
       <PageFrame
         title="Samtal"
         meta={read.data ? (rows.length === 1 ? '1 samtal' : `${rows.length} samtal`) : undefined}
-        actions={<Button label="Ny fråga" variant="primary" href="/" />}
+        actions={<Button label="Ny fråga" variant="primary" href="/conversations/new" />}
         label="Samtal"
       >
         <AsyncContent

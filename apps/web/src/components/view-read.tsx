@@ -6,7 +6,7 @@ import { viewSearch } from '../panel-address';
 import type { ThingSubject } from './conversation-context';
 
 /**
- * A view read for an address and what "Fråga Clew" asks about (D126 rules 1 and 5). Every read a page draws (a tool's
+ * A view read for an address and what "Fråga assistenten" asks about (D126 rules 1 and 5). Every read a page draws (a tool's
  * page, the news, the thing beside a conversation) is read here, and a thing's subject is what the conversation about
  * it is about: a work item beside the transcript, a view beside it, or a list as its chip alone.
  */

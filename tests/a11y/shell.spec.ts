@@ -330,9 +330,10 @@ test.describe('an address that opened a thing over a page', () => {
 });
 
 /**
- * The rail folded to its icons (D112 item 1, board Sidebar, the `shell-side-nav` template): Ny fråga and Sök are rows
- * with icons like every other row, so the rail's own fold draws them as icons named by their labels, never cut at its
- * edge, and the keyboard reaches each in turn.
+ * The rail folded to its icons (D126 item 10, board RailOrder variant b, the `shell-side-nav` template): Sök, the places
+ * and Ny fråga are rows with icons like every other row, so the rail's own fold draws them as icons named by their
+ * labels, never cut at its edge, and the keyboard reaches each in turn in the rail's order, the work first. A
+ * conversation's row has no icon and is not drawn folded.
  */
 test.describe('the folded rail', () => {
   test.use({ viewport: desktop });
@@ -346,11 +347,15 @@ test.describe('the folded rail', () => {
     await page.getByRole('button', { name: 'Komprimera sidofältet' }).click();
     await expect(page.getByRole('button', { name: 'Expandera sidofältet' })).toBeVisible();
     const rows = [
-      rail.getByRole('link', { name: 'Ny fråga', exact: true }),
       rail.getByRole('button', { name: 'Sök', exact: true }),
       rail.getByRole('link', { name: /^Hem/ }),
       rail.getByRole('link', { name: /^Att göra/ }),
       rail.getByRole('link', { name: 'Kalender', exact: true }),
+      rail.getByRole('button', { name: 'Påminnelser', exact: true }),
+      rail.getByRole('link', { name: 'Personal', exact: true }),
+      rail.getByRole('link', { name: 'Läget', exact: true }),
+      rail.getByRole('link', { name: 'Ny fråga', exact: true }),
+      rail.getByRole('link', { name: 'Alla samtal', exact: true }),
     ];
     // The rail's own box, measured once it has finished folding.
     await expect.poll(async () => (await rail.boundingBox())!.width).toBeLessThan(100);
@@ -370,8 +375,10 @@ test.describe('the folded rail', () => {
       await expect(row).toBeFocused();
     }
     await expectNoAxeViolations(page);
+    // A conversation's row has no icon, so the folded rail does not draw it.
+    await expect(rail.getByRole('link', { name: 'Vem är på plats i dag?' })).toBeHidden();
     // Sök opens Astryx's command palette over the page, the field takes the focus, and a pick opens what was found.
-    await rows[1]!.click();
+    await rows[0]!.click();
     const palette = page.getByRole('dialog', { name: 'Sök i samtal och ärenden' });
     const field = palette.getByRole('combobox', { name: 'Sök i samtal och ärenden' });
     await expect(field).toBeFocused();

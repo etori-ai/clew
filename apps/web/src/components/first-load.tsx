@@ -42,7 +42,7 @@ export function FirstLoad({ header }: { header: SiteHeaderView | null }) {
   return (
     <AppShell
       height="fill"
-      variant="elevated"
+      variant="wash"
       contentPadding={0}
       mobileNav={{ breakpoint: 'md', isOpen: false, onOpenChange: () => undefined }}
       topNav={

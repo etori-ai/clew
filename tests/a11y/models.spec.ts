@@ -320,13 +320,14 @@ test.describe('model administration', () => {
   });
 });
 
+// The model menu is the box's, on the conversation page (Ny fråga included); Hem's line has none (D126 item 4).
 test.describe("the person's model in the box", () => {
   test.use({ viewport: desktop });
   test('with one model the menu is there and names it, so the box always says which model answers (D36)', async ({
     page,
     api: _,
   }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await expect(composer(page)).toBeVisible();
     const trigger = page.getByRole('button', { name: 'Modell: Kapabel' });
     await expect(trigger).toBeVisible();
@@ -338,7 +339,7 @@ test.describe("the person's model in the box", () => {
     api,
   }) => {
     api.modelChoices = 2;
-    await open(page, '/');
+    await open(page, '/conversations/new');
     const trigger = page.getByRole('button', { name: 'Modell: Kapabel' });
     await trigger.click();
     const group = page.getByRole('group', { name: 'Modell' });
@@ -369,7 +370,7 @@ test.describe("the person's model in the box", () => {
     await expect(page.getByRole('paragraph').filter({ hasText: 'Du har 18 semesterdagar kvar i år.' })).toBeVisible();
     // The answer is Clew's turn (D126 rule 5: what it read stands as its tool calls, not in the turn's name), and the
     // model that wrote it is named under it.
-    const answer = page.getByRole('article', { name: 'Clew', exact: true });
+    const answer = page.getByRole('article', { name: 'Assistenten', exact: true });
     await expect(answer.getByText(/Svar från Kapabel/)).toBeVisible();
   });
 });

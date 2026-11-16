@@ -68,7 +68,7 @@ export class HandoverHeld extends Error {
     readonly assistant: { id: string; name: string; description?: string; source: string },
     readonly about: 'person' | 'card',
   ) {
-    super('Frågan nämner något som hör hemma i Clew.');
+    super('Frågan nämner något som hör hemma här.');
     this.name = 'HandoverHeld';
   }
 }

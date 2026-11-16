@@ -16,7 +16,7 @@ export interface CardPlace {
    * not in a row of its own above it.
    */
   onClose?: () => void;
-  /** "Fråga Clew" among the item's buttons (`AskClew`, D126 rule 5). */
+  /** "Fråga assistenten" among the item's buttons (`AskClew`, D126 rule 5). */
   ask?: ReactNode;
 }
 

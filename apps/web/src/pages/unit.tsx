@@ -318,7 +318,7 @@ function OverviewSection({ answer, href }: { answer: SectionAnswer; href: string
 /**
  * The unit as a page (D126 rule 1, the composition of board Person; D97 items 5 and 6), at `/units/:id`, "Läget" in the
  * rail for a manager who follows up one unit: the way back and the unit's place among the units the reader follows up,
- * its name, its actions and "Fråga Clew" under the name, then its tabs, each a link with its own address (`?section=`):
+ * its name, its actions and "Fråga assistenten" under the name, then its tabs, each a link with its own address (`?section=`):
  * Översikt (Läget, every figure of the reader's own unit; the sources' key figures; Behöver dig; each source's row in
  * short with "Visa allt"), one tab per source that answered for this unit (its row and its fuller read; the follow-up
  * dialogue's tab is the dialogue itself, D118, D126 rule 3) and Ärenden (the reader's work items about the unit). The
@@ -442,7 +442,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     );
   else {
     const { name } = detail.entity;
-    // "Fråga Clew" (D126 rule 5): a new conversation about the unit, the same subject from every tab; the tab it was
+    // "Fråga assistenten" (D126 rule 5): a new conversation about the unit, the same subject from every tab; the tab it was
     // pressed on is only what the pane beside the transcript shows first. A source's read about a unit never reaches
     // the model (D97 item 7): the question goes without a chip.
     const shownFirst = drawn.some(a => a.source.capability === tab) || tab === NEEDS_YOU ? tab : null;

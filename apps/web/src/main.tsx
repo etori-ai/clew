@@ -60,10 +60,15 @@ type Shell = {
   /** D121: the relations to people held by grant: whether Kompetens offers its search. Never an admin flag. */
   relations: RelationGrant[];
 };
-/** The cache inspector, development only: the production bundle, the a11y suite and a deployment never carry it. */
-const Devtools = import.meta.env.DEV
-  ? lazy(() => import('@tanstack/react-query-devtools').then(m => ({ default: m.ReactQueryDevtools })))
-  : null;
+/**
+ * The cache inspector, development only and only when asked for (`VITE_QUERY_DEVTOOLS=true`): its floating button sits
+ * over the page's bottom corner, where a box's send button is. The production bundle, the a11y suite and a deployment
+ * never carry it.
+ */
+const Devtools =
+  import.meta.env.DEV && import.meta.env.VITE_QUERY_DEVTOOLS === 'true'
+    ? lazy(() => import('@tanstack/react-query-devtools').then(m => ({ default: m.ReactQueryDevtools })))
+    : null;
 /**
  * The protected tree mounts only after a live session is confirmed. No user content is kept in browser storage: the
  * query cache (D33) is one client per confirmed session, in memory, emptied once the boundary has shown the ended card.
