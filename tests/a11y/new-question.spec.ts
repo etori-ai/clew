@@ -133,38 +133,47 @@ test.describe('what stands under the box', () => {
     await expect(recipient(page, 'Clew')).toHaveCount(0);
   });
 
-  test('Fråga någon annan: choosing an assistant by keyboard makes it the box’s recipient, says so and sends nothing', async ({
+  test('Fråga någon annan: an assistant’s row is a link that opens a conversation with its panel, and sends nothing', async ({
     page,
     api,
   }) => {
     api.handoverAssistants = [hrAssistant];
     await open(page, '/conversations/new');
     await expect(others(page).getByRole('heading', { level: 2, name: 'Fråga någon annan' })).toBeVisible();
-    const row = others(page).getByRole('button', { name: /^HR-assistenten/ });
+    // The box above only ever goes to Clew: it has no recipient menu.
+    await expect(recipient(page, 'Clew')).toHaveCount(0);
+    const row = others(page).getByRole('link', { name: 'HR-assistenten', exact: true });
     await expect(others(page)).toContainText('Kunskapsbanken · Svarar på frågor om anställning och ledighet.');
     await expectNoAxeViolations(page);
     await row.focus();
     await page.keyboard.press('Enter');
-    await expect(recipient(page, 'HR-assistenten')).toBeVisible();
-    await expect(page.getByRole('textbox', { name: 'Fråga HR-assistenten' })).toBeFocused();
-    await expect
-      .poll(() => announcements(page))
-      .toContainEqual(expect.stringContaining('Du skriver till HR-assistenten i Kunskapsbanken'));
+    await expect(page).toHaveURL(/\/conversations\/new\?assistant=kunskap%3Ahr$/);
+    await expect(page.getByRole('textbox', { name: 'Skriv till HR-assistenten i Kunskapsbanken' })).toBeFocused();
     expect(api.asked).toHaveLength(0);
   });
 
-  test('Visa alla opens the box’s own Till: menu, and Esc closes it without leaving the page', async ({
+  test('Visa alla shows the rest of the assistants in place, and is offered only when there are more than three', async ({
     page,
     api,
   }) => {
     api.handoverAssistants = [hrAssistant];
     await open(page, '/conversations/new');
+    await expect(others(page).getByRole('button', { name: 'Visa alla' })).toHaveCount(0);
+    api.handoverAssistants = [
+      hrAssistant,
+      ...Array.from({ length: 4 }, (_, i) => ({
+        id: `kunskap:a${i}`,
+        name: `Assistent ${i + 1}`,
+        source: 'Kunskapsbanken',
+      })),
+    ];
+    await page.reload();
+    await expect(others(page).getByRole('listitem')).toHaveCount(3);
     await others(page).getByRole('button', { name: 'Visa alla' }).click();
-    await expect(page.getByRole('menuitemradio', { name: /^Clew/ })).toBeFocused();
-    await expect(page.getByRole('menuitemradio', { name: /HR-assistenten/ })).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('menuitemradio')).toHaveCount(0);
+    await expect(others(page).getByRole('listitem')).toHaveCount(5);
+    await expect(others(page).getByRole('button', { name: 'Visa alla' })).toHaveCount(0);
     await expect(page).toHaveURL('/conversations/new');
+    await expectNoAxeViolations(page);
   });
 });
 

@@ -63,7 +63,8 @@ export function AssistantsMenu({ open, hrefFor }: { open: string | null; hrefFor
   return (
     <DropdownMenu
       button={{
-        label: 'Assistenter',
+        // The name holds the words on the button (2.5.3), the count of those in this conversation with them.
+        label: here.length > 0 ? `Assistenter${DOT}${here.length}` : 'Assistenter',
         children: here.length > 0 ? `Assistenter${DOT}${here.length}` : 'Assistenter',
         variant: 'secondary',
         size: 'sm',
@@ -73,7 +74,7 @@ export function AssistantsMenu({ open, hrefFor }: { open: string | null; hrefFor
     >
       {here.length > 0 && (
         <DropdownMenuGroup title="I det här samtalet">
-          <DropdownMenuRadioGroup label="I det här samtalet" value={open ?? undefined} onChange={pick}>
+          <DropdownMenuRadioGroup label="Assistenter i det här samtalet" value={open ?? undefined} onChange={pick}>
             {here.map(h => (
               <DropdownMenuRadioItem
                 key={h.assistant}
@@ -127,9 +128,18 @@ export function AssistantPane({
   const [value, setValue] = useState('');
   // Opening the panel is the person turning to this assistant: its box takes the focus, as a dialog's first field does.
   const field = useRef<ChatComposerInputHandle>(null);
+  // Also once the conversation is read from its address, since the page gives the focus to Clew's box when it has.
+  const conversationId = talk.conversation?.id;
   useEffect(() => {
-    field.current?.focus();
-  }, [assistant]);
+    const frame = requestAnimationFrame(() => field.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [assistant, conversationId]);
+  // A question Clew held on its way out waits for the person's choice: the safe answer takes the focus (D125 item 13).
+  const stay = useRef<HTMLButtonElement>(null);
+  const isHeld = talk.aside?.assistant === assistant && !!talk.aside.held;
+  useEffect(() => {
+    if (isHeld) stay.current?.focus();
+  }, [isHeld]);
   const kept = handoversOf(talk.conversation?.handover).find(h => h.assistant === assistant);
   const found = listed?.find(a => a.id === assistant);
   const who = kept
@@ -238,6 +248,19 @@ export function AssistantPane({
               </HStack>
             )}
             {meta?.cut && <Text type="supporting">Svaret var längre än Clew visar.</Text>}
+            {/* The way to Clew never hangs on the assistant saying it cannot answer: an answer that looks thin, or a
+                question that was Clew's all along, is put to Clew by the person's own press. */}
+            {meta?.side && question && (
+              <HStack>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  label="Fråga Clew samma sak"
+                  isDisabled={talk.busy}
+                  onClick={() => talk.askClew(question)}
+                />
+              </HStack>
+            )}
           </VStack>
         </ChatMessageBubble>
       </ChatMessage>
@@ -333,6 +356,7 @@ export function AssistantPane({
                             </HStack>
                             <HStack gap={2} wrap="wrap">
                               <Button
+                                ref={stay}
                                 size="sm"
                                 variant="primary"
                                 label="Låt Clew svara"

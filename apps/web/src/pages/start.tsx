@@ -388,6 +388,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   useEffect(() => {
     if (wasFresh.current === fresh) return;
     wasFresh.current = fresh;
+    // Not when Ny fråga gave way to a conversation with another system's assistant beside it: the person turned to
+    // that assistant, and its panel's field takes the focus.
+    if (new URLSearchParams(window.location.search).get(ASSISTANT_PARAM)) return;
     const frame = requestAnimationFrame(() => talk.focus());
     return () => cancelAnimationFrame(frame);
   }, [fresh]);

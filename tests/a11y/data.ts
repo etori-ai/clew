@@ -734,34 +734,42 @@ export const handedConversation = (
   conversationId = 'overlamnad',
   fails = false,
   /** How the turn went otherwise: Clew's own assistant chose it, it handed the question back, or it answered and is done. */
-  how: { routed?: boolean; returns?: 'declined' | 'completed' } = {},
+  how: { routed?: boolean; returns?: 'declined' | 'completed'; side?: boolean } = {},
 ): ConversationResponse => {
   const previous = source.find(t => t.id === conversationId)?.messages ?? [];
   const who = { assistant: hrAssistant.id, name: hrAssistant.name, source: hrAssistant.source };
   const link = 'https://kunskap.example/samtal/1';
-  const declined = how.returns === 'declined';
-  const body = declined
-    ? 'Du har APT 10:00 i morgon.'
-    : fails
-      ? 'Kunskapsbanken svarar inte just nu.'
-      : `Enligt kollektivavtalet har du **25 semesterdagar** per år. Det är svar ${previous.length / 2 + 1} i det här samtalet.`;
+  // Asked in the panel beside the conversation, a question the assistant does not take is kept as declined there.
+  const side = how.side ? ({ side: true } as const) : {};
+  const declinedAtSide = !!how.side && how.returns === 'declined';
+  const declined = how.returns === 'declined' && !how.side;
+  const body = declinedAtSide
+    ? ''
+    : declined
+      ? 'Du har APT 10:00 i morgon.'
+      : fails
+        ? 'Kunskapsbanken svarar inte just nu.'
+        : `Enligt kollektivavtalet har du **25 semesterdagar** per år. Det är svar ${previous.length / 2 + 1} i det här samtalet.`;
   const answerMeta: NonNullable<Thread['messages'][number]['meta']> = declined
     ? { shape: 'svar', assistant: 'model', source: 'Kalendern', handedBack: who }
     : {
         shape: 'svar',
         assistant: 'handover',
         source: hrAssistant.name,
-        handover: fails
-          ? { ...who, failed: true }
-          : {
-              ...who,
-              link,
-              cites: [
-                { label: 'Semesterregler', link: 'https://intra.example/semester' },
-                { label: 'Kollektivavtalet' },
-              ],
-              ...(how.returns === 'completed' ? { returned: true } : {}),
-            },
+        handover: declinedAtSide
+          ? { ...who, ...side, declined: true }
+          : fails
+            ? { ...who, ...side, failed: true }
+            : {
+                ...who,
+                ...side,
+                link,
+                cites: [
+                  { label: 'Semesterregler', link: 'https://intra.example/semester' },
+                  { label: 'Kollektivavtalet' },
+                ],
+                ...(how.returns === 'completed' ? { returned: true } : {}),
+              },
       };
   const reply = thread({
     id: conversationId,
@@ -778,7 +786,12 @@ export const handedConversation = (
         body: text,
         createdAt: NOW,
         meta: {
-          handed: { ...who, ...(how.routed ? { routed: true } : {}), ...(declined ? { declined: true } : {}) },
+          handed: {
+            ...who,
+            ...side,
+            ...(how.routed ? { routed: true } : {}),
+            ...(declined ? { declined: true } : {}),
+          },
         },
       },
       { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: answerMeta },
