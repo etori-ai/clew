@@ -1,7 +1,6 @@
 import type { ReactNode, Ref } from 'react';
 import {
   Card,
-  Center,
   ArrowLeftIcon,
   Divider,
   Heading,
@@ -267,6 +266,7 @@ export function PageFrame({
       {...(layoutRef ? { ref: layoutRef } : {})}
       {...(entry ? { xstyle: entry } : {})}
       height={pin ? 'fill' : 'auto'}
+      {...(end && !panelFacts ? {} : { contentWidth: width })}
       header={header}
       start={start}
       content={content}
@@ -289,15 +289,16 @@ export function PageFrame({
       }
     />
   );
-  // On a phone the page is the window. Elsewhere it is a sheet (D126, amended 2026-11-16): the column on a surface of its
-  // own, as wide as Hem's, standing on the ground the rail stands on, so a pane's edge is the sheet's edge and the room
-  // beside the column on a wide screen reads as ground, not as an empty page.
+  // On a phone the page is the window. Elsewhere it is a sheet (D126 item 12): a surface of its own on the ground the
+  // rail stands on, filling what the rail leaves at any window width. What reads as a column keeps Hem's measure in the
+  // middle of the sheet; a page with a pane of its own lets the pane stand at the sheet's far edge and gives the rest
+  // to its list or transcript, so nothing ends in the middle of the page.
   if (mobile) return layout;
   return (
-    <Center axis="horizontal" height={pin ? '100%' : undefined} paddingBlock={3} paddingInline={3}>
-      <Card padding={0} width="100%" maxWidth={width} height={pin ? '100%' : undefined}>
+    <VStack hAlign="stretch" height={pin ? '100%' : undefined} padding={3} paddingInlineStart={0}>
+      <Card padding={0} height={pin ? '100%' : undefined}>
         {layout}
       </Card>
-    </Center>
+    </VStack>
   );
 }

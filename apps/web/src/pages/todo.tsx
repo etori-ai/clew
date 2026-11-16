@@ -79,7 +79,7 @@ import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
 import { itemSubject } from '../components/view-read';
 import { AskClew } from '../components/thing-panel';
 import type { ThingSubject } from '../components/conversation-context';
-import { PAGE_WIDTH, PageFrame } from '../components/page-frame';
+import { PageFrame } from '../components/page-frame';
 
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
@@ -97,12 +97,6 @@ const INTERACTIVE_WITHIN_ROW =
  * surface, as the board draws the list and the pane at about 45 and 55.
  */
 const SINGLE_SURFACE_BELOW = 900;
-/**
- * Att göra's column, the one page that may be wider than the page frame's (D126): the queue and its reading pane side by
- * side in Hem's 1120 px left the item's name 305 px at a 1470 px window, under the 320 px a name reads in; 1160 px is
- * the narrowest column that gives it that. Pending the product owner's decision (2026-11-14).
- */
-const TODO_WIDTH = PAGE_WIDTH + 40;
 const PANE_MIN = 440;
 const LIST_MIN = 300;
 const PANE_SHARE = 0.55;
@@ -243,8 +237,8 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
 
   // The template's measure: the page's own box decides whether the pane stands beside the list.
   const [surfaceRef, pageWidth] = useSurfaceWidth();
-  // The list and the pane share the page's column (D126), so the column, not the page's box, is what they divide.
-  const surfaceWidth = Math.min(pageWidth, TODO_WIDTH);
+  // The sheet fills what the rail leaves (D126 item 12), so the page's own box is what the list and the pane divide.
+  const surfaceWidth = pageWidth;
   const isMeasured = surfaceWidth > 0;
   const single = isMeasured ? surfaceWidth < SINGLE_SURFACE_BELOW : mobile;
   const moved = useRef(false),
@@ -624,7 +618,6 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           its reading pane side by side inside the same column, the list in a card as Hem's lists are. */}
       <PageFrame
         layoutRef={surfaceRef}
-        width={TODO_WIDTH}
         title="Att göra"
         titleId="att-gora"
         meta={countsLine ?? undefined}

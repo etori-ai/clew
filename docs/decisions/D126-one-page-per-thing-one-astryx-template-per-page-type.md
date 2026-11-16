@@ -47,11 +47,14 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
     ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)); an installation nobody has
     configured is still Astryx Neutral.
 
-12. **The page is a sheet** (amended 2026-11-16, product owner). Every page is drawn by `PageFrame`
-    (`apps/web/src/components/page-frame.tsx`) in Hem's column, and from a tablet up that column is a surface of its
-    own (a `Card` as wide as the column) on the ground the rail stands on (`AppShell variant="wash"`). A pane's edge is
-    then the sheet's edge; before, a pane inside the centred column ended in the middle of a wide window with empty page
-    beside it. On a phone the page is the window.
+12. **The page is a sheet that grows** (amended 2026-11-16, product owner). Every page is drawn by `PageFrame`
+    (`apps/web/src/components/page-frame.tsx`). From a tablet up the page is a surface of its own (a `Card`) on the
+    ground the rail stands on (`AppShell variant="wash"`), and it fills what the rail leaves at any window width. What
+    reads as a column (Hem, a register, a thing's page, a form) keeps Hem's measure in the middle of the sheet. A page
+    with a pane of its own (Att göra, a conversation about a thing) lets the pane stand at the sheet's far edge and
+    gives the rest to its list or transcript. Two things scroll: the rail, and the page's content under its header,
+    which stays. On a phone the page is the window. A sheet as wide as the column, centred or beside the rail, was
+    tried the same day and left an empty band beside the rail or beside the sheet on a wide screen.
 
 The calendar keeps its own page ([D27](D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens.md)) and the
 address stays the state: every tab, pane and step is a URL.
