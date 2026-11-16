@@ -549,7 +549,7 @@ describe("Clew's own assistant hands a question over (D125 item 11)", () => {
   });
 });
 
-describe('an assistant hands the conversation back (D125 item 12)', () => {
+describe('an assistant beside the conversation, and a source that still hands back (D128)', () => {
   /** A source with one assistant whose answers the test scripts, one list of events per question. */
   const scripted = (script: AssistantAskEvent[][]): Connector => ({
     id: 'kunskap',
@@ -579,12 +579,10 @@ describe('an assistant hands the conversation back (D125 item 12)', () => {
     },
   });
   const HR = 'kunskap:hr';
-  test('declined: nothing the assistant wrote stands, Clew answers the same words itself, and the turn says who handed back', async () => {
+  test('a source that ends with a declined handback: the answer stands as the assistant\u2019s own, and Clew does not answer in its place', async () => {
     const asked: string[] = [];
-    const clew: ModelGenerate = async ({ messages, tools }) => {
+    const clew: ModelGenerate = async ({ messages }) => {
       asked.push(String(messages.at(-1)!.content));
-      // Handed back, the question is Clew's: it is not offered the handover again.
-      expect(Object.keys(tools)).not.toContain('clew__handOver');
       return { text: 'Du har APT 10:00 i morgon.', toolCalls: [] };
     };
     const w = world({
@@ -601,58 +599,37 @@ describe('an assistant hands the conversation back (D125 item 12)', () => {
     const events: TurnEvent[] = [];
     const turn = await w.assistant.converse(
       hillevi,
-      { text: 'Vad har jag i kalendern i morgon?', assistant: HR },
-      { emit: e => events.push(e) },
+      { text: 'Vad har jag i kalendern i morgon?', assistant: HR, suggested: true },
+      { emit: e => events.push(e), offers: true },
     );
-    expect(asked).toEqual(['Vad har jag i kalendern i morgon?']);
-    expect(turn.assistant).toBe('model');
-    expect(turn.answer.body).toBe('Du har APT 10:00 i morgon.');
-    // The assistant's own sentence was heard and taken back.
-    expect(events).toContainEqual({ type: 'text', delta: '', reset: true });
-    // The listener hears that it was handed back before a word of Clew's own answer.
-    const back = events.findIndex(e => e.type === 'handedBack');
-    expect(events[back]).toEqual({
-      type: 'handedBack',
-      assistant: { id: HR, name: 'HR-assistenten', source: 'Kunskapsbanken' },
-    });
-    expect(events.slice(back + 1).some(e => e.type === 'handed')).toBe(false);
+    // Clew's own model was not asked: the assistant's words are its answer.
+    expect(asked).toEqual([]);
+    expect(turn.assistant).toBe('handover');
+    expect(turn.answer.body).toBe('Det där kan jag inte svara på.');
+    expect(events.some(e => e.type === 'text' && e.reset)).toBe(false);
     const [question, answer] = turn.thread.messages;
-    expect(turn.thread.messages).toHaveLength(2);
     expect(question!.meta!.handed).toEqual({
       assistant: HR,
       name: 'HR-assistenten',
       source: 'Kunskapsbanken',
-      declined: true,
+      routed: true,
     });
-    expect(answer!.meta!.handedBack).toEqual({ assistant: HR, name: 'HR-assistenten', source: 'Kunskapsbanken' });
-    expect(answer!.meta!.handover).toBeUndefined();
-    // The conversation remembers the assistant and its session there, so the person can turn to it again.
-    expect(turn.thread.handover).toEqual({
-      assistant: HR,
-      name: 'HR-assistenten',
-      source: 'Kunskapsbanken',
-      session: 's-1',
-    });
+    expect(answer!.meta!.handover).toEqual({ assistant: HR, name: 'HR-assistenten', source: 'Kunskapsbanken' });
+    expect(answer!.meta!.handedBack).toBeUndefined();
+    expect(turn.thread.handover).toMatchObject({ assistant: HR, session: 's-1' });
     expect(w.store.audit).toHaveLength(1);
-    expect(w.store.audit[0]).toMatchObject({ action: 'conversation.asked', details: { handedBack: HR } });
-    expect(JSON.stringify(w.store.audit[0])).not.toContain('kan jag inte');
+    expect(w.store.audit[0]).toMatchObject({ action: 'conversation.handed', details: { assistant: HR } });
+    expect(w.store.audit[0]!.details).not.toHaveProperty('returned');
+    expect(w.store.audit[0]!.details).not.toHaveProperty('handedBack');
   });
-  test('declined after the person said yes to Clew\u2019s suggestion: Clew answers, and the turn keeps who suggested', async () => {
-    const model: ModelGenerate = async ({ tools }) => {
-      expect(Object.keys(tools)).not.toContain('clew__handOver');
-      return { text: 'Det svarar jag på själv.', toolCalls: [] };
-    };
-    const w = world({ generate: model, extra: [scripted([[{ type: 'handback', reason: 'declined' }]])] });
-    const turn = await w.assistant.converse(
-      hillevi,
-      { text: 'Hur många semesterdagar har jag rätt till?', assistant: HR, suggested: true },
-      { offers: true },
-    );
-    expect(turn.answer.body).toBe('Det svarar jag på själv.');
-    expect(turn.thread.messages[0]!.meta!.handed).toMatchObject({ assistant: HR, routed: true, declined: true });
-    expect(w.store.audit[0]).toMatchObject({ details: { handedBack: HR, routed: 'suggested' } });
+  test('a declined handback without a word is no answer: said in Clew\u2019s words and marked failed', async () => {
+    const w = world({ extra: [scripted([[{ type: 'handback', reason: 'declined' }]])] });
+    const turn = await w.assistant.converse(hillevi, { text: 'Hur många är sjuka i dag?', assistant: HR, side: true });
+    expect(turn.answer.body).toBe('HR-assistenten svarade inte på frågan.');
+    expect(turn.thread.messages[1]!.meta!.handover).toMatchObject({ assistant: HR, side: true, failed: true });
+    expect(w.store.audit.at(-1)).toMatchObject({ details: { assistant: HR, side: true, failed: 'unavailable' } });
   });
-  test('completed: the answer stands as the assistant\u2019s and is marked as its last word', async () => {
+  test('a completed handback is an answer like any other', async () => {
     const w = world({
       extra: [
         scripted([
@@ -671,81 +648,41 @@ describe('an assistant hands the conversation back (D125 item 12)', () => {
       name: 'HR-assistenten',
       source: 'Kunskapsbanken',
       link: 'https://kunskap.example/s/9',
-      returned: true,
     });
     expect(turn.thread.handover).toMatchObject({ session: 's-9' });
-    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.handed', details: { returned: 'completed' } });
+    expect(w.store.audit.at(-1)!.details).not.toHaveProperty('returned');
   });
-  test('asked in the panel beside the conversation: a declined question is kept as declined, Clew does not answer it unasked, and the person\u2019s own press puts it to Clew', async () => {
-    const asked: string[] = [];
-    const clew: ModelGenerate = async ({ messages, tools }) => {
-      asked.push(String(messages.at(-1)!.content));
-      // Brought to Clew by the person, the question is not offered to an assistant again.
-      expect(Object.keys(tools)).not.toContain('clew__handOver');
-      return { text: 'En person är sjukskriven i dag.', toolCalls: [] };
-    };
+  test('asked in the panel beside the conversation: the exchange is marked as the side\u2019s and is not the conversation\u2019s summary', async () => {
     const w = world({
-      generate: clew,
+      generate: async () => ({ text: 'Clew svarar.', toolCalls: [] }),
       extra: [
         scripted([
           [
-            { type: 'text', delta: 'Du har 25 dagar.' },
+            { type: 'text', delta: 'Ja, även på deltid.' },
             { type: 'done', session: 's-1' },
-          ],
-          [
-            { type: 'text', delta: 'Det där kan jag inte svara på.' },
-            { type: 'handback', reason: 'declined', session: 's-1' },
           ],
         ]),
       ],
     });
-    const first = await w.assistant.converse(hillevi, { text: 'Hur många semesterdagar?', assistant: HR, side: true });
-    expect(first.thread.messages[0]!.meta!.handed).toMatchObject({ assistant: HR, side: true });
-    expect(first.thread.messages[1]!.meta!.handover).toMatchObject({ assistant: HR, side: true });
-    const events: TurnEvent[] = [];
-    const turn = await w.assistant.converse(
-      hillevi,
-      { text: 'Hur många är sjuka i dag?', assistant: HR, side: true, conversationId: first.conversationId },
-      { emit: e => events.push(e) },
-    );
-    // Clew's own model was not asked, and the listener is not told Clew answers.
-    expect(asked).toEqual([]);
-    expect(events.some(e => e.type === 'handedBack')).toBe(false);
-    expect(turn.assistant).toBe('handover');
-    const [, , question, answer] = turn.thread.messages;
-    expect(question!.meta!.handed).toEqual({
+    const first = await w.assistant.converse(hillevi, { text: 'Vad har jag att göra?' });
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Gäller det på deltid?',
+      assistant: HR,
+      side: true,
+      conversationId: first.conversationId,
+    });
+    expect(turn.thread.messages.at(-2)!.meta!.handed).toEqual({
       assistant: HR,
       name: 'HR-assistenten',
       source: 'Kunskapsbanken',
       side: true,
     });
-    // Nothing the assistant wrote stands.
-    expect(answer!.body).toBe('');
-    expect(answer!.meta!.handover).toMatchObject({ assistant: HR, side: true, declined: true });
-    // What is said at the side is not the conversation's summary.
-    expect(turn.thread.summary).toBe('Du har 25 dagar.');
+    expect(turn.thread.messages.at(-1)!.meta!.handover).toMatchObject({ assistant: HR, side: true });
+    expect(turn.thread.summary).toBe('Clew svarar.');
     expect(w.store.audit.at(-1)).toMatchObject({
       action: 'conversation.handed',
-      details: { assistant: HR, side: true, returned: 'declined' },
+      details: { assistant: HR, side: true },
     });
-    expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('kan jag inte');
-
-    const own = await w.assistant.converse(
-      hillevi,
-      { text: 'Hur många är sjuka i dag?', returnedBy: HR, conversationId: first.conversationId },
-      { offers: true },
-    );
-    expect(asked).toEqual(['Hur många är sjuka i dag?']);
-    expect(own.assistant).toBe('model');
-    expect(own.thread.messages.at(-2)!.meta!.handed).toEqual({
-      assistant: HR,
-      name: 'HR-assistenten',
-      source: 'Kunskapsbanken',
-      declined: true,
-      fromSide: true,
-    });
-    expect(own.thread.messages.at(-1)!.meta!.handover).toBeUndefined();
-    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.replied', details: { fromSide: HR } });
   });
   test('a conversation keeps one exchange with each assistant asked in it, and a question to one asked before continues its own', async () => {
     const w = world({
@@ -791,15 +728,6 @@ describe('an assistant hands the conversation back (D125 item 12)', () => {
     expect(third.thread.handover!.others).toHaveLength(1);
     expect(w.store.audit.at(-1)).toMatchObject({ details: { assistant: HR, session: 'continued', side: true } });
     expect(w.store.audit.at(-2)).toMatchObject({ details: { assistant: GUIDE, session: 'new', side: true } });
-  });
-  test('an assistant the conversation is not with is not believed to have returned a question', async () => {
-    const w = world({
-      generate: async () => ({ text: 'Svar.', toolCalls: [] }),
-      extra: [scripted([])],
-    });
-    const turn = await w.assistant.converse(hillevi, { text: 'Hur många är sjuka i dag?', returnedBy: HR });
-    expect(turn.thread.messages[0]!.meta?.handed).toBeUndefined();
-    expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('fromSide');
   });
 });
 

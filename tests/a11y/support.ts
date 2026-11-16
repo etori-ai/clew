@@ -477,8 +477,6 @@ export class MockApi {
   handoverAssistants: import('@clew/contracts').HandoverAssistant[] = [];
   /** The other system does not answer a handed-over question. */
   handoverFails = false;
-  /** The assistant returns the conversation: it hands the question back, or answers and is done (D125 item 12). */
-  handoverReturns: 'declined' | 'completed' | undefined = undefined;
   /** Clew's own assistant hands a question that matches to the listed assistant, as its model would (D125 item 11). */
   routes: RegExp | undefined = undefined;
   /** A question to the assistant that matches is held for naming the person's staff (D125 item 13). */
@@ -1678,7 +1676,6 @@ export class MockApi {
         own?: boolean;
         confirmed?: boolean;
         side?: boolean;
-        returnedBy?: string;
       };
       this.asked.push(body);
       await this.answerHeld;
@@ -1707,26 +1704,11 @@ export class MockApi {
         ? handedConversation(this.threads, body.text, body.conversationId, this.handoverFails, {
             routed: !!body.suggested,
             side: !!body.side,
-            ...(this.handoverReturns ? { returns: this.handoverReturns } : {}),
           })
         : conversation(this.threads, body.text, body.conversationId);
-      // A conversation keeps the assistants it has an exchange with whoever answers the turn, and a question the
-      // person brought to Clew from the panel says where it came from.
+      // A conversation keeps the assistants it has an exchange with whoever answers the turn.
       const before = this.threads.find(t => t.id === response.conversationId)?.handover;
       if (!handed && before) response.thread.handover = before;
-      if (!handed && body.returnedBy && before) {
-        const question = response.thread.messages.at(-2)!;
-        question.meta = {
-          ...question.meta,
-          handed: {
-            assistant: before.assistant,
-            name: before.name,
-            source: before.source,
-            declined: true,
-            fromSide: true,
-          },
-        };
-      }
       const step = handed
         ? { id: 'steg-1', capability: 'clew.handover', title: 'Frågar HR-assistenten', source: 'Kunskapsbanken' }
         : { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };

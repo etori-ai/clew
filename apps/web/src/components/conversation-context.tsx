@@ -89,11 +89,6 @@ export interface PendingTurn {
    */
   held?: 'person' | 'card';
   /**
-   * The assistant the question went to handed it back (D125 item 12): the answer on its way is Clew's own, under a
-   * line that says so.
-   */
-  back?: Handed;
-  /**
    * With `handed`: the person said yes to Clew's suggestion of that assistant (D126 item 6). The question already on
    * the page is the one sent on: it says so, and the suggestion has become one line under it.
    */
@@ -167,10 +162,10 @@ export interface ConversationState {
   /** Lets go of a question the panel held or failed to send. */
   dropAside(): void;
   /**
-   * Puts a question from the panel to Clew, the person's own press: one the assistant could not answer (`returnedBy`),
-   * or one Clew held on its way out.
+   * Puts a question from the panel to Clew, the person's own press: one the assistant answered or could not, or one
+   * Clew held on its way out.
    */
-  askClew(text: string, returnedBy?: string): void;
+  askClew(text: string): void;
   /** Yes to Clew's suggestion: the question on the page goes to the suggested assistant, as it was written. */
   acceptOffer(): void;
   /** No to it: Clew answers the question itself. */
@@ -273,10 +268,6 @@ interface Send {
   own?: boolean;
   /** Clew held the question and the person chose to send it anyway. */
   confirmed?: boolean;
-  /** The assistant that could not answer this question in the panel; the person put it to Clew. */
-  returnedBy?: string | undefined;
-  /** The assistant handed the question back while the turn runs: the host gives the box back to Clew and says so. */
-  onHandedBack?: (assistant: Handed) => void;
   /** Clew suggests another system's assistant for this question: the host hears it and asks the person. */
   onOffer?: (assistant: HandoverAssistant, held?: 'person' | 'card') => void;
   /** The question is drawn: the host puts the transcript where it belongs. */
@@ -351,9 +342,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
       suggested,
       own,
       confirmed,
-      returnedBy,
       onOffer,
-      onHandedBack,
       onStart,
       onAnswered,
       refocus,
@@ -392,20 +381,11 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
             ...(handed && suggested ? { suggested: true as const } : {}),
             ...(own ? { own: true as const } : {}),
             ...(handed && confirmed ? { confirmed: true as const } : {}),
-            ...(!handed && returnedBy ? { returnedBy } : {}),
           },
           event => {
             // The turn went to another system's assistant: what follows is drawn as that assistant's from its first word.
             if (event.type === 'handed') setPending(p => p && { ...p, handed: event.assistant, answer: '' });
-            else if (event.type === 'handedBack') {
-              // It handed the question back: from here the pending answer is Clew's, under the line that says so.
-              setPending(p => {
-                if (!p) return p;
-                const { handed: _was, ...rest } = p;
-                return { ...rest, back: event.assistant, steps: [], answer: '' };
-              });
-              onHandedBack?.(event.assistant);
-            } else if (event.type === 'step')
+            else if (event.type === 'step')
               setPending(
                 p =>
                   p && {
@@ -755,17 +735,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 
   // The question Clew's assistant suggested another system's assistant for, kept so the person's answer sends it again.
   const offered = useRef<{ question: Question; assistant: HandoverAssistant; held?: 'person' | 'card' } | null>(null);
-  // Whether this turn's handback was already said while it ran.
-  const saidBack = useRef(false);
   /** One question on its way to whoever answers it: Clew, or another system's assistant with nothing attached. */
   const dispatch = useCallback(
     async (
       question: Question,
-      how: { to?: Handed | null; suggested?: boolean; own?: boolean; confirmed?: boolean; returnedBy?: string },
+      how: { to?: Handed | null; suggested?: boolean; own?: boolean; confirmed?: boolean },
     ) => {
       const { raw, text, chips: used, current, from } = question;
       offered.current = null;
-      saidBack.current = false;
       await send({
         raw,
         text,
@@ -776,13 +753,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         ...(how.suggested ? { suggested: true } : {}),
         ...(how.own ? { own: true } : {}),
         ...(how.confirmed ? { confirmed: true } : {}),
-        ...(how.returnedBy ? { returnedBy: how.returnedBy } : {}),
         onOffer: (assistant, held) => {
           offered.current = { question, assistant, ...(held ? { held } : {}) };
-        },
-        onHandedBack: assistant => {
-          saidBack.current = true;
-          announce(`${assistant.name} lämnade tillbaka frågan. Clew svarar.`);
         },
         onStart: () => {
           setShown(true);
@@ -797,12 +769,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         onAnswered: response => {
           if (!current) onConversation(response.conversationId);
           const to = response.thread.handover;
-          const last = response.thread.messages.at(-1)?.meta;
-          // The assistant handed the question back and Clew answered it (D125 item 12): said when it happened, and
-          // here only if that moment was not heard.
-          if (last?.handedBack) {
-            if (!saidBack.current) announce(`${last.handedBack.name} lämnade tillbaka frågan. Clew svarade.`);
-          } else if (response.assistant === 'handover' && to) {
+          if (response.assistant === 'handover' && to) {
             // The answer is that assistant's; the box stays Clew's, and the way on with the assistant is beside it.
             announce(`${to.name} i ${to.source} har svarat. Rutan skriver fortfarande till Clew.`);
           }
@@ -902,8 +869,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         if (!current) onConversation(response.conversationId);
         const answer = response.thread.messages.at(-1)?.meta?.handover;
         announce(
-          answer?.declined
-            ? `${assistant.name} kunde inte svara. Du kan fråga Clew i stället.`
+          answer?.failed
+            ? `${assistant.name} svarade inte. Du kan fråga Clew samma sak.`
             : `${assistant.name} har svarat i sidofältet.`,
         );
         return true;
@@ -918,12 +885,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     [announce, busy, client, conversation, onConversation, setConversation],
   );
   const askClew = useCallback(
-    (text: string, returnedBy?: string) => {
+    (text: string) => {
       setAside(null);
-      void dispatch(
-        { raw: text, text, chips: [], current: openRef.current ? conversation : null },
-        returnedBy ? { returnedBy } : { own: true },
-      );
+      void dispatch({ raw: text, text, chips: [], current: openRef.current ? conversation : null }, { own: true });
     },
     [conversation, dispatch],
   );

@@ -109,8 +109,9 @@ export function AssistantsMenu({ open, hrefFor }: { open: string | null; hrefFor
  * it are Clew's, always, and an assistant of another system is talked to here, in a panel of its own with a box of its
  * own. Where a message goes is which box it is typed in. The panel draws that assistant's whole exchange in this
  * conversation: the question Clew sent on, on the person's yes, and everything asked here since. What is typed here
- * goes to that system, unchanged and alone (D125 item 4). An assistant that does not take a question says so here and
- * the person may put it to Clew, by their own press; nothing is routed for them. The whole assistant, with its files
+ * goes to that system, unchanged and alone (D125 item 4). Under every answer here, and under one that did not
+ * come, the same words can be put to Clew by the person's own press; nothing is routed for them, and an assistant
+ * does not hand a question back. The whole assistant, with its files
  * and its own history, is in its own system: the header links there.
  */
 export function AssistantPane({
@@ -171,10 +172,6 @@ export function AssistantPane({
   const messages = sideMessages(all, assistant);
   const pending = talk.aside?.assistant === assistant ? talk.aside : null;
   const busy = talk.busy || (!!pending && !pending.held);
-  // A question this assistant could not answer, already put to Clew by the person.
-  const passed = (question: string) =>
-    all.some(m => m.role === 'user' && m.meta?.handed?.fromSide && m.body === question) ||
-    talk.pending?.text === question;
   const time = (at: string, footer?: string) => (
     <ChatMessageMetadata
       timestamp={<Timestamp value={at} format="time" hasTooltip={false} />}
@@ -192,34 +189,31 @@ export function AssistantPane({
   const answered = (m: ThreadMessage, i: number) => {
     const meta = m.meta?.handover;
     const question = [...messages.slice(0, i)].reverse().find(x => x.role === 'user')?.body ?? '';
-    if (meta?.declined)
-      return (
-        <ChatMessage key={`side-${i}`} sender="assistant" name={theirs}>
-          <ChatMessageBubble variant="ghost" width="100%">
-            <VStack gap={3}>
-              <Text>{`${who.name} kan inte svara på den här frågan.`}</Text>
-              <HStack gap={2} vAlign="center" wrap="wrap">
-                <Button
-                  size="sm"
-                  variant="primary"
-                  label="Fråga Clew i stället"
-                  isDisabled={talk.busy || passed(question)}
-                  onClick={() => talk.askClew(question, assistant)}
-                />
-                {passed(question) && <Text type="supporting">Frågan står nu i samtalet med Clew</Text>}
-              </HStack>
-            </VStack>
-          </ChatMessageBubble>
-        </ChatMessage>
-      );
-    if (meta?.failed)
+    // The way to Clew never hangs on the assistant: under every answer, and under one that did not come, the same
+    // words can be put to Clew by the person's own press.
+    const toClew = question ? (
+      <HStack>
+        <Button
+          size="sm"
+          variant="ghost"
+          label="Fråga Clew samma sak"
+          isDisabled={talk.busy}
+          onClick={() => talk.askClew(question)}
+        />
+      </HStack>
+    ) : null;
+    // No answer: the system did not answer, or the assistant wrote nothing; said in Clew's words, never in its name.
+    if (meta?.failed || meta?.declined)
       return (
         <ChatMessage key={`side-${i}`} sender="assistant" name={<VisuallyHidden>Clew</VisuallyHidden>}>
           <ChatMessageBubble variant="ghost" width="100%" metadata={time(m.createdAt)}>
-            <HStack gap={1} vAlign="center">
-              <Icon icon="warning" size="sm" color="warning" />
-              <Text>{m.body}</Text>
-            </HStack>
+            <VStack gap={3}>
+              <HStack gap={1} vAlign="center">
+                <Icon icon="warning" size="sm" color="warning" />
+                <Text>{m.body || `${who.name} svarade inte på frågan.`}</Text>
+              </HStack>
+              {meta.side && toClew}
+            </VStack>
           </ChatMessageBubble>
         </ChatMessage>
       );
@@ -248,19 +242,7 @@ export function AssistantPane({
               </HStack>
             )}
             {meta?.cut && <Text type="supporting">Svaret var längre än Clew visar.</Text>}
-            {/* The way to Clew never hangs on the assistant saying it cannot answer: an answer that looks thin, or a
-                question that was Clew's all along, is put to Clew by the person's own press. */}
-            {meta?.side && question && (
-              <HStack>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  label="Fråga Clew samma sak"
-                  isDisabled={talk.busy}
-                  onClick={() => talk.askClew(question)}
-                />
-              </HStack>
-            )}
+            {meta?.side && toClew}
           </VStack>
         </ChatMessageBubble>
       </ChatMessage>

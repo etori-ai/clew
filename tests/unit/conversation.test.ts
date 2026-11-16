@@ -13,6 +13,7 @@ import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminde
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
 import { calendarUsecases } from '../../apps/server/src/modules/calendar/usecases/samtal';
 import { assistantUsecases, TurnStopped } from '../../apps/server/src/assistant';
+import { speaksOf } from '../../apps/server/src/assistant/people';
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
 import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
@@ -1133,6 +1134,14 @@ describe('a question about a person the asker manages (D115)', () => {
     expect(audit(w.store, card.id)).toEqual(['thread.pushed']);
   });
 
+  test('an answer speaks of a work item when it writes one of the longer words of its title', () => {
+    const leave = 'Godkänn en ledighetsansökan, 29 dec. till 30 dec.';
+    expect(speaksOf('Johan har varit sjukskriven sedan 3 november.', leave)).toBe(false);
+    expect(speaksOf('Det finns också en ledighetsansökan från Johan som väntar på dig.', leave)).toBe(true);
+    expect(speaksOf('Boka ett OMTANKESAMTAL med Anna.', 'Boka ett omtankesamtal med en medarbetare')).toBe(true);
+    // Short words, which every sentence has, never count.
+    expect(speaksOf('Det finns en sak till dec.', leave)).toBe(false);
+  });
   test('with a model: the one work item about the one person named is the item the model may draft on, and nothing is sent', async () => {
     const LATER = '2026-11-12T13:15:00.000Z';
     const model = scripted(
@@ -1199,7 +1208,8 @@ describe('a question about a person the asker manages (D115)', () => {
     expect(turn.answer.body).toBe(
       'Under Behöver dig finns ett öppet ärende om Anna Lindqvist: "Boka ett omtankesamtal med en medarbetare", senast måndag 16 november.',
     );
-    expect(turn.thread.messages.at(-1)!.meta).toMatchObject({ cards: [card.id] });
+    // Without a model nothing can tell whether the question is about that work: it is kept, and drawn as a quiet row.
+    expect(turn.thread.messages.at(-1)!.meta).toMatchObject({ cards: [card.id], cardsAs: 'rows' });
     expect(w.store.audit.at(-1)).toMatchObject({
       action: 'conversation.asked',
       details: { assistant: 'router', tools: [], cards: [card.id] },
@@ -1297,7 +1307,10 @@ describe('a question about a person the asker manages (D115)', () => {
     const turn = await w.assistant.converse(hillevi, { text: QUESTION });
     expect(model.handed.join('\n')).not.toContain('Åtgärdspunkt');
     expect(JSON.parse(model.handed[2]!).workItems).toHaveLength(1);
-    expect(turn.thread.messages.at(-1)!.meta?.cards).toEqual([card.id]);
+    // The model was told of the work item about Anna and its answer does not speak of it: nothing is drawn under an
+    // answer that is about something else (the product owner, 2026-11-16).
+    expect(card.id).toBeTruthy();
+    expect(turn.thread.messages.at(-1)!.meta?.cards).toBeUndefined();
     // Pointed at, it is read in full while nobody is named, and by its title alone once Anna is.
     const chip = { ref: 'thread:point-1', kind: 'thread' as const, label: 'Åtgärdspunkt från utvecklingssamtal' };
     await w.assistant.converse(hillevi, { text: 'Vad står det här?', chips: [chip] });

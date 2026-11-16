@@ -40,13 +40,15 @@ answered by which box it is typed in.
    own. This replaces "a conversation is handed to at most one assistant" in D125 item 5. The thread remembers the
    assistant asked last and, under `others`, the ones before it (`handoversOf`, `withHandover` in
    `packages/contracts/src/handover.ts`); no migration.
-7. **Handing a question back is the person's press.** An assistant that does not take a question asked in the panel
-   (`handback: declined`) is kept as declined with nothing of what it wrote, the panel says it cannot answer, and
-   "Fråga Clew i stället" puts the same words to Clew, marked in the transcript and the audit row as coming from the
-   panel. Clew never answers such a question unasked. Under every side answer "Fråga Clew samma sak" does the same
-   without the mark, so the way to Clew does not hang on the assistant admitting it cannot answer. A question Clew sent
-   on from the transcript and the assistant hands back is still answered by Clew, as D125 item 12 says: the person
-   asked Clew. `handback: completed` has nothing left to do, since nothing sticks.
+7. **An assistant does not hand a question back; the person puts it to Clew** (amended 2026-11-16, product owner,
+   after a test run in which the assistant handed back a question Clew had suggested it for, declined a follow-up it
+   should have taken, and wrote a refusal as text without handing back). Clew does not act on `handback`: the text an
+   assistant wrote stands as its answer, on a question Clew sent on and on one asked in the panel alike, and Clew
+   never answers in its place unasked. An assistant that cannot answer says so in its own words. Under every answer
+   in the panel, and under one that did not come, "Fråga Clew samma sak" puts the same words to Clew by the person's
+   press. A source may still end an answer with `handback`: it is read as `done`, and with no text the turn is said
+   in Clew's words as not answered. Eneo no longer offers its assistants the hand-back tool. This replaces D125 item
+   12.
 8. **Clew hears every exchange of the conversation; nothing goes the other way** (D125 items 4 and 8). The side
    exchange is part of the history Clew's model is given, each part marked as the other assistant's.
 9. **Nothing in the transcript moves by itself.** An answer landing, a hand-back or a turn ending appends rows or
@@ -61,8 +63,8 @@ needs to act on them ("påminn mig om det"); storing the side exchange with the 
 shared scroll. A full chat with the assistant inside Clew would repeat the other system's own interface, where its
 files and other functions work.
 
-**Replaces.** D125 item 5 (sticky recipient, one assistant per conversation), the automatic answer of item 12 for a
-question asked at the side, and the warning line of item 13; the hold of item 13 stands and is drawn in the panel. It
+**Replaces.** D125 item 5 (sticky recipient, one assistant per conversation), item 12 (the assistant handing a
+question back and Clew answering it), and the warning line of item 13; the hold of item 13 stands and is drawn in the panel. It
 adds a box to the conversation's page beside D126 item 4's.
 
 **Not built.**

@@ -17,7 +17,7 @@ import type {
   View,
   ViewRef,
 } from '@clew/contracts';
-import { handoversOf, viewRows, withHandover } from '@clew/contracts';
+import { viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import { audiencedActorOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
@@ -47,6 +47,7 @@ import {
   personAnswer,
   personSubject,
   personTool,
+  speaksOf,
   type ManagedPerson,
   type PeopleInTurn,
 } from './people';
@@ -54,7 +55,7 @@ import type { AssistantDeps, ResolvedModel } from './ports';
 import { draftSelection, parseVerb, verbsFor } from './verbs';
 import { threadAccess } from '../threads/access';
 import { HandoverOffered, TurnStopped } from './domain';
-import { assistantLine, handoverPath, handoverTool, ROUTABLE_MAX, type HandedBack } from './handover';
+import { assistantLine, handoverPath, handoverTool, ROUTABLE_MAX } from './handover';
 
 export { HandoverHeld, HandoverOffered, TurnStopped } from './domain';
 export type { AssistantDeps, ModelResolver } from './ports';
@@ -539,7 +540,13 @@ export function assistantUsecases(deps: AssistantDeps) {
           ? headingFollowUps((searched.output as SearchResult).rows)
           : nearest(text, tools).map(t => t.title);
       const draft = drafts.last;
-      const found = [...lookedUp.values()].flatMap(p => people.work(p).map(t => t.id));
+      // Open work about a person the model looked up is drawn only when the answer speaks of it.
+      const found = [...lookedUp.values()].flatMap(p =>
+        people
+          .work(p)
+          .filter(t => speaksOf(parsed.body, t.title))
+          .map(t => t.id),
+      );
       const shape: Produced['shape'] = draft ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
       return {
         body: parsed.body,
@@ -593,13 +600,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     observer: TurnObserver = {},
   ): Promise<ConversationResponse> {
     // Handed to an assistant of another system: the person's words go there unchanged and Clew's own model is not
-    // asked, unless that assistant hands the question back (D125 item 12): then Clew answers it, as below.
-    let declined: HandedBack | undefined;
-    if (input.assistant) {
-      const handed = await handOver(persona, input, observer);
-      if (!('handedBack' in handed)) return handed;
-      declined = handed;
-    }
+    // asked. Its answer stands as its own; Clew never answers in its place unasked.
+    if (input.assistant) return handOver(persona, input, observer);
     const turn = turnFor(persona, observer);
     const chips: Chip[] = input.chips ?? [];
     const resolved = await resolveChips(deps, persona, chips);
@@ -647,8 +649,6 @@ export function assistantUsecases(deps: AssistantDeps) {
       const routable =
         observer.offers &&
         !input.own &&
-        !input.returnedBy &&
-        !declined &&
         model.tools &&
         deps.handover &&
         !chips.length &&
@@ -671,12 +671,19 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (!produced) produced = await routerPath(persona, input.text, fallback, turn, people);
     if (observer.signal?.aborted) throw new TurnStopped();
     // Drawn in the turn: the chipped or named cards, then the asker's work about the people the question names or the
-    // model looked up (D115), each once, three at most.
-    const cards = [
-      ...new Set([...[...chippedCards, ...named, ...namedWork(people)].map(t => t.id), ...(produced.cards ?? [])]),
-    ]
+    // model looked up (D115), each once, three at most. Under a model's answer, work about a named person is drawn
+    // only when the answer speaks of it: the model is told of that work and points at it when the question is about
+    // it. Without a model nothing can tell, so it is kept and drawn as quiet rows (`cardsAs`).
+    const byModel = produced.assistant === 'model';
+    const answered = produced.body;
+    const pointed = [...chippedCards, ...named].map(t => t.id);
+    const about = namedWork(people)
+      .filter(t => !byModel || speaksOf(answered, t.title))
+      .map(t => t.id);
+    const cards = [...new Set([...pointed, ...about, ...(produced.cards ?? [])])]
       .filter(id => !shown.has(id))
       .slice(0, 3);
+    const asRows = !byModel && cards.length > 0 && !cards.some(id => pointed.includes(id));
     const at = clock().toISOString();
     const conversationId = existing?.id ?? ids();
     const refs = chips.map(c => c.ref);
@@ -715,50 +722,13 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(produced.sources?.length ? { sources: produced.sources } : {}),
       ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}),
       ...(cards.length ? { cards } : {}),
+      ...(asRows ? { cardsAs: 'rows' as const } : {}),
       ...(produced.model ? { model: produced.model } : {}),
       ...(produced.modelCall ? { modelCall: produced.modelCall } : {}),
       ...(fallbackReason ? { fallbackReason } : {}),
-      ...(declined
-        ? {
-            handedBack: {
-              assistant: declined.handedBack.assistant,
-              name: declined.handedBack.name,
-              source: declined.handedBack.source,
-            },
-          }
-        : {}),
     };
-    // A question that went to another system's assistant and came back says where it went (D125 item 12).
-    // The person put a question to Clew that the conversation's assistant could not answer in the panel: the question
-    // says where it came from. Only the assistant the conversation is with is believed.
-    const fromSide =
-      !declined && input.returnedBy
-        ? handoversOf(existing?.handover).find(h => h.assistant === input.returnedBy)
-        : undefined;
     const askedMeta: MessageMeta = {
       ...(chips.length ? { chips, refs } : {}),
-      ...(fromSide
-        ? {
-            handed: {
-              assistant: fromSide.assistant,
-              name: fromSide.name,
-              source: fromSide.source,
-              declined: true as const,
-              fromSide: true as const,
-            },
-          }
-        : {}),
-      ...(declined
-        ? {
-            handed: {
-              assistant: declined.handedBack.assistant,
-              name: declined.handedBack.name,
-              source: declined.handedBack.source,
-              ...(declined.routed ? { routed: true as const } : {}),
-              declined: true as const,
-            },
-          }
-        : {}),
     };
     await store.transaction(async tx => {
       if (!existing) {
@@ -773,7 +743,6 @@ export function assistantUsecases(deps: AssistantDeps) {
           connector: 'clew',
           area: 'fragor',
           summary: produced!.body,
-          ...(declined ? { handover: withHandover(undefined, declined.handedBack) } : {}),
           items: [],
           actions: [],
           waitingOn: null,
@@ -786,7 +755,6 @@ export function assistantUsecases(deps: AssistantDeps) {
         await tx.updateThread(conversationId, {
           summary: produced!.body,
           updatedAt: at,
-          ...(declined ? { handover: withHandover(existing.handover, declined.handedBack) } : {}),
         });
       }
       await tx.addMessage(conversationId, {
@@ -826,11 +794,6 @@ export function assistantUsecases(deps: AssistantDeps) {
           // The audit row finds the turn's trace and cost (D91); the text stays in the message, never here.
           ...(produced!.modelCall ? { modelCall: produced!.modelCall } : {}),
           ...(fallbackReason ? { fallbackReason } : {}),
-          // The question went to another system's assistant first, which handed it back: which one, and who chose it.
-          ...(declined
-            ? { handedBack: declined.handedBack.assistant, ...(declined.routed ? { routed: 'suggested' } : {}) }
-            : {}),
-          ...(fromSide ? { fromSide: fromSide.assistant } : {}),
         },
       });
     });

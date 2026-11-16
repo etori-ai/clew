@@ -208,7 +208,10 @@ function recipientAfter(messages: ThreadMessage[]) {
   if (!question || answer?.meta?.handedBack || answer?.meta?.handover?.returned) return null;
   return askedOf(question);
 }
-/** The words above Clew's own answer to a question another assistant handed back. */
+/**
+ * The words above Clew's own answer to a question another assistant handed back, in a conversation from before
+ * 2026-11-16: an assistant no longer hands a question back, and Clew no longer answers in its place unasked.
+ */
 const handedBackText = (name: string) => `${name} lämnade tillbaka frågan · Clew svarar`;
 function handedBackLine(m: ThreadMessage): TurnLineContent | undefined {
   return m.role === 'assistant' && m.meta?.handedBack ? toClew(handedBackText(m.meta.handedBack.name)) : undefined;
@@ -476,8 +479,10 @@ const stepCall = (s: TurnStep): ChatToolCallItem => ({
 /** The model's text as it is written (D36), revealed at a steady pace by Astryx's hook; with reduced motion it shows whole. */
 export function StreamingAnswer({ text }: { text: string }) {
   const shown = useStreamingText(text, true);
+  // Astryx parses what has arrived so far and fades each piece in, so a list or bold text half written is drawn as
+  // what it is becoming, not as stray asterisks.
   return (
-    <Markdown density="compact" headingLevelStart={2}>
+    <Markdown density="compact" headingLevelStart={2} isStreaming>
       {shown}
     </Markdown>
   );
@@ -934,7 +939,7 @@ export function Transcript({
               {m.body}
             </Markdown>
             {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
-            {m.meta?.cards && m.meta.cards.length > 1 ? (
+            {m.meta?.cards && (m.meta.cards.length > 1 || m.meta.cardsAs === 'rows') ? (
               <TurnCardRows
                 ids={m.meta.cards}
                 hrefFor={id => cardHref?.(id) ?? itemPageHref(id, window.location.pathname + window.location.search)}
@@ -1009,7 +1014,7 @@ export function Transcript({
           // held until something is known, the capabilities it reads as calls with their status, then the text.
           ...(pending
             ? [
-                ...(!pending.suggested && !pending.back && pendingSwitch(messages, pending)
+                ...(!pending.suggested && pendingSwitch(messages, pending)
                   ? [<TurnLine key={`switch-${n}`} line={pendingSwitch(messages, pending)!} />]
                   : []),
                 question(
@@ -1021,11 +1026,6 @@ export function Transcript({
                 ),
                 ...(pending.handed && pending.suggested
                   ? [<SuggestedLine key={`suggested-${n}`} name={pending.handed.name} source={pending.handed.source} />]
-                  : []),
-                // The assistant handed the question back while the turn runs: the line says so at once, and what is
-                // written under it is Clew's own answer.
-                ...(pending.back
-                  ? [<TurnLine key={`back-${n}`} line={toClew(handedBackText(pending.back.name))} />]
                   : []),
                 pending.offer ? (
                   <ChatMessage key={`turn-${n + 1}`} sender="assistant" name={CLEW}>

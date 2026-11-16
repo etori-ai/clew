@@ -246,6 +246,21 @@ export function personSubject(turn: PeopleInTurn): Thread | undefined {
   return work.length === 1 ? work[0] : undefined;
 }
 /** The work items about the people the question names, in the order named: what the turn draws (D34, H1). */
+/**
+ * Whether an answer speaks of a work item: it writes one of the longer words of the item's title. The asker's open work
+ * about a person the question names is drawn under a model's answer only then (the product owner, 2026-11-16: a
+ * question about how long someone had been sick drew their leave application). The model is told of that work and
+ * told to point at it when the question is about what to do.
+ */
+export function speaksOf(text: string, title: string): boolean {
+  const said = text.normalize('NFC').toLocaleLowerCase('sv');
+  return (
+    title
+      .normalize('NFC')
+      .toLocaleLowerCase('sv')
+      .match(/\p{L}{6,}/gu) ?? []
+  ).some(word => said.includes(word));
+}
 export const namedWork = (turn: PeopleInTurn): Thread[] =>
   turn.named.flatMap(n => (n.found.match === 'one' ? turn.work(n.found.person) : []));
 
