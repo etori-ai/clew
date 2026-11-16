@@ -52,6 +52,12 @@ export interface StartContext {
    * names `param`, and the id is resolved to the user name again when the person decides (`decisions.ts`).
    */
   person?: { param: string; personId: string; sourceKey: string };
+  /**
+   * `'topic'`: the propose's own topic alone says which work this is. What it was given is then only how the request
+   * was worded (the assistant fills it in from a conversation, differently each time), so while the card is open a
+   * request with other input is the same card. Without it the input is part of what makes two requests the same card.
+   */
+  same?: 'topic';
 }
 
 export function startedCards({ store, registry, run, digest, clock, ids, people }: StartedDeps) {
@@ -122,14 +128,15 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
     // execute's topic also says which property of its input keeps the person, for the decision to resolve.
     // An execute decided in its dialog is told apart by its answers too, so another order is another card and the same
     // order sent twice is the one card (a digest: the answers themselves are not kept on it).
+    // A propose whose topic alone is its identity (`same`) is one card whatever it was given.
+    const authority = persona.authorizationVersion;
     const topic = startedTopic(
       capability,
-      digest({
-        input,
-        identity,
-        authority: persona.authorizationVersion,
-        ...(Object.keys(answers).length ? { answers } : {}),
-      }),
+      digest(
+        chosen.kind === 'propose' && context.same === 'topic'
+          ? { identity, authority }
+          : { input, identity, authority, ...(Object.keys(answers).length ? { answers } : {}) },
+      ),
       chosen.kind === 'execute' ? person?.param : undefined,
     );
     const open = await store.openThread(persona.id, topic);

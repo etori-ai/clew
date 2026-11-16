@@ -354,6 +354,7 @@ export const assistant = assistantUsecases({
       // By Clew's key, the person's id (D122), as the cards about them name them; only someone who can be asked about.
       unit.people.flatMap(p => (personKey(p) ? [{ key: p.id, name: p.name, unit: unit.unitLabel }] : [])),
     ),
+  start: (persona, capability, input, context) => threads.startCard(persona, capability, input, context),
 });
 /** The models' health probe (D8), started by main.ts beside the server: once at boot, then every minute. */
 export const startAssistantProbe = (intervalMs = 60_000) => {

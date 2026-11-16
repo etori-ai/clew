@@ -176,8 +176,13 @@ export function createConnector({
     if (url.pathname === '/clew/scan') return jsonResponse({ drafts: [] });
     if (url.pathname === '/clew/figure') return jsonResponse({ figure: null });
 
-    const name = decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length));
-    const capability = capabilities[name];
+    let name;
+    try {
+      name = decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length));
+    } catch {
+      return errorResponse('not-found', 'Okänd förmåga.', 404);
+    }
+    const capability = Object.hasOwn(capabilities, name) ? capabilities[name] : undefined;
     if (!capability) return errorResponse('not-found', 'Okänd förmåga.', 404);
 
     // The person's own token for SupportManagement. Without it there is nobody to act as: a scan, a figure, a
