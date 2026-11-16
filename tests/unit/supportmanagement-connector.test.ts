@@ -1,5 +1,7 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
+import { createServer } from 'node:http';
+import { connect, type AddressInfo } from 'node:net';
 import { type Actor } from '../../packages/connectors/src/index';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, createManifest, type ErrandSource } from '../../connectors/supportmanagement/connector.mjs';
@@ -11,8 +13,9 @@ import {
   toSourceErrand,
 } from '../../connectors/supportmanagement/errands.mjs';
 import { createSupportManagementErrands } from '../../connectors/supportmanagement/supportmanagement.mjs';
+import { listener } from '../../connectors/supportmanagement/http.mjs';
 import { errandRefPattern, manifest as smManifest } from '../../connectors/supportmanagement/manifest.mjs';
-import { assertionFor, testJwks } from '../connector-authority';
+import { assertionFor, signedRequest, testJwks } from '../connector-authority';
 
 /**
  * The SupportManagement connector (D35, D89): the person's errands as rows in the shared errand model, read with the
@@ -438,5 +441,105 @@ describe('the SupportManagement API adapter', () => {
       [ref('IK', 'a1f0c3d2-0001-4000-8000-000000000001', '2281'), 'waiting-on-me'],
       [ref('IK', 'a1f0c3d2-0002-4000-8000-000000000002', '2281'), 'new'],
     ]);
+  });
+});
+
+/**
+ * The HTTP listener is reached by anyone who reaches the port, before Clew's signature is checked. Whatever a request
+ * holds, the connector answers it and goes on.
+ */
+describe('the HTTP listener', () => {
+  const serve = async (handle: (request: Request) => Promise<Response>, limit?: number) => {
+    const unexpected: unknown[] = [];
+    const server = createServer(listener(handle, { ...(limit ? { limit } : {}), log: name => unexpected.push(name) }));
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    /** One request written by hand, so that it can be one a well-behaved client would not send. */
+    const raw = (text: string) =>
+      new Promise<string>((resolve, reject) => {
+        const socket = connect(port, '127.0.0.1', () => socket.write(text));
+        let answer = '';
+        socket.on('data', chunk => (answer += chunk));
+        socket.on('end', () => resolve(answer));
+        socket.on('error', reject);
+      });
+    return { raw, unexpected, close: () => new Promise(resolve => server.close(resolve)) };
+  };
+  const ok = async () => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } });
+
+  test('a request that cannot be read is answered, and the next one is served', async () => {
+    const seen: string[] = [];
+    const { raw, close } = await serve(async request => {
+      seen.push(`${request.method} ${new URL(request.url).pathname} ${await request.text()}`);
+      return ok();
+    });
+    try {
+      // A GET with a body: the body is not read, and the request is served.
+      expect(
+        await raw('GET /clew/manifest HTTP/1.1\r\nHost: connector\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx'),
+      ).toStartWith('HTTP/1.1 200');
+      // A Host that is no host does not matter: only the path is read.
+      expect(await raw('POST /clew/scan HTTP/1.1\r\nHost: a b\r\nConnection: close\r\n\r\n')).toStartWith(
+        'HTTP/1.1 200',
+      );
+      expect(
+        await raw('POST /clew/scan HTTP/1.1\r\nHost: connector\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}'),
+      ).toStartWith('HTTP/1.1 200');
+      expect(seen).toEqual(['GET /clew/manifest ', 'POST /clew/scan ', 'POST /clew/scan {}']);
+    } finally {
+      await close();
+    }
+  });
+
+  test('a body over the limit is refused without being kept, and a handler that throws is an answer, not an exit', async () => {
+    let calls = 0;
+    const { raw, unexpected, close } = await serve(async () => {
+      if (++calls === 1) throw new TypeError('with a person’s text in it');
+      return ok();
+    }, 8);
+    try {
+      const big = await raw(
+        'POST /clew/scan HTTP/1.1\r\nHost: connector\r\nContent-Length: 9\r\nConnection: close\r\n\r\n123456789',
+      );
+      expect(big).toStartWith('HTTP/1.1 413');
+      expect(calls).toBe(0);
+      const thrown = await raw('POST /clew/scan HTTP/1.1\r\nHost: connector\r\nConnection: close\r\n\r\n');
+      expect(thrown).toStartWith('HTTP/1.1 500');
+      // Only the error's name is logged.
+      expect(unexpected).toEqual(['TypeError']);
+      expect(await raw('POST /clew/scan HTTP/1.1\r\nHost: connector\r\nConnection: close\r\n\r\n')).toStartWith(
+        'HTTP/1.1 200',
+      );
+    } finally {
+      await close();
+    }
+  });
+
+  test('a capability name that cannot be decoded matches no assertion, and one that is no capability is not found', async () => {
+    const { sm } = stack();
+    const url = (name: string) => 'http://connector/clew/capabilities/' + name;
+    // The assertion is bound to the capability in the route (D117): a name that cannot be read is bound to nothing,
+    // so no assertion matches it and the call is refused before anything is looked up.
+    const unreadable = await sm.handle(
+      new Request(url('%E0%A4%A'), {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + (await assertionFor('sm', secret)(hillevi)),
+          'x-clew-connector-key': secret,
+        },
+        body: '{}',
+      }),
+    );
+    expect(unreadable.status).toBe(401);
+    const unknown = await sm.handle(
+      await signedRequest(url('constructor'), {
+        id: 'sm',
+        actor: hillevi,
+        body: { input: {} },
+        key: secret,
+        label: secret,
+      }),
+    );
+    expect(unknown.status).toBe(404);
   });
 });

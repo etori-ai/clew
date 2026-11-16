@@ -1,4 +1,5 @@
 import type {
+  AskValues,
   AuthenticatedContext,
   Chip,
   ClewAction,
@@ -19,7 +20,7 @@ import type {
 } from '@clew/contracts';
 import { viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
-import { audiencedActorOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
+import { audiencedActorOf, answersOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import { cardRows, type CardRows } from './card';
@@ -30,6 +31,7 @@ import {
   headingFollowUps,
   matchCapability,
   matchCards,
+  matchPropose,
   nearest,
   searchAnswer,
   templatedAnswer,
@@ -112,12 +114,17 @@ interface Turn {
   signal: AbortSignal | undefined;
   run: <O = unknown>(name: string, input: unknown) => Promise<O>;
   reads: TurnRead[];
+  /** The work item a propose called in this turn became, and what the propose was given (`begin`). */
+  started?: { threadId: string; capability: string; input: Record<string, unknown> };
 }
 /** How many rows an output holds: its declared view's rows, else a top-level `rows`; undefined when it has none. */
 const rowCount = (view: View | undefined, output: unknown): number | undefined => {
   const rows = view ? viewRows(view, output) : (output as { rows?: unknown } | null)?.rows;
   return Array.isArray(rows) ? rows.length : undefined;
 };
+/** What the model is told when its propose became a work item: that nothing was sent, so it does not say otherwise. */
+const STARTED_NOTE =
+  'Ett utkast visas för personen som ett ärende. Inget är skickat till något system: personen granskar utkastet och skickar det själv.';
 const isSearchResult = (v: unknown): v is SearchResult =>
   !!v && typeof v === 'object' && Array.isArray((v as SearchResult).rows) && Array.isArray((v as SearchResult).sources);
 /** The most lines about earlier reads the prompt carries. */
@@ -203,20 +210,97 @@ export function assistantUsecases(deps: AssistantDeps) {
       const started = clock().getTime();
       const took = () => Math.max(0, clock().getTime() - started);
       emit({ type: 'step', step: { ...step, status: 'running' } });
+      const proposed = info?.kind === 'propose' && !!deps.start;
       try {
+        // A propose is never run as a read: asked for in a conversation it becomes a work item the person decides on,
+        // through the same use case as an item the person starts themselves. What it was given is kept for the draft.
         // Every read of the turn is the assistant's, made for the person (D122 items 5 and 6).
-        const output = await deps.run<O>(persona, name, input, { caller: 'assistant' });
+        const output = proposed
+          ? ((await begin(name, input)) as O)
+          : await deps.run<O>(persona, name, input, { caller: 'assistant' });
         emit({ type: 'step', step: { ...step, status: 'complete', ms: took() } });
+        // A propose that became a work item is not a read: the item has its own audit row.
+        if (proposed) return output;
         const rows = rowCount(registry.find(name)?.capability.view, output);
         reads.push({ capability: name, ...(rows !== undefined ? { rows } : {}) });
         return output;
       } catch (e) {
         emit({ type: 'step', step: { ...step, status: 'error', ms: took() } });
-        reads.push({ capability: name, failed: true });
+        if (!proposed) reads.push({ capability: name, failed: true });
         throw e;
       }
     };
-    return { emit, signal: observer.signal, run, reads };
+    const begin = async (name: string, input: unknown) => {
+      const given = isRecord(input) ? input : {};
+      // The propose's own topic says which work it is: asked again with more, in this turn or a later one, it is the
+      // item that is already open, and what was said before is kept under what is said now.
+      const { threadId } = await deps.start!(persona, name, given, {
+        reason: 'Du bad assistenten förbereda det',
+        same: 'topic',
+      });
+      const before = turn.started?.threadId === threadId ? turn.started.input : {};
+      turn.started = { threadId, capability: name, input: { ...before, ...given } };
+      return { started: true, note: STARTED_NOTE };
+    };
+    const turn: Turn = { emit, signal: observer.signal, run, reads };
+    return turn;
+  }
+  /**
+   * The draft a started work item is shown with. What the assistant gave the propose is the person's to review: where
+   * the item's action asks for a property of the same name, the value is the draft of that ask, checked as the decision
+   * checks it and opened in the action's own dialog, where the person can change it (D112 item 8). A value that does
+   * not pass is left out, and what is still missing is asked there. A draft of the same action on the same item earlier
+   * in the conversation is what was said before: its values stand where this turn says nothing else. Nothing is sent
+   * from here.
+   */
+  async function startedDraft(
+    persona: AuthenticatedContext,
+    started: NonNullable<Turn['started']>,
+    now: string,
+    history: Thread['messages'] = [],
+  ): Promise<Pick<Produced, 'draft' | 'forslag'>> {
+    const thread = await access.read(persona, started.threadId);
+    if (!thread) return {};
+    const action = draftableActions(registry, persona, thread)[0];
+    const earlier = history
+      .map(m => m.meta?.draft)
+      .filter(d => d?.kind === 'action' && d.threadId === thread.id && d.actionId === action?.id)
+      .at(-1)?.values;
+    const told: Record<string, unknown> = { ...earlier, ...started.input };
+    const values: AskValues = {};
+    if (action)
+      for (const ask of action.asks) {
+        const value = told[ask.property];
+        if (typeof value !== 'string' || !value.trim()) continue;
+        const one = answersOf([ask], { [ask.property]: value }, now, action.input);
+        if (!('problem' in one)) Object.assign(values, one.answers);
+      }
+    return action && Object.keys(values).length
+      ? { draft: { kind: 'action', threadId: thread.id, actionId: action.id, values, thread } }
+      : { forslag: { threadId: thread.id } };
+  }
+
+  /**
+   * The answer when a work item was started and no model wrote one: the router's own start, or a model call that failed
+   * after its propose had become an item. The item is the answer, so the person is never left with an item on Hem that
+   * the conversation says nothing about.
+   */
+  async function startedAnswer(
+    persona: AuthenticatedContext,
+    started: NonNullable<Turn['started']>,
+    assistant: 'router' | 'unavailable',
+    history: Thread['messages'] = [],
+  ): Promise<Produced> {
+    const tool = registry.tools(audiencedActorOf(persona)).find(t => t.name === started.capability);
+    return {
+      body: `Jag har förberett "${tool?.title ?? 'ärendet'}" som ett ärende. Fyll i uppgifterna och skicka när du är klar. Inget är skickat.`,
+      source: tool?.source ?? 'Startsidan',
+      shape: 'forslag',
+      assistant,
+      clewActions: [],
+      followUps: [],
+      ...(await startedDraft(persona, started, clock().toISOString(), history)),
+    };
   }
 
   /** The chip path (D12): with one chipped card the assistant does not guess. Clew-side actions are only proposed; drafts change the card, never a source. */
@@ -326,6 +410,12 @@ export function assistantUsecases(deps: AssistantDeps) {
       text,
       tools.filter(t => t.name !== SEARCH_TOOL),
     );
+    const wanted = deps.start ? matchPropose(text, tools) : undefined;
+    if (wanted) {
+      // Without the model the propose is started as it is: the work item asks the person for everything.
+      await turn.run(wanted.name, {});
+      if (turn.started) return startedAnswer(persona, turn.started, assistant);
+    }
     if (match) {
       // A view with a search field takes the rest of what was typed as its question (D38); every other read runs as it is.
       const input = viewInput(text, match);
@@ -498,8 +588,12 @@ export function assistantUsecases(deps: AssistantDeps) {
         if (sent) turn.emit({ type: 'text', delta: '', reset: true });
         return { handTo: handTo.assistant.id };
       }
-      // The draft is not a read: it names no source, offers no view and is kept as the turn's draft instead.
-      const reads = answer.toolCalls.filter(c => c.capability !== DRAFT_TOOL);
+      // The draft is not a read: it names no source, offers no view and is kept as the turn's draft instead. Neither is
+      // a propose that became a work item.
+      const reads = answer.toolCalls.filter(
+        c => c.capability !== DRAFT_TOOL && c.capability !== turn.started?.capability,
+      );
+      const begun = turn.started ? await startedDraft(persona, turn.started, now.toISOString(), history) : {};
       const ended = clock();
       models.health.mark(model.providerId, true, ended.toISOString());
       // The turn's record (D91): what it cost and where its trace is, never what was said.
@@ -579,7 +673,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           .filter(t => speaksOf(parsed.body, t.title))
           .map(t => t.id),
       );
-      const shape: Produced['shape'] = draft ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
+      const shape: Produced['shape'] = draft || turn.started ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
       return {
         body: parsed.body,
         source,
@@ -601,7 +695,7 @@ export function assistantUsecases(deps: AssistantDeps) {
                 thread: subject,
               },
             }
-          : {}),
+          : begun),
         model: { id: model.id, title: model.title },
         modelCall,
         ...(found.length ? { cards: found } : {}),
@@ -624,7 +718,8 @@ export function assistantUsecases(deps: AssistantDeps) {
   /**
    * One turn of the conversation. A listener hears its steps and the model's text while it runs (D36); the turn, its two
    * messages and its audit row are still written together once the answer is known, and a turn stopped before that
-   * writes nothing.
+   * writes nothing of the conversation. A work item a propose became before the stop is not the turn's: it was
+   * committed with its own audit row when it started, and stays as the person's open item.
    */
   async function converse(
     persona: AuthenticatedContext,
@@ -699,6 +794,9 @@ export function assistantUsecases(deps: AssistantDeps) {
       else if ('unavailable' in outcome) fallbackReason = outcome.unavailable;
       else produced = outcome;
     }
+    // The model failed after its propose had become a work item: the item is the answer, and nothing is routed or
+    // started a second time.
+    if (!produced && turn.started) produced = await startedAnswer(persona, turn.started, fallback, history);
     if (!produced && named.length) produced = cardPath(named, fallback);
     if (!produced) produced = await routerPath(persona, input.text, fallback, turn, people);
     if (observer.signal?.aborted) throw new TurnStopped();
@@ -715,7 +813,11 @@ export function assistantUsecases(deps: AssistantDeps) {
     const cards = [...new Set([...pointed, ...about, ...(produced.cards ?? [])])]
       .filter(id => !shown.has(id))
       .slice(0, 3);
-    const asRows = !byModel && cards.length > 0 && !cards.some(id => pointed.includes(id));
+    // A work item this turn started is drawn in the turn, also under a draft of its action: the draft's buttons open
+    // the action's own dialog, and that dialog is the item's.
+    if (turn.started && !cards.includes(turn.started.threadId)) cards.unshift(turn.started.threadId);
+    const asRows =
+      !byModel && cards.length > 0 && !cards.some(id => pointed.includes(id) || id === turn.started?.threadId);
     const at = clock().toISOString();
     const conversationId = existing?.id ?? ids();
     const refs = chips.map(c => c.ref);

@@ -1,0 +1,30 @@
+import type { StatusKind } from './connector.mjs';
+import type { FieldMap } from './pob.mjs';
+export declare function readConfig(env?: Record<string, string | undefined>): {
+  adapter: 'fixture' | 'api';
+  pob?: {
+    url: string;
+    authorization: string;
+    fields: FieldMap;
+    userMatch: string;
+    customerMatch: string;
+    statusLabels: Record<string, string>;
+    timeZone: string;
+    listLimit: number;
+    insecureHosts: string[];
+    startCheck: 'strict' | 'warn' | 'off';
+  };
+  port: number;
+  secret?: string;
+  audience: string;
+  identity: { issuer: string; jwksUrl: string; insecureHosts: string[] };
+  accountClaim: string;
+  sourceLabel?: string;
+  statusKinds: Record<string, StatusKind>;
+  caseTypes: string[];
+  problemMemo: string;
+  caseLink?: string;
+  writes: string[];
+  create: { caseType: string; category: string; groupId: string };
+  urgentNote?: string;
+};

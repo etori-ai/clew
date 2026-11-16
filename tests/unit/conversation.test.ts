@@ -1,7 +1,8 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread, TurnEvent } from '../../packages/contracts/src/index';
-import { audiencedActorOf, openGovernance, type Connector } from '../../packages/connectors/src/index';
+import { createHash } from 'node:crypto';
+import { audiencedActorOf, CapabilityError, openGovernance, type Connector } from '../../packages/connectors/src/index';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { fixtureConnectors } from '../fixture-connectors';
@@ -10,6 +11,7 @@ import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
+import { startedCards } from '../../apps/server/src/threads/usecases/started';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
 import { calendarUsecases } from '../../apps/server/src/modules/calendar/usecases/samtal';
 import { assistantUsecases, TurnStopped } from '../../apps/server/src/assistant';
@@ -111,6 +113,15 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     ids,
   });
   const reminders = reminderUsecases({ store, clock });
+  // A work item a propose becomes when the assistant is asked for it: the same use case as one the person starts.
+  const started = startedCards({
+    store,
+    registry,
+    run,
+    digest: value => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32),
+    clock,
+    ids,
+  });
   // The administered model (D24): with a `generate`, one provider and one switched-on default model the test plays.
   const modelStore = memoryModelStore(),
     health = memoryModelHealth();
@@ -159,6 +170,7 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     clock,
     ids,
     trace: () => '0af7651916cd43dd8448eb211c80319c',
+    start: started.startCard,
     log: (...args: unknown[]) => {
       logged.push(args);
     },
@@ -1386,4 +1398,269 @@ test('a question the search answers asks a source for one provisioned group only
   expect(outsider.view?.capability).toBe('clew.search');
   expect(outsider.answer.body).toMatch(/^Jag hittade inget om det här i källorna jag får söka i\./);
   expect(asked).toEqual(['hassan']);
+});
+
+/**
+ * The assistant starts a work item, the person sends it. A propose is never run as a read: asked for in a conversation
+ * it becomes a work item through the same use case as one the person starts, with its own audit row, and what the
+ * assistant was told is the draft of the item's asks, which the person opens in the action's own dialog and can change.
+ * Nothing is sent to a source from the conversation: the item's execute runs only through the human decision.
+ */
+describe('the assistant starts a work item from a propose, the person sends it', () => {
+  type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
+  const said = { problem: 'Skärmen är svart sedan i morse.', place: 'Sal 12' };
+  /** A service desk as a connector: a propose the model may call, and the execute behind the work item's one button. */
+  function desk(sent: unknown[], options: { refuse?: boolean } = {}): Connector {
+    const text = { type: 'string', maxLength: 4000 };
+    return {
+      id: 'desk',
+      kind: 'passthrough',
+      source: 'Servicedesken',
+      areas: [],
+      capabilities: [
+        {
+          name: 'desk.reportFault',
+          kind: 'propose',
+          title: 'Felanmäl dator',
+          description: 'Förbereder en felanmälan som ett utkast åt personen.',
+          model: true,
+          scope: {},
+          input: {
+            type: 'object',
+            properties: { problem: text, place: text, mood: text },
+            additionalProperties: false,
+          } as never,
+          output: { type: 'object' } as never,
+          run: async () => {
+            if (options.refuse) throw new CapabilityError('Du finns inte som anmälare hos Servicedesken.');
+            return {
+              topic: 'desk:fault',
+              area: 'desk',
+              title: 'Felanmäl dator',
+              summary: 'Ett utkast till en felanmälan. Inget är skickat.',
+              reason: 'Källans egen anledning',
+              items: [],
+              actions: [
+                {
+                  id: 'send',
+                  label: 'Skicka felanmälan',
+                  capability: 'desk.createCase',
+                  kind: 'execute',
+                  role: 'primary',
+                },
+              ],
+            };
+          },
+        },
+        {
+          name: 'desk.createCase',
+          kind: 'execute',
+          title: 'Skicka felanmälan',
+          description: 'Skapar ett ärende hos servicedesken.',
+          model: false,
+          scope: {},
+          input: {
+            type: 'object',
+            properties: { problem: { type: 'string', minLength: 1 }, place: { type: 'string', minLength: 1 } },
+            required: ['problem', 'place'],
+            additionalProperties: false,
+          } as never,
+          output: { type: 'object' } as never,
+          asks: [
+            { kind: 'long-text', property: 'problem', label: 'Vad är fel?', required: true },
+            { kind: 'text', property: 'place', label: 'Var finns datorn?', required: true },
+          ],
+          run: async (_actor: unknown, input: unknown) => {
+            sent.push(input);
+            return { headline: 'Skickat.', rows: [] };
+          },
+        },
+      ],
+    } as unknown as Connector;
+  }
+  /** A model that calls the propose with what it was told, and says what it did. */
+  const calling =
+    (input: Record<string, unknown>, heard: unknown[] = []): ModelGenerate =>
+    async ({ tools }) => {
+      const report = tools['desk__reportFault'] as Callable | undefined;
+      if (!report) return { text: 'Det kan jag inte hjälpa till med.', toolCalls: [] };
+      let output: unknown;
+      try {
+        output = await report.execute(input, {});
+      } catch (error) {
+        output = { error: (error as Error).message };
+      }
+      heard.push(output);
+      return {
+        text: 'Jag har förberett en felanmälan. Granska den och skicka den när du är klar.',
+        toolCalls: [{ capability: 'desk.reportFault', input, output }],
+      };
+    };
+  const deskCards = async (w: ReturnType<typeof world>) =>
+    (await w.threads.listThreadsFor(hassan)).filter(t => t.connector === 'desk');
+
+  test('a propose the model calls becomes a work item, with what the model was told as its draft; nothing is sent', async () => {
+    const sent: unknown[] = [];
+    const heard: unknown[] = [];
+    const w = world({ generate: calling(said, heard), extra: [desk(sent)] });
+    const turn = await w.assistant.converse(hassan, { text: 'Min dator startar inte, kan du felanmäla den?' });
+    // The model is told that nothing was sent, so it does not say otherwise.
+    // What the model hears is the output as a reading: a yes, and that nothing was sent.
+    expect(heard).toEqual([{ started: 'Ja', note: expect.stringContaining('Inget är skickat') }]);
+    const [card, ...more] = await deskCards(w);
+    expect(more).toEqual([]);
+    expect(card).toMatchObject({
+      kind: 'pushed',
+      state: 'open',
+      title: 'Felanmäl dator',
+      // The person asked for it: that is the reason, whatever the source wrote.
+      trigger: { reason: 'Du bad assistenten förbereda det', source: 'Servicedesken' },
+    });
+    expect(turn).toMatchObject({
+      shape: 'forslag',
+      assistant: 'model',
+      draft: { kind: 'action', threadId: card!.id, actionId: 'send', values: said, thread: { id: card!.id } },
+    });
+    // The draft is kept in the conversation; the propose is not among the answer's reads.
+    expect(turn.thread.messages.at(-1)!.meta?.draft).toEqual({
+      kind: 'action',
+      threadId: card!.id,
+      actionId: 'send',
+      values: said,
+    });
+    expect(turn.thread.messages.at(-1)!.meta?.toolCalls).toBeUndefined();
+    // The item itself is drawn in the turn, under the draft: the draft's buttons open the item's own dialog.
+    expect(turn.thread.messages.at(-1)!.meta?.cards).toEqual([card!.id]);
+    // The work item has its own audit row, and the turn's row names the action and its asks, never what was said.
+    expect(audit(w.store, card!.id)).toEqual(['thread.started']);
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'conversation.asked',
+      details: { tools: [], drafted: { thread: card!.id, action: 'send', asks: ['problem', 'place'] } },
+    });
+    expect(JSON.stringify(w.store.audit)).not.toContain('Skärmen');
+    expect(JSON.stringify(w.store.audit)).not.toContain('Sal 12');
+    // Nothing reached the source: the execute runs only when the person decides.
+    expect(sent).toEqual([]);
+    expect(card!.receipt ?? null).toBeNull();
+    expect(card!.execution ?? null).toBeNull();
+  });
+
+  test('what the model does not know is left for the person, and what the action does not ask is not kept', async () => {
+    const w = world({ generate: calling({ problem: said.problem, mood: 'irriterad' }), extra: [desk([])] });
+    const turn = await w.assistant.converse(hassan, { text: 'Min skärm är svart' });
+    // Only the answer to an ask of the item's action is a draft: the place is asked in the dialog.
+    expect(turn.draft).toMatchObject({ actionId: 'send', values: { problem: said.problem } });
+    expect(JSON.stringify(turn.thread.messages.at(-1)!.meta)).not.toContain('irriterad');
+
+    // Told nothing, the model's propose still starts the item: it is drawn in the turn, and asks for everything.
+    const empty = world({ generate: calling({}), extra: [desk([])] });
+    const bare = await empty.assistant.converse(hassan, { text: 'Jag vill felanmäla' });
+    const [card] = await deskCards(empty);
+    expect(bare).toMatchObject({ shape: 'forslag', forslag: { threadId: card!.id } });
+    expect(bare.draft).toBeUndefined();
+    expect(bare.thread.messages.at(-1)!.meta?.cards).toEqual([card!.id]);
+  });
+
+  test('without the model the propose is started by its own title, and only by that', async () => {
+    const sent: unknown[] = [];
+    const w = world({ extra: [desk(sent)] });
+    // A word in common is not enough to start a work item.
+    await w.assistant.converse(hassan, { text: 'Min dator är långsam' });
+    expect(await deskCards(w)).toEqual([]);
+    const turn = await w.assistant.converse(hassan, { text: 'Felanmäl dator' });
+    const [card] = await deskCards(w);
+    expect(turn).toMatchObject({
+      shape: 'forslag',
+      assistant: 'router',
+      forslag: { threadId: card!.id },
+      answer: {
+        body: 'Jag har förberett "Felanmäl dator" som ett ärende. Fyll i uppgifterna och skicka när du är klar. Inget är skickat.',
+        source: 'Servicedesken',
+      },
+    });
+    expect(turn.thread.messages.at(-1)!.meta?.cards).toEqual([card!.id]);
+    expect(audit(w.store, card!.id)).toEqual(['thread.started']);
+    // Asked again while the item is open, it is the same item.
+    await w.assistant.converse(hassan, { text: 'Felanmäl dator' });
+    expect(await deskCards(w)).toHaveLength(1);
+    expect(sent).toEqual([]);
+  });
+
+  test('asked again with more, in the same turn or the next, it is the same item and what was said before is kept', async () => {
+    // Two turns: the problem first, the place when the model has asked for it.
+    const inputs = [{ problem: said.problem }, { place: said.place }];
+    const w = world({ generate: args => calling(inputs.shift()!)(args), extra: [desk([])] });
+    const first = await w.assistant.converse(hassan, { text: 'Min skärm är svart' });
+    expect(first.draft).toMatchObject({ values: { problem: said.problem } });
+    const second = await w.assistant.converse(hassan, {
+      text: 'Den står i sal 12',
+      conversationId: first.conversationId,
+    });
+    const [card, ...more] = await deskCards(w);
+    expect(more).toEqual([]);
+    expect(second.draft).toMatchObject({ threadId: card!.id, actionId: 'send', values: said });
+    // One item was started, once.
+    expect(audit(w.store, card!.id)).toEqual(['thread.started']);
+
+    // One turn in which the model calls the propose twice.
+    const twice: ModelGenerate = async ({ tools }) => {
+      const report = tools['desk__reportFault'] as Callable;
+      await report.execute({ problem: said.problem }, {});
+      await report.execute({ place: said.place }, {});
+      return { text: 'Jag har förberett en felanmälan.', toolCalls: [] };
+    };
+    const one = world({ generate: twice, extra: [desk([])] });
+    const turn = await one.assistant.converse(hassan, { text: 'Min skärm i sal 12 är svart' });
+    expect(await deskCards(one)).toHaveLength(1);
+    expect(turn.draft).toMatchObject({ actionId: 'send', values: said });
+  });
+
+  test('the propose’s topic is what makes it one item for the assistant; started by the person, the input tells two apart', async () => {
+    const w = world({ extra: [desk([])] });
+    const start = (input: Record<string, unknown>, same?: 'topic') =>
+      w.deps.start!(hassan, 'desk.reportFault', input, { reason: 'Du valde', ...(same ? { same } : {}) });
+    const a = await start({ problem: 'Skärmen är svart' }, 'topic');
+    const b = await start({ problem: 'Skärmen är svart', place: 'Sal 12' }, 'topic');
+    expect(b.threadId).toBe(a.threadId);
+    // Without it, as when the person starts an action with its input, other input is another item.
+    const c = await start({ problem: 'Skärmen är svart' });
+    const d = await start({ problem: 'Tangentbordet är trasigt' });
+    expect(new Set([a.threadId, c.threadId, d.threadId]).size).toBe(3);
+    for (const id of [a.threadId, c.threadId, d.threadId]) expect(audit(w.store, id)).toEqual(['thread.started']);
+  });
+
+  test('a model that fails after its propose became an item still answers with the item, and starts no second one', async () => {
+    const failing: ModelGenerate = async ({ tools }) => {
+      await (tools['desk__reportFault'] as Callable).execute(said, {});
+      throw new Error('timeout');
+    };
+    const w = world({ generate: failing, extra: [desk([])] });
+    // The text names the propose's title, which the router would start by itself.
+    const turn = await w.assistant.converse(hassan, { text: 'Felanmäl dator: skärmen i sal 12 är svart' });
+    const [card, ...more] = await deskCards(w);
+    expect(more).toEqual([]);
+    expect(turn).toMatchObject({
+      shape: 'forslag',
+      assistant: 'unavailable',
+      draft: { kind: 'action', threadId: card!.id, actionId: 'send', values: said },
+      answer: {
+        body: 'Jag har förberett "Felanmäl dator" som ett ärende. Fyll i uppgifterna och skicka när du är klar. Inget är skickat.',
+        source: 'Servicedesken',
+      },
+    });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'conversation.asked',
+      details: { assistant: 'unavailable', drafted: { thread: card!.id, action: 'send' } },
+    });
+  });
+
+  test('a propose the source refuses starts nothing', async () => {
+    const heard: unknown[] = [];
+    const w = world({ generate: calling(said, heard), extra: [desk([], { refuse: true })] });
+    const turn = await w.assistant.converse(hassan, { text: 'Felanmäl min dator' });
+    expect(await deskCards(w)).toEqual([]);
+    expect(turn.draft).toBeUndefined();
+    expect(turn.forslag).toBeUndefined();
+    expect(JSON.stringify(heard)).toContain('anmälare');
+  });
 });

@@ -13,8 +13,11 @@ import { parseManifest, remoteConnector, type FetchLike } from '../../packages/c
 import { merge, systemReport, unanswered } from '../../apps/server/src/modules/errands/domain';
 import { errandCapabilities } from '../../apps/server/src/modules/errands/capabilities';
 import { errandUsecases } from '../../apps/server/src/modules/errands/usecases';
+import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { createConnector as createSm } from '../../connectors/supportmanagement/connector.mjs';
 import { createFixtureErrands } from '../../connectors/supportmanagement/errands.mjs';
+import { createConnector as createPob } from '../../connectors/pob/connector.mjs';
+import { createFixtureCases, type CaseSource } from '../../connectors/pob/cases.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
 
 /**
@@ -365,4 +368,119 @@ test('a case system for one provisioned group only is asked for its members, thr
   expect(registry.allowed(member, 'clew.errands')).toBeDefined();
   expect(registry.allowed(outsider, 'clew.errands')).toBeUndefined();
   expect(registry.allowed(mikael, 'clew.errands')).toBeUndefined();
+});
+
+/**
+ * Two real connectors on their made-up systems (the plan in
+ * docs/reviews/2026-11-13-a-pob-connector-and-errands-from-two-case-systems.md, phase 2): SupportManagement, which
+ * reads the person from a token for its own audience, and POB, which checks a token for its own audience against the
+ * identity provider's keys. Clew trades the session for one token per audience and each system gets its own.
+ */
+describe('SupportManagement and POB in one list of errands', () => {
+  const secret = 'test-secret-test-secret';
+  const issuer = 'https://idp.test/realms/clew';
+  const keys = generateKeyPair('RS256', { extractable: true });
+  const idpJwks = async () => ({
+    keys: [{ ...(await exportJWK((await keys).publicKey)), kid: 'idp-1', alg: 'RS256', use: 'sig' }],
+  });
+  /** A token as the identity provider signs it for one audience. */
+  const tokenFor = async (username: string, audience: string) =>
+    new SignJWT({ preferred_username: username, iss: issuer, aud: audience, exp: at / 1000 + 60 })
+      .setProtectedHeader({ alg: 'RS256', kid: 'idp-1', typ: 'JWT' })
+      .sign((await keys).privateKey);
+  const who = (base: Actor, userName: string): Actor => ({ ...base, id: userName, userName });
+  const hilleviB = who(hillevi, 'hillevi');
+  const mikaelB = who(mikael, 'mikael');
+
+  function both(options: { pobSource?: CaseSource } = {}) {
+    const sm = createSm({ jwks: testJwks, secret, source: createFixtureErrands({ now: () => at }), now: () => at });
+    const pob = createPob({
+      jwks: testJwks,
+      secret,
+      source: options.pobSource ?? createFixtureCases({ now: () => at }),
+      identity: { issuer, jwks: idpJwks },
+      now: () => at,
+      log: () => {},
+    });
+    const remote = (id: string, connector: { manifest: unknown; handle(request: Request): Promise<Response> }) =>
+      remoteConnector(parseManifest(connector.manifest, id), {
+        url: `http://${id}-connector`,
+        key: secret,
+        assert: assertionFor(id, secret),
+        fetch: ((input, init) => connector.handle(new Request(input, init))) as FetchLike,
+      });
+    return world([remote('sm', sm), remote('pob', pob)], { perSourceMs: 2000, totalMs: 3000 });
+  }
+  /** The session as Clew's token exchange: one token per audience, and a note of which audiences were asked for. */
+  function session(username: string, asked: string[] = [], swap: Record<string, string> = {}) {
+    return {
+      delegate: async (audience: string) => {
+        asked.push(audience);
+        return tokenFor(username, swap[audience] ?? audience);
+      },
+    };
+  }
+  const shown = (result: ErrandsResult) => result.rows.map(r => [r.label, r.state, r.system]);
+
+  test('what a person handles in either system is one list, ordered by whose move it is', async () => {
+    const asked: string[] = [];
+    const result = await list(both(), mikaelB, {}, session('mikael', asked));
+    expect(shown(result)).toEqual([
+      ['IT-48211 · Incident, Dator', 'waiting-on-me', 'IT-supporten'],
+      ['IK-26110007 · Behörighet, Beställning', 'waiting-on-me', 'Ärendesystemet'],
+      ['IT-48230 · Incident, Skrivare', 'new', 'IT-supporten'],
+      ['IK-26110011 · Behörighet, Återställning', 'new', 'Ärendesystemet'],
+      ['IT-48102 · Beställning, Mobiltelefon', 'waiting-on-others', 'IT-supporten'],
+      ['IK-26100031 · Behörighet, Beställning', 'waiting-on-others', 'Ärendesystemet'],
+      ['IK-26110004 · Utrustning, Felanmälan', 'waiting-on-others', 'Ärendesystemet'],
+    ]);
+    expect(result.unanswered).toEqual([]);
+    // One token per system, each for that system's own audience.
+    expect(asked.sort()).toEqual(['pob', 'supportmanagement']);
+    // A row opens in the system it came from.
+    expect(result.rows[0]!.view).toEqual({
+      capability: 'pob.errand',
+      input: { ref: 'errand:pob:48211' },
+      title: 'Ärende',
+      source: 'IT-supporten',
+    });
+    expect(result.rows[1]!.view?.capability).toBe('sm.errand');
+  });
+
+  test('what a person reported in POB is a request (D123): the reported view lists the other system only, and POB answers with none', async () => {
+    const result = await list(both(), hilleviB, { view: 'reported' }, session('hillevi'));
+    expect(shown(result)).toEqual([
+      ['IK-26110004 · Utrustning, Felanmälan', 'waiting-on-me', 'Ärendesystemet'],
+      ['IK-26110007 · Behörighet, Beställning', 'waiting-on-others', 'Ärendesystemet'],
+    ]);
+    // No rows from POB is an answer, not a system that is down.
+    expect(result.unanswered).toEqual([]);
+    expect(result.systems.map(s => [s.id, s.status])).toEqual([
+      ['sm', 'ok'],
+      ['pob', 'ok'],
+    ]);
+  });
+
+  test('a token for one system is not accepted by the other', async () => {
+    const crossed = session('mikael', [], { pob: 'supportmanagement', supportmanagement: 'pob' });
+    await expect(list(both(), mikaelB, {}, crossed)).rejects.toThrow('Inget av ärendesystemen svarar just nu.');
+    // With only POB's token wrong, SupportManagement is listed and POB is named.
+    const half = await list(both(), mikaelB, {}, session('mikael', [], { pob: 'supportmanagement' }));
+    expect([...new Set(half.rows.map(r => r.system))]).toEqual(['Ärendesystemet']);
+    expect(half.unanswered).toEqual(['IT-supporten']);
+  });
+
+  test('when one of them is down the other is listed, and the one that is down is named', async () => {
+    const fixture = createFixtureCases({ now: () => at });
+    const down: CaseSource = {
+      ...fixture,
+      list: async () => {
+        throw new Error('down');
+      },
+    };
+    const result = await list(both({ pobSource: down }), mikaelB, {}, session('mikael'));
+    expect([...new Set(result.rows.map(r => r.system))]).toEqual(['Ärendesystemet']);
+    expect(result.rows).toHaveLength(4);
+    expect(result.unanswered).toEqual(['IT-supporten']);
+  });
 });

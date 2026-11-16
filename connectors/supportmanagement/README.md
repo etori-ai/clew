@@ -19,7 +19,8 @@ lists what is needed; until then the connector runs on a fixture that behaves as
 | `connector.mjs` | The reads, the shared state, the assertion check, the token requirement and HTTP error handling |
 | `errands.mjs` | The errand port, the mapping `toSourceErrand`, and a made-up SupportManagement with its own access rules |
 | `supportmanagement.mjs` | SupportManagement's API behind the port |
-| `server.mjs` | Serves it over HTTP and reads the configuration |
+| `http.mjs` | The HTTP listener: reads a request within a size limit and answers whatever it holds, so nothing sent to the port ends the process |
+| `server.mjs` | Reads the configuration and serves the connector with that listener |
 
 ## What a person gets
 

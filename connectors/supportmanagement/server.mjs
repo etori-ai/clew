@@ -12,6 +12,7 @@ import { createServer } from 'node:http';
 import { STATUS_KINDS, createConnector } from './connector.mjs';
 import { createFixtureErrands } from './errands.mjs';
 import { createSupportManagementErrands } from './supportmanagement.mjs';
+import { listener } from './http.mjs';
 
 /** A JSON object of strings from the environment, or `{}` when the variable is unset. */
 const strings = name => {
@@ -63,15 +64,6 @@ const { handle } = createConnector({
   links: strings('SM_NAMESPACE_LINKS'),
 });
 const port = Number(process.env.PORT ?? 4050);
-createServer(async (req, res) => {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const request = new Request(`http://${req.headers.host ?? 'connector'}${req.url}`, {
-    method: req.method,
-    headers: req.headers,
-    body: chunks.length ? Buffer.concat(chunks) : undefined,
-  });
-  const response = await handle(request);
-  res.writeHead(response.status, Object.fromEntries(response.headers));
-  res.end(Buffer.from(await response.arrayBuffer()));
-}).listen(port, () => console.log(`sm connector listening on :${port} (${adapter} adapter)`));
+createServer(listener(handle)).listen(port, () =>
+  console.log(`sm connector listening on :${port} (${adapter} adapter)`),
+);

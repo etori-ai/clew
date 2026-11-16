@@ -1,0 +1,42 @@
+# The POB connector next to the devcontainer. An administrator registers it in Clew (Administration › Anslutna system,
+# or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+#
+#   POB_SECRET=<16+ characters> CLEW_URL=http://host.docker.internal:3000 \
+#   POB_IDP_ISSUER=<the identity provider's issuer> POB_IDP_JWKS_URL=<where its keys are> \
+#   docker compose -f connectors/pob/compose.yaml up pob
+# and register it from inside the app container with the same secret:
+#   docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts pob http://host.docker.internal:4055 --secret <the secret>
+#
+# Without POB_ADAPTER the connector serves the made-up errands in cases.mjs. Against a POB (a draft adapter that has
+# met none, README.md): POB_ADAPTER=api with POB_URL, a credential, POB_USER_MATCH, POB_CUSTOMER_MATCH,
+# POB_STATUS_KINDS and POB_CASE_TYPES.
+services:
+  pob:
+    build: .
+    environment:
+      CLEW_CONNECTOR_SECRET: ${POB_SECRET:?set POB_SECRET to a shared secret of 16+ characters}
+      CLEW_URL: ${CLEW_URL:?set CLEW_URL to Clew's base URL, https outside local development}
+      POB_IDP_ISSUER: ${POB_IDP_ISSUER:?set POB_IDP_ISSUER to the identity provider's issuer}
+      POB_IDP_JWKS_URL: ${POB_IDP_JWKS_URL:?set POB_IDP_JWKS_URL to where the identity provider's keys are}
+      POB_INSECURE_HTTP_HOSTS: ${POB_INSECURE_HTTP_HOSTS:-}
+      POB_ADAPTER: ${POB_ADAPTER:-fixture}
+      POB_AUDIENCE: ${POB_AUDIENCE:-}
+      POB_ACCOUNT_CLAIM: ${POB_ACCOUNT_CLAIM:-}
+      POB_SOURCE_LABEL: ${POB_SOURCE_LABEL:-}
+      POB_STATUS_KINDS: ${POB_STATUS_KINDS:-}
+      POB_CASE_TYPES: ${POB_CASE_TYPES:-}
+      POB_PROBLEM_MEMO: ${POB_PROBLEM_MEMO:-}
+      POB_CASE_LINK: ${POB_CASE_LINK:-}
+      POB_URL: ${POB_URL:-}
+      POB_USER: ${POB_USER:-}
+      POB_PASSWORD: ${POB_PASSWORD:-}
+      POB_AUTHORIZATION: ${POB_AUTHORIZATION:-}
+      POB_USER_MATCH: ${POB_USER_MATCH:-}
+      POB_CUSTOMER_MATCH: ${POB_CUSTOMER_MATCH:-}
+      POB_FIELDS: ${POB_FIELDS:-}
+      POB_STATUS_LABELS: ${POB_STATUS_LABELS:-}
+      POB_TIMEZONE: ${POB_TIMEZONE:-}
+      POB_LIST_LIMIT: ${POB_LIST_LIMIT:-}
+      POB_START_CHECK: ${POB_START_CHECK:-}
+    ports:
+      - "127.0.0.1:4055:4055"

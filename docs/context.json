@@ -1730,6 +1730,25 @@
       ]
     },
     {
+      "path": "connectors/pob/README.md",
+      "title": "pob: what a person handles and what they reported in POB, as a Clew connector",
+      "category": "integrator-guide",
+      "headings": [
+        "Why this connector holds a credential, and what stands in its place",
+        "What a person gets",
+        "A card when a request waits on the person",
+        "Reporting a fault (`POB_WRITES=create`)",
+        "How a status becomes a state",
+        "The access log",
+        "Configuration",
+        "The API adapter's assumptions",
+        "The made-up POB",
+        "Run and check",
+        "What it never does",
+        "Unverified"
+      ]
+    },
+    {
       "path": "connectors/qlik/README.md",
       "title": "qlik: what Qlik knows, as a Clew connector",
       "category": "integrator-guide",
@@ -4466,6 +4485,25 @@
         "Independent validation of PR 63 (2026-11-13)",
         "Second independent review of PR 63 (2026-11-13)",
         "Repairs after the second independent review (2026-11-13)"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-13-a-pob-connector-and-errands-from-two-case-systems.md",
+      "title": "Implementation plan: a POB connector, and one errand list from two case systems · 2026-11-13",
+      "category": "review-history",
+      "headings": [
+        "Outcome",
+        "What it rests on",
+        "Design",
+        "Phase 0 · Verify against a running POB",
+        "Phase 1 · List a person's errands",
+        "Phase 2 · One list with SupportManagement",
+        "Phase 3 · Create an errand",
+        "Phase 4 · Reply in an errand",
+        "Not covered",
+        "Later, and not planned here",
+        "What an installation sets up",
+        "Questions this leaves, and who they wait for"
       ]
     },
     {

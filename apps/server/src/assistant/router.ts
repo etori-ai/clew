@@ -69,6 +69,20 @@ const tokens = (s: string) =>
 const same = (a: string, b: string) =>
   a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a)));
 /** Score each read capability by its title and description against the question; the best wins, nothing matches below one point. */
+/**
+ * A propose the person named by its own title, word for word ("Felanmäl dator"). Starting a work item is never guessed
+ * at from a word in common, the way a read is matched: without the model it takes the title.
+ */
+export function matchPropose(text: string, tools: ToolInfo[]): ToolInfo | undefined {
+  const plain = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const q = plain(text);
+  return tools.find(tool => tool.kind === 'propose' && plain(tool.title).length > 0 && q.includes(plain(tool.title)));
+}
 export function matchCapability(text: string, tools: ToolInfo[]): ToolInfo | undefined {
   const q = text
     .toLowerCase()
