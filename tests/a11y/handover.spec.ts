@@ -16,7 +16,8 @@ import { hrAssistant } from './data';
  * A conversation handed to an assistant of another system (the assistants profile): choosing it in the list the button above
  * the field opens, the box saying whom it talks to, the question going there alone, the answer drawn as that
  * assistant's own with its sources and the way on, and a source that does not answer. Keyboard, focus, announcements,
- * axe and reflow, at desktop, phone and 320 px.
+ * axe and reflow, at desktop, phone and 320 px. Whom the box talks to is chosen in the box on Ny fråga; Hem's line has no
+ * such menu and sends its question to Clew, who may suggest an assistant (D126 item 4).
  */
 // Handed over, the box takes no `@`, so it is a plain text field and not the combobox Clew's own box is.
 const handedBox = (page: import('@playwright/test').Page) =>
@@ -40,7 +41,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
     page,
     api: _,
   }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await expect(composer(page)).toBeVisible();
     await expect(page.getByRole('button', { name: /^Till: / })).toHaveCount(0);
     await menuButton(page, 'Modell: Kapabel').click();
@@ -51,7 +52,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
     api,
   }) => {
     api.handoverAssistants = [hrAssistant];
-    await open(page, '/');
+    await open(page, '/conversations/new');
     // Clew to begin with; the list opens on it, with the assistant under its system and what it is for.
     await recipient(page, 'Clew').focus();
     await page.keyboard.press('Enter');
@@ -93,7 +94,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
       ),
       { id: 'arkiv:diarie', name: 'Diarieguiden', description: 'Registrering och gallring.', source: 'Arkivet' },
     ];
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await recipient(page, 'Clew').click();
     await expect(page.getByRole('group', { name: 'Kunskapsbanken' }).getByRole('menuitemradio')).toHaveCount(7);
     await expect(page.getByRole('group', { name: 'Arkivet' }).getByRole('menuitemradio')).toHaveCount(1);
@@ -114,7 +115,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
     api,
   }) => {
     api.handoverAssistants = [hrAssistant];
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await pick(page);
     await handedBox(page).fill('Hur många semesterdagar har jag rätt till?');
     await handedBox(page).press('Enter');
@@ -160,7 +161,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
   });
   test('a conversation that was handed over opens still talking to the assistant', async ({ page, api }) => {
     api.handoverAssistants = [hrAssistant];
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await pick(page);
     await handedBox(page).fill('Hur många semesterdagar har jag rätt till?');
     await handedBox(page).press('Enter');
@@ -173,7 +174,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
   test('a system that does not answer is said in Clew’s words, not in the assistant’s name', async ({ page, api }) => {
     api.handoverAssistants = [hrAssistant];
     api.handoverFails = true;
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await pick(page);
     await handedBox(page).fill('Hur många semesterdagar har jag rätt till?');
     await handedBox(page).press('Enter');
@@ -189,7 +190,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
     test(`at ${layout} the handed-over box and the answer reflow without a sideways scroll`, async ({ page, api }) => {
       api.handoverAssistants = [hrAssistant];
       await page.setViewportSize(viewport);
-      await open(page, '/');
+      await open(page, '/conversations/new');
       await pick(page);
       await expect(recipient(page, 'HR-assistenten')).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
@@ -283,7 +284,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
   });
   test('"Ny fråga" in the rail gives the box back to Clew', async ({ page, api }) => {
     api.handoverAssistants = [hrAssistant];
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await pick(page);
     await handedBox(page).fill('Hur många semesterdagar har jag rätt till?');
     await handedBox(page).press('Enter');
@@ -300,7 +301,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
   }) => {
     api.handoverAssistants = [hrAssistant];
     api.handoverReturns = 'declined';
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await pick(page);
     await handedBox(page).fill('Vad har jag i kalendern i morgon?');
     await handedBox(page).press('Enter');
@@ -326,7 +327,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
   }) => {
     api.handoverAssistants = [hrAssistant];
     api.handoverReturns = 'completed';
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await pick(page);
     await handedBox(page).fill('Hur många semesterdagar har jag rätt till?');
     await handedBox(page).press('Enter');
@@ -353,7 +354,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
     api,
   }) => {
     api.handoverAssistants = [hrAssistant];
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await expect(page.getByText('Du skriver till HR-assistenten i Kunskapsbanken, inte till Clew.')).toHaveCount(0);
     await pick(page);
     await expect(
@@ -369,7 +370,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
   }) => {
     api.handoverAssistants = [hrAssistant];
     api.holds = /Anna/;
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await pick(page);
     await handedBox(page).fill('Hur länge har Anna varit sjukskriven?');
     await handedBox(page).press('Enter');
@@ -395,7 +396,7 @@ test.describe('handing a conversation to another system’s assistant', () => {
   test('sending a held question anyway says so in what is sent', async ({ page, api }) => {
     api.handoverAssistants = [hrAssistant];
     api.holds = /Anna/;
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await pick(page);
     await handedBox(page).fill('Vad säger rutinen om Anna?');
     await handedBox(page).press('Enter');

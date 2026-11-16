@@ -474,13 +474,21 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
         ),
     },
     // Where it stands (board StatusPanel's queue): the state's mark and what it concerns ("Obekräftat · 1 av 3",
-    // "Behöver dig · försenad", "Klart · i dag 08.13"), the same word the item's notice says in the pane.
+    // "Behöver dig · försenad", "Klart · i dag 08.13"), the same word the item's notice says in the pane. Under the tab
+    // Behöver dig that word is the tab's name, so a row that needs the person shows only what it concerns ("försenad")
+    // beside the dot, or the dot alone, whose name still says it in full.
     {
       key: 'status',
       header: 'Status',
       // On a phone the mark wraps under its dot rather than push the table past the screen (1.4.10).
       width: pixel(mobile ? 120 : 180),
-      renderCell: r => <StatusMark kind={r.status.kind} detail={r.status.detail} />,
+      renderCell: r => (
+        <StatusMark
+          kind={r.status.kind}
+          detail={r.status.detail}
+          isWordHidden={tab === 'needs-you' && r.status.kind === 'needs-you'}
+        />
+      ),
     },
   ];
   // Beside the pane, or on a phone, the system's column gives way (the template drops its tags while the pane is open).

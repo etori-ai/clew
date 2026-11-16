@@ -171,6 +171,7 @@ export {
   ArrowDownTrayIcon,
   ArrowLeftIcon,
   ArrowPathIcon,
+  ArrowRightIcon,
   ArrowsPointingOutIcon,
   AtSymbolIcon,
   BellIcon,

@@ -23,8 +23,12 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
 3. **Nothing opens over a page.** The side panel that opened over Hem, Personal and the tools, the wide overlays of
    the talk and the dialogue, and the inline unfold are removed. An address that carried such a panel redirects to
    the thing's page.
-4. **The assistant has two homes:** the composer on Hem and the conversation page. "Fråga Clew" on a page starts a
-   conversation with that thing beside it. No other page has a composer.
+4. **The assistant has two homes** (amended 2026-11-16, product owner; canvas board HemFraga, variant a): a one-line
+   way in on Hem and the conversation page, which holds the composer (Ny fråga, item 14, is a conversation not asked
+   yet). Hem's line answers nothing on Hem: what is written there is sent as the conversation's first question, as the
+   composer sends it, and the conversation page takes the column with the question asked; with nothing written its
+   button opens Ny fråga. Whom to ask, the model, `@` and dictation are the composer's alone. "Fråga Clew" on a page
+   starts a conversation with that thing beside it. No other page has a composer.
 5. **While Clew works, the turn shows it:** every tool call as a row of `ChatToolCalls` with the system it goes to
    and its own status, the answer's place held, the send button as Stop. A read's result is a card in the
    transcript whose names are links.
@@ -37,11 +41,17 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
 8. **A register** (`table-page`) is a title, at most one primary action, the views of the same rows as tabs, and the
    table. Personal is one register: Kompetens, Samtal and Introduktion och avslut are its tabs, and a person's own
    competences and plan are tabs of their own page.
-9. **Hem is a dashboard:** the composer once, then Behöver dig, I dag, Läget and Nyheter, each linking to its own
-   place. No tool tiles, no digest sentence, no suggestion chips.
-10. **The rail** (`shell-side-nav`): Ny fråga and Sök; Mitt arbete (Hem, Att göra, Kalender); Min enhet for a manager
-    (Personal, Läget); Verktyg; Samtal (the latest three and a page of all); Administration as one row and the person
-    at the foot. Administration's sections sit in a panel of its own (`settings-sidebar`).
+9. **Hem is a dashboard:** one line under the greeting to ask Clew (amended 2026-11-16: the field "Vad vill du göra?"
+   filling the row and the button "Fråga Clew", item 4), then Behöver dig, I dag, Läget and Nyheter, each linking to
+   its own place. No tool tiles, no digest sentence, no suggestion chips. The composer that stood there first offered
+   the question's options before there was a question and pushed the work down the page.
+10. **The rail** (`shell-side-nav`; amended 2026-11-16, product owner, canvas board RailOrder, variant b "Arbetet
+    först"): Sök alone at the top, the rail's one utility; Mitt arbete (Hem, Att göra, Kalender, Påminnelser); Min
+    enhet for a manager (Personal, Läget); Verktyg (the person's tools, then Alla verktyg); Fråga Clew (Ny fråga first,
+    the latest three conversations and Alla samtal); Administration as one row and the person at the foot.
+    Administration's sections sit in a panel of its own (`settings-sidebar`). The work comes first because asking
+    Clew is one way of doing it, not a place above it, and Ny fråga heads the conversations it starts. Ny fråga and Sök
+    as the rail's first two rows, over the work, were built first.
 11. **Clew's own look** is the example appearance `themes/clew`: ink indigo as the accent on a cool paper ground,
     the status colours left to status, the ball of thread as the logo. It is applied like any appearance
     ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)); an installation nobody has
@@ -72,8 +82,10 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
     undo window, what it waits on, a silent system) to a state and its words, keeping every sentence D45, D47, D116 and
     D122 gave a case. The state is said once: no fact repeats it, and a decision already made shows when it was due as a
     plain date, never a red badge. Att göra's queue has a Status column with the mark, so a row and its pane say the
-    same word. A thing's read is named sections in one fixed order, each under a rule with its count as a neutral badge
-    beside its name and an optional link at the end of its heading row: Uppgifter, what the thing consists of (rows
+    same word; under its tab Behöver dig, whose name the word is, a row that needs the person shows only what the mark
+    concerns ("försenad") beside the dot, or the dot alone, and the dot's name says the whole mark. A thing's read is
+    named sections in one fixed order, each under a rule with its count as a neutral badge beside its name and an
+    optional link at the end of its heading row: Uppgifter, what the thing consists of (rows
     and their documents, when they are the same things, are one list, each row the link to its document with its own
     mark, the unresolved first), Varför ser jag detta? (which holds every sentence that stood without a heading), and
     Händelser, folded by default in Astryx's `Collapsible`.
@@ -90,7 +102,7 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
     alla", which opens that menu. A block with nothing to list is not drawn, and with neither nothing stands under the
     box. The rail marks Ny fråga while the page is open. Sending the first question continues on the conversation's
     own address, which takes the page's place in the history, so Back leads to where the person was. Hem keeps its own
-    box; an address that names a thing (`?card=`, `?person=`, `?unit=`, `?open=`, `?lens=`) keeps its "Fråga om …"
+    line (item 4); an address that names a thing (`?card=`, `?person=`, `?unit=`, `?open=`, `?lens=`) keeps its "Fråga om …"
     page with the pane.
 
 The calendar keeps its own page ([D27](D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens.md)) and the

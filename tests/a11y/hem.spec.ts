@@ -7,6 +7,7 @@ import {
   expect,
   expectNoAxeViolations,
   heading,
+  hemLine,
   narrow,
   open,
   phone,
@@ -21,7 +22,7 @@ import { menuRows } from './phonebook';
 import { Units } from './unit-data';
 
 /**
- * Hem (D126, board Hem): the greeting and the day, the box once, then "Behöver dig" beside "I dag", their cards ending
+ * Hem (D126, boards Hem and HemFraga): the greeting and the day, one line to ask Clew, then "Behöver dig" beside "I dag", their cards ending
  * level, "Läget på <enhet>" for a manager and "Nyheter"; the item that asks for a read receipt as one callout above the
  * blocks, and under them the person's action points. No tool tiles, no digest sentence, no suggestion chips, nothing
  * beside or over the page: every row and tile leads to the page of what it names, with Hem as the way back.
@@ -67,7 +68,7 @@ const box = async (l: Locator) => (await l.boundingBox())!;
 test.describe('Hem', () => {
   test.use({ viewport: desktop });
 
-  test('the greeting, the box once, Behöver dig beside I dag, then Läget and Nyheter, in one heading order and nothing else', async ({
+  test('the greeting, the line to ask Clew, Behöver dig beside I dag, then Läget and Nyheter, in one heading order and nothing else', async ({
     page,
     api,
   }) => {
@@ -77,10 +78,10 @@ test.describe('Hem', () => {
     await expect(
       page.getByRole('main').getByText(new RegExp(`^Onsdag 4 november\\s·\\s${user.unitLabel}$`)),
     ).toBeVisible();
-    await expect(composer(page)).toHaveCount(1);
+    await expect(hemLine(page)).toHaveCount(1);
     await expect(callout(page)).toBeVisible();
-    // The callout between the box and the blocks, the two blocks side by side, Läget and Nyheter under them (board Hem).
-    const b = await box(composer(page)),
+    // The callout between the line and the blocks, the two blocks side by side, Läget and Nyheter under them (board Hem).
+    const b = await box(hemLine(page)),
       lifted = await box(callout(page)),
       n = await box(needs(page)),
       d = await box(today(page)),
@@ -257,7 +258,7 @@ test.describe('Hem', () => {
     await expect
       .poll(() => announcements(page))
       .toContainEqual(expect.stringContaining('Läskvittot är registrerat. Ärendet ligger under Klart.'));
-    await expect(composer(page)).toBeFocused();
+    await expect(hemLine(page)).toBeFocused();
     // Once the receipt has had its moment the callout is gone, and nothing takes its place.
     await expect(callout(page)).toHaveCount(0, { timeout: 10_000 });
     await expect(needs(page).locator('#work-rutin')).toHaveCount(0);
@@ -305,6 +306,122 @@ test.describe('Hem', () => {
     await open(page, '/');
     await expect(callout(page)).toHaveCount(0);
     await expect(needs(page).locator('#work-brandrutin')).toBeVisible();
+  });
+});
+
+/**
+ * Hem's line (D126 items 4 and 9, board HemFraga variant a): one field, labelled "Fråga Clew", filling the row under the
+ * greeting, and the button "Fråga Clew". Nothing is answered on Hem: Enter or the button asks the question as Hem's
+ * composer did, and the conversation takes the column with the question in its transcript; with nothing written the
+ * button opens Ny fråga and Enter does nothing. Whom to ask, the model and `@` are the conversation page's box's.
+ */
+test.describe('Hem’s line', () => {
+  test.use({ viewport: desktop });
+  const askButton = (page: Page) => page.getByRole('main').getByRole('button', { name: 'Fråga Clew', exact: true });
+
+  test('a labelled field and Fråga Clew side by side; Enter asks once, and the conversation takes the column with the question asked', async ({
+    page,
+    api,
+  }) => {
+    const release = api.holdAnswer();
+    await open(page, '/');
+    const line = hemLine(page);
+    await expect(line).toHaveAttribute('placeholder', 'Vad vill du göra?');
+    // The field fills the row and the button stands at its end, on the same line (board HemFraga a).
+    const f = await box(line),
+      b = await box(askButton(page));
+    expect(Math.abs(f.y + f.height / 2 - (b.y + b.height / 2))).toBeLessThan(2);
+    expect(b.x).toBeGreaterThanOrEqual(f.x + f.width);
+    expect(f.width).toBeGreaterThan(b.width * 3);
+    // None of the box's controls on Hem: no recipient, no model, no `@` (the box on the conversation page has them).
+    await expect(page.getByRole('button', { name: /^Till: / })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Modell: / })).toHaveCount(0);
+    await expect(page.getByRole('combobox', { name: 'Vad vill du göra' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // Enter with nothing written does nothing.
+    await line.focus();
+    await page.keyboard.press('Enter');
+    await expect(line).toBeFocused();
+    await expect(page).toHaveURL(/\/$/);
+    expect(api.asked).toHaveLength(0);
+    // Two Enters in the same moment send the question once.
+    await line.fill('Vem är på plats?');
+    await line.evaluate(el => {
+      for (let i = 0; i < 2; i++) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    const log = page.getByRole('log');
+    await expect(log).toContainText('Vem är på plats?');
+    await expect(heading(page, 1, 'Vem är på plats?')).toBeVisible();
+    // The conversation's own box has the focus, and Hem's line is gone with Hem.
+    await expect(page.getByRole('combobox', { name: 'Svara i samtalet' })).toBeFocused();
+    await expect(hemLine(page)).toHaveCount(0);
+    release();
+    await expect(log).toContainText('Tio personer är på plats i dag.');
+    await expect(page).toHaveURL(/\/conversations\/konversation$/);
+    expect(api.asked).toHaveLength(1);
+    expect(api.asked[0]).toMatchObject({ text: 'Vem är på plats?', chips: [] });
+    expect(api.asked[0]!.conversationId).toBeUndefined();
+    await expectNoAxeViolations(page);
+  });
+
+  test('with nothing written the button opens Ny fråga, which the rail marks; a question half written stays through a visit elsewhere, and the button asks it', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/');
+    const ask = askButton(page);
+    // It has a valid action with an empty field, so it is not drawn as disabled.
+    await expect(ask).toBeEnabled();
+    await expect(ask).not.toHaveAttribute('aria-disabled', 'true');
+    await ask.click();
+    await expect(page).toHaveURL(/\/conversations\/new$/);
+    await expect(page.getByRole('combobox', { name: 'Vad vill du göra' })).toBeFocused();
+    await expect(rail(page).getByRole('link', { name: 'Ny fråga', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(api.asked).toHaveLength(0);
+    await page.goBack();
+    await expect(heading(page, 1, GREETING)).toBeVisible();
+    // A question half written is kept while the person looks at another page.
+    await hemLine(page).fill('Vem är på plats?');
+    await rail(page)
+      .getByRole('link', { name: /^Att göra/ })
+      .click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
+    await rail(page).getByRole('link', { name: /^Hem/ }).click();
+    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+    await askButton(page).click();
+    await expect(page.getByRole('log')).toContainText('Tio personer är på plats i dag.');
+    await expect(page).toHaveURL(/\/conversations\/konversation$/);
+    expect(api.asked).toHaveLength(1);
+    // Esc leads back to Hem, where the line has the focus again, empty.
+    await page.keyboard.press('Escape');
+    await expect(heading(page, 1, GREETING)).toBeVisible();
+    await expect(hemLine(page)).toBeFocused();
+    await expect(hemLine(page)).toHaveValue('');
+  });
+
+  test('at 320 px the field and the button fit without sideways scrolling, the button beside the field or under it', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(narrow);
+    await open(page, '/');
+    const line = hemLine(page),
+      ask = askButton(page);
+    await expect(line).toBeInViewport({ ratio: 1 });
+    await expect(ask).toBeInViewport({ ratio: 1 });
+    const f = await box(line),
+      b = await box(ask);
+    expect(b.x >= f.x + f.width || b.y >= f.y + f.height).toBe(true);
+    // The button's words are drawn whole, never behind an ellipsis.
+    expect(await ask.evaluate(el => [...el.querySelectorAll('*')].every(c => c.scrollWidth <= c.clientWidth))).toBe(
+      true,
+    );
+    expect(await reflowProblems(page)).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expectNoAxeViolations(page);
   });
 });
 
@@ -493,18 +610,18 @@ test.describe('Hem, narrow', () => {
 test.describe('Hem on a phone', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 
-  test('the box under the greeting, the blocks one under the other, and a finger reaches the callout’s buttons and a news row', async ({
+  test('the line under the greeting, the blocks one under the other, and a finger reaches the callout’s buttons and a news row', async ({
     page,
     api,
   }) => {
     everything(api);
     await open(page, '/');
     const h = await box(heading(page, 1, GREETING)),
-      b = await box(composer(page)),
+      b = await box(hemLine(page)),
       n = await box(needs(page)),
       d = await box(today(page)),
       w = await box(news(page));
-    // As the board's phone draws it: the box in the page under the greeting, not docked at the foot.
+    // As the board's phone draws it: the line in the page under the greeting, not docked at the foot.
     expect(b.y).toBeGreaterThan(h.y + h.height);
     expect(n.y).toBeGreaterThan(b.y + b.height);
     expect(Math.abs(d.x - n.x)).toBeLessThan(2);

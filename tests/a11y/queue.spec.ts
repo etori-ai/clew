@@ -58,11 +58,24 @@ test.describe('Att göra: the piles', () => {
     await expect(all).toHaveCount(6);
     await expect(all.first()).toContainText('Attestera 3 fakturor, 48 200 kr');
     await expect(all.first()).toContainText('Ekonomisystemet');
-    // An item about nobody in particular says why it is here, and its state in words in the Status column, the word its
-    // notice says (1.4.1, D126 item 13): the dot beside the word has no name of its own, so the state is heard once.
+    // An item about nobody in particular says why it is here, and its state in the Status column (1.4.1, D126 item 13).
+    // Under Behöver dig the state's word is the tab's name, so the row draws only what it concerns beside the dot, and
+    // the dot's name says the whole mark, heard once; a row with nothing more to say draws the dot alone.
     await expect(queue(page).getByRole('columnheader', { name: 'Status' })).toBeVisible();
-    await expect(all.first()).toHaveText(/Fakturorna förfaller i veckan.*Behöver dig\u00a0· i dag/);
-    await expect(all.first().getByRole('img')).toHaveCount(0);
+    await expect(all.first()).toHaveText(/Fakturorna förfaller i veckan.*i dag$/);
+    await expect(all.first()).not.toContainText('Behöver dig');
+    await expect(all.first().getByRole('img')).toHaveAccessibleName('Behöver dig, i dag');
+    let quiet = 0;
+    for (const r of await all.all()) {
+      const mark = r.getByRole('img', { name: /^Behöver dig/ });
+      if ((await mark.count()) === 0) continue;
+      quiet++;
+      const name = (await mark.getAttribute('aria-label'))!;
+      await expect(r.getByRole('cell').last()).toHaveText(
+        name === 'Behöver dig' ? '' : name.slice('Behöver dig, '.length),
+      );
+    }
+    expect(quiet).toBeGreaterThan(0);
     await expectNoAxeViolations(page);
     // Väntar på andra holds what waits on others and what the person set aside, which says when it comes back.
     await tabs.getByRole('link', { name: /^Väntar på andra/ }).focus();
@@ -171,8 +184,8 @@ test.describe('Att göra: the reading pane', () => {
     for (let i = 0; i < (await all.count()); i++) await expect(all.nth(i).getByRole('link')).toHaveCount(1);
     const fakturor = page.locator('#work-fakturor');
     await expect(fakturor.getByRole('link')).toHaveAccessibleName('Attestera 3 fakturor, 48 200 kr');
-    // The state and the source are read in the row, beside its link.
-    await expect(fakturor).toContainText('Behöver dig\u00a0· i dag');
+    // The state and the source are read in the row, beside its link: under Behöver dig the dot names the whole mark.
+    await expect(fakturor.getByRole('img', { name: 'Behöver dig, i dag' })).toBeVisible();
     // The row names its system, as the same row on Hem does.
     await expect(fakturor).toContainText('Ekonomisystemet');
     expect((await fakturor.boundingBox())!.height).toBeGreaterThanOrEqual(44);

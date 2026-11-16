@@ -320,13 +320,14 @@ test.describe('model administration', () => {
   });
 });
 
+// The model menu is the box's, on the conversation page (Ny fråga included); Hem's line has none (D126 item 4).
 test.describe("the person's model in the box", () => {
   test.use({ viewport: desktop });
   test('with one model the menu is there and names it, so the box always says which model answers (D36)', async ({
     page,
     api: _,
   }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await expect(composer(page)).toBeVisible();
     const trigger = page.getByRole('button', { name: 'Modell: Kapabel' });
     await expect(trigger).toBeVisible();
@@ -338,7 +339,7 @@ test.describe("the person's model in the box", () => {
     api,
   }) => {
     api.modelChoices = 2;
-    await open(page, '/');
+    await open(page, '/conversations/new');
     const trigger = page.getByRole('button', { name: 'Modell: Kapabel' });
     await trigger.click();
     const group = page.getByRole('group', { name: 'Modell' });

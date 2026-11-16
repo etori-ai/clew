@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { useLocation, useParams } from 'react-router';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router';
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { unresolvedExecution, type Area, type SessionUser, type Thread } from '@clew/contracts';
 import {
+  ArrowRightIcon,
   Badge,
   Banner,
   Button,
@@ -10,11 +11,14 @@ import {
   Grid,
   Heading,
   HStack,
+  Icon,
   Link,
   List,
+  SparklesIcon,
   StackItem,
   StatusNotice,
   Text,
+  TextInput,
   VStack,
   useAnnounce,
   useEntryAnimation,
@@ -29,8 +33,7 @@ import { useReceiptArrivals } from '../linger';
 import { declaredPage, viewPageHref, type ViewTarget } from '../view-address';
 import { itemPageHref, needsYouOf, rowFacts, sourcesNotice, todoHref } from '../work-items';
 import { DOT } from '../dot';
-import { Composer } from '../components/composer';
-import { useConversation } from '../components/conversation-context';
+import { useConversation, type AskFrom } from '../components/conversation-context';
 import { ConversationPage } from './conversation';
 import { NewQuestionPage } from './new-question';
 import { asksAbout } from '../conversation-about';
@@ -81,15 +84,16 @@ const dayLine = (date: string, unit: string) => {
 };
 
 /**
- * The start page (D34, D50, D112, D126). At `/` the column is Hem (D126, board Hem): the greeting and the day, the box
- * once under them, and then the blocks, each a heading over its card that leads to its place: "Behöver dig", the most
- * urgent work items, beside "I dag", the day as the calendar family draws it (D32); for a manager "Läget på <enhet>",
- * the unit's figures as tiles; then "Nyheter". The item that asks for the person's read receipt stands above the blocks
- * as one callout (Fokusnyhet). Under them the person's own action points (D96 item 7), drawn as a block, until they are
- * rows in Att göra. No digest sentences, no suggestion chips and no tool tiles (D126 rule 8): the tools are in the rail
- * and on Alla verktyg, and Mina ärenden (D90) and what the person ordered or reported (D123) are two of them. Every row
- * and tile leads to the page of what it names (D126 rule 1), with Hem as the way back; nothing opens over Hem, and an
- * address that opened something beside it before leads to that thing's page (the shell's `panelRedirect`, rule 3).
+ * The start page (D34, D50, D112, D126). At `/` the column is Hem (D126, board Hem): the greeting and the day, one line
+ * under them to ask Clew (`HemQuestion`, board HemFraga), and then the blocks, each a heading over its card that leads
+ * to its place: "Behöver dig", the most urgent work items, beside "I dag", the day as the calendar family draws it
+ * (D32); for a manager "Läget på <enhet>", the unit's figures as tiles; then "Nyheter". The item that asks for the
+ * person's read receipt stands above the blocks as one callout (Fokusnyhet). Under them the person's own action points
+ * (D96 item 7), drawn as a block, until they are rows in Att göra. No digest sentences, no suggestion chips and no tool
+ * tiles (D126 rule 8): the tools are in the rail and on Alla verktyg, and Mina ärenden (D90) and what the person
+ * ordered or reported (D123) are two of them. Every row and tile leads to the page of what it names (D126 rule 1), with
+ * Hem as the way back; nothing opens over Hem, and an address that opened something beside it before leads to that
+ * thing's page (the shell's `panelRedirect`, rule 3).
  *
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel beside it (rule 2):
  * the view an answer names, the card or view that was open when it was asked, or the page it was asked on. The address
@@ -130,6 +134,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const itemHref = (threadId: string) => itemPageHref(threadId, HEM);
   const toast = useToast();
   const announce = useAnnounce();
+  // Hem's line (`HemQuestion`), and the box on the page: the conversation's own while its transcript has the column,
+  // else the line.
+  const line = useRef<HTMLInputElement | null>(null);
+  const focusBox = () => (talk.open ? talk.focus() : line.current?.focus());
   // A card's own button changed it (in the pane beside a conversation, in an answer, in the callout): when that took
   // the focused button away, the focus goes to the item's title where the item is beside the transcript, else back to
   // the box, rather than to nothing (2.4.3). Told before the cache is written.
@@ -150,7 +158,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     // The item in the pane beside the transcript (`card-<id>`): its title, which the receipt now stands under.
     const beside = document.getElementById(`card-${was.id}-title`);
     if (beside) beside.focus();
-    else talk.focus();
+    else focusBox();
   }, [threads]);
   // A receipt that has just arrived (D70): the row keeps its place for a moment, and a toast says where the item went,
   // with the way there and the way back. The toast stays until closed (2.2.1), as the Avfärda toast does.
@@ -216,8 +224,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     if (calendarSilent && silent.named) say([{ connector: 'calendar', source: calendarName }]);
   }, [calendarSilent, silent.named, calendarName, say]);
 
-  // The box's context for `@`: the work items Hem shows.
-  const near = [...(focus ? [focus] : []), ...first].map(t => 'thread:' + t.id);
   /**
    * A work item's supporting line on Hem (board Hem): the system it comes from and why it is here. A system of Clew's
    * own (an owned domain such as introductions, the house mark of D71: a known system without an ordinal) is not named,
@@ -386,9 +392,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const column = (entry: EntryStyle) => {
     if (fresh) return <NewQuestionPage greeting={greetingOf(user.name, new Date())} entry={entry} />;
     if (talk.open) return <ConversationPage entry={entry} onChange={replace} />;
-    // Hem (D126, board Hem): the greeting, the day line and the box in the frame's header (the box anchored under the
-    // heading, D53), pinned while the blocks scroll under them. On a phone and on a short screen nothing is pinned
-    // (1.4.10): the page grows with its content and the shell's main region scrolls the whole page.
+    // Hem (D126, board Hem): the greeting, the day line and the line to ask Clew in the frame's header (the line
+    // anchored under the heading, D53), pinned while the blocks scroll under them. On a phone and on a short screen
+    // nothing is pinned (1.4.10): the page grows with its content and the shell's main region scrolls the whole page.
     return (
       <PageFrame
         entry={entry}
@@ -397,7 +403,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         title={greetingOf(user.name, new Date())}
         titleId="hem"
         meta={dayLine(todayDate, user.unitLabel)}
-        below={<Composer place="landing" near={near} />}
+        below={<HemQuestion field={line} stacked={mobile} />}
         label="Hem"
       >
         {blocks}
@@ -407,7 +413,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
 
   return (
     <>
-      <KeepFocus open={talk.open} focus={talk.focus} />
+      <KeepFocus open={talk.open} focus={focusBox} />
       <Shell
         user={user}
         nav={nav}
@@ -463,11 +469,80 @@ function RowCard({ pending, fallback, children }: { pending: boolean; fallback: 
   );
 }
 
+/** What Hem's line hands the conversation: nothing to ask about, and Hem as the place Esc leads back to. */
+const FROM_HEM: AskFrom = { chips: [], search: '' };
 /**
- * The box keeps focus across the transcript opening and closing (D31). The composer moves between the page flow on the
- * landing and the dock of a conversation, so it remounts on each change of `open`; the focus the old instance held is
- * given to the new one after the commit. A conversation asked on another page arrives with its transcript already
- * open: the box here takes the focus the page's own box had (D50).
+ * Hem's question (D126 items 4 and 9, board HemFraga variant a): one line under the greeting, the field and "Fråga
+ * Clew". Nothing is answered on Hem: Enter or the button sends what is written as every first question is sent
+ * (`submit`), and the conversation takes the column with the question asked; with nothing written the button opens Ny
+ * fråga, as the rail's row does, and Enter does nothing. While the question leaves, the button shows it, and a second
+ * Enter is refused by the turn's own guard. The field holds the conversation's draft, so a question half written is
+ * still there after a visit elsewhere. Whom to ask, the model, `@` and dictation are the conversation page's box's. On a
+ * phone (`stacked`) the button stands under the field at its full width, so its words are never cut (1.4.10).
+ */
+function HemQuestion({ field, stacked }: { field: RefObject<HTMLInputElement | null>; stacked: boolean }) {
+  const talk = useConversation();
+  const navigate = useNavigate();
+  const written = talk.value.trim() !== '';
+  const ask = () => {
+    if (written && !talk.busy) void talk.submit(talk.value, FROM_HEM);
+  };
+  // ⌘K takes the focus to the box from anywhere (the conversation's own keys); on Hem the box is this line.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') field.current?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [field]);
+  const input = (
+    <TextInput
+      ref={field}
+      label="Fråga Clew"
+      isLabelHidden
+      size="lg"
+      startIcon={SparklesIcon}
+      placeholder="Vad vill du göra?"
+      value={talk.value}
+      onChange={talk.setValue}
+      onEnter={ask}
+      enterKeyHint="send"
+      status={talk.error ? { type: 'error', message: talk.error } : undefined}
+    />
+  );
+  const button = (
+    <Button
+      label="Fråga Clew"
+      variant="primary"
+      size="lg"
+      endContent={<Icon icon={ArrowRightIcon} />}
+      isLoading={talk.busy}
+      {...(stacked ? { width: '100%' } : {})}
+      onClick={() => {
+        if (written) return ask();
+        talk.newConversation({ from: HEM, stay: true });
+        navigate('/conversations/new');
+      }}
+    />
+  );
+  return stacked ? (
+    <VStack gap={2} hAlign="stretch">
+      {input}
+      {button}
+    </VStack>
+  ) : (
+    <HStack gap={2} vAlign="center">
+      <StackItem size="fill">{input}</StackItem>
+      {button}
+    </HStack>
+  );
+}
+
+/**
+ * The box keeps focus across the transcript opening and closing (D31). Hem's line gives way to the box docked under the
+ * conversation, and comes back when it closes, so each change of `open` gives the focus the one held to the other after
+ * the commit. A conversation asked on another page arrives with its transcript already open: the box here takes the
+ * focus the page's own box had (D50).
  */
 function KeepFocus({ open, focus }: { open: boolean; focus: () => void }) {
   // Only a change of `open` moves the focus. `focus` is a new function on every render of the conversation's context,

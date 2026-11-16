@@ -2381,8 +2381,18 @@ export { expect };
 
 export const answer = (page: Page) =>
   page.locator('.astryx-chat-message-bubble').filter({ hasText: 'Tio personer är på plats i dag.' });
-/** The box: named after the landing's heading, "Svara i samtalet" once a conversation is open (the scope line, H3.3). */
-export const composer = (page: Page) => page.getByRole('combobox', { name: /^(Vad vill du göra|Svara i samtalet)$/ });
+/**
+ * Hem's line (D126 items 4 and 9, board HemFraga): a plain field named "Fråga Clew", whose question is asked on the
+ * conversation page. It takes no `@`, so it is no combobox.
+ */
+export const hemLine = (page: Page) => page.getByRole('textbox', { name: 'Fråga Clew', exact: true });
+/**
+ * Where a question is written: Hem's line, the box on Ny fråga ("Vad vill du göra"), and "Svara i samtalet" once a
+ * conversation is open (the scope line, H3.3). One of them is on a page at a time. Hem's line is a plain input, so what
+ * it holds is its value; the boxes hold their text.
+ */
+export const composer = (page: Page) =>
+  page.getByRole('combobox', { name: /^(Vad vill du göra|Svara i samtalet)$/ }).or(hemLine(page));
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
 /** "Inte nu" on the first work item, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {

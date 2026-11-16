@@ -143,20 +143,20 @@ export const TOOLS_HREF = '/tools';
 type Found = ({ href: string } | { card: string }) & { detail: string; group: string };
 
 /**
- * The rail (D126 rule 7, board Shell, the `shell-side-nav` template): two verbs, the places in three short groups, the
- * account at the foot. Ny fråga and Sök first, each with its icon, so the rail's own collapse draws them as icons named
- * by their labels as it does every row; Sök opens Astryx's `CommandPalette` over the page, which finds conversations,
- * work items, areas and tools. Then "Mitt arbete": Hem, Att göra with how much needs the person, and Kalender while the
- * calendar is the person's to see (D23), and Påminnelser with how many are due (`ReminderRow`). "Min enhet" for a manager (D94): Personal, whose tabs are the unit's
- * competence, talks and introductions (D126; their pages mark it), and Läget, the unit the manager follows up, or the
- * list of them when there are several (D117). "Verktyg": the views an administrator placed as tools (D40, each a page of
- * its own, D42) and Clew's own lists the person has (`toolsOf`), the first four, and "Alla verktyg", the page that lists
- * every one of them (`/tools`). "Samtal": the three newest
- * conversations, each with a dot only where the data says something about it (the answer being written, a draft that
- * waits for the person), and "Alla samtal", the register of them. At the foot one row, Administration, for a person who
- * holds any of its sections (`ADMIN_ROWS`); the administration lists its sections itself. Every place is a link to a
- * route, so the back button and a reload land in the same place. Returned as the shell's slots so the shell keeps the
- * heading, the person and the way out.
+ * The rail (D126 item 10, board RailOrder variant b, the `shell-side-nav` template): the work first. Sök alone at the
+ * top, the rail's one utility, which opens Astryx's `CommandPalette` over the page and finds conversations, work items,
+ * areas and tools. Then "Mitt arbete": Hem, Att göra with how much needs the person, and Kalender while the calendar is
+ * the person's to see (D23), and Påminnelser with how many are due (`ReminderRow`). "Min enhet" for a manager (D94):
+ * Personal, whose tabs are the unit's competence, talks and introductions (D126; their pages mark it), and Läget, the
+ * unit the manager follows up, or the list of them when there are several (D117). "Verktyg": the views an administrator
+ * placed as tools (D40, each a page of its own, D42) and Clew's own lists the person has (`toolsOf`), the first four,
+ * and "Alla verktyg", the page that lists every one of them (`/tools`). "Fråga Clew": asking is one way of doing the
+ * work, so it follows it, with "Ny fråga" heading the conversations it starts, then the three newest, each with a dot
+ * only where the data says something about it (the answer being written, a draft that waits for the person), and "Alla
+ * samtal", the register of them. Every row that has an icon keeps it, so the rail's own collapse draws it as an icon
+ * named by its label. At the foot one row, Administration, for a person who holds any of its sections (`ADMIN_ROWS`);
+ * the administration lists its sections itself. Every place is a link to a route, so the back button and a reload land
+ * in the same place. Returned as the shell's slots so the shell keeps the heading, the person and the way out.
  */
 export function useRail({
   current,
@@ -281,19 +281,8 @@ export function useRail({
     ),
     sections: (
       <>
-        {/* The two verbs (board Shell, the template's "New chat" and "Search"): rows with icons, so a folded rail draws them as its other rows. */}
+        {/* The rail's one utility (board RailOrder b, the template's "Search"): a row with its icon, so a folded rail draws it as its other rows. */}
         <SideNavSection title="Börja" isHeaderHidden>
-          {/* Ny fråga is a page of its own (D126 item 14): a new conversation with nothing in it, wherever it is pressed. */}
-          <SideNavItem
-            label="Ny fråga"
-            icon={PlusIcon}
-            href="/conversations/new"
-            isSelected={!!current.newQuestion}
-            onClick={() => {
-              const { pathname, search } = pageLocation();
-              talk.newConversation({ from: pathname + search, stay: true });
-            }}
-          />
           <SideNavItem label="Sök" icon="search" onClick={() => setSearching(true)} />
         </SideNavSection>
         <Divider />
@@ -358,21 +347,34 @@ export function useRail({
             />
           </SideNavSection>
         )}
-        {g.questions.length > 0 && (
-          <SideNavSection title="Samtal">
-            {/* Rows of the section itself, so Astryx cuts a long title with an ellipsis on one line (D112, Astryx gaps). */}
-            {conversations.map(t => {
-              const state = conversationState(t, threads, answering);
-              return (
-                <SideNavItem
-                  key={t.id}
-                  label={titled(t.title)}
-                  href={`/conversations/${t.id}`}
-                  isSelected={current.conversationId === t.id}
-                  endContent={state ? <StatusDot variant={state.variant} label={state.label} /> : undefined}
-                />
-              );
-            })}
+        {/* Fråga Clew (D126 item 10): asking is one way of doing the work, so it follows it, Ny fråga first. */}
+        <SideNavSection title="Fråga Clew">
+          {/* Ny fråga is a page of its own (D126 item 14): a new conversation with nothing in it, wherever it is pressed. */}
+          <SideNavItem
+            label="Ny fråga"
+            icon={PlusIcon}
+            href="/conversations/new"
+            isSelected={!!current.newQuestion}
+            onClick={() => {
+              const { pathname, search } = pageLocation();
+              talk.newConversation({ from: pathname + search, stay: true });
+            }}
+          />
+          {/* Rows of the section itself, so Astryx cuts a long title with an ellipsis on one line (D112, Astryx gaps). */}
+          {conversations.map(t => {
+            const state = conversationState(t, threads, answering);
+            return (
+              <SideNavItem
+                key={t.id}
+                label={titled(t.title)}
+                href={`/conversations/${t.id}`}
+                isSelected={current.conversationId === t.id}
+                endContent={state ? <StatusDot variant={state.variant} label={state.label} /> : undefined}
+              />
+            );
+          })}
+          {/* The register of every conversation, once there is one to list. */}
+          {g.questions.length > 0 && (
             <SideNavItem
               label="Alla samtal"
               icon={ChatBubbleLeftRightIcon}
@@ -384,8 +386,8 @@ export function useRail({
                   !conversations.some(t => t.id === current.conversationId))
               }
             />
-          </SideNavSection>
-        )}
+          )}
+        </SideNavSection>
       </>
     ),
     footer:

@@ -5,6 +5,7 @@ import {
   expect,
   expectNoAxeViolations,
   heading,
+  hemLine,
   narrow,
   open,
   openNav,
@@ -68,7 +69,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await open(page, '/');
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
     await expect(rail).toHaveCount(1);
-    await expect(rail.getByRole('link', { name: 'Ny fråga' })).toBeVisible();
+    // The work first (D126 item 10): Sök alone at the top, and Ny fråga heads the conversations under Fråga Clew.
+    await expect(rail.getByRole('group', { name: 'Börja' }).getByRole('button')).toHaveText(['Sök']);
+    await expect(rail.getByRole('group', { name: 'Fråga Clew' }).getByRole('link').first()).toHaveText('Ny fråga');
     // The places (D126 rule 7): Hem, Att göra with how much needs the person, then Kalender; the piles and the areas
     // are Att göra's tabs and filter, not rows here, and Hem carries no word of its own (rule 8).
     await expect(rail.getByRole('link', { name: /^Hem/ })).toHaveAttribute('href', '/');
@@ -78,9 +81,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(rail.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
     // Without a tool an administrator placed there is no Verktyg (D40).
     await expect(rail.getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
-    // Samtal is a section of the rail with the conversations as its rows; a conversation the data says nothing about has
-    // no dot.
-    const talk = rail.getByRole('group', { name: 'Samtal' }).getByRole('link', { name: 'Vem är på plats i dag?' });
+    // Fråga Clew is a section of the rail with the conversations as its rows; a conversation the data says nothing about
+    // has no dot.
+    const talk = rail.getByRole('group', { name: 'Fråga Clew' }).getByRole('link', { name: 'Vem är på plats i dag?' });
     await expect(talk).toHaveAttribute('href', '/conversations/fraga');
     await expect(rail.getByRole('listitem').filter({ has: talk }).getByRole('img')).toHaveCount(0);
     for (const gone of ['Behöver dig', 'Jag föreslår', 'Till kännedom', 'Inte nu'])
@@ -143,17 +146,17 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
       expect(new Set(names).size).toBe(names.length);
     });
 
-  test('Hem is one heading over the box, and under the box Behöver dig and I dag side by side, then Läget, and no digest', async ({
+  test('Hem is one heading over its line, and under the line Behöver dig and I dag side by side, then Läget, and no digest', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
-    // One heading, the greeting (D126, board Hem), with the box under it; nothing sums the day up in a sentence.
+    // One heading, the greeting (D126, board Hem), with the line to ask Clew under it; nothing sums the day up in a sentence.
     await expect(page.getByText(/behöver dig i dag/)).toHaveCount(0);
     const title = (await heading(page, 1, 'God morgon, Testa').boundingBox())!,
-      box = (await composer(page).boundingBox())!;
+      box = (await hemLine(page).boundingBox())!;
     expect(box.y).toBeGreaterThan(title.y);
-    // Under the box the two blocks side by side: the most urgent work items and the day.
+    // Under the line the two blocks side by side: the most urgent work items and the day.
     const needs = page.getByRole('region', { name: 'Behöver dig' });
     await expect(needs.getByRole('listitem')).toHaveCount(4);
     await expect(needs.getByRole('link', { name: 'Visa alla' })).toHaveAttribute('href', '/todo');
@@ -185,28 +188,31 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('typing in the box offers nothing under it: no suggestion chips on a page (2026-11-13)', async ({
+  test('typing in Hem’s line offers nothing under it: no suggestion chips on a page (2026-11-13)', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
-    await composer(page).fill('attestera');
+    await hemLine(page).fill('attestera');
     await expect(page.getByText('Menar du')).toHaveCount(0);
     await expect(page.getByRole('link', { name: /Attestera 3 fakturor/ })).toHaveCount(1);
   });
 
-  test('a row reaches the box by @, which with nothing typed offers only what the page shows', async ({
+  test('Hem’s line takes no @; the box on Ny fråga does, and a word after it finds a work item', async ({
     page,
     api: _,
   }) => {
+    // Hem's line is one plain field (D126 item 4): `@` is a character there, and no list opens.
     await open(page, '/');
-    await composer(page).pressSequentially('@');
+    await hemLine(page).pressSequentially('@');
+    await expect(hemLine(page)).toHaveValue('@');
+    await expect(page.getByRole('listbox', { name: 'Objekt' })).toHaveCount(0);
+    await open(page, '/conversations/new');
+    await composer(page).pressSequentially('@fakt');
     const menu = page.getByRole('listbox', { name: 'Objekt' });
     await expect(menu.getByRole('option').first()).toBeVisible();
     const offered = await menu.getByRole('option').allTextContents();
-    // The work items Hem shows are offered; a card set aside (Inte nu) is not.
     expect(offered.some(o => o.includes('Attestera 3 fakturor, 48 200 kr'))).toBe(true);
-    expect(offered.some(o => o.includes('Brandskyddsrond i oktober saknar protokoll'))).toBe(false);
   });
 
   test('the answer is the card: a question that names a card draws it in the turn, a heading under the conversation, with its rows and buttons', async ({

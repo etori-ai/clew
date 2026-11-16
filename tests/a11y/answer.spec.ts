@@ -6,6 +6,7 @@ import {
   expect,
   expectNoAxeViolations,
   heading,
+  hemLine,
   narrow,
   open,
   reflowProblems,
@@ -70,12 +71,13 @@ test.describe('the answer on its way', () => {
     await page.getByRole('button', { name: 'Stoppa' }).click();
     await expect(page.getByRole('log')).toHaveCount(0);
     await expect(heading(page, 1, GREETING)).toBeVisible();
-    await expect(composer(page)).toHaveText('Vem är på plats?');
+    // Back on Hem, the question stands in Hem's line, a plain field whose value it is.
+    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Frågan avbröts'));
     await page.waitForTimeout(api.answerDelay + 500);
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole('log')).toHaveCount(0);
-    await expect(composer(page)).toHaveText('Vem är på plats?');
+    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
   });
 
   // D92: the conversation takes Hem's place with Astryx's fade and Hem comes back with one; under reduced motion both are

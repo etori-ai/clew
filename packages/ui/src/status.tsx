@@ -49,18 +49,39 @@ export const statusText = (kind: StatusKind, detail?: string | null) =>
 
 /**
  * Size 1, the mark: in a table cell or a list row, where the row itself is the link. The dot beside the word is
- * decoration with no name of its own, so the state is heard once, in the words.
+ * decoration with no name of its own, so the state is heard once, in the words. Where the list already names the state
+ * (`isWordHidden`: Att göra's "Behöver dig" tab, whose every row would say it again) the word is not drawn: the dot
+ * stands with what the state concerns ("försenad"), or alone, and carries the whole mark as its name ("Behöver dig,
+ * försenad"), so it is still heard once and in full.
  */
 export function StatusMark({
   kind,
   detail,
   weight,
+  isWordHidden = false,
 }: {
   kind: StatusKind;
   detail?: string | null | undefined;
   /** Semibold where the row is the one still unresolved (board StatusPanel's first invoice). */
   weight?: 'normal' | 'semibold' | undefined;
+  /** The list around the mark already says the state's word: only what it concerns is drawn beside the dot. */
+  isWordHidden?: boolean;
 }) {
+  if (isWordHidden)
+    return (
+      <HStack gap={2} vAlign="center" wrap="nowrap">
+        <StatusDot
+          variant={statusDot(kind)}
+          label={detail ? `${STATUS[kind].word}, ${detail}` : STATUS[kind].word}
+          isPulsing={kind === 'sending'}
+        />
+        {detail && (
+          <Text aria-hidden {...(weight ? { weight } : {})}>
+            {detail}
+          </Text>
+        )}
+      </HStack>
+    );
   return (
     <HStack gap={2} vAlign="center" wrap="nowrap">
       <StatusDot variant={statusDot(kind)} label={STATUS[kind].word} isPulsing={kind === 'sending'} aria-hidden />

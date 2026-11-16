@@ -195,11 +195,13 @@ test.describe('the work item as a page', () => {
     const card = api.threads.find(t => t.id === 'ledighet')!;
     card.deadline = null;
     card.remindedAt = NOW;
-    // The row: why it is here, and in its Status column the state with the reminder as what it concerns.
+    // The row: why it is here, and in its Status column what the state concerns, the reminder; under Behöver dig the
+    // state's word is the tab's, said by the dot's name.
     await open(page, '/todo');
     const row = page.getByRole('main').locator('#work-ledighet');
     await expect(row).toContainText('Ansökan väntar på beslut');
-    await expect(row).toContainText('Behöver dig\u00a0· påminnelse');
+    await expect(row).toContainText('påminnelse');
+    await expect(row.getByRole('img', { name: 'Behöver dig, påminnelse' })).toBeVisible();
     // The page: a plain to-do, so no notice, and no badge that says the word beside the title.
     await open(page, '/items/ledighet');
     await expect(page.getByRole('heading', { level: 1, name: card.title })).toBeVisible();

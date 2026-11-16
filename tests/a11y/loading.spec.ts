@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { composer, expect, expectNoAxeViolations, narrow, open, reflowProblems, test } from './support';
+import { composer, expect, expectNoAxeViolations, hemLine, narrow, open, reflowProblems, test } from './support';
 import { menuRows } from './phonebook';
 
 /** Release responses explicitly: slow-loading assertions must not race an arbitrary timeout. */
@@ -41,7 +41,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, narrow]) {
       await expect(page.getByRole('region', { name: /^Läget på / })).not.toHaveAttribute('aria-busy', 'true');
       day();
       await expect(page.getByText('Hämtar i dag …')).toHaveCount(0);
-      await expect(composer(page)).toHaveText('En fråga medan sidan hämtas');
+      // Hem's line is a plain field: what it holds is its value (D126 item 4).
+      await expect(hemLine(page)).toHaveValue('En fråga medan sidan hämtas');
       await expect(composer(page)).toBeFocused();
       expect(Math.abs((await composer(page).boundingBox())!.y - before!.y)).toBeLessThan(2);
       expect(await reflowProblems(page)).toEqual([]);
@@ -236,5 +237,5 @@ test('a background refresh preserves content, focus and the composer draft', asy
   release();
   await page.waitForLoadState('networkidle');
   await expect(content).toHaveAttribute('data-kept', 'yes');
-  await expect(composer(page)).toHaveText('Behåll min fråga');
+  await expect(hemLine(page)).toHaveValue('Behåll min fråga');
 });
