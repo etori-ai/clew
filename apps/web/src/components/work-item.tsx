@@ -1,10 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { daysUntil, sameSubject, snoozeWhen, stockholmDate, type ItemEvent, type Thread } from '@clew/contracts';
+import { daysUntil, sameSubject, type ItemEvent, type ReceiptRow, type Thread, type ThreadItem } from '@clew/contracts';
 import {
   Badge,
-  Banner,
   Button,
   Card,
   CheckboxList,
@@ -23,92 +22,81 @@ import {
   ScrollableArea,
   Skeleton,
   StackItem,
-  StatusDot,
+  StatusMark,
   Text,
   VStack,
   XMarkIcon,
   useMediaQuery,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
-import { api } from '../api';
 import { areasQuery, itemEventsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { executionStatus } from '../execution-status';
 import { useMarks } from '../marks';
 import { shortQuery } from '../media';
 import { readOf, withoutRead } from '../panel-address';
-import { documentHref } from '../review-address';
-import { canUndoReceipt, receiptComplete } from '../receipt-state';
+import { documentHref, reviewHref } from '../review-address';
 import { entityHref } from '../person-address';
-import { dueOf, fromClewItself, itemPageHref, noticeOf, rowsSaySomething, stateOf } from '../work-items';
+import { outcomeStatus, receiptRowsInOrder, type ItemStatus } from '../status-of';
+import { dueOf, fromClewItself, itemPageHref, noticeOf, rowsSaySomething } from '../work-items';
 import { readPageHref } from '../view-address';
+import { whenWord } from '../when-word';
 import { useConversation } from './conversation-context';
 import {
   ActionRow,
   ItemLabel,
   SystemLine,
   TimerNote,
-  clock,
   leavingMark,
   reviewedAction,
   rowSystems,
-  snoozedLabel,
-  useMinutesLeft,
   useThreadActions,
-  type Actions,
-  type RowSystems,
 } from './card';
-import { StaleMark, useSilentSources } from './silent-sources';
+import { StaleMark, silentLine, useSilentSources } from './silent-sources';
 import { PageFrame, narrowPageQuery } from './page-frame';
+import { FoldedSection, ItemSection } from './item-section';
+
+export { whenWord } from '../when-word';
 
 /**
- * A thing, drawn once (D126 rules 1 and 2, boards Att göra and Ärende, `.claude/canvas/app/thing.tsx`): a work item is
- * the same parts wherever it is shown. Its page (`WorkItemPage`, `/items/<threadId>`, the `work-item-detail` template)
- * is the way back and the title, the buttons directly under the title, the read in the column and the facts in the end
- * `LayoutPanel` (above the read where the window is narrow). Att göra's reading pane (`WorkItem`, `place="pane"`) is the
- * source line, the title as the link to the page and the buttons, which never scroll out of view (the critique of
- * 2026-11-13 found an opened item showing its middle), then the facts, "Varför ser jag detta?", the rows and
- * "Händelser" under them. The same narrow item stands beside a conversation and in an answer. Nothing unfolds inside
- * the item (rule 3): each of its reads is a link to the read's own page. Every fact comes from the item itself or from
- * its audit rows (`/api/threads/<id>/events`); nothing is guessed, and a field with nothing behind it is not drawn.
+ * A thing, drawn once (D126 rules 1 and 2, boards Att göra, Ärende and StatusPanel, `.claude/canvas/app/thing.tsx`): a
+ * work item is the same parts wherever it is shown. Its page (`WorkItemPage`, `/items/<threadId>`, the
+ * `work-item-detail` template) is the way back and the title, the buttons or the status notice directly under the
+ * title, the read in the column and the facts in the end `LayoutPanel` (above the read where the window is narrow). Att
+ * göra's reading pane (`WorkItem`, `place="pane"`) is the source line, the title as the link to the page and the buttons
+ * or the notice, which never scroll out of view (the critique of 2026-11-13 found an opened item showing its middle),
+ * then the sections. The same narrow item stands beside a conversation and in an answer.
+ *
+ * The read is named sections in one order (D126 item 13), each under a rule with its count beside its name:
+ * "Uppgifter" (the facts, in the pane and on a narrow page), what the item consists of (a notice's text, "Meddelandet";
+ * the rows, "Rader", which for an item reviewed one row at a time are also its documents, so they are listed once), "Varför
+ * ser jag detta?" (the source's reason and the item's own summary), and "Händelser", folded. The state is said once, in
+ * the notice: no fact repeats it. Nothing unfolds inside the item but Händelser (rule 3): each of its reads is a link to
+ * the read's own page. Every fact comes from the item itself or from its audit rows (`/api/threads/<id>/events`);
+ * nothing is guessed, and a field with nothing behind it is not drawn.
  */
-
-const outcomeDot = {
-  done: { variant: 'success', label: 'Klart' },
-  unknown: { variant: 'warning', label: 'Okänt' },
-  failed: { variant: 'error', label: 'Misslyckades' },
-  skipped: { variant: 'neutral', label: 'Inte skickad' },
-} as const;
 
 const longDate = (date: string) =>
   new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(
     new Date(date.slice(0, 10) + 'T12:00:00Z'),
   );
 const capital = (s: string) => (s ? s[0]!.toLocaleUpperCase('sv-SE') + s.slice(1) : s);
-/** An instant as a person says it beside today: "i dag 08.31", "i går 16.02", "i morgon 06:00", else "11 november 08.31". */
-export function whenWord(instant: string, now = today()): string {
-  const date = stockholmDate(instant);
-  const days = daysUntil(date, now);
-  const day = days === 0 ? 'i dag' : days === -1 ? 'i går' : days === 1 ? 'i morgon' : longDate(date);
-  return `${day} ${clock(instant)}`;
-}
+/** The person has decided, or the item is no longer theirs: when it was due is a plain fact, never a red badge. */
+const decided = (thread: Thread) => !!thread.execution || !!thread.receipt || thread.state !== 'open';
 /**
- * A due day as the title's badge says it (board Ärende: "Svara i dag"). A badge that only repeats the state's word
- * ("Påminnelse") is left out, as on the item's row.
+ * A due day as the title's badge says it (board Ärende: "Svara i dag"), on a plain to-do only: once the person has
+ * decided, the notice says where it stands and the day is a fact (D126 item 13). A badge that only repeats the row's
+ * word ("Påminnelse") is left out, as on the item's row.
  */
 function dueBadge(thread: Thread, day: string) {
-  const due = dueOf(thread, day);
-  const state = stateOf(thread, new Date().toISOString(), day);
-  if (!due || due.label === state.label) return null;
-  const label =
-    due.label === 'Försenad' || due.label === 'Påminnelse'
-      ? due.label
-      : `Svara ${due.label.toLocaleLowerCase('sv-SE')}`;
+  const due = decided(thread) ? null : dueOf(thread, day);
+  if (!due || due.label === 'Påminnelse') return null;
+  const label = due.label === 'Försenad' ? due.label : `Svara ${due.label.toLocaleLowerCase('sv-SE')}`;
   return <Badge variant={due.variant} label={label} />;
 }
 /** The source line: the system and the area; an item from Clew itself names its area alone (`fromClewItself`). */
 const sourceLine = (mark: { source: string; title: string }, own = false) =>
-  [own ? '' : mark.source, mark.title].filter(Boolean).join(' · ');
+  [own ? '' : mark.source, mark.title].filter(Boolean).join(' · ');
 
 /** Everything the parts of one work item share: its actions, its marks and where its reads lead. */
 function useWorkItem(thread: Thread, onChange: (thread: Thread) => void) {
@@ -142,129 +130,103 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void) {
   const notice = noticeOf(thread);
   const omit = notice?.out ? [notice.out.id] : undefined;
   const own = fromClewItself(thread, areas?.systems);
-  return { title, actions, mark, systems, own, from: pathname + search, readHref, notice, omit };
+  const here = pathname + search;
+  // Where the rows stand: the receipt's, read back, once there is one; else the item's own (`rowsSaySomething`).
+  // The rows say something (`rowsSaySomething`), or the receipt read back more than one: a notice's one row, which is
+  // the notice itself, is never a section of its own.
+  const rowsShown = rowsSaySomething(thread) || (thread.receipt?.rows.length ?? 0) > 1;
+  // Each row has a document behind it, read on the review's page (D70, D73 amended 2026-11-12).
+  const documents = !!reviewedAction(thread)?.preview && thread.items.some(i => i.selectable);
+  return { title, actions, mark, systems, own, from: here, readHref, notice, omit, rowsShown, documents };
 }
 type ItemState = ReturnType<typeof useWorkItem>;
 
-/** A section of the read: its heading and what it holds, named by the heading. */
-function ItemSection({
-  id,
-  title,
-  level,
-  visual,
-  children,
-}: {
-  id: string;
-  title: string;
-  level: number;
-  visual: 2 | 3 | 4;
-  children: ReactNode;
-}) {
+/**
+ * "Varför ser jag detta?" (board Ärende): the source's reason, where and when it came, and the item's own summary where
+ * it says more than the reason (the invoices' match): no sentence of the item's stands without a heading.
+ */
+function Why({ thread, item }: { thread: Thread; item: ItemState }) {
+  const summary = !item.notice && thread.summary && thread.summary !== thread.trigger.reason ? thread.summary : null;
   return (
-    <VStack as="section" gap={2} aria-labelledby={id}>
-      <Heading id={id} level={visual} accessibilityLevel={level as 2 | 3 | 4 | 5}>
-        {title}
-      </Heading>
-      {children}
+    <VStack gap={3}>
+      <Text as="p">
+        {thread.trigger.reason.replace(/\.$/, '')}. Ärendet kom från {thread.trigger.source}{' '}
+        {whenWord(thread.trigger.at)}.
+      </Text>
+      {summary && <Text as="p">{summary}</Text>}
+    </VStack>
+  );
+}
+/**
+ * A notice's text (D112, amended 2026-11-12): what the person is asked to read, a paragraph per paragraph of the
+ * source's text, and after it the item's link out to the whole of it, marked as leaving Clew (D111 rule 8).
+ */
+function NoticeText({ item }: { item: ItemState }) {
+  const notice = item.notice!;
+  const out = notice.out;
+  return (
+    <VStack gap={3}>
+      {notice.paragraphs.map((p, i) => (
+        <Text key={i} as="p">
+          {p}
+        </Text>
+      ))}
+      {out && (
+        <HStack>
+          <Button
+            variant="secondary"
+            label={out.label}
+            clickAction={() => item.actions.perform(out)}
+            {...leavingMark(out)}
+          />
+        </HStack>
+      )}
     </VStack>
   );
 }
 
 /**
- * The receipt after a decision (D70, board ActReceipt): the source's headline, each row read back with its outcome and
- * the system that answered, and Ångra with the time left while the source allows it. Green only when every row was read back.
+ * A row's name: for an item reviewed one row at a time with a document behind each row (D70, D73 amended 2026-11-12),
+ * the link to the review's page at that row, where the document is drawn with the decision, so the rows and their
+ * documents are one list (board StatusPanel's "Fakturor", D126 item 13) and Back gives the focus to the link again;
+ * otherwise the row's own name (`ItemLabel`).
  */
-function Receipt({ thread, actions, systems }: { thread: Thread; actions: Actions; systems: RowSystems }) {
-  const receipt = thread.receipt!;
-  const minutes = useMinutesLeft(receipt.undoUntil);
-  const undoOpen = minutes !== null && canUndoReceipt(thread);
-  const failed = receipt.rows.some(r => r.outcome === 'failed'),
-    unknown = receipt.rows.some(r => r.outcome === 'unknown');
-  const status = failed ? 'error' : unknown ? 'warning' : receiptComplete(receipt) ? 'success' : 'info';
-  const pending = executionStatus(thread.execution);
-  return (
-    <Banner
-      status={status}
-      title={receipt.headline}
-      collapsible={false}
-      endContent={
-        undoOpen ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            label={`${pending ? 'Ångra bekräftade' : 'Ångra'} · ${minutes} min kvar`}
-            clickAction={() => actions.run(() => api.undoReceipt(thread.id))}
-          />
-        ) : undefined
-      }
-    >
-      <List density="compact" hasDividers aria-label="Kvitto, rad för rad">
-        {receipt.rows.map(r => (
-          <ListItem
-            key={r.ref}
-            startContent={<StatusDot variant={outcomeDot[r.outcome].variant} label={outcomeDot[r.outcome].label} />}
-            label={<Text weight="semibold">{r.label}</Text>}
-            description={<Text type="supporting">{r.detail}</Text>}
-            endContent={
-              <Text type="supporting" textWrap="nowrap">
-                {systems.of.get(r.ref)?.source ?? thread.trigger.source}
-              </Text>
-            }
-          />
-        ))}
-      </List>
-    </Banner>
-  );
-}
-
-/**
- * "Varför ser jag detta?" (board Ärende): the source's reason, where and when it came. The item's lead (its summary)
- * is the first paragraph of the read, above it (`Lead`).
- */
-function Why({ thread }: { thread: Thread }) {
-  return (
-    <Text as="p">
-      {thread.trigger.reason.replace(/\.$/, '')}. Ärendet kom från {thread.trigger.source} {whenWord(thread.trigger.at)}
-      .
-    </Text>
-  );
-}
-/** The item's own words (board Ärende's first section): a notice's text, else its summary where it says more than the reason. */
-function Lead({ thread, item }: { thread: Thread; item: ItemState }) {
-  const notice = item.notice;
-  if (notice) {
-    const out = notice.out;
-    if (!notice.paragraphs.length && !out) return null;
-    // A notice (D112, amended 2026-11-12): what the person is asked to read, a paragraph per paragraph of the source's
-    // text, and after it the item's link out to the whole of it, marked as leaving Clew (D111 rule 8).
+function RowName({
+  thread,
+  item,
+  row,
+  semibold = false,
+}: {
+  thread: Thread;
+  item: ItemState;
+  row: { ref: string; label: string; subject?: ThreadItem['subject'] };
+  semibold?: boolean;
+}) {
+  const step = item.documents ? thread.items.filter(i => i.selectable).findIndex(i => i.ref === row.ref) : -1;
+  if (step >= 0)
     return (
-      <VStack gap={3}>
-        {notice.paragraphs.map((p, i) => (
-          <Text key={i} as="p">
-            {p}
-          </Text>
-        ))}
-        {out && (
-          <HStack>
-            <Button
-              variant="secondary"
-              label={out.label}
-              clickAction={() => item.actions.perform(out)}
-              {...leavingMark(out)}
-            />
-          </HStack>
-        )}
-      </VStack>
+      <Link
+        href={documentHref(thread.id, step, item.from)}
+        color="primary"
+        weight={semibold ? 'semibold' : 'normal'}
+        aria-label={`Öppna underlaget för ${row.label}`}
+      >
+        {row.label}
+      </Link>
     );
-  }
-  if (!thread.summary || thread.summary === thread.trigger.reason) return null;
-  return <Text as="p">{thread.summary}</Text>;
+  const own = thread.items.find(i => i.ref === row.ref);
+  return own ? (
+    <ItemLabel item={own} from={item.from} />
+  ) : (
+    <Text weight={semibold ? 'semibold' : 'normal'}>{row.label}</Text>
+  );
 }
 
 /**
- * The rows (board Ärende's list in a card): Astryx's checkbox list where the rows are chosen for the item's action
- * (`selectable`, `selected`, `usesItems`), with how many are chosen; a plain list where they are not. A row that names a
- * person or a unit links to them (D97 item 6).
+ * The rows as the item has them before a decision (board Ärende's list in a card): Astryx's checkbox list where the rows
+ * are chosen for the item's action (`selectable`, `selected`, `usesItems`), with how many are chosen, a review begun on
+ * its page laid over the ticks; a plain list where they are not. A row that names a person or a unit links to them (D97
+ * item 6); a row with a document leads to it.
  */
 function Rows({ thread, item }: { thread: Thread; item: ItemState }) {
   const conversation = useConversation();
@@ -297,7 +259,7 @@ function Rows({ thread, item }: { thread: Thread; item: ItemState }) {
               key={i.ref}
               value={i.ref}
               align="start"
-              label={<ItemLabel item={i} from={item.from} />}
+              label={<RowName thread={thread} item={item} row={i} />}
               description={describe(i.ref, i.detail)}
             />
           ))}
@@ -311,7 +273,8 @@ function Rows({ thread, item }: { thread: Thread; item: ItemState }) {
           <ListItem
             key={i.ref}
             isSelected={conversation.chipped.includes(i.ref)}
-            label={<ItemLabel item={i} from={item.from} />}
+            {...(item.documents ? { startContent: <Icon icon={DocumentTextIcon} color="secondary" /> } : {})}
+            label={<RowName thread={thread} item={item} row={i} />}
             description={describe(i.ref, i.detail)}
           />
         ))}
@@ -320,33 +283,45 @@ function Rows({ thread, item }: { thread: Thread; item: ItemState }) {
   );
 }
 
+/** A receipt row's state: its mark in the vocabulary, or "Inte skickad" for a row that was never sent. */
+function Outcome({ outcome }: { outcome: ReceiptRow['outcome'] }) {
+  const kind = outcomeStatus(outcome);
+  return kind ? (
+    <StatusMark kind={kind} />
+  ) : (
+    <Text type="supporting" color="secondary">
+      Inte skickad
+    </Text>
+  );
+}
 /**
- * "Dokument" (board Ärende): the document behind each row the item reviews one at a time (D70), where its action names
- * a `preview` read. Each is a link to the review's page at that row, where the document is drawn with the decision (D73,
- * amended 2026-11-12), and Back gives the focus to the link again.
+ * The receipt's rows after a decision (D70, board StatusPanel's "Fakturor"): each row read back, the unresolved first
+ * and in semibold, its state's mark at its end (D126 item 13), the system that answered under it when the rows come from
+ * several, and its document a link away where it has one.
  */
-function Documents({ thread }: { thread: Thread }) {
-  const { pathname, search } = useLocation();
-  const rows = thread.items.filter(i => i.selectable);
+function ReceiptRows({ thread, item }: { thread: Thread; item: ItemState }) {
+  const rows = receiptRowsInOrder(thread.receipt!.rows);
   return (
     <Card padding={0}>
-      <List hasDividers>
-        {rows.map((row, step) => (
-          <ListItem
-            key={row.ref}
-            startContent={<Icon icon={DocumentTextIcon} color="secondary" />}
-            label={
-              <Link
-                href={documentHref(thread.id, step, pathname + search)}
-                color="primary"
-                aria-label={`Öppna underlaget för ${row.label}`}
-              >
-                {row.label}
-              </Link>
-            }
-            description={<Text type="supporting">{`Underlag från ${thread.trigger.source}`}</Text>}
-          />
-        ))}
+      <List density="balanced" hasDividers aria-label="Kvitto, rad för rad">
+        {rows.map(r => {
+          const unresolved = r.outcome === 'unknown' || r.outcome === 'failed';
+          return (
+            <ListItem
+              key={r.ref}
+              {...(item.documents ? { startContent: <Icon icon={DocumentTextIcon} color="secondary" /> } : {})}
+              label={<RowName thread={thread} item={item} row={r} semibold={unresolved} />}
+              description={
+                item.systems.multi ? (
+                  <SystemLine mark={item.systems.of.get(r.ref)} words={r.detail} />
+                ) : (
+                  <Text type="supporting">{r.detail}</Text>
+                )
+              }
+              endContent={<Outcome outcome={r.outcome} />}
+            />
+          );
+        })}
       </List>
     </Card>
   );
@@ -400,9 +375,10 @@ function eventWords(e: ItemEvent, thread: Thread): string {
   }
 }
 /**
- * "Händelser" (board Ärende): what Clew and the person did to the item, newest first, with what Clew has planned at the
- * top (the person's reminder or the time a set-aside item comes back), each a row of a list in a card with when under
- * it. Read from the item's audit rows; the person is "Du", never by name, and nobody else is named.
+ * "Händelser" (boards Ärende and StatusPanel): what Clew and the person did to the item, newest first, with what Clew
+ * has planned at the top (the person's reminder or the time a set-aside item comes back), each a row of a list in a card
+ * with when under it. Read from the item's audit rows; the person is "Du", never by name, and nobody else is named.
+ * Folded by default (D126 item 13), with how many beside its name once they are read.
  */
 function Events({ thread }: { thread: Thread }) {
   const events = useQuery(itemEventsQuery(thread.id, thread.updatedAt));
@@ -412,28 +388,6 @@ function Events({ thread }: { thread: Thread }) {
       key: `${t.kind}:${t.dueAt}`,
       words: t.kind === 'reminder' ? `påminner dig ${whenWord(t.dueAt)}` : `tar upp ärendet igen ${whenWord(t.dueAt)}`,
     }));
-  if (events.isPending)
-    return (
-      <VStack gap={2} aria-busy="true">
-        <Skeleton height={20} width="70%" />
-        <Skeleton height={20} width="50%" />
-      </VStack>
-    );
-  if (events.isError)
-    return (
-      <VStack gap={2}>
-        <Text as="p">{errorMessage(events.error, 'Händelserna kunde inte hämtas just nu.')}</Text>
-        <HStack>
-          <Button
-            size="sm"
-            variant="secondary"
-            label="Försök igen"
-            isLoading={events.isFetching}
-            onClick={() => void events.refetch()}
-          />
-        </HStack>
-      </VStack>
-    );
   // Who did it is the first word of the row (board Ärende's Händelser), with no mark before it.
   const row = (key: string, by: 'you' | 'clew', words: string, when: string) => (
     <ListItem
@@ -443,7 +397,25 @@ function Events({ thread }: { thread: Thread }) {
       description={<Text type="supporting">{when}</Text>}
     />
   );
-  return (
+  const body = events.isPending ? (
+    <VStack gap={2} aria-busy="true">
+      <Skeleton height={20} width="70%" />
+      <Skeleton height={20} width="50%" />
+    </VStack>
+  ) : events.isError ? (
+    <VStack gap={2}>
+      <Text as="p">{errorMessage(events.error, 'Händelserna kunde inte hämtas just nu.')}</Text>
+      <HStack>
+        <Button
+          size="sm"
+          variant="secondary"
+          label="Försök igen"
+          isLoading={events.isFetching}
+          onClick={() => void events.refetch()}
+        />
+      </HStack>
+    </VStack>
+  ) : (
     <Card padding={0}>
       <List hasDividers aria-label="Händelser, de senaste först">
         {planned.map(p => row(p.key, 'clew', p.words, 'planerat'))}
@@ -451,32 +423,34 @@ function Events({ thread }: { thread: Thread }) {
       </List>
     </Card>
   );
+  return (
+    <FoldedSection
+      title="Händelser"
+      countWord="händelser"
+      count={events.data ? planned.length + events.data.events.length : undefined}
+    >
+      {body}
+    </FoldedSection>
+  );
 }
 const hasEvents = (thread: Thread) => !!thread.timers?.some(t => t.state === 'scheduled') || thread.kind === 'pushed';
 
 /**
- * The facts (board Ärende's `MetadataList`, the page's end panel and the pane under the buttons): the state with its
- * dot, the people and units the rows name as links to their pages, when it is due, what it waits on and when it comes
- * back, the source, when it came and when it was handled. Only what the item really has.
+ * The facts (board StatusPanel's `MetadataList`, the page's end panel and the pane's "Uppgifter"): the people and units
+ * the rows name as links to their pages, when it is due, the source and when it came. Only what the item really has.
+ * Where the item stands, what it waits on, when it comes back and when it was done are the notice's (D126 item 13: the
+ * state is said once). When it was due is a badge while it is the person's to decide, and a plain date once decided.
  */
-function Facts({ thread, item }: { thread: Thread; item: ItemState }) {
-  const now = new Date().toISOString(),
-    day = today();
-  const state = stateOf(thread, now, day);
+function Facts({ thread, item, columns }: { thread: Thread; item: ItemState; columns?: number | 'multi' }) {
+  const day = today();
   const subjects = thread.items.filter(
     (i, n, all) => i.subject && all.findIndex(j => j.subject && sameSubject(j.subject, i.subject!)) === n,
   );
-  const due = dueOf(thread, day);
+  const due = decided(thread) ? null : dueOf(thread, day);
   const deadline = thread.deadline?.slice(0, 10);
   const days = deadline ? daysUntil(deadline, day) : null;
   return (
-    <MetadataList>
-      <MetadataListItem label="Status">
-        <HStack gap={2} vAlign="center">
-          <StatusDot variant={state.variant} label={state.label} aria-hidden />
-          <Text>{state.label}</Text>
-        </HStack>
-      </MetadataListItem>
+    <MetadataList {...(columns ? { columns } : {})}>
       {subjects.length > 0 && (
         <MetadataListItem label="Berör">
           <VStack gap={1} hAlign="start">
@@ -504,16 +478,6 @@ function Facts({ thread, item }: { thread: Thread; item: ItemState }) {
           </HStack>
         </MetadataListItem>
       )}
-      {thread.waitingOn && thread.state === 'open' && (
-        <MetadataListItem label="Väntar på">
-          <Text>{capital(thread.waitingOn)}</Text>
-        </MetadataListItem>
-      )}
-      {thread.snoozedUntil && thread.state === 'open' && (
-        <MetadataListItem label="Tillbaka">
-          <Text>{capital(whenWord(thread.snoozedUntil))}</Text>
-        </MetadataListItem>
-      )}
       {/* An item from Clew itself has no source to name (`fromClewItself`). */}
       {!item.own && (
         <MetadataListItem label="Källa">
@@ -523,25 +487,18 @@ function Facts({ thread, item }: { thread: Thread; item: ItemState }) {
       <MetadataListItem label="Kom">
         <Text>{capital(whenWord(thread.createdAt))}</Text>
       </MetadataListItem>
-      {thread.handledAt && thread.state !== 'open' && (
-        <MetadataListItem label={thread.state === 'dismissed' ? 'Avfärdat' : 'Klart'}>
-          <Text>{capital(whenWord(thread.handledAt))}</Text>
-        </MetadataListItem>
-      )}
     </MetadataList>
   );
 }
 
 /**
- * The read, under the facts in the pane and in the page's column, each part only where it has something to say: the
- * receipt after a decision, the item's own words (a notice's text, its summary), "Varför ser jag detta?" (not after a
- * decision), the rows (not when their one row is the item itself, `rowsSaySomething`), "Dokument" and "Händelser".
+ * The read, under the head in the pane and in the page's column: its sections in their order, each only where it has
+ * something to say, the first without the rule the head already draws above it.
  */
 function Read({
   thread,
   item,
   level,
-  visual,
   idBase,
   facts,
   gap = 6,
@@ -550,52 +507,78 @@ function Read({
   item: ItemState;
   /** The sections' heading level. */
   level: number;
-  visual: 2 | 3;
   idBase: string;
-  /** The facts, where they stand in the read's flow (the pane, a narrow page): first, with a rule under them. */
+  /** The facts, where they stand in the read's flow (the pane, a narrow page): the first section. */
   facts?: ReactNode;
-  /** The space between the sections: the pane's step (board Att göra), or the page's wider one (board Ärende). */
+  /** The space between the sections: the pane's step (board StatusPanel), or the page's wider one (board Ärende). */
   gap?: 6 | 8;
 }) {
   const receipt = thread.receipt;
-  const documents = reviewedAction(thread)?.preview ? thread.items.some(i => i.selectable) : false;
+  const status = item.actions.status;
   const id = (part: string) => `${idBase}-${thread.id}-${part}`;
+  const rowCount = receipt?.rows.length || thread.items.length;
+  // The decided review is seen again from the end of the rows' heading (board StatusPanel: "Visa granskningen").
+  const reviewLink = status.review ? (
+    <Link href={reviewHref(thread.id, { from: item.from })}>Visa granskning</Link>
+  ) : undefined;
+  const sections: { key: string; draw: (divided: boolean) => ReactNode }[] = [];
+  if (facts)
+    sections.push({
+      key: 'facts',
+      draw: d => (
+        <ItemSection divided={d} id={id('facts')} title="Uppgifter" level={level}>
+          <Card variant="muted" padding={4}>
+            {facts}
+          </Card>
+        </ItemSection>
+      ),
+    });
+  if (item.notice && (item.notice.paragraphs.length || item.notice.out))
+    sections.push({
+      key: 'notice',
+      draw: d => (
+        <ItemSection divided={d} id={id('notice')} title="Meddelandet" level={level}>
+          <NoticeText item={item} />
+        </ItemSection>
+      ),
+    });
+  if (item.rowsShown)
+    sections.push({
+      key: 'rows',
+      draw: d => (
+        <ItemSection divided={d} id={id('rows')} title="Rader" level={level} count={rowCount} end={reviewLink}>
+          {receipt?.rows.length ? <ReceiptRows thread={thread} item={item} /> : <Rows thread={thread} item={item} />}
+        </ItemSection>
+      ),
+    });
+  // Also after a decision (board StatusPanel): why the item came still answers why it is here.
+  sections.push({
+    key: 'why',
+    draw: d => (
+      <ItemSection divided={d} id={id('why')} title="Varför ser jag detta?" level={level}>
+        <Why thread={thread} item={item} />
+      </ItemSection>
+    ),
+  });
   return (
     <VStack gap={gap}>
-      {receipt && <Receipt thread={thread} actions={item.actions} systems={item.systems} />}
-      {facts}
-      <Lead thread={thread} item={item} />
-      {!receipt && (
-        <ItemSection id={id('why')} title="Varför ser jag detta?" level={level} visual={visual}>
-          <Why thread={thread} />
-        </ItemSection>
-      )}
-      {!receipt && rowsSaySomething(thread) && (
-        <ItemSection id={id('rows')} title="Rader" level={level} visual={visual}>
-          <Rows thread={thread} item={item} />
-        </ItemSection>
-      )}
-      {documents && (
-        <ItemSection id={id('documents')} title="Dokument" level={level} visual={visual}>
-          <Documents thread={thread} />
-        </ItemSection>
-      )}
-      {hasEvents(thread) && (
-        <ItemSection id={id('events')} title="Händelser" level={level} visual={visual}>
-          <Events thread={thread} />
-        </ItemSection>
-      )}
+      {sections.map((s, i) => (
+        <Fragment key={s.key}>{s.draw(i > 0)}</Fragment>
+      ))}
+      {hasEvents(thread) && <Events thread={thread} />}
     </VStack>
   );
 }
 
 /**
- * What stands under the buttons when it applies: a reminder that could not be scheduled, a draft, a refusal, a system
- * that may be old; and the confirmation and the action dialog the buttons open.
+ * What stands under the buttons or the notice when it applies: a reminder that could not be scheduled, a draft, a
+ * refusal, a system that may be old (unless the notice already says it does not answer); and the confirmation and the
+ * action dialog the buttons open.
  */
-function Notes({ thread, item }: { thread: Thread; item: ItemState }) {
+function Notes({ thread, item, status }: { thread: Thread; item: ItemState; status: ItemStatus }) {
   const draft = thread.messages.at(-1)?.meta?.draft;
   const silent = useSilentSources().of(thread.connector);
+  const said = !!silent && !!status.notice?.description?.includes(silentLine(silent));
   return (
     <>
       <TimerNote thread={thread} />
@@ -604,7 +587,7 @@ function Notes({ thread, item }: { thread: Thread; item: ItemState }) {
           Utkast från samtalet. Inget är skickat förrän du trycker på knappen här.
         </Text>
       )}
-      {silent && thread.state === 'open' && <StaleMark silent={silent} />}
+      {silent && thread.state === 'open' && !said && <StaleMark silent={silent} />}
       {item.actions.error && (
         <Text as="p" role="alert" color="accent">
           {item.actions.error}
@@ -615,26 +598,15 @@ function Notes({ thread, item }: { thread: Thread; item: ItemState }) {
     </>
   );
 }
-/** What the item's state does not say by itself, beside its title: set aside until when, or what it waits on. */
-function waitWords(thread: Thread): string | null {
-  if (thread.state !== 'open') return null;
-  const now = new Date().toISOString();
-  if (thread.snoozedUntil && Date.parse(thread.snoozedUntil) > Date.parse(now))
-    return snoozedLabel(thread.snoozedUntil);
-  const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
-  return thread.waitingOn && reminder && !thread.waitingOn.startsWith('påminnelsen ')
-    ? `Påminner dig ${snoozeWhen(reminder.dueAt, now)}`
-    : null;
-}
 
 /** Where a work item is drawn at its narrow width: Att göra's reading pane, beside a conversation, in an answer. */
 export type ItemPlace = 'pane' | 'answer';
 /**
- * The work item at its narrow width (D126 rule 2, board Att göra's pane): the source line, the title as the link to the
- * item's page (the name is the way in; "Öppna som sida" is gone) with ✕ beside it where the item can be let go of, the
- * buttons directly under the title, then a rule and the read with the facts first. In the reading pane the head stands
- * still and the read scrolls under it, so the decision never leaves the screen; on a short screen (1.4.10) and in an
- * answer it all follows in one flow. An `article` named by its title.
+ * The work item at its narrow width (D126 rule 2, board StatusPanel's pane): the source line, the title as the link to
+ * the item's page (the name is the way in; "Öppna som sida" is gone) with ✕ beside it where the item can be let go of,
+ * the buttons or the status notice directly under the title, then a rule and the read with "Uppgifter" first. In the
+ * reading pane the head stands still and the read scrolls under it, so the decision never leaves the screen; on a short
+ * screen (1.4.10) and in an answer it all follows in one flow. An `article` named by its title.
  */
 export function WorkItem({
   thread,
@@ -660,7 +632,7 @@ export function WorkItem({
   const pinnedHead = place === 'pane' && !short;
   const inset = place === 'pane' ? 6 : 0;
   const head = (
-    <VStack gap={3}>
+    <VStack gap={4}>
       <HStack gap={3} vAlign="start">
         <StackItem size="fill">
           <VStack gap={1}>
@@ -678,7 +650,6 @@ export function WorkItem({
                 {thread.title}
               </Link>
             </Heading>
-            {waitWords(thread) && <Text type="supporting">{waitWords(thread)}</Text>}
           </VStack>
         </StackItem>
         {onClose && (
@@ -690,8 +661,16 @@ export function WorkItem({
           />
         )}
       </HStack>
-      <ActionRow thread={thread} actions={item.actions} readHref={item.readHref} omit={item.omit} ask={ask} />
-      <Notes thread={thread} item={item} />
+      <ActionRow
+        thread={thread}
+        actions={item.actions}
+        readHref={item.readHref}
+        omit={item.omit}
+        ask={ask}
+        titleRef={item.title}
+        reviewShown={item.rowsShown}
+      />
+      <Notes thread={thread} item={item} status={item.actions.status} />
     </VStack>
   );
   const read = (
@@ -699,9 +678,8 @@ export function WorkItem({
       thread={thread}
       item={item}
       level={headingLevel + 1}
-      visual={3}
       idBase={idBase}
-      facts={<Facts thread={thread} item={item} />}
+      facts={<Facts thread={thread} item={item} columns={2} />}
     />
   );
   if (pinnedHead)
@@ -713,7 +691,7 @@ export function WorkItem({
         aria-label={`Ärende: ${thread.title}`}
         id={`${idBase}-${thread.id}`}
       >
-        <VStack paddingInline={inset} paddingBlockStart={inset} paddingBlockEnd={4} gap={4}>
+        <VStack paddingInline={inset} paddingBlockStart={inset} paddingBlockEnd={6} gap={6}>
           {head}
           <Divider />
         </VStack>
@@ -741,11 +719,12 @@ export function WorkItem({
 }
 
 /**
- * The work item as a page (D126 rule 1, `/items/<threadId>`, the `work-item-detail` template, board Ärende): in the
- * header the way back (to where the person came from when Clew can name it, else Att göra) with the source beside it,
- * the title as the page's heading with when it is due, and the buttons directly under it; the read in the column; the
- * facts under "Uppgifter" in the end panel, 340 px beside the column, and above the read at 1024 px and below. On a short
- * screen nothing is pinned and the page scrolls as one (1.4.10).
+ * The work item as a page (D126 rule 1, `/items/<threadId>`, the `work-item-detail` template, boards Ärende and
+ * StatusPanel): in the header the way back (to where the person came from when Clew can name it, else Att göra) with
+ * the source beside it, the title as the page's heading with when it is due while it is the person's to decide, and the
+ * buttons or the status notice directly under it; the read in the column; the facts under "Uppgifter" in the end panel,
+ * 340 px beside the column, and as the read's first section at 1024 px and below. On a short screen nothing is pinned
+ * and the page scrolls as one (1.4.10).
  */
 export function WorkItemPage({
   thread,
@@ -767,10 +746,9 @@ export function WorkItemPage({
     return () => cancelAnimationFrame(frame);
   }, [thread.id]);
   const day = today();
-  const facts = <Facts thread={thread} item={item} />;
-  // The one page frame (D126): the way back with the source beside it, the title with when it is due, the buttons
-  // directly under it, the read in the column and the facts in the end panel; at 1024 px and below the read places the
-  // facts itself, first.
+  // The one page frame (D126): the way back with the source beside it, the title with when it is due, the buttons or
+  // the notice directly under it, the read in the column and the facts in the end panel; at 1024 px and below the read
+  // places the facts itself, first.
   return (
     <PageFrame
       back={back}
@@ -782,11 +760,18 @@ export function WorkItemPage({
       title={thread.title}
       titleRef={item.title}
       status={dueBadge(thread, day)}
-      meta={waitWords(thread) ? <Text type="supporting">{waitWords(thread)}</Text> : undefined}
       below={
         <VStack gap={4}>
-          <ActionRow thread={thread} actions={item.actions} readHref={item.readHref} omit={item.omit} ask={ask} />
-          <Notes thread={thread} item={item} />
+          <ActionRow
+            thread={thread}
+            actions={item.actions}
+            readHref={item.readHref}
+            omit={item.omit}
+            ask={ask}
+            titleRef={item.title}
+            reviewShown={item.rowsShown}
+          />
+          <Notes thread={thread} item={item} status={item.actions.status} />
         </VStack>
       }
       label="Ärendet"
@@ -796,13 +781,20 @@ export function WorkItemPage({
           <Heading level={3} accessibilityLevel={2}>
             Uppgifter
           </Heading>
-          {facts}
+          <Facts thread={thread} item={item} />
         </VStack>
       }
       factsAbove={false}
     >
       {/* The sections are the page's second level, drawn at the size the board gives them (board Ärende). */}
-      <Read thread={thread} item={item} level={2} visual={3} gap={8} idBase="item" facts={narrow ? facts : undefined} />
+      <Read
+        thread={thread}
+        item={item}
+        level={2}
+        gap={8}
+        idBase="item"
+        facts={narrow ? <Facts thread={thread} item={item} columns="multi" /> : undefined}
+      />
     </PageFrame>
   );
 }

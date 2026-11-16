@@ -113,7 +113,7 @@ const RECENT_MAX = 2;
  * assistant, so once it is, the list is Clew and that assistant. Nothing is drawn when the person has no assistant to
  * ask: the box is Clew's as before.
  */
-function Recipient({ isDisabled }: { isDisabled: boolean }) {
+function Recipient({ isDisabled, menu }: { isDisabled: boolean; menu?: RecipientMenu | undefined }) {
   const talk = useConversation();
   const listed = useQuery(handoverAssistantsQuery).data ?? [];
   const threads = useQuery(threadsQuery).data?.threads;
@@ -174,7 +174,9 @@ function Recipient({ isDisabled }: { isDisabled: boolean }) {
         }}
         menuWidth={340}
         menuMaxHeight={460}
+        {...(menu ? { isMenuOpen: menu.isOpen } : {})}
         onOpenChange={open => {
+          menu?.onOpenChange(open);
           if (!open) setFilter('');
         }}
         {...(all.length >= FILTER_FROM
@@ -271,6 +273,14 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
  */
 export type ComposerPlace = 'landing' | 'conversation';
 /**
+ * The "Till:" menu held open from outside the box: Ny fråga's "Visa alla" under its list of other systems' assistants
+ * opens the same menu the box's own button does (D126 item 14), so there is one place to choose from them all.
+ */
+export interface RecipientMenu {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+}
+/**
  * The box (D31, D34; boards Hem and Samtal): Astryx's ChatComposer, in the page flow on Hem and docked by ChatLayout in a
  * conversation. Above the field, whom it talks to (`Recipient`, D125 item 5) and, while that is another system's
  * assistant, what leaves Clew. The chips the person pointed at sit in the composer's drawer as removable tokens; `@` in
@@ -283,12 +293,15 @@ export function Composer({
   near = [],
   about,
   placeholder: aboutPlaceholder,
+  recipientMenu,
 }: {
   place: ComposerPlace;
   near?: string[];
   about?: ChipRef[] | undefined;
   /** What the empty box says in a conversation about someone ("Fråga om Johan"); else whom it writes to. */
   placeholder?: string | undefined;
+  /** The "Till:" menu's open state, where the page opens it from outside the box (`RecipientMenu`). */
+  recipientMenu?: RecipientMenu | undefined;
 }) {
   const talk = useConversation();
   // While a conversation's own box is on the page, "Lägg till i samtalet" is offered: no other page has a box.
@@ -400,7 +413,7 @@ export function Composer({
           }}
         />
       }
-      headerActions={choosable ? <Recipient isDisabled={talk.busy} /> : undefined}
+      headerActions={choosable ? <Recipient isDisabled={talk.busy} menu={recipientMenu} /> : undefined}
       /* What leaves Clew while another system's assistant is asked (D125 items 4 and 5, board SamtalEneo). */
       headerContext={
         handed ? (

@@ -230,7 +230,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   if (short)
     return (
       <>
-        <PageFrame entry={entry} title={heading} titleId="samtal" meta={meta} actions={handedChip}>
+        <PageFrame entry={entry} title={heading} titleId="samtal" meta={meta} actions={handedChip} label="Samtalet">
           <VStack gap={4}>
             {body}
             {composer}
@@ -247,6 +247,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
         titleId="samtal"
         meta={meta}
         actions={handedChip}
+        label="Samtalet"
         bare
         end={
           beside && about.pane ? (

@@ -97,6 +97,8 @@ export interface RailCurrent {
    * a conversation the rail does not list marks "Alla samtal" (board Samtal's rail).
    */
   conversation?: boolean;
+  /** Ny fråga's own page is open (`/conversations/new` naming nothing, D126 item 14): the rail marks "Ny fråga". */
+  newQuestion?: boolean;
   /**
    * The capability whose tool page is open (D42), so its row under Verktyg is marked; null on a tool's page that does not
    * know it is a tool, where the rail marks the tool whose page the address is.
@@ -281,7 +283,17 @@ export function useRail({
       <>
         {/* The two verbs (board Shell, the template's "New chat" and "Search"): rows with icons, so a folded rail draws them as its other rows. */}
         <SideNavSection title="Börja" isHeaderHidden>
-          <SideNavItem label="Ny fråga" icon={PlusIcon} href="/" />
+          {/* Ny fråga is a page of its own (D126 item 14): a new conversation with nothing in it, wherever it is pressed. */}
+          <SideNavItem
+            label="Ny fråga"
+            icon={PlusIcon}
+            href="/conversations/new"
+            isSelected={!!current.newQuestion}
+            onClick={() => {
+              const { pathname, search } = pageLocation();
+              talk.newConversation({ from: pathname + search, stay: true });
+            }}
+          />
           <SideNavItem label="Sök" icon="search" onClick={() => setSearching(true)} />
         </SideNavSection>
         <Divider />
@@ -367,7 +379,9 @@ export function useRail({
               href="/conversations"
               isSelected={
                 current.surface === 'conversations' ||
-                (!!current.conversation && !conversations.some(t => t.id === current.conversationId))
+                (!!current.conversation &&
+                  !current.newQuestion &&
+                  !conversations.some(t => t.id === current.conversationId))
               }
             />
           </SideNavSection>

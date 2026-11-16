@@ -56,6 +56,43 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
     which stays. On a phone the page is the window. A sheet as wide as the column, centred or beside the rail, was
     tried the same day and left an empty band beside the rail or beside the sheet on a wide screen.
 
+13. **One status vocabulary** (amended 2026-11-16, product owner; canvas boards Status, StatusPanel and
+    StatusElsewhere). Where a thing stands is one of eight states, each with one Swedish word, the same wherever it is
+    shown: Behöver dig, Skickas, Väntar, Klart, Delvis klart, Obekräftat, Misslyckades and Hindrat. The tone says how it
+    went, the words whose move it is; a state is never told by colour alone. It is drawn in three sizes from
+    `packages/ui/src/status.tsx`: the mark in a row (`StatusMark`, a dot and the word, with what it concerns after
+    it: "Obekräftat · 1 av 3"), the badge beside a title (`StatusBadge`) and the notice under a title (`StatusNotice`,
+    Astryx's `Banner`, never folded). A notice's title says what is unresolved in the person's words, its description
+    why and since when, and it carries at most one move: a filled button when the move is the person's, a secondary one
+    when it is an offer (Påminn, Ångra); the move is the one the thing has always offered for that state (Kontrollera
+    status, the decision again, the review, Ångra, Påminn mig, Ta upp nu, Återöppna), and the others stand under ⋯. A
+    plain to-do has no notice: its title and its buttons say what is expected. Once something has happened or is in
+    the way, the notice takes the place of the buttons and of the grey sentence among them, and "Fråga Clew" and ⋯
+    stand under it. `apps/web/src/status-of.ts` is the one mapping from what the item holds (its execution, receipt,
+    undo window, what it waits on, a silent system) to a state and its words, keeping every sentence D45, D47, D116 and
+    D122 gave a case. The state is said once: no fact repeats it, and a decision already made shows when it was due as a
+    plain date, never a red badge. Att göra's queue has a Status column with the mark, so a row and its pane say the
+    same word. A thing's read is named sections in one fixed order, each under a rule with its count as a neutral badge
+    beside its name and an optional link at the end of its heading row: Uppgifter, what the thing consists of (rows
+    and their documents, when they are the same things, are one list, each row the link to its document with its own
+    mark, the unresolved first), Varför ser jag detta? (which holds every sentence that stood without a heading), and
+    Händelser, folded by default in Astryx's `Collapsible`.
+14. **Ny fråga is a page of its own** (amended 2026-11-16, product owner; canvas board NyFraga, variant b). "Ny
+    fråga" in the rail, and on Alla samtal, leads to `/conversations/new` naming nothing to ask about, which is no
+    longer Hem: inside the sheet, centred both ways in a column of at most 720 px, the installation's mark as the
+    rail's heading draws it (none when no logo is saved; the native image of
+    [D37](D37-header-logo-is-installation-branding.md) to D39, here without a name of its own since the rail names the
+    installation), Hem's greeting as the page's level-1 heading, "Vad vill du ha hjälp med?" and the box, which has the
+    focus. Under the box, "Fortsätt": the person's three latest conversations, as the rail lists them, each the link to
+    the conversation with when it was last active, and "Alla samtal"; and "Fråga någon annan": at most three of the
+    other systems' assistants the box's "Till:" menu lists ([D125](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md)),
+    each a row that makes that assistant the box's recipient exactly as the menu does and sends nothing, with "Visa
+    alla", which opens that menu. A block with nothing to list is not drawn, and with neither nothing stands under the
+    box. The rail marks Ny fråga while the page is open. Sending the first question continues on the conversation's
+    own address, which takes the page's place in the history, so Back leads to where the person was. Hem keeps its own
+    box; an address that names a thing (`?card=`, `?person=`, `?unit=`, `?open=`, `?lens=`) keeps its "Fråga om …"
+    page with the pane.
+
 The calendar keeps its own page ([D27](D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens.md)) and the
 address stays the state: every tab, pane and step is a URL.
 
@@ -75,4 +112,6 @@ D112 drew them. The canvas is listed in [design canvases](../reference/design-ca
 
 **Open.** The competence matrix needs a real grid and is not redrawn; Dialogstöd as a tab is drawn only in outline;
 Astryx's templates use `stylex.create` for a few details that Clew's pre-compiled CSS path leaves out; no manual
-screen-reader pass has been made.
+screen-reader pass has been made. Astryx's `Banner` has no neutral tone, so the notice of "Väntar" is blue like
+"Skickas" (its mark and badge are neutral). A heading cannot stand inside the `Collapsible`'s trigger button, so the
+folded "Händelser" is a named region whose name is the trigger's text, not a heading in the outline.

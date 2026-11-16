@@ -25,6 +25,7 @@ import {
   LayoutPanel,
   Link,
   ResizeHandle,
+  StatusMark,
   Tab,
   Table,
   TabList,
@@ -57,7 +58,6 @@ import {
   itemPageHref,
   needsYouOf,
   rowFacts,
-  rowLine,
   sourcesNotice,
   tabOf,
   tabTitle,
@@ -74,7 +74,10 @@ import { silentLine, staleWhy, useSilentSources } from '../components/silent-sou
 import { BriefSkeleton } from '../components/brief';
 import { AsyncContent } from '../components/loading';
 import { cardBody } from '../components/card-panel';
-import { whenWord } from '../components/work-item';
+import { whenWord } from '../when-word';
+import { DOT } from '../dot';
+import { statusOf, type ItemStatus } from '../status-of';
+import { reviewedAction } from '../components/card';
 import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
 import { itemSubject } from '../components/view-read';
 import { AskClew } from '../components/thing-panel';
@@ -135,6 +138,8 @@ interface QueueRow extends Record<string, unknown> {
   id: string;
   thread: Thread;
   facts: RowFacts;
+  /** Its state in the one vocabulary (D126 item 13): the word the item's own notice says. */
+  status: ItemStatus;
   href: string;
 }
 
@@ -408,23 +413,34 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     waiting: 'Inget väntar. Det som väntar på andra, eller som du lagt åt sidan, kommer tillbaka av sig självt.',
     done: 'Inget är klart ännu.',
   };
-  const tableRows: QueueRow[] = rows.map(t => ({
-    id: t.id,
-    thread: t,
-    facts: rowFacts(t, now, todayDate),
-    href: rowHref(t),
-  }));
+  const tableRows: QueueRow[] = rows.map(t => {
+    const quiet = silent.of(t.connector);
+    return {
+      id: t.id,
+      thread: t,
+      facts: rowFacts(t, now, todayDate),
+      status: statusOf(t, {
+        now,
+        today: todayDate,
+        when: instant => whenWord(instant),
+        silent: quiet ? silentLine(quiet) : null,
+        reviewed: !!reviewedAction(t),
+      }),
+      href: rowHref(t),
+    };
+  });
   /**
-   * Under the name: whom it is about (board Att göra); in the other piles also where it stands and why, in words (1.4.1),
-   * and under Klart with what outcome ("Klart · Ledigheten är beviljad", "Avfärdat · …").
+   * Under the name: whom it is about (board Att göra); in the other piles, and where it names nobody, why it is here,
+   * what it waits on or what came of it ("Ledigheten är beviljad"). Where it stands is the Status column's word, the
+   * word its notice says in the pane (D126 item 13), so the line never says it again.
    */
   const aboutLine = (r: QueueRow) => {
     const t = r.thread;
     const stale = t.state === 'open' && !!silent.of(t.connector);
     const about = aboutOf(t);
-    const why = tab !== 'needs-you' || !about ? rowLine(r.facts) : null;
-    const words = [about, why && stale ? staleWhy(why) : why].filter(Boolean).join(' · ');
-    return stale && !why ? staleWhy(words) : words;
+    const why = tab !== 'needs-you' || !about ? r.facts.why : null;
+    const words = [about, why].filter(Boolean).join(DOT);
+    return stale ? (words ? staleWhy(words) : 'Kan vara gammal') : words;
   };
   const columns: TableColumn<QueueRow>[] = [
     {
@@ -457,26 +473,15 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           <Token size="sm" label={marks.ofThread(r.thread).source} />
         ),
     },
-    tab === 'done'
-      ? {
-          key: 'done',
-          header: 'Klart',
-          width: pixel(130),
-          align: 'end',
-          renderCell: r =>
-            r.thread.handledAt ? (
-              <Text type="supporting" color="secondary" textWrap="nowrap">
-                {whenWord(r.thread.handledAt)}
-              </Text>
-            ) : null,
-        }
-      : {
-          key: 'due',
-          header: 'Senast',
-          width: pixel(120),
-          align: 'end',
-          renderCell: r => (r.facts.due ? <Badge variant={r.facts.due.variant} label={r.facts.due.label} /> : null),
-        },
+    // Where it stands (board StatusPanel's queue): the state's mark and what it concerns ("Obekräftat · 1 av 3",
+    // "Behöver dig · försenad", "Klart · i dag 08.13"), the same word the item's notice says in the pane.
+    {
+      key: 'status',
+      header: 'Status',
+      // On a phone the mark wraps under its dot rather than push the table past the screen (1.4.10).
+      width: pixel(mobile ? 120 : 180),
+      renderCell: r => <StatusMark kind={r.status.kind} detail={r.status.detail} />,
+    },
   ];
   // Beside the pane, or on a phone, the system's column gives way (the template drops its tags while the pane is open).
   const shownColumns = single || (itemId && surfaceWidth < 1200) ? columns.filter(c => c.key !== 'source') : columns;

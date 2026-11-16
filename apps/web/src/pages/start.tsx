@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { useParams } from 'react-router';
+import { useLocation, useParams } from 'react-router';
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { unresolvedExecution, type Area, type SessionUser, type Thread } from '@clew/contracts';
 import {
@@ -13,6 +13,7 @@ import {
   Link,
   List,
   StackItem,
+  StatusNotice,
   Text,
   VStack,
   useAnnounce,
@@ -31,6 +32,8 @@ import { DOT } from '../dot';
 import { Composer } from '../components/composer';
 import { useConversation } from '../components/conversation-context';
 import { ConversationPage } from './conversation';
+import { NewQuestionPage } from './new-question';
+import { asksAbout } from '../conversation-about';
 
 /**
  * The column fades in when it changes hands (D92): the conversation taking Hem's place when a question is sent, and Hem
@@ -48,7 +51,7 @@ import { BriefSkeleton } from '../components/brief';
 import { LinkRow } from '../components/work-row';
 import { MyCommitments } from '../components/my-commitments';
 import { NoCalendar, TodayCard, TodayCardSkeleton, TodayHeading } from '../components/today';
-import { SilentNotice, silentLine, staleWhy, useSaySilent, useSilentSources } from '../components/silent-sources';
+import { silentLine, staleWhy, useSaySilent, useSilentSources } from '../components/silent-sources';
 import { Lage } from '../components/lage';
 import { NewsBlock } from '../components/news';
 import { FocusNews, focusOf } from '../components/focus-news';
@@ -113,6 +116,11 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const talk = useConversation();
   const params = useParams<{ conversationId?: string }>();
   const conversationId = params.conversationId && params.conversationId !== 'new' ? params.conversationId : null;
+  // Ny fråga (D126 item 14): a new conversation whose address names nothing to ask about, before anything is asked, is
+  // a page of its own. Once the first question is sent the transcript takes its place, and its address the page's.
+  const { search } = useLocation();
+  const fresh =
+    params.conversationId === 'new' && !asksAbout(search) && !talk.conversation && !talk.pending && !talk.error;
   /**
    * Where a view named on Hem leads (D126 rule 1): the page Clew's own read declares for its rows, else the view's own
    * page, with Hem as the way back.
@@ -177,7 +185,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day and the model's status are extras.
   const failed = [threadsQ, areasQ].find(q => q.isError && q.data === undefined);
   const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.') : null;
-  const railCurrent: RailCurrent = { surface: 'start', conversationId, conversation: talk.open };
+  const railCurrent: RailCurrent = { surface: 'start', conversationId, conversation: talk.open, newQuestion: fresh };
   // A conversation names itself in the tab (`ConversationPage`: its question, or before one what it is about); Hem is
   // named and spoken here.
   usePageTitle(talk.open ? null : 'Hem');
@@ -309,10 +317,16 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             withoutCalendar ? (
               <NoCalendar hidden={calendarHidden} />
             ) : calendarSilent ? (
-              <SilentNotice
-                silent={{ source: calendarName, since: calendarSince }}
-                retrying={dayQ.isFetching}
-                onRetry={() => void dayQ.refetch()}
+              // The status vocabulary's notice (D126 item 13): it failed, since when, and the one move, Försök igen.
+              <StatusNotice
+                kind="failed"
+                title={silentLine({ source: calendarName, since: calendarSince })}
+                description="Dagens bokningar kan inte visas."
+                action={{
+                  label: 'Försök igen',
+                  isLoading: dayQ.isFetching,
+                  clickAction: () => void dayQ.refetch(),
+                }}
               />
             ) : undefined
           }
@@ -357,8 +371,20 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       <MyCommitments />
     </VStack>
   );
-  /** What the column holds: the conversation's page when a conversation is open (D31, D126 rule 5), else Hem. */
+  // The box is a new one as Ny fråga gives way to the transcript, and as it comes back: the focus goes with it (D31).
+  const wasFresh = useRef(fresh);
+  useEffect(() => {
+    if (wasFresh.current === fresh) return;
+    wasFresh.current = fresh;
+    const frame = requestAnimationFrame(() => talk.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [fresh]);
+  /**
+   * What the column holds: Ny fråga's own page (D126 item 14), the conversation's page when a conversation is open (D31,
+   * D126 rule 5), else Hem.
+   */
   const column = (entry: EntryStyle) => {
+    if (fresh) return <NewQuestionPage greeting={greetingOf(user.name, new Date())} entry={entry} />;
     if (talk.open) return <ConversationPage entry={entry} onChange={replace} />;
     // Hem (D126, board Hem): the greeting, the day line and the box in the frame's header (the box anchored under the
     // heading, D53), pinned while the blocks scroll under them. On a phone and on a short screen nothing is pinned
@@ -372,6 +398,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         titleId="hem"
         meta={dayLine(todayDate, user.unitLabel)}
         below={<Composer place="landing" near={near} />}
+        label="Hem"
       >
         {blocks}
       </PageFrame>
@@ -406,7 +433,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           ) : undefined
         }
       >
-        <Entering key={talk.open ? 'conversation' : 'hem'}>{column}</Entering>
+        <Entering key={fresh ? 'new' : talk.open ? 'conversation' : 'hem'}>{column}</Entering>
       </Shell>
     </>
   );

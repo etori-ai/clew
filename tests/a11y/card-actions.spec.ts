@@ -361,8 +361,10 @@ test.describe('Klart', () => {
     await open(page, '/todo?tab=done');
     const done = page.getByRole('table', { name: 'Klart' });
     await expect(done.getByRole('row')).toHaveCount(3);
-    await expect(done.locator('#work-attest')).toContainText('Klart · ');
-    await expect(done.locator('#work-avfardad')).toContainText('Avfärdat · ');
+    // Each in the status vocabulary's word (D126 item 13): a decision with a row in doubt is unconfirmed, a dismissal is
+    // done and says so.
+    await expect(done.locator('#work-attest')).toContainText('Obekräftat\u00a0· 1 av 2');
+    await expect(done.locator('#work-avfardad')).toContainText('Klart\u00a0· avfärdat');
     await expect(done).not.toContainText('Vem är på plats i dag?');
   });
 });

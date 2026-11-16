@@ -366,8 +366,9 @@ test.describe('a conversation about a person', () => {
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL('/conversations/new');
     await expect(page.getByRole('complementary', { name: 'Johan Byström' })).toHaveCount(0);
-    await expect(page.getByRole('heading', { level: 1, name: 'Nytt samtal' })).toBeVisible();
-    await expect(box(page)).toBeFocused();
+    // A conversation not asked yet that names nothing is Ny fråga's own page (D126 item 14).
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^God (morgon|förmiddag|eftermiddag|kväll), /);
+    await expect(page.getByRole('combobox', { name: 'Vad vill du göra' })).toBeFocused();
   });
 
   test('an address from before, `?person=&section=`, opens the person with that tab first', async ({

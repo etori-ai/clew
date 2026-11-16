@@ -740,9 +740,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         if (shownRef.current) newConversation();
         else focus();
       }
-      // Esc inside a dialog, a menu or the `@` list is theirs (the D29 picker, the pile menu); only a bare Esc closes the conversation.
+      // Esc inside a dialog, a menu or the `@` list is theirs (the D29 picker, the pile menu); only a bare Esc closes the
+      // conversation. A menu that closed on it has handed the focus back to its button by now, so its handled Esc is
+      // known by `defaultPrevented` (the "Till:" menu on Ny fråga, D126 item 14).
       else if (
         e.key === 'Escape' &&
+        !e.defaultPrevented &&
         !document.activeElement?.closest('[role="dialog"], [role="menu"], [role="listbox"], dialog')
       )
         close();

@@ -92,6 +92,14 @@ export function paneTabHref(pathname: string, search: URLSearchParams | string, 
   const s = q.toString();
   return s ? `${pathname}?${s}` : pathname;
 }
+/**
+ * Whether a new conversation's address names anything to ask about (D126 rule 2): a work item or a view beside it, a
+ * person, a unit or a lens of Personal. `/conversations/new` naming nothing is Ny fråga's own page (D126 item 14).
+ */
+export function asksAbout(search: URLSearchParams | string): boolean {
+  const q = new URLSearchParams(search);
+  return ['card', 'open', 'person', 'unit', 'lens'].some(key => !!q.get(key));
+}
 /** Every name a conversation's address gives a person, a unit or a lens of Personal, and the pane's tab. */
 const SUBJECT_KEYS = ['person', 'unit', 'section', 'lens'];
 /**

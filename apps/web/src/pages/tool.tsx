@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser, ViewRef } from '@clew/contracts';
 import type { PanelViewSpec } from '@clew/contracts';
-import { Banner, Button, EmptyState, Heading, HStack, Skeleton, Text, VStack, useMediaQuery } from '@clew/ui';
+import { Button, EmptyState, Heading, HStack, Skeleton, StatusNotice, Text, VStack, useMediaQuery } from '@clew/ui';
 import { areasQuery, entityDetailQuery } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
@@ -173,15 +173,10 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       <WayBack back={back} />
     </HStack>
   );
-  // "Försök igen" stands in the banner, never behind its "Expandera" (errands.spec, requests.spec).
+  // The status vocabulary's notice (D126 item 13): the read failed, and its one move, "Försök igen", stands in it,
+  // never behind an "Expandera" (errands.spec, requests.spec).
   const banner = failed && (
-    <Banner
-      status="error"
-      container="section"
-      collapsible={false}
-      title={failed.message}
-      endContent={<Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />}
-    />
+    <StatusNotice kind="failed" title={failed.message} action={{ label: 'Försök igen', clickAction: failed.retry }} />
   );
   // One thing (D126 rule 1): the thing's page, as a work item's is drawn.
   const thing = tool?.spec && ONE_THING.has(tool.spec.kind) ? tool : null;

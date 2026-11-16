@@ -60,7 +60,8 @@ describe("a work item's row says its state in words (WCAG 1.4.1)", () => {
   });
   test('from the thread itself, an item that waits says what it waits on once: someone, or its source', () => {
     expect(line({ waitingOn: 'skyddsombudet' })).toBe('Väntar på skyddsombudet');
-    // A decision that was approved and waits for its source, with the words the server's projection writes.
+    // A decision that was approved and waits for its source, with the words the server's projection writes after the
+    // status vocabulary's word for it (D126 item 13), the same word the item's notice and the queue's mark say.
     expect(
       line({
         waitingOn: 'källans besked',
@@ -73,7 +74,7 @@ describe("a work item's row says its state in words (WCAG 1.4.1)", () => {
           compensates: null,
         },
       }),
-    ).toBe('Väntar på källans besked');
+    ).toBe('Skickas\u00a0· Väntar på källans besked');
   });
   test('an item reminded today that has no day says Påminnelse once: the state, and no badge that repeats it', () => {
     const reminded = rowFacts(thread({ remindedAt: NOW }), NOW, TODAY);

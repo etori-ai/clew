@@ -59,8 +59,20 @@ export function headerLogo(shared: Logo | null | undefined, own: Logo | null, mo
   return mobile ? (own ?? shared) : { ...shared, darkSrc: shared.src };
 }
 
-/** The installation's logo in the rail's heading, as D37 to D39 allow a native image there: an asset, not an icon. */
-export function InstallationLogo({ logo }: { logo: Logo | null }) {
+/**
+ * The installation's logo in the rail's heading, as D37 to D39 allow a native image there: an asset, not an icon. Ny
+ * fråga draws the same mark over its greeting (D126 item 14), larger and with no name of its own, since the rail
+ * already names the installation (`height`, `decorative`).
+ */
+export function InstallationLogo({
+  logo,
+  height = 28,
+  decorative = false,
+}: {
+  logo: Logo | null;
+  height?: number;
+  decorative?: boolean;
+}) {
   const { mode } = useAppearance();
   const [failed, setFailed] = useState<string | null>(null);
   const src = logo ? (mode === 'dark' && logo.darkSrc ? logo.darkSrc : logo.src) : undefined;
@@ -69,12 +81,12 @@ export function InstallationLogo({ logo }: { logo: Logo | null }) {
     // Its height is the row's measure and its width follows the mark, as the shared header draws it.
     <img
       src={src}
-      alt={logo.alt}
-      height={28}
+      alt={decorative ? '' : logo.alt}
+      height={height}
       style={{
-        height: 28,
+        height,
         width: 'auto',
-        maxWidth: 160,
+        maxWidth: (160 / 28) * height,
         objectFit: 'contain',
         // A logo with no dark variant keeps its own light ground in the dark appearance (D39).
         backgroundColor: mode === 'dark' && !logo.darkSrc ? 'var(--color-on-dark)' : undefined,
