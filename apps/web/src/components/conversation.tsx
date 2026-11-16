@@ -62,7 +62,7 @@ import { requestAction } from '../action-requests';
 import { valueText, type ActionStep } from '../action-path';
 import { executionStatus } from '../execution-status';
 import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../answer-card';
-import { sentWords, suggestedWords } from '../conversation-about';
+import { isSide, sentWords, sideCount, suggestedWords } from '../conversation-about';
 import { DOT } from '../dot';
 
 /** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
@@ -167,7 +167,7 @@ export const keepLines = (body: string) => body.replace(/([^\n])\n(?=[^\n])/g, '
 /** The other system's assistant that wrote an answer, or undefined: Clew's own answers, and Clew's words about one that failed. */
 const answeredBy = (m: ThreadMessage) => (m.meta?.handover && !m.meta.handover.failed ? m.meta.handover : undefined);
 /** Whom a question went to: another system's assistant, or null for Clew. */
-const askedOf = (m: ThreadMessage) => m.meta?.handed ?? null;
+const askedOf = (m: ThreadMessage) => (m.meta?.handed && !m.meta.handed.declined ? m.meta.handed : null);
 const lastQuestion = (messages: ThreadMessage[]) => [...messages].reverse().find(x => x.role === 'user');
 /** A line in the transcript where whom the person talks to changes: its words, and the system it turns to, if any. */
 interface TurnLineContent {
@@ -193,7 +193,8 @@ function switchLine(messages: ThreadMessage[], i: number): TurnLineContent | und
   const to = askedOf(m);
   const from = before ? recipientAfter(messages.slice(0, i)) : null;
   if ((to?.assistant ?? null) === (from?.assistant ?? null)) return undefined;
-  return to ? toAssistant(to) : toClew('Du pratar med Clew igen');
+  // The box under the transcript is Clew's, always: a question to Clew needs no line saying so.
+  return to ? toAssistant(to) : undefined;
 }
 /**
  * Whom the conversation was with once its turns so far had ended: the assistant of the last question, unless that
@@ -204,12 +205,6 @@ function recipientAfter(messages: ThreadMessage[]) {
   const answer = [...messages].reverse().find(x => x.role === 'assistant');
   if (!question || answer?.meta?.handedBack || answer?.meta?.handover?.returned) return null;
   return askedOf(question);
-}
-/** The line under a turn in which the assistant returned the conversation: it is done. */
-function returnLine(m: ThreadMessage): TurnLineContent | undefined {
-  return m.role === 'assistant' && m.meta?.handover?.returned
-    ? toClew(`${m.meta.handover.name} är klar · du pratar med Clew igen`)
-    : undefined;
 }
 /** The words above Clew's own answer to a question another assistant handed back. */
 const handedBackText = (name: string) => `${name} lämnade tillbaka frågan · Clew svarar`;
@@ -224,7 +219,7 @@ function pendingSwitch(
   const from = recipientAfter(messages);
   const to = pending.handed ?? null;
   if ((to?.id ?? null) === (from?.assistant ?? null)) return undefined;
-  return to ? toAssistant({ assistant: to.id, name: to.name, source: to.source }) : toClew('Du pratar med Clew igen');
+  return to ? toAssistant({ assistant: to.id, name: to.name, source: to.source }) : undefined;
 }
 /**
  * A line in the transcript where whom the person talks to changes (D125 items 5 and 12): Astryx's system message, with
@@ -253,7 +248,7 @@ function TurnLine({ line }: { line: TurnLineContent }) {
   );
 }
 /** The mark of another system's assistant beside what it wrote (board SamtalEneo): its initials on a square tile, as a person's are on a round one. */
-function AssistantMark({ name }: { name: string }) {
+export function AssistantMark({ name }: { name: string }) {
   return <Avatar name={name} size="sm" shape="square" tooltip={false} />;
 }
 /**
@@ -362,10 +357,19 @@ function HandoverOffer({
  * Clew keeps when it was, and the way to the same conversation in the system itself, where it continues with everything
  * that assistant can do. Everything on the surface is that assistant's; Clew offers nothing of its own under it.
  */
-function AssistantAnswer({ handover, children }: { handover: HandoverMeta; children: ReactNode }) {
+function AssistantAnswer({
+  handover,
+  isHeld,
+  children,
+}: {
+  handover: HandoverMeta;
+  /** Nothing of the answer is written yet: the surface takes a width of its own, since the placeholder's is a share of it. */
+  isHeld?: boolean;
+  children: ReactNode;
+}) {
   const cites = handover.cites ?? [];
   return (
-    <Card variant="muted" padding={4}>
+    <Card variant="muted" padding={4} {...(isHeld ? { width: '100%', maxWidth: 360 } : {})}>
       <VStack gap={3}>
         {children}
         {cites.length > 0 && (
@@ -468,7 +472,7 @@ const stepCall = (s: TurnStep): ChatToolCallItem => ({
   ...(s.ms !== undefined && s.status !== 'running' ? { duration: seconds(s.ms) } : {}),
 });
 /** The model's text as it is written (D36), revealed at a steady pace by Astryx's hook; with reduced motion it shows whole. */
-function StreamingAnswer({ text }: { text: string }) {
+export function StreamingAnswer({ text }: { text: string }) {
   const shown = useStreamingText(text, true);
   return (
     <Markdown density="compact" headingLevelStart={2}>
@@ -675,6 +679,8 @@ export function Transcript({
   about,
   firstLine,
   onDraft,
+  asideHref,
+  asideOpen,
 }: {
   onOpenView: (view: ViewRef) => void;
   renderCard: (thread: Thread) => ReactNode;
@@ -691,6 +697,13 @@ export function Transcript({
   firstLine?: string | undefined;
   /** A draft's button was pressed: the host makes sure the work item is drawn, so its dialog can open (D112 item 8). */
   onDraft?: (draft: ActionDraftRef) => void;
+  /**
+   * The address that puts an assistant's own exchange beside the transcript: the way on with another system's
+   * assistant under its answer. Absent where nothing can stand beside the transcript.
+   */
+  asideHref?: ((assistant: string) => string) | undefined;
+  /** The assistant whose exchange stands beside the transcript now. */
+  asideOpen?: string | null | undefined;
 }) {
   const talk = useConversation();
   const markOf = useObjectMark();
@@ -711,7 +724,9 @@ export function Transcript({
   const transcriptArea = useRef<HTMLDivElement>(null);
   const animatedLayout = useAnimatedLayout({ containerRef: transcriptArea });
   if (!conversation && !pending) return null;
-  const messages = conversation?.messages ?? [];
+  // What was said in the panel beside the conversation is drawn there: the transcript is Clew's.
+  const everything = conversation?.messages ?? [];
+  const messages = everything.filter(m => !isSide(m));
   // Rows are keyed by position, so the pending question and answer become the written ones in place: the log (aria-busy
   // while the answer is written) speaks the answer once, and never the question twice (D36, 4.1.3).
   const n = messages.length;
@@ -817,6 +832,24 @@ export function Transcript({
               {keepLines(m.body)}
             </Markdown>
           </AssistantAnswer>
+          {asideHref && (
+            <HStack gap={3} vAlign="center" wrap="wrap">
+              <Button
+                size="sm"
+                variant="secondary"
+                label={`Fortsätt med ${other.name}`}
+                isDisabled={asideOpen === other.assistant}
+                href={asideHref(other.assistant)}
+              />
+              {sideCount(everything, other.assistant) > 0 && (
+                <Text type="supporting">
+                  {sideCount(everything, other.assistant) === 1
+                    ? '1 fråga i sidofältet'
+                    : `${sideCount(everything, other.assistant)} frågor i sidofältet`}
+                </Text>
+              )}
+            </HStack>
+          )}
         </ChatMessage>
       );
     const calls = readCalls(m, titleOf, systemOf);
@@ -894,12 +927,10 @@ export function Transcript({
             // system's assistant, or back to Clew, the transcript says so once, above the question (D125 item 5).
             const routed = m.role === 'user' && m.meta?.handed?.routed ? m.meta.handed : null;
             const line = routed ? undefined : (switchLine(messages, i) ?? handedBackLine(m));
-            const back = returnLine(m);
             return [
               ...(line ? [<TurnLine key={`switch-${i}`} line={line} />] : []),
               written(m, i),
               ...(routed ? [<SuggestedLine key={`suggested-${i}`} name={routed.name} source={routed.source} />] : []),
-              ...(back ? [<TurnLine key={`return-${i}`} line={back} />] : []),
             ];
           }),
           // The question on its way (D36): drawn at once as the person sent it, the answer under it pending: its place
@@ -955,7 +986,7 @@ export function Transcript({
                       />
                     )}
                     {pending.handed ? (
-                      <AssistantAnswer handover={{ source: pending.handed.source }}>
+                      <AssistantAnswer handover={{ source: pending.handed.source }} isHeld={!pending.answer}>
                         {pending.answer ? <StreamingAnswer text={keepLines(pending.answer)} /> : held}
                       </AssistantAnswer>
                     ) : (

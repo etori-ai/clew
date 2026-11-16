@@ -676,6 +676,86 @@ describe('an assistant hands the conversation back (D125 item 12)', () => {
     expect(turn.thread.handover).toMatchObject({ session: 's-9' });
     expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.handed', details: { returned: 'completed' } });
   });
+  test('asked in the panel beside the conversation: a declined question is kept as declined, Clew does not answer it unasked, and the person\u2019s own press puts it to Clew', async () => {
+    const asked: string[] = [];
+    const clew: ModelGenerate = async ({ messages, tools }) => {
+      asked.push(String(messages.at(-1)!.content));
+      // Brought to Clew by the person, the question is not offered to an assistant again.
+      expect(Object.keys(tools)).not.toContain('clew__handOver');
+      return { text: 'En person är sjukskriven i dag.', toolCalls: [] };
+    };
+    const w = world({
+      generate: clew,
+      extra: [
+        scripted([
+          [
+            { type: 'text', delta: 'Du har 25 dagar.' },
+            { type: 'done', session: 's-1' },
+          ],
+          [
+            { type: 'text', delta: 'Det där kan jag inte svara på.' },
+            { type: 'handback', reason: 'declined', session: 's-1' },
+          ],
+        ]),
+      ],
+    });
+    const first = await w.assistant.converse(hillevi, { text: 'Hur många semesterdagar?', assistant: HR, side: true });
+    expect(first.thread.messages[0]!.meta!.handed).toMatchObject({ assistant: HR, side: true });
+    expect(first.thread.messages[1]!.meta!.handover).toMatchObject({ assistant: HR, side: true });
+    const events: TurnEvent[] = [];
+    const turn = await w.assistant.converse(
+      hillevi,
+      { text: 'Hur många är sjuka i dag?', assistant: HR, side: true, conversationId: first.conversationId },
+      { emit: e => events.push(e) },
+    );
+    // Clew's own model was not asked, and the listener is not told Clew answers.
+    expect(asked).toEqual([]);
+    expect(events.some(e => e.type === 'handedBack')).toBe(false);
+    expect(turn.assistant).toBe('handover');
+    const [, , question, answer] = turn.thread.messages;
+    expect(question!.meta!.handed).toEqual({
+      assistant: HR,
+      name: 'HR-assistenten',
+      source: 'Kunskapsbanken',
+      side: true,
+    });
+    // Nothing the assistant wrote stands.
+    expect(answer!.body).toBe('');
+    expect(answer!.meta!.handover).toMatchObject({ assistant: HR, side: true, declined: true });
+    // What is said at the side is not the conversation's summary.
+    expect(turn.thread.summary).toBe('Du har 25 dagar.');
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'conversation.handed',
+      details: { assistant: HR, side: true, returned: 'declined' },
+    });
+    expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('kan jag inte');
+
+    const own = await w.assistant.converse(
+      hillevi,
+      { text: 'Hur många är sjuka i dag?', returnedBy: HR, conversationId: first.conversationId },
+      { offers: true },
+    );
+    expect(asked).toEqual(['Hur många är sjuka i dag?']);
+    expect(own.assistant).toBe('model');
+    expect(own.thread.messages.at(-2)!.meta!.handed).toEqual({
+      assistant: HR,
+      name: 'HR-assistenten',
+      source: 'Kunskapsbanken',
+      declined: true,
+      fromSide: true,
+    });
+    expect(own.thread.messages.at(-1)!.meta!.handover).toBeUndefined();
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.replied', details: { fromSide: HR } });
+  });
+  test('an assistant the conversation is not with is not believed to have returned a question', async () => {
+    const w = world({
+      generate: async () => ({ text: 'Svar.', toolCalls: [] }),
+      extra: [scripted([])],
+    });
+    const turn = await w.assistant.converse(hillevi, { text: 'Hur många är sjuka i dag?', returnedBy: HR });
+    expect(turn.thread.messages[0]!.meta?.handed).toBeUndefined();
+    expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('fromSide');
+  });
 });
 
 describe('a question on its way to another assistant is held when it names the person\u2019s staff or cards (D125 item 13)', () => {

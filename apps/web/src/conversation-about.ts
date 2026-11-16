@@ -31,8 +31,49 @@ export const withWords = (recipient: Pick<Recipient, 'name' | 'source'> | null):
  * Under a question that went to another system's assistant (D126 item 6): sent on, when Clew suggested the assistant
  * and the person chose it; sent to, when the person had picked it themself.
  */
-export const sentWords = (handed: { name: string; source: string; routed?: true | undefined }): string =>
-  handed.routed ? `Skickad vidare till ${handed.name} i ${handed.source}` : `Skickat till ${handed.name}`;
+export const sentWords = (handed: {
+  name: string;
+  source: string;
+  routed?: true | undefined;
+  fromSide?: true | undefined;
+}): string =>
+  handed.fromSide
+    ? `Från sidofältet · ${handed.name} kunde inte svara`
+    : handed.routed
+      ? `Skickad vidare till ${handed.name} i ${handed.source}`
+      : `Skickat till ${handed.name} i ${handed.source}`;
+
+type Said = Thread['messages'][number];
+/**
+ * Asked or answered in the panel beside the conversation: drawn there and not in the transcript, which stays Clew's.
+ */
+export const isSide = (m: Said): boolean => !!(m.meta?.handed?.side || m.meta?.handover?.side);
+/**
+ * One assistant's own exchange in a conversation, as the panel beside it draws it: every question that went to that
+ * assistant, from the transcript or from the panel, and what it answered. A question the person brought to Clew from
+ * the panel is Clew's and is not among them.
+ */
+export const sideMessages = (messages: Said[], assistant: string): Said[] =>
+  messages.filter(m =>
+    m.role === 'user'
+      ? m.meta?.handed?.assistant === assistant &&
+        !m.meta.handed.fromSide &&
+        !(m.meta.handed.declined && !m.meta.handed.side)
+      : m.meta?.handover?.assistant === assistant,
+  );
+/** How many questions were asked of an assistant in the panel. */
+export const sideCount = (messages: Said[], assistant: string): number =>
+  messages.filter(m => m.role === 'user' && m.meta?.handed?.side && m.meta.handed.assistant === assistant).length;
+/** The conversation's address with that assistant's exchange beside it, or with none. */
+export function assistantHref(pathname: string, search: URLSearchParams | string, assistant: string | null): string {
+  const q = new URLSearchParams(search);
+  if (assistant) q.set(ASSISTANT_PARAM, assistant);
+  else q.delete(ASSISTANT_PARAM);
+  const s = q.toString();
+  return s ? `${pathname}?${s}` : pathname;
+}
+/** The name the address gives the assistant whose exchange stands beside the conversation. */
+export const ASSISTANT_PARAM = 'assistant';
 
 /** The one line that takes the place of Clew's suggestion once the person has chosen the assistant (D126 item 6). */
 export const suggestedWords = (handed: { name: string; source: string }): string =>

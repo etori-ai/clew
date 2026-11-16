@@ -3387,6 +3387,13 @@ export const MessageMetaSchema = object({
       routed: Type.Optional(Type.Literal(true)),
       /** The assistant did not take the question (D125 item 12): the answer under it is Clew's own. */
       declined: Type.Optional(Type.Literal(true)),
+      /** Asked in the panel beside the conversation: the question and its answer are drawn there, not in the transcript. */
+      side: Type.Optional(Type.Literal(true)),
+      /**
+       * With `declined`: the question was asked in the panel, the assistant could not answer it, and the person chose
+       * to put it to Clew. It stands in the transcript and says where it came from.
+       */
+      fromSide: Type.Optional(Type.Literal(true)),
     }),
   ),
   /** On Clew's own answer to a question another system's assistant handed back (D125 item 12): which assistant did. */
@@ -3413,6 +3420,13 @@ export const MessageMetaSchema = object({
       cut: Type.Optional(Type.Literal(true)),
       /** The assistant considered the matter done and returned the conversation to Clew with this answer (D125 item 12). */
       returned: Type.Optional(Type.Literal(true)),
+      /** The answer to a question asked in the panel beside the conversation: drawn there, not in the transcript. */
+      side: Type.Optional(Type.Literal(true)),
+      /**
+       * With `side`: the assistant did not take the question. The body is empty; the panel says so and offers to put
+       * the question to Clew, which is the person's own press.
+       */
+      declined: Type.Optional(Type.Literal(true)),
     }),
   ),
 });
@@ -4681,6 +4695,16 @@ export const ConversationInput = object({
    * the person chose to send it anyway (D125 item 13). Recorded with the turn.
    */
   confirmed: Type.Optional(Type.Literal(true)),
+  /**
+   * With `assistant`: the question is asked in the panel beside the conversation, where that assistant's own exchange
+   * is drawn. A question it does not take is then kept as declined and never answered by Clew unasked.
+   */
+  side: Type.Optional(Type.Literal(true)),
+  /**
+   * Without `assistant`: this assistant could not answer the question in the panel and the person chose to put it to
+   * Clew. Recorded on the question when the conversation is that assistant's; never trusted for access.
+   */
+  returnedBy: Type.Optional(HandoverAssistantSchema.properties.id),
 });
 export type ConversationInput = Static<typeof ConversationInput>;
 /** One turn's answer: its shape, where it came from, and what it produced for the page. */

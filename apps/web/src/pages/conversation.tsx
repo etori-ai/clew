@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Thread, ViewRef } from '@clew/contracts';
 import {
-  AreaChip,
   ChatLayout,
   Divider,
   EmptyState,
@@ -34,8 +33,10 @@ import { useMarks } from '../marks';
 import { usePageTitle } from '../page-title';
 import { DOT } from '../dot';
 import {
+  ASSISTANT_PARAM,
   aboutWords,
   addressEntity,
+  assistantHref,
   askAboutWords,
   askPersonPlaceholder,
   withWords,
@@ -45,6 +46,7 @@ import {
 import { mobileQuery, shortQuery } from '../components/shell';
 import { Composer } from '../components/composer';
 import { Transcript } from '../components/conversation';
+import { AssistantPane } from '../components/assistant-pane';
 import { titled, useConversation, type ChipRef } from '../components/conversation-context';
 import { drawn } from '../components/thing-panel';
 import { cardBody } from '../components/card-panel';
@@ -138,6 +140,25 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
     closePane();
   };
   const about = useAbout({ here, closePane, escape, onChange, onOpenItem: setOpenItem });
+  // Another system's assistant beside the conversation (`assistant` in the address): its own exchange and its own box.
+  // One panel holds one thing, so it stands in the place of the thing the conversation is about while it is open.
+  const asideId = new URLSearchParams(search).get(ASSISTANT_PARAM);
+  const closeAside = useCallback(() => {
+    talk.dropAside();
+    navigate(assistantHref(pathname, search, null));
+    requestAnimationFrame(() => talk.focus());
+  }, [navigate, pathname, search, talk]);
+  const aside = asideId ? (
+    <AssistantPane
+      assistant={asideId}
+      onClose={closeAside}
+      onKeyDown={e => {
+        if (e.key !== 'Escape' || (e.target as HTMLElement).closest(OWN_ESCAPE)) return;
+        e.stopPropagation();
+        closeAside();
+      }}
+    />
+  ) : null;
   // A view an answer names (D116): a table or a list is its own page with the conversation as the way back, one thing
   // beside the transcript.
   const viewHref = (v: ViewRef) => viewOpenHref(views, pathname, search, v);
@@ -159,6 +180,8 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       onDraft={draft => {
         if (!drawn(draft.threadId)) navigate(withCard(pathname, search, draft.threadId));
       }}
+      asideHref={id => assistantHref(pathname, search, id)}
+      asideOpen={asideId}
     />
   );
   // Opened from its address, a conversation is read before it is drawn: its shape meanwhile, never an empty page. On
@@ -166,16 +189,14 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   // same log when the answer gives the conversation its address, so it speaks the answer once (4.1.3).
   const routeId = pathname.startsWith('/conversations/') ? pathname.slice('/conversations/'.length) : null;
   const loading = !!routeId && routeId !== 'new' && talk.conversation?.id !== routeId && !talk.pending && !talk.error;
-  const handed = talk.handed;
-  const handedOrdinal = handed ? (marks.system(handed.id.slice(0, handed.id.indexOf(':')))?.ordinal ?? null) : null;
   // The line under the title: whom the conversation is with and, once something is asked and the title is the question,
   // which thing it is about. Before that the title says it ("Fråga om …"); where nothing stands beside the transcript
   // the line still holds the thing's name as the link to its page.
   const asked = !!talk.conversation || !!talk.pending;
-  const paneShown = !!about.pane && beside;
+  const paneShown = !!about.pane && beside && !aside;
   const meta = (
     <Text type="supporting" color="secondary">
-      {`Samtal med ${withWords(handed)}`}
+      {`Samtal med ${withWords(null)}`}
       {about.name && (asked || !paneShown) && (
         <>
           {asked ? `${DOT}om ` : DOT}
@@ -188,8 +209,6 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   // The page names itself in the browser tab (2.4.2). The log speaks its answers and the box keeps the focus, so the
   // change of title is not spoken.
   usePageTitle(heading, false);
-  // Whose box this is now, by the mark of the system it lives in (D71, board SamtalEneo).
-  const handedChip = handed ? <AreaChip ordinal={handedOrdinal} label={handed.source} /> : undefined;
   const composer = (
     <Composer
       place="conversation"
@@ -230,11 +249,13 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   if (short)
     return (
       <>
-        <PageFrame entry={entry} title={heading} titleId="samtal" meta={meta} actions={handedChip} label="Samtalet">
-          <VStack gap={4}>
-            {body}
-            {composer}
-          </VStack>
+        <PageFrame entry={entry} title={heading} titleId="samtal" meta={meta} label="Samtalet">
+          {aside ?? (
+            <VStack gap={4}>
+              {body}
+              {composer}
+            </VStack>
+          )}
         </PageFrame>
         {dialog}
       </>
@@ -246,11 +267,14 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
         title={heading}
         titleId="samtal"
         meta={meta}
-        actions={handedChip}
         label="Samtalet"
         bare
         end={
-          beside && about.pane ? (
+          beside && aside ? (
+            <LayoutPanel width={PANE} padding={0} hasDivider role="complementary" label="Assistent i ett annat system">
+              {aside}
+            </LayoutPanel>
+          ) : beside && about.pane ? (
             <LayoutPanel
               width={PANE}
               padding={0}
@@ -266,9 +290,8 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       >
         {/* As the `ai-chat` template holds it: the chat column is the content's full height, and ChatLayout owns the
             scroll, so the box stays docked inside the window. */}
-        <VStack height="100%">
-          <ChatLayout composer={composer}>{body}</ChatLayout>
-        </VStack>
+        {/* Where nothing fits beside the transcript, the assistant's exchange takes the column until it is closed. */}
+        <VStack height="100%">{!beside && aside ? aside : <ChatLayout composer={composer}>{body}</ChatLayout>}</VStack>
       </PageFrame>
       {dialog}
     </>

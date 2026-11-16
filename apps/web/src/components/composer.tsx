@@ -413,7 +413,10 @@ export function Composer({
           }}
         />
       }
-      headerActions={choosable ? <Recipient isDisabled={talk.busy} menu={recipientMenu} /> : undefined}
+      /* In a conversation the box is Clew's, always: another system's assistant is talked to in the panel beside it. */
+      headerActions={
+        choosable && place === 'landing' ? <Recipient isDisabled={talk.busy} menu={recipientMenu} /> : undefined
+      }
       /* What leaves Clew while another system's assistant is asked (D125 items 4 and 5, board SamtalEneo). */
       headerContext={
         handed ? (

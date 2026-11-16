@@ -128,9 +128,11 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
  * never as its own answer or its own read. A turn the other system failed to answer is Clew's own words already.
  */
 export const heardBody = (m: Pick<Thread['messages'][number], 'role' | 'body' | 'meta'>): string => {
-  if (m.role === 'user' && m.meta?.handed)
+  // A question the person brought to Clew from the panel is a question to Clew.
+  if (m.role === 'user' && m.meta?.handed && !m.meta.handed.fromSide)
     return `(Frågan ställdes till ${m.meta.handed.name} i ${m.meta.handed.source}.) ${m.body}`;
   const handover = m.role === 'assistant' ? m.meta?.handover : undefined;
+  if (handover?.declined) return `(${handover.name} i ${handover.source} svarade inte på frågan.)`;
   if (handover && !handover.failed)
     return `(Det här svarade ${handover.name} i ${handover.source}, inte du. Det är inget du själv har läst.) ${m.body}`;
   return m.body;
@@ -644,6 +646,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       const routable =
         observer.offers &&
         !input.own &&
+        !input.returnedBy &&
         !declined &&
         model.tools &&
         deps.handover &&
@@ -727,8 +730,25 @@ export function assistantUsecases(deps: AssistantDeps) {
         : {}),
     };
     // A question that went to another system's assistant and came back says where it went (D125 item 12).
+    // The person put a question to Clew that the conversation's assistant could not answer in the panel: the question
+    // says where it came from. Only the assistant the conversation is with is believed.
+    const fromSide =
+      !declined && input.returnedBy && existing?.handover?.assistant === input.returnedBy
+        ? existing.handover
+        : undefined;
     const askedMeta: MessageMeta = {
       ...(chips.length ? { chips, refs } : {}),
+      ...(fromSide
+        ? {
+            handed: {
+              assistant: fromSide.assistant,
+              name: fromSide.name,
+              source: fromSide.source,
+              declined: true as const,
+              fromSide: true as const,
+            },
+          }
+        : {}),
       ...(declined
         ? {
             handed: {
@@ -811,6 +831,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           ...(declined
             ? { handedBack: declined.handedBack.assistant, ...(declined.routed ? { routed: 'suggested' } : {}) }
             : {}),
+          ...(fromSide ? { fromSide: fromSide.assistant } : {}),
         },
       });
     });

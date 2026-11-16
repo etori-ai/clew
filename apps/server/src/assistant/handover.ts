@@ -100,6 +100,9 @@ export function handoverPath(deps: AssistantDeps) {
   ): Promise<ConversationResponse | HandedBack> {
     // Clew's own assistant suggested this assistant and the person said yes (D125 item 11): the turn says so.
     const routed = input.suggested === true;
+    // Asked in the panel beside the conversation: the exchange is drawn there, and a question the assistant does not
+    // take stays there as declined until the person puts it to Clew themself.
+    const side = input.side === true;
     const outside = deps.handover;
     const picked = input.assistant;
     if (!outside || !picked) throw new InputError('Det finns ingen assistent att lämna frågan till.');
@@ -205,7 +208,7 @@ export function handoverPath(deps: AssistantDeps) {
     }
     if (observer.signal?.aborted) throw new TurnStopped();
     emit({ type: 'step', step: { ...step, status: failed ? 'error' : 'complete', ms: took() } });
-    if (returned === 'declined' && !failed) {
+    if (returned === 'declined' && !failed && !side) {
       // The question is not that assistant's: nothing it wrote stands, nothing is stored here, and the caller answers
       // the person's same words itself. What the caller is told is who handed back and where the conversation there
       // is, never a word of the other system's.
@@ -235,7 +238,13 @@ export function handoverPath(deps: AssistantDeps) {
       ...(link ? { link } : {}),
     };
     const who = { assistant: picked, name: listed.name, source: listed.source };
-    const asked = { ...who, ...(routed ? { routed: true as const } : {}) };
+    const asked = { ...who, ...(routed ? { routed: true as const } : {}), ...(side ? { side: true as const } : {}) };
+    const declinedAtSide = side && returned === 'declined' && !failed;
+    // Nothing the assistant wrote stands when it did not take the question.
+    if (declinedAtSide && body) {
+      body = '';
+      emit({ type: 'text', delta: '', reset: true });
+    }
     const answerMeta: MessageMeta = {
       shape: 'svar',
       assistant: 'handover',
@@ -253,6 +262,8 @@ export function handoverPath(deps: AssistantDeps) {
         ...(failed ? { failed: true as const } : {}),
         ...(cut ? { cut: true as const } : {}),
         ...(returned === 'completed' && !failed ? { returned: true as const } : {}),
+        ...(side ? { side: true as const } : {}),
+        ...(declinedAtSide ? { declined: true as const } : {}),
       },
     };
     await store.transaction(async tx => {
@@ -267,7 +278,7 @@ export function handoverPath(deps: AssistantDeps) {
           week: null,
           connector: 'clew',
           area: 'fragor',
-          summary: body,
+          summary: body || input.text.slice(0, 200),
           handover: state,
           items: [],
           actions: [],
@@ -278,7 +289,8 @@ export function handoverPath(deps: AssistantDeps) {
           updatedAt: at,
         });
       } else {
-        await tx.updateThread(conversationId, { summary: body, updatedAt: at, handover: state });
+        // What is said at the side does not become the conversation's summary: that stays the transcript's.
+        await tx.updateThread(conversationId, { ...(side ? {} : { summary: body }), updatedAt: at, handover: state });
       }
       await tx.addMessage(conversationId, { role: 'user', body: input.text, at, meta: { handed: asked } });
       await tx.addMessage(conversationId, { role: 'assistant', body, at, meta: answerMeta });
@@ -298,6 +310,8 @@ export function handoverPath(deps: AssistantDeps) {
           ...(cut ? { cut: true } : {}),
           ...(failed ? { failed } : {}),
           ...(returned === 'completed' && !failed ? { returned: 'completed' } : {}),
+          ...(side ? { side: true } : {}),
+          ...(declinedAtSide ? { returned: 'declined' } : {}),
           // How the assistant was chosen: by the person in the list above the field, or on Clew's suggestion.
           ...(routed ? { routed: 'suggested' } : {}),
           // The question was held for naming a person or a card of the asker's, and they sent it anyway.
