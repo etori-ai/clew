@@ -129,12 +129,15 @@ export function AssistantPane({
   const [value, setValue] = useState('');
   // Opening the panel is the person turning to this assistant: its box takes the focus, as a dialog's first field does.
   const field = useRef<ChatComposerInputHandle>(null);
-  // Also once the conversation is read from its address, since the page gives the focus to Clew's box when it has.
+  // Also once the conversation is read from its address, since the page gives the focus to Clew's box when it has, and
+  // once the assistant is known: until the list of assistants is read the panel has no field to focus, and a person
+  // who then typed would be writing to Clew.
   const conversationId = talk.conversation?.id;
+  const known = !!talk.conversation?.handover || !!listed;
   useEffect(() => {
     const frame = requestAnimationFrame(() => field.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [assistant, conversationId]);
+  }, [assistant, conversationId, known]);
   // A question Clew held on its way out waits for the person's choice: the safe answer takes the focus (D125 item 13).
   const stay = useRef<HTMLButtonElement>(null);
   const isHeld = talk.aside?.assistant === assistant && !!talk.aside.held;
