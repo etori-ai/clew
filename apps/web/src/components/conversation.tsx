@@ -212,7 +212,7 @@ function recipientAfter(messages: ThreadMessage[]) {
  * The words above Clew's own answer to a question another assistant handed back, in a conversation from before
  * 2026-11-16: an assistant no longer hands a question back, and Clew no longer answers in its place unasked.
  */
-const handedBackText = (name: string) => `${name} lämnade tillbaka frågan · Clew svarar`;
+const handedBackText = (name: string) => `${name} lämnade tillbaka frågan · assistenten svarar`;
 function handedBackLine(m: ThreadMessage): TurnLineContent | undefined {
   return m.role === 'assistant' && m.meta?.handedBack ? toClew(handedBackText(m.meta.handedBack.name)) : undefined;
 }
@@ -313,7 +313,7 @@ function HandoverOffer({
             <Text as="span" weight="semibold">
               {offer.name}
             </Text>
-            {` lämnar den Clew och hamnar i ${offer.source}.`}
+            {` hamnar den i ${offer.source}.`}
           </Text>
         </HStack>
         <HStack gap={2} wrap="wrap">
@@ -321,7 +321,7 @@ function HandoverOffer({
             ref={first}
             size="sm"
             variant="primary"
-            label="Låt Clew svara"
+            label="Låt assistenten svara"
             isDisabled={isDisabled}
             onClick={talk.declineOffer}
           />
@@ -351,7 +351,7 @@ function HandoverOffer({
           isDisabled={isDisabled}
           onClick={talk.acceptOffer}
         />
-        <Button variant="secondary" label="Svara själv, Clew" isDisabled={isDisabled} onClick={talk.declineOffer} />
+        <Button variant="secondary" label="Svara själv" isDisabled={isDisabled} onClick={talk.declineOffer} />
       </HStack>
     </VStack>
   );
@@ -396,7 +396,7 @@ function AssistantAnswer({
             </MetadataListItem>
           </MetadataList>
         )}
-        {handover.cut && <Text type="supporting">Svaret var längre än Clew visar.</Text>}
+        {handover.cut && <Text type="supporting">Svaret var längre än det som visas här.</Text>}
         {handover.link && (
           <Link href={handover.link} target="_blank" rel="noreferrer">
             {`Fortsätt samtalet i ${handover.source}`}
@@ -493,7 +493,7 @@ function ProposalWeek({ thread }: { thread: Thread }) {
   const events = week.data?.events ?? EMPTY_EVENTS;
   if (!thread.week) return null;
   return (
-    <ChatMessage sender="assistant" name={<VisuallyHidden>Clew</VisuallyHidden>}>
+    <ChatMessage sender="assistant" name={<VisuallyHidden>Assistenten</VisuallyHidden>}>
       <ChatMessageBubble variant="ghost" width="100%">
         <EventList
           from={thread.week}
@@ -704,7 +704,7 @@ function readCalls(
   });
 }
 /** Clew's own turn names itself (boards Samtal and SamtalVerktyg); what it read is said by its calls. */
-const CLEW = 'Clew';
+const CLEW = 'Assistenten';
 /**
  * The transcript (D31; D126, boards Samtal, SamtalVerktyg, SamtalEneoFraga and SamtalEneo): the conversation in the
  * `ai-chat` template's message list. The person's chips sit above their bubble as tokens, except the thing the
@@ -1054,7 +1054,7 @@ export function Transcript({
                       <ChatToolCalls
                         calls={pending.steps.map(stepCall)}
                         defaultIsExpanded
-                        label={`Clew arbetar · ${pending.steps.length} steg`}
+                        label={`Assistenten arbetar · ${pending.steps.length} steg`}
                       />
                     )}
                     {pending.handed ? (

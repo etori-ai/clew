@@ -310,16 +310,17 @@ test.describe('Hem', () => {
 });
 
 /**
- * Hem's line (D126 items 4 and 9, board HemFraga variant a): one field, labelled "Fråga Clew", filling the row under the
- * greeting, and the button "Fråga Clew". Nothing is answered on Hem: Enter or the button asks the question as Hem's
+ * Hem's line (D126 items 4 and 9, board HemFraga variant a): one field, labelled "Fråga assistenten", filling the row under the
+ * greeting, and the button "Fråga assistenten". Nothing is answered on Hem: Enter or the button asks the question as Hem's
  * composer did, and the conversation takes the column with the question in its transcript; with nothing written the
  * button opens Ny fråga and Enter does nothing. Whom to ask, the model and `@` are the conversation page's box's.
  */
 test.describe('Hem’s line', () => {
   test.use({ viewport: desktop });
-  const askButton = (page: Page) => page.getByRole('main').getByRole('button', { name: 'Fråga Clew', exact: true });
+  const askButton = (page: Page) =>
+    page.getByRole('main').getByRole('button', { name: 'Fråga assistenten', exact: true });
 
-  test('a labelled field and Fråga Clew side by side; Enter asks once, and the conversation takes the column with the question asked', async ({
+  test('a labelled field and Fråga assistenten side by side; Enter asks once, and the conversation takes the column with the question asked', async ({
     page,
     api,
   }) => {

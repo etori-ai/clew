@@ -177,7 +177,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
         .filter(Boolean)
         .join(' · ')
     : '';
-  // "Fråga Clew" on a lens's tab (D126 rule 5): a conversation about the people under that lens (`?lens=`).
+  // "Fråga assistenten" on a lens's tab (D126 rule 5): a conversation about the people under that lens (`?lens=`).
   const ask = lens ? (
     <AskClew
       subject={{

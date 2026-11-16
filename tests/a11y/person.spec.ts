@@ -15,7 +15,7 @@ import { CONTACT, FRITIDS, JOHAN_EMAIL, MELLANSTADIET, People } from './person-d
 /**
  * The person as a page (D126 rule 1, board Person; D97 item 5): the thing's page, with the way back, the avatar, the
  * name with the title and the unit, the actions under the name (the first as the primary, the second as a secondary,
- * Fråga Clew, the rest under Fler åtgärder), the person's sections as tabs that are links with their own address
+ * Fråga assistenten, the rest under Fler åtgärder), the person's sections as tabs that are links with their own address
  * (`?section=`), and the facts (Anställning, Kontakt, Enhet) in the end panel, above the read where the window is
  * narrow. Nothing opens over or beside the page (rule 3): a work item is its own page, the talk is its tab, and a
  * propose's dialog comes before anything is created (rule 4). `person-data.ts` answers the person and their sections,
@@ -64,10 +64,10 @@ test.describe('the person as a page', () => {
     await expect(main.getByText('Lärare 4–6 · Bergsåkers skola', { exact: true })).toBeVisible();
     // The avatar is decoration: the name beside it says who it is.
     await expect(main.locator('.astryx-avatar').first()).toHaveAttribute('aria-hidden', 'true');
-    // The actions: the first as the primary, the second as a secondary, Fråga Clew, the rest under Fler åtgärder.
+    // The actions: the first as the primary, the second as a secondary, Fråga assistenten, the rest under Fler åtgärder.
     await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toBeVisible();
     await expect(main.getByRole('button', { name: 'Registrera frånvaro', exact: true })).toBeVisible();
-    await expect(main.getByRole('button', { name: 'Fråga Clew' })).toBeVisible();
+    await expect(main.getByRole('button', { name: 'Fråga assistenten' })).toBeVisible();
     await main.getByRole('button', { name: 'Fler åtgärder för Johan Byström' }).click();
     await expect(page.getByRole('menuitem')).toHaveText(['Boka samtal']);
     await page.keyboard.press('Escape');
@@ -291,7 +291,7 @@ test.describe('the person’s page where the window is narrow', () => {
 
 test.describe('the person on a phone', () => {
   test.use({ viewport: phoneSize });
-  test('Åtgärder holds every action with Fråga Clew under it, and the tabs scroll in their strip', async ({
+  test('Åtgärder holds every action with Fråga assistenten under it, and the tabs scroll in their strip', async ({
     page,
     api: _,
   }) => {
@@ -305,13 +305,13 @@ test.describe('the person on a phone', () => {
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toHaveCount(0);
-    await expect(main.getByRole('button', { name: 'Fråga Clew' })).toBeVisible();
+    await expect(main.getByRole('button', { name: 'Fråga assistenten' })).toBeVisible();
     await expect(tabs(page).getByRole('link', { name: 'Översikt' })).toBeInViewport();
   });
 });
 
 /**
- * One conversation per person, not one per tab (the product owner, 2026-11-14): "Fråga Clew" on any of a person's tabs
+ * One conversation per person, not one per tab (the product owner, 2026-11-14): "Fråga assistenten" on any of a person's tabs
  * lands on a conversation about the person, titled "Fråga om <name>" before anything is written, with the person beside
  * it drawn with the page's parts and tabs; the tab it came from is only the pane's first tab. Changing the pane's tab
  * changes its address and nothing else; Esc in the pane lets go of the person and keeps the conversation.
@@ -331,12 +331,12 @@ test.describe('a conversation about a person', () => {
       [CONTACT, 'Kontakt'],
     ] as const) {
       await open(page, `/people/johan?section=${section}&from=%2Fstaff`);
-      await page.getByRole('main').getByRole('button', { name: 'Fråga Clew' }).click();
+      await page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' }).click();
       // The address carries the person; the tab only says what the pane shows first.
       await expect(page).toHaveURL(`/conversations/new?person=johan&section=${section}`);
       await expect(page.getByRole('heading', { level: 1, name: 'Fråga om Johan Byström' })).toBeVisible();
       await expect(page).toHaveTitle('Fråga om Johan Byström · Startsidan');
-      await expect(page.getByText('Samtal med Clew', { exact: true })).toBeVisible();
+      await expect(page.getByText('Samtal med assistenten', { exact: true })).toBeVisible();
       await expect(page.getByText('Fråga om Johan', { exact: true })).toBeVisible();
       await expect(box(page)).toBeFocused();
       // The pane is the person: the name as the link to their page at the same tab, the line under it, the tabs.
@@ -349,7 +349,7 @@ test.describe('a conversation about a person', () => {
       await expect(pane(page).getByRole('region', { name: label, exact: true })).toBeVisible();
       // Only the reads: none of the page's actions.
       await expect(pane(page).getByRole('button', { name: 'Boka möte' })).toHaveCount(0);
-      await expect(pane(page).getByRole('button', { name: 'Fråga Clew' })).toHaveCount(0);
+      await expect(pane(page).getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     }
     await expectNoAxeViolations(page);
     // The pane's Översikt is an address of the same conversation: the subject stays, nothing is asked.

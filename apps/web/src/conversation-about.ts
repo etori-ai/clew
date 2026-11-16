@@ -25,7 +25,7 @@ export function talkingTo(thread: Pick<Thread, 'handover' | 'messages'>): Recipi
 
 /** Whom, in the line under a conversation's title and on Alla samtal: "Clew", "HR-assistenten i Eneo". */
 export const withWords = (recipient: Pick<Recipient, 'name' | 'source'> | null): string =>
-  recipient ? `${recipient.name} i ${recipient.source}` : 'Clew';
+  recipient ? `${recipient.name} i ${recipient.source}` : 'assistenten';
 
 /**
  * Under a question that went to another system's assistant (D126 item 6): sent on, when Clew suggested the assistant
@@ -77,11 +77,11 @@ export const ASSISTANT_PARAM = 'assistant';
 
 /** The one line that takes the place of Clew's suggestion once the person has chosen the assistant (D126 item 6). */
 export const suggestedWords = (handed: { name: string; source: string }): string =>
-  `Clew föreslog ${handed.name} i ${handed.source} · du valde att fråga den`;
+  `Assistenten föreslog ${handed.name} i ${handed.source} · du valde att fråga den`;
 
 /**
  * The chips the conversation's page takes from its own address (`?card=` a work item, `?open=` a view): what stands
- * beside the transcript is what every question there is about, so "Fråga Clew" never puts these in the drawer too.
+ * beside the transcript is what every question there is about, so "Fråga assistenten" never puts these in the drawer too.
  */
 export function addressChipRefs(search: URLSearchParams | string): string[] {
   const q = new URLSearchParams(search);
@@ -93,7 +93,7 @@ export function addressChipRefs(search: URLSearchParams | string): string[] {
 /** A person or a unit, the two things with tabs of their own that a conversation can be about. */
 export type EntitySubjectKind = 'person' | 'unit';
 /**
- * What "Fråga Clew" on a person's or a unit's page asks about (D126 rule 5; the product owner, 2026-11-14: one
+ * What "Fråga assistenten" on a person's or a unit's page asks about (D126 rule 5; the product owner, 2026-11-14: one
  * conversation per person, not one per tab): the person or the unit, the same subject whichever of their tabs it was
  * pressed on. The tab only says what the pane beside the transcript shows first (`section`, the page's own name for a
  * tab), never what the conversation is about. Nothing about them goes with the question as a chip: what a source says

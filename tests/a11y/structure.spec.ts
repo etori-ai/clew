@@ -69,9 +69,11 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await open(page, '/');
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
     await expect(rail).toHaveCount(1);
-    // The work first (D126 item 10): Sök alone at the top, and Ny fråga heads the conversations under Fråga Clew.
+    // The work first (D126 item 10): Sök alone at the top, and Ny fråga heads the conversations under Fråga assistenten.
     await expect(rail.getByRole('group', { name: 'Börja' }).getByRole('button')).toHaveText(['Sök']);
-    await expect(rail.getByRole('group', { name: 'Fråga Clew' }).getByRole('link').first()).toHaveText('Ny fråga');
+    await expect(rail.getByRole('group', { name: 'Fråga assistenten' }).getByRole('link').first()).toHaveText(
+      'Ny fråga',
+    );
     // The places (D126 rule 7): Hem, Att göra with how much needs the person, then Kalender; the piles and the areas
     // are Att göra's tabs and filter, not rows here, and Hem carries no word of its own (rule 8).
     await expect(rail.getByRole('link', { name: /^Hem/ })).toHaveAttribute('href', '/');
@@ -81,9 +83,11 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(rail.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
     // Without a tool an administrator placed there is no Verktyg (D40).
     await expect(rail.getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
-    // Fråga Clew is a section of the rail with the conversations as its rows; a conversation the data says nothing about
+    // Fråga assistenten is a section of the rail with the conversations as its rows; a conversation the data says nothing about
     // has no dot.
-    const talk = rail.getByRole('group', { name: 'Fråga Clew' }).getByRole('link', { name: 'Vem är på plats i dag?' });
+    const talk = rail
+      .getByRole('group', { name: 'Fråga assistenten' })
+      .getByRole('link', { name: 'Vem är på plats i dag?' });
     await expect(talk).toHaveAttribute('href', '/conversations/fraga');
     await expect(rail.getByRole('listitem').filter({ has: talk }).getByRole('img')).toHaveCount(0);
     for (const gone of ['Behöver dig', 'Jag föreslår', 'Till kännedom', 'Inte nu'])
@@ -228,7 +232,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(heading(page, 2, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
     await expect(card.getByRole('checkbox')).toHaveCount(3);
     await expect(card.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
-    await expect(page.getByRole('article', { name: 'Clew', exact: true })).toContainText('saknar beställning');
+    await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toContainText('saknar beställning');
   });
 
   test('the rail searches conversations and cards and opens what is picked: from Hem the work item’s page', async ({
@@ -292,7 +296,7 @@ test.describe('3.1.2 language of parts', () => {
     await expect(answer(page)).toBeVisible();
     await expect(page.getByRole('article', { name: 'Du', exact: true })).toBeVisible();
     // Clew's turn names itself (board Samtal): the same word in Swedish as in English.
-    await expect(page.getByRole('article', { name: 'Clew', exact: true })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toBeVisible();
   });
 
   // On the landing the box has no header and already holds the focus (G); the conversation's scope line carries the shortcut.
@@ -358,9 +362,9 @@ test.describe('D26 questions answered from documents', () => {
       'target',
       '_blank',
     );
-    // A passage goes into a conversation only beside a conversation's own box (D112 item 7); the page has "Fråga Clew".
+    // A passage goes into a conversation only beside a conversation's own box (D112 item 7); the page has "Fråga assistenten".
     await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    await expect(panel.getByRole('button', { name: 'Fråga Clew' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Fråga assistenten' })).toBeVisible();
     await expect(rows.nth(2)).toContainText('2 år sedan');
     await expect(rows.nth(2).getByRole('link', { name: 'Öppna' })).toHaveCount(0);
     await expect(panel.getByText(/^SharePoint svarade inte\./)).toBeVisible();

@@ -2384,10 +2384,10 @@ export { expect };
 export const answer = (page: Page) =>
   page.locator('.astryx-chat-message-bubble').filter({ hasText: 'Tio personer är på plats i dag.' });
 /**
- * Hem's line (D126 items 4 and 9, board HemFraga): a plain field named "Fråga Clew", whose question is asked on the
+ * Hem's line (D126 items 4 and 9, board HemFraga): a plain field named "Fråga assistenten", whose question is asked on the
  * conversation page. It takes no `@`, so it is no combobox.
  */
-export const hemLine = (page: Page) => page.getByRole('textbox', { name: 'Fråga Clew', exact: true });
+export const hemLine = (page: Page) => page.getByRole('textbox', { name: 'Fråga assistenten', exact: true });
 /**
  * Where a question is written: Hem's line, the box on Ny fråga ("Vad vill du göra"), and "Svara i samtalet" once a
  * conversation is open (the scope line, H3.3). One of them is on a page at a time. Hem's line is a plain input, so what

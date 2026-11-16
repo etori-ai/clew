@@ -70,10 +70,10 @@ function placeOf(from: string | null): RailCurrent {
  * stands when the view is no tool of its own. A read the person may not open, and one that does not exist, both say
  * "Verktyget finns inte" and nothing else, and are not asked for.
  * A list or a table is a register (D126 rule 8, board Personal, the `table-page` template): the name as the heading
- * with the system's badge and "Fråga Clew" on its line, the view's own search field and choice and the count under it,
+ * with the system's badge and "Fråga assistenten" on its line, the view's own search field and choice and the count under it,
  * then the rows. The name in a row is the link to the row's own read, its page (rule 4); a row never opens a panel.
  * One thing (a record, a contact card, a text, a document) is a thing's page (rule 1, the `work-item-detail`
- * template): the way back and the title, "Fråga Clew" under it, the read in the column and a record's facts in the end
+ * template): the way back and the title, "Fråga assistenten" under it, the read in the column and a record's facts in the end
  * panel, above the read where the window is narrow. The view is drawn by the one renderer (D38).
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -134,7 +134,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     manager: user.role === 'manager',
   });
   const tool = main.shown?.capability === capability ? main.shown : null;
-  // "Fråga Clew" (D126 rule 5): a new conversation about the view as it stands; a list goes as its chip alone, one
+  // "Fråga assistenten" (D126 rule 5): a new conversation about the view as it stands; a list goes as its chip alone, one
   // thing stands beside the conversation.
   const subject =
     ready && title

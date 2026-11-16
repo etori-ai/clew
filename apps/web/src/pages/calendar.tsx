@@ -149,7 +149,7 @@ const proposalStatus: Partial<Record<Proposal['status'], string>> = {
 /**
  * A meeting's buttons (D112 item 9, board Calendar, the `invited` state): what the calendar lets the person do, move or
  * cancel their own booking (the dialog that was the entry's, opened at that step, so the keyboard path is the same as
- * before), and "Fråga Clew". A meeting someone else organises has no buttons of the organiser's, and the calendar
+ * before), and "Fråga assistenten". A meeting someone else organises has no buttons of the organiser's, and the calendar
  * offers no reply of the person's own, so it has none.
  */
 function EventActions({
@@ -207,7 +207,7 @@ function EventFacts({ item }: { item: AgendaItem }) {
  * A proposal's buttons (D112 item 9, board Calendar, the `thing` state): the proposal's existing decisions, through the
  * same use cases as before (`modules/calendar/usecases/decisions.ts`): send the invitation for this time, move it (the
  * dialog, never drag alone), draw the proposals again in the next week, and undo while the calendar allows it; then
- * "Fråga Clew". A decision that fails says so above the buttons.
+ * "Fråga assistenten". A decision that fails says so above the buttons.
  */
 function ProposalActions({
   item,
@@ -363,7 +363,7 @@ const TITLE_ID = 'calendar-title';
  * event or a proposal chosen in the grid opens in the page's own pane in the end slot (`entry` in the address, so Back,
  * a reload and Esc keep working): its buttons under its name and its facts under them, a proposal's name the link to
  * its work item. Below the width where the pane fits beside the week, on a short screen and on a phone, the same pane is
- * a drawer over the grid. Nothing else opens beside the calendar (D126 rule 3), and the pane has no box: "Fråga Clew"
+ * a drawer over the grid. Nothing else opens beside the calendar (D126 rule 3), and the pane has no box: "Fråga assistenten"
  * and "Fråga om veckan" lead to a conversation with the entry or the range beside it (rule 5). The proposals are reached
  * from "Förslag N" in the page's header, a menu that leads to each one. A booking of one's own and a moved or cancelled
  * entry go through dialogs, so every action has a keyboard path; drag is a convenience for proposals alone.
@@ -486,7 +486,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const proposed = thread?.state === 'open' ? thread.proposals.filter(p => p.status === 'proposed') : [];
   const mark = thread ? marks.ofThread(thread) : null;
 
-  /** An entry as the pane draws it (D112 item 9), and what "Fråga Clew" asks about it with (D126 rule 5). */
+  /** An entry as the pane draws it (D112 item 9), and what "Fråga assistenten" asks about it with (D126 rule 5). */
   const entryOpened = (item: AgendaItem): Opened | null => {
     if (item.proposal) {
       const p = item.proposal;
@@ -519,7 +519,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     }
     if (!item.event) return null;
     const ref = 'event:' + item.event.id;
-    // A meeting outside the window the server resolves its chip in has nothing to ask with: no "Fråga Clew" (D126 rule 5).
+    // A meeting outside the window the server resolves its chip in has nothing to ask with: no "Fråga assistenten" (D126 rule 5).
     const subject: ThingSubject | null =
       CHIP_REF.test(ref) && inChipWindow(item.start)
         ? { key: ref, label: 'mötet', chips: [{ ref, kind: 'event', label: item.title }], search: '' }
@@ -672,7 +672,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   // title with what can be done, and under it where in time with how it is shown, 44 px controls under a finger. The
   // controls are Astryx's `sm`, as the toolbar that held them made them (28 px, under the heading's 32 px line). Both
   // rows are full at 375 px, so "Fråga om veckan" is not on a phone's head (it would make a third row and push the week
-  // down); an entry opened on a phone still has "Fråga Clew" among its buttons in the drawer.
+  // down); an entry opened on a phone still has "Fråga assistenten" among its buttons in the drawer.
   // In the one page frame (D126): the title on the line every page's title stands on, the controls at its end.
   const head = mobile
     ? {

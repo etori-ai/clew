@@ -405,7 +405,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     const { name } = detail.entity;
     // The way back (board Person): the page in `from` when Clew can name it, else Personal for the reader's own people.
     const back = origin ?? (!from && detail.relation === 'managed' ? { label: 'Personal', href: '/staff' } : null);
-    // "Fråga Clew" (D126 rule 5): a new conversation about the person, the same subject from every tab (the product
+    // "Fråga assistenten" (D126 rule 5): a new conversation about the person, the same subject from every tab (the product
     // owner, 2026-11-14: one conversation per person, not one per tab). The tab it was pressed on only says what the
     // pane beside the transcript shows first, where the pane has that tab (a source's or Ärenden; the reader's own
     // Kompetens and Introduktion write, and stay on this page). What a source says about a person never reaches the

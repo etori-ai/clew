@@ -141,7 +141,7 @@ export interface ConversationState {
   makeCard(messageId: string): Promise<void>;
   openConversation(threadId: string): Promise<void>;
   /**
-   * A new conversation with Clew: nothing in it, nothing in the drawer. `from` is the page "Fråga Clew" was pressed on,
+   * A new conversation with Clew: nothing in it, nothing in the drawer. `from` is the page "Fråga assistenten" was pressed on,
    * where Esc leads back to; `stay` keeps the address (the caller navigates to the new conversation's page itself).
    */
   newConversation(options?: { from?: string; stay?: boolean }): void;
@@ -234,7 +234,7 @@ export function useClaimBox(claims = true) {
 export const titled = (question: string) => question.charAt(0).toLocaleUpperCase('sv-SE') + question.slice(1);
 /**
  * Whether the assistant may be asked here (D8, D112 item 7): a model is configured. Without one no box is drawn beside a
- * thing and no "Fråga Clew" is offered; the thing is drawn alone, as before.
+ * thing and no "Fråga assistenten" is offered; the thing is drawn alone, as before.
  */
 export function useModelConfigured(): boolean {
   return !!useQuery(assistantQuery).data?.configured;
@@ -520,13 +520,13 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   };
 }
 
-/** The address of a conversation not asked yet: "Fråga Clew" lands here with the thing beside it (D126 rule 5). */
+/** The address of a conversation not asked yet: "Fråga assistenten" lands here with the thing beside it (D126 rule 5). */
 const NEW = '/conversations/new';
 /**
  * The conversation (D31, D50, D126): one state for the box and the transcript, held above the pages so a question asked
  * on Hem is the same conversation when the transcript takes the column. The transcript is on the page at `/` once a
  * question is sent there, and on the conversation's own page, `/conversations/:id`; `/conversations/new` is a
- * conversation not asked yet, where "Fråga Clew" lands with the thing beside it and nothing is sent until the person
+ * conversation not asked yet, where "Fråga assistenten" lands with the thing beside it and nothing is sent until the person
  * writes. The box keeps focus throughout and sending never moves it. Chips travel in the drawer and stay across turns;
  * the text is cleared. Esc leads back to where the conversation was asked, and the conversation is kept under Samtal.
  */
@@ -771,7 +771,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           const to = response.thread.handover;
           if (response.assistant === 'handover' && to) {
             // The answer is that assistant's; the box stays Clew's, and the way on with the assistant is beside it.
-            announce(`${to.name} i ${to.source} har svarat. Rutan skriver fortfarande till Clew.`);
+            announce(`${to.name} i ${to.source} har svarat. Rutan skriver fortfarande till assistenten.`);
           }
         },
       });
@@ -870,7 +870,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         const answer = response.thread.messages.at(-1)?.meta?.handover;
         announce(
           answer?.failed
-            ? `${assistant.name} svarade inte. Du kan fråga Clew samma sak.`
+            ? `${assistant.name} svarade inte. Skriv frågan till assistenten om du vill ha svar där.`
             : `${assistant.name} har svarat i sidofältet.`,
         );
         return true;
@@ -975,7 +975,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * What "Fråga Clew" asks about (D126 rule 5): a key that names the thing (`thread:<id>`, a view and its input, a
+ * What "Fråga assistenten" asks about (D126 rule 5): a key that names the thing (`thread:<id>`, a view and its input, a
  * calendar entry, a person), the words for it, the chips that go with the question so the answer is about it, and the
  * part of the conversation page's address that puts the thing beside the transcript (`?card=`, `?open=`, `?person=`;
  * empty when nothing stands beside it, a list or a range of rows going as its chips alone).

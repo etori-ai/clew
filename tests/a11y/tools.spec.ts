@@ -138,13 +138,13 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
-  test('the page asks with Fråga Clew at the end of its title line, not a box at its foot, and nothing offers Lägg till i samtalet', async ({
+  test('the page asks with Fråga assistenten at the end of its title line, not a box at its foot, and nothing offers Lägg till i samtalet', async ({
     page,
     api,
   }) => {
     api.menu = menuRows;
     await open(page, directory);
-    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga Clew' })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toBeVisible();
     await expect(page.getByRole('combobox', { name: 'Vad vill du göra' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
   });

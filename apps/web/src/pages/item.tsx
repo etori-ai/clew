@@ -75,7 +75,7 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
     },
     [threadId, navigate],
   );
-  // "Fråga Clew" (D126 rule 5): a new conversation with the item beside it.
+  // "Fråga assistenten" (D126 rule 5): a new conversation with the item beside it.
   const ask = thread ? <AskClew subject={itemSubject(thread)} /> : null;
   let body;
   if (thread && !thread.proposals.length)

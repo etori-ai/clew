@@ -507,7 +507,7 @@ function HemQuestion({ field, stacked }: { field: RefObject<HTMLInputElement | n
   const input = (
     <TextInput
       ref={field}
-      label="Fråga Clew"
+      label="Fråga assistenten"
       isLabelHidden
       size="lg"
       startIcon={SparklesIcon}
@@ -521,7 +521,7 @@ function HemQuestion({ field, stacked }: { field: RefObject<HTMLInputElement | n
   );
   const button = (
     <Button
-      label="Fråga Clew"
+      label="Fråga assistenten"
       variant="primary"
       size="lg"
       endContent={<Icon icon={ArrowRightIcon} />}

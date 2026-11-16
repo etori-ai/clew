@@ -750,7 +750,7 @@ describe('a question on its way to another assistant is held when it names the p
     // A caller that cannot ask the person refuses instead.
     await expect(
       w.assistant.converse(hillevi, { text: 'Hur länge har Anna Lindqvist varit sjukskriven?', assistant: GUIDE }),
-    ).rejects.toThrow('Frågan nämner något som hör hemma i Clew');
+    ).rejects.toThrow('Frågan nämner något som hör hemma här');
     expect(asks(w)).toEqual([]);
     // Sent anyway, by the person's own choice: it goes as written, and the audit row says it was confirmed.
     const turn = await w.assistant.converse(

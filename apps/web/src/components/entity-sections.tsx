@@ -506,9 +506,9 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
 
 /**
  * The opened person's or unit's actions under its name (D126 rule 1, board Person), every one of them: the first as the
- * primary button, the second as a secondary one, "Fråga Clew" (`ask`) as a ghost after them, and the rest under "Fler
+ * primary button, the second as a secondary one, "Fråga assistenten" (`ask`) as a ghost after them, and the rest under "Fler
  * åtgärder", grouped by the system they act in, as the row menu on Personal is (artboard A3). On a phone one button,
- * "Åtgärder", the width of the column, holds them all, with "Fråga Clew" under it. A propose opens the action dialog,
+ * "Åtgärder", the width of the column, holds them all, with "Fråga assistenten" under it. A propose opens the action dialog,
  * and nothing is created before its last button; an execute opens its work item with the decision over it
  * (`entity-actions.ts`). A source's refusal is said aloud and stands under the buttons until the next action. They hold
  * what can be done about the entity, never a choice of where Clew shows it, and never a way into a source's page, which

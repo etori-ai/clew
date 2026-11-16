@@ -150,7 +150,7 @@ type Found = ({ href: string } | { card: string }) & { detail: string; group: st
  * Personal, whose tabs are the unit's competence, talks and introductions (D126; their pages mark it), and Läget, the
  * unit the manager follows up, or the list of them when there are several (D117). "Verktyg": the views an administrator
  * placed as tools (D40, each a page of its own, D42) and Clew's own lists the person has (`toolsOf`), the first four,
- * and "Alla verktyg", the page that lists every one of them (`/tools`). "Fråga Clew": asking is one way of doing the
+ * and "Alla verktyg", the page that lists every one of them (`/tools`). "Fråga assistenten": asking is one way of doing the
  * work, so it follows it, with "Ny fråga" heading the conversations it starts, then the three newest, each with a dot
  * only where the data says something about it (the answer being written, a draft that waits for the person), and "Alla
  * samtal", the register of them. Every row that has an icon keeps it, so the rail's own collapse draws it as an icon
@@ -347,8 +347,8 @@ export function useRail({
             />
           </SideNavSection>
         )}
-        {/* Fråga Clew (D126 item 10): asking is one way of doing the work, so it follows it, Ny fråga first. */}
-        <SideNavSection title="Fråga Clew">
+        {/* Fråga assistenten (D126 item 10): asking is one way of doing the work, so it follows it, Ny fråga first. */}
+        <SideNavSection title="Fråga assistenten">
           {/* Ny fråga is a page of its own (D126 item 14): a new conversation with nothing in it, wherever it is pressed. */}
           <SideNavItem
             label="Ny fråga"

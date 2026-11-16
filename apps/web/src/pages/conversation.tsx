@@ -80,13 +80,13 @@ export function conversationTitle(
   const asked = talk.conversation?.title ?? talk.pending?.text.slice(0, 80);
   if (asked) return titled(asked);
   if (about.name) return askAboutWords(about.name);
-  return about.subject ? 'Fråga Clew' : 'Nytt samtal';
+  return about.subject ? 'Fråga assistenten' : 'Nytt samtal';
 }
 
 /**
  * What the conversation is about, by its address (D126 rule 2): the work item beside it (`card`), a view that is one
  * thing (`open`, a record, a document, a day), a person or a unit (`person`, `unit`, one subject whichever of their tabs
- * "Fråga Clew" was pressed on; `section` is only the pane's tab), or the people under a lens of Personal (`lens`). Its
+ * "Fråga assistenten" was pressed on; `section` is only the pane's tab), or the people under a lens of Personal (`lens`). Its
  * chips go with every question there; a person or a unit goes with none, since what a source says about them never
  * reaches the model (D97 item 7, D115).
  */
@@ -109,7 +109,7 @@ export interface About {
  * SamtalEneo): its title and a line saying whom it is with and, when it is about a thing, which; the transcript in
  * `ChatLayout` with the box docked under it; and the thing it is about in the end panel, drawn with the parts the
  * queue's reading pane draws (source line, the title as the link to its page, the decisions under the title, the facts),
- * with ✕. `/conversations/new` is a conversation not asked yet: "Fråga Clew" lands there with the thing beside it, the
+ * with ✕. `/conversations/new` is a conversation not asked yet: "Fråga assistenten" lands there with the thing beside it, the
  * box has the focus, and nothing is sent until the person writes. At narrow width the thing is one link away instead of
  * a pane. On a short screen (1.4.10) nothing is docked and the page scrolls as one.
  */
@@ -377,7 +377,7 @@ function useAbout({
       </HStack>
     );
     // The same parts as Att göra's reading pane (D126 rule 2): the work item at its narrow width, its ✕ in its own title
-    // row and no "Fråga Clew", since this is that conversation. A calendar proposal keeps its own card (D27).
+    // row and no "Fråga assistenten", since this is that conversation. A calendar proposal keeps its own card (D27).
     const body =
       thread && !thread.proposals.length ? (
         <VStack height="100%" onKeyDown={escape}>

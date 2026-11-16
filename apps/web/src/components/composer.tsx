@@ -201,7 +201,9 @@ export function Composer({
   }, [talk.rememberObject, markOf]);
   // Whom the box writes to, as the boards say it; Ny fråga's says what the box is for.
   const placeholder =
-    place === 'conversation' ? (aboutPlaceholder ?? 'Skriv till Clew') : 'Fråga något eller be Clew göra det åt dig';
+    place === 'conversation'
+      ? (aboutPlaceholder ?? 'Skriv till assistenten')
+      : 'Fråga något eller be assistenten göra det åt dig';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
   const announced = useAddedAnnouncement(talk.chips);
   // While an answer is on its way the send button is Stoppa and the field stays open, so the person can write the next

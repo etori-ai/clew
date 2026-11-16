@@ -125,8 +125,7 @@ export function handoverPath(deps: AssistantDeps) {
           (await access.list(persona, clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed'),
         ).length > 0;
       if (named || carded) {
-        if (!observer.offers)
-          throw new InputError('Frågan nämner något som hör hemma i Clew och skickas inte vidare härifrån.');
+        if (!observer.offers) throw new InputError('Frågan nämner något som hör hemma här och skickas inte vidare.');
         throw new HandoverHeld(listed, named ? 'person' : 'card');
       }
     }

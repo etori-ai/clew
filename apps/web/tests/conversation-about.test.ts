@@ -31,9 +31,9 @@ const answer = (meta?: Thread['messages'][number]['meta']) =>
 const who = { assistant: handover.assistant, name: handover.name, source: handover.source };
 
 describe('whom a conversation is with (D125, D126)', () => {
-  test('a conversation never handed over is with Clew', () => {
+  test('a conversation never handed over is with the assistant', () => {
     expect(talkingTo({ messages: [question(), answer()] })).toBeNull();
-    expect(withWords(null)).toBe('Clew');
+    expect(withWords(null)).toBe('assistenten');
   });
   test('a conversation handed to another system’s assistant is with it, named with its system', () => {
     const with_ = talkingTo({ handover, messages: [question({ handed: who }), answer({ handover: who })] });
@@ -68,7 +68,7 @@ describe('a question handed on stands once (D126 item 6)', () => {
   });
   test('the suggestion becomes one line', () => {
     expect(suggestedWords({ name: 'HR-assistenten', source: 'Eneo' })).toBe(
-      'Clew föreslog HR-assistenten i Eneo · du valde att fråga den',
+      'Assistenten föreslog HR-assistenten i Eneo · du valde att fråga den',
     );
   });
 });
@@ -85,7 +85,7 @@ describe('what a conversation’s page is about, by its address (D126 rule 2)', 
 });
 
 describe('one conversation per person, not one per tab (the product owner, 2026-11-14)', () => {
-  test('"Fråga Clew" on two of a person’s tabs is one subject, with a different first tab in the pane', () => {
+  test('"Fråga assistenten" on two of a person’s tabs is one subject, with a different first tab in the pane', () => {
     const fromAbsence = entitySubject('person', 'johan', 'hr.person');
     const fromEquipment = entitySubject('person', 'johan', 'servicedesk.person');
     expect(fromAbsence.key).toBe('person:johan');

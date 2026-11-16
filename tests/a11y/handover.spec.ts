@@ -16,7 +16,7 @@ type Page = import('@playwright/test').Page;
 /**
  * An assistant of another system beside the conversation (the assistants profile; the product owner, 2026-11-16): the
  * transcript and the box under it are Clew's, always, and the assistant is talked to in a panel of its own with a box of
- * its own. The ways to it (a row on Ny fråga, "Assistenter" in the conversation's header, "Fortsätt med …" under an
+ * its own. The ways to it (a row on Ny fråga, "Andra assistenter" in the conversation's header, "Fortsätt med …" under an
  * answer Clew sent on), a question asked there going to it alone and being drawn there, the way to Clew under an answer
  * there, a system that does not answer, a question Clew holds, and Clew's own suggestion. Keyboard, focus,
  * announcements, axe and reflow, at desktop, phone and 320 px.
@@ -57,8 +57,8 @@ test.describe('another system’s assistant beside the conversation', () => {
     await page.keyboard.press('Escape');
     await composer(page).fill('Vad har jag i kalendern i morgon?');
     await composer(page).press('Enter');
-    await expect(page.getByRole('article', { name: 'Clew', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Assistenter/ })).toHaveCount(0);
+    await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Andra assistenter/ })).toHaveCount(0);
   });
   test('Ny fråga’s box has no recipient menu; an assistant’s row opens a conversation with its panel, whose field has the focus and a name', async ({
     page,
@@ -79,7 +79,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     // Nothing was sent by opening it, and the box under the transcript is still Clew's.
     expect(api.asked).toHaveLength(0);
     await expect(composer(page)).toBeVisible();
-    await expect(page.getByText('Samtal med Clew', { exact: true })).toBeVisible();
+    await expect(page.getByText('Samtal med assistenten', { exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
   });
   test('a question asked in the panel goes to the assistant alone and is drawn there; the transcript says once that the exchange exists', async ({
@@ -139,7 +139,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     await panel(page).getByRole('button', { name: 'Stäng' }).click();
     await expect(panel(page)).toHaveCount(0);
   });
-  test('"Assistenter" in a conversation’s header lists the ones the person may ask, and choosing by keyboard opens the panel', async ({
+  test('"Andra assistenter" in a conversation’s header lists the ones the person may ask, and choosing by keyboard opens the panel', async ({
     page,
     api,
   }) => {
@@ -147,8 +147,8 @@ test.describe('another system’s assistant beside the conversation', () => {
     await open(page, '/conversations/new');
     await composer(page).fill('Vad har jag i kalendern i morgon?');
     await composer(page).press('Enter');
-    await expect(page.getByRole('article', { name: 'Clew', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Assistenter', exact: true }).focus();
+    await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Andra assistenter', exact: true }).focus();
     await page.keyboard.press('Enter');
     const row = page.getByRole('menuitemradio', { name: /HR-assistenten/ });
     await expect(page.getByRole('group', { name: 'Du kan fråga', exact: true })).toBeVisible();
@@ -181,7 +181,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     await expect(panel(page).getByText('25 semesterdagar')).toBeVisible();
     // Clew was not asked, and the panel offers no way to ask it.
     expect(api.asked).toHaveLength(1);
-    await expect(panel(page).getByRole('button', { name: /Fråga Clew/ })).toHaveCount(0);
+    await expect(panel(page).getByRole('button', { name: /Fråga assistenten/ })).toHaveCount(0);
     // The panel's box is one row, with what leaves Clew said once at the panel's head.
     await expect(
       panel(page).getByText('Det du skriver här skickas till Kunskapsbanken. Inget annat ur samtalet följer med.'),
@@ -206,7 +206,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     await expect(yes).toBeFocused();
     await expect(page.getByText(/kan svara på det här\. Vill du att jag skickar frågan dit\?/)).toBeVisible();
     await expect(page.getByRole('log').getByText('Svarar på frågor om anställning och ledighet.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Svara själv, Clew', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Svara själv', exact: true })).toBeVisible();
     await expect
       .poll(() => announcements(page))
       .toContainEqual(
@@ -226,7 +226,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     await expect(log.getByText(QUESTION, { exact: true })).toHaveCount(1);
     await expect(log.getByText('Skickad vidare till HR-assistenten i Kunskapsbanken')).toHaveCount(1);
     await expect(
-      log.getByText('Clew föreslog HR-assistenten i Kunskapsbanken · du valde att fråga den', { exact: true }),
+      log.getByText('Assistenten föreslog HR-assistenten i Kunskapsbanken · du valde att fråga den', { exact: true }),
     ).toHaveCount(1);
     await expect(page.getByRole('button', { name: 'Skicka till HR-assistenten', exact: true })).toHaveCount(0);
     // The answer is the assistant's, with its sources; no model wrote it and Clew offers nothing of its own under it.
@@ -236,14 +236,14 @@ test.describe('another system’s assistant beside the conversation', () => {
     // Nothing sticks: the box under the transcript is Clew's and has the focus, and nothing opened by itself.
     await expect(composer(page)).toBeFocused();
     await expect(page.getByRole('button', { name: /^Till: / })).toHaveCount(0);
-    await expect(page.getByText('Samtal med Clew', { exact: true })).toBeVisible();
+    await expect(page.getByText('Samtal med assistenten', { exact: true })).toBeVisible();
     await expect(panel(page)).toHaveCount(0);
     await expectNoAxeViolations(page);
     // The way on with the assistant is under its answer: its exchange beside the transcript, with what Clew sent on.
     await answer.getByRole('link', { name: 'Fortsätt med HR-assistenten' }).click();
     await expect(sideBox(page)).toBeFocused();
     await expect(panel(page).getByText(QUESTION, { exact: true })).toBeVisible();
-    await expect(panel(page).getByText('Från samtalet med Clew')).toBeVisible();
+    await expect(panel(page).getByText('Från samtalet med assistenten')).toBeVisible();
     await askBeside(page, 'Och om jag är över 40?');
     await expect(panel(page).getByText('Det är svar 2 i det här samtalet.')).toBeVisible();
     await expect(answer.getByText('1 fråga i sidofältet')).toBeVisible();
@@ -264,7 +264,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     await open(page, '/');
     await composer(page).fill('Hur många semesterdagar har jag?');
     await composer(page).press('Enter');
-    await page.getByRole('button', { name: 'Svara själv, Clew', exact: true }).click();
+    await page.getByRole('button', { name: 'Svara själv', exact: true }).click();
     await expect(page.getByText(/Du har 18 semesterdagar/)).toBeVisible();
     expect(api.asked.at(-1)).toEqual({ text: 'Hur många semesterdagar har jag?', chips: [], own: true });
     await expect(page.getByRole('button', { name: 'Skicka till HR-assistenten', exact: true })).toHaveCount(0);
@@ -279,7 +279,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     await openBeside(page);
     await askBeside(page, 'Hur länge har Anna varit sjukskriven?');
     // Not sent: the safe choice has the focus, and the other one names where the question would go.
-    const stay = panel(page).getByRole('button', { name: 'Låt Clew svara', exact: true });
+    const stay = panel(page).getByRole('button', { name: 'Låt assistenten svara', exact: true });
     await expect(stay).toBeFocused();
     await expect(panel(page).getByText('Inte skickad')).toBeVisible();
     await expect(panel(page).getByText(/Frågan ser ut att gälla din personal\./)).toBeVisible();
@@ -322,10 +322,10 @@ test.describe('another system’s assistant beside the conversation', () => {
     await askBeside(page, QUESTION);
     await expect(panel(page).getByText('25 semesterdagar')).toBeVisible();
     await page.goto('/conversations/overlamnad');
-    await expect(page.getByText('Samtal med Clew', { exact: true })).toBeVisible();
+    await expect(page.getByText('Samtal med assistenten', { exact: true })).toBeVisible();
     await expect(panel(page)).toHaveCount(0);
     await expect(composer(page)).toBeVisible();
-    await page.getByRole('button', { name: /^Assistenter/ }).click();
+    await page.getByRole('button', { name: /^Andra assistenter/ }).click();
     await expect(page.getByRole('group', { name: 'I det här samtalet', exact: true })).toBeVisible();
     await page.getByRole('menuitemradio', { name: /HR-assistenten/ }).click();
     await expect(panel(page).getByText('25 semesterdagar')).toBeVisible();
@@ -367,7 +367,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     await expect(
       page.getByRole('article', { name: ANSWERED, exact: true }).getByText('25 semesterdagar'),
     ).toBeVisible();
-    await expect(page.getByText(/^Clew föreslog HR-assistenten i Kunskapsbanken/)).toBeVisible();
+    await expect(page.getByText(/^Assistenten föreslog HR-assistenten i Kunskapsbanken/)).toBeVisible();
     await expect(page.getByText('Fortsätt med HR-assistenten')).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);

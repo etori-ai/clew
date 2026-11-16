@@ -101,7 +101,7 @@ export interface DeclaredViewProps {
   onShowAll?: () => void;
   /** Where "Visa allt" leads, as a link (a list's own page, D116); with it `onShowAll` is not needed. */
   showAllHref?: string | undefined;
-  /** A tool page's own control after the view's (D112 item 7: "Fråga Clew"), at the end of the title's line. */
+  /** A tool page's own control after the view's (D112 item 7: "Fråga assistenten"), at the end of the title's line. */
   pageAction?: ReactNode;
   /**
    * Whether a row's own read is the one open beside the page (D112 item 6, board Tool: the inspector): that row is the

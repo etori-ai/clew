@@ -689,7 +689,7 @@ const reopenable = (thread: Thread) =>
  *
  * A plain to-do (D126 item 13: nothing has happened and nothing is in the way) has its decisions: the one next step from
  * the connector, filled only when the item is due today (D48), and the decisions beside it, so two opposed decisions
- * (Godkänn and Avslå) stand side by side at every width; then "Fråga Clew" (`ask`, a ghost button that leads to the
+ * (Godkänn and Avslå) stand side by side at every width; then "Fråga assistenten" (`ask`, a ghost button that leads to the
  * conversation about the item, rule 5), "Lägg till i samtalet" beside a conversation's own box (D111 rule 6), and ⋯
  * ("Fler åtgärder") with the item's reads, the rest of its actions, "Inte nu" (D49: the item's one time action while it
  * is the person's) and Avfärda. A read is a link to its own page (D126 rule 3: nothing unfolds in the item), a read out
@@ -725,7 +725,7 @@ export function ActionRow({
   readHref?: ((action: ThreadAction) => string | undefined) | undefined;
   /** The ids of the actions the item draws in another place. */
   omit?: readonly string[] | undefined;
-  /** "Fråga Clew" (`AskClew`), after the decisions; absent where the item is beside its own conversation. */
+  /** "Fråga assistenten" (`AskClew`), after the decisions; absent where the item is beside its own conversation. */
   ask?: ReactNode;
   /** The item's title, which takes the focus when the notice replaces the button that had it. */
   titleRef?: RefObject<HTMLHeadingElement | null> | undefined;
@@ -1024,7 +1024,7 @@ export function ActionRow({
         {more({})}
       </HStack>
     );
-  // Decided or set aside for good, while the decision settles: "Fråga Clew" and the item's reads under ⋯.
+  // Decided or set aside for good, while the decision settles: "Fråga assistenten" and the item's reads under ⋯.
   const readsLeft = here.filter(a => a !== primary && isRead(a));
   if (!readsLeft.length && !ask) return null;
   return (

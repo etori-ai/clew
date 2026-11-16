@@ -65,8 +65,9 @@ export function AssistantsMenu({ open, hrefFor }: { open: string | null; hrefFor
     <DropdownMenu
       button={{
         // The name holds the words on the button (2.5.3), the count of those in this conversation with them.
-        label: here.length > 0 ? `Assistenter${DOT}${here.length}` : 'Assistenter',
-        children: here.length > 0 ? `Assistenter${DOT}${here.length}` : 'Assistenter',
+        // "Andra": the conversation's own assistant is called assistenten, and these are other systems'.
+        label: here.length > 0 ? `Andra assistenter${DOT}${here.length}` : 'Andra assistenter',
+        children: here.length > 0 ? `Andra assistenter${DOT}${here.length}` : 'Andra assistenter',
         variant: 'secondary',
         size: 'sm',
       }}
@@ -194,7 +195,7 @@ export function AssistantPane({
     // No answer: the system did not answer, or the assistant wrote nothing; said in Clew's words, never in its name.
     if (meta?.failed || meta?.declined)
       return (
-        <ChatMessage key={`side-${i}`} sender="assistant" name={<VisuallyHidden>Clew</VisuallyHidden>}>
+        <ChatMessage key={`side-${i}`} sender="assistant" name={<VisuallyHidden>Assistenten</VisuallyHidden>}>
           <ChatMessageBubble variant="ghost" width="100%" metadata={time(m.createdAt)}>
             <VStack gap={3}>
               <HStack gap={1} vAlign="center">
@@ -229,7 +230,7 @@ export function AssistantPane({
                 )}
               </HStack>
             )}
-            {meta?.cut && <Text type="supporting">Svaret var längre än Clew visar.</Text>}
+            {meta?.cut && <Text type="supporting">Svaret var längre än det som visas här.</Text>}
           </VStack>
         </ChatMessageBubble>
       </ChatMessage>
@@ -303,7 +304,12 @@ export function AssistantPane({
             {[
               ...messages.map((m, i) =>
                 m.role === 'user'
-                  ? asked(`side-${i}`, m.body, m.createdAt, m.meta?.handed?.side ? undefined : 'Från samtalet med Clew')
+                  ? asked(
+                      `side-${i}`,
+                      m.body,
+                      m.createdAt,
+                      m.meta?.handed?.side ? undefined : 'Från samtalet med assistenten',
+                    )
                   : answered(m, i),
               ),
               ...(pending
@@ -312,7 +318,7 @@ export function AssistantPane({
                     <ChatMessage
                       key={`side-${n + 1}`}
                       sender="assistant"
-                      name={pending.held ? <VisuallyHidden>Clew</VisuallyHidden> : theirs}
+                      name={pending.held ? <VisuallyHidden>Assistenten</VisuallyHidden> : theirs}
                     >
                       <ChatMessageBubble variant="ghost" width="100%">
                         {pending.held ? (
@@ -320,7 +326,7 @@ export function AssistantPane({
                             <HStack gap={2} vAlign="center" wrap="wrap">
                               <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Inte skickad" />
                               <Text>
-                                {`Frågan ser ut att gälla ${pending.held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Skickar du den lämnar den Clew och hamnar i ${who.source}.`}
+                                {`Frågan ser ut att gälla ${pending.held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Skickar du den hamnar den i ${who.source}.`}
                               </Text>
                             </HStack>
                             <HStack gap={2} wrap="wrap">
@@ -328,7 +334,7 @@ export function AssistantPane({
                                 ref={stay}
                                 size="sm"
                                 variant="primary"
-                                label="Låt Clew svara"
+                                label="Låt assistenten svara"
                                 onClick={() => talk.askClew(pending.text)}
                               />
                               <Button

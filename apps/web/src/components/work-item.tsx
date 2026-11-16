@@ -623,7 +623,7 @@ export function WorkItem({
   onChange: (thread: Thread) => void;
   /** Let go of the item where it is open beside a list: its ✕, at the end of the title's row. */
   onClose?: () => void;
-  /** "Fråga Clew" among the buttons (`AskClew`); absent beside the conversation about the item and in its answers. */
+  /** "Fråga assistenten" among the buttons (`AskClew`); absent beside the conversation about the item and in its answers. */
   ask?: ReactNode;
 }) {
   const short = useMediaQuery(shortQuery);
@@ -735,7 +735,7 @@ export function WorkItemPage({
   thread: Thread;
   back: { label: string; href: string };
   onChange: (thread: Thread) => void;
-  /** "Fråga Clew" (`AskClew`), after the decisions. */
+  /** "Fråga assistenten" (`AskClew`), after the decisions. */
   ask?: ReactNode;
 }) {
   const narrow = useMediaQuery(narrowPageQuery);
