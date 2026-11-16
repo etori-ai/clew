@@ -545,10 +545,13 @@ export function assistantUsecases(deps: AssistantDeps) {
       let card = view;
       let shownRows = namedRows;
       if (pointedTool?.view && view?.capability === pointedTool.name) {
-        if (namedRows) shownRows = { count: namedRows.count, show: 'all' };
+        // An answer that names some of the rows (the late ones, the invoices) keeps the card on those rows.
+        if (namedRows?.show === 'none') shownRows = { count: namedRows.count, show: 'all' };
       } else if (pointedTool?.view && !view) {
+        // Only the read the person pointed at is made for a card. A follow-up without a chip that the model answers
+        // from what was said is not read again here: such a turn makes no read (a logged read least of all).
         try {
-          const rows = viewRows(pointedTool.view, await turn.run(pointedTool.name, {}));
+          const rows = cardRows(pointedTool.view, {}, await turn.run(pointedTool.name, {}), parsed.body);
           if (rows) {
             card = {
               capability: pointedTool.name,
@@ -557,7 +560,7 @@ export function assistantUsecases(deps: AssistantDeps) {
               source: pointedTool.source,
               declared: true,
             };
-            shownRows = { count: rows.length, show: 'all' };
+            shownRows = rows.show === 'none' ? { count: rows.count, show: 'all' } : rows;
           }
         } catch {
           // A read that takes an input, or a source that does not answer: the answer stands without a card.

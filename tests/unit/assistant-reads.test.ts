@@ -688,10 +688,38 @@ describe('the card under an answer is the read it rests on, and the rows it is a
     expect(unread.meta.view).toMatchObject({ capability: 'competence.attention', input: {}, declared: true });
     expect(unread.meta.viewRows).toEqual({ count: 4, show: 'all' });
     expect(unread.audit.details).toMatchObject({ view: 'competence.attention' });
+    // An answer that names some of the rows keeps the card on those rows, chip or not.
+    const some = await world([['competence__attention', {}]], { brandskydd: true });
+    some.model.turn.text = 'Maria Källströms brandskydd går ut 20 januari 2027.';
+    expect((await some.ask('hillevi', 'Vad går ut?', undefined, [chip])).meta.viewRows).toMatchObject({
+      show: 'named',
+    });
     // Without the chip, an answer that reads nothing has no card.
     const plain = await world([], { brandskydd: true });
     plain.model.turn.text = 'Som jag sa: ingen saknar truckkort.';
     expect((await plain.ask('hillevi', 'Och truckkort?')).meta.view).toBeUndefined();
+  });
+  test('two rows named by title are both drawn, whatever space the source wrote an amount with and whatever else the answer repeats of one', () => {
+    const view = {
+      kind: 'list' as const,
+      title: 'label',
+      fields: [
+        { key: 'label', label: 'Ärende' },
+        { key: 'fact', label: 'Uppgift' },
+      ],
+    };
+    const rows = [
+      { ref: 'a', label: 'Delegering läkemedel gick ut 8 oktober', fact: 'Intyget gäller inte längre.' },
+      { ref: 'b', label: 'Attestera 3 fakturor, 37\u00a0050 kr', fact: '2 matchar en beställning.' },
+      { ref: 'c', label: 'Boka ett omtankesamtal', fact: '' },
+      { ref: 'd', label: 'Uppföljningssamtal efter tre månader', fact: '' },
+      { ref: 'e', label: 'Sjukanmälan att registrera', fact: '' },
+    ];
+    const answer =
+      'Två är försenade:\n- **Delegering läkemedel gick ut 8 oktober**: intyget gäller inte längre.\n- **Attestera 3 fakturor, 37 050 kr**';
+    const drawn = cardRows(view as never, {}, { rows }, answer);
+    expect(drawn).toMatchObject({ count: 5, show: 'named' });
+    expect((drawn as { marks: string[] }).marks).toHaveLength(2);
   });
   test('competence: a read the model narrowed with its input is the card, with that input', async () => {
     const w = await world([['competence__holdings', { person: 'anna' }]], { brandskydd: true });

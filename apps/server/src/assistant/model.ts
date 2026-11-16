@@ -123,6 +123,7 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Nämn inte enskilda medarbetares namn om personen inte själv använde dem.',
     '- När ett verktyg svarar att resultatet visas i en vy: säg kort att uppgifterna finns i vyn och hur många rader den har. Återge eller gissa aldrig innehållet.',
     '- Formatera med markdown, sparsamt: fetstil för det viktigaste i svaret (ett antal, ett belopp, ett datum, namnet på ett ärende), punktlistor för uppräkningar och numrerade steg för en ordning. Inga rubriker och inga tabeller: rader ur ett system visas i kortet under svaret, så skriv aldrig av dem som en tabell.',
+    '- Har du läst en lista med fler än tre rader och frågan gäller hela listan: räkna inte upp raderna, de står i kortet under svaret. Säg hur många de är och det som sticker ut (vad som är försenat, vad som brådskar). Gäller frågan några av raderna, nämn just dem vid namn.',
     'När svaret bygger på sökverktyget (rutiner och dokument):',
     '- Svara bara utifrån de avsnitt som kom tillbaka och hitta aldrig på mer. Om avsnitten inte räcker, säg det.',
     '- Markera varje påstående med avsnittets nummer i hakparentes, till exempel [1]. Nämn dokumentets namn, vem som äger det och när det senast granskades.',

@@ -595,6 +595,9 @@ function ViewEmbed({
     retry: false,
   });
   const figure = figureBelongs(view, rows);
+  // A cut list unfolds in the card on the person's own press (the product owner, 2026-11-16): the answer no longer
+  // repeats the rows, so the card is where all of them are read.
+  const [whole, setWhole] = useState(false);
   if (read.isPending) return null;
   if (!read.data?.view)
     return (
@@ -611,18 +614,29 @@ function ViewEmbed({
     <DeclaredView
       view={read.data.view}
       output={read.data.output}
-      {...(marks ? { only: marks } : { limit: EMBED_ROWS })}
+      {...(marks ? { only: marks } : whole ? {} : { limit: EMBED_ROWS })}
       heading={view.title}
       onShowAll={onShowAll}
       showAllHref={hrefFor?.(view)}
       {...(hrefFor ? { hrefFor } : {})}
     />
   );
+  const more = !marks && !whole && (rows?.count ?? 0) > EMBED_ROWS;
+  const body = more ? (
+    <VStack gap={2}>
+      {drawn}
+      <HStack>
+        <Button size="sm" variant="secondary" label={`Visa alla ${rows!.count}`} onClick={() => setWhole(true)} />
+      </HStack>
+    </VStack>
+  ) : (
+    drawn
+  );
   return (
     <VStack gap={3}>
       {/* The figure that belongs to this read is said as a line above it (D54, artboard 3), as the tile on Hem says it. */}
       {figure && <FigureLines select={figure} now={at} />}
-      {framed ? <Card>{drawn}</Card> : drawn}
+      {framed ? <Card>{body}</Card> : body}
     </VStack>
   );
 }
