@@ -63,6 +63,7 @@ test.describe('a row is one link; the steps are on the open work item', () => {
     await open(page, '/todo?item=ledighet');
     const card = page.locator('#card-ledighet');
     await expect(card.getByText('Personalsystemet · Personal', { exact: true }).first()).toBeVisible();
+    await card.getByRole('button', { name: 'Varför ser jag detta?' }).click();
     await expect(card.getByText(/Ärendet kom från Personalsystemet /)).toBeVisible();
     await expect(page.getByText(/Ångra/)).toHaveCount(0);
   });

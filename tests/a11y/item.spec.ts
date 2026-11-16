@@ -49,7 +49,11 @@ test.describe('the work item as a page', () => {
     for (let i = 1; i < levels.length; i++) expect(levels[i]! - levels[i - 1]!).toBeLessThanOrEqual(1);
     // The sections are the outline's second level, drawn at the size the board gives them (board Ärende): the level a
     // screen reader is told is `aria-level` where the drawn element is a smaller heading.
-    for (const name of ['Rader', 'Varför ser jag detta?']) {
+    // Varför ser jag detta? is folded and no heading (the product owner, 2026-11-16): a region with a button that says so.
+    await expect(
+      page.getByRole('main').getByRole('region', { name: 'Varför ser jag detta?' }).getByRole('button'),
+    ).toHaveAttribute('aria-expanded', 'false');
+    for (const name of ['Rader']) {
       const section = page.getByRole('main').getByRole('heading', { name, exact: true });
       await expect(section).toBeVisible();
       expect(await section.evaluate(h => Number(h.getAttribute('aria-level') ?? h.tagName.slice(1))), name).toBe(2);
@@ -166,6 +170,7 @@ test.describe('the work item as a page', () => {
     const why = main.getByRole('region', { name: 'Varför ser jag detta?' });
     expect(await y(first)).toBeGreaterThan(await y(ack));
     expect(await y(why)).toBeGreaterThan(await y(main.getByText(NOTICE_TEXT.at(-1)!, { exact: true })));
+    await why.getByRole('button', { name: 'Varför ser jag detta?' }).click();
     await expect(why).toContainText(NOTICE_REASON);
     await expect(why).not.toContainText(NOTICE_TEXT[0]!);
     await expect(page.getByRole('heading', { level: 2, name: 'Rader' })).toHaveCount(0);
@@ -241,7 +246,7 @@ test.describe('the work item page where the end panel does not fit', () => {
     for (const term of ['Källa', 'Svara senast', 'Kom']) await expect(main).toContainText(term);
     const y = async (l: Locator) => (await l.boundingBox())!.y;
     expect(await y(main.getByRole('heading', { name: 'Uppgifter' }))).toBeLessThan(
-      await y(main.getByRole('heading', { name: 'Varför ser jag detta?' })),
+      await y(main.getByRole('region', { name: 'Varför ser jag detta?' })),
     );
     await expect(page.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
     await expectNoAxeViolations(page);

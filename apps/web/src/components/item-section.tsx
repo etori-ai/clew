@@ -67,12 +67,15 @@ export function FoldedSection({
   title,
   count,
   countWord,
+  quiet = false,
   children,
 }: {
   title: string;
   count?: number | undefined;
-  /** What the count counts, for a screen reader: "Händelser, 3 händelser". */
-  countWord: string;
+  /** What the count counts, for a screen reader: "Händelser, 3 händelser". Not needed without a count. */
+  countWord?: string;
+  /** Its name in the body size: a section that explains, not one that is worked in ("Varför ser jag detta?"). */
+  quiet?: boolean;
   children: ReactNode;
 }) {
   const id = useId();
@@ -87,7 +90,7 @@ export function FoldedSection({
           animatedLayout={animatedLayout}
           trigger={
             <HStack gap={2} vAlign="center">
-              <Text id={id} type="large" weight="semibold">
+              <Text id={id} {...(quiet ? {} : { type: 'large' as const })} weight="semibold">
                 {title}
               </Text>
               {count !== undefined && (
@@ -96,7 +99,7 @@ export function FoldedSection({
                   label={
                     <>
                       {count}
-                      <VisuallyHidden> {countWord}</VisuallyHidden>
+                      {countWord && <VisuallyHidden> {countWord}</VisuallyHidden>}
                     </>
                   }
                 />

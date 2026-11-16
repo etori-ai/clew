@@ -357,6 +357,7 @@ test.describe('Att göra: a notice in the reading pane', () => {
     expect(await y(first)).toBeGreaterThan(await y(ack));
     expect(await y(whole)).toBeGreaterThan(await y(item.getByText(NOTICE_TEXT.at(-1)!, { exact: true })));
     expect(await y(why)).toBeGreaterThan(await y(whole));
+    await why.getByRole('button', { name: 'Varför ser jag detta?' }).click();
     await expect(why).toContainText(NOTICE_REASON);
     await expect(why).not.toContainText(NOTICE_TEXT[1]!);
     await expect(item.getByRole('heading', { name: 'Rader' })).toHaveCount(0);
@@ -375,6 +376,7 @@ test.describe('Att göra: a notice in the reading pane', () => {
     // a heading (D126 item 13), and keeps its rows above it; its link out to the source is under ⋯, marked as leaving Clew.
     await open(page, '/todo?item=fakturor');
     const invoices = pane.locator('#card-fakturor');
+    await invoices.getByRole('region', { name: 'Varför ser jag detta?' }).getByRole('button').click();
     await expect(invoices.getByRole('region', { name: 'Varför ser jag detta?' })).toContainText(
       'Alla matchar sina beställningar och ryms i budgeten.',
     );
