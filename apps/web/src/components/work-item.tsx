@@ -551,13 +551,14 @@ function Read({
         </ItemSection>
       ),
     });
-  // Also after a decision (board StatusPanel): why the item came still answers why it is here.
+  // Also after a decision (board StatusPanel): why the item came still answers why it is here. Folded and in the body
+  // size wherever an item is drawn (the product owner, 2026-11-16): it explains, and stood before what is acted on.
   sections.push({
     key: 'why',
-    draw: d => (
-      <ItemSection divided={d} id={id('why')} title="Varför ser jag detta?" level={level}>
+    draw: () => (
+      <FoldedSection title="Varför ser jag detta?" quiet>
         <Why thread={thread} item={item} />
-      </ItemSection>
+      </FoldedSection>
     ),
   });
   return (

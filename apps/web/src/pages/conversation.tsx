@@ -176,11 +176,6 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
         besideCard === t.id ? null : cardBody(t, { place: 'answer', level: 2, compact: mobile, onChange })
       }
       viewHref={viewHref}
-      // An assistant's draft (D112 item 8) opens in its work item's dialog: the item is put beside the transcript first
-      // when it is on the page nowhere, and its dialog opens once it is.
-      onDraft={draft => {
-        if (!drawn(draft.threadId)) navigate(withCard(pathname, search, draft.threadId));
-      }}
       asideHref={id => assistantHref(pathname, search, id)}
       asideOpen={asideId}
       // A row of several items opens its item beside the transcript, in the place of an assistant's exchange if one

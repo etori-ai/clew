@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { stockholmDate } from '@clew/contracts';
+import { stockholmDate, type AskValues } from '@clew/contracts';
 import type {
   HandoverAssistant,
   CalendarEvent,
@@ -59,7 +59,9 @@ import { useConversation, type ChipRef } from './conversation-context';
 import { reviewLabel, staleLabel } from './panel-labels';
 import { useMarks, useObjectMark } from '../marks';
 import { FigureLines } from './figure-line';
-import { requestAction } from '../action-requests';
+import { ActionDialog } from './action-dialog';
+import { api, ApiError } from '../api';
+import { useDecisionSend } from '../mutations';
 import { valueText, type ActionStep } from '../action-path';
 import { executionStatus } from '../execution-status';
 import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../answer-card';
@@ -82,23 +84,20 @@ const verbOf = (label: string) => (label.split(' ')[0] ?? label).toLocaleLowerCa
  * the same cache as every screen (D33), so once the person has sent it the draft says what came back, and a newer draft
  * of the same action marks this one as replaced.
  */
-function ActionDraftCard({
-  draft,
-  at,
-  replaced,
-  onOpen,
-}: {
-  draft: ActionDraftRef;
-  at: string;
-  replaced: boolean;
-  onOpen?: ((draft: ActionDraftRef) => void) | undefined;
-}) {
+function ActionDraftCard({ draft, at, replaced }: { draft: ActionDraftRef; at: string; replaced: boolean }) {
   const item = useQuery(threadQuery(draft.threadId));
   const thread = item.data;
   const action = thread?.actions.find(a => a.id === draft.actionId);
+  // The draft opens the action's dialog itself (the product owner, 2026-11-16): the work item is not put beside the
+  // transcript for it, where its head, facts and buttons said nothing the draft does not. The dialog and the decision
+  // it sends are the same as on the item (`ActionDialog`, `useDecisionSend`); what the person changes in the dialog
+  // is kept while the conversation is open.
+  const [dialog, setDialog] = useState<{ open: boolean; startAt: ActionStep } | null>(null);
+  const [typed, setTyped] = useState<AskValues | null>(null);
+  const decision = useDecisionSend();
   if (!thread || !action) return null;
   const asks = action.path?.asks ?? [];
-  const values = draft.values ?? {};
+  const values = typed ?? draft.values ?? {};
   const shown = asks.filter(a => values[a.property]);
   // What the person did after the draft was written: the receipt read back, a decision on its way, or the item gone.
   const after = (instant: string | null | undefined) => !!instant && Date.parse(instant) >= Date.parse(at);
@@ -113,14 +112,28 @@ function ActionDraftCard({
         : thread.state !== 'open'
           ? { variant: 'neutral' as const, label: 'Ärendet är redan hanterat' }
           : null;
-  const open = (startAt: ActionStep) => {
-    requestAction({ threadId: thread.id, actionId: action.id, startAt, values });
-    onOpen?.(draft);
+  const superseded = !receipt && !waiting && replaced;
+  const open = (startAt: ActionStep) => setDialog({ open: true, startAt });
+  const send = async (sent: AskValues): Promise<string | null> => {
+    const result = await decision.send(async () => {
+      const answer = await api.act(thread.id, action.id, undefined, undefined, sent);
+      if (answer.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
+      setDialog(d => (d ? { ...d, open: false } : d));
+      return answer.thread;
+    });
+    return result && 'error' in result ? result.error : null;
   };
   return (
     <ChatMessageBubble variant="ghost" width="100%">
       <Card padding={4}>
         <VStack gap={3} as="section" aria-label={`Utkast: ${action.label}`}>
+          {/* The item the draft belongs to, by name and as the way to it: the item is not drawn whole above its draft. */}
+          <Text type="supporting">
+            {`${thread.trigger.source}${DOT}`}
+            <Link href={itemPageHref(thread.id, window.location.pathname + window.location.search)}>
+              {thread.title}
+            </Link>
+          </Text>
           <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
             <Text weight="semibold">{action.label}</Text>
             {state ? (
@@ -132,7 +145,9 @@ function ActionDraftCard({
               <Badge variant="neutral" label="Utkast" />
             )}
           </HStack>
-          {shown.length > 0 && (
+          {/* A draft a newer one replaced keeps its line and drops its values (the product owner, 2026-11-16): the
+              values that count are in the newest draft, and the older ones were read as a second form. */}
+          {shown.length > 0 && !superseded && (
             <MetadataList columns="single">
               {shown.map(a => (
                 <MetadataListItem key={a.property} label={a.label}>
@@ -156,6 +171,19 @@ function ActionDraftCard({
           )}
         </VStack>
       </Card>
+      {dialog && (
+        <ActionDialog
+          target={{ kind: 'item', thread, action }}
+          isOpen={dialog.open}
+          onOpenChange={isOpen => {
+            if (!isOpen) setDialog(d => (d ? { ...d, open: false } : d));
+          }}
+          startAt={dialog.startAt}
+          values={values}
+          onValuesChange={setTyped}
+          onSend={send}
+        />
+      )}
     </ChatMessageBubble>
   );
 }
@@ -747,7 +775,6 @@ export function Transcript({
   viewHref,
   about,
   firstLine,
-  onDraft,
   asideHref,
   asideOpen,
   cardHref,
@@ -765,8 +792,6 @@ export function Transcript({
    * a unit, which no chip above the question names, so the transcript reads alone when it is read later.
    */
   firstLine?: string | undefined;
-  /** A draft's button was pressed: the host makes sure the work item is drawn, so its dialog can open (D112 item 8). */
-  onDraft?: (draft: ActionDraftRef) => void;
   /**
    * The address that puts an assistant's own exchange beside the transcript: the way on with another system's
    * assistant under its answer. Absent where nothing can stand beside the transcript.
@@ -950,6 +975,10 @@ export function Transcript({
       );
     const calls = readCalls(m, titleOf, systemOf);
     const card = cardOf(i, m);
+    // The item a turn's draft belongs to is not drawn whole above the draft (the product owner, 2026-11-16): the draft
+    // names it and opens the action's dialog itself.
+    const drafted = isActionDraft(m.meta?.draft) ? m.meta!.draft!.threadId : null;
+    const cards = (m.meta?.cards ?? []).filter(id => id !== drafted);
     return (
       <ChatMessage key={`turn-${i}`} sender="assistant" name={clewName(m)}>
         {calls.length > 0 && <ChatToolCalls calls={calls} />}
@@ -965,13 +994,13 @@ export function Transcript({
               {m.body}
             </Markdown>
             {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
-            {m.meta?.cards && (m.meta.cards.length > 1 || m.meta.cardsAs === 'rows') ? (
+            {cards.length > 1 || (cards.length > 0 && m.meta?.cardsAs === 'rows') ? (
               <TurnCardRows
-                ids={m.meta.cards}
+                ids={cards}
                 hrefFor={id => cardHref?.(id) ?? itemPageHref(id, window.location.pathname + window.location.search)}
               />
             ) : (
-              m.meta?.cards?.map(id => <TurnCard key={id} id={id} render={renderCard} />)
+              cards.map(id => <TurnCard key={id} id={id} render={renderCard} />)
             )}
             <AnswerView
               card={card}
@@ -1006,7 +1035,6 @@ export function Transcript({
             draft={m.meta!.draft as ActionDraftRef}
             at={m.createdAt}
             replaced={replaced(i, m.meta!.draft as ActionDraftRef)}
-            onOpen={onDraft}
           />
         ) : (
           m.meta?.draft && (
