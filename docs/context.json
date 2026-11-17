@@ -1549,6 +1549,15 @@
       "status": "provisional (the product owner chose it on 2026-11-16 from the canvas \"Clew",
       "date": "2026-11-16",
       "area": "ui, product"
+    },
+    {
+      "key": "D129-clew-builds-a-server-image-and-a-web-image-from-the-repository-root",
+      "number": 129,
+      "path": "docs/decisions/D129-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
+      "title": "D129 · Clew builds a server image and a web image from the repository root",
+      "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and neither has run on a cluster or been signed in through)",
+      "date": "2026-11-17",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -2334,6 +2343,12 @@
     {
       "path": "docs/decisions/D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md",
       "title": "D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D129-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
+      "title": "D129 · Clew builds a server image and a web image from the repository root",
       "category": "decision-history",
       "headings": []
     },
@@ -3453,6 +3468,7 @@
       "headings": [
         "Observability",
         "Operations",
+        "Container images",
         "Model configuration"
       ]
     },

@@ -18,6 +18,14 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 **Evidence.** [Runbook](../../maintainers/reliability-operations.md), [operations guide](../../guides/provisioning-for-operations.md), [CI](../../../.github/workflows/reliability.yml)
 
+## Container images
+
+**Works in this checkout.** Two images built from the repository root ([D129](../../decisions/D129-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md)): the server (`apps/server/Dockerfile`: Node through tsx, Bun and the operator's scripts, the build argument `CLEW_RELEASE` kept as the release) and the web app (`apps/web/Dockerfile`: nginx serving the built files and passing `/api/` and `/scim/` on to `CLEW_SERVER_URL`). `scripts/images.txt` lists them and every connector's image, and `scripts/images-build.sh` builds what it lists. On 2026-11-17 both were built with Docker and with buildah, and run on a workstation as an arbitrary user in group 0: `bun run db:init` migrated an empty PostgreSQL 18.6, the server started, launched the durable engine under the build's release and answered `/api/health` and `/api/ready`, `bun scripts/workflows-move.ts` ran, and the web image served the app, answered an unknown path with `index.html` and passed `/api/` and `/scim/` on.
+
+**Limits and pending work.** Not run on a cluster, and nobody has signed in through them: the trial had no identity provider. The server image holds the whole workspace with its development dependencies (about 1.4 GB), because the scripts at the root resolve their imports through the root's development dependencies. No image is published anywhere and nothing in CI builds them, so a change that breaks a Dockerfile is found by whoever builds next. Of the connectors' images only `hello`'s was built in this pass. No compose file or manifest for a whole installation is in the repository.
+
+**Evidence.** [D129](../../decisions/D129-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md), [server image](../../../apps/server/Dockerfile), [web image](../../../apps/web/Dockerfile), [its nginx configuration](../../../apps/web/nginx.conf.template), [the image list](../../../scripts/images.txt), [the build script](../../../scripts/images-build.sh), [hosting guide](../../guides/scim-sign-in-and-hosting.md)
+
 ## Model configuration
 
 **Works in this checkout.** Providers/models are administered in the product and database. A model's audience that names a provisioned group offers the model to its members ([Users and identity](identity.md#users-and-identity)). `scripts/models-check.ts` checks a model end to end on the development stack: it refuses to run unless `CLEW_POC=true` or `--confirm` is given, switches its throwaway model on for its own throwaway unit only and checks that a person outside that unit is not offered it, and its clean-up deletes only the audit rows whose actor is its own run's person.
