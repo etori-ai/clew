@@ -31,6 +31,7 @@ import { api } from '../api';
 import { KeepNavigation, ReminderBell } from './reminders';
 import { mobileQuery } from '../media';
 import { cardOverPage, panelRedirect } from '../panel-address';
+import { DELIVERY_TOAST, deliveryToast, withArrivals, type Arrival } from '../delivery-toast';
 import { personPageHref } from '../person-address';
 import { pageLocation, usePublishPageLocation } from '../page-location';
 import { useFocusOnTheWayBack } from '../way-back';
@@ -189,40 +190,60 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       deliveryMounted.current = false;
     };
   }, []);
+  // What the one delivery toast is saying while it is drawn; empty again once it has left.
+  const arrivals = useRef<Arrival[]>([]);
   useEffect(() => {
-    for (const delivery of threadsQ.data?.deliveries ?? []) {
-      if (deliveryAttempts.current.has(delivery.id)) continue;
+    const fresh = (threadsQ.data?.deliveries ?? []).flatMap(delivery => {
+      if (deliveryAttempts.current.has(delivery.id)) return [];
       const thread = threadsQ.data?.threads.find(t => t.id === delivery.threadId);
-      if (!thread) continue;
+      if (!thread) return [];
       deliveryAttempts.current.add(delivery.id);
-      void api
-        .claimDelivery(delivery.id)
-        .then(({ claimed }) => {
-          if (!claimed || !deliveryMounted.current || !deliveryContext.current?.threads.some(t => t.id === thread.id))
-            return;
-          const dismiss = toast({
-            body: delivery.kind === 'reminder' ? 'Påminnelse: ' + thread.title : 'Nya uppgifter finns i Att göra.',
-            isAutoHide: false,
-            uniqueID: delivery.id,
-            endContent: (
-              <Button
-                size="sm"
-                variant="ghost"
-                label="Visa"
-                onClick={() => {
-                  // Over the page the person is on when they press it, which need not be the one that raised the toast.
-                  const { pathname, search } = pageLocation();
-                  navigate(cardOverPage(pathname, search, thread.id));
-                  dismiss();
-                }}
-              />
-            ),
-          });
-        })
-        .catch(() => {
-          deliveryAttempts.current.delete(delivery.id);
-        });
-    }
+      return [{ delivery, thread }];
+    });
+    if (!fresh.length) return;
+    // Everything one read brought is claimed first and said once: one toast and one announcement, however many came.
+    void Promise.all(
+      fresh.map(({ delivery, thread }) =>
+        api.claimDelivery(delivery.id).then(
+          ({ claimed }): Arrival | null =>
+            claimed ? { threadId: thread.id, title: thread.title, kind: delivery.kind } : null,
+          () => {
+            deliveryAttempts.current.delete(delivery.id);
+            return null;
+          },
+        ),
+      ),
+    ).then(claimed => {
+      if (!deliveryMounted.current) return;
+      const arrived = claimed.filter(
+        (a): a is Arrival => a !== null && !!deliveryContext.current?.threads.some(t => t.id === a.threadId),
+      );
+      if (!arrived.length) return;
+      arrivals.current = withArrivals(arrivals.current, arrived);
+      const { body, threadId } = deliveryToast(arrivals.current);
+      // It leaves by itself (Astryx holds it while it is pointed at, focused or the window is away): what it says
+      // stays in Att göra and under Påminnelser in the bell. A later delivery replaces it in place (`uniqueID`).
+      const dismiss = toast({
+        body,
+        uniqueID: DELIVERY_TOAST,
+        onHide: () => {
+          arrivals.current = [];
+        },
+        endContent: (
+          <Button
+            size="sm"
+            variant="ghost"
+            label="Visa"
+            onClick={() => {
+              // Over the page the person is on when they press it, which need not be the one that raised the toast.
+              const { pathname, search } = pageLocation();
+              navigate(threadId ? cardOverPage(pathname, search, threadId) : '/todo');
+              dismiss();
+            }}
+          />
+        ),
+      });
+    });
   }, [threadsQ.data, toast, navigate]);
   const logout = async () => {
     try {

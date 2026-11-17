@@ -717,10 +717,16 @@ export function ActionRow({
   ask,
   titleRef,
   reviewShown = false,
+  beside = false,
 }: {
   thread: Thread;
   actions: Actions;
   pinned?: boolean;
+  /**
+   * The item stands in a pane beside a list or a transcript. Beside a conversation it is what the conversation is about
+   * and goes with every question, so "Lägg till i samtalet" is not offered on it.
+   */
+  beside?: boolean;
   /** Where a read inside Clew leads: its own page (D116, D126). A read without one is pressed. */
   readHref?: ((action: ThreadAction) => string | undefined) | undefined;
   /** The ids of the actions the item draws in another place. */
@@ -811,15 +817,17 @@ export function ActionRow({
   ) : null;
   const addChip = () =>
     conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id });
-  // Only beside a conversation's own box (D112 item 7, D126 rule 2).
-  const addToConversation = conversation.hasBox ? (
-    <Button
-      variant="ghost"
-      label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'}
-      isDisabled={inConversation}
-      onClick={addChip}
-    />
-  ) : null;
+  // Only where a conversation's own box is (D112 item 7, D126 rule 2), and never on the item in the pane beside it:
+  // that one is what the conversation is about, and the assistant is told it stands open there.
+  const addToConversation =
+    conversation.hasBox && !beside ? (
+      <Button
+        variant="ghost"
+        label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'}
+        isDisabled={inConversation}
+        onClick={addChip}
+      />
+    ) : null;
 
   // A notice takes the buttons' place once something has happened or is in the way (D126 item 13), except while the
   // person's own action settles: the pressed button keeps loading where it was until the item has come to rest (D64).
