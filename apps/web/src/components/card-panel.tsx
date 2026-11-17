@@ -18,6 +18,10 @@ export interface CardPlace {
   onClose?: () => void;
   /** "Fråga assistenten" among the item's buttons (`AskClew`, D126 rule 5). */
   ask?: ReactNode;
+  /** Beside a conversation: the area's mark at the start of the item's header. */
+  marked?: boolean;
+  /** Beside a conversation: what stands before ✕ in the item's header (`NamedMenu`). */
+  tools?: ReactNode;
 }
 
 /**
@@ -50,5 +54,7 @@ export const cardBody = (thread: Thread, place: CardPlace) =>
       onChange={place.onChange}
       {...(place.onClose ? { onClose: place.onClose } : {})}
       {...(place.ask ? { ask: place.ask } : {})}
+      {...(place.marked ? { marked: true } : {})}
+      {...(place.tools ? { tools: place.tools } : {})}
     />
   );

@@ -1047,6 +1047,76 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
   });
 });
 
+/**
+ * The thing in the pane beside the transcript goes with every question asked there. The question says which of its
+ * chips that is (`beside`), and the model is told it stands open there, so "det öppna ärendet" is that item; what the
+ * person added to the box stays under "Du tittar på". The turn's audit row names the chips as before.
+ */
+describe('the thing open beside the transcript is told to the model as that', () => {
+  const OPEN = 'Öppet i rutan bredvid samtalet just nu';
+  const ADDED = 'Du tittar på (det personen lagt till i samtalet):';
+  async function asked(input: { beside?: string; both?: boolean }) {
+    const prompts: string[] = [];
+    const generate: ModelGenerate = async ({ system }) => {
+      prompts.push(system);
+      return { text: 'Det är fakturorna från Skolgrossisten.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    await w.threads.ensureThreads(hillevi);
+    const cards = await w.threads.listThreadsFor(hillevi);
+    const invoices = cards.find(t => t.topic === 'finance:invoices')!;
+    const other = cards.find(t => t.id !== invoices.id && t.kind === 'pushed' && t.state === 'open')!;
+    const chip = (t: typeof invoices) => ({ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title });
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Vilka fakturor gäller det öppna ärendet?',
+      chips: input.both ? [chip(invoices), chip(other)] : [chip(invoices)],
+      ...(input.beside ? { beside: input.beside === 'open' ? 'thread:' + invoices.id : input.beside } : {}),
+    });
+    return { w, turn, invoices, other, system: prompts[0]! };
+  }
+  const under = (system: string, heading: string) => {
+    const from = system.indexOf(heading);
+    if (from < 0) return '';
+    const rest = system.slice(from + heading.length);
+    const end = rest.indexOf('\n\n');
+    return end < 0 ? rest : rest.slice(0, end);
+  };
+
+  test('the open item stands under its own heading, with the words a person uses for it, and not among what was added', async () => {
+    const { w, turn, invoices, system } = await asked({ beside: 'open' });
+    expect(turn.assistant).toBe('model');
+    expect(system).toContain(
+      OPEN +
+        ' (skriver personen "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
+    );
+    expect(under(system, OPEN)).toContain(`Ärende "${invoices.title}"`);
+    expect(system).not.toContain(ADDED);
+    // The question is kept and audited with its chip as before; where the item stood is not part of the record.
+    expect(turn.thread.messages[0]!.meta).toMatchObject({ refs: ['thread:' + invoices.id] });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'conversation.asked',
+      details: { chips: ['thread:' + invoices.id] },
+    });
+    expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('beside');
+  });
+
+  test('what the person added to the box stays under Du tittar på, beside the open item', async () => {
+    const { invoices, other, system } = await asked({ beside: 'open', both: true });
+    expect(under(system, OPEN)).toContain(`Ärende "${invoices.title}"`);
+    expect(under(system, OPEN)).not.toContain(`Ärende "${other.title}"`);
+    expect(under(system, ADDED)).toContain(`Ärende "${other.title}"`);
+    expect(under(system, ADDED)).not.toContain(`Ärende "${invoices.title}"`);
+  });
+
+  test('without a pane, or with a ref that is not one of the chips, the item is what the person added', async () => {
+    for (const beside of [undefined, 'thread:someone-elses']) {
+      const { invoices, system } = await asked(beside ? { beside } : {});
+      expect(system).not.toContain(OPEN);
+      expect(under(system, ADDED)).toContain(`Ärende "${invoices.title}"`);
+    }
+  });
+});
+
 describe('a question about a person the asker manages (D115)', () => {
   const QUESTION = 'Anna har varit sjuk i två veckor, vad gör jag?';
   type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
@@ -1091,7 +1161,7 @@ describe('a question about a person the asker manages (D115)', () => {
     // The prompt names who "Anna" is and the work about her by title, last day and buttons; nothing a source holds.
     expect(system).toContain('Medarbetare som personen nämnde (bland dem personen är chef för):');
     expect(system).toContain(
-      '- "Anna" är Anna Lindqvist på Skönsmons skola, användarnamn anna. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
+      '- "Anna" är Anna Lindqvist på Skönsmons skola, användarnamn anna. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Avfärda).',
     );
     expect(system).toContain('Uppgifter om medarbetarnas hälsa och frånvaro lämnas inte till dig.');
     // The lookup is Clew's own and answers the same, with the user name a read about one person takes (D122); the
@@ -1102,7 +1172,7 @@ describe('a question about a person the asker manages (D115)', () => {
       unit: 'Skönsmons skola',
       userName: 'anna',
       workItems: [
-        'Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
+        'Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Avfärda).',
       ],
       note: 'Ärendena visas för personen i samtalet. Uppgifter om medarbetarens hälsa och frånvaro lämnas inte till dig.',
     });

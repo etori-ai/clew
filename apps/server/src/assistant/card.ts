@@ -1,5 +1,13 @@
 import { readsSummary } from '@clew/connectors';
-import { rowMark, viewRows, type MessageMeta, type View, type ViewField } from '@clew/contracts';
+import {
+  ITEM_REF,
+  VIEW_ITEMS_MAX,
+  rowMark,
+  viewRows,
+  type MessageMeta,
+  type View,
+  type ViewField,
+} from '@clew/contracts';
 
 /**
  * The card under an answer (D38): the read the answer rests on, drawn with the input the model gave it, and of its rows
@@ -74,6 +82,25 @@ function aboutTheWhole(answer: string, count: number): boolean {
   const text = fold(answer);
   const said = [String(count), ...(count >= 2 && count <= 12 ? [NUMBER_WORDS[count - 2]!] : [])];
   return said.some(n => writes(text, n, true)) || writes(text, 'vyn');
+}
+/**
+ * The work items among the rows an answer names (`MessageMeta.viewItems`): the rows the answer writes the values of
+ * (`namedRows`) whose ref is a work item's (`thread:<id>`), each once and in the read's order, a menu's worth at most.
+ * Whatever the card draws of the read, the answer is about the items it names, so the pane beside the conversation can
+ * lead to each of them. None for a view that is not a table or a list or declares no ref, and for an id a message could
+ * not hold.
+ */
+export function namedItems(view: View, output: unknown, answer: string): string[] {
+  if ((view.kind !== 'table' && view.kind !== 'list') || !view.ref) return [];
+  const rows = viewRows(view, output);
+  if (!rows?.length) return [];
+  const ids = namedRows(view, rows, answer).flatMap(row => {
+    const ref = row[view.ref!];
+    if (typeof ref !== 'string' || !ref.startsWith(ITEM_REF)) return [];
+    const id = ref.slice(ITEM_REF.length);
+    return id.length >= 1 && id.length <= 80 ? [id] : [];
+  });
+  return [...new Set(ids)].slice(0, VIEW_ITEMS_MAX);
 }
 const narrowed = (input: Record<string, unknown>) =>
   Object.values(input).some(v => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0));

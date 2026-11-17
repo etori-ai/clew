@@ -3,6 +3,9 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Thread, ViewRef } from '@clew/contracts';
 import {
+  AreaMark,
+  Button,
+  Card,
   ChatLayout,
   Divider,
   EmptyState,
@@ -12,13 +15,17 @@ import {
   IconButton,
   LayoutPanel,
   Link,
+  ResizeHandle,
   Skeleton,
   StackItem,
   Text,
   VStack,
   VisuallyHidden,
   XMarkIcon,
+  percent,
+  pixel,
   useMediaQuery,
+  useResizable,
   type AgendaItem,
 } from '@clew/ui';
 import { areasQuery, entityDetailQuery, entityListQuery, threadQuery, threadsQuery } from '../queries';
@@ -47,6 +54,7 @@ import { mobileQuery, shortQuery } from '../components/shell';
 import { Composer } from '../components/composer';
 import { Transcript } from '../components/conversation';
 import { AssistantPane, AssistantsMenu } from '../components/assistant-pane';
+import { NamedMenu } from '../components/named-menu';
 import { titled, useConversation, type ChipRef } from '../components/conversation-context';
 import { drawn } from '../components/thing-panel';
 import { cardBody } from '../components/card-panel';
@@ -63,6 +71,14 @@ import { EntityPane } from './entity-pane';
  * header's line.
  */
 const PANE = 440;
+/**
+ * The pane's width is the person's own (the product owner, 2026-11-17, after Eneo's panel): dragged by the grip on its
+ * edge or moved with the arrow keys on it, never under what its header and buttons need and never over two fifths of
+ * the window, so the transcript still reads as one; kept in the browser.
+ */
+const PANE_MIN = 360;
+const PANE_MAX = 720;
+const PANE_SHARE = 40;
 const paneQuery = `(min-width: ${260 + 500 + PANE}px)`;
 /** Esc inside a menu, a list or a dialog is theirs. */
 const OWN_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
@@ -81,6 +97,33 @@ export function conversationTitle(
   if (asked) return titled(asked);
   if (about.name) return askAboutWords(about.name);
   return about.subject ? 'Fråga assistenten' : 'Nytt samtal';
+}
+
+/** How many frames an answer may take to draw its item again before the focus goes to the box instead (about a second). */
+const DRAWN_WITHIN = 60;
+/** The element takes the focus once it is drawn; one that never is leaves the focus to what the caller falls back on. */
+function focusOnceDrawn(id: string, otherwise: () => void, left = DRAWN_WITHIN) {
+  const element = document.getElementById(id);
+  if (element) element.focus();
+  else if (left <= 0) otherwise();
+  else requestAnimationFrame(() => focusOnceDrawn(id, otherwise, left - 1));
+}
+
+/**
+ * Where a work item was drawn in an answer while it stands beside the transcript (one item, one place): a row that says
+ * where it is, and "Visa här", which lets the pane go of it so the answer draws it again.
+ */
+function ShownBeside({ onShowHere }: { onShowHere: () => void }) {
+  return (
+    <Card variant="muted" padding={3}>
+      <HStack justify="between" vAlign="center" gap={3}>
+        <Text type="supporting" color="secondary">
+          Visas bredvid samtalet
+        </Text>
+        <Button size="sm" variant="ghost" label="Visa här" onClick={onShowHere} />
+      </HStack>
+    </Card>
+  );
 }
 
 /**
@@ -139,7 +182,23 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
     e.stopPropagation();
     closePane();
   };
-  const about = useAbout({ here, closePane, escape, onChange, onOpenItem: setOpenItem });
+  // The menu over what the conversation has named, in the header of whatever stands beside the transcript.
+  const named = <NamedMenu />;
+  const about = useAbout({ here, closePane, escape, onChange, onOpenItem: setOpenItem, tools: named });
+  const pane = useResizable({
+    defaultSize: PANE,
+    minSize: PANE_MIN,
+    maxSize: percent(PANE_SHARE, { max: pixel(PANE_MAX) }),
+    autoSaveId: 'clew:conversation-pane',
+  });
+  /** "Visa här": the item goes back into the answer that is about it, and its title there has the focus. */
+  const showHere = useCallback(
+    (threadId: string) => {
+      navigate(withoutPanel(pathname, search));
+      focusOnceDrawn(`thread-${threadId}-title`, () => talk.focus());
+    },
+    [navigate, pathname, search, talk],
+  );
   // Another system's assistant beside the conversation (`assistant` in the address): its own exchange and its own box.
   // One panel holds one thing, so it stands in the place of the thing the conversation is about while it is open.
   const asideId = new URLSearchParams(search).get(ASSISTANT_PARAM);
@@ -148,10 +207,18 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
     navigate(assistantHref(pathname, search, null));
     requestAnimationFrame(() => talk.focus());
   }, [navigate, pathname, search, talk]);
-  const assistants = <AssistantsMenu open={asideId} hrefFor={id => assistantHref(pathname, search, id)} />;
+  // At the end of the header: what the conversation holds, the way to put any of it beside the transcript when nothing
+  // stands there, and the other systems' assistants.
+  const assistants = (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      <NamedMenu place="header" />
+      <AssistantsMenu open={asideId} hrefFor={id => assistantHref(pathname, search, id)} />
+    </HStack>
+  );
   const aside = asideId ? (
     <AssistantPane
       assistant={asideId}
+      tools={named}
       onClose={closeAside}
       onKeyDown={e => {
         if (e.key !== 'Escape' || (e.target as HTMLElement).closest(OWN_ESCAPE)) return;
@@ -164,6 +231,8 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   // beside the transcript.
   const viewHref = (v: ViewRef) => viewOpenHref(views, pathname, search, v);
   const besideCard = new URLSearchParams(search).get('card');
+  // Whether the item the address names is drawn in the pane now: the pane fits, and no assistant stands in its place.
+  const cardInPane = beside && !aside && !!about.pane;
   // A person or a unit is said under the first question, so the transcript reads alone later.
   const firstLine = about.entity?.name ? aboutWords(about.entity.name) : undefined;
   const transcript = (
@@ -171,9 +240,14 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       about={about.chips}
       firstLine={firstLine}
       onOpenView={v => navigate(viewHref(v))}
-      // The item beside the transcript is not drawn again in the turn that is about it: one item, one place.
+      // The item beside the transcript is not drawn again in the turn that is about it: one item, one place. Where it
+      // was drawn, a row says so and brings it back.
       renderCard={t =>
-        besideCard === t.id ? null : cardBody(t, { place: 'answer', level: 2, compact: mobile, onChange })
+        besideCard !== t.id ? (
+          cardBody(t, { place: 'answer', level: 2, compact: mobile, onChange })
+        ) : cardInPane ? (
+          <ShownBeside onShowHere={() => showHere(t.id)} />
+        ) : null
       }
       viewHref={viewHref}
       asideHref={id => assistantHref(pathname, search, id)}
@@ -215,7 +289,9 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   const composer = (
     <Composer
       place="conversation"
-      about={about.chips}
+      // With the thing in the pane, the question says it stands open beside the transcript: the assistant reads "det
+      // öppna ärendet" as it. Where no pane is drawn it goes along as before, as what the conversation is about.
+      about={paneShown ? about.chips.map(c => ({ ...c, beside: true as const })) : about.chips}
       placeholder={
         about.entity?.kind === 'person' && about.entity.name ? askPersonPlaceholder(about.entity.name) : undefined
       }
@@ -274,21 +350,39 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
         label="Samtalet"
         bare
         end={
-          beside && aside ? (
-            <LayoutPanel width={PANE} padding={0} hasDivider role="complementary" label="Assistent i ett annat system">
-              {aside}
-            </LayoutPanel>
-          ) : beside && about.pane ? (
-            <LayoutPanel
-              width={PANE}
-              padding={0}
-              hasDivider
-              isScrollable={about.pane.scrolls}
-              role="complementary"
-              label={about.pane.label}
-            >
-              {about.pane.body}
-            </LayoutPanel>
+          beside && (aside || about.pane) ? (
+            <>
+              {/* The grip draws the line between the transcript and the pane, so the pane draws none of its own. */}
+              <ResizeHandle
+                direction="horizontal"
+                isReversed
+                hasDivider
+                resizable={pane.props}
+                label="Ändra rutans bredd"
+              />
+              {aside ? (
+                <LayoutPanel
+                  width={pane.size}
+                  padding={0}
+                  hasDivider={false}
+                  role="complementary"
+                  label="Assistent i ett annat system"
+                >
+                  {aside}
+                </LayoutPanel>
+              ) : (
+                <LayoutPanel
+                  width={pane.size}
+                  padding={0}
+                  hasDivider={false}
+                  isScrollable={about.pane!.scrolls}
+                  role="complementary"
+                  label={about.pane!.label}
+                >
+                  {about.pane!.body}
+                </LayoutPanel>
+              )}
+            </>
           ) : undefined
         }
       >
@@ -309,15 +403,19 @@ function useAbout({
   escape,
   onChange,
   onOpenItem,
+  tools,
 }: {
   here: string;
   closePane: () => void;
   escape: (e: KeyboardEvent) => void;
   onChange: (thread: Thread) => void;
   onOpenItem: (item: { item: AgendaItem; dayItems: AgendaItem[] }) => void;
+  /** What stands before ✕ in the pane's header, whatever the pane holds (`NamedMenu`). */
+  tools: ReactNode;
 }): About {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
+  const marks = useMarks();
   const q = new URLSearchParams(search);
   const cardId = q.get('card');
   const open = q.get('open');
@@ -362,7 +460,8 @@ function useAbout({
       <BriefSkeleton rows={1} compact />
     );
     const close = (
-      <HStack justify="end">
+      <HStack justify="end" gap={1}>
+        {tools}
         <IconButton
           variant="ghost"
           label="Stäng ärendet"
@@ -376,7 +475,7 @@ function useAbout({
     const body =
       thread && !thread.proposals.length ? (
         <VStack height="100%" onKeyDown={escape}>
-          {cardBody(thread, { place: 'pane', level: 2, onChange, onClose: closePane })}
+          {cardBody(thread, { place: 'pane', level: 2, onChange, onClose: closePane, marked: true, tools })}
         </VStack>
       ) : (
         <VStack gap={3} padding={6} onKeyDown={escape}>
@@ -397,9 +496,12 @@ function useAbout({
     const shown = rows ? null : side.shown;
     const input = shown?.input ?? {};
     const href = viewPageHref({ capability: open, title, input }, here);
+    // A view's mark is its area's (D71), as on its chip: the capability's connector is the first part of its name.
+    const mark = marks.ofCapability(open, open.split('.')[0] ?? '', shown?.source ?? '');
     const body = (
       <VStack gap={6} padding={6} onKeyDown={escape}>
         <HStack justify="between" vAlign="start" gap={3}>
+          <AreaMark ordinal={mark.ordinal} icon={mark.icon} />
           <StackItem size="fill">
             <VStack gap={1}>
               {shown?.source && (
@@ -414,7 +516,10 @@ function useAbout({
               </Heading>
             </VStack>
           </StackItem>
-          <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={closePane} />
+          <HStack gap={1} vAlign="center">
+            {tools}
+            <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={closePane} />
+          </HStack>
         </HStack>
         <Divider />
         {shown ? (
@@ -463,6 +568,7 @@ function useAbout({
             kind={entity.kind}
             entityKey={entity.key}
             tab={entity.tab}
+            tools={tools}
             onClose={closePane}
             onKeyDown={escape}
           />

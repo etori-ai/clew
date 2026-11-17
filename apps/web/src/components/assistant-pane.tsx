@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { handoversOf, type ThreadMessage } from '@clew/contracts';
 import { useNavigate } from 'react-router';
@@ -119,10 +119,13 @@ export function AssistantPane({
   assistant,
   onClose,
   onKeyDown,
+  tools,
 }: {
   assistant: string;
   onClose: () => void;
   onKeyDown?: (e: KeyboardEvent) => void;
+  /** What stands before ✕ in the header: the menu over what the conversation has named. */
+  tools?: ReactNode;
 }) {
   const talk = useConversation();
   const marks = useMarks();
@@ -152,8 +155,12 @@ export function AssistantPane({
     : found
       ? { id: assistant, name: found.name, source: found.source, description: found.description }
       : undefined;
+  // What stands before ✕ (the menu over what the conversation has named) keeps its place beside it in every state.
   const close = (
-    <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={onClose} />
+    <HStack gap={1} vAlign="center">
+      {tools}
+      <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={onClose} />
+    </HStack>
   );
   if (!who)
     return (

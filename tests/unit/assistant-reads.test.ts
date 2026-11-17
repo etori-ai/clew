@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { rowMark, type AuthenticatedContext, type View } from '../../packages/contracts/src/index';
+import { rowMark, type AuthenticatedContext, type Thread, type View } from '../../packages/contracts/src/index';
 import {
   READING_CHARS,
   READING_ROWS,
   Registry,
+  SEARCH_CONNECTOR,
   actorOf,
   dateWords,
   modelReading,
@@ -23,10 +24,11 @@ import {
 } from '../../apps/server/src/modules/competence/capabilities';
 import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
 import { calendarConnector } from '../../apps/server/src/modules/calendar/connector';
+import { workCapabilities } from '../../apps/server/src/modules/work/capabilities';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { assistantUsecases, type AssistantDeps } from '../../apps/server/src/assistant';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
-import { CARD_MARKS_MAX, cardRows } from '../../apps/server/src/assistant/card';
+import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
 import { fixtureConnectors } from '../fixture-connectors';
 
 /**
@@ -173,7 +175,7 @@ const FREE = [
  * With `brandskydd`, Anna's Brandskydd has run out too, Erik's is valid and Maria's runs out in January, so what needs
  * doing has four rows, Anna twice and Maria last.
  */
-async function world(script: Script = [], options: { brandskydd?: boolean } = {}) {
+async function world(script: Script = [], options: { brandskydd?: boolean; work?: Thread[] } = {}) {
   const d = directory();
   const registry = new Registry({ relations: d.relations.relate });
   const store = memoryCompetenceStore({
@@ -245,7 +247,20 @@ async function world(script: Script = [], options: { brandskydd?: boolean } = {}
   ];
   // The fixtures' records are seeded from the sources' clock: the invoices fall due from 13 November.
   const fixtures = fixtureConnectors({ only: ['hr', 'finance'], clock: () => new Date(T) }).connectors;
-  for (const c of [...connectors, ...fixtures]) registry.register({ ...c, uses: [] }).govern(c.id, openGovernance());
+  // Att göra as a read (`clew.work`), where a scenario gives the person work items: its rows are work items by their ref.
+  const work: Connector[] = options.work
+    ? [
+        {
+          id: SEARCH_CONNECTOR,
+          kind: 'core',
+          source: 'Startsidan',
+          areas: [],
+          ...workCapabilities({ list: async () => options.work!, clock: () => new Date(T) }),
+        } as Connector,
+      ]
+    : [];
+  for (const c of [...connectors, ...fixtures, ...work])
+    registry.register({ ...c, uses: [] }).govern(c.id, openGovernance());
   const model = scripted(script);
   const threads = memoryThreadStore();
   let ids = 0;
@@ -721,6 +736,47 @@ describe('the card under an answer is the read it rests on, and the rows it is a
     expect(drawn).toMatchObject({ count: 5, show: 'named' });
     expect((drawn as { marks: string[] }).marks).toHaveLength(2);
   });
+  test('the work items among the rows an answer names are kept by their ids, whatever the card draws of the read', () => {
+    const view = {
+      kind: 'list' as const,
+      title: 'label',
+      ref: 'ref',
+      fields: [
+        { key: 'label', label: 'Ärende' },
+        { key: 'fact', label: 'Uppgift' },
+      ],
+    };
+    const rows = [
+      {
+        ref: 'thread:t-delegering',
+        label: 'Delegering läkemedel gick ut 8 oktober',
+        fact: 'Intyget gäller inte längre.',
+      },
+      { ref: 'thread:t-fakturor', label: 'Attestera 3 fakturor, 37\u00a0050 kr', fact: '2 matchar en beställning.' },
+      { ref: 'thread:t-omtanke', label: 'Boka ett omtankesamtal', fact: '' },
+      // A row that is not a work item: its ref is the source's own, and no id is kept of it.
+      { ref: 'inv-7', label: 'Faktura från Energibolaget', fact: '' },
+    ];
+    const late =
+      'Det finns 2 försenade ärenden:\n- **Delegering läkemedel gick ut 8 oktober**\n- **Attestera 3 fakturor, 37 050 kr**';
+    expect(namedItems(view as never, { rows }, late)).toEqual(['t-delegering', 't-fakturor']);
+    // An answer that says how many rows the read answered draws the read as a whole; the items it names are still kept.
+    const whole = 'Du har 4 ärenden. Störst är **Attestera 3 fakturor, 37 050 kr** och **Faktura från Energibolaget**.';
+    expect(cardRows(view as never, {}, { rows }, whole)).toEqual({ count: 4, show: 'all' });
+    expect(namedItems(view as never, { rows }, whole)).toEqual(['t-fakturor']);
+    // None named, a view without a ref, and a read that is not rows: nothing kept.
+    expect(namedItems(view as never, { rows }, 'Inget är försenat.')).toEqual([]);
+    expect(namedItems({ ...view, ref: undefined } as never, { rows }, late)).toEqual([]);
+    expect(namedItems({ kind: 'detail', fields: [] } as never, { rows }, late)).toEqual([]);
+    // More than a menu holds: the first of them, in the read's order.
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      ref: `thread:t${i}`,
+      label: `Ärende nummer ${i + 100}`,
+      fact: '',
+    }));
+    const all = many.map(r => r.label).join(', ');
+    expect(namedItems(view as never, { rows: many }, all)).toEqual(many.slice(0, 8).map(r => r.ref.slice(7)));
+  });
   test('competence: a read the model narrowed with its input is the card, with that input', async () => {
     const w = await world([['competence__holdings', { person: 'anna' }]], { brandskydd: true });
     w.model.turn.text = 'Två av hennes kompetenser har gått ut.';
@@ -778,6 +834,56 @@ describe('the card under an answer is the read it rests on, and the rows it is a
  * Where an answer comes from and when are facts the server knows: the turn's reads, by the registry's names for their
  * systems, and the message's time. The model is not asked to write them, and what it writes of them anyway is cut.
  */
+describe('the work items an answer names among the rows it draws', () => {
+  /** A work item with only what Att göra's read takes of it. */
+  const workItem = (id: string, title: string): Thread =>
+    ({
+      id,
+      kind: 'pushed',
+      topic: id,
+      title,
+      state: 'open',
+      connector: 'finance',
+      area: 'ekonomi',
+      summary: '',
+      items: [],
+      actions: [],
+      waitingOn: null,
+      deadline: null,
+      snoozedUntil: null,
+      trigger: { reason: 'Kom', source: 'Ekonomisystemet', at: T },
+      messages: [],
+      proposals: [],
+      createdAt: T,
+      updatedAt: T,
+    }) as unknown as Thread;
+  const items = [
+    workItem('t-delegering', 'Delegering läkemedel gick ut 8 oktober'),
+    workItem('t-fakturor', 'Attestera 3 fakturor, 37 050 kr'),
+    workItem('t-omtanke', 'Boka ett omtankesamtal med en medarbetare'),
+    workItem('t-sjuk', 'Sjukanmälan att registrera'),
+  ];
+  test('are kept with the answer by their ids, so the pane beside the conversation can lead to each; the audit row holds none', async () => {
+    const w = await world([['clew__work', {}]], { work: items });
+    w.model.turn.text =
+      'Två ärenden är försenade:\n- **Delegering läkemedel gick ut 8 oktober**\n- **Attestera 3 fakturor, 37 050 kr**';
+    const { meta, audit } = await w.ask('hillevi', 'Vilka är försenade?');
+    expect(meta.view).toMatchObject({ capability: 'clew.work', declared: true });
+    expect(meta.viewRows).toMatchObject({ count: 4, show: 'named' });
+    expect(meta.viewItems).toEqual(['t-delegering', 't-fakturor']);
+    // The transcript draws the list, not a card per item.
+    expect(meta.cards).toBeUndefined();
+    // What the turn leaves in the audit row is which read it made, never which rows or items (D91).
+    expect(audit.details).toMatchObject({ view: 'clew.work' });
+    expect(JSON.stringify(audit)).not.toContain('t-delegering');
+  });
+  test('an answer that names none of them keeps none', async () => {
+    const w = await world([['clew__work', {}]], { work: items });
+    w.model.turn.text = 'Inget av dina ärenden är försenat.';
+    expect((await w.ask('hillevi', 'Vilka är försenade?')).meta.viewItems).toBeUndefined();
+  });
+});
+
 describe('the source of an answer is the turn’s, never the model’s prose', () => {
   test('the prompt asks for no source or time, and each tool says its system by the registry’s name', async () => {
     const w = await world([['competence__attention', {}]]);
