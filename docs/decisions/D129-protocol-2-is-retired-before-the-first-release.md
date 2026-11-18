@@ -41,9 +41,10 @@ since every manifest on 2 is refused.
 **Consequences.** A connector process that serves an old manifest is now refused rather than warned about: the stack's
 fixtures need a restart after a protocol change (`docker compose -f .devcontainer/compose.yaml restart <id> …`), and
 the loader records `manifest-invalid` with the steps until they get one. A manifest stored before the change is never
-put live as it is: the loader and the reconciler ignore it, an administrator's change to the row does not register it
-(`applyLive` in `apps/server/src/connectors/usecases/admin.ts` reads it through `parseManifest`), and
-`bun run dev:connectors` fetches the service's current one in its place. Migration `0080_retire_protocol_outdated`
-sets a stored health of `protocol-outdated` to `untested`, which the next load or check replaces. The verifiers in
+put live as it is: the loader and the reconciler ignore it, and an administrator's change to the row does not register
+it (`applyLive` in `apps/server/src/connectors/usecases/admin.ts` reads it through `parseManifest`). No migration or
+fallback carries the old rows over, since the data is disposable: after the fixtures, restart the BFF, whose boot
+fetches every enabled connector's manifest and records its health over what was stored under 2, and run
+`bun run dev:connectors` only after that, since it refuses a stored manifest the loader refuses. The verifiers in
 `connectors/` still refuse an assertion without the `body` claim or a call without `about`, which is what a Clew on 2
 sent; nothing there changes.
