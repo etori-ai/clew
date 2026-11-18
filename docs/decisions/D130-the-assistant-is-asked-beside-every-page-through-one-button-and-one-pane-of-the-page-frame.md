@@ -38,8 +38,8 @@ test.
    Opening the thing gives the focus to its name, never to the box.
 6. **A conversation beside a page is a real conversation about its subject, one per subject** (the product owner,
    2026-11-18). The pane shows the person's latest one about that subject and continues it; the pane can start
-   another. "Helt fönster" in the pane's header leads to the conversation's page, with the subject beside it where a
-   thing can stand there. It is listed under Alla samtal with what it is about, and among the rail's latest only once it has been
+   another. "Öppna som samtal" in the pane's header leads to the conversation's page, where the subject stands beside
+   the conversation if a thing can stand there. It is listed under Alla samtal with what it is about, and among the rail's latest only once it has been
    opened at full size.
 7. **An answer in the pane is text, a few named rows as links, or one row for an action the assistant has filled
    in.** A card, a table, a document, a week and anything from a file are drawn on the conversation's page, and the
@@ -51,10 +51,12 @@ test.
    them. Things come to such a conversation with `@` and "Lägg till i samtalet" and stand beside it.
 10. **A person must be able to tell the two sizes apart without knowing assistants** (the product owner, 2026-11-18:
     "most users of the system are not AI-natives"). Before anything is asked the pane says in plain words what asking
-    here does and what the whole window adds; the words go with the first question. The way to the whole window is
-    named for what it is, "Helt fönster". Where an answer needs room the pane does not have, it says what the answer
-    is and offers the whole window (rule 7), so the difference is met where it matters. The pane's box is the plain
-    one: the model, `@`, dictation and other systems' assistants belong to the whole window (rule 9).
+    here does and what opening it as a conversation adds; the words go with the first question. The way there is
+    named with words a person already has. "Helt fönster" was drawn and found unclear by the owner the same day, who then
+    chose "Öppna som samtal": the product's own word for what the question becomes and where it is found afterwards
+    (Alla samtal). The row under an answer that needs room says "Visa i samtalet". Where an answer needs room the pane does not have, it says
+    what the answer is and offers the conversation (rule 7), so the difference is met where it matters. The pane's box is the plain
+    one: the model, `@`, dictation and other systems' assistants belong to the conversation's page (rule 9).
 11. **The pane stands beside the page from one window width on every page; below it, it is a drawer over the page; on
     a phone the button leads to the conversation's page.** While the pane is open the page draws the narrow layout it
     already has: a table scrolls or becomes its list, a thing's facts stand above its read.
