@@ -4202,18 +4202,25 @@ export const PROVISIONED_KEY_LENGTH = 512;
  * D100: the most a question about the people may hold. The page holds what it sends to the same limits, so that
  * nothing a person types or an address names is refused as a malformed request.
  */
-export const USERS_QUERY_LIMITS = { text: 200, unitId: PROVISIONED_KEY_LENGTH, page: 1_000_000 } as const;
+export const USERS_QUERY_LIMITS = {
+  text: 200,
+  unitId: PROVISIONED_KEY_LENGTH,
+  personId: PROVISIONED_KEY_LENGTH,
+  page: 1_000_000,
+} as const;
 /**
  * D100: one page of Administration › Användare, asked for in a request body so that a searched name is never part of
  * an address. Every part narrows the list further. `text` is words matched without regard to case against the name,
  * the title, the user name, the e-mail and the titles of the person's employments (D110, D114), each word in one of
  * them. `unitId` is a unit with everything below it in the tree. `role` is a role on some unit, and with `unitId` on
- * one of those units.
+ * one of those units. `personId` is one person by id: the person page asks for that person's row this way, to show an
+ * administrator whether they have signed in.
  */
 export const UsersAdminQuery = Type.Object(
   {
     text: Type.Optional(Type.String({ maxLength: USERS_QUERY_LIMITS.text })),
     unitId: Type.Optional(Type.String({ minLength: 1, maxLength: USERS_QUERY_LIMITS.unitId })),
+    personId: Type.Optional(Type.String({ minLength: 1, maxLength: USERS_QUERY_LIMITS.personId })),
     role: Type.Optional(RoleSchema),
     status: Type.Optional(literals(USER_STATUSES)),
     capability: Type.Optional(CapabilitySchema),

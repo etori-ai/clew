@@ -720,6 +720,7 @@ export class MockApi {
         if (this.peopleRefused) return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
         const matching = this.people.filter(
           u =>
+            (!asked.personId || u.id === asked.personId) &&
             words.every(w =>
               [u.name, u.title, u.userName, u.email].some(v =>
                 (v ?? '').normalize('NFC').toLocaleLowerCase('sv').includes(w),

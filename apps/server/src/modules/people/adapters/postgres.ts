@@ -150,6 +150,7 @@ function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
   const granted = personHas(sql`${schema.accessGrants}`, eq(schema.accessGrants.personId, schema.people.id)),
     bound = personHas(sql`${schema.identityBindings}`, eq(schema.identityBindings.personId, schema.people.id));
   return [
+    search.personId === undefined ? undefined : eq(schema.people.id, search.personId),
     ...(search.words ?? []).map(word => {
       const pattern = '%' + word.replace(/[\\%_]/g, '\\$&') + '%';
       return or(
