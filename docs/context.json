@@ -4569,6 +4569,18 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-18-astryx-0.7.16-upgrade.md",
+      "title": "Review: Astryx 0.7.13 to 0.7.16, what is new and what it changed here · 2026-11-18",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "What is new that matters to Clew",
+        "Swedish strings",
+        "Dependencies",
+        "Outcome"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",

@@ -205,6 +205,17 @@ test.describe('the action dialog on a work item', () => {
     await date.first().press('Tab');
     await expect.poll(() => api.timesReads.some(q => q.includes('date=2026-11-10'))).toBe(true);
     await expect(dialog.getByRole('group', { name: 'Din dag, tisdag 10 november' })).toBeVisible();
+    // A date the calendar does not have stays in the field and the field says so, in Swedish (Astryx 0.7.15; the
+    // message is Clew's own in packages/ui/src/locale.ts, since the shipped catalogue lacks it).
+    await date.first().fill('');
+    await date.first().pressSequentially('2026-02-30');
+    await date.first().press('Tab');
+    await expect(dialog.getByText('Ange ett datum som finns').first()).toBeVisible();
+    await expect(date.first()).toHaveAttribute('aria-invalid', 'true');
+    await date.first().fill('');
+    await date.first().pressSequentially('2026-11-10');
+    await date.first().press('Tab');
+    await expect(dialog.getByText('Ange ett datum som finns')).toHaveCount(0);
     // The step is taller than the window, and axe takes a label scrolled out of the dialog's view for a missing one
     // (label-title-only): the times and the fields under them are brought into view first, as a person scrolls to them.
     await when(dialog).scrollIntoViewIfNeeded();

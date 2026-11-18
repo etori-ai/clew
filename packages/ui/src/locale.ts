@@ -11,6 +11,13 @@ export const swedish = {
   '@astryx.chatDictation.start': { defaultMessage: 'Tala' },
   '@astryx.chatDictation.stop': { defaultMessage: 'Sluta tala' },
   '@astryx.chatTriggerMenu.searching': { defaultMessage: 'Söker …' },
+  '@astryx.dateInput.nonexistentDate': {
+    defaultMessage: '{named, select, yes {Ange ett datum som finns ({calendar})} other {Ange ett datum som finns}}',
+  },
+  '@astryx.dateInput.outOfRangeDate': {
+    defaultMessage:
+      '{bounds, select, both {Ange ett datum från {min} till {max}} min {Ange ett datum från och med {min}} max {Ange ett datum till och med {max}} other {Ange ett tillgängligt datum}}',
+  },
   '@astryx.dropdownMenu.backTo': { defaultMessage: 'Tillbaka till {parent}' },
   '@astryx.kbd.key.alt': { defaultMessage: 'Alt' },
   '@astryx.kbd.key.backspace': { defaultMessage: 'Backsteg' },
@@ -28,5 +35,7 @@ export const swedish = {
   '@astryx.kbd.key.tab': { defaultMessage: 'Tabb' },
   '@astryx.kbd.key.up': { defaultMessage: 'Uppåtpil' },
   '@astryx.kbd.shortcut': { defaultMessage: '{shortcut} + {key}' },
+  '@astryx.numberInput.invalidNumber': { defaultMessage: 'Ogiltigt tal' },
+  '@astryx.timestamp.copyFailed': { defaultMessage: 'Det gick inte att kopiera till urklipp.' },
   '@astryx.typeahead.selectionCleared': { defaultMessage: 'Rensat: {label}' },
 };

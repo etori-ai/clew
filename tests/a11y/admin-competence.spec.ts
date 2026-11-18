@@ -182,8 +182,17 @@ test.describe('Administration › Kompetens', () => {
       await page.keyboard.press('Space');
       const months = dialog.getByRole('spinbutton', { name: /Giltigt i/ });
       await months.focus();
+      // A fraction in a whole-number field stays and the field says so, in Swedish (Astryx 0.7.16; the message is
+      // Clew's own in packages/ui/src/locale.ts, since the shipped catalogue lacks it).
+      await page.keyboard.type('2,5');
+      await page.keyboard.press('Tab');
+      await expect(dialog.getByText('Ogiltigt tal').first()).toBeVisible();
+      await expect(months).toHaveAttribute('aria-invalid', 'true');
+      await months.focus();
+      await page.keyboard.press('ControlOrMeta+A');
       await page.keyboard.type('36');
       await page.keyboard.press('Tab');
+      await expect(dialog.getByText('Ogiltigt tal')).toHaveCount(0);
       await dialog.getByRole('button', { name: 'Spara', exact: true }).focus();
       await page.keyboard.press('Enter');
 
