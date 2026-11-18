@@ -9,7 +9,7 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS } from './data';
+import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS, usersPeople } from './data';
 import { CONTACT, FRITIDS, JOHAN_EMAIL, MELLANSTADIET, People } from './person-data';
 
 /**
@@ -267,6 +267,25 @@ test.describe('the person as a page', () => {
     const facts = page.getByRole('complementary', { name: 'Uppgifter' });
     await expect(facts.getByText(MELLANSTADIET.label, { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: new RegExp(MELLANSTADIET.label) })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('an administrator of users reads under Kontakt whether the person has signed in; nobody else does', async ({
+    page,
+    api,
+  }) => {
+    await new People().route(page);
+    api.people = [{ ...usersPeople()[0]!, id: 'johan', bound: false }];
+    await open(page, '/people/johan?from=%2Fstaff');
+    const facts = page.getByRole('complementary', { name: 'Uppgifter' });
+    await expect(facts).toContainText('Användarnamn');
+    await expect(facts).not.toContainText('Inloggning');
+    expect(api.peopleQueries).toEqual([]);
+    api.admin = true;
+    await page.reload();
+    await expect(facts).toContainText('Inloggning');
+    await expect(facts.getByText('Inte inloggad ännu', { exact: true })).toBeVisible();
+    expect(api.peopleQueries).toContainEqual({ personId: 'johan' });
     await expectNoAxeViolations(page);
   });
 });

@@ -256,10 +256,12 @@ export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
  * further and an absent part narrows nothing. `words` each match, without regard to case, somewhere in the name, the
  * title (D110), the user name, the e-mail or the title of one of the person's employments (D114). `unitIds` is an
  * assignment on one of the units, `role` an assignment with that role, and the two together one assignment that is
- * both. `status` is the row's reading of access (`UserStatus`), `capability` a capability on the grant.
+ * both. `status` is the row's reading of access (`UserStatus`), `capability` a capability on the grant, and `personId`
+ * the one person with that id.
  */
 export interface UserSearch {
   words?: readonly string[];
+  personId?: string;
   unitIds?: readonly string[];
   role?: Role;
   status?: UserStatus;
