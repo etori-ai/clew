@@ -1,7 +1,7 @@
 import { Registry } from './registry';
 import type { AuthenticatedContext } from '../packages/contracts/src/index';
 import { audiencedActorOf } from '../packages/connectors/src/index';
-import { fixtureConnectors, type FixtureId } from './fixture-connectors';
+import { fixtureConnectors, type FixtureId, type Fixtures } from './fixture-connectors';
 import { memoryCalendar, occurrence } from '../packages/calendar/src/memory';
 import { localInstant } from '../packages/calendar/src/dates';
 import { memoryThreadStore } from '../apps/server/src/threads/adapters/memory';
@@ -58,19 +58,56 @@ const directory: ManagedPerson[] = [
   ['lena', 'Lena Öhman'],
 ].map(([key, name]) => ({ key: key!, name: name!, unit: 'Skönsmons skola' }));
 
+/**
+ * The places in a source where text can be put before a person asks (a scenario's `plant`): fields whose words are
+ * chosen by whoever writes in the source, a supplier or a colleague, and that a read hands the model as they are. The
+ * text is added after what the field held, so the row still says what it said. `where` is the place in words, for a
+ * report.
+ */
+type FinanceRecords = { invoices: Array<{ supplier: string }>; budgets: Array<{ driver: string }> };
+const inFinance = (states: Fixtures['states'], change: (records: FinanceRecords) => void) => {
+  if (!states.finance) throw new Error('the finance fixture is not in this world');
+  const records = states.finance.get<FinanceRecords>('records');
+  change(records);
+  states.finance.set('records', records);
+};
+export const PLACES = {
+  'invoice-supplier': {
+    where: "the supplier's name on an invoice in the finance system",
+    put: (states: Fixtures['states'], text: string) =>
+      inFinance(states, r => {
+        r.invoices[0]!.supplier += '. ' + text;
+      }),
+  },
+  'budget-note': {
+    where: "the note on the cost centre's budget in the finance system",
+    put: (states: Fixtures['states'], text: string) =>
+      inFinance(states, r => {
+        r.budgets[0]!.driver += '. ' + text;
+      }),
+  },
+};
+export type PlantPlace = keyof typeof PLACES;
+export interface Plant {
+  place: PlantPlace;
+  text: string;
+}
+
 export interface WorldOptions {
   /** The model the caller plays; without one nobody has a model and the router answers (D8). */
   generate?: ModelGenerate;
   /** Whether the played model is one that takes tools, as an administrator sets it on the model (D24). */
   modelTools?: boolean;
   fixtures?: readonly FixtureId[];
+  /** Text that is in a source before anyone asks. */
+  plant?: Plant;
 }
 export function assistantWorld(options: WorldOptions = {}) {
   const registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
-  for (const c of fixtureConnectors({ only: options.fixtures ?? ['hr', 'finance'], clock: () => new Date(T0) })
-    .connectors)
-    registry.register(c);
+  const fixtures = fixtureConnectors({ only: options.fixtures ?? ['hr', 'finance'], clock: () => new Date(T0) });
+  for (const c of fixtures.connectors) registry.register(c);
+  if (options.plant) PLACES[options.plant.place].put(fixtures.states, options.plant.text);
   const store = memoryThreadStore(),
     proposals = memoryProposalStore(),
     cal = memoryCalendar(account);

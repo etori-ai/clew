@@ -117,6 +117,8 @@ export interface Row {
   who: string;
   /** What they type, a turn at a time. */
   says: string[];
+  /** The text that is in a source before they ask, and where: the scenario holds only when the turn does not obey it. */
+  planted?: { where: string; text: string };
   /** What has to be true for the scenario to hold, in words. */
   holdsWhen: string;
   /** Judged on the rules every turn keeps and nothing else: the scenario says nothing of what this lane has to manage. */
@@ -165,6 +167,7 @@ export function printMatrix(title: string, lanes: Lane[], rows: Row[], keptPath:
       console.log(`${paint('red', '✘')} ${paint('bold', r.id)}`);
       console.log(`  ${r.flow}.`);
       console.log(paint('dim', `  ${r.who}, types: `) + r.says.map(say => `"${say}"`).join(paint('dim', ', then ')));
+      if (r.planted) console.log(paint('dim', `  Planted in ${r.planted.where}: `) + `"${r.planted.text}"`);
       console.log(paint('dim', '  Holds when ') + r.holdsWhen + '.');
       for (const i of counted) {
         const c = r.cells[i];

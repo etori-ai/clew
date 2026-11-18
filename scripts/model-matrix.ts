@@ -31,6 +31,7 @@ import {
   DIMENSIONS,
   LANES,
   WHO,
+  planted,
   runScenario,
   scenarios as all,
   type Scenario,
@@ -318,6 +319,7 @@ for (const matrix of kept.matrices) {
       flow: s.flow,
       who: WHO[s.persona],
       says: s.turns.map(t => t.say),
+      ...(s.plant ? { planted: planted(s)! } : {}),
       holdsWhen: s.holdsWhen,
       // A scenario that says nothing of what a model has to manage is judged on the rules every turn keeps, and marked.
       rulesOnly: matrix.name === 'models' && !s.turns.some(t => t.model),

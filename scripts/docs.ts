@@ -24,7 +24,7 @@ import { manifest as appraisals } from '../connectors/appraisals/connector.mjs';
 import { manifest as moodle } from '../connectors/moodle/manifest.mjs';
 import { manifest as servicedesk } from '../connectors/servicedesk/connector.mjs';
 import { modelResultsMarkdown, type ModelResults } from './model-results';
-import { scenarios, WHO } from '../tests/assistant-scenarios';
+import { planted, scenarios, WHO } from '../tests/assistant-scenarios';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const check = process.argv.includes('--check');
@@ -121,6 +121,7 @@ generated.set(
         flow: s.flow,
         who: WHO[s.persona],
         says: s.turns.map(t => t.say),
+        ...(s.plant ? { planted: planted(s)! } : {}),
         holdsWhen: s.holdsWhen,
         judged: s.turns.some(t => t.model),
       })),
