@@ -21,7 +21,7 @@ export const remoteRow = (id: string, overrides: Partial<NewConnector> = {}): Ne
   url: 'http://hello:4010',
   secret: 'sealed:' + id,
   state: 'draft',
-  manifest: { protocol: 1, id, kind: 'passthrough', source: 'Hello', areas: [], capabilities: [], scan: false },
+  manifest: { protocol: 3, id, kind: 'passthrough', source: 'Hello', areas: [], capabilities: [], scan: false },
   health: { status: 'ok', at: T0 },
   createdBy: 'person:mikael',
   at: T0,
@@ -144,7 +144,7 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       await store.recordHealth(
         id,
         { status: 'ok', at: T1 },
-        { protocol: 1, id, kind: 'passthrough', source: 'Hello 2', areas: [], capabilities: [], scan: true },
+        { protocol: 3, id, kind: 'passthrough', source: 'Hello 2', areas: [], capabilities: [], scan: true },
         T1,
       );
       expect(await store.read(id)).toMatchObject({ manifestAt: T1, version: 1 });

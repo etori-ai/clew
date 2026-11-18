@@ -104,12 +104,11 @@ it came by, and carries in its body, which the assertion is bound to, how the ca
   as D99 has it, which Clew works out: a manager of several units reaches the reports on each, a manager higher in the
   tree the managers of the units below). Clew never sends a colleague to these reads: a key it may not be asked about is
   left out of `keys`, and a single `person` outside them is refused by Clew as an unknown capability is.
-- **Fail-closed:** a key with no vouched relation, a missing `about` (a Clew on protocol 2, anything sending keys past
-  Clew), an `about` for another entity and a relation other than `self` or `managed` are no row (`moodle.person`,
+- **Fail-closed:** a key with no vouched relation, a missing `about` (anything sending keys past Clew), an `about` for another entity and a relation other than `self` or `managed` are no row (`moodle.person`,
   `moodle.holdings`) or not found (`moodle.courses`, `moodle.course`), the same answer as for a person Moodle does not
   know, and nothing is looked up for them. The verifier, handed the request, refuses an assertion that was not issued
   for exactly this body and this capability, so an `about` cannot be added or changed, and refuses one without Clew's
-  `body` claim, as a Clew on protocol 2 signs it.
+  `body` claim.
 - **What stays the connector's, because it is about Moodle and not about the organisation:** exactly one account must
   match a key; under `self` the account found must be the signed caller's own; and `moodle.course` answers not found for
   a course the person is not enrolled in, one that does not exist, and one the list would not show (enrolled, never
@@ -320,7 +319,7 @@ On 2026-11-12 against Moodle LMS 5.3.1 as seeded by `.devcontainer/moodle/seed.p
   Hillevi answered himself only; his own list answered; Johan's list and Johan's course refused by Clew.
 - Straight to the running service, signed by the installation's key and bound to the body: Johan's list as Hassan with
   no `about`, and with `about` saying `colleague`, not found (404); keys with no `about`, no row; an assertion without
-  the body claim, as a Clew on protocol 2 signs it, refused (401).
+  the body claim refused (401).
 - With a badge and a course renamed to contain "&", `moodle.courses` through the running service answered
   "HLR- & AED-instruktör" and "Informationssäkerhet & dataskydd för medarbetare"; both were named back (before the move
   to protocol 3).

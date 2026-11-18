@@ -169,7 +169,7 @@ test.describe('administration', () => {
       await open(page, '/admin/connectors/finance');
       await expect(page.getByRole('img', { name: 'Färg lila, 2:a anslutna systemet' })).toBeVisible();
       await expect(
-        page.getByText('2:a anslutna systemet · färg lila · direkt från källan · protokoll 1'),
+        page.getByText('2:a anslutna systemet · färg lila · direkt från källan · protokoll 3'),
       ).toBeVisible();
       const areas = (await pickSection(page, 'Områden')).getByRole('list', { name: 'Områden' });
       await expect(areas.getByRole('listitem').first()).toContainText('Budget');

@@ -168,7 +168,7 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
     registry.run<Row>(actor, `${ID}.course`, { person: who, course: id });
   /**
    * A request straight to the service as Clew sends it (D117): the body, with the `about` given, bound to the assertion.
-   * Without `about` it is a call that vouches for nobody: a Clew on protocol 2, or anything that sends keys past Clew.
+   * Without `about` it is a call that vouches for nobody: anything that sends keys past Clew.
    */
   const post = async (
     actor: Actor,
@@ -815,7 +815,7 @@ describe('the Moodle connector', () => {
     const { post, learning } = stack();
     const rows = async (response: Response) => ((await response.json()) as { output: { rows: Row[] } }).output.rows;
     const before = { ...learning.controls.calls };
-    // No `about`: a Clew on protocol 2, or anything sending keys past Clew.
+    // No `about`: anything sending keys past Clew.
     expect(await rows(await post(hillevi, 'moodle.person', { keys: ['anna', 'erik'] }))).toEqual([]);
     expect((await post(hillevi, 'moodle.courses', { person: 'anna' })).status).toBe(404);
     expect((await post(hillevi, 'moodle.course', { person: 'anna', course: '2' })).status).toBe(404);
@@ -862,7 +862,7 @@ describe('the Moodle connector', () => {
       new Request(url, { method: 'POST', headers: elsewhere.headers, body: await elsewhere.text() }),
     );
     expect(replayed.status).toBe(401);
-    // An assertion with no body claim, as a Clew on protocol 2 signs it.
+    // An assertion with no body claim (D117).
     const unbound = await assertionFor(ID, secret)(anna);
     const old = await service.handle(
       new Request(url, {

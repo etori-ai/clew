@@ -196,8 +196,8 @@ export function createConnector({
 
   /**
    * The Moodle account behind each key the caller may be answered about, in the order asked. A key is answered only when
-   * Clew vouched for it as `self` or `managed`: a key it did not vouch for, a missing `about` (a Clew on protocol 2,
-   * anything that sends keys past Clew) and any other relation are no one, the same as a person Moodle does not know.
+   * Clew vouched for it as `self` or `managed`: a key it did not vouch for, a missing `about` (anything that sends keys past
+   * Clew) and any other relation are no one, the same as a person Moodle does not know.
    * Then what is about Moodle and not about the organisation: a key asked twice (in any case) is answered once, the
    * account is the one that holds the key in lower case, a key no account or more than one holds so is no one
    * (`accountsOf`), and under `self` the account found must be the signed caller's own. Every read finds its people here.
@@ -643,7 +643,7 @@ export function createConnector({
     if (request.method !== 'POST' || !url.pathname.startsWith('/clew/')) return fail('not-found', 'Okänd adress.', 404);
 
     // The assertion must have been issued for exactly this body and this capability (D117), so the `input` and the
-    // `about` read below are Clew's. A Clew on protocol 2 signs no body and is refused here.
+    // `about` read below are Clew's. An assertion without the `body` claim is refused here.
     const assertion = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
     const key = request.headers.get('x-clew-connector-key');
     if (url.pathname.startsWith(INSTALLATION_ROUTE)) return installationCall(request, url, assertion, key);
