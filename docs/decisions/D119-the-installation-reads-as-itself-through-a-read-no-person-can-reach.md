@@ -1,6 +1,6 @@
 # D119 · The installation reads as itself, through a read no person can reach
 
-**Status:** provisional (built 2026-11-12 on branch `holdings-caller` for D108 item 9's copy of every source's holdings; accepted once a connector outside the repository answers an installation read and the competence register's copy has run on it) · **Date:** 2026-11-12 · **Area:** integrations, identity
+**Status:** provisional (built 2026-11-12 on branch `holdings-caller` for D108 item 9's copy of every source's holdings; accepted once a connector outside the repository answers an installation read and the competence register's copy has run on it; item 5's refusal of `installation` in a manifest on 2 removed by [D129](D129-protocol-2-is-retired-before-the-first-release.md) on 2026-11-18, which refuses every manifest on 2) · **Date:** 2026-11-12 · **Area:** integrations, identity
 
 **Decision.** Clew can call a connector as the installation itself, with no person behind the call. Such a call is
 not a capability: it is a read of its own kind, declared apart, reachable from the core alone, and signed so that the

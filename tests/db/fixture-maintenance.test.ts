@@ -192,7 +192,7 @@ test('reset retires pending work, preserves unknown effects and receipts, blocks
 
 test('bootstrap leaves an existing disabled connector and disabled scoped binding unchanged', async () => {
   const manifest = {
-    protocol: 2,
+    protocol: 3,
     id: connectorId,
     kind: 'passthrough',
     source: 'Test',
@@ -234,4 +234,55 @@ test('bootstrap leaves an existing disabled connector and disabled scoped bindin
     true,
   );
   expect(preserved.binding).toEqual(original.binding);
+});
+
+test('bootstrap replaces a stored manifest the loader now refuses, keeping the row, and audits it (D129)', async () => {
+  const id = 'fixture-' + randomUUID().slice(0, 24);
+  const current = {
+    protocol: 3 as const,
+    id,
+    kind: 'passthrough' as const,
+    source: 'Test',
+    scan: false,
+    areas: [],
+    capabilities: [],
+  };
+  const server = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    fetch: request =>
+      new URL(request.url).pathname === '/clew/manifest' ? Response.json(current) : new Response(null, { status: 404 }),
+  });
+  const url = `http://127.0.0.1:${server.port}`;
+  try {
+    // A row written while protocol 2 was accepted, with the health it was given then.
+    await database()
+      .insert(schema.connectors)
+      .values({
+        id,
+        url,
+        secret: 'preserve-this-seal',
+        state: 'disabled',
+        manifest: { ...current, protocol: 2 } as never,
+        health: { status: 'protocol-outdated' as never, at: '2026-11-17T08:00:00.000Z' },
+        createdBy: 'test',
+        updatedBy: 'test',
+      });
+    const result = await registerConnector({ id, url, secret: 'replacement-not-used', enable: true, ifMissing: true });
+    expect(result).toEqual({ manifest: current, existing: true, state: 'disabled' });
+    const [row] = await database().select().from(schema.connectors).where(eq(schema.connectors.id, id));
+    expect(row).toMatchObject({ state: 'disabled', secret: 'preserve-this-seal', manifest: current });
+    expect(row!.health).toMatchObject({ status: 'ok' });
+    const audit = await database()
+      .select()
+      .from(schema.audit)
+      .where(and(eq(schema.audit.action, 'connector.manifest'), eq(schema.audit.subject, 'connector:' + id)));
+    expect(audit.map(a => a.details)).toEqual([{ refused: 'stored manifest', source: 'Test', capabilities: 0 }]);
+  } finally {
+    server.stop(true);
+    await database()
+      .delete(schema.audit)
+      .where(eq(schema.audit.subject, 'connector:' + id));
+    await database().delete(schema.connectors).where(eq(schema.connectors.id, id));
+  }
 });

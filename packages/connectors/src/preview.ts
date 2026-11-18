@@ -414,8 +414,6 @@ function locate(problem: string, document: Manifestish): Located {
     return { path: base };
   }
   // The reads Clew makes as the installation (D119).
-  if (problem.startsWith('Installation reads were added under protocol 3'))
-    return { rule: 'installation-on-3', path: 'installation' };
   const installation = /^Installation read ([^\s:]+)(?: (input|output))?: (.*)$/s.exec(problem);
   if (installation) {
     const [, name, schema, rest] = installation;

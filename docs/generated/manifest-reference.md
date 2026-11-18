@@ -2839,7 +2839,7 @@ Example:
 
 #### `installation`
 
-The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it.
+The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched.
 
 - Type: array of object
 - optional
@@ -3013,7 +3013,7 @@ Example:
 
 #### `assistants`
 
-The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field; a manifest on 2 cannot declare it.
+The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field.
 
 - Type: object
 - optional

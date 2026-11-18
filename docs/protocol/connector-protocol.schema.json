@@ -2232,7 +2232,7 @@
             "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
           },
           "maxItems": 1,
-          "description": "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it."
+          "description": "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched."
         },
         "uses": {
           "type": "array",
@@ -2317,7 +2317,7 @@
             }
           },
           "additionalProperties": false,
-          "description": "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field; a manifest on 2 cannot declare it."
+          "description": "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field."
         },
         "header": {
           "type": "object",

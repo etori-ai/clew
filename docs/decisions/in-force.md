@@ -58,7 +58,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D89 · An errand connector acts as the person, and the case system decides access](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) | 2026-11-09 | accepted |  |
 | [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D99](README.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md), [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md), [D117](README.md), [D122](README.md) |
 | [D117 · The core decides who a source may be asked about, on every call, and signs the relation](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) | 2026-11-12 | provisional | [D129](D129-protocol-2-is-retired-before-the-first-release.md) |
-| [D119 · The installation reads as itself, through a read no person can reach](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) | 2026-11-12 | provisional |  |
+| [D119 · The installation reads as itself, through a read no person can reach](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) | 2026-11-12 | provisional | [D129](D129-protocol-2-is-retired-before-the-first-release.md) |
 | [D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) | 2026-11-13 | provisional |  |
 | [D127 · A read can say its rows are a read about people, asked for everyone, and then has one place](D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md) | 2026-11-14 | provisional |  |
 | [D129 · Protocol 2 is retired before the first release, and until a release a break retires the number before it](D129-protocol-2-is-retired-before-the-first-release.md) | 2026-11-18 | accepted |  |
@@ -168,7 +168,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
 | [D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it](D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md) | 2026-11-13 | provisional |  |
-| [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional | [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) |
+| [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional | [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md), [D129](D129-protocol-2-is-retired-before-the-first-release.md) |
 
 ## Proposed, not decided
 

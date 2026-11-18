@@ -34,7 +34,7 @@ const checkedAs = () =>
 
 /** The manifest a service answers under a connector id, with a read about a person and a callback it asks for. */
 const manifestFor = (connector: string) => ({
-  protocol: 2,
+  protocol: 3,
   id: connector,
   kind: 'passthrough',
   source: 'Kontrolltjänsten',

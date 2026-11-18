@@ -436,7 +436,7 @@ export const ConnectorManifestSchema = Type.Object(
       Type.Array(ManifestInstallationReadSchema, {
         maxItems: INSTALLATION_PROFILES.length,
         description:
-          "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it.",
+          "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched.",
       }),
     ),
     uses: Type.Optional(
@@ -472,7 +472,7 @@ export const ConnectorManifestSchema = Type.Object(
               "One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both.",
           }),
         },
-        "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field; a manifest on 2 cannot declare it.",
+        "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field.",
       ),
     ),
     header: Type.Optional(

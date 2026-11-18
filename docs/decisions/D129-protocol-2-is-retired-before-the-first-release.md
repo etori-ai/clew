@@ -30,7 +30,20 @@ still accepted when no one runs Clew yet.
 **Why.** Clew is in its lab phase and its data is disposable. A compatibility path no one uses is code to read, test
 and explain, and it hid a real problem (stale processes) behind a warning that read as a protocol problem.
 
+**Replaces.** Nothing is superseded. It amends [D60](D60-the-instance-serves-its-connector-protocol.md) item 4 (the
+window applies from the first release on), closes the window of
+[D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) item 10, and
+removes the rules that a manifest on 2 cannot declare `installation`
+([D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) item 5) or `assistants`
+([D125](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) item 1),
+since every manifest on 2 is refused.
+
 **Consequences.** A connector process that serves an old manifest is now refused rather than warned about: the stack's
 fixtures need a restart after a protocol change (`docker compose -f .devcontainer/compose.yaml restart <id> …`), and
-the loader records `manifest-invalid` with the steps until they get one. The verifiers in `connectors/` still refuse an
-assertion without the `body` claim or a call without `about`, which is what a Clew on 2 sent; nothing there changes.
+the loader records `manifest-invalid` with the steps until they get one. A manifest stored before the change is never
+put live as it is: the loader and the reconciler ignore it, an administrator's change to the row does not register it
+(`applyLive` in `apps/server/src/connectors/usecases/admin.ts` reads it through `parseManifest`), and
+`bun run dev:connectors` fetches the service's current one in its place. Migration `0080_retire_protocol_outdated`
+sets a stored health of `protocol-outdated` to `untested`, which the next load or check replaces. The verifiers in
+`connectors/` still refuse an assertion without the `body` claim or a call without `about`, which is what a Clew on 2
+sent; nothing there changes.

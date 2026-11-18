@@ -13,7 +13,7 @@ import {
   readConnector,
   updateConnector,
 } from '@clew/db/connectors';
-import { fetchManifest, parseManifest } from '../packages/connectors/src/remote';
+import { fetchManifest, ManifestError, parseManifest } from '../packages/connectors/src/remote';
 import { sealSecret } from '../apps/server/src/auth-crypto';
 import { secretPurpose } from '../apps/server/src/connectors/remote';
 import { internalIds } from '../apps/server/src/connectors/registry';
@@ -43,7 +43,28 @@ export async function registerConnector(options: {
     throw new Error('Connector ' + id + ' is still bundled. Complete the fixture cutover before registration.');
   if (existing && options.ifMissing) {
     if (!existing.manifest) throw new Error('Existing connector ' + id + ' has no manifest; refresh it explicitly.');
-    return { manifest: parseManifest(existing.manifest, id), existing: true, state: existing.state };
+    try {
+      return { manifest: parseManifest(existing.manifest, id), existing: true, state: existing.state };
+    } catch (error) {
+      if (!(error instanceof ManifestError)) throw error;
+    }
+    // The stored manifest is one the loader now refuses, such as one on a retired protocol (D129): the service's
+    // current manifest replaces it, as a refresh in administration would, and the row keeps its state and secret.
+    const manifest = await fetchManifest(existing.url ?? url, id);
+    await database().transaction(async tx => {
+      await updateConnector(tx, id, actor, {
+        manifest,
+        manifestAt: new Date(),
+        health: { status: 'ok', at: new Date().toISOString() },
+      });
+      await writeAudit(tx, {
+        actor,
+        action: 'connector.manifest',
+        subject: 'connector:' + id,
+        details: { refused: 'stored manifest', source: manifest.source, capabilities: manifest.capabilities.length },
+      });
+    });
+    return { manifest, existing: true, state: existing.state };
   }
   const manifest = await fetchManifest(url, id);
   const sealed = sealSecret(secret, secretPurpose(id));

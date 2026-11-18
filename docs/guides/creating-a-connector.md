@@ -198,7 +198,7 @@ For a connector that participates in multi-system tasks, declare the fact kinds 
 
 A delegated interactive read does not establish background authorization. Figures and callbacks do not get session tokens. Approved writes and scans on a delegating connector get the person's token only while the session that approved or asked for them is active; otherwise a write remains pending with `needs-session` and Clew does not call the scan. Resolve the source's own background authorization before promising work that must happen while the person is away.
 
-Keep deployment versions independent of protocol `2`. The current manifest has no `version` or `deprecated` field. [Implementation status](../reference/status.md) is the guide to supported features.
+Keep deployment versions independent of the protocol number. The current manifest has no `version` or `deprecated` field. [Implementation status](../reference/status.md) is the guide to supported features.
 
 ## 8. Say what your rows are about
 

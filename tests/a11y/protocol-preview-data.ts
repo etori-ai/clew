@@ -9,7 +9,7 @@ const keys = {
   required: ['keys'],
 };
 export const appraisals = {
-  protocol: 2,
+  protocol: 3,
   id: 'appraisals',
   kind: 'passthrough',
   source: 'Samtalssystemet',
