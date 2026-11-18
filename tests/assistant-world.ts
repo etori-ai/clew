@@ -17,7 +17,7 @@ import type { ManagedPerson } from '../apps/server/src/assistant/ports';
 /**
  * The assistant on memory adapters over the fixture connectors, built the way `tests/unit/conversation.test.ts` builds
  * it: the real router, registry and use cases, a fixed clock, and a model only when the caller plays one. It imports no
- * test runner, so the scenario suite (`tests/unit/assistant-scenarios.test.ts`) and the eval runner (`evals/run.ts`)
+ * test runner, so the scenario suite (`tests/unit/assistant-scenarios.test.ts`) and the model matrix (`scripts/model-matrix.ts`)
  * stand on the same world.
  */
 export const T0 = '2026-11-04T07:00:00.000Z';

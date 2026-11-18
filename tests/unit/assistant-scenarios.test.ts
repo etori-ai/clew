@@ -4,7 +4,7 @@ import { judge, LANES, runScenario, scenarios } from '../assistant-scenarios';
 /**
  * The golden set of the question box without a model (D8): every scenario in `tests/assistant-scenarios.ts`, answered
  * by the router alone and by the router standing in for a model that fails. These paths are deterministic, so they gate
- * here; `evals/run.ts` draws the same scenarios as a matrix.
+ * here; `scripts/model-matrix.ts` draws the same scenarios as a matrix.
  */
 for (const lane of LANES)
   describe(`the assistant's flows, ${lane === 'router' ? 'without a model' : 'with a model that fails'}`, () => {

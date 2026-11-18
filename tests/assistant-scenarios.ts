@@ -9,7 +9,7 @@ import { assistantWorld, personas, type PersonaId } from './assistant-world';
  *
  * A lane is how the turn is answered. `router` is an installation without a model (D8); `unavailable` is one whose
  * model fails on every call, so the router takes over and the turn records why. Both are deterministic and gate in
- * `bun run check`. `model` is an installation whose model the caller plays (a real endpoint in `evals/run.ts`): the same
+ * `bun run check`. `model` is an installation whose model the caller plays (a real endpoint in `scripts/model-matrix.ts`): the same
  * scenarios, judged by each turn's `model` expectation, which never fixes the prose a model is free to write.
  */
 export type Lane = 'router' | 'unavailable' | 'model';

@@ -4,7 +4,7 @@
 
 Clew is meant to run on an open-weight model an organisation hosts itself, not only on the largest models. This page shows which models carry the flows the question box is built for, so that whoever sets an installation up can choose one knowing what it manages and where it falls short.
 
-Every model here was put through the same flows by `evals/run.ts`: a person asks, in Swedish, the way they would in the product, against the fixture systems of the development stack, and the turn is judged on what it did, never on how the answer was worded. A flow holds when the right source was read, the right thing was drawn under the answer, nothing was said that the person may not see, nothing was carried out by asking, and the turn was audited. Each flow is run several times, because a model does not answer the same way twice.
+Every model here was put through the same flows by `scripts/model-matrix.ts`: a person asks, in Swedish, the way they would in the product, against the fixture systems of the development stack, and the turn is judged on what it did, never on how the answer was worded. A flow holds when the right source was read, the right thing was drawn under the answer, nothing was said that the person may not see, nothing was carried out by asking, and the turn was audited. Each flow is run several times, because a model does not answer the same way twice.
 
 ## Models
 
@@ -107,11 +107,11 @@ Clew answers without a model too: a deterministic router takes the question, and
 Any model behind an OpenAI-compatible endpoint can be run. In the devcontainer:
 
 ```sh
-bun install --cwd evals --frozen-lockfile
 cp evals/models.example.json evals/models.json   # name the endpoint and the model; a key goes in an environment variable
-cd evals && node --import tsx run.ts              # the report in the terminal and under evals/results/
-node --import tsx run.ts --publish                 # also writes docs/reference/model-results.json
-cd .. && bun run docs:generate                     # redraws this page
+bun scripts/model-matrix.ts                      # the report in the terminal, every run kept in evals/results/runs.json
+bun scripts/model-matrix.ts --publish            # also writes docs/reference/model-results.json
+bun scripts/model-matrix.ts --rejudge --publish  # judges the kept runs again, without asking the model
+bun run docs:generate                            # redraws this page
 ```
 
-The run reaches the endpoints `models.json` names and nothing else. How the suite is built is in [testing](../architecture/testing.md).
+The runner is part of Clew and installs nothing of its own. The run reaches the endpoints `models.json` names and nothing else. How the suite is built is in [testing](../architecture/testing.md).
