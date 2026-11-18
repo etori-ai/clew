@@ -19,7 +19,6 @@ import {
 import { checkConnector } from '../../packages/connectors/src/check';
 import { manifestProblems } from '../../packages/connectors/src/remote';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
-import { healthOf } from '../../packages/connectors/src/protocol';
 import { connectorProblems } from '../../packages/connectors/src/validation';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
@@ -1363,12 +1362,16 @@ describe('a remote connector is told the relation, bound to the request', () => 
     expect(await answer('src.person', { keys: ['hassan'] })).toEqual(unknown);
     expect(new RelationsUnavailableError()).not.toBeInstanceOf(CapabilityError);
   });
-  test('a connector on protocol 2 still loads for its window: no `about` in its bodies, its looser rules, and a warning', async () => {
-    // Protocol 3 is a break (D60, D117): `about` in closed request objects, the binding the verifier requires, and the
-    // plain-string rule. A manifest on 2, with a commitments read whose `person` is untyped, is loaded and held to 2.
-    const old = {
+  test('a manifest on protocol 2 is refused as retired, with what it must change (D129)', () => {
+    // Protocol 3 is a break (D60, D117) and 2 was retired before the first release: the loader names the number, what
+    // this Clew loads and what to change, rather than a literal mismatch.
+    const problems = manifestProblems({ ...manifest, protocol: 2 }, 'remote');
+    expect(problems).toEqual([expect.stringContaining('/protocol: 2 is not accepted by this Clew, which loads 3')]);
+    expect(problems[0]).toContain('declare protocol 3');
+    expect(manifestProblems({ ...manifest, protocol: 1 }, 'remote')).toEqual([expect.stringContaining('RS256')]);
+    // A read whose `person` is untyped is refused on 3, the only number there is.
+    const loose = {
       ...manifest,
-      protocol: 2,
       capabilities: [
         ...manifest.capabilities,
         {
@@ -1383,60 +1386,9 @@ describe('a remote connector is told the relation, bound to the request', () => 
         },
       ],
     };
-    expect(manifestProblems(old, 'remote')).toEqual([]);
-    expect(manifestProblems({ ...old, protocol: 3 }, 'remote')).toEqual([
+    expect(manifestProblems(loose, 'remote')).toEqual([
       expect.stringContaining('remote.commitments: person names a person, so it must be a plain string property'),
     ]);
-    expect(manifestProblems({ ...old, protocol: 1 }, 'remote')).toEqual([expect.stringContaining('not accepted')]);
-    expect(healthOf(old as never, T)).toEqual({
-      status: 'protocol-outdated',
-      at: T,
-      detail: expect.stringContaining('declare protocol 3'),
-    });
-    expect(healthOf(manifest as never, T)).toEqual({ status: 'ok', at: T });
-    const bodies: Array<Record<string, unknown>> = [];
-    const w = world();
-    w.registry
-      .register(
-        remoteConnector(parseManifest(old, 'remote'), {
-          url: 'http://remote',
-          assert: async () => 'x',
-          fetch: async (url, init) => {
-            const body = JSON.parse(String(init!.body)) as { input: Record<string, unknown> };
-            bodies.push(body);
-            return Response.json({
-              output: String(url).endsWith('/remote.person')
-                ? { rows: (body.input.keys as string[]).map(key => ({ key, state: 'Bokat' })) }
-                : { rows: [] },
-            });
-          },
-        }),
-      )
-      .govern('remote', openGovernance());
-    const run = (name: string, input: unknown) => w.registry.run(actorOf(w.people.persona('hillevi')), name, input);
-    // The rule still holds for it; it is only not told the relation, which its closed `CallRequest` would refuse.
-    expect(await run('remote.person', { keys: ['anna', 'karin'] })).toEqual({
-      rows: [{ key: 'anna', state: 'Bokat' }],
-    });
-    expect(bodies.map(b => Object.keys(b))).toEqual([['actor', 'input']]);
-    // Its loose `person` is still resolved, and anything but a string refused, at the call.
-    await expect(run('remote.commitments', { person: 'karin' })).rejects.toThrow('Okänd förmåga.');
-    await expect(run('remote.commitments', { person: ['anna'] })).rejects.toThrow('Okänd förmåga.');
-    expect(await run('remote.commitments', { person: 'anna' })).toEqual({ rows: [] });
-    expect(bodies.at(-1)).toEqual({ actor: expect.anything(), input: { person: 'anna' } });
-    // The conformance check says what administration says.
-    const report = await checkConnector({
-      url: 'http://remote',
-      id: 'remote',
-      assert: async () => 'x',
-      assertForeign: async () => 'x',
-      fetch: async url =>
-        String(url).endsWith('/clew/manifest') ? Response.json(old) : Response.json({ output: { rows: [] } }),
-    });
-    expect(report.findings).toContainEqual({ level: 'warn', text: expect.stringMatching(/^protocol 2: deprecated/) });
-    expect(report.items).toContainEqual(
-      expect.objectContaining({ level: 'warn', label: 'Följer ett äldre protokoll' }),
-    );
   });
   test('the conformance check vouches for no real key unless an operator names a person to sign as', async () => {
     const w = await remote();

@@ -5,7 +5,7 @@ Hello demonstrates a manifest, reads, a scan, a figure, a callback and toy execu
 - [Create a connector](../../docs/guides/creating-a-connector.md): the supported authoring path.
 - [Protocol reference](../../docs/reference/connector-protocol.md) and [generated manifest](../../docs/generated/hello.manifest.json).
 - [connector.mjs](connector.mjs): declarations and handlers.
-- [verification.mjs](verification.mjs): required companion verifier; protocol 2 RS256 assertions and the separate transport secret.
+- [verification.mjs](verification.mjs): required companion verifier; protocol 3 RS256 assertions bound to their request and the separate transport secret.
 - [server.mjs](server.mjs): Node HTTP service.
 
 ## Run locally

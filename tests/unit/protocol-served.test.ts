@@ -41,12 +41,14 @@ describe('the OpenAPI document', () => {
     expect(document.info.version).toBe(String(PROTOCOL_VERSION));
     expect(document['x-clew-protocol']).toEqual({
       current: 3,
-      accepted: [3, 2],
-      // 2 is accepted for a window after the break of 3 (D60, D117), and says what a connector on it must change.
-      deprecated: { 2: expect.stringContaining('declare protocol 3') },
-      retired: expect.objectContaining({ 1: expect.stringContaining('RS256') }),
+      accepted: [3],
+      // 2 was retired before the first release (D129), and says what a connector on it must change.
+      retired: expect.objectContaining({
+        1: expect.stringContaining('RS256'),
+        2: expect.stringContaining('declare protocol 3'),
+      }),
     });
-    expect([PROTOCOL_VERSION, PROTOCOL_ACCEPTED]).toEqual([3, [3, 2]]);
+    expect([PROTOCOL_VERSION, PROTOCOL_ACCEPTED]).toEqual([3, [3]]);
     const names = Object.keys(document.components.schemas);
     for (const ref of refs(document.paths)) expect(names).toContain(ref.replace('#/components/schemas/', ''));
   });
@@ -112,7 +114,7 @@ describe('the manifest dry run', () => {
     const preview = previewManifest(hello, { id: 'hello' });
     expect(validPreview(preview)).toBe(true);
     expect(preview.ok).toBe(true);
-    expect(preview.protocol).toEqual({ current: 3, accepted: [3, 2] });
+    expect(preview.protocol).toEqual({ current: 3, accepted: [3] });
     const manifest = preview.manifest!;
     expect(manifest.id).toBe('hello');
     expect(manifest.capabilities.map(c => c.name)).toEqual((hello as any).capabilities.map((c: any) => c.name));
@@ -168,9 +170,7 @@ describe('the manifest dry run', () => {
         }),
       ),
     ).toEqual([
-      expect.stringMatching(
-        /^\/protocol: 1 is not accepted by this Clew, which loads 3 and 2; retired 2026-11-05: .*RS256/,
-      ),
+      expect.stringMatching(/^\/protocol: 1 is not accepted by this Clew, which loads 3; retired 2026-11-05: .*RS256/),
     ]);
     expect(
       manifestProblems(
@@ -178,19 +178,10 @@ describe('the manifest dry run', () => {
           m.protocol = 4;
         }),
       ),
-    ).toEqual(['/protocol: 4 is not accepted by this Clew, which loads 3 and 2']);
-    // 2 is still loaded for its window (D60, D117).
-    // The assistants profile came with 3, so a manifest on 2 is hello's without it.
-    expect(
-      manifestProblems(
-        edited(hello, m => {
-          m.protocol = 2;
-          delete m.assistants;
-        }),
-      ),
-    ).toEqual([]);
+    ).toEqual(['/protocol: 4 is not accepted by this Clew, which loads 3']);
+    // 2 is retired (D129): a manifest on it is refused whatever it declares.
     expect(manifestProblems(edited(hello, m => void (m.protocol = 2)))).toEqual([
-      'The assistants profile was added under protocol 3; a manifest on protocol 2 cannot declare assistants.',
+      expect.stringMatching(/^\/protocol: 2 is not accepted by this Clew, which loads 3; retired 2026-11-18/),
     ]);
     expect(manifestProblems({ protocol: '2' })).toEqual(
       expect.arrayContaining([expect.stringMatching(/^\/protocol: /), expect.stringMatching(/^\/id: /)]),
@@ -808,14 +799,6 @@ describe('a capability about an entity (D97)', () => {
         { path: 'capabilities[2].person', anchor: 'rule-person-not-a-unit' },
       ],
       // The reads Clew makes as the installation (D119).
-      [
-        'an installation read on protocol 2',
-        edited(talks, m => {
-          m.protocol = 2;
-          m.installation = [{ ...structuredClone(HOLDINGS_EXAMPLE), name: 'appraisals.holdings' }];
-        }),
-        { path: 'installation', anchor: 'rule-installation-on-3' },
-      ],
       [
         'an installation read that is no profile',
         edited(

@@ -4286,8 +4286,6 @@ export const ConnectorHealthSchema = object({
     Type.Literal('manifest-invalid'),
     Type.Literal('secret-rejected'),
     Type.Literal('untested'),
-    // Loaded on the previous protocol for its window (D60): it works, and must move to the current one.
-    Type.Literal('protocol-outdated'),
   ]),
   at: Type.String(),
   detail: Type.Optional(Type.String()),

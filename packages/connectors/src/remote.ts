@@ -27,7 +27,6 @@ import {
   INSTALLATION_ROUTE,
   PROTOCOL_ACCEPTED,
   PROTOCOL_RETIRED,
-  protocolTerms,
   ScanResponseSchema,
   type ConnectorManifest,
   type ProtocolErrorCode,
@@ -326,8 +325,7 @@ function installationRead(
  */
 export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTransport): Connector {
   const source = manifest.source;
-  // A connector on the previous protocol (D60) was written against bodies without `about`; it is never sent one.
-  const told = (clew: Clew) => (protocolTerms(manifest.protocol).about && clew.about ? { about: clew.about } : {});
+  const told = (clew: Clew) => (clew.about ? { about: clew.about } : {});
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name,
     kind: c.kind,

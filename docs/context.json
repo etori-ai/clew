@@ -808,7 +808,7 @@
       "number": 60,
       "path": "docs/decisions/D60-the-instance-serves-its-connector-protocol.md",
       "title": "D60 · The instance serves its connector protocol, and a protocol break keeps the number before it",
-      "status": "accepted, built 2026-11-06",
+      "status": "accepted, built 2026-11-06; item 4 amended by [D129](D129-protocol-2-is-retired-before-the-first-release.md) (2026-11-18): until the first release a break retires the number before it at once, and the window applies from the first release on",
       "date": "2026-11-06",
       "area": "integrations"
     },
@@ -1384,7 +1384,7 @@
       "number": 117,
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
       "title": "D117 · The core decides who a source may be asked about, on every call, and signs the relation",
-      "status": "provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule \"a user can view and edit their own data and nothing else; a manager their employees'\", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation)",
+      "status": "provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule \"a user can view and edit their own data and nothing else; a manager their employees'\", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation; item 10's window for protocol 2 closed by [D129](D129-protocol-2-is-retired-before-the-first-release.md) on 2026-11-18, before the first release)",
       "date": "2026-11-12",
       "area": "integrations, identity"
     },
@@ -1549,6 +1549,15 @@
       "status": "provisional (the product owner chose it on 2026-11-16 from the canvas \"Clew",
       "date": "2026-11-16",
       "area": "ui, product"
+    },
+    {
+      "key": "D129-protocol-2-is-retired-before-the-first-release",
+      "number": 129,
+      "path": "docs/decisions/D129-protocol-2-is-retired-before-the-first-release.md",
+      "title": "D129 · Protocol 2 is retired before the first release, and until a release a break retires the number before it",
+      "status": "accepted (product owner, 2026-11-18)",
+      "date": "2026-11-18",
+      "area": "integrations"
     }
   ],
   "documents": [
@@ -2334,6 +2343,12 @@
     {
       "path": "docs/decisions/D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md",
       "title": "D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D129-protocol-2-is-retired-before-the-first-release.md",
+      "title": "D129 · Protocol 2 is retired before the first release, and until a release a break retires the number before it",
       "category": "decision-history",
       "headings": []
     },

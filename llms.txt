@@ -25,7 +25,7 @@
 - [Manifest field reference](docs/generated/manifest-reference.md): generated, every manifest field with type, constraints, example and rules; drawn at /protocol/manifest from /api/protocol/manifest-reference.json.
 - [Example manifests](docs/generated/README.md): generated from the runnable connectors.
 - [Authentication overview](docs/guides/authentication-overview.md): the end-to-end flow: sign-in, signed assertion, source credential choice and human decisions.
-- [Authorization](docs/guides/authorization.md): protocol 2, RS256, pinned public keys, separate callback grants.
+- [Authorization](docs/guides/authorization.md): protocol 3, RS256, pinned public keys, request binding, separate callback grants.
 - [Search and views](docs/guides/example-custom-directory.md): phone book implementation.
 - [Where things open](docs/guides/where-things-open.md): one table from what a manifest declares to where Clew shows it, the work item action fields `target` and `confirm`, `asks` and `effect`, and links out of Clew (D111, D112).
 - [Actions and recovery](docs/guides/actions-and-receipts.md): source writes, receipts and execution limits.

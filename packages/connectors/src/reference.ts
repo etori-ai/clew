@@ -299,7 +299,7 @@ export const RULES: Rule[] = [
     fields: ['protocol'],
     enforced: 'loader',
     decision: 'D60',
-    text: `A manifest on a retired or unknown number is refused, naming the number, the accepted ones and the reason. This instance loads ${PROTOCOL_ACCEPTED.join(' and ')}.`,
+    text: `A manifest on a retired or unknown number is refused, naming the number, the accepted ones and the reason. This instance loads ${PROTOCOL_ACCEPTED.join(' and ')}; 2 was retired before the first release (D129).`,
   },
   {
     id: 'id-matches',
@@ -560,15 +560,6 @@ export const RULES: Rule[] = [
     enforced: 'loader',
     decision: 'D97',
     text: '`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.requests`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.',
-  },
-  {
-    id: 'installation-on-3',
-    title: 'Installation reads came with protocol 3',
-    fields: ['protocol', 'installation'],
-    enforced: 'loader',
-    decision: 'D119',
-    record: D119_INSTALLATION,
-    text: '`installation` was added under protocol 3 as an optional field: a manifest without it is read as before, and a manifest on 2 that declares it is refused. Declare protocol 3 and carry the verifier of 3.',
   },
   {
     id: 'installation-profile',

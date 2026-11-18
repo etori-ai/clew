@@ -167,7 +167,7 @@ describe('the field list', () => {
   });
   test('types and constraints read as words', () => {
     const byPath = Object.fromEntries(reference.fields.map(f => [f.path, f]));
-    expect(byPath['protocol']!.type).toBe('3 / 2');
+    expect(byPath['protocol']!.type).toBe('3');
     expect(byPath['capabilities']!.type).toBe('array of object');
     expect(byPath['capabilities[].input']!.type).toBe('object (free keys)');
     expect(byPath['capabilities[].view.fields[].tones']!.type).toBe(
@@ -593,12 +593,6 @@ describe('the rules', () => {
       'hr',
     ],
     // The installation's reads (D119), on a manifest that declares the holdings profile.
-    'installation-on-3': [
-      broken(holdingsManifest, m => {
-        m.protocol = 2;
-      }),
-      'lms',
-    ],
     'installation-profile': [
       broken(holdingsManifest, m => {
         m.installation[0].name = 'lms.everything';
