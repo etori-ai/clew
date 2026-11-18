@@ -299,7 +299,7 @@ export const RULES: Rule[] = [
     fields: ['protocol'],
     enforced: 'loader',
     decision: 'D60',
-    text: `A manifest on a retired or unknown number is refused, naming the number, the accepted ones and the reason. This instance loads ${PROTOCOL_ACCEPTED.join(' and ')}; 2 was retired before the first release (D129).`,
+    text: `A manifest on any other number is refused, naming the number and the ones this instance loads: ${PROTOCOL_ACCEPTED.join(' and ')}. Until the first release there is one version, changed in place (D129).`,
   },
   {
     id: 'id-matches',

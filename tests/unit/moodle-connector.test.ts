@@ -254,10 +254,10 @@ function wrapped(
 }
 
 describe('the Moodle connector', () => {
-  test('declares protocol 3, what each read admits, that none of them is a tool, and the holdings read for the installation alone', () => {
+  test('declares the protocol, what each read admits, that none of them is a tool, and the holdings read for the installation alone', () => {
     expect(manifestProblems(moodleManifest, ID)).toEqual([]);
     const m = parseManifest(moodleManifest, ID);
-    expect([m.protocol, m.kind, m.source, m.scan, m.areas]).toEqual([3, 'passthrough', 'Lärplattformen', false, []]);
+    expect([m.protocol, m.kind, m.source, m.scan, m.areas]).toEqual([1, 'passthrough', 'Lärplattformen', false, []]);
     expect(m.capabilities.map(c => [c.name, c.kind, c.model, c.about ?? null, c.view?.kind ?? null])).toEqual([
       ['moodle.person', 'read', false, { entity: 'person' }, 'list'],
       ['moodle.courses', 'read', false, null, 'list'],

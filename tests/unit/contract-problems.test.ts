@@ -119,13 +119,13 @@ describe('the problems of a value that fails a contract', () => {
         edited(hello, m => void (m.kind = 'core')),
       ),
     ).toEqual(['/kind: Expected union value']);
-    // A protocol number is the one this instance loads (D60, D129): 3.
+    // A protocol number is the one this instance loads (D60, D129): 1.
     expect(
       lines(
         ConnectorManifestSchema,
-        edited(hello, m => void (m.protocol = '3')),
+        edited(hello, m => void (m.protocol = '1')),
       ),
-    ).toEqual(['/protocol: Expected 3']);
+    ).toEqual(['/protocol: Expected 1']);
     expect(
       lines(
         ConnectorManifestSchema,

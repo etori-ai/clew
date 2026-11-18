@@ -139,8 +139,8 @@ export function connectorUsecases(deps: AdminDeps) {
       }
       let m = manifest;
       if (!m && row.manifest !== undefined && row.manifest !== null) {
-        // A stored manifest goes live only as the loader reads it: one it refuses, on a retired protocol (D129) or
-        // otherwise, is not registered, and what is live of it is governed shut, as the reconciler does.
+        // A stored manifest goes live only as the loader reads it: one it refuses, on a number this Clew does not load or
+        // for any other reason, is not registered, and what is live of it is governed shut, as the reconciler does.
         try {
           m = parseManifest(row.manifest, row.id);
         } catch {

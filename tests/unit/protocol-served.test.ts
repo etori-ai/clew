@@ -40,15 +40,11 @@ describe('the OpenAPI document', () => {
     expect(document.openapi).toBe('3.1.0');
     expect(document.info.version).toBe(String(PROTOCOL_VERSION));
     expect(document['x-clew-protocol']).toEqual({
-      current: 3,
-      accepted: [3],
-      // 2 was retired before the first release (D129), and says what a connector on it must change.
-      retired: expect.objectContaining({
-        1: expect.stringContaining('RS256'),
-        2: expect.stringContaining('declare protocol 3'),
-      }),
+      // One version until the first release, changed in place (D129); no list of retired numbers.
+      current: 1,
+      accepted: [1],
     });
-    expect([PROTOCOL_VERSION, PROTOCOL_ACCEPTED]).toEqual([3, [3]]);
+    expect([PROTOCOL_VERSION, PROTOCOL_ACCEPTED]).toEqual([1, [1]]);
     const names = Object.keys(document.components.schemas);
     for (const ref of refs(document.paths)) expect(names).toContain(ref.replace('#/components/schemas/', ''));
   });
@@ -114,7 +110,7 @@ describe('the manifest dry run', () => {
     const preview = previewManifest(hello, { id: 'hello' });
     expect(validPreview(preview)).toBe(true);
     expect(preview.ok).toBe(true);
-    expect(preview.protocol).toEqual({ current: 3, accepted: [3] });
+    expect(preview.protocol).toEqual({ current: 1, accepted: [1] });
     const manifest = preview.manifest!;
     expect(manifest.id).toBe('hello');
     expect(manifest.capabilities.map(c => c.name)).toEqual((hello as any).capabilities.map((c: any) => c.name));
@@ -162,27 +158,12 @@ describe('the manifest dry run', () => {
     ]);
     expect(previewManifest(hello).ok).toBe(true);
   });
-  test('a retired protocol number is named with its reason, an unknown one with what is accepted', () => {
-    expect(
-      manifestProblems(
-        edited(hello, m => {
-          m.protocol = 1;
-        }),
-      ),
-    ).toEqual([
-      expect.stringMatching(/^\/protocol: 1 is not accepted by this Clew, which loads 3; retired 2026-11-05: .*RS256/),
-    ]);
-    expect(
-      manifestProblems(
-        edited(hello, m => {
-          m.protocol = 4;
-        }),
-      ),
-    ).toEqual(['/protocol: 4 is not accepted by this Clew, which loads 3']);
-    // 2 is retired (D129): a manifest on it is refused whatever it declares.
-    expect(manifestProblems(edited(hello, m => void (m.protocol = 2)))).toEqual([
-      expect.stringMatching(/^\/protocol: 2 is not accepted by this Clew, which loads 3; retired 2026-11-18/),
-    ]);
+  test('any other protocol number is named with the one this Clew loads, not as a literal mismatch', () => {
+    // The numbers the records before D129 used, 2 and 3, are refused as any other.
+    for (const protocol of [2, 3, 4])
+      expect(manifestProblems(edited(hello, m => void (m.protocol = protocol)))).toEqual([
+        `/protocol: ${protocol} is not accepted by this Clew, which loads 1`,
+      ]);
     expect(manifestProblems({ protocol: '2' })).toEqual(
       expect.arrayContaining([expect.stringMatching(/^\/protocol: /), expect.stringMatching(/^\/id: /)]),
     );
@@ -299,7 +280,7 @@ describe('a capability about an entity (D97)', () => {
     required: ['key'],
   };
   const talks = {
-    protocol: 3,
+    protocol: 1,
     id: 'appraisals',
     kind: 'passthrough',
     source: 'Samtalssystemet',
@@ -574,8 +555,8 @@ describe('a capability about an entity (D97)', () => {
         },
       ],
       [
-        'a retired protocol',
-        edited(talks, m => (m.protocol = 1)),
+        'a protocol this Clew does not load',
+        edited(talks, m => (m.protocol = 2)),
         { path: 'protocol', anchor: 'rule-protocol-accepted' },
       ],
       ['another id', talks, { path: 'id', anchor: 'rule-id-matches' }, 'other'],

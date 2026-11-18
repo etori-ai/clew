@@ -2,19 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Clew connector protocol",
-    "version": "3",
+    "version": "1",
     "summary": "How a connector service and a Clew installation talk to each other.",
     "description": "A connector is an HTTP service of your own. It serves the routes tagged **Connector**; Clew loads its manifest and calls it as the acting person, with an RS256 assertion it can verify against the keys at the route tagged **Clew**. Shapes are the same JSON Schemas the instance validates with, published under `components.schemas` and, as one bundle, as `connector-protocol.schema.json` under `/api/protocol/`. Generate server stubs from this document or implement the paths by hand; the examples under `connectors/` in the repository are complete. Try `POST /api/protocol/manifest` with a manifest before any service exists. The manifest field by field, with examples: [manifest reference](/protocol/manifest)."
   },
   "x-clew-protocol": {
-    "current": 3,
+    "current": 1,
     "accepted": [
-      3
-    ],
-    "retired": {
-      "1": "retired 2026-11-05: shared-secret (HS256) identity signing was replaced by RS256 installation keys (D44). Move the verifier to the installation's public keys and declare protocol 3.",
-      "2": "retired 2026-11-18, before the first release (D129): protocol 3 (D117) replaced it: declare protocol 3, accept `about` in the request body (CallRequest and DocumentReadRequest gained it), verify the assertion's `body` and `capability` claims against the request (connectors/hello/verification.mjs), and make every input that names a person a plain string property, the `person` of a `<id>.commitments` read included."
-    }
+      1
+    ]
   },
   "tags": [
     {
@@ -938,8 +934,8 @@
         "properties": {
           "protocol": {
             "type": "number",
-            "const": 3,
-            "description": "The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3 only: 2 was retired before the first release (D129). An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before."
+            "const": 1,
+            "description": "The version of this contract the manifest is written to, not of the connector (D60). This instance loads 1, the only version until the first release (D129): the contract changes in place until then, and every connector in the repository with it."
           },
           "id": {
             "type": "string",
@@ -3152,7 +3148,7 @@
               "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
             },
             "maxItems": 1,
-            "description": "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched."
+            "description": "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). A manifest without it is untouched."
           },
           "uses": {
             "type": "array",
@@ -3237,7 +3233,7 @@
               }
             },
             "additionalProperties": false,
-            "description": "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field."
+            "description": "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Optional: a manifest without it is untouched."
           },
           "header": {
             "type": "object",

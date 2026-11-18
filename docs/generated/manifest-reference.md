@@ -2,7 +2,7 @@
 
 # Manifest field reference
 
-Protocol **3**. One entry per field of the connector manifest: what it does, its type, whether it is required, its constraints, an example and what it must agree with. Generated from the schema the instance validates with, so nothing here is a field that does not exist. The Swedish in examples is what a person reads in Clew; everything else in a manifest is English.
+Protocol **1**. One entry per field of the connector manifest: what it does, its type, whether it is required, its constraints, an example and what it must agree with. Generated from the schema the instance validates with, so nothing here is a field that does not exist. The Swedish in examples is what a person reads in Clew; everything else in a manifest is English.
 
 A running Clew draws this page at `/protocol/manifest`, serves it as data at `/api/protocol/manifest-reference.json`, the routes as OpenAPI at `/api/protocol`, and a dry run of a manifest at `POST /api/protocol/manifest` (D60). Field tables with less prose: [generated reference](README.md); the wire shapes: [JSON Schema](../protocol/connector-protocol.schema.json).
 
@@ -986,17 +986,17 @@ export const lon = {
 
 #### `protocol`
 
-The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3 only: 2 was retired before the first release (D129). An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before.
+The version of this contract the manifest is written to, not of the connector (D60). This instance loads 1, the only version until the first release (D129): the contract changes in place until then, and every connector in the repository with it.
 
-- Type: 3
+- Type: 1
 - required
 - Pairs with:
-  - **The protocol number is one this instance loads.** A manifest on a retired or unknown number is refused, naming the number, the accepted ones and the reason. This instance loads 3; 2 was retired before the first release (D129). ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md))
+  - **The protocol number is one this instance loads.** A manifest on any other number is refused, naming the number and the ones this instance loads: 1. Until the first release there is one version, changed in place (D129). ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md))
 
 Example:
 
 ```json
-3
+1
 ```
 
 #### `id`
@@ -2839,7 +2839,7 @@ Example:
 
 #### `installation`
 
-The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched.
+The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). A manifest without it is untouched.
 
 - Type: array of object
 - optional
@@ -3013,7 +3013,7 @@ Example:
 
 #### `assistants`
 
-The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field.
+The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Optional: a manifest without it is untouched.
 
 - Type: object
 - optional
@@ -3063,7 +3063,7 @@ One of this manifest's read capabilities, taking no input and answering a SiteHe
 
 Where Clew applies each: when the manifest is loaded, when the connector is registered, in the conformance check, or on each call.
 
-- **The protocol number is one this instance loads** (loader; `protocol`) ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md)): A manifest on a retired or unknown number is refused, naming the number, the accepted ones and the reason. This instance loads 3; 2 was retired before the first release (D129).
+- **The protocol number is one this instance loads** (loader; `protocol`) ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md)): A manifest on any other number is refused, naming the number and the ones this instance loads: 1. Until the first release there is one version, changed in place (D129).
 - **The id is the registered id** (loader; `id`) ([D23](../decisions/D23-connectors-are-managed-in-the-database.md)): An administrator registers the connector under an id; a manifest with another id is refused.
 - **Every capability name starts with the id** (loader; `id`, `capabilities[].name`) ([D37](../decisions/README.md)): A capability is named `<id>.<verb>`. The name is the contract: keep it for a compatible change, choose a new name for a break.
 - **An execute is never a tool** (loader; `capabilities[].kind`, `capabilities[].model`) ([D8](../decisions/D08-every-action-works-without-the-model.md)): A capability of kind `execute` must declare `model: false`. It runs only through a human decision, and a callback cannot reach it either.

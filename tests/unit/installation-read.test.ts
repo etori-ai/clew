@@ -85,7 +85,7 @@ const holdingsOutput = {
   additionalProperties: false,
 };
 const manifest = (id = 'lms') => ({
-  protocol: 3,
+  protocol: 1,
   id,
   kind: 'passthrough',
   source: 'Lärplattformen',
@@ -423,7 +423,7 @@ describe('the registry reads as the installation', () => {
     expect(() => new Registry().register(inProcess)).toThrow('only its profiles');
   });
 
-  test('additive to protocol 3: a manifest without `installation` and every request shape a connector already serves are unchanged', () => {
+  test('additive: a manifest without `installation` and every request shape a connector already serves are unchanged', () => {
     // The closed manifest gained one optional property; nothing it had changed, and no request shape a connector
     // without installation reads receives was touched. Its own request shape is a new definition.
     const defs = protocolSchema().$defs as Record<string, any>;

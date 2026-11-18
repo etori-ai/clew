@@ -1,4 +1,4 @@
-// Protocol 3 verifier. No Clew packages or private signing material are needed.
+// Clew connector protocol verifier. No Clew packages or private signing material are needed.
 import { createHash, createPublicKey, verify, timingSafeEqual } from 'node:crypto';
 export const b64 = value => Buffer.from(value, 'base64url');
 /** SHA-256 of the exact request body, base64url: what Clew signs as the assertion's `body` claim (D117). */

@@ -44,7 +44,7 @@ This complete minimal manifest declares one team list. It is a contract example,
 <!-- minimal-connector-manifest -->
 ```json
 {
-  "protocol": 3,
+  "protocol": 1,
   "id": "directory",
   "kind": "passthrough",
   "source": "Personalkatalogen",
@@ -285,7 +285,7 @@ An action about a person names the input property that takes the key, and requir
 
 For values drawn in a column or a section, three view options help: the `tones` key `*` warns for any present value ("2 försenade") while an absent one stays neutral; `beside: true` draws a field on the line of the one before it ("Bokat", "tors 12 nov kl. 09:00"); `compact: true` marks the one field that says the row in one value where there is room for only one ("Inte bokat").
 
-**Protocol 3.** Who may be asked about, `about` in the request body and the assertion's binding to its body are protocol 3, a break from 2 ([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)): declare `"protocol": 3`, validate request bodies against the schema of 3 (its `CallRequest` has `about`), copy the verifier of 3 and hand it the request (`verify(token, key, request)`), and make every input that names a person a plain string property. A manifest still on 2 is refused, since 2 was retired before the first release ([D129](../decisions/D129-protocol-2-is-retired-before-the-first-release.md)); the [protocol reference](../reference/connector-protocol.md#contract-changes) lists exactly what breaks.
+**The protocol.** Declare `"protocol": 1`, the only version until the first release, when the contract changes in place ([D129](../decisions/D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md)). Who may be asked about, `about` in the request body and the assertion's binding to its body ([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)) are part of it: validate request bodies against the published schema (its `CallRequest` has `about`), copy the verifier and hand it the request (`verify(token, key, request)`), and make every input that names a person a plain string property. The [protocol reference](../reference/connector-protocol.md#contract-changes) lists what a connector must do.
 
 **Preview it.** Open `/protocol/preview` on a running instance and paste the manifest or choose its file. The page posts it to the dry run and shows every problem placed in the document, where each capability about an entity would show, who would see it there, and the row mark, the section and the menu drawn with sample rows. The samples are made from your declaration; nothing is called. The same answer comes from `POST /api/protocol/manifest?id=<id>` as `places`, `audience` and `samples`.
 

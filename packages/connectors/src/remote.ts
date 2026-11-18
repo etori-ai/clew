@@ -26,7 +26,6 @@ import {
   ConnectorManifestSchema,
   INSTALLATION_ROUTE,
   PROTOCOL_ACCEPTED,
-  PROTOCOL_RETIRED,
   ScanResponseSchema,
   type ConnectorManifest,
   type ProtocolErrorCode,
@@ -80,8 +79,8 @@ export class ManifestError extends Error {
 
 /**
  * Every problem a manifest document has, in the order Clew finds them; none means Clew would load it. The schema first
- * (every path listed), then the rules between fields. A retired or unknown protocol number is named as such (D60), not
- * as a literal mismatch. `previewManifest` shows the whole list; `parseManifest` throws on it.
+ * (every path listed), then the rules between fields. A protocol number this Clew does not load is named as such
+ * (D60), with the one it loads, not as a literal mismatch. `previewManifest` shows the whole list; `parseManifest` throws on it.
  */
 export function manifestProblems(document: unknown, expectedId?: string): string[] {
   const errors = contractProblems(ConnectorManifestSchema, document);
@@ -89,7 +88,7 @@ export function manifestProblems(document: unknown, expectedId?: string): string
     const protocol = (document as { protocol?: unknown } | null)?.protocol;
     return errors.map(e =>
       e.path === '/protocol' && typeof protocol === 'number' && !PROTOCOL_ACCEPTED.includes(protocol)
-        ? `/protocol: ${protocol} is not accepted by this Clew, which loads ${PROTOCOL_ACCEPTED.join(' and ')}${PROTOCOL_RETIRED[protocol] ? `; ${PROTOCOL_RETIRED[protocol]}` : ''}`
+        ? `/protocol: ${protocol} is not accepted by this Clew, which loads ${PROTOCOL_ACCEPTED.join(' and ')}`
         : `${e.path || '/'}: ${e.message}`,
     );
   }

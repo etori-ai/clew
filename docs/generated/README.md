@@ -2,7 +2,7 @@
 
 # Generated connector reference
 
-Protocol version: **3**. Generated from [protocol.ts](../../packages/connectors/src/protocol.ts), its imported contracts and the real connector manifest exports. The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions, and the [OpenAPI document](../protocol/connector-protocol.openapi.json) for the routes. A running Clew serves both, a viewer and a manifest dry run under `/api/protocol` (D60), generated from the same code as these files. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).
+Protocol version: **1**. Generated from [protocol.ts](../../packages/connectors/src/protocol.ts), its imported contracts and the real connector manifest exports. The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions, and the [OpenAPI document](../protocol/connector-protocol.openapi.json) for the routes. A running Clew serves both, a viewer and a manifest dry run under `/api/protocol` (D60), generated from the same code as these files. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).
 
 The manifest field by field, with examples and the rules between fields, is [manifest-reference.md](manifest-reference.md).
 
@@ -26,19 +26,19 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 
 | Field | Required | Shape | Description |
 |---|---|---|---|
-| `protocol` | yes | 3 | The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3 only: 2 was retired before the first release (D129). An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before. |
+| `protocol` | yes | 1 | The version of this contract the manifest is written to, not of the connector (D60). This instance loads 1, the only version until the first release (D129): the contract changes in place until then, and every connector in the repository with it. |
 | `id` | yes | string | Stable and lowercase. Must match the id Clew was configured with, and prefixes every capability name. |
 | `kind` | yes | "passthrough" / "derived" | Who owns the data (D3): `passthrough` when it lives in the connected system and Clew keeps refs and audit rows only; `derived` when the connector computes it from other sources. `core` is Clew's own and never a remote connector. |
 | `source` | yes | string | Swedish. The system as shown on cards: "Personalsystemet". |
 | `areas` | yes | array of object | The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions. |
 | `capabilities` | yes | array of object | What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one. |
-| `installation` | no | array of object | The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched. |
+| `installation` | no | array of object | The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). A manifest without it is untouched. |
 | `uses` | no | array of string | The exact capability names of other connectors this one calls back through `POST /api/connectors/call` while serving a request (D37), such as `calendar.today`. A name not listed is refused; an `execute` can never be called back. |
 | `facts` | no | array of object | The fact kinds this connector creates (D55), each prefixed with its id. |
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |
 | `delegation` | no | object | The connector acts as the person against its system with a token Clew obtains by token exchange. |
 | `documents` | no | boolean | Implements POST /clew/documents for authorised, versioned binary document reads (D79). |
-| `assistants` | no | object | The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field. |
+| `assistants` | no | object | The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Optional: a manifest without it is untouched. |
 | `header` | no | object | The shared header (D88): this connector can give Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. Declaring it makes the connector a candidate, not the holder: only the one connector an administrator chose to give the header answers, whatever the order connectors were registered in. Clew keeps no header of its own beyond its default (the site's name and Start). |
 
 ## ManifestCapability

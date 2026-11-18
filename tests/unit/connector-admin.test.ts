@@ -329,12 +329,12 @@ describe('adding and governing a remote connector', () => {
     expect(store.audit.at(-1)).toMatchObject({ action: 'connector.removed', details: { closedCards: 1 } });
     await expect(admin.read(mikael, 'hello')).rejects.toThrow('finns inte');
   });
-  test('a stored manifest the loader refuses, on a retired protocol (D129), is never put live by a change to its row', async () => {
+  test('a stored manifest the loader refuses, on a number this Clew does not load (D129), is never put live by a change to its row', async () => {
     const { admin, store, registry, live } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
     await admin.update(mikael, 'hello', { state: 'enabled' });
     expect(registry.governance('hello').state).toBe('enabled');
-    // A row written while protocol 2 was accepted: the service has moved on, the stored copy has not.
+    // A row written under another protocol number: the service has moved on, the stored copy has not.
     const stored = (await store.read('hello'))!.manifest as ConnectorManifest;
     await store.transaction(tx => tx.update('hello', { manifest: { ...stored, protocol: 2 } as never }, 'test', T0));
     const before = live.registered.length;

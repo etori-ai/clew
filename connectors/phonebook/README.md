@@ -38,7 +38,7 @@ team" for the team list. Everything works without a model. With a model, the vie
 | Variable | Meaning |
 |---|---|
 | `CLEW_CONNECTOR_SECRET` | The secret shared with Clew, 16 characters or more. Required |
-| `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks` for protocol 3 verification. Required; HTTPS outside the explicit local development allowlist |
+| `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks` for protocol verification. Required; HTTPS outside the explicit local development allowlist |
 | `PORT` | Default 4020 |
 | `PHONEBOOK_ADAPTER` | `fixture` (default, the made-up organisation) or `http` |
 | `PHONEBOOK_URL`, `PHONEBOOK_API_KEY` | The phone book API and its integration key, for `http`. The key comes from a secrets store and stays in this container; Clew never sees it |

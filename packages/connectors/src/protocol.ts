@@ -74,7 +74,7 @@ import {
  * A callback uses the separate signed `callback` claim, never the request assertion, and only targets declared
  * in `uses`. See docs/guides/authorization.md and docs/reference/connector-protocol.md.
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 1;
 /** The route Clew posts a read it makes as the installation to (D119): never the person's route. */
 export const INSTALLATION_ROUTE = '/clew/installation/';
 /** The subject of the installation's own assertion (D119). Not a person's id: Clew signs a person with their id. */
@@ -411,7 +411,7 @@ export const ConnectorManifestSchema = Type.Object(
   {
     protocol: Type.Literal(PROTOCOL_VERSION, {
       description:
-        'The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3 only: 2 was retired before the first release (D129). An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before.',
+        'The version of this contract the manifest is written to, not of the connector (D60). This instance loads 1, the only version until the first release (D129): the contract changes in place until then, and every connector in the repository with it.',
     }),
     id: Type.String({
       pattern: '^[a-z][a-z0-9-]*$',
@@ -436,7 +436,7 @@ export const ConnectorManifestSchema = Type.Object(
       Type.Array(ManifestInstallationReadSchema, {
         maxItems: INSTALLATION_PROFILES.length,
         description:
-          "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched.",
+          "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). A manifest without it is untouched.",
       }),
     ),
     uses: Type.Optional(
@@ -472,7 +472,7 @@ export const ConnectorManifestSchema = Type.Object(
               "One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both.",
           }),
         },
-        "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field.",
+        "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Optional: a manifest without it is untouched.",
       ),
     ),
     header: Type.Optional(
@@ -491,7 +491,7 @@ export const ConnectorManifestSchema = Type.Object(
   },
   {
     additionalProperties: false,
-    $id: 'https://clew.dev/protocol/3/connector-manifest.schema.json',
+    $id: 'https://clew.dev/protocol/1/connector-manifest.schema.json',
     title: 'Clew connector manifest',
   },
 );
@@ -661,7 +661,7 @@ export type CallbackRequest = Static<typeof CallbackRequestSchema>;
 export function protocolSchema() {
   return {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://clew.dev/protocol/3/connector-protocol.schema.json',
+    $id: 'https://clew.dev/protocol/1/connector-protocol.schema.json',
     title: 'Clew connector protocol',
     description: 'Shapes exchanged between Clew and a connector service. See docs/reference/connector-protocol.md.',
     $defs: {
@@ -721,18 +721,12 @@ export function protocolSchema() {
 }
 
 /**
- * Versions (D60). `protocol` is the version of this contract, not of a connector: a connector has no version, a
- * capability's name is its contract (D37). An additive change (a new optional field, a looser constraint) keeps the
- * number; views, the menu, delegation and facts all arrived under 2. A break is a new number. After the first release
- * Clew accepts the new number and the one before it for a stated window (D60); before it, nothing outside the
- * repository runs a connector, so a break retires the number before it at once (D129), as a security change always
- * does. 3 is a break (D117), and 2 was retired on 2026-11-18 with the reason in `PROTOCOL_RETIRED`.
+ * Versions (D60, D129). `protocol` is the version of this contract, not of a connector: a connector has no version, a
+ * capability's name is its contract (D37). Until the first release there is one version, 1, and a change to the
+ * contract, breaking or not, keeps the number and changes every connector in the repository with it (D129). From the
+ * first release a break is a new number, accepted beside the one before it for a stated window (D60).
  */
 export const PROTOCOL_ACCEPTED: readonly number[] = [PROTOCOL_VERSION];
-export const PROTOCOL_RETIRED: Readonly<Record<number, string>> = {
-  1: "retired 2026-11-05: shared-secret (HS256) identity signing was replaced by RS256 installation keys (D44). Move the verifier to the installation's public keys and declare protocol 3.",
-  2: "retired 2026-11-18, before the first release (D129): protocol 3 (D117) replaced it: declare protocol 3, accept `about` in the request body (CallRequest and DocumentReadRequest gained it), verify the assertion's `body` and `capability` claims against the request (connectors/hello/verification.mjs), and make every input that names a person a plain string property, the `person` of a `<id>.commitments` read included.",
-};
 
 /**
  * What Clew makes of a manifest document before any service runs (D60): the problems it would refuse it for, else what it
@@ -1042,7 +1036,6 @@ export function openApiDocument(options: OpenApiOptions = {}) {
     'x-clew-protocol': {
       current: PROTOCOL_VERSION,
       accepted: [...PROTOCOL_ACCEPTED],
-      retired: PROTOCOL_RETIRED,
     },
     tags: [
       {

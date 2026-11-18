@@ -10,7 +10,7 @@ Clew makes as the installation itself, with no person behind it
 ([D119](../../docs/decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)).
 
 It reads as **one service account** through Moodle's REST web service API, with the account's token from configuration;
-it never needs the person's token. It speaks protocol 3: who may be asked about is Clew's to decide
+it never needs the person's token. It speaks protocol 1: who may be asked about is Clew's to decide
 ([D117](../../docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)),
 and the connector answers only the people a verified request vouches for; the installation's read answers every
 account, and only to the installation's own assertion. Nothing is stored between requests. No
@@ -341,7 +341,7 @@ than a few hundred completions or more than one page of accounts (the paging, th
 tested on the stand-in only), `MOODLE_MATCH_FIELD=idnumber` against the real Moodle (the stand-in and the recorded
 lookups only), a Moodle site with extended username characters, a course whose completion has several criteria (the
 recorded courses have one each), the per-item refusals against a real Moodle (stand-in and synthetic answers only), the
-deadline and disconnect against a slow real Moodle, and the running Clew's own registration on protocol 3 (refreshed
+deadline and disconnect against a slow real Moodle, and the running Clew's own registration on the current protocol (refreshed
 by hand).
 
 ## What Moodle could not say

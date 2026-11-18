@@ -32,7 +32,7 @@ The web half: one action dialog (`apps/web/src/components/action-dialog.tsx`, As
 
 **Works in this checkout.** `/api/protocol`: OpenAPI 3.1 and JSON Schema generated from the validating code, a RapiDoc page from the image, a manifest dry run that shares descriptor rules and schema compilation with registration and lists problems or what Clew would make of the document, and the manifest field by field with examples and rules at `/protocol/manifest`, drawn by the web app from `/api/protocol/manifest-reference.json` (also [committed](../../generated/manifest-reference.md)).
 
-**Limits and pending work.** The viewer page is outside the WCAG suite; protocol 3 is current and the only number loaded; 1 and 2 are retired, each with what a connector must change. Accepting N and N-1 for a window after a break is policy from the first release on ([D129](../../decisions/D129-protocol-2-is-retired-before-the-first-release.md)), and no code for it exists today.
+**Limits and pending work.** The viewer page is outside the WCAG suite; protocol 1 is current and the only number loaded, and it changes in place until the first release; from then on a break is a new number accepted beside the one before it for a window ([D129](../../decisions/D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md)), and no code for that window exists today.
 
 **Evidence.** [Routes](../../../apps/server/src/routes/protocol.ts), [preview](../../../packages/connectors/src/preview.ts), [tests](../../../tests/unit/protocol-served.test.ts), [D60](../../decisions/D60-the-instance-serves-its-connector-protocol.md)
 

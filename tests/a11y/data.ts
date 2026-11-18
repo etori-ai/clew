@@ -1064,7 +1064,7 @@ export const connectorDetail = (
   figuresOff: string[] = [],
 ): ConnectorDetail => ({
   ...c,
-  protocol: 3,
+  protocol: 1,
   scan: true,
   // The economy system declares a header capability in the suite, so its page offers the switch (D88).
   headerCapability: c.id === 'finance' ? 'finance.header' : null,

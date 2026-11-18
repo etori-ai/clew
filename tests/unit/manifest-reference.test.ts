@@ -38,7 +38,7 @@ const keysInput = {
   required: ['keys'],
 };
 const aboutManifest = {
-  protocol: 3,
+  protocol: 1,
   id: 'hr',
   kind: 'passthrough',
   source: 'Personalsystemet',
@@ -102,7 +102,7 @@ const aboutManifest = {
 
 /** A learning platform that answers the holdings profile as the installation's read (D119), from the handwritten example. */
 const holdingsManifest = {
-  protocol: 3,
+  protocol: 1,
   id: 'lms',
   kind: 'passthrough',
   source: 'Lärplattformen',
@@ -167,7 +167,7 @@ describe('the field list', () => {
   });
   test('types and constraints read as words', () => {
     const byPath = Object.fromEntries(reference.fields.map(f => [f.path, f]));
-    expect(byPath['protocol']!.type).toBe('3');
+    expect(byPath['protocol']!.type).toBe('1');
     expect(byPath['capabilities']!.type).toBe('array of object');
     expect(byPath['capabilities[].input']!.type).toBe('object (free keys)');
     expect(byPath['capabilities[].view.fields[].tones']!.type).toBe(
@@ -202,7 +202,7 @@ describe('the field list', () => {
       required: ['refs'],
     };
     const manifest = {
-      protocol: 3,
+      protocol: 1,
       id: 'hr',
       kind: 'passthrough',
       source: 'Personalsystemet',
@@ -365,7 +365,7 @@ describe('the field list', () => {
     };
     const loaded: Record<string, ReturnType<typeof parseManifest>> = {};
     for (const [id, fragment] of Object.entries(example.manifests)) {
-      const manifest = { protocol: 3, kind: 'passthrough', source: 'System', scan: false, areas: [], ...fragment };
+      const manifest = { protocol: 1, kind: 'passthrough', source: 'System', scan: false, areas: [], ...fragment };
       expect({ id, problems: manifestProblems(manifest, id) }).toEqual({ id, problems: [] });
       loaded[id] = parseManifest(manifest, id);
       expect(() => new Registry().register(remoteConnector(loaded[id]!, transport))).not.toThrow();
@@ -406,7 +406,7 @@ describe('the rules', () => {
   const probes: Record<string, [unknown, string | undefined]> = {
     'protocol-accepted': [
       broken(hello, m => {
-        m.protocol = 1;
+        m.protocol = 2;
       }),
       'hello',
     ],

@@ -628,7 +628,7 @@ describe('the loader holds every input that names someone to a plain string', ()
   });
   test('a manifest is refused the same way, and a unit capability declares unit, never person', () => {
     const manifest = (capabilities: object[]) => ({
-      protocol: 3,
+      protocol: 1,
       id: 'src',
       kind: 'passthrough',
       source: 'Källan',
@@ -1046,7 +1046,7 @@ describe('the relation registrar (D121): competence across the organisation, and
       output: anything,
       person: { param: 'person', admits: ['self', 'registrar'] },
     };
-    const manifest = { protocol: 3, id: 'src', kind: 'passthrough', source: 'Källan', areas: [], scan: false };
+    const manifest = { protocol: 1, id: 'src', kind: 'passthrough', source: 'Källan', areas: [], scan: false };
     expect(manifestProblems({ ...manifest, capabilities: [notes] }, 'src').join()).toContain(
       '/capabilities/0/person/admits/1',
     );
@@ -1187,7 +1187,7 @@ describe('every other path into the registry', () => {
 
 describe('a remote connector is told the relation, bound to the request', () => {
   const manifest = {
-    protocol: 3,
+    protocol: 1,
     id: 'remote',
     kind: 'passthrough',
     source: 'Fjärrsystemet',
@@ -1362,14 +1362,13 @@ describe('a remote connector is told the relation, bound to the request', () => 
     expect(await answer('src.person', { keys: ['hassan'] })).toEqual(unknown);
     expect(new RelationsUnavailableError()).not.toBeInstanceOf(CapabilityError);
   });
-  test('a manifest on protocol 2 is refused as retired, with what it must change (D129)', () => {
-    // Protocol 3 is a break (D60, D117) and 2 was retired before the first release: the loader names the number, what
-    // this Clew loads and what to change, rather than a literal mismatch.
-    const problems = manifestProblems({ ...manifest, protocol: 2 }, 'remote');
-    expect(problems).toEqual([expect.stringContaining('/protocol: 2 is not accepted by this Clew, which loads 3')]);
-    expect(problems[0]).toContain('declare protocol 3');
-    expect(manifestProblems({ ...manifest, protocol: 1 }, 'remote')).toEqual([expect.stringContaining('RS256')]);
-    // A read whose `person` is untyped is refused on 3, the only number there is.
+  test('one protocol, held to the plain-string rule; another number is refused before any rule (D117, D129)', () => {
+    // There is no earlier number held to looser rules: a manifest on 2, the number the window of D117 kept, is refused
+    // as any number but 1 is.
+    expect(manifestProblems({ ...manifest, protocol: 2 }, 'remote')).toEqual([
+      '/protocol: 2 is not accepted by this Clew, which loads 1',
+    ]);
+    // A read whose `person` is untyped is refused.
     const loose = {
       ...manifest,
       capabilities: [
