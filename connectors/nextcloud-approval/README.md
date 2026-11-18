@@ -133,8 +133,7 @@ sessions; the connector sends `Clew`.
 `Actor` already carries Clew's own id, which never changes and is never reused, but Nextcloud does not know it. Whether
 `Actor` should also carry a key that the source can know and that never changes, such as the directory's `externalId`,
 so that a connector could find the person's account without relying on the user name, is an open question
-([open questions](../../docs/maintainers/open-questions.md#waiting-for-the-product-owner), the row on `Actor` in
-protocol 2).
+([open questions](../../docs/maintainers/open-questions.md#waiting-for-the-product-owner), the row on `Actor`).
 
 ## Configuration
 

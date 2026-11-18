@@ -1,5 +1,5 @@
 {
-  "protocol": 3,
+  "protocol": 1,
   "id": "phonebook",
   "kind": "passthrough",
   "source": "Telefonboken",

@@ -24,13 +24,7 @@ import {
   type RelationResolver,
 } from './index';
 import { fetchManifest, remoteConnector, type AssertionBinding, type FetchLike } from './remote';
-import {
-  INSTALLATION_ROUTE,
-  PROTOCOL_VERSION,
-  protocolTerms,
-  type AboutPlace,
-  type ConnectorManifest,
-} from './protocol';
+import { INSTALLATION_ROUTE, type AboutPlace, type ConnectorManifest } from './protocol';
 import { menuRowOf, placesOf, rowsKey, viewRows, viewOutputProblem } from './views';
 
 /**
@@ -204,17 +198,6 @@ export async function checkConnector(
     'Systemets beskrivning är giltig',
     `${count(manifest.capabilities.length, 'funktion', 'funktioner')}, ${count(manifest.areas.length, 'område', 'områden')}. ${manifest.scan ? 'Skickar ärenden.' : 'Skickar inga ärenden.'}`,
   );
-  // The previous protocol is loaded for a window (D60), and the check says so as administration does.
-  const deprecated = protocolTerms(manifest.protocol).deprecated;
-  if (deprecated) {
-    warn(`protocol ${manifest.protocol}: ${deprecated}`);
-    item(
-      'warn',
-      'connection',
-      'Följer ett äldre protokoll',
-      `Systemet följer protokoll ${manifest.protocol}, som Clew läser bara under en övergångstid. Det behöver uppdateras till protokoll ${PROTOCOL_VERSION}.`,
-    );
-  }
   if (manifest.delegation) {
     warn(
       `delegation: acts as the person for audience "${manifest.delegation.audience}"; not verified by this check (it has no session), so a "denied" answer below is the expected one`,

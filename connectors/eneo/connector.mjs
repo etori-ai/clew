@@ -20,7 +20,7 @@ const PARTIAL_TAG = /^<(?:i(?:n(?:r(?:e(?:f(?: (?:i(?:d(?:=(?:"(?:[0-9a-f]*(?:"(
 const ASK_TOTAL_MS = 170_000;
 
 export const manifest = {
-  protocol: 3,
+  protocol: 1,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Eneo',

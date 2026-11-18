@@ -1,5 +1,5 @@
 import type { Actor, Registry } from '@clew/connectors';
-import { healthOf, type ConnectorManifest } from '@clew/connectors/protocol';
+import type { ConnectorManifest } from '@clew/connectors/protocol';
 import {
   ManifestError,
   fetchManifest,
@@ -115,7 +115,7 @@ export async function loadConnectors(registry: Registry, options: LoadOptions = 
           const manifest = await fetchManifest(source.url, source.id, options.fetch);
           if (JSON.stringify(manifest) !== JSON.stringify(stored))
             registerConnector(registry, source, manifest, options.fetch, options.authority);
-          await record(source.id, healthOf(manifest, new Date().toISOString()), manifest);
+          await record(source.id, { status: 'ok', at: new Date().toISOString() }, manifest);
           log(
             `Connector "${source.id}" (${manifest.source}) registered from ${source.url}: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas${manifest.scan ? ', scan' : ''}.`,
           );

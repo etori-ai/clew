@@ -451,7 +451,7 @@ const hmeAboutCapability = {
 };
 
 export const manifest = {
-  protocol: 3,
+  protocol: 1,
   id: 'qlik',
   kind: 'passthrough',
   source: 'Qlik',

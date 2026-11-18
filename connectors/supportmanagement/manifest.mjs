@@ -135,7 +135,7 @@ const errandCapability = {
  */
 export function createManifest({ audience = DEFAULT_AUDIENCE, source = DEFAULT_SOURCE } = {}) {
   return {
-    protocol: 3,
+    protocol: 1,
     id: CONNECTOR,
     kind: 'passthrough',
     source,
