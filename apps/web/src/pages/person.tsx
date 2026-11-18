@@ -19,7 +19,9 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { ApiError } from '../api';
-import { areasQuery, boardingPlansQuery, entityDetailQuery } from '../queries';
+import { adminQueries, areasQuery, boardingPlansQuery, entityDetailQuery } from '../queries';
+import { useHeldCapabilities } from '../capabilities';
+import { statusLabel, statusOf } from '../user-status';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import {
@@ -106,7 +108,8 @@ export function nameLine(detail: EntityDetail): string | undefined {
  * The facts of a person's page (board Person: Anställning, Kontakt), the end panel beside the read and above it where
  * the window is narrow. Anställning: each employment's title where there are several, its unit, form, start and share
  * of full time with its bar, and "Chef: Du" for the reader's own report. Kontakt: how the person is reached and the
- * user name the directory knows them by (D124 item 7: in code type). Enhet: their unit, a link to its page where the
+ * user name the directory knows them by (D124 item 7: in code type), and for a reader with `admin.users` whether the
+ * person has signed in (Inloggning), which Administration › Användare no longer shows as a column. Enhet: their unit, a link to its page where the
  * server says the reader may open it (D117). Nothing the directory has not given is drawn.
  */
 function PersonFacts({ detail, from }: { detail: EntityDetail; from: string | null }) {
@@ -122,6 +125,9 @@ function PersonFacts({ detail, from }: { detail: EntityDetail; from: string | nu
   );
   const unit = entity.unit;
   const here = personPageHref(entity.key, { from });
+  // The person's row as Användare reads it, asked for by id; only for a reader the server lets read that list.
+  const administers = useHeldCapabilities().includes('admin.users');
+  const account = useQuery({ ...adminQueries.usersPage({ personId: entity.key }), enabled: administers }).data?.rows[0];
   return (
     <VStack gap={8}>
       {(employments.length > 0 || relation === 'managed') && (
@@ -191,6 +197,11 @@ function PersonFacts({ detail, from }: { detail: EntityDetail; from: string | nu
           <MetadataListItem label="Användarnamn">
             <Text type="code">{entity.sourceKey}</Text>
           </MetadataListItem>
+          {account && (
+            <MetadataListItem label="Inloggning">
+              <Text>{statusLabel[statusOf(account)]}</Text>
+            </MetadataListItem>
+          )}
         </MetadataList>
       </RailSection>
       {unit && (

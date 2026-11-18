@@ -15,7 +15,6 @@ import {
   type Role,
   type SessionUser,
   type UserAdminRow,
-  type UserStatus,
   type UsersAdminOverview,
   type UsersAdminQueryType,
 } from '@clew/contracts';
@@ -50,6 +49,7 @@ import {
   type SearchableItem,
 } from '@clew/ui';
 import { PersonNameLink } from '../../components/person-name-link';
+import { statusLabel, statusOf } from '../../user-status';
 import { api } from '../../api';
 import { DOT } from '../../dot';
 import { adminQueries } from '../../queries';
@@ -75,8 +75,10 @@ import {
  * the catalogues, because access a person has lost in the catalogue ends in Clew only when the push arrives. A
  * catalogue is added there and handed its key, and a key is replaced or taken back from the row's menu (D107).
  *
- * A state that is in order is a word ("Har loggat in", "Läser in"), and colour marks only what an administrator must
- * act on ("Ingen åtkomst", "Tyst i över två dygn"). The people are a Table where its columns fit, from 1267 px with the
+ * A state that is in order is a word ("Läser in"), and colour marks only what an administrator must act on ("Ingen
+ * åtkomst", "Tyst i över två dygn"). Whether a person has signed in is not a column: it stands on the person's page,
+ * under Inloggning, and the Status filter still finds who has and who has not. A person without access, or switched
+ * off, carries that as a badge beside the name, since it is what an administrator acts on. The people are a Table where its columns fit, from 1267 px with the
  * rail and the page's margins, and List rows below that; the mappings are a Table from 864 px.
  *
  * The people are read a page at a time (D100) and narrowed above the list: a search box, then one Selector per field
@@ -155,14 +157,6 @@ const leavesThePage = (e: MouseEvent) => e.button !== 0 || e.metaKey || e.ctrlKe
 /** Every unit the person is placed on, the one they act as first: most people have one, and nobody's second is hidden. */
 const placements = (u: UserAdminRow) =>
   [...u.assignments].sort((a, b) => Number(b.unitId === u.active?.unitId) - Number(a.unitId === u.active?.unitId) || 0);
-const statusOf = (u: UserAdminRow): UserStatus =>
-  !u.enabled ? 'disabled' : !u.active ? 'no-access' : u.bound ? 'signed-in' : 'not-signed-in';
-const statusLabel: Record<UserStatus, string> = {
-  'signed-in': 'Har loggat in',
-  'not-signed-in': 'Inte inloggad ännu',
-  'no-access': 'Ingen åtkomst',
-  disabled: 'Avstängd',
-};
 /** The supporting line under a person's name: the title, then the user name; either alone when only one was sent. */
 const underName = (u: UserAdminRow) => [u.title, u.userName].filter(Boolean).join(DOT);
 const roles: Role[] = ['manager', 'employee'];
@@ -523,18 +517,12 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       await client.invalidateQueries({ queryKey: keys.admin.users });
     }
   };
-  const status = (u: UserAdminRow) => {
-    const state = statusOf(u),
-      label = statusLabel[state];
-    return state === 'signed-in' ? (
-      inOrder(label)
-    ) : state === 'not-signed-in' ? (
-      <Text color="secondary" textWrap="nowrap">
-        {label}
-      </Text>
-    ) : (
-      <Badge variant={state === 'no-access' ? 'warning' : 'neutral'} label={label} />
-    );
+  /** Only what an administrator acts on: no access, or switched off. Signing in is shown on the person's page. */
+  const exception = (u: UserAdminRow) => {
+    const state = statusOf(u);
+    return state === 'no-access' || state === 'disabled' ? (
+      <Badge variant={state === 'no-access' ? 'warning' : 'neutral'} label={statusLabel[state]} />
+    ) : undefined;
   };
   // One line per unit in both cells, each held to its line, so a unit and the role on it stay beside each other.
   const lines = (u: UserAdminRow, text: (a: UserAdminRow['assignments'][number]) => string) =>
@@ -557,7 +545,10 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
         <HStack gap={2} vAlign="start">
           <Avatar name={r.u.name} size="sm" tooltip={false} aria-hidden />
           <VStack gap={0} hAlign="start">
-            <PersonNameLink person={r.u} />
+            <HStack gap={2} vAlign="center" wrap="wrap">
+              <PersonNameLink person={r.u} />
+              {exception(r.u)}
+            </HStack>
             {underName(r.u) && <Text type="supporting">{underName(r.u)}</Text>}
           </VStack>
         </HStack>
@@ -590,7 +581,6 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           <Text color="secondary">Inga</Text>
         ),
     },
-    { key: 'status', header: 'Status', width: pixel(160), renderCell: (r: Row) => status(r.u) },
   ];
   const mapColumns = [
     {
@@ -817,7 +807,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                         {heldLabels(u).length > 0 && <Text type="supporting">{heldLabels(u).join(', ')}</Text>}
                       </VStack>
                     }
-                    endContent={status(u)}
+                    endContent={exception(u)}
                   />
                 ))}
               </List>

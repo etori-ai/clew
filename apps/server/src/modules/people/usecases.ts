@@ -1238,10 +1238,14 @@ export function usersAdminUsecases(deps: {
         words = searchWords(query.text),
         // A unit id with a NUL names no unit and a word with one is in no name: such a search matches nobody, and the
         // store is not asked it.
-        nobody = words.some(holdsNul) || (query.unitId !== undefined && holdsNul(query.unitId));
+        nobody =
+          words.some(holdsNul) ||
+          (query.unitId !== undefined && holdsNul(query.unitId)) ||
+          (query.personId !== undefined && holdsNul(query.personId));
       return deps.store.transaction(async tx => {
         const search: UserSearch = {
           words,
+          ...(query.personId === undefined ? {} : { personId: query.personId }),
           ...(query.unitId === undefined || nobody
             ? {}
             : { unitIds: branchOf(await tx.unitTree(persona.organisationId), query.unitId) }),
