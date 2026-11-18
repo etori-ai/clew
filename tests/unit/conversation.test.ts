@@ -21,6 +21,12 @@ import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
 import type { ManagedPerson } from '../../apps/server/src/assistant/ports';
 import { DRAFT_TOOL, draftableActions, draftTool } from '../../apps/server/src/assistant/drafts';
+import {
+  PREPARE_CANCEL_TOOL,
+  PREPARE_MOVE_TOOL,
+  prepareCancelTool,
+  prepareMoveTool,
+} from '../../apps/server/src/assistant/prepared';
 import { parseManifest, remoteConnector } from '../../packages/connectors/src/remote';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
 import {
@@ -1044,6 +1050,301 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
       drafted: true,
     });
     expect(heard).toEqual([{ actionId: 'book', values: { when: '2026-11-16T08:00:00Z' } }]);
+  });
+});
+
+/**
+ * A prepared decision (the product owner, 2026-11-18): the meeting that stands open beside the conversation may be given a
+ * new time, or be put up for cancellation, by the assistant, checked as the calendar's decision checks it and not sent.
+ * The answer carries it, the conversation keeps it and the turn's audit row says which kind about which meeting, never
+ * the time or the title. The calendar is left as it was: the person saves with the page's own form, or answers its own
+ * "Ställ in mötet?". The tools are offered only for a meeting the person may change, and only when it stands open beside
+ * the conversation; the model is told what the person can do with the meeting themselves either way.
+ */
+describe('the assistant prepares a move or a cancellation of the open meeting, the person decides', () => {
+  type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
+  const TOOL = 'clew__prepareMove';
+  const CANCEL = 'clew__prepareCancel';
+  const OWN =
+    'Det är personens eget möte: personen kan själv flytta det med "Flytta …" och ställa in det med "Ställ in …" där mötet visas, utan något annat program.';
+  const NOTE = 'Tiden står i formuläret hos personen. Inget är sparat; personen sparar själv.';
+  const ASKED = 'Frågan "Ställ in mötet?" visas nu för personen. Inget är inställt förrän personen har svarat på den.';
+  const NOBODY_ELSE = 'Om deltagarna är lediga då vet du inte: deras kalendrar läses inte här.';
+  const APT = { start: localInstant('2026-11-04T10:00'), end: localInstant('2026-11-04T11:00') };
+  const chip = (uid: string, title: string) => ({ ref: 'event:' + uid, kind: 'event' as const, label: title });
+  /** Meetings beside the seeded APT: another of Hillevi's own the next day, and four she cannot move from Clew. */
+  function seeded(w: ReturnType<typeof world>) {
+    const at = (day: string, from: string, to: string) => ({
+      start: localInstant(`${day}T${from}`),
+      end: localInstant(`${day}T${to}`),
+    });
+    w.cal.events.push(
+      occurrence({ uid: 'lunch', title: 'Lunch med rektor', ...at('2026-11-05', '12:30', '13:30') }, account),
+      occurrence(
+        {
+          uid: 'theirs',
+          title: 'Ledningsgrupp',
+          ...at('2026-11-05', '09:00', '10:00'),
+          organizer: 'chefen@clew.test',
+          organizerName: 'Chefen',
+        },
+        account,
+      ),
+      occurrence({ uid: 'locked', title: 'Skolråd', ...at('2026-11-05', '15:00', '16:00'), canCancel: false }, account),
+      occurrence(
+        { uid: 'weekly', title: 'Veckomöte', ...at('2026-11-06', '08:00', '09:00'), recurring: true },
+        account,
+      ),
+      occurrence({ uid: 'day', title: 'Studiedag', start: '2026-11-06', end: '2026-11-07', allDay: true }, account),
+    );
+  }
+  /** A model that prepares what `plan` says, in order, when it is offered the tools. */
+  function scripted(plan: ('move' | 'cancel')[] = ['move']) {
+    const offered: string[][] = [];
+    const prompts: string[] = [];
+    const answers: unknown[] = [];
+    const generate: ModelGenerate = async ({ tools, system }) => {
+      offered.push(Object.keys(tools));
+      prompts.push(system);
+      const move = tools[TOOL] as Callable | undefined,
+        cancel = tools[CANCEL] as Callable | undefined;
+      if (!move || !cancel) return { text: 'Det mötet kan jag inte flytta eller ställa in åt dig.', toolCalls: [] };
+      const toolCalls: { capability: string; input: Record<string, unknown>; output: unknown }[] = [];
+      const call = async (tool: Callable, capability: string, input: Record<string, unknown>) => {
+        const output = await tool.execute(input, {});
+        answers.push(output);
+        toolCalls.push({ capability, input, output });
+      };
+      for (const step of plan)
+        if (step === 'cancel') await call(cancel, 'clew.prepareCancel', {});
+        else {
+          // Half an hour later overlaps only the meeting itself, which is not counted against it.
+          await call(move, 'clew.prepareMove', { start: '2026-11-04T10:30', end: '2026-11-04T11:30' });
+          // A later call in the same turn replaces the earlier one: Thursday afternoon, where lunch runs over.
+          await call(move, 'clew.prepareMove', { start: '2026-11-05T13:00', end: '2026-11-05T14:00' });
+        }
+      return {
+        text:
+          plan.at(-1) === 'cancel'
+            ? 'Du får frågan om att ställa in mötet och svarar själv; inget är inställt.'
+            : 'Jag föreslår torsdag 13.00–14.00. Spara i formuläret när du är nöjd; mötet är inte flyttat.',
+        toolCalls,
+      };
+    };
+    return { generate, offered, prompts, answers };
+  }
+
+  test('a new time for the open meeting is kept in the conversation with its audit row, and the calendar is untouched', async () => {
+    const model = scripted();
+    const w = world({ generate: model.generate });
+    seeded(w);
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Flytta mötet till torsdag eftermiddag',
+      chips: [chip('apt', 'APT')],
+      beside: 'event:apt',
+    });
+    expect(model.offered[0]).toEqual(expect.arrayContaining([TOOL, CANCEL]));
+    // The model is told what the person can do with the open meeting themselves, and how to prepare either.
+    expect(model.prompts[0]).toContain('Mötet "APT"');
+    expect(model.prompts[0]).toContain(`10:00–11:00 i kalendern. ${OWN}`);
+    expect(model.prompts[0]).toContain('clew__prepareMove');
+    expect(model.prompts[0]).toContain('clew__prepareCancel');
+    expect(model.prompts[0]).toContain(
+      'Säg aldrig att det måste göras direkt i kalendern eller i ett annat program, och skriv aldrig att mötet är flyttat eller inställt.',
+    );
+    expect(model.answers).toEqual([
+      { prepared: true, note: `${NOTE} Personen har inget annat i kalendern då. ${NOBODY_ELSE}` },
+      { prepared: true, note: `${NOTE} Personen har redan ett annat möte i kalendern då; säg det. ${NOBODY_ELSE}` },
+    ]);
+    const prepared = {
+      kind: 'calendar.move' as const,
+      event: { id: 'apt', title: 'APT', ...APT },
+      start: '2026-11-05T12:00:00.000Z',
+      end: '2026-11-05T13:00:00.000Z',
+    };
+    expect(turn).toMatchObject({ shape: 'forslag', assistant: 'model', prepared });
+    expect(turn.draft).toBeUndefined();
+    // The conversation keeps the last prepared decision; the tool's calls are not the answer's reads.
+    const answer = turn.thread.messages.at(-1)!;
+    expect(answer.meta?.prepared).toEqual(prepared);
+    expect(answer.meta?.toolCalls).toBeUndefined();
+    expect(answer.meta?.reads).toBeUndefined();
+    expect(answer.meta?.source).toBe('Assistenten');
+    // One audit row for the turn: which kind about which meeting. Never the time, the title or the text.
+    expect(w.store.audit.map(e => e.action)).toEqual(['conversation.asked']);
+    const row = w.store.audit.at(-1)!;
+    expect(row).toMatchObject({
+      action: 'conversation.asked',
+      subject: 'thread:' + turn.conversationId,
+      details: { tools: [], chips: ['event:apt'], prepared: { kind: 'calendar.move', event: 'apt' } },
+    });
+    for (const content of ['APT', '2026-11-05T12:00', 'torsdag 13.00', 'Lunch med rektor'])
+      expect(JSON.stringify(row)).not.toContain(content);
+    // Nothing was written to the calendar: the meeting is where it was, at the revision the page holds.
+    expect(w.cal.events.find(e => e.uid === 'apt')).toMatchObject({ ...APT, revision: 'r1' });
+
+    // A follow-up with the meeting only added, not open beside the conversation: nothing to prepare, and the earlier
+    // prepared decision is not told to the model as something it read.
+    await w.assistant.converse(hillevi, {
+      text: 'Och om det inte går?',
+      conversationId: turn.conversationId,
+      chips: [chip('apt', 'APT')],
+    });
+    expect(model.offered.at(-1)).not.toContain(TOOL);
+    expect(model.offered.at(-1)).not.toContain(CANCEL);
+    expect(model.prompts.at(-1)).not.toContain('clew__prepare');
+    expect(model.prompts.at(-1)).not.toContain('Lästes för tidigare svar');
+    // What the person can do with the meeting is still said where it was added.
+    expect(model.prompts.at(-1)).toContain(OWN);
+  });
+
+  test('a cancellation of the open meeting is asked of the person, kept with its audit row, and nothing is cancelled', async () => {
+    const model = scripted(['cancel']);
+    const w = world({ generate: model.generate });
+    seeded(w);
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Jag vill ställa in det',
+      chips: [chip('apt', 'APT')],
+      beside: 'event:apt',
+    });
+    expect(model.answers).toEqual([{ prepared: true, note: ASKED }]);
+    const prepared = { kind: 'calendar.cancel' as const, event: { id: 'apt', title: 'APT', ...APT } };
+    expect(turn).toMatchObject({ shape: 'forslag', assistant: 'model', prepared });
+    expect(turn.prepared).toEqual(prepared);
+    const answer = turn.thread.messages.at(-1)!;
+    expect(answer.meta?.prepared).toEqual(prepared);
+    expect(answer.meta?.toolCalls).toBeUndefined();
+    expect(answer.meta?.reads).toBeUndefined();
+    expect(w.store.audit.map(e => e.action)).toEqual(['conversation.asked']);
+    const row = w.store.audit.at(-1)!;
+    expect(row).toMatchObject({
+      action: 'conversation.asked',
+      subject: 'thread:' + turn.conversationId,
+      details: { tools: [], chips: ['event:apt'], prepared: { kind: 'calendar.cancel', event: 'apt' } },
+    });
+    for (const content of ['APT', 'ställa in mötet och svarar']) expect(JSON.stringify(row)).not.toContain(content);
+    // Nothing was cancelled: the meeting stands in the calendar as it was.
+    expect(w.cal.cancelled).toEqual([]);
+    expect(w.cal.events.find(e => e.uid === 'apt')).toMatchObject({ ...APT, revision: 'r1' });
+  });
+
+  test('the last prepared decision of a turn is its answer’s, whichever kind', async () => {
+    const model = scripted(['move', 'cancel']);
+    const w = world({ generate: model.generate });
+    seeded(w);
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Flytta det, nej förresten, ställ in det',
+      chips: [chip('apt', 'APT')],
+      beside: 'event:apt',
+    });
+    expect(model.answers).toHaveLength(3);
+    const prepared = { kind: 'calendar.cancel' as const, event: { id: 'apt', title: 'APT', ...APT } };
+    expect(turn.prepared).toEqual(prepared);
+    expect(turn.thread.messages.at(-1)!.meta?.prepared).toEqual(prepared);
+    expect(w.store.audit.at(-1)!.details).toMatchObject({ prepared: { kind: 'calendar.cancel', event: 'apt' } });
+  });
+
+  test('a meeting the person may not change from Clew is said to be so, and nothing is offered', async () => {
+    const reasons: Record<string, string> = {
+      theirs: 'Bara organisatören kan flytta eller ställa in mötet.',
+      locked: 'Mötet går inte att flytta eller ställa in härifrån.',
+      weekly: 'Ett återkommande möte går inte att flytta eller ställa in härifrån.',
+      day: 'En heldag går inte att flytta eller ställa in härifrån.',
+    };
+    for (const [uid, reason] of Object.entries(reasons)) {
+      const model = scripted();
+      const w = world({ generate: model.generate });
+      seeded(w);
+      const turn = await w.assistant.converse(hillevi, {
+        text: 'Flytta mötet till fredag',
+        chips: [chip(uid, uid)],
+        beside: 'event:' + uid,
+      });
+      expect(model.offered[0]).not.toContain(TOOL);
+      expect(model.offered[0]).not.toContain(CANCEL);
+      expect(model.prompts[0]).not.toContain('clew__prepare');
+      expect(model.prompts[0]).toContain(reason);
+      expect(model.prompts[0]).not.toContain(OWN);
+      expect(turn.prepared).toBeUndefined();
+      expect(turn.thread.messages.at(-1)!.meta?.prepared).toBeUndefined();
+      expect(w.store.audit.at(-1)!.details).not.toHaveProperty('prepared');
+    }
+  });
+
+  test('without the meeting open beside the conversation there is nothing to prepare', async () => {
+    const model = scripted();
+    const w = world({ generate: model.generate });
+    seeded(w);
+    // Nothing added, the meeting added but not open, and something else open beside the conversation.
+    await w.assistant.converse(hillevi, { text: 'Flytta APT till torsdag' });
+    await w.assistant.converse(hillevi, { text: 'Flytta APT till torsdag', chips: [chip('apt', 'APT')] });
+    await w.assistant.converse(hillevi, {
+      text: 'Flytta APT till torsdag',
+      chips: [chip('apt', 'APT'), chip('lunch', 'Lunch med rektor')],
+      beside: 'event:someone-elses',
+    });
+    expect(model.offered).toHaveLength(3);
+    for (const tools of model.offered) {
+      expect(tools).not.toContain(TOOL);
+      expect(tools).not.toContain(CANCEL);
+    }
+    expect(model.answers).toEqual([]);
+  });
+
+  test('the tool checks the new time as the decision does, and hears only a time that passes', async () => {
+    const w = world();
+    seeded(w);
+    const { view } = await w.calendar.listWeek(hillevi, '2026-11-02', 14);
+    const event = (uid: string) => view.find(e => e.id === uid)!;
+    const heard: unknown[] = [];
+    const tool = prepareMoveTool({ event: event('apt'), now: T0, prepared: p => heard.push(p) });
+    expect(tool.name).toBe(PREPARE_MOVE_TOOL);
+    const FORM = 'Skriv tiderna i svensk tid som ÅÅÅÅ-MM-DDTHH:MM, till exempel 2026-11-19T13:00.';
+    const refused: [unknown, string][] = [
+      [{ start: '2026-11-05T14:00', end: '2026-11-05T13:00' }, 'Sluttiden måste vara efter starttiden.'],
+      [{ start: '2026-11-05T13:00', end: '2026-11-05T13:00' }, 'Sluttiden måste vara efter starttiden.'],
+      [{ start: '2026-11-05T23:00', end: '2026-11-06T01:00' }, 'Mötet ska börja och sluta samma dag.'],
+      [{ start: '2026-11-04T07:30', end: '2026-11-04T08:30' }, 'Tiden har redan passerat.'],
+      [{ start: '2026-11-04T10:00', end: '2026-11-04T11:00' }, 'Mötet ligger redan på den tiden.'],
+      [{ start: 'torsdag 13.00', end: 'torsdag 14.00' }, FORM],
+      [{ start: '2026-11-05', end: '2026-11-05' }, FORM],
+      [{ start: '2026-02-30T10:00', end: '2026-02-30T11:00' }, FORM],
+      // A clock time Stockholm skips when the clocks go forward is refused, never shifted.
+      [{ start: '2027-03-28T02:30', end: '2027-03-28T03:30' }, FORM],
+      [{ start: 1_700_000_000_000, end: '2026-11-05T14:00' }, FORM],
+      [{ end: '2026-11-05T14:00' }, FORM],
+    ];
+    for (const [input, error] of refused)
+      expect(await tool.execute(input as Record<string, unknown>)).toEqual({ error });
+    expect(heard).toEqual([]);
+    // A meeting the person may not change is refused by both tools themselves too, whatever the time.
+    for (const uid of ['theirs', 'locked', 'weekly', 'day']) {
+      const other = prepareMoveTool({ event: event(uid), now: T0, prepared: p => heard.push(p) });
+      expect(await other.execute({ start: '2026-11-09T09:00', end: '2026-11-09T10:00' })).toHaveProperty('error');
+      const cancel = prepareCancelTool({ event: event(uid), prepared: p => heard.push(p) });
+      expect(cancel.name).toBe(PREPARE_CANCEL_TOOL);
+      expect(await cancel.execute({})).toHaveProperty('error');
+    }
+    expect(heard).toEqual([]);
+    // A meeting that ends at midnight ends on its own day; an instant with its offset is taken as it is.
+    expect(await tool.execute({ start: '2026-11-05T23:00', end: '2026-11-06T00:00' })).toEqual({
+      prepared: true,
+      note: `${NOTE} ${NOBODY_ELSE}`,
+    });
+    expect(await tool.execute({ start: '2026-11-05T13:00:00+01:00', end: '2026-11-05 14:00' })).toMatchObject({
+      prepared: true,
+    });
+    expect(heard).toEqual([
+      expect.objectContaining({ start: '2026-11-05T22:00:00.000Z', end: '2026-11-05T23:00:00.000Z' }),
+      expect.objectContaining({ start: '2026-11-05T12:00:00.000Z', end: '2026-11-05T13:00:00.000Z' }),
+    ]);
+    // A cancellation of the person's own meeting takes nothing and is heard with the meeting as it stands.
+    const cancelled: unknown[] = [];
+    expect(await prepareCancelTool({ event: event('apt'), prepared: p => cancelled.push(p) }).execute({})).toEqual({
+      prepared: true,
+      note: ASKED,
+    });
+    expect(cancelled).toEqual([{ kind: 'calendar.cancel', event: { id: 'apt', title: 'APT', ...APT } }]);
   });
 });
 

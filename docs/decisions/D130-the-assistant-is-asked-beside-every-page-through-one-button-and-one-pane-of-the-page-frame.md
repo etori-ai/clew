@@ -1,0 +1,93 @@
+# D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides
+
+**Status:** provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas "Clew · the assistant beside every page", where a register, Läget, a work item's page and Att göra were drawn with the pane open at 1366 px and 1728 px, and answered four of the review's five questions the same day. Nothing of it is built except Kalender's pane ([D129](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md)), which is its reference for a pane that already holds a picked thing. Nothing outside the repository has tested it, and no manual screen-reader pass is made) · **Date:** 2026-11-18 · **Area:** ui, product
+
+**Context.** Where the assistant is asked has been decided four times and reversed three: beside the page was
+rejected in [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md), chosen in
+[D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), removed in
+[D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) and chosen again for Kalender in D129. The review
+found three causes. Two needs were treated as one choice: asking about what is on the screen without losing it, and a
+conversation as a place to work. The end slot was asked to hold a thing and the assistant at once. And each decision
+was made on the page it was drawn for and reversed on another. It also found the assistant's presence uneven: of 24
+page types and tabs outside Administration, 11 can ask about what they show (in five different ways), 3 are the
+assistant's own and 10 have nothing, because each page decides for itself whether to draw the button. On the day D129
+was made the owner met the same need on two registers, a record, Läget and Introduktion och avslut, all outside D129's
+test.
+
+**Decision.**
+
+1. **Every page of the person's work has one button, "Fråga assistenten", at the end of its title's line, drawn by the
+   page frame.** A page says what it shows (its subject) or that it has none and why; it cannot leave the button out.
+   Administration has none: nothing there is a read the assistant may make. Without a model the button is not drawn
+   (D8).
+2. **The button opens the assistant's pane in the page's end slot, and the page stays.** The pane is in the address,
+   so Back, Forward and a reload reproduce it. The button again, ✕ or Esc closes it and the focus returns to the
+   button. Opening asks nothing.
+3. **The pane is the assistant's and shows no thing.** It holds its heading, what it is about in words, the
+   conversation and the box. A name in an answer is a link to the thing's page, and following it leaves the pane's
+   conversation with the page it was asked on.
+4. **The pane is about one subject: the page's thing, the page's list, or the thing standing in the page's own pane.**
+   The subject goes with every question as what stands open. The reads of Clew's own domains that these pages show are
+   opened to the assistant in the same change (the product owner, 2026-11-18), for the person who may make them
+   ([D122](D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md)
+   item 3). Where a read of another system stays closed to it, the pane says so under its heading before anything is
+   asked.
+5. **Where a page's own pane holds a picked thing, the box stands at that pane's foot from the start and the
+   conversation about the thing stands over it.** Kalender's entry is the reference (D129). Att göra's item follows
+   (the product owner, 2026-11-18), accepting that a long item in a low window leaves the conversation under the fold.
+   Opening the thing gives the focus to its name, never to the box.
+6. **A conversation beside a page is a real conversation about its subject, one per subject** (the product owner,
+   2026-11-18). The pane shows the person's latest one about that subject and continues it; the pane can start
+   another. "Helt fönster" in the pane's header leads to the conversation's page, with the subject beside it where a
+   thing can stand there. It is listed under Alla samtal with what it is about, and among the rail's latest only once it has been
+   opened at full size.
+7. **An answer in the pane is text, a few named rows as links, or one row for an action the assistant has filled
+   in.** A card, a table, a document, a week and anything from a file are drawn on the conversation's page, and the
+   pane draws one row that leads there. A list is a link to its page.
+8. **The assistant fills in only an action about what stands open, and the person sends it.** The filled-in action
+   opens in the action's own form: the action dialog, or the page's form where the page has one (Kalender). Nothing is
+   written before its last button, and a cancellation keeps the person's confirming press.
+9. **The assistant about nothing on a page is Hem's line, Ny fråga and the conversation's page**, as D126 item 4 has
+   them. Things come to such a conversation with `@` and "Lägg till i samtalet" and stand beside it.
+10. **A person must be able to tell the two sizes apart without knowing assistants** (the product owner, 2026-11-18:
+    "most users of the system are not AI-natives"). Before anything is asked the pane says in plain words what asking
+    here does and what the whole window adds; the words go with the first question. The way to the whole window is
+    named for what it is, "Helt fönster". Where an answer needs room the pane does not have, it says what the answer
+    is and offers the whole window (rule 7), so the difference is met where it matters. The pane's box is the plain
+    one: the model, `@`, dictation and other systems' assistants belong to the whole window (rule 9).
+11. **The pane stands beside the page from one window width on every page; below it, it is a drawer over the page; on
+    a phone the button leads to the conversation's page.** While the pane is open the page draws the narrow layout it
+    already has: a table scrolls or becomes its list, a thing's facts stand above its read.
+
+**Conditions, so that it is not reopened.**
+
+- **How it differs from D112's panel, in one sentence**, because it will be read as the same thing: that panel showed
+  a thing on every page and was the way to open one; this pane shows no thing, opens nothing, and exists only on the
+  person's press. A later change that puts a thing into it reopens this decision and has to say so.
+- **The page being laid out again when the pane opens is accepted**, as the price of asking beside it, and only on the
+  person's press.
+- **The frame provides it, not the page.** A page that draws its own way to ask, or its own box, is a defect against
+  this record, not a variation.
+- **One component.** The conversation is drawn by the same parts beside a page and at full size; Kalender's pane moves
+  onto them.
+- **A doubt about one page is tested against rules 1 to 11 and these conditions**, and changes the page or adds a
+  rule; it does not reopen where the assistant is asked.
+
+**Replaces.** The last sentence of D126 item 4 ("No other page has a composer") and "Fråga Clew" as a way out of the
+page; D129 item 1's test ("only where its answer is drawn on the page itself") and its item 2 for pages without a pane
+of their own; rule 4 of [interface spaces](../reference/interface-spaces.md) when it is built. It keeps D126 rules 1
+and 3 (one page per thing, nothing opens over a page to show a thing), D116 (a list is a page) and D128 (another
+system's assistant has its own panel beside a conversation).
+
+**Not built, and what is still open.**
+
+- All of it, except Kalender's pane. The order the review proposes: the frame and one conversation component; the
+  registers and Läget, with their reads opened; a thing's page, where the facts move above the read; Att göra's item.
+- What the server is told stands open is a work item or a calendar entry today. A record with its input, a person, a
+  unit and a list are not yet subjects the assistant is given.
+- An action on a row of a view is not something a connector can declare
+  ([open questions](../maintainers/open-questions.md)); rule 8 is met today for a work item, a person or a unit, and
+  for Kalender's own two.
+- Files: nothing exists, and whether a file a person brings is Clew's to read or the AI platform's is undecided. It is
+  not part of this decision.
+- A conversation that follows the person from page to page was not chosen.

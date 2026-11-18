@@ -17,6 +17,8 @@ export const keys = {
   calendar: (week: string) => ['calendar', week] as const,
   members: ['calendar-members'] as const,
   rooms: ['calendar-rooms'] as const,
+  /** Who is free at a time being booked: asked again for every time, guest list and room the form holds. */
+  availability: (input: unknown) => ['calendar-availability', input] as const,
   snoozePresets: ['snooze-presets'] as const,
   verbsAll: ['verbs'] as const,
   verbs: (threadId: string) => ['verbs', threadId] as const,

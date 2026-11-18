@@ -3291,6 +3291,39 @@ export const DraftSchema = object({
   values: Type.Optional(AskValuesSchema),
 });
 export type Draft = Static<typeof DraftSchema>;
+/**
+ * A decision of Clew's own that the assistant has filled in and checked, and not sent (the product owner, 2026-11-18):
+ * where a `draft` is a work item's action, this is a human decision that belongs to no work item. The page the
+ * decision is made on draws it in the form the person would have filled in, and the person's own button sends it;
+ * nothing is executed from it. `calendar.move` is a new time for a meeting of the person's own: the meeting as it
+ * stands (so a page can find it and say what it was) and the time it is proposed for. `calendar.cancel` is that
+ * meeting to be cancelled: the page asks the person its own question, "Ställ in mötet?", and the person answers it.
+ * Neither carries a `ref` or a `revision`: the page saves with the ones it reads from the calendar, and the model never
+ * sees either.
+ */
+export const PreparedSchema = Type.Union([
+  object({
+    kind: Type.Literal('calendar.move'),
+    event: object({
+      id: Type.String({ minLength: 1, maxLength: 1000 }),
+      title: Type.String(),
+      start: instant,
+      end: instant,
+    }),
+    start: instant,
+    end: instant,
+  }),
+  object({
+    kind: Type.Literal('calendar.cancel'),
+    event: object({
+      id: Type.String({ minLength: 1, maxLength: 1000 }),
+      title: Type.String(),
+      start: instant,
+      end: instant,
+    }),
+  }),
+]);
+export type Prepared = Static<typeof PreparedSchema>;
 /** A verb about one chipped object, derived from its actions and Clew's standard actions, never from the model. */
 export const VerbSchema = object({
   id: Type.String(),
@@ -3356,6 +3389,8 @@ export const MessageMetaSchema = object({
    */
   viewItems: Type.Optional(Type.Array(id, { maxItems: VIEW_ITEMS_MAX })),
   draft: Type.Optional(DraftSchema),
+  /** A decision of Clew's own, filled in by the assistant and not sent (`PreparedSchema`). */
+  prepared: Type.Optional(PreparedSchema),
   toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
   /**
    * Every read the turn made through the registry (D122 item 8): which capability, how many rows it answered, or that
@@ -4750,6 +4785,8 @@ export const ConversationResponseSchema = object({
       thread: ThreadSchema,
     }),
   ),
+  /** A decision of Clew's own that the answer filled in: the page it was asked on draws it in the decision's own form. */
+  prepared: Type.Optional(PreparedSchema),
   clewActions: Type.Array(ClewActionSchema),
   verbs: Type.Optional(Type.Array(VerbSchema)),
   followUps: Type.Array(Type.String()),

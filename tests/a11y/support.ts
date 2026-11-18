@@ -1,6 +1,7 @@
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type {
+  Chip,
   EffectPreview,
   ItemEvent,
   MenuEntry,
@@ -201,6 +202,8 @@ export class MockApi {
     text: string;
     conversationId?: string;
     chips?: { ref: string }[];
+    /** The one of `chips` that stands open where the question was asked (`ConversationInput.beside`). */
+    beside?: string;
     assistant?: string;
     suggested?: boolean;
     own?: boolean;
@@ -1672,6 +1675,7 @@ export class MockApi {
         text: string;
         conversationId?: string;
         chips?: { ref: string }[];
+        beside?: string;
         assistant?: string;
         suggested?: boolean;
         own?: boolean;
@@ -1706,7 +1710,19 @@ export class MockApi {
             routed: !!body.suggested,
             side: !!body.side,
           })
-        : conversation(this.threads, body.text, body.conversationId);
+        : conversation(
+            this.threads,
+            body.text,
+            // Asked in place, a new conversation is one per thing, as the server makes a new one per question asked.
+            body.conversationId ??
+              (body.own && body.beside ? 'om-' + body.beside.replace(/[^A-Za-z0-9]/g, '-') : undefined),
+            body.beside,
+          );
+      // The server keeps the chips a question went with on it (`MessageMeta.chips`): how a page finds the
+      // conversation about its thing again. Kept here for a question asked in place.
+      const question = [...response.thread.messages].reverse().find(m => m.role === 'user');
+      if (!handed && body.own && body.beside && body.chips?.length && question)
+        question.meta = { ...question.meta, chips: body.chips as Chip[] };
       // A conversation keeps the assistants it has an exchange with whoever answers the turn.
       const before = this.threads.find(t => t.id === response.conversationId)?.handover;
       if (!handed && before) response.thread.handover = before;

@@ -787,8 +787,57 @@ export const handedConversation = (
     followUps: [],
   };
 };
-export const conversation = (source: Thread[], text: string, conversationId = 'konversation'): ConversationResponse => {
+export const conversation = (
+  source: Thread[],
+  text: string,
+  conversationId = 'konversation',
+  /** What stood open where the question was asked (`ConversationInput.beside`). */
+  beside?: string,
+): ConversationResponse => {
   const previous = source.find(t => t.id === conversationId)?.messages ?? [];
+  // Asked to move or cancel a meeting that stands open on Kalender, the assistant prepares the decision and saves nothing
+  // (`Prepared`, 2026-11-18): the meeting open in the pane if it is the person's own in the week on screen, else the
+  // week's first own one; a move to Thursday 13:00–13:30 the same week. The answer and the saved message both carry it.
+  if (/flytta|ställ in/i.test(text) && beside?.startsWith('event:')) {
+    const week = events('2026-11-02').filter(e => e.mine && e.canCancel && !e.recurring && !e.allDay);
+    const event = week.find(e => 'event:' + e.id === beside) ?? week[0]!;
+    const meeting = { id: event.id, title: event.title, start: event.start, end: event.end };
+    const cancel = /ställ in/i.test(text);
+    const prepared: NonNullable<ConversationResponse['prepared']> = cancel
+      ? { kind: 'calendar.cancel', event: meeting }
+      : { kind: 'calendar.move', event: meeting, start: '2026-11-05T12:00:00.000Z', end: '2026-11-05T12:30:00.000Z' };
+    const body = cancel
+      ? 'Mötet kan ställas in. Svara på frågan om du vill ställa in det; inget är inställt än.'
+      : 'Torsdag 13:00–13:30 är ledigt för dig, Mona Berg och Per Lindahl. Spara om tiden passar, eller dra blocket.';
+    const reply = thread({
+      id: conversationId,
+      title: text.slice(0, 80),
+      kind: 'question',
+      connector: 'clew',
+      area: 'fragor',
+      messages: [
+        ...previous,
+        { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW },
+        {
+          id: `a${previous.length}`,
+          role: 'assistant',
+          body,
+          createdAt: NOW,
+          meta: { source: 'Kalendern', assistant: 'model', prepared },
+        },
+      ],
+    });
+    return {
+      conversationId,
+      thread: reply,
+      shape: 'svar',
+      assistant: 'model',
+      answer: { body, source: 'Kalendern', at: NOW },
+      prepared,
+      clewActions: [],
+      followUps: [],
+    };
+  }
   // A question about a routine is answered from documents (D26): numbered steps, citations, the sources as a view.
   if (/ramlat/i.test(text)) {
     const body =

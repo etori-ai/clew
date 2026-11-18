@@ -78,3 +78,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Design exploration: Organisation, Användare and the person card · 2026-11-13](2026-11-13-organisation-users-and-the-person-card.md)
 - [Handover review of the SCIM provisioning guides](2026-11-13-scim-provisioning-guide-handover.md)
 - [One pattern on Astryx, and the library question](2026-11-14-one-pattern-on-astryx-and-the-library-question.md)
+- [Where the assistant is asked](2026-11-18-where-the-assistant-is-asked.md)

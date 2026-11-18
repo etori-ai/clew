@@ -9,6 +9,7 @@ import type {
   MessageMeta,
   ModelCall,
   ModelRef,
+  Prepared,
   SearchResult,
   SourceCitation,
   Thread,
@@ -40,6 +41,7 @@ import {
 } from './router';
 import { modelAnswer, systemPrompt, type ReadRecord, type ToolCallRecord } from './model';
 import { DRAFT_TOOL, draftableActions, draftTool, type ActionDraft } from './drafts';
+import { ownOverlaps, prepareCancelTool, prepareMoveTool, PREPARE_TOOLS, whyNotChangeable } from './prepared';
 import { listObjects } from './objects';
 import {
   namedWork,
@@ -74,6 +76,8 @@ type Produced = {
   /** The work items among the rows the answer names (`namedItems`). */
   viewItems?: string[];
   draft?: NonNullable<ConversationResponse['draft']>;
+  /** A decision of Clew's own the model filled in and nothing sent (`prepared.ts`): the last one the turn heard. */
+  prepared?: Prepared;
   forslag?: { threadId: string };
   clewActions: ClewAction[];
   toolCalls?: ToolCallRecord[];
@@ -174,7 +178,9 @@ export function assistantUsecases(deps: AssistantDeps) {
       .flatMap(m => {
         const reads: TurnRead[] = m.meta?.reads ?? m.meta?.toolCalls?.map(c => ({ capability: c.capability })) ?? [];
         const said = reads
-          .filter(r => r.capability !== PERSON_TOOL && r.capability !== DRAFT_TOOL)
+          .filter(
+            r => r.capability !== PERSON_TOOL && r.capability !== DRAFT_TOOL && !PREPARE_TOOLS.includes(r.capability),
+          )
           .map(
             r =>
               (registry.find(r.capability)?.capability.title ?? r.capability) +
@@ -519,6 +525,16 @@ export function assistantUsecases(deps: AssistantDeps) {
     const subject = chips.primaryThread ?? personSubject(people);
     const draftable = model.tools && subject ? draftableActions(registry, persona, subject) : [];
     const drafts: { last?: ActionDraft } = {};
+    // The meeting that stands open beside the conversation may be moved or cancelled as a prepared decision, only one
+    // the person may change from Clew and only with a model that uses tools; nothing is saved or sent (`prepared.ts`).
+    // A meeting the person merely added to the conversation is not the one they are looking at, and is not offered.
+    // Both tools report to one callback: the turn's last prepared decision is its answer's, whichever kind.
+    const open = chips.beside ? chips.objects.find(o => o.ref === chips.beside) : undefined;
+    const meeting = model.tools && open?.kind === 'event' && !whyNotChangeable(open.event) ? open.event : undefined;
+    const prepared: { last?: Prepared } = {};
+    const hear = (p: Prepared) => {
+      prepared.last = p;
+    };
     // A person the model looks up (D115) brings their work items into the turn's answer.
     const lookedUp = new Map<string, ManagedPerson>();
     // The assistant of another system the model hands the question to, if it does (D125 item 11).
@@ -530,6 +546,17 @@ export function assistantUsecases(deps: AssistantDeps) {
             draftTool(draftable, now.toISOString(), d => {
               drafts.last = d;
             }),
+          ]
+        : []),
+      ...(meeting
+        ? [
+            prepareMoveTool({
+              event: meeting,
+              now: now.toISOString(),
+              overlapping: ownOverlaps(calendar, persona, meeting),
+              prepared: hear,
+            }),
+            prepareCancelTool({ event: meeting, prepared: hear }),
           ]
         : []),
       ...(lookup ? [personTool(people, now.toISOString(), p => lookedUp.set(p.key, p))] : []),
@@ -567,6 +594,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           }
         : {}),
       drafts: draftable.length > 0,
+      prepares: !!meeting,
       ...(people.people.length ? { people: { lines: peopleLines(people, now.toISOString()), lookup } } : {}),
       ...(earlier.length ? { earlier } : {}),
       ...(model.tools && routable.length ? { assistants: routable.map(assistantLine) } : {}),
@@ -605,9 +633,12 @@ export function assistantUsecases(deps: AssistantDeps) {
         return { handTo: handTo.assistant.id };
       }
       // The draft is not a read: it names no source, offers no view and is kept as the turn's draft instead. Neither is
-      // a propose that became a work item.
+      // a prepared decision, kept as the turn's own, nor a propose that became a work item.
       const reads = answer.toolCalls.filter(
-        c => c.capability !== DRAFT_TOOL && c.capability !== turn.started?.capability,
+        c =>
+          c.capability !== DRAFT_TOOL &&
+          !PREPARE_TOOLS.includes(c.capability) &&
+          c.capability !== turn.started?.capability,
       );
       const begun = turn.started ? await startedDraft(persona, turn.started, now.toISOString(), history) : {};
       const ended = clock();
@@ -694,7 +725,8 @@ export function assistantUsecases(deps: AssistantDeps) {
           .filter(t => speaksOf(parsed.body, t.title))
           .map(t => t.id),
       );
-      const shape: Produced['shape'] = draft || turn.started ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
+      const shape: Produced['shape'] =
+        draft || prepared.last || turn.started ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
       return {
         body: parsed.body,
         source,
@@ -718,6 +750,7 @@ export function assistantUsecases(deps: AssistantDeps) {
               },
             }
           : begun),
+        ...(prepared.last ? { prepared: prepared.last } : {}),
         model: { id: model.id, title: model.title },
         modelCall,
         ...(found.length ? { cards: found } : {}),
@@ -871,6 +904,7 @@ export function assistantUsecases(deps: AssistantDeps) {
             },
           }
         : {}),
+      ...(produced.prepared ? { prepared: produced.prepared } : {}),
       ...(produced.toolCalls?.length
         ? { toolCalls: produced.toolCalls.map(c => ({ capability: c.capability, input: c.input })) }
         : {}),
@@ -945,6 +979,12 @@ export function assistantUsecases(deps: AssistantDeps) {
                 },
               }
             : {}),
+          // A decision the assistant prepared and nothing sent: which kind (a move or a cancellation), about which
+          // meeting. A move's time is the conversation's, as a draft's values are, and the meeting's title is never
+          // the audit row's (D91).
+          ...(produced!.prepared
+            ? { prepared: { kind: produced!.prepared.kind, event: produced!.prepared.event.id } }
+            : {}),
           ...(produced!.sources?.length ? { sources: produced!.sources.map(s => s.ref) } : {}),
           ...(cards.length ? { cards } : {}),
           ...(produced!.model ? { model: produced!.model.id } : {}),
@@ -967,6 +1007,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(produced.view ? { view: produced.view } : {}),
       ...(produced.forslag ? { forslag: produced.forslag } : {}),
       ...(produced.draft ? { draft: produced.draft } : {}),
+      ...(produced.prepared ? { prepared: produced.prepared } : {}),
       clewActions: produced.clewActions,
       ...(verbs ? { verbs } : {}),
       followUps: produced.followUps.slice(0, 3),

@@ -38,6 +38,19 @@
 .clew-cal-view-fixed {
   overflow: hidden;
 }
+/*
+  Kalender's page (2026-11-18): the grid takes the height it is given, so the week ends where the sheet ends and never
+  in the middle of it. Its frame is the sheet's (FullCalendar's `borderless`), its lines run to the header's rule and
+  to the pane's. There the grid holds the whole day and scrolls inside itself under its day headers: the office day
+  fills what is seen and the hours before and after it are a scroll away (the product owner, 2026-11-18: people work
+  early and late). `calendar.tsx` sizes the rows for that. As the child of a stack it takes what the stack has left;
+  anywhere else, the whole of its parent.
+*/
+.clew-cal-fill {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+}
 .clew-cal-table-header {
   background-color: var(--color-background-surface);
 }
@@ -217,6 +230,11 @@
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
 }
+/* Where the grid fills the sheet the hour stands in its own row, under its line: nothing is cut where the axis starts. */
+.clew-cal-fill .clew-cal-slot-header-inner {
+  top: var(--spacing-1);
+  background-color: transparent;
+}
 .clew-cal-slot-header-divider {
   border-inline-end: 1px var(--clew-cal-border-style) var(--clew-cal-line);
 }
@@ -247,8 +265,9 @@
 .clew-cal-slot-lane.clew-cal-minor {
   border-top-style: dotted;
 }
+/* Outside the working day is the ground the sheet stands on: quieter than a meeting, so the two are never one colour. */
 .clew-cal-non-business {
-  background-color: var(--color-background-muted);
+  background-color: var(--color-background-body);
 }
 .clew-cal-highlight {
   background-color: var(--color-accent-muted);
@@ -268,14 +287,15 @@
 }
 
 /*
-  Events (D71, artboard 6). A meeting is neutral: the surface with an emphasized edge. A proposal is the assistant's:
-  the info-muted fill and a dashed info edge, the only blue in the calendar. A booked samtal is a meeting. No hue in a
-  cell: the system colours are the cards', and the calendar is Clew's own.
+  Events (D71, artboard 6). A meeting is neutral and has a body (2026-11-18): the muted fill with an emphasized edge,
+  so it stands out from the grid it lies on. A proposal is the assistant's: the info-muted fill and a dashed info edge,
+  the only blue in the calendar. A booked samtal is a meeting. No hue in a cell: the system colours are the cards', and
+  the calendar is Clew's own.
 */
 .clew-cal-event {
-  --clew-cal-event-bg: var(--color-background-surface);
+  --clew-cal-event-bg: var(--color-background-muted);
   --clew-cal-event-fg: var(--color-text-primary);
-  --clew-cal-event-border: var(--color-border-emphasized);
+  --clew-cal-event-border: var(--color-border);
   --clew-cal-event-edge: var(--color-border-emphasized);
   --clew-cal-event-line: solid;
 }
@@ -296,8 +316,20 @@
 .clew-cal-event.clew-cal-mirror {
   opacity: 0.75;
 }
-.clew-cal-event.clew-cal-selected {
-  box-shadow: var(--shadow-med);
+/*
+  The entry that stands in the pane is told by the accent, its fill and its edge, never by a shadow alone. The entry a
+  person is placing (a new booking, a meeting being moved) has the same accent whether or not it stands in the pane, and
+  a dashed edge: it is theirs, and not yet in the calendar.
+*/
+.clew-cal-event.clew-cal-selected,
+.clew-cal-event.clew-cal-draft {
+  --clew-cal-event-bg: var(--color-accent-muted);
+  --clew-cal-event-fg: var(--color-text-primary);
+  --clew-cal-event-border: var(--color-accent);
+  --clew-cal-event-edge: var(--color-accent);
+}
+.clew-cal-event.clew-cal-draft {
+  --clew-cal-event-line: dashed;
 }
 
 .clew-cal-block-event {
@@ -534,8 +566,9 @@
   background-color: var(--color-accent);
   color: var(--color-on-accent);
 }
+/* A day of the month before or after is quieter, and still text to read: secondary, never the disabled colour (1.4.3). */
 .clew-cal-day-number.clew-cal-other {
-  color: var(--color-text-disabled);
+  color: var(--color-text-secondary);
 }
 .clew-cal-day-number.clew-cal-narrow {
   margin: var(--spacing-0-5);

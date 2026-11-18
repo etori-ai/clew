@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { stockholmDate, type AskValues } from '@clew/contracts';
 import type {
@@ -6,6 +7,7 @@ import type {
   CalendarEvent,
   Draft,
   MessageMeta,
+  Prepared,
   SourceCitation,
   Thread,
   ThreadMessage,
@@ -52,7 +54,7 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { mobileQuery } from '../media';
-import { weekNumber } from '@clew/calendar/dates';
+import { dayLabel, displayDate, timeRange, weekNumber } from '@clew/calendar/dates';
 import { areasQuery, calendarWeekQuery, entityDetailQuery, threadQuery, viewQuery } from '../queries';
 import { DeclaredView } from './view';
 import { useConversation, type ChipRef } from './conversation-context';
@@ -68,6 +70,7 @@ import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../an
 import { isSide, sentWords, sideCount, suggestedWords } from '../conversation-about';
 import { DOT } from '../dot';
 import { itemPageHref, rowFacts, rowLine } from '../work-items';
+import { withEntry } from '../panel-address';
 
 /** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
 export type ActionDraftRef = Draft & { kind: 'action'; actionId: string };
@@ -513,6 +516,47 @@ export function StreamingAnswer({ text }: { text: string }) {
     <Markdown density="compact" headingLevelStart={2} isStreaming>
       {shown}
     </Markdown>
+  );
+}
+/** A time as Kalender's pane writes it: "Torsdag 5 november · 13:00–13:30". */
+const spanWords = (start: string, end: string) => {
+  const day = dayLabel(displayDate(start));
+  return `${day.charAt(0).toLocaleUpperCase('sv-SE')}${day.slice(1)}\u00a0· ${timeRange(start, end)}`;
+};
+/**
+ * A decision of the calendar's the answer prepared (`MessageMeta.prepared`, the product owner 2026-11-18): one row
+ * under the answer's text. A move says the new time, a cancellation the meeting and its time. Beside a conversation its
+ * button is "Visa i kalendern", which opens the meeting on Kalender with "Flytta …" filled in or "Ställ in mötet?"
+ * asked; the prepared decision goes in the router's state, never in the address, so Back or a reload never does it
+ * again. On the page the decision is made on, `action` is that page's own button instead (null: none, where the page
+ * cannot make it). Nothing is saved or cancelled from here: the decision is the person's button on Kalender.
+ */
+export function PreparedRow({
+  prepared,
+  action,
+}: {
+  prepared: Prepared;
+  action?: { label: string; onPress: () => void } | null | undefined;
+}) {
+  const navigate = useNavigate();
+  const said =
+    prepared.kind === 'calendar.move'
+      ? spanWords(prepared.start, prepared.end)
+      : `${prepared.event.title}, ${spanWords(prepared.event.start, prepared.event.end)}`;
+  // The meeting's own week, where it is read; Kalender then shows the week of a new time.
+  const at = new URLSearchParams({ date: displayDate(prepared.event.start), view: 'week' });
+  const button =
+    action === undefined
+      ? {
+          label: 'Visa i kalendern',
+          onPress: () => navigate(withEntry('/calendar', at, prepared.event.id), { state: { prepared } }),
+        }
+      : action;
+  return (
+    <HStack gap={3} vAlign="center" wrap="wrap">
+      <Text weight="semibold">{said}</Text>
+      {button && <Button size="sm" variant="secondary" label={button.label} onClick={button.onPress} />}
+    </HStack>
   );
 }
 /** The proposals' week in the transcript (D32): the week's meetings with the drawn times among them, as a list in a ghost bubble, after the `ai-chat` template's card-in-a-bubble. */
@@ -993,6 +1037,7 @@ export function Transcript({
             >
               {m.body}
             </Markdown>
+            {m.meta?.prepared && <PreparedRow prepared={m.meta.prepared} />}
             {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
             {cards.length > 1 || (cards.length > 0 && m.meta?.cardsAs === 'rows') ? (
               <TurnCardRows

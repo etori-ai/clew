@@ -20,7 +20,8 @@ export type ToolSchemaInfo = ToolInfo & { input: unknown };
 export type ToolCallRecord = { capability: string; input: Record<string, unknown>; output: unknown };
 /**
  * A tool of Clew's own beside the read capabilities, named like one (`clew.<verb>`): the draft of a work item's action
- * (D112 item 8, `drafts.ts`). It runs in the process, writes nothing and never reaches a connector's execute.
+ * (D112 item 8, `drafts.ts`) or a prepared decision of Clew's own (`prepared.ts`). It runs in the process, writes
+ * nothing and never reaches a connector's execute.
  */
 export interface ClewTool {
   name: string;
@@ -87,6 +88,12 @@ export interface PromptContext {
   beside?: string[];
   /** The work item's actions may be filled in as a draft (D112 item 8): the prompt says how and that nothing is sent. */
   drafts?: boolean;
+  /**
+   * The meeting open beside the conversation may be moved or cancelled as a prepared decision (`prepared.ts`): the
+   * prompt says to read the day before a move, that the person decides either themselves, and that it is done where
+   * the meeting is shown, never in another program.
+   */
+  prepares?: boolean;
   /**
    * The asker manages people (D115): the lines about the people the question names, and whether the model may look a
    * name up itself. Absent for someone who manages nobody.
@@ -170,6 +177,13 @@ export function systemPrompt(ctx: PromptContext): string {
       'När personen vill att en av ärendets åtgärder görs:',
       '- Fyll i den med verktyget clew__draftAction, efter att ha läst det du behöver (till exempel lediga tider i kalendern).',
       '- Säg sedan i en mening vad du fyllt i och att inget är skickat: personen granskar utkastet och skickar själv.',
+    );
+  if (ctx.prepares)
+    lines.push(
+      'När personen vill flytta eller ställa in mötet som står öppet bredvid samtalet:',
+      '- Flytta: läs först dagen med calendar__day eller lediga tider med calendar__freeTimes, och fyll sedan i den nya tiden med verktyget clew__prepareMove. Säg i en mening vilken tid du föreslår och att personen sparar den själv.',
+      '- Ställa in: anropa verktyget clew__prepareCancel. Säg i en mening att personen får frågan om att ställa in mötet och svarar själv.',
+      '- Personen kan också göra båda själv med "Flytta …" och "Ställ in …" där mötet visas. Säg aldrig att det måste göras direkt i kalendern eller i ett annat program, och skriv aldrig att mötet är flyttat eller inställt.',
     );
   if (ctx.earlier?.length)
     lines.push(

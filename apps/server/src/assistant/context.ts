@@ -1,5 +1,10 @@
 import { isSnoozed, type CalendarEvent, type ReceiptRow, type SearchHit, type Thread } from '@clew/contracts';
 import { dayLabel, shortDayLabel, timeLabel, timeRange } from '@clew/calendar/dates';
+import { whyNotChangeable } from './prepared';
+
+/** A meeting of the person's own, as the model is told it: the buttons where the meeting is shown do both. */
+const OWN_MEETING =
+  'Det är personens eget möte: personen kan själv flytta det med "Flytta …" och ställa in det med "Ställ in …" där mötet visas, utan något annat program.';
 
 /** A chip resolved against what the person may actually see. Labels from the browser are never trusted. */
 export type ResolvedObject =
@@ -111,7 +116,12 @@ export function serialiseContext(
       case 'proposal':
         return `Förslaget ${o.proposal.participant.name} ${day(o.proposal.start)} ${timeRange(o.proposal.start, o.proposal.end)} i ärendet "${o.thread.title}".`;
       case 'event':
-        return `Mötet "${o.event.title}" ${day(o.event.start)} ${o.event.allDay ? 'heldag' : timeRange(o.event.start, o.event.end)}${o.event.room ? ', ' + o.event.room : ''} i kalendern.`;
+        // What the person can do with it themselves, so the model neither offers what it cannot prepare nor sends the
+        // person to another program for what the meeting's own buttons do.
+        return (
+          `Mötet "${o.event.title}" ${day(o.event.start)} ${o.event.allDay ? 'heldag' : timeRange(o.event.start, o.event.end)}${o.event.room ? ', ' + o.event.room : ''} i kalendern. ` +
+          (whyNotChangeable(o.event) ?? OWN_MEETING)
+        );
       case 'capability':
         return `Förmågan "${o.title}" (${o.source}).`;
       case 'document': {

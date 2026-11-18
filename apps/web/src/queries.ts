@@ -1,6 +1,7 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import type {
   AskValues,
+  AvailabilityInput,
   BoardingStartBody,
   CompetenceMatrixInput,
   CompetenceSearchBody,
@@ -133,6 +134,18 @@ export const membersQuery = queryOptions({
   staleTime: 5 * 60_000,
 });
 export const roomsQuery = queryOptions({ queryKey: keys.rooms, queryFn: () => api.rooms(), staleTime: 5 * 60_000 });
+/**
+ * Who is free at the time a booking form holds (Kalender's "Ny bokning"): read by itself as the time, the guests or the
+ * room change, and kept only briefly, since other people's calendars move.
+ */
+export const availabilityQuery = (input: AvailabilityInput | null) =>
+  queryOptions({
+    queryKey: keys.availability(input),
+    queryFn: () => api.availability(input!),
+    enabled: input !== null,
+    staleTime: 30_000,
+    retry: false,
+  });
 /** The picker's rows (D29), read once a minute for the whole page so every card shows the same times. */
 export const snoozePresetsQuery = queryOptions({
   queryKey: keys.snoozePresets,

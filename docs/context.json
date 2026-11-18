@@ -1528,7 +1528,7 @@
       "number": 126,
       "path": "docs/decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md",
       "title": "D126 · One page per thing, and one Astryx template per page type",
-      "status": "provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation)",
+      "status": "provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation; item 4 amended by [D129](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) on 2026-11-18: a page whose answer is drawn on the page itself may hold the assistant's box in its pane, Kalender first; and by [D130](D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) the same day: the assistant is asked beside every page, which replaces the item's last sentence when built)",
       "date": "2026-11-14",
       "area": "ui"
     },
@@ -1548,6 +1548,24 @@
       "title": "D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew",
       "status": "provisional (the product owner chose it on 2026-11-16 from the canvas \"Clew",
       "date": "2026-11-16",
+      "area": "ui, product"
+    },
+    {
+      "key": "D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page",
+      "number": 129,
+      "path": "docs/decisions/D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md",
+      "title": "D129 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in",
+      "status": "provisional (the product owner chose it on 2026-11-18 from the third row of the canvas \"Clew",
+      "date": "2026-11-18",
+      "area": "ui, product"
+    },
+    {
+      "key": "D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame",
+      "number": 130,
+      "path": "docs/decisions/D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
+      "title": "D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
+      "status": "provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas \"Clew",
+      "date": "2026-11-18",
       "area": "ui, product"
     }
   ],
@@ -2338,8 +2356,20 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md",
+      "title": "D129 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D13-conversation-in-the-composer-drawer.md",
       "title": "D13 · The conversation lives in the composer's drawer; the dim is an Astryx Overlay",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
+      "title": "D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
       "category": "decision-history",
       "headings": []
     },
@@ -4551,6 +4581,24 @@
         "What the critique found",
         "The proposal, as the canvas draws it",
         "What this would change, and what is open"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-18-where-the-assistant-is-asked.md",
+      "title": "Where the assistant is asked",
+      "category": "review-history",
+      "headings": [
+        "1. The question, and why it keeps being reopened",
+        "2. The history",
+        "3. The inventory",
+        "4. The general assistant and files",
+        "5. The options",
+        "6. The options weighed",
+        "7. The protocol half",
+        "8. How four other products place their assistant",
+        "9. Recommendation",
+        "10. Questions only the owner can answer",
+        "Appendix: the facts, with where they were read"
       ]
     },
     {

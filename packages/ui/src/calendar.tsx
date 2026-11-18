@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, type CalendarRef, type EventInput } from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/react/timegrid';
 import dayGridPlugin from '@fullcalendar/react/daygrid';
@@ -46,6 +46,22 @@ type Props = {
   selectedId?: string;
   /** An embedded calendar: a tighter axis fitted to its entries and shorter slots. */
   compact?: boolean;
+  /**
+   * Kalender's page: the grid takes the height it is given, without a frame of its own. The time grid then holds the
+   * whole day, midnight to midnight, and scrolls inside itself under its day headers. Its rows are as tall as it takes
+   * for 07–18 to fill what is seen, and it opens there: an early or a late hour is a scroll away (the product owner,
+   * 2026-11-18). The host gives it a box with a height.
+   */
+  fill?: boolean;
+  /** Saturday and Sunday are drawn too, as days outside the working week. Off in the embeds, whose week is five days. */
+  weekends?: boolean;
+  /**
+   * The entry a person is placing (a new booking, a meeting being moved): it alone is dragged and stretched on the grid,
+   * and `onDraftChange` is told where it was put. The host's fields are the keyboard path to the same time (D27).
+   */
+  draftId?: string;
+  /** Where the draft was dragged or stretched to. Returning false puts it back (a span the host cannot take). */
+  onDraftChange?: (start: string, end: string) => boolean | void;
   onItemClick?: (item: AgendaItem) => void;
   /** Called when a proposal was dragged to a new time; only proposals are draggable (D27). A rejected promise puts it back. */
   onMoveProposal?: (item: AgendaItem, start: string, end: string) => Promise<unknown> | void;
@@ -57,6 +73,9 @@ const kindLabel = { event: 'bokat', proposal: 'förslag', booked: 'bokat samtal'
 const plugins = [clewCalendarTheme, timeGridPlugin, dayGridPlugin, listPlugin, interactionPlugin];
 const timeFormat = { hour: '2-digit', minute: '2-digit', hour12: false } as const;
 const office = { start: 8 * 60, end: 17 * 60 };
+/** The day the page shows without scrolling: the office day with an hour before and after it. */
+const pageDay = { start: 7 * 60, end: 18 * 60 };
+const pageRows = (pageDay.end - pageDay.start) / 30;
 const businessHours = { daysOfWeek: [1, 2, 3, 4, 5], startTime: '08:00', endTime: '17:00' };
 const rowMs = 30 * 60_000;
 const hourMs = 60 * 60_000;
@@ -83,13 +102,15 @@ const isDay = (view: CalendarView) => view === 'timeGridDay' || view === 'listDa
 const isMonth = (view: CalendarView) => view === 'dayGridMonth';
 const isList = (view: CalendarView) => view === 'listWeek' || view === 'listDay';
 /** The days a view shows, for the axis and the spoken summary. */
-const shownDays = (view: CalendarView, date: string) => (isDay(view) ? [date] : isMonth(view) ? [] : dates(date, 5));
+const shownDays = (view: CalendarView, date: string, weekends = false) =>
+  isDay(view) ? [date] : isMonth(view) ? [] : dates(date, weekends ? 7 : 5);
 
 /**
  * The event calendar: FullCalendar 7 Standard under Clew's theme (D27). The toolbar is the host's, so `headerToolbar`
  * stays off; `date` and `view` are controlled through the calendar API. Events render through Astryx Text, the day
  * headers are real headings, and a visually hidden summary names what the view holds, because the time grid itself is
- * not a WAI-ARIA grid. Proposals alone may be dragged; everything else is read-only. The same component, `compact`,
+ * not a WAI-ARIA grid. A proposal may be dragged, and the one entry a person is placing (`draftId`) dragged and
+ * stretched; everything else is read-only. The same component, `compact`,
  * is the day strip and the list inside a panel, a dialog or a chat bubble (D32).
  */
 export function EventCalendar({
@@ -101,6 +122,10 @@ export function EventCalendar({
   accessiblePath,
   selectedId,
   compact = false,
+  fill = false,
+  weekends = false,
+  draftId,
+  onDraftChange,
   onItemClick,
   onMoveProposal,
   onSelectRange,
@@ -117,20 +142,17 @@ export function EventCalendar({
         start: item.start,
         end: item.end,
         allDay: item.allDay,
-        editable: item.kind === 'proposal' && !!onMoveProposal,
-        durationEditable: false,
-        extendedProps: { kind: item.kind, selected: item.id === selectedId },
+        editable: item.id === draftId ? !!onDraftChange : item.kind === 'proposal' && !!onMoveProposal,
+        durationEditable: item.id === draftId && !!onDraftChange && !item.proposal,
+        extendedProps: { kind: item.kind, selected: item.id === selectedId, draft: item.id === draftId },
       })),
-    [items, onMoveProposal, selectedId],
+    [items, onMoveProposal, selectedId, draftId, onDraftChange],
   );
   const shown = useMemo(() => {
-    const days = shownDays(view, date);
+    const days = shownDays(view, date, weekends);
     return days.length ? items.filter(item => days.some(day => occursOn(item, day))) : items;
-  }, [view, date, items]);
-  const { start, end } = useMemo(
-    () => axis(shown, compact ? office : { start: 7 * 60, end: 18 * 60 }),
-    [shown, compact],
-  );
+  }, [view, date, items, weekends]);
+  const { start, end } = useMemo(() => axis(shown, compact ? office : pageDay), [shown, compact]);
   useEffect(() => {
     const api = ref.current?.getApi();
     if (api && api.view.type !== view) api.changeView(view, date);
@@ -140,14 +162,39 @@ export function EventCalendar({
     if (api && displayDate(api.getDate().toISOString()) !== date) api.gotoDate(date);
   }, [date]);
   const summary = useMemo(
-    () => summarise(view, date, items) + (accessiblePath ? ` ${accessiblePath}` : ''),
-    [view, date, items, accessiblePath],
+    () => summarise(view, date, items, weekends) + (accessiblePath ? ` ${accessiblePath}` : ''),
+    [view, date, items, accessiblePath, weekends],
   );
+  // Where the grid scrolls inside itself (`fill`), a row's height is a number of pixels, so the row that makes 07–18
+  // fill what is seen is measured from FullCalendar's scroller (found from a row it holds) and measured again when the
+  // window changes; the grid is then put back at 07. The scroller is left as FullCalendar makes it: a tab stop on it
+  // would stand between the grid's row group and its rows, which breaks the table it is part of (axe:
+  // aria-required-children). Every entry is a tab stop and comes into view with the focus, and every hour is reached
+  // through the host's time fields; an empty stretch outside the office day is seen with a wheel or a finger.
+  const host = useRef<HTMLDivElement>(null);
+  const [fitted, setFitted] = useState<number | null>(null);
+  const timed = fill && !isMonth(view) && !isList(view);
+  useEffect(() => {
+    if (!timed) return;
+    let scroller = host.current?.querySelector('.clew-cal-slot-lane')?.parentElement ?? null;
+    while (scroller && scroller !== host.current && !/auto|scroll/.test(getComputedStyle(scroller).overflowY))
+      scroller = scroller.parentElement;
+    if (!scroller || scroller === host.current) return;
+    const seen = scroller;
+    const fit = () => setFitted(Math.max(20, Math.floor(seen.clientHeight / pageRows)));
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(seen);
+    return () => observer.disconnect();
+  }, [timed, view]);
+  useEffect(() => {
+    if (timed && fitted) ref.current?.getApi().scrollToTime(clock(pageDay.start));
+  }, [timed, fitted, view]);
   const heading = (day: Date, narrow: boolean, today: boolean, inline = false) => (
     <DayHeading date={day} level={dayHeadingLevel} narrow={narrow} today={today} inline={inline} />
   );
   return (
-    <div role="group" aria-label={label}>
+    <div ref={host} role="group" aria-label={label} className={fill ? 'clew-cal-fill' : undefined}>
       <VisuallyHidden>
         <p>{summary}</p>
       </VisuallyHidden>
@@ -158,9 +205,11 @@ export function EventCalendar({
         initialDate={date}
         locale={sv}
         timeZone={timeZone}
-        weekends={false}
+        weekends={weekends}
         headerToolbar={false}
-        height="auto"
+        height={fill ? '100%' : 'auto'}
+        expandRows={fill}
+        borderless={fill}
         events={events}
         eventInteractive
         eventOrder="start,-duration,title"
@@ -169,11 +218,13 @@ export function EventCalendar({
         displayEventEnd={false}
         slotDuration="00:30"
         slotHeaderInterval="01:00"
-        slotMinHeight={compact ? 20 : 28}
+        slotMinHeight={timed && fitted ? fitted : compact ? 20 : 28}
         slotHeaderFormat={timeFormat}
-        slotMinTime={start}
-        slotMaxTime={end}
-        scrollTime={start}
+        // The page's grid holds the whole day and opens at the start of the office day; an embed and a grid as tall as
+        // its day hold the office day, stretched to the entries outside it.
+        slotMinTime={fill ? '00:00' : start}
+        slotMaxTime={fill ? '24:00' : end}
+        scrollTime={fill ? clock(pageDay.start) : start}
         businessHours={businessHours}
         nowIndicator
         allDaySlot
@@ -183,7 +234,6 @@ export function EventCalendar({
         selectMirror
         selectMinDistance={4}
         snapDuration="00:15"
-        selectConstraint={businessHours}
         dateClick={
           onSelectRange &&
           (info => {
@@ -275,6 +325,11 @@ export function EventCalendar({
         }}
         eventDrop={info => {
           const item = byId.get(info.event.id);
+          // The entry being placed is the host's to keep: it says where the block stands, and may refuse.
+          if (item && item.id === draftId && onDraftChange && info.event.start && info.event.end) {
+            if (onDraftChange(info.event.start.toISOString(), info.event.end.toISOString()) === false) info.revert();
+            return;
+          }
           if (!item || item.kind !== 'proposal' || !onMoveProposal || !info.event.start || !info.event.end) {
             info.revert();
             return;
@@ -284,8 +339,21 @@ export function EventCalendar({
             () => info.revert(),
           );
         }}
+        eventResize={info => {
+          const ok =
+            info.event.id === draftId &&
+            !!onDraftChange &&
+            !!info.event.start &&
+            !!info.event.end &&
+            onDraftChange(info.event.start.toISOString(), info.event.end.toISOString()) !== false;
+          if (!ok) info.revert();
+        }}
         select={info => {
-          onSelectRange?.(info.start.toISOString(), info.end.toISOString());
+          // A booking has a clock and one day: a span of whole days, or one that runs past midnight, starts nothing.
+          const oneDay =
+            !info.allDay &&
+            displayDate(info.start.toISOString()) === displayDate(new Date(info.end.getTime() - 1).toISOString());
+          if (oneDay) onSelectRange?.(info.start.toISOString(), info.end.toISOString());
           ref.current?.getApi().unselect();
         }}
       />
@@ -329,8 +397,8 @@ function DayHeading({
 }
 
 /** What a screen reader hears first: the span and, per day, how many meetings and proposals, since the grid is a picture. */
-function summarise(view: CalendarView, date: string, items: AgendaItem[]) {
-  const days = shownDays(view, date);
+function summarise(view: CalendarView, date: string, items: AgendaItem[], weekends = false) {
+  const days = shownDays(view, date, weekends);
   const head = isDay(view) ? dayLabel(date) : isMonth(view) ? monthLabel(date) : `Vecka ${weekNumber(date)}`;
   if (!days.length) return `${head}. ${items.length} poster.`;
   const parts = days.map(day => {

@@ -91,6 +91,7 @@ export function PageFrame({
   width = PAGE_WIDTH,
   pinned,
   bare = false,
+  bleed = false,
   scrollTabStop = false,
   footer,
   entry,
@@ -140,6 +141,11 @@ export function PageFrame({
   pinned?: boolean;
   /** The content is the page's own scroller and inset (the conversation's ChatLayout): no padding of the frame's. */
   bare?: boolean;
+  /**
+   * The content runs to the sheet's edges and is given the column's whole height to fill (Kalender's grid, which is its
+   * own frame): no inset of the frame's, and the header on the same edges. The column still scrolls what is taller.
+   */
+  bleed?: boolean;
   /**
    * The column scrolls in Astryx's `ScrollableArea`, which takes a tab stop while it scrolls, so a column that may hold
    * nothing focusable (a work item's read, a record, a review's step) can still be read by keyboard (axe:
@@ -241,7 +247,13 @@ export function PageFrame({
     );
   // A bare column keeps the frame's inset where the window is wide, so the transcript stands under the title; on a phone
   // the transcript's own inset is the page's (ChatLayout pads its messages and its box), so nothing is cut at 320 px.
-  const content = bare ? (
+  const content = bleed ? (
+    <LayoutContent padding={0} isScrollable={pin} {...(label ? { label } : {})}>
+      <VStack height="100%" hAlign="stretch">
+        {children}
+      </VStack>
+    </LayoutContent>
+  ) : bare ? (
     <LayoutContent padding={mobile ? 0 : gutter} isScrollable={false} {...(label ? { label } : {})}>
       {children}
     </LayoutContent>
@@ -266,7 +278,8 @@ export function PageFrame({
       {...(layoutRef ? { ref: layoutRef } : {})}
       {...(entry ? { xstyle: entry } : {})}
       height={pin ? 'fill' : 'auto'}
-      {...(end && !panelFacts ? {} : { contentWidth: width })}
+      // A page whose content runs to the sheet's edges has its header on the same edges, not on Hem's measure.
+      {...((end && !panelFacts) || bleed ? {} : { contentWidth: width })}
       header={header}
       start={start}
       content={content}
