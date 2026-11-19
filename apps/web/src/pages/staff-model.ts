@@ -232,9 +232,14 @@ export function cardLinkTexts(list: EntityList, key: string): CardLink[] {
     ...(a.proposals > 0 ? [{ kind: 'proposal' as const, text: countText('proposal', a.proposals), ...thread }] : []),
   ];
 }
+/** A person may be listed on several units the reader manages (D94). Count their Clew key once in the register. */
+export function peopleCount(groups: EntityList['groups']): number {
+  return new Set(groups.flatMap(group => group.entities.map(person => person.key))).size;
+}
+
 /** The line under the title (board Personal): "Bergsåkers skola · 5 medarbetare", or how many units when there are several. */
 export function peopleLine(groups: EntityList['groups']): string {
-  const people = groups.reduce((sum, g) => sum + g.entities.length, 0);
+  const people = peopleCount(groups);
   return groups.length === 1
     ? `${groups[0]!.label}\u00a0· ${people} medarbetare`
     : `${groups.length} enheter\u00a0· ${people} medarbetare`;

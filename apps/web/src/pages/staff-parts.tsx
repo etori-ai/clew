@@ -217,7 +217,6 @@ interface TableRow extends Record<string, unknown> {
   entity: EntityRef;
 }
 type Group = EntityList['groups'][number];
-const count = (n: number) => (n === 0 ? 'Ingen medarbetare' : `${n} medarbetare`);
 /**
  * A unit's people (D130 item 16), as the startsidan prototype draws its register: one card with its heading inside,
  * "Medarbetare" and how many, what searches it under the heading (`tools`), and the table inside the card's inset, so
@@ -228,11 +227,13 @@ function UnitCard({
   group,
   single,
   tools,
+  empty,
   children,
 }: {
   group: Group;
   single: boolean;
   tools?: ReactNode;
+  empty?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -243,15 +244,15 @@ function UnitCard({
       countLabel="medarbetare"
       tools={tools}
     >
-      {group.entities.length === 0 ? (
-        <EmptyState
-          isCompact
-          title="Ingen medarbetare på enheten"
-          description="Katalogen har inte fört in någon annan än dig på den här enheten."
-        />
-      ) : (
-        children
-      )}
+      {group.entities.length > 0
+        ? children
+        : (empty ?? (
+            <EmptyState
+              isCompact
+              title="Ingen medarbetare på enheten"
+              description="Katalogen har inte fört in någon annan än dig på den här enheten."
+            />
+          ))}
     </BoardCard>
   );
 }
@@ -392,6 +393,7 @@ export function AllUnit({
   narrow,
   animatedLayout,
   tools,
+  empty,
 }: {
   group: Group;
   single: boolean;
@@ -400,10 +402,11 @@ export function AllUnit({
   animatedLayout: AnimatedLayout;
   /** What searches the register, under the card's heading. */
   tools?: ReactNode;
+  empty?: ReactNode;
 }) {
   const location = useLocation();
   return (
-    <UnitCard group={group} single={single} tools={tools}>
+    <UnitCard group={group} single={single} tools={tools} empty={empty}>
       {narrow ? (
         <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
           {group.entities.map(e => {

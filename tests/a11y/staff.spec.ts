@@ -181,12 +181,43 @@ test.describe('Personal', () => {
       await expect(page).toHaveURL('/staff?q=karin');
       await expect(page.getByRole('row')).toHaveCount(2);
       await expect(row(page, 'Karin Lindqvist')).toBeVisible();
-      await search.fill('zzz');
+      await search.press('End');
+      await page.keyboard.type('x');
       await expect(page.getByRole('heading', { level: 2, name: 'Ingen medarbetare heter så' })).toBeVisible();
+      await expect(search).toBeFocused();
+      await page.keyboard.press('Backspace');
+      await expect(row(page, 'Karin Lindqvist')).toBeVisible();
+      await expect(search).toBeFocused();
+      await search.fill('zzz');
       await expectNoAxeViolations(page);
       await page.getByRole('button', { name: 'Visa alla' }).click();
       await expect(page).toHaveURL('/staff');
       await expect(page.getByRole('row')).toHaveCount(6);
+      await expect(search).toBeFocused();
+    });
+
+    test('the overview counts overlapping memberships once and includes each configured lens', async ({
+      page,
+      api,
+    }) => {
+      const [school] = api.entityList.groups;
+      const anna = school!.entities.find(person => person.key === 'anna')!;
+      api.entityList.groups.push({ id: 'unit-fritids', label: 'Fritids', entities: [anna] });
+      const talks = api.entityList.lenses.find(lens => lens.capability === TALK_LENS)!;
+      for (const [capability, title] of [
+        ['followup.plans', 'Planer'],
+        ['followup.meetings', 'Uppföljningar'],
+      ] as const) {
+        api.entityList.lenses.push({ ...talks, capability, title });
+        api.entityRows[capability] = { capability, status: 'ok', rows: [{ key: anna.sourceKey, state: 'Saknas' }] };
+      }
+      await open(page, '/staff');
+      await expect(page.getByText('2 enheter · 5 medarbetare', { exact: true })).toBeVisible();
+      await expect(page.getByRole('group', { name: 'Medarbetare 5', exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Uppföljningar: 1 medarbetare behöver dig' })).toHaveAttribute(
+        'href',
+        '/staff?show=followup.meetings',
+      );
     });
 
     test("the row's menu is named for the person and grouped by source, and its talk leads to the person's talk tab", async ({

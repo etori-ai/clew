@@ -25,7 +25,7 @@ import { AskClew } from '../components/conversation/thing-panel';
 import { useEntityAction } from '../entity-actions';
 import { fromCardsBeside, fromPersonBeside, insideClew, overlayRedirect, sourceTab } from '../person-address';
 import { peopleReadHref } from '../view-address';
-import { answerOf, lensNeed, peopleLine, silentOf, sourcesRead, valueCounts, type Answer } from './staff-model';
+import { answerOf, lensNeed, peopleCount, silentOf, sourcesRead, valueCounts, type Answer } from './staff-model';
 import {
   ALL_TAB,
   AllUnit,
@@ -133,7 +133,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
   const narrow = mobile;
   const words = search.get(QUERY) ?? '';
   const groups = useMemo(() => (list ? matching(list, words) : []), [list, words]);
-  const found = groups.reduce((n, g) => n + g.entities.length, 0);
+  const found = groups.some(g => g.entities.length > 0);
+  const total = list ? peopleCount(list.groups) : 0;
   const action = useEntityAction();
   usePageTitle(lens ? `${lens.title} · Personal` : 'Personal');
 
@@ -203,9 +204,11 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
   ) : null;
   // One unit's register has its search inside its card (D130 item 16); several units share one in the page's header.
   const inCard = !lens && single;
+  const searchRef = useRef<HTMLInputElement>(null);
   const searchField =
-    list && list.groups.some(g => g.entities.length > 0) ? (
+    total > 0 ? (
       <TextInput
+        ref={searchRef}
         type="search"
         label="Sök medarbetare"
         isLabelHidden
@@ -218,9 +221,24 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
         width={mobile ? '100%' : inCard ? 480 : 260}
       />
     ) : undefined;
+  const noMatches = (
+    <EmptyState
+      headingLevel={2}
+      title="Ingen medarbetare heter så"
+      description="Sök på en del av förnamnet eller efternamnet."
+      actions={
+        <Button
+          label="Visa alla"
+          onClick={() => {
+            type('');
+            searchRef.current?.focus();
+          }}
+        />
+      }
+    />
+  );
   // The unit's key figures over the register (D130 item 16), as the reference opens Personal: how many people it
   // lists, and for each lens how many of them need the reader, in that need's colour, leading to the lens.
-  const total = list ? list.groups.reduce((n, g) => n + g.entities.length, 0) : 0;
   const figures =
     list && !lens && total > 0 ? (
       <FigureRow>
@@ -231,12 +249,12 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
           // Where they are: the unit, or how many units. The page's line under its title says the rest.
           foot={list.groups.length === 1 ? list.groups[0]!.label : `${list.groups.length} enheter`}
         />
-        {list.lenses.slice(0, 3).flatMap(l => {
+        {list.lenses.map(l => {
           const answer = answers.get(l.capability);
-          if (answer?.status !== 'ok') return [];
+          if (answer?.status !== 'ok') return null;
           const need = lensNeed(l, answer);
           const n = need?.count ?? 0;
-          return [
+          return (
             <KeyFigure
               key={l.capability}
               label={l.title}
@@ -246,8 +264,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
               foot={l.own ? 'Clew' : l.source}
               href={lensHref(l.capability)}
               name={`${l.title}: ${n} medarbetare behöver dig`}
-            />,
-          ];
+            />
+          );
         })}
       </FigureRow>
     ) : null;
@@ -293,21 +311,16 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
               </VStack>
             )}
             {action.dialog}
-            {found > 0 && figures}
-            {ctx && list && list.groups.every(g => g.entities.length === 0) ? (
+            {found && figures}
+            {ctx && total === 0 ? (
               <EmptyState
                 headingLevel={2}
                 title="Inga medarbetare att visa"
                 description="Här ser den som är chef för en enhet medarbetarna på den. Katalogen avgör vem som är chef; be systemförvaltaren om det inte stämmer."
                 actions={<Button label="Till startsidan" href="/" />}
               />
-            ) : ctx && found === 0 ? (
-              <EmptyState
-                headingLevel={2}
-                title="Ingen medarbetare heter så"
-                description="Sök på en del av förnamnet eller efternamnet."
-                actions={<Button label="Visa alla" onClick={() => type('')} />}
-              />
+            ) : ctx && !found && !inCard ? (
+              noMatches
             ) : ctx && lens ? (
               // A lens whose source did not answer has nothing to list: the sentence above takes the table's place.
               lensSilent ? null : (
@@ -333,6 +346,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
                   narrow={narrow}
                   animatedLayout={animatedLayout}
                   tools={inCard ? searchField : undefined}
+                  empty={found ? undefined : noMatches}
                 />
               ))
             ) : null}
