@@ -24,7 +24,7 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 **Limits and pending work.** Not yet drawn with the mark: the figure tiles (D54). On a phone a page's tabs past the first are under Astryx's `TabMenu` ("Fler"). No signed-in pass on the development stack or screen-reader pass yet.
 
-**Evidence.** [D71](../../decisions/D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md), [mark](../../../packages/ui/src/mark.tsx), [marks lookup](../../../apps/web/src/marks.ts), [registry test](../../../tests/unit/system-marks.test.ts), [store contract](../../../tests/connector-store-contract.ts), [admin spec](../../../tests/a11y/admin.spec.ts)
+**Evidence.** [D71](../../decisions/D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md), [mark](../../../packages/ui/src/components/mark.tsx), [marks lookup](../../../apps/web/src/marks.ts), [registry test](../../../tests/unit/system-marks.test.ts), [store contract](../../../tests/connector-store-contract.ts), [admin spec](../../../tests/a11y/admin.spec.ts)
 
 ## Initial page loading
 
@@ -40,7 +40,7 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 **Limits and pending work.** Påminnelser as a row is this build's choice (the canvas has no bell beside the rail's heading and no such row) and waits for the product owner. Not resizable: `SideNav resizable` puts its handle outside the navigation landmark (D112 gap 1). A conversation's dot says nothing about an answer that failed or a turn stopped, and tells its two states apart by colour alone ([open questions](../../maintainers/open-questions.md)). Browser scenarios in `tests/a11y/shell.spec.ts` and `tests/a11y/queue.spec.ts` (the count); no screen-reader pass.
 
-**Evidence.** [D126](../../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md), [shell](../../../apps/web/src/components/shell.tsx), [rail](../../../apps/web/src/components/nav.tsx), [tools](../../../apps/web/src/tool-catalogue.ts), [the conversation's dot](../../../apps/web/src/work-items.ts), [browser evidence](../../../tests/a11y/shell.spec.ts)
+**Evidence.** [D126](../../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md), [shell](../../../apps/web/src/components/shell/shell.tsx), [rail](../../../apps/web/src/components/shell/nav.tsx), [tools](../../../apps/web/src/tool-catalogue.ts), [the conversation's dot](../../../apps/web/src/work-items.ts), [browser evidence](../../../tests/a11y/shell.spec.ts)
 
 ## The conversation and the thing beside it
 
@@ -50,7 +50,7 @@ The assistant also starts a work item (2026-11-16): a `propose` with `model: tru
 
 **Limits and pending work.** That the assistant starts a work item from a propose has no numbered decision record yet, and no browser spec. "Fråga om veckan" sends the calendar's week read as its chip, so the model reads the week through its tool and is not told which week is on screen when it is not the current one. An event more than two weeks ahead goes without its chip (the server resolves an event among this week and the next). A conversation about a person or a unit tells the model nothing about them (D97 item 7); a person the asker names in their own words is resolved among their staff and the work about them is handed to the model (D115). The server scenario of drafts (`tests/unit/conversation.test.ts`) passes in `bun run check`; the browser scenarios of a conversation about a thing (`/conversations/new?card=`) are in `tests/a11y/answer.spec.ts`, and of Samtal in the rail and Alla samtal in `tests/a11y/menu.spec.ts`. No signed-in pass and no screen-reader pass.
 
-**Evidence.** [the conversation's page](../../../apps/web/src/pages/conversation.tsx), [Alla samtal](../../../apps/web/src/pages/conversations.tsx), ["Fråga Clew"](../../../apps/web/src/components/thing-panel.tsx), [conversation state](../../../apps/web/src/components/conversation-context.tsx), [transcript and drafts](../../../apps/web/src/components/conversation.tsx), [server drafts](../../../apps/server/src/assistant/drafts.ts), [unit scenario](../../../tests/unit/conversation.test.ts), browser evidence of [the conversation about a thing](../../../tests/a11y/answer.spec.ts) and [Alla samtal](../../../tests/a11y/menu.spec.ts)
+**Evidence.** [the conversation's page](../../../apps/web/src/pages/conversation.tsx), [Alla samtal](../../../apps/web/src/pages/conversations.tsx), ["Fråga Clew"](../../../apps/web/src/components/conversation/thing-panel.tsx), [conversation state](../../../apps/web/src/components/conversation/conversation-context.tsx), [transcript and drafts](../../../apps/web/src/components/conversation/conversation.tsx), [server drafts](../../../apps/server/src/assistant/drafts.ts), [unit scenario](../../../tests/unit/conversation.test.ts), browser evidence of [the conversation about a thing](../../../tests/a11y/answer.spec.ts) and [Alla samtal](../../../tests/a11y/menu.spec.ts)
 
 ## Adding to the box
 
@@ -66,7 +66,7 @@ The assistant also starts a work item (2026-11-16): a `propose` with `model: tru
 
 **Limits and pending work.** The action points are not yet rows in Att göra ([open questions](../../maintainers/open-questions.md)). The server half passes its unit tests (`tests/unit/news.test.ts`, `tests/unit/read-receipt.test.ts`), and on 2026-11-11 the development stack answered `clew.news` and marked the communication fixture's "Jag har läst" with its `publishedAt` for a manager signed in through the local Keycloak. The only news source is the communication fixture: its routine "Ny rutin vid hot och våld" leaves Clew by its link (a synthetic address on a reserved example domain, so the tab it opens finds nothing) and its survey opens in Clew. "Alla nyheter" is drawn by its own page beside the tool page (`pages/news.tsx`), the same composition as `pages/tool.tsx`. The browser scenarios are in `tests/a11y/hem.spec.ts`, with Hem's links in `structure.spec.ts`, `shell.spec.ts` and `reliability.spec.ts`. No screen-reader pass.
 
-**Evidence.** [Hem](../../../apps/web/src/pages/start.tsx), [the callout](../../../apps/web/src/components/focus-news.tsx), [I dag](../../../apps/web/src/components/today.tsx), [Nyheter](../../../apps/web/src/components/news.tsx), [Läget](../../../apps/web/src/components/lage.tsx) and [its order](../../../apps/web/src/lage-figures.ts), [Alla nyheter](../../../apps/web/src/pages/news.tsx), [read receipt in a draft](../../../tests/unit/read-receipt.test.ts), [browser scenarios](../../../tests/a11y/hem.spec.ts)
+**Evidence.** [Hem](../../../apps/web/src/pages/start.tsx), [the callout](../../../apps/web/src/components/hem/focus-news.tsx), [I dag](../../../apps/web/src/components/hem/today.tsx), [Nyheter](../../../apps/web/src/components/hem/news.tsx), [Läget](../../../apps/web/src/components/hem/lage.tsx) and [its order](../../../apps/web/src/lage-figures.ts), [Alla nyheter](../../../apps/web/src/pages/news.tsx), [read receipt in a draft](../../../tests/unit/read-receipt.test.ts), [browser scenarios](../../../tests/a11y/hem.spec.ts)
 
 ## Alla verktyg and a tool's page
 
@@ -82,4 +82,4 @@ The assistant also starts a work item (2026-11-16): a `propose` with `model: tru
 
 **Limits and pending work.** Whether Organisation's unit becomes a page is an [open question](../../maintainers/open-questions.md). Browser scenarios in `tests/a11y/admin.spec.ts` and the specs of each section; no screen-reader pass.
 
-**Evidence.** [the frame](../../../apps/web/src/components/admin-frame.tsx), [the index](../../../apps/web/src/pages/admin/shell.tsx), [browser evidence](../../../tests/a11y/admin.spec.ts)
+**Evidence.** [the frame](../../../apps/web/src/components/shell/admin-frame.tsx), [the index](../../../apps/web/src/pages/admin/shell.tsx), [browser evidence](../../../tests/a11y/admin.spec.ts)

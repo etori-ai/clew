@@ -42,9 +42,9 @@ import { keys } from '../../query-keys';
 import { errorMessage } from '../../query-policy';
 import { useAdminAction } from '../../mutations';
 import { usePageTitle } from '../../page-title';
-import { DialogFrame } from '../../components/dialog-frame';
-import { mobileQuery } from '../../components/shell';
-import { LevelField, isSkillType, levelLabel } from '../../components/register-holding';
+import { DialogFrame } from '../../components/shell/dialog-frame';
+import { mobileQuery } from '../../components/shell/shell';
+import { LevelField, isSkillType, levelLabel } from '../../components/people/register-holding';
 import { AdminShell } from './shell';
 
 /**

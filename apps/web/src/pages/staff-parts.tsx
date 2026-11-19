@@ -6,31 +6,32 @@ import type { EntityColumn, EntityList, EntityRef, EntitySource, SessionUser, Vi
 import {
   Avatar,
   Badge,
+  BoardCard,
   Button,
-  Card,
   EmptyState,
   HStack,
-  Heading,
   Link,
   List,
   ListItem,
   MoreMenu,
-  Table,
-  Text,
-  VStack,
-  VisuallyHidden,
+  PersonAvatar,
   pixel,
   proportional,
+  registerTable,
   resolveColumnWidths,
+  Table,
+  Text,
   useAnnounce,
   useMediaQuery,
+  VisuallyHidden,
+  VStack,
 } from '@clew/ui';
-import { FieldCell, FieldValue, badgeVariant, fieldText, fieldWord, isBadged } from '../components/view';
-import { personTitle } from '../components/entity-sections';
-import { useRail } from '../components/nav';
-import { ThingTabs } from '../components/entity-page';
-import { PageFrame } from '../components/page-frame';
-import { Shell, shortQuery } from '../components/shell';
+import { FieldCell, FieldValue, badgeVariant, fieldText, fieldWord, isBadged } from '../components/views/view';
+import { personTitle } from '../components/people/entity-sections';
+import { useNav } from '../components/shell/nav';
+import { ThingTabs } from '../components/people/entity-page';
+import { PageFrame } from '../components/shell/page-frame';
+import { Shell, shortQuery } from '../components/shell/shell';
 import type { EntityActionStart } from '../entity-actions';
 import { pageOnly } from '../panel-address';
 import { NEEDS_YOU, personPageHref, sourceWayHref, wayBack } from '../person-address';
@@ -165,7 +166,7 @@ function Person({
   const role = roleOf(entity, unit);
   return (
     <HStack gap={3} vAlign="center">
-      <Avatar name={entity.name} size="sm" tooltip={false} aria-hidden />
+      <PersonAvatar name={entity.name} />
       <VStack gap={0}>
         <Link
           ref={openers(entity.id)}
@@ -187,7 +188,9 @@ function Person({
 /** A column's heading in two lines (artboard A2): the field's label, and the system it comes from under it. */
 const columnHeader = (column: EntityColumn) => (
   <VStack gap={0}>
-    <Text weight="semibold">{column.field.label}</Text>
+    {/* The label in small capitals, as the reference heads its register's columns (D130 item 16), and its source in
+        ordinary letters under it. */}
+    <Text type="eyebrow">{column.field.label}</Text>
     <Text type="supporting" weight="normal">
       {column.source}
     </Text>
@@ -216,33 +219,40 @@ interface TableRow extends Record<string, unknown> {
 type Group = EntityList['groups'][number];
 const count = (n: number) => (n === 0 ? 'Ingen medarbetare' : `${n} medarbetare`);
 /**
- * A unit's people (board Personal): the table in a card in Hem's column, as Hem puts its lists (the product owner,
- * 2026-11-14: every page shares Hem's container); with several units, each card under its own heading with how many it
- * has. A unit with nobody else on it says so.
+ * A unit's people (D130 item 16), as the startsidan prototype draws its register: one card with its heading inside,
+ * "Medarbetare" and how many, what searches it under the heading (`tools`), and the table inside the card's inset, so
+ * its first column stands under the heading (measured in the prototype: the table starts where the heading does).
+ * With several units each is such a card under its own name. A unit with nobody else on it says so.
  */
-function UnitCard({ group, single, children }: { group: Group; single: boolean; children: ReactNode }) {
-  const body =
-    group.entities.length === 0 ? (
-      <EmptyState
-        isCompact
-        title="Ingen medarbetare på enheten"
-        description="Katalogen har inte fört in någon annan än dig på den här enheten."
-      />
-    ) : (
-      children
-    );
-  const card = <Card padding={0}>{body}</Card>;
-  if (single) return card;
+function UnitCard({
+  group,
+  single,
+  tools,
+  children,
+}: {
+  group: Group;
+  single: boolean;
+  tools?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <VStack as="section" gap={3} aria-label={group.label}>
-      <HStack gap={3} vAlign="center" wrap="wrap">
-        <Heading level={2}>{group.label}</Heading>
-        <Text type="supporting" color="secondary">
-          {count(group.entities.length)}
-        </Text>
-      </HStack>
-      {card}
-    </VStack>
+    <BoardCard
+      id={`enhet-${group.id}`}
+      title={single ? 'Medarbetare' : group.label}
+      count={group.entities.length}
+      countLabel="medarbetare"
+      tools={tools}
+    >
+      {group.entities.length === 0 ? (
+        <EmptyState
+          isCompact
+          title="Ingen medarbetare på enheten"
+          description="Katalogen har inte fört in någon annan än dig på den här enheten."
+        />
+      ) : (
+        children
+      )}
+    </BoardCard>
   );
 }
 /**
@@ -359,7 +369,7 @@ export function listMinWidth(list: EntityList | undefined, lens: EntitySource | 
 }
 const personColumn = (ctx: Context, unit: string, lens?: string) => ({
   key: 'person',
-  header: 'Namn',
+  header: <Text type="eyebrow">Namn</Text>,
   width: PERSON_WIDTH,
   renderCell: (r: TableRow) => <Person entity={r.entity} unit={unit} lens={lens} openers={ctx.openers} />,
 });
@@ -381,16 +391,19 @@ export function AllUnit({
   ctx,
   narrow,
   animatedLayout,
+  tools,
 }: {
   group: Group;
   single: boolean;
   ctx: Context;
   narrow: boolean;
   animatedLayout: AnimatedLayout;
+  /** What searches the register, under the card's heading. */
+  tools?: ReactNode;
 }) {
   const location = useLocation();
   return (
-    <UnitCard group={group} single={single}>
+    <UnitCard group={group} single={single} tools={tools}>
       {narrow ? (
         <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
           {group.entities.map(e => {
@@ -436,14 +449,13 @@ export function AllUnit({
             })),
             {
               key: 'now',
-              header: 'Just nu',
+              header: <Text type="eyebrow">Just nu</Text>,
               width: NOW_WIDTH,
               renderCell: (r: TableRow) => <Marks entity={r.entity} ctx={ctx} />,
             },
             menuColumn(ctx),
           ]}
-          density="balanced"
-          hasHover
+          {...registerTable}
         />
       )}
     </UnitCard>
@@ -520,7 +532,7 @@ export function LensUnit({
             personColumn(ctx, group.label, lens.capability),
             ...groups.map(g => ({
               key: `field:${g.lead.key}`,
-              header: g.lead.label,
+              header: <Text type="eyebrow">{g.lead.label}</Text>,
               width: cellWidth(g),
               ...(g.lead.format === 'number' && !g.beside.length ? { align: 'end' as const } : {}),
               renderCell: (r: TableRow) => {
@@ -530,8 +542,7 @@ export function LensUnit({
             })),
             menuColumn(ctx, lens),
           ]}
-          density="balanced"
-          hasHover
+          {...registerTable}
         />
       )}
     </UnitCard>
@@ -631,7 +642,7 @@ export function PersonalFrame({
 }) {
   const short = useMediaQuery(shortQuery);
   const manager = user.role === 'manager';
-  const nav = useRail({ current: { surface: 'staff' }, admin, manager });
+  const nav = useNav({ current: { surface: 'staff' }, admin, manager });
   const list = useQuery({ ...entityListQuery('person'), enabled: manager }).data;
   const systems = useQuery(areasQuery).data?.systems;
   // A place whose system the person cannot see is not drawn (D23); until `/api/areas` answers, the tab is drawn.
@@ -649,6 +660,7 @@ export function PersonalFrame({
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        cards
         title="Personal"
         titleId={PERSONAL_TITLE_ID}
         meta={groups.length > 0 ? peopleLine(groups) : undefined}

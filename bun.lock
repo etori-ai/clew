@@ -129,9 +129,9 @@
       "name": "@clew/site-header",
       "version": "0.0.1",
       "dependencies": {
-        "@astryxdesign/core": "0.7.13",
-        "@astryxdesign/theme-neutral": "0.7.13",
+        "@astryxdesign/core": "0.7.16",
         "@clew/ui": "workspace:*",
+        "@fontsource-variable/raleway": "5.3.0",
         "@heroicons/react": "2.2.0",
         "react": "19.3.1",
         "react-dom": "19.3.1",
@@ -145,10 +145,11 @@
       "name": "@clew/ui",
       "version": "0.0.1",
       "dependencies": {
-        "@astryxdesign/core": "0.7.13",
-        "@astryxdesign/theme-neutral": "0.7.13",
+        "@astryxdesign/core": "0.7.16",
+        "@astryxdesign/theme-neutral": "0.7.16",
         "@clew/calendar": "workspace:*",
         "@clew/contracts": "workspace:*",
+        "@fontsource-variable/raleway": "5.3.0",
         "@fullcalendar/react": "7.1.4",
         "@heroicons/react": "2.2.0",
         "@stylexjs/stylex": "0.19.1",
@@ -179,9 +180,9 @@
 
     "@astryxdesign/cli": ["@astryxdesign/cli@0.7.13", "", { "dependencies": { "@babel/core": "7.29.7", "@babel/parser": "7.29.8", "@babel/plugin-transform-typescript": "7.29.7", "@babel/types": "7.29.8", "@stylexjs/babel-plugin": "^0.19.1", "ast-types": "0.16.3", "commander": "^12.1.0", "ignore": "^7.0.14", "jiti": "^2.7.0", "jscodeshift": "^17.4.0", "linkedom": "^0.18.15", "node-diff3": "3.2.1", "postcss": "^8.5.23", "postcss-selector-parser": "^7.1.6", "recast": "0.23.21", "zod": "^4.6.7" }, "peerDependencies": { "@astryxdesign/core": "*" }, "optionalPeers": ["@astryxdesign/core"], "hasInstallScript": true, "bin": { "cli": "./clients/cli/bin/astryx.mjs", "astryx": "./clients/cli/bin/astryx.mjs" } }, "sha512-Rl4RVRk1e7OMJyKdThfja80vy35aX/aZ5Jv3KdFGSOSUa98d6/Ytj++U0/o1i2YMNSICL7IX24vK1jlBNWIxQA=="],
 
-    "@astryxdesign/core": ["@astryxdesign/core@0.7.13", "", { "dependencies": { "intl-messageformat": "^11.2.9" }, "peerDependencies": { "@stylexjs/stylex": "^0.19.0", "react": ">=19.0.0", "react-dom": ">=19.0.0" }, "hasInstallScript": true }, "sha512-S7htUi6xxg/dt36a2niop9BGc+GvMyP5swl0uG3F92MHF6v067+nkkeyKEdBKgj5KKXQkh4hRyLW20QSOTFNsw=="],
+    "@astryxdesign/core": ["@astryxdesign/core@0.7.16", "", { "dependencies": { "intl-messageformat": "^11.2.9" }, "peerDependencies": { "@stylexjs/stylex": "^0.19.0", "react": ">=19.0.0", "react-dom": ">=19.0.0" }, "hasInstallScript": true }, "sha512-3FFQGIOiRVczlrBtRH/Pm4TQwl6FVTCkMhGfljVcxjGBY1AJ4yhx6fRFnP7Nw/Wjaic1vne2TbJ7HW00d3vK2Q=="],
 
-    "@astryxdesign/theme-neutral": ["@astryxdesign/theme-neutral@0.7.13", "", { "dependencies": { "lucide-react": "^1.66.0" }, "peerDependencies": { "@astryxdesign/core": "0.7.13", "react": ">=19" } }, "sha512-kiqx1NYykopiWHhFYD1XbokcCO8G5PjUXrOPj+cTc2WxzhYYVnrVh0SRctJVcrrvJXnDxuywuuwL0TbOuDuJdA=="],
+    "@astryxdesign/theme-neutral": ["@astryxdesign/theme-neutral@0.7.16", "", { "dependencies": { "lucide-react": "^1.66.0" }, "peerDependencies": { "@astryxdesign/core": "0.7.16", "react": ">=19" } }, "sha512-4tjVvrL9VM2jpfTceORnYWnR9fiSj93ssAUo786YmODlOHoZIs1b/aCcmClxr0VUdGVha4y33DpCqoutmwF8DQ=="],
 
     "@axe-core/playwright": ["@axe-core/playwright@4.14.0", "", { "dependencies": { "axe-core": "~4.14.0" }, "peerDependencies": { "playwright-core": ">= 1.0.0" } }, "sha512-SGUhG5PIHd2eMdpgBF2PyQLOhX+qyDR2PT4cmoS4Qk2ak+jX/rrSvst9l0PGv5WTHolKpUMvVmoHpr4cZgf1RQ=="],
 
@@ -348,6 +349,8 @@
     "@floating-ui/dom": ["@floating-ui/dom@1.8.0", "", { "dependencies": { "@floating-ui/core": "^1.8.0", "@floating-ui/utils": "^0.2.12" } }, "sha512-yXSrzeHZBTZadLOlfyhCkJHNeLJnHRnRInwdZ40L7ZiaAtrBwoYlsDrX3v5zB1Utk7CLfzcOVnVVWoXEky7Ceg=="],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.12", "", {}, "sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww=="],
+
+    "@fontsource-variable/raleway": ["@fontsource-variable/raleway@5.3.0", "", {}, "sha512-aSV2k+V6Zz+od0dHpBOzkVxEzmgEdiXcxDfant39jLOx+T89dielQRrZylukwK3Fp+FY255gPqz67ruOfs1rqA=="],
 
     "@formatjs/fast-memoize": ["@formatjs/fast-memoize@3.1.7", "", {}, "sha512-zXfhLpvA6T7+efdt9JLbBwZ00tT7NsBMDVnDu8rpHeNNv8KfRZAMo2gkG0k9lK/Nzc//3kJ9pImsfuJxk3KhUA=="],
 

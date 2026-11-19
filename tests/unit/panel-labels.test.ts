@@ -9,7 +9,7 @@ import {
   longDay,
   shortDay,
   statusWord,
-} from '../../apps/web/src/components/panel-labels';
+} from '../../apps/web/src/components/views/panel-labels';
 import { calendarConnector } from '../../apps/server/src/modules/calendar/connector';
 import { fixtureConnectors } from '../fixture-connectors';
 

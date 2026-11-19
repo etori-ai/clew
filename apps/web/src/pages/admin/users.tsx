@@ -49,7 +49,7 @@ import {
   type SearchSource,
   type SearchableItem,
 } from '@clew/ui';
-import { PersonNameLink } from '../../components/person-name-link';
+import { PersonNameLink } from '../../components/people/person-name-link';
 import { api } from '../../api';
 import { DOT } from '../../dot';
 import { adminQueries } from '../../queries';

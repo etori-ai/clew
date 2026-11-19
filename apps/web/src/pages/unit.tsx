@@ -33,12 +33,18 @@ import { TALK_PARAM } from '../talk-address';
 import { DIALOGUE_PARAM } from '../dialogue-address';
 import { entitySubject } from '../conversation-about';
 import { declaredPage, viewPageHref } from '../view-address';
-import { toolHref, useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { ContentSkeleton } from '../components/loading';
-import { AskClew } from '../components/thing-panel';
-import { DialogueTab } from '../components/dialogue-overlay';
-import { EntityPage, PageSection, RailSection, ThingTabs, type PageSectionEntry } from '../components/entity-page';
+import { toolHref, useNav, type NavCurrent } from '../components/shell/nav';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { ContentSkeleton } from '../components/shell/loading';
+import { AskClew } from '../components/conversation/thing-panel';
+import { DialogueTab } from '../components/people/dialogue-overlay';
+import {
+  EntityPage,
+  PageSection,
+  RailSection,
+  ThingTabs,
+  type PageSectionEntry,
+} from '../components/people/entity-page';
 import {
   EntityActions,
   NeedsYouRows,
@@ -52,9 +58,9 @@ import {
   unanswered,
   useSectionAnswers,
   type SectionAnswer,
-} from '../components/entity-sections';
-import { KeyFigureTiles } from '../components/unit-figures';
-import { PageFrame } from '../components/page-frame';
+} from '../components/people/entity-sections';
+import { KeyFigureTiles } from '../components/people/unit-figures';
+import { PageFrame } from '../components/shell/page-frame';
 
 /**
  * Whether the reader manages the unit and how many people it has: the people the reader may ask about come in one group
@@ -362,7 +368,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
 
   // The rail marks the place the unit was opened from; otherwise a manager's unit is Läget's, and an employee's marks
   // nothing.
-  const current: RailCurrent = from?.startsWith('/staff')
+  const current: NavCurrent = from?.startsWith('/staff')
     ? { surface: 'staff' }
     : tool
       ? { surface: 'verktyg', view: tool }
@@ -371,7 +377,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
         : user.role === 'manager'
           ? { surface: 'units' }
           : { surface: 'verktyg', view: null };
-  const nav = useRail({ current, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current, admin, manager: user.role === 'manager' });
 
   const drawn = drawnSections(answers);
   const tabs: Array<{ value: string; label: string; badge?: ReactNode }> = detail

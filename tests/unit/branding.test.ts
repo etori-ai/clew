@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { contrastRatio, themeFromAccent } from '@clew/contracts';
+import { readFileSync } from 'node:fs';
+import { contrastRatio, parseThemeFile, themeFromAccent } from '@clew/contracts';
 import { NEUTRAL_BRANDING, readBranding, type Branding } from '../../packages/ui/src/branding';
 import {
   clewComponentCSS,
@@ -159,5 +160,56 @@ describe('the appearance the browser draws (D98)', () => {
     expect(plain['--color-background-surface']).not.toBe('#5b1f78');
     expect(plain['--color-text-primary']).toBe('#ffffff');
     expect(createHeaderBandTheme(custom)).toBe(createHeaderBandTheme({ ...custom, revision: 4 }));
+  });
+
+  test("a theme's inverted background is the band's ground, with the white or black text that reads on it (D130)", () => {
+    const colors = custom.theme!.colors;
+    const dark = createHeaderBandTheme({
+      ...custom,
+      theme: { ...custom.theme!, colors: { ...colors, 'background-inverted': ['#003c69', '#eaf1f8'] } },
+    }).tokens;
+    expect(dark['--color-background-surface']).toBe('#003c69');
+    expect(dark['--color-text-primary']).toBe('#ffffff');
+    const pale = createHeaderBandTheme({
+      ...custom,
+      theme: { ...custom.theme!, colors: { ...colors, 'background-inverted': ['#eaf1f8', '#003c69'] } },
+    }).tokens;
+    expect(pale['--color-background-surface']).toBe('#eaf1f8');
+    expect(pale['--color-text-primary']).toBe('#000000');
+  });
+
+  test("the form is the base theme's and no theme file changes it: the type, the corners and a card's shadow (D130)", () => {
+    for (const theme of [createClewTheme(NEUTRAL_BRANDING), createClewTheme(custom)]) {
+      expect(theme.tokens['--font-family-heading']).toContain('Raleway Variable');
+      expect(theme.tokens['--font-family-body']).toMatch(/^Arial/);
+      expect(theme.tokens['--radius-container']).toBe('1rem');
+      expect(theme.components?.card?.base).toMatchObject({ boxShadow: 'var(--shadow-low)' });
+    }
+  });
+
+  test('a status badge is a tint with its own words, readable in every example theme and both appearances (D130)', () => {
+    const examples: Branding[] = [NEUTRAL_BRANDING, custom];
+    for (const name of ['startsidan-prototype', 'sundsvall', 'clew']) {
+      const file = parseThemeFile(
+        JSON.parse(readFileSync(new URL(`../../themes/${name}/theme.tokens.json`, import.meta.url), 'utf8')),
+      );
+      if (!file.ok) throw new Error(`${name}: ${file.problems.map(p => p.message).join(' ')}`);
+      examples.push({ revision: 1, theme: file.theme, logo: null });
+    }
+    // The hue each status variant is drawn in (`theme.ts`): its text on its ground, at text contrast (1.4.3).
+    const hues = { error: 'red', warning: 'yellow', success: 'green', info: 'blue' };
+    const badge = createClewTheme(NEUTRAL_BRANDING).components?.badge as Record<string, Record<string, string>>;
+    for (const [variant, hue] of Object.entries(hues)) {
+      expect(badge[`variant:${variant}`]).toMatchObject({
+        backgroundColor: `var(--color-background-${hue})`,
+        color: `var(--color-text-${hue})`,
+      });
+      for (const branding of examples)
+        for (const mode of ['light', 'dark'] as const) {
+          const tokens = resolveClewTokens(branding, mode);
+          const ratio = contrastRatio(tokens[`--color-text-${hue}`]!, tokens[`--color-background-${hue}`]!);
+          expect(ratio, `${variant} in ${branding.theme?.name ?? 'Neutral'}, ${mode}`).toBeGreaterThanOrEqual(4.5);
+        }
+    }
   });
 });

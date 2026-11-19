@@ -10,15 +10,15 @@ import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
 import { opensAsPage, viewOpenHref, withViewInput } from '../view-address';
 import { useShownForTheWayBack } from '../way-back';
-import { Shell, shortQuery } from '../components/shell';
-import { placeOfRead, useRail, type RailCurrent } from '../components/nav';
-import { DeclaredView } from '../components/view';
-import { PanelBody, answersWithRowsOf } from '../components/panel';
-import { useView, viewSubject } from '../components/view-read';
-import { AskClew } from '../components/thing-panel';
-import { PageFrame, WayBack } from '../components/page-frame';
-import { PageHeader } from '../components/page-header';
-import { ContentArrival, ContentSkeleton } from '../components/loading';
+import { Shell, shortQuery } from '../components/shell/shell';
+import { placeOfRead, useNav, type NavCurrent } from '../components/shell/nav';
+import { DeclaredView } from '../components/views/view';
+import { PanelBody, answersWithRowsOf } from '../components/views/panel';
+import { useView, viewSubject } from '../components/views/view-read';
+import { AskClew } from '../components/conversation/thing-panel';
+import { PageFrame, WayBack } from '../components/shell/page-frame';
+import { PageHeader } from '../components/shell/page-header';
+import { ContentArrival, ContentSkeleton } from '../components/shell/loading';
 
 /** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
 const tableQuery = '(min-width: 1280px)';
@@ -49,7 +49,7 @@ function nounOf(spec: { kind: string; noun?: { other: string } } | undefined): s
  * the rail (`placeOfRead`): on the place the view was opened from, as a work item's page does (`item.tsx`); with no
  * such place, on nothing.
  */
-function placeOf(from: string | null): RailCurrent {
+function placeOf(from: string | null): NavCurrent {
   const tool = toolOf(from);
   if (from?.startsWith('/staff')) return { surface: 'staff' };
   if (from?.startsWith('/calendar')) return { surface: 'calendar' };
@@ -128,7 +128,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     : null;
   // A tool in the rail marks its row; a read of a connector with a place of its own in the rail (Kompetens, Kalender)
   // marks that place wherever it was opened from; any other view the place it was opened from.
-  const nav = useRail({
+  const nav = useNav({
     current: entry ? { surface: 'verktyg', view: capability } : (placeOfRead(capability) ?? placeOf(from)),
     admin,
     manager: user.role === 'manager',

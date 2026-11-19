@@ -5,17 +5,17 @@ import { Banner, Button, EmptyState, VStack, useMediaQuery } from '@clew/ui';
 import { areasQuery } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { Shell, shortQuery } from '../components/shell';
-import { useRail } from '../components/nav';
+import { Shell, shortQuery } from '../components/shell/shell';
+import { useNav } from '../components/shell/nav';
 import { viewOpenHref, withViewInput } from '../view-address';
 import { useShownForTheWayBack } from '../way-back';
-import { DeclaredView } from '../components/view';
-import { useView, viewSubject } from '../components/view-read';
-import { AskClew } from '../components/thing-panel';
-import { PageHeader } from '../components/page-header';
-import { ContentArrival, ContentSkeleton } from '../components/loading';
-import { PageFrame } from '../components/page-frame';
-import { NEWS_CAPABILITY } from '../components/news';
+import { DeclaredView } from '../components/views/view';
+import { useView, viewSubject } from '../components/views/view-read';
+import { AskClew } from '../components/conversation/thing-panel';
+import { PageHeader } from '../components/shell/page-header';
+import { ContentArrival, ContentSkeleton } from '../components/shell/loading';
+import { PageFrame } from '../components/shell/page-frame';
+import { NEWS_CAPABILITY } from '../components/hem/news';
 
 /** As on a tool's page: the table from 1280 px beside the rail, the same rows as a list below it. */
 const tableQuery = '(min-width: 1280px)';
@@ -42,7 +42,7 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
   // Placed in the rail, the list carries the administrator's row's name; otherwise its own.
   const entry = areas?.menu?.find(e => e.capability === NEWS_CAPABILITY);
   const title = entry?.label ?? TITLE;
-  const nav = useRail({
+  const nav = useNav({
     current: { surface: 'verktyg', view: NEWS_CAPABILITY },
     admin,
     manager: user.role === 'manager',

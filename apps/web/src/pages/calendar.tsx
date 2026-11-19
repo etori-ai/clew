@@ -61,15 +61,15 @@ import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
 import { ENTRY_PARAM, viewSearch, withEntry } from '../panel-address';
 import { itemPageHref } from '../work-items';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { useRail } from '../components/nav';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { useNav } from '../components/shell/nav';
 import { EventDialog, type Mode } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
-import { PageFrame } from '../components/page-frame';
-import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { AskClew } from '../components/thing-panel';
-import type { ThingSubject } from '../components/conversation-context';
-import { SilentNotice, useSaySilent, useSilentSources } from '../components/silent-sources';
+import { PageFrame } from '../components/shell/page-frame';
+import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
+import { AskClew } from '../components/conversation/thing-panel';
+import type { ThingSubject } from '../components/conversation/conversation-context';
+import { SilentNotice, useSaySilent, useSilentSources } from '../components/shell/silent-sources';
 
 /** The three views as the URL names them, so a view is addressable and the back button works. */
 type View = 'day' | 'week' | 'month';
@@ -389,7 +389,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       return q;
     });
   // The same frame as the start page (D31, D34), from the same cache (D33): the rail with the person's time axis.
-  const nav = useRail({ current: { surface: 'calendar' }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'calendar' }, admin, manager: user.role === 'manager' });
   const marks = useMarks();
   // The proposal thread is picked from the stream's own list, so a decision here and the item on Att göra agree.
   const threadsQ = useQuery({ ...threadsQuery, select: selectProposalThread });

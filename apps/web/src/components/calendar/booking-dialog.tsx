@@ -26,9 +26,9 @@ import { api } from '../../api';
 import { membersQuery, roomsQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { keys } from '../../query-keys';
-import { mobileQuery } from '../shell';
+import { mobileQuery } from '../shell/shell';
 import { applyThread } from '../../thread-cache';
-import { DialogFrame } from '../dialog-frame';
+import { DialogFrame } from '../shell/dialog-frame';
 
 const EMPTY_MEMBERS: CalendarMember[] = [];
 const EMPTY_ROOMS: CalendarRoom[] = [];

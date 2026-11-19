@@ -35,12 +35,12 @@ import {
 } from '@clew/ui';
 import { ApiError } from '../../api';
 import { DOT } from '../../dot';
-import { PersonNameLink } from '../../components/person-name-link';
+import { PersonNameLink } from '../../components/people/person-name-link';
 import { adminQueries } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
-import { AsyncContent, ContentSkeleton } from '../../components/loading';
-import { mobileQuery, shortQuery } from '../../components/shell';
+import { AsyncContent, ContentSkeleton } from '../../components/shell/loading';
+import { mobileQuery, shortQuery } from '../../components/shell/shell';
 import { AdminShell } from './shell';
 
 /**

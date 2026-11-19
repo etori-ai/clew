@@ -1549,6 +1549,15 @@
       "status": "provisional (the product owner chose it on 2026-11-16 from the canvas \"Clew",
       "date": "2026-11-16",
       "area": "ui, product"
+    },
+    {
+      "key": "D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx",
+      "number": 130,
+      "path": "docs/decisions/D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md",
+      "title": "D130 · Clew's look and layout are the startsidan prototype's, built with Astryx",
+      "status": "provisional (Oliver Borgström, 2026-11-18; first chosen 2026-11-11 and built on the branch `prototype-look`, PR #40, which did not land; accepted once a manager outside the team has used it)",
+      "date": "2026-11-18",
+      "area": "ui, product"
     }
   ],
   "documents": [
@@ -2340,6 +2349,12 @@
     {
       "path": "docs/decisions/D13-conversation-in-the-composer-drawer.md",
       "title": "D13 · The conversation lives in the composer's drawer; the dim is an Astryx Overlay",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md",
+      "title": "D130 · Clew's look and layout are the startsidan prototype's, built with Astryx",
       "category": "decision-history",
       "headings": []
     },
@@ -3344,6 +3359,17 @@
         "From origin to close",
         "A person and a unit",
         "Implementation and verification"
+      ]
+    },
+    {
+      "path": "docs/reference/layout-measures.md",
+      "title": "Layout measures",
+      "category": "integrator-guide",
+      "headings": [
+        "Where a measure lives",
+        "The measures",
+        "Checking a page",
+        "Open"
       ]
     },
     {
@@ -4366,6 +4392,22 @@
         "Assessment",
         "Findings and what was done",
         "Left as it is",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-11-startsidan-prototype-version-1-0-against-clew.md",
+      "title": "Review: the startsidan prototype's Version 1.0 against Clew · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "What was asked",
+        "What was looked at",
+        "What Clew's start page was",
+        "What the prototype's Version 1.0 is",
+        "What differs in kind, not in paint",
+        "What Astryx has for it",
+        "What Clew lacks for it",
+        "Two things found on the way",
         "Outcome"
       ]
     },

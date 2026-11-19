@@ -24,7 +24,7 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 **Limits and pending work.** A text view's own execute ("Jag har läst" under the text) is not built: a view has no execute and the receipt stays the card's. Astryx's table header and `MetadataList` labels keep Astryx's type. No signed-in pass on the development stack or screen-reader pass yet.
 
-**Evidence.** [D71](../../decisions/D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md), [view](../../../apps/web/src/components/view.tsx), [a silent system](../../../apps/web/src/components/silent-sources.tsx), [unit tests](../../../tests/unit/views.test.ts), [labels](../../../tests/unit/panel-labels.test.ts), [browser evidence](../../../tests/a11y/views.spec.ts)
+**Evidence.** [D71](../../decisions/D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md), [view](../../../apps/web/src/components/views/view.tsx), [a silent system](../../../apps/web/src/components/shell/silent-sources.tsx), [unit tests](../../../tests/unit/views.test.ts), [labels](../../../tests/unit/panel-labels.test.ts), [browser evidence](../../../tests/a11y/views.spec.ts)
 
 ## Läget's figures
 
@@ -32,4 +32,4 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 **Limits and pending work.** The line under an answer is the views' to mount; the figure's word on a tab is gone (D111). HME has no connector. No signed-in pass on the development stack or screen-reader pass yet.
 
-**Evidence.** [D54](../../decisions/D54-figures-come-from-connectors-and-laget-draws-them.md), [mapping](../../../packages/ui/src/figure-items.ts), [tile](../../../packages/ui/src/figure.tsx), [registry tests](../../../tests/unit/connectors.test.ts), [mapping tests](../../../tests/unit/figure-items.test.ts), [browser evidence](../../../tests/a11y/structure.spec.ts)
+**Evidence.** [D54](../../decisions/D54-figures-come-from-connectors-and-laget-draws-them.md), [mapping](../../../packages/ui/src/figure-items.ts), [tile](../../../packages/ui/src/components/figure.tsx), [registry tests](../../../tests/unit/connectors.test.ts), [mapping tests](../../../tests/unit/figure-items.test.ts), [browser evidence](../../../tests/a11y/structure.spec.ts)

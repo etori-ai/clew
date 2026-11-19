@@ -6,7 +6,7 @@ import { HStack, VStack } from '@astryxdesign/core/Layout';
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList';
 import { Text } from '@astryxdesign/core/Text';
 import { Icon } from '@astryxdesign/core/Icon';
-import { UserCircleIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, UserCircleIcon } from '@heroicons/react/24/outline';
 import type { ColorMode } from '@clew/ui/appearance-preference';
 import { useCompactSiteHeader } from './site-header';
 
@@ -65,14 +65,26 @@ export function SiteHeaderPerson({
             onClick={() => setIsOpen(true)}
           />
         ) : (
+          // The name in bold over the person's unit, and a mark that the row opens something, as the reference draws
+          // the person on its band (D130).
           <Button
             label={`${name}, inställningar`}
             variant="ghost"
-            size="sm"
+            size="lg"
             aria-haspopup="dialog"
+            endContent={<Icon icon={ChevronDownIcon} size="sm" color="inherit" />}
             onClick={() => setIsOpen(true)}
           >
-            {name}
+            <VStack gap={0} hAlign="start">
+              <Text weight="bold" color="inherit">
+                {name}
+              </Text>
+              {description ? (
+                <Text type="supporting" color="inherit">
+                  {description}
+                </Text>
+              ) : null}
+            </VStack>
           </Button>
         )}
       </HStack>

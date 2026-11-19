@@ -24,10 +24,10 @@ import { areasQuery, headerQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { narrowTools, toolboxPage, toolGroups, toolsOf, whatItIs } from '../tool-catalogue';
-import { Shell, shortQuery } from '../components/shell';
-import { toolHref, useRail } from '../components/nav';
-import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { PageFrame } from '../components/page-frame';
+import { Shell, shortQuery } from '../components/shell/shell';
+import { toolHref, useNav } from '../components/shell/nav';
+import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
+import { PageFrame } from '../components/shell/page-frame';
 
 /** The search field's words in the address (D43): the narrowed catalogue survives a reload and Back. */
 const FILTER = 'filter';
@@ -72,7 +72,7 @@ function ToolTile({ tool, from }: { tool: MenuEntry; from: string }) {
 export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   // 1.4.10: with 480 px or less in height nothing is pinned; the whole page scrolls.
   const short = useMediaQuery(shortQuery);
-  const nav = useRail({ current: { surface: 'tools' }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'tools' }, admin, manager: user.role === 'manager' });
   usePageTitle('Alla verktyg');
   const navigate = useNavigate();
   const { pathname, search: address } = useLocation();
@@ -159,6 +159,7 @@ export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: 
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        cards
         title="Alla verktyg"
         meta={
           read.data && all.length > 0

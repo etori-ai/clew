@@ -74,8 +74,8 @@ import {
 } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { mobileQuery } from '../components/shell';
-import { levelLabel } from '../components/register-holding';
+import { mobileQuery } from '../components/shell/shell';
+import { levelLabel } from '../components/people/register-holding';
 import { personPageFrom } from '../person-address';
 import { CompetenceHeader, managesFrom, untilWords } from './competence-parts';
 import { COMPETENCE_TAB, PersonalFrame } from './staff-parts';

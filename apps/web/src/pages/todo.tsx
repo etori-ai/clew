@@ -13,37 +13,41 @@ import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-q
 import { isSnoozed, sameSubject, streamGroup, type Area, type SessionUser, type Thread } from '@clew/contracts';
 import {
   Badge,
-  Card,
+  BoardCard,
   DropdownMenu,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   EmptyState,
+  FigureRow,
   HStack,
   Icon,
   IconButton,
   InboxIcon,
+  KeyFigure,
   LayoutPanel,
   Link,
+  pixel,
+  proportional,
+  registerTable,
   ResizeHandle,
+  SECTION_GAP,
   StatusMark,
   Tab,
   Table,
+  type TableColumn,
+  type TablePlugin,
   TabList,
   Text,
   TextInput,
   Token,
-  VStack,
-  VisuallyHidden,
-  XMarkIcon,
-  pixel,
-  proportional,
   useAnnounce,
   useMediaQuery,
   useResizable,
   useTableRowStatus,
   useToast,
-  type TableColumn,
-  type TablePlugin,
+  VisuallyHidden,
+  VStack,
+  XMarkIcon,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { areasQuery, threadsQuery } from '../queries';
@@ -68,21 +72,20 @@ import {
   type RowFacts,
   type TodoTab,
 } from '../work-items';
-import { useRail } from '../components/nav';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { silentLine, staleWhy, useSilentSources } from '../components/silent-sources';
-import { BriefSkeleton } from '../components/brief';
-import { AsyncContent } from '../components/loading';
-import { cardBody } from '../components/card-panel';
+import { useNav } from '../components/shell/nav';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { silentLine, staleWhy, useSilentSources } from '../components/shell/silent-sources';
+import { BriefSkeleton } from '../components/work/brief';
+import { cardBody } from '../components/work/card-panel';
 import { whenWord } from '../when-word';
 import { DOT } from '../dot';
 import { statusOf, type ItemStatus } from '../status-of';
-import { reviewedAction } from '../components/card';
-import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
-import { itemSubject } from '../components/view-read';
-import { AskClew } from '../components/thing-panel';
-import type { ThingSubject } from '../components/conversation-context';
-import { PageFrame } from '../components/page-frame';
+import { reviewedAction } from '../components/work/card';
+import { ReceiptNotice, receiptMessage } from '../components/work/receipt-notice';
+import { itemSubject } from '../components/views/view-read';
+import { AskClew } from '../components/conversation/thing-panel';
+import type { ThingSubject } from '../components/conversation/conversation-context';
+import { PageFrame } from '../components/shell/page-frame';
 
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
@@ -217,7 +220,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     (!words || `${t.title} ${t.trigger.reason} ${t.trigger.source}`.toLocaleLowerCase('sv-SE').includes(words));
   const rows = piles[tab].filter(matches);
 
-  const nav = useRail({ current: { surface: 'todo' }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'todo' }, admin, manager: user.role === 'manager' });
   usePageTitle('Att göra');
   // Back from an item's page that sent its item away: the row after it, among the rows drawn before it went.
   const location = useLocation();
@@ -445,7 +448,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const columns: TableColumn<QueueRow>[] = [
     {
       key: 'title',
-      header: 'Ärende',
+      header: <Text type="eyebrow">Ärende</Text>,
       width: proportional(3),
       renderCell: r => (
         <VStack gap={0.5}>
@@ -465,7 +468,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     },
     {
       key: 'source',
-      header: 'Från',
+      header: <Text type="eyebrow">Från</Text>,
       width: pixel(150),
       // An item from Clew itself names no system (`fromClewItself`): Clew is not a system the person goes to.
       renderCell: r =>
@@ -479,7 +482,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     // beside the dot, or the dot alone, whose name still says it in full.
     {
       key: 'status',
-      header: 'Status',
+      header: <Text type="eyebrow">Status</Text>,
       // On a phone the mark wraps under its dot rather than push the table past the screen (1.4.10).
       width: pixel(mobile ? 120 : 180),
       renderCell: r => (
@@ -521,8 +524,63 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       }) as TablePlugin<QueueRow>,
     [itemId, navigate],
   );
+  // Beside its reading pane the list stands in the frame's card and draws none of its own.
+  const beside = !!itemId && !single;
+  // What is overdue among what needs the person: its due badge is the error's.
+  const overdue = piles['needs-you'].filter(
+    t => (!area || t.area === area) && rowFacts(t, now, todayDate).due?.variant === 'error',
+  ).length;
+  /**
+   * The piles as key figures over the list (D130 item 19), as the reference opens Mina aktiviteter: what needs the
+   * person, how much of it is overdue, what waits on others and what is done, each leading to its pile. Not drawn
+   * beside the reading pane, where the list and the item share the page.
+   */
+  const figures =
+    loading || beside ? null : (
+      <FigureRow>
+        <KeyFigure
+          label="Behöver dig"
+          value={String(count('needs-you'))}
+          href={href({ tab: 'needs-you', item: null })}
+          name={`Behöver dig: ${count('needs-you')} ärenden`}
+        />
+        <KeyFigure
+          label="Försenade"
+          value={String(overdue)}
+          tone={overdue ? 'error' : undefined}
+          href={href({ tab: 'needs-you', item: null })}
+          name={`Försenade: ${overdue} ärenden`}
+        />
+        <KeyFigure
+          label="Väntar på andra"
+          value={String(count('waiting'))}
+          href={href({ tab: 'waiting', item: null })}
+          name={`Väntar på andra: ${count('waiting')} ärenden`}
+        />
+        <KeyFigure
+          label="Klart"
+          value={String(count('done'))}
+          tone={count('done') ? 'success' : undefined}
+          href={href({ tab: 'done', item: null })}
+          name={`Klart: ${count('done')} ärenden`}
+        />
+      </FigureRow>
+    );
+  /**
+   * The pile as the reference draws a list (D130 item 19): one card with its heading inside, the pile's name and how
+   * many it holds, the filters under the heading, and the table inside the card's inset.
+   */
   const list = (
-    <AsyncContent pending={loading} fallback={<BriefSkeleton compact={mobile} />} gap={4}>
+    <BoardCard
+      id="todo-pile"
+      title={tabTitle[tab]}
+      count={loading ? undefined : count(tab)}
+      countLabel="ärenden"
+      tools={filters}
+      bare={beside}
+      pending={loading}
+      pendingLabel="Hämtar ärendena …"
+    >
       {(sourcesLine && rows.length > 0) || failed || rows.length === 0 ? (
         <VStack gap={3}>
           {sourcesLine && rows.length > 0 && (
@@ -558,18 +616,16 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
         </VStack>
       ) : null}
       {!failed && rows.length > 0 && (
-        <Card padding={0}>
-          <Table<QueueRow>
-            aria-label={tabTitle[tab]}
-            data={tableRows}
-            columns={shownColumns}
-            idKey="id"
-            hasHover
-            plugins={itemId && !single ? { open: openStatus, rows: rowPlugin } : { rows: rowPlugin }}
-          />
-        </Card>
+        <Table<QueueRow>
+          aria-label={tabTitle[tab]}
+          data={tableRows}
+          columns={shownColumns}
+          idKey="id"
+          {...registerTable}
+          plugins={itemId && !single ? { open: openStatus, rows: rowPlugin } : { rows: rowPlugin }}
+        />
       )}
-    </AsyncContent>
+    </BoardCard>
   );
 
   /** Esc inside a menu, a list or a dialog is theirs, and so is Esc on a button whose menu is open; a bare Esc lets go of the item. */
@@ -631,15 +687,11 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           its reading pane side by side inside the same column, the list in a card as Hem's lists are. */}
       <PageFrame
         layoutRef={surfaceRef}
+        cards
         title="Att göra"
         titleId="att-gora"
         meta={countsLine ?? undefined}
-        actions={
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            {filters}
-            <AskClew subject={queueSubject} />
-          </HStack>
-        }
+        actions={<AskClew subject={queueSubject} />}
         tabs={
           <TabList hasDivider={false} isFullBleed value={tab} onChange={() => {}} aria-label="Urval">
             {todoTabs.map(t => {
@@ -682,7 +734,10 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           )
         }
       >
-        {list}
+        <VStack gap={SECTION_GAP}>
+          {figures}
+          {list}
+        </VStack>
       </PageFrame>
     </Shell>
   );

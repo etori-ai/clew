@@ -127,7 +127,7 @@ change that may refuse a file accepted today (2026-11-13,
 [Organisation, Användare and the person card](../reviews/2026-11-13-organisation-users-and-the-person-card.md)).
 
 For the product owner: a conversation in the rail tells "Svarar" from "Väntar på dig" by its dot's colour alone
-(`apps/web/src/components/nav.tsx`), with no word beside it, which WCAG 1.4.1 does not allow. A work item's row got
+(`apps/web/src/components/shell/nav.tsx`), with no word beside it, which WCAG 1.4.1 does not allow. A work item's row got
 its state in words by [D124](../decisions/D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md)
 item 9; the rail's row has no supporting line to hold one, so the answer is a design choice: a visible word or a
 shape per state (2026-11-13, the same review).

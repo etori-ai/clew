@@ -12,7 +12,7 @@ import {
   type ViewField,
   type ViewTone,
 } from '@clew/contracts';
-import { statusWord } from '../components/panel-labels';
+import { statusWord } from '../components/views/panel-labels';
 import { wholeRow } from '../view-fields';
 
 /**
