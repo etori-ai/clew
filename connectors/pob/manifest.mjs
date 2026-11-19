@@ -377,7 +377,7 @@ const createEffectCapability = {
  */
 export function createManifest({ audience = DEFAULT_AUDIENCE, source = DEFAULT_SOURCE, writes = [] } = {}) {
   return {
-    protocol: 3,
+    protocol: 1,
     id: CONNECTOR,
     kind: 'passthrough',
     source,

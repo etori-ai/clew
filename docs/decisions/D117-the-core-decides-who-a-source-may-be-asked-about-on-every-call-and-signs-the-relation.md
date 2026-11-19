@@ -1,6 +1,6 @@
 # D117 · The core decides who a source may be asked about, on every call, and signs the relation
 
-**Status:** provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule "a user can view and edit their own data and nothing else; a manager their employees'", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation) · **Date:** 2026-11-12 · **Area:** integrations, identity
+**Status:** provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule "a user can view and edit their own data and nothing else; a manager their employees'", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation; item 10's protocol 3 is protocol 1 and its window for 2 is closed since [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md), 2026-11-18) · **Date:** 2026-11-12 · **Area:** integrations, identity
 
 **Decision.** "Who may be asked about" ([D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) item 8) is one rule in the core, applied by the registry to every call that names a person or a unit, whatever path the call came by. A capability says which relations it admits, and the source is told how the caller stands to each key it is sent, in a request the assertion is bound to.
 

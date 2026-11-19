@@ -16,7 +16,7 @@ const link = {
 const place = { ...link, properties: { ...link.properties, children: { type: 'array', items: link } } };
 
 export const manifest = {
-  protocol: 3,
+  protocol: 1,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Intranätet',

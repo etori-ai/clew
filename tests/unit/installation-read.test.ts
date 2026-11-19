@@ -14,12 +14,7 @@ import {
 } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { previewManifest } from '../../packages/connectors/src/preview';
-import {
-  INSTALLATION_CALLER,
-  INSTALLATION_SUBJECT,
-  protocolSchema,
-  protocolTerms,
-} from '../../packages/connectors/src/protocol';
+import { INSTALLATION_CALLER, INSTALLATION_SUBJECT, protocolSchema } from '../../packages/connectors/src/protocol';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createVerifier, verifyAssertion, verifyInstallationAssertion } from '../../connectors/hello/verification.mjs';
 // @ts-expect-error A frozen JavaScript fixture without declarations: the template before D119.
@@ -89,8 +84,8 @@ const holdingsOutput = {
   required: ['rows', 'withdrawalsReported'],
   additionalProperties: false,
 };
-const manifest = (id = 'lms', protocol = 3) => ({
-  protocol,
+const manifest = (id = 'lms') => ({
+  protocol: 1,
   id,
   kind: 'passthrough',
   source: 'Lärplattformen',
@@ -377,12 +372,8 @@ describe('the registry reads as the installation', () => {
     expect(lms.seen).toEqual([]);
   });
 
-  test('the loader: installation reads came with protocol 3, are the profiles Clew knows, and fit the profile', () => {
+  test('the loader: installation reads are the profiles Clew knows, and fit the profile', () => {
     expect(manifestProblems(manifest(), 'lms')).toEqual([]);
-    expect(protocolTerms(2).installation).toBe(false);
-    expect(manifestProblems(manifest('lms', 2), 'lms')).toEqual([
-      'Installation reads were added under protocol 3 (D119); a manifest on protocol 2 cannot declare installation.',
-    ]);
     const changed = (change: (m: any) => void) => {
       const m = JSON.parse(JSON.stringify(manifest()));
       change(m);
@@ -432,7 +423,7 @@ describe('the registry reads as the installation', () => {
     expect(() => new Registry().register(inProcess)).toThrow('only its profiles');
   });
 
-  test('additive to protocol 3: a manifest without `installation` and every request shape a connector already serves are unchanged', () => {
+  test('additive: a manifest without `installation` and every request shape a connector already serves are unchanged', () => {
     // The closed manifest gained one optional property; nothing it had changed, and no request shape a connector
     // without installation reads receives was touched. Its own request shape is a new definition.
     const defs = protocolSchema().$defs as Record<string, any>;

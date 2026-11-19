@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**134 in force**: 97 accepted and 37 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**135 in force**: 98 accepted and 37 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -49,7 +49,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) | 2026-11-05 | accepted | [D89](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md), [D123](README.md) |
 | [D52 · The mocks are generic systems; nothing in the repository names a vendor](D52-the-mocks-are-generic-systems-without-vendor-names.md) | 2026-11-05 | accepted |  |
 | [D54 · Figures come from connectors, and Läget draws them](D54-figures-come-from-connectors-and-laget-draws-them.md) | 2026-11-06 | accepted | [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) |
-| [D60 · The instance serves its connector protocol, and a protocol break keeps the number before it](D60-the-instance-serves-its-connector-protocol.md) | 2026-11-06 | accepted |  |
+| [D60 · The instance serves its connector protocol, and a protocol break keeps the number before it](D60-the-instance-serves-its-connector-protocol.md) | 2026-11-06 | accepted | [D129](README.md) |
 | [D61 · Fixture sources are independent connectors in the development stack; Clew bundles only its core](D61-fixture-sources-are-independent-connectors.md) | 2026-11-06 | accepted |  |
 | [D69 · A local fake of Microsoft Graph tests the Microsoft 365 adapter](D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md) | 2026-11-06 | accepted |  |
 | [D77 · Job approvals preserve watch intent, binding identity and receipt authority](D77-job-approvals-preserve-intent-bindings-and-receipt-authority.md) | 2026-11-07 | accepted |  |
@@ -57,10 +57,11 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D80 · Recover rejected rows without replaying confirmed writes](D80-recover-rejected-rows-without-replaying-confirmed-writes.md) | 2026-11-08 | accepted |  |
 | [D89 · An errand connector acts as the person, and the case system decides access](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) | 2026-11-09 | accepted |  |
 | [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D99](README.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md), [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md), [D117](README.md), [D122](README.md) |
-| [D117 · The core decides who a source may be asked about, on every call, and signs the relation](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) | 2026-11-12 | provisional |  |
-| [D119 · The installation reads as itself, through a read no person can reach](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) | 2026-11-12 | provisional |  |
+| [D117 · The core decides who a source may be asked about, on every call, and signs the relation](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) | 2026-11-12 | provisional | [D129](README.md) |
+| [D119 · The installation reads as itself, through a read no person can reach](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) | 2026-11-12 | provisional | [D129](README.md) |
 | [D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) | 2026-11-13 | provisional |  |
 | [D127 · A read can say its rows are a read about people, asked for everyone, and then has one place](D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md) | 2026-11-14 | provisional |  |
+| [D129 · The connector protocol is 1, and changes in place until the first release](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) | 2026-11-18 | accepted |  |
 
 ## Identity
 
@@ -159,7 +160,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D116 · A panel is a peek at one thing; a list is a page, and every view has an address](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) | 2026-11-12 | provisional | [D124](README.md), [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) |
 | [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
 | [D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) | 2026-11-13 | provisional |  |
-| [D126 · One page per thing, and one Astryx template per page type](D126-one-page-per-thing-one-astryx-template-per-page-type.md) | 2026-11-14 | provisional | [D129](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md), [D130](D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) |
+| [D126 · One page per thing, and one Astryx template per page type](D126-one-page-per-thing-one-astryx-template-per-page-type.md) | 2026-11-14 | provisional | [D129](README.md), [D130](D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) |
 | [D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) | 2026-11-16 | provisional |  |
 | [D129 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) | 2026-11-18 | provisional |  |
 | [D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides](D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | 2026-11-18 | provisional |  |
@@ -169,7 +170,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
 | [D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it](D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md) | 2026-11-13 | provisional |  |
-| [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional | [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) |
+| [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional | [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md), [D129](README.md) |
 | [D131 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed](D131-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md) | 2026-11-19 | provisional |  |
 
 ## Proposed, not decided

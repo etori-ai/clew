@@ -8,7 +8,7 @@
 
 Eneo's retrieval over the person's knowledge bases as a search source for Clew (D14, D26). Clew's composite search asks
 it beside every other source; the person sees Eneo's passages as citations and in the sources view, and nothing of the
-source document is indexed in Clew. It also carries the assistants profile (D125): the assistants an owner in Eneo made available to other clients can be picked in Clew's box, and a question then goes to the whole assistant in Eneo. The connector uses Node and the companion protocol 3 verifier, in the same service shape as [hello](../hello/README.md). Start with the [integrator guide](../../docs/guides/creating-a-connector.md) and [authorization](../../docs/guides/authorization.md).
+source document is indexed in Clew. It also carries the assistants profile (D125): the assistants an owner in Eneo made available to other clients can be picked in Clew's box, and a question then goes to the whole assistant in Eneo. The connector uses Node and the companion protocol verifier, in the same service shape as [hello](../hello/README.md). Start with the [integrator guide](../../docs/guides/creating-a-connector.md) and [authorization](../../docs/guides/authorization.md).
 
 ## What it declares
 

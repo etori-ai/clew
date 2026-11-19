@@ -256,7 +256,7 @@ function installationReads(source) {
 /** `source` is the system's name as a person reads it. */
 export function createManifest({ source = DEFAULT_SOURCE } = {}) {
   return {
-    protocol: 3,
+    protocol: 1,
     id: CONNECTOR,
     kind: 'passthrough',
     source,

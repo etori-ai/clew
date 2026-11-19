@@ -251,7 +251,7 @@ test.describe('the manifest preview', () => {
     // The field says what is missing, and Astryx mirrors the field's status into its live region.
     await expect(field(page)).toHaveAttribute('aria-invalid', 'true');
     await expect(page.getByText('Paste a manifest or choose its file.').first()).toBeVisible();
-    await field(page).fill('{ "protocol": 2, "id": ');
+    await field(page).fill('{ "protocol": 1, "id": ');
     await runButton(page).click();
     await expect(heading(page, 2, 'The document is not JSON')).toBeFocused();
     expect(await announcements(page)).toContain('The document is not JSON.');
