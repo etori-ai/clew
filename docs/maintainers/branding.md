@@ -63,10 +63,11 @@ the contrast check reads. Once a theme is saved the same button downloads that t
 
 A file is refused whole, with every problem listed, when it names a colour that cannot be set, sets a colour in one
 appearance only, holds a value that is not an opaque sRGB colour, or would make a theme whose text cannot be read.
-The contrast check is WCAG 2.2 AA on the pairs in `THEME_CONTRAST_PAIRS`: 4.5:1 for text on the surfaces and on the
-accent, info and success fills, 3:1 for the accent, the focus ring, icons and a progress bar's fill on its track (`text-primary` on `track`), in both
-appearances. A colour the
-file leaves alone is checked as Clew's base theme draws it. The page checks before it lets you save and shows the
+In both appearances, text on surfaces, semantic fills and tinted status badges must reach 4.5:1. Blue and green
+badges use `text-blue` on `background-blue` and `text-green` on `background-green`. The accent, focus ring, icons
+and progress bar fill on its track must reach 3:1. The pairs are listed in `THEME_CONTRAST_PAIRS`.
+Existing installations keep their saved badge backgrounds. Clew uses readable black or white text wherever a
+previously saved pair fails. A colour the file leaves alone is checked against the base theme. The page checks before it lets you save and shows the
 theme in both appearances; the server checks again. The check covers the listed pairs, not every component state:
 look at the pages, in both appearances, after a new theme is saved.
 
@@ -79,13 +80,15 @@ and can be downloaded as a file afterwards.
 ### The logo
 
 A PNG or an SVG of at most 256 kB, with the name a screen reader reads in its place, and optionally a variant for
-dark ground. Use the original file from the organisation's graphic profile. Without a dark variant the logo stands
-on a light plate in the dark appearance and on the header's band. An SVG that carries script, event attributes,
+dark ground. Use the original file from the organisation's graphic profile. Both the app and the embedded header
+choose the logo for the colour of the bar. On a dark bar, a logo with only a light-ground variant gets a light plate.
+An SVG that carries script, event attributes,
 embedded foreign content or a reference out of the file is refused. Clew serves the logo from its own origin.
 
-The header shows the logo of the header connector when an administrator has chosen one that gives a logo
-([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)); the installation's own logo is
-shown otherwise, and always on the sign-in page.
+The header shows the active header connector's logo when it supplies one. The connector supplies its mark for dark
+ground, such as Sundsvall's white dragon. A pale band gives that mark a dark plate. The installation's own logo
+appears when the connector has none, and always on the sign-in page.
+([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md))
 
 The logo keeps its proportions at the header row's height
 ([D37](../decisions/D37-header-logo-is-installation-branding.md), [D39](../decisions/D39-compact-header-profile-and-reminders.md)).

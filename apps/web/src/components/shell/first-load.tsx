@@ -59,7 +59,8 @@ export function FirstLoad({ header }: { header: SiteHeaderView | null }) {
           menu={menu}
           selected={selectedItem(menu, here)}
           location={here}
-          logo={headerLogo(shared?.logo, branding.logo, false)}
+          hostNavigation={{ homeHref: START_PAGE.href, locationKey: location.key }}
+          logo={headerLogo(shared?.logo, branding.logo)}
           band={bandTheme}
           contentWidth={SHELL_WIDTH}
           pages={pages}

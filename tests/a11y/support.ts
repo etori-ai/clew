@@ -2697,11 +2697,8 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
       visited.push(active);
       const r = active.getBoundingClientRect();
       const name = `${active.tagName.toLowerCase()} "${(active.getAttribute('aria-label') ?? active.textContent ?? '').trim().slice(0, 50)}" at ${Math.round(r.left)},${Math.round(r.top)}`;
-      // Hem's line draws its ring round the pill that holds the field and its button (D130, `variant:ask`), six
-      // boxes out from the input; every other control is ringed within three.
-      const reach = active.matches('input') ? 6 : 3;
       const ring = (el: Element | null, depth: number): boolean => {
-        if (!el || depth > reach) return false;
+        if (!el || depth > 3) return false;
         const s = getComputedStyle(el);
         // An Astryx field (TextInput, Typeahead) draws its ring as an inset shadow on the wrapper around the input; an elevation shadow is never inset.
         const fieldRing =
@@ -2727,7 +2724,10 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
         const s = getComputedStyle(el);
         return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0;
       };
-      if (!ring(active, 0) && !drawn(ownRow)) unmarked.push(name);
+      // Hem's field uses the pill's focus outline. Its inset shadow is present even at rest.
+      const askPill = active.matches('input') ? active.closest('[data-variant="ask"]') : null;
+      const marked = askPill ? drawn(askPill) : ring(active, 0) || drawn(ownRow);
+      if (!marked) unmarked.push(name);
       const box = {
         left: Math.max(r.left, 0),
         right: Math.min(r.right, innerWidth),

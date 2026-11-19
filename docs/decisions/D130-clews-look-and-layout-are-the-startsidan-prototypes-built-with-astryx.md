@@ -91,7 +91,8 @@ it, nothing opens over a page. The comparison this rests on is
 14. **The line to ask is one pill**, as the prototype draws its ask field: a round mark in the assistant's blue, the
     field, and "Fråga AI" inside it, on the card's ground with the card's shadow. The pill is a `Card` variant and the
     field inside it stands in a nested theme where it has no edge of its own, as the header's band is a nested theme;
-    the pill shows the field's focus as a 2 px edge in the assistant's blue. The assistant's button is a `Button`
+    the pill shows focus with a 2 px outline that remains visible in forced colours. It takes the assistant's blue
+    wherever that reaches 3:1 against the card and the theme's accent text colour elsewhere. The assistant's button is a `Button`
     variant, `ai`: a pill in the theme's info colour. The floating button of item 10 is the same button and reads
     "Fråga AI"; on Hem it is there too and leads to Hem's own line, which takes the focus, as the prototype's does.
     Hem then has two buttons that read "Fråga AI", so the floating one is named by what it does there ("Fråga AI:

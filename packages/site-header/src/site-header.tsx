@@ -1,4 +1,4 @@
-import { use, useState, type AnchorHTMLAttributes, type ReactNode, type Ref } from 'react';
+import { use, useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode, type Ref } from 'react';
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
 import { MobileNav } from '@astryxdesign/core/MobileNav';
 import { SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
@@ -11,11 +11,11 @@ import { Badge } from '@astryxdesign/core/Badge';
 import { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
 import { useMediaQuery } from '@astryxdesign/core/hooks';
 import { DEFAULT_WIDTH_BREAKPOINTS, Theme, ThemeContext, type DefinedTheme } from '@astryxdesign/core/theme';
+import { isDarkHeaderBand } from '@clew/ui/theme';
 import { selectedItem, type SiteMenu, type SiteMenuItem } from './menu';
 
 /**
- * Every link in the header is a whole-page load, whatever router the host has put behind Astryx's `LinkProvider`: the
- * header crosses sites (Clew's Start, the intranet's sections), so no host's client-side routing may catch it.
+ * A place owned by another site loads its document, even when the intranet shares the host's origin.
  */
 function PageLink({
   ref,
@@ -24,6 +24,14 @@ function PageLink({
 }: AnchorHTMLAttributes<HTMLAnchorElement> & { ref?: Ref<HTMLAnchorElement>; to?: string }) {
   // Astryx hands a custom link both `href` and a router's `to`; an anchor needs only the first.
   return <a ref={ref} {...props} />;
+}
+
+/** The host router owns its home address, which a connector may give as an absolute URL. */
+function bandLink(href: string, home: URL | undefined) {
+  if (home && URL.canParse(href, home) && new URL(href, home).href === home.href) {
+    return { href: home.pathname + home.search + home.hash };
+  }
+  return { href, as: PageLink };
 }
 
 /**
@@ -62,14 +70,18 @@ export type SiteHeaderPage = Readonly<{
   count?: number;
   countLabel?: string;
 }>;
-/** The installation's logo (D38); `darkSrc` is the variant drawn on a dark ground (Sundsvall's white dragon). */
-export type SiteHeaderLogo = Readonly<{ src: string; alt: string; darkSrc?: string }>;
+/** An installation supplies a logo for light ground and optionally one for dark. A header connector supplies its dark-ground mark (D88). */
+export type SiteHeaderLogo = Readonly<
+  { src: string; alt: string } & ({ ground?: 'light'; darkSrc?: string } | { ground: 'dark'; darkSrc?: never })
+>;
 export type SiteHeaderProps = Readonly<{
   menu: SiteMenu;
   /** The id of the top-level item the page belongs to; `aria-current="page"` and the selected style. */
   selected?: string | null;
   /** The page's address, so the row under the band marks the link that is the page. */
   location?: string | URL;
+  /** The host's routed home and the current history entry. A same-tab navigation closes the drawer. */
+  hostNavigation?: Readonly<{ homeHref: string; locationKey: string }>;
   logo?: SiteHeaderLogo | null;
   /** Under the site's name, as the web app shows the person's unit. */
   subheading?: string;
@@ -84,8 +96,7 @@ export type SiteHeaderProps = Readonly<{
   band?: DefinedTheme;
   /**
    * The host's own pages under the selected place (D130), drawn in the row under the band in place of the pages the
-   * menu lists for it. They are the host's, so they go through the host's router (Astryx's `LinkProvider`) and do not
-   * load a page, unlike every other link in the header.
+   * menu lists for it. Like the host's home, they go through its router (Astryx's `LinkProvider`).
    */
   pages?: readonly SiteHeaderPage[];
   /** The id of the page among `pages` that is the current one. */
@@ -175,6 +186,7 @@ export function SiteHeader({
   menu,
   selected = null,
   location,
+  hostNavigation,
   logo,
   subheading,
   end,
@@ -190,15 +202,21 @@ export function SiteHeader({
   const shell = useAppShellMobile();
   const narrow = useCompactSiteHeader();
   const [isOpen, setIsOpen] = useState(false);
+  useEffect(() => setIsOpen(false), [hostNavigation?.locationKey]);
+  const home = hostNavigation && location ? new URL(hostNavigation.homeHref, location) : undefined;
+  const siteLink = bandLink(menu.site.href, home);
   const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const dark = useDarkSiteHeader();
-  // On the band the ground is dark in both appearances, so the dark variant is the one to draw when there is one.
-  const logoSrc = logo ? (band || dark ? (logo.darkSrc ?? logo.src) : logo.src) : undefined;
+  const darkBand = useMemo(() => (band ? isDarkHeaderBand(band, dark ? 'dark' : 'light') : dark), [band, dark]);
+  const forcedColors = useMediaQuery('(forced-colors: active)');
+  const logoSrc = logo && darkBand ? (logo.darkSrc ?? logo.src) : logo?.src;
+  const darkLogoGround = logo?.ground === 'dark' || (darkBand && !!logo?.darkSrc);
+  const logoPlate = darkLogoGround ? 'var(--color-on-light)' : 'var(--color-on-dark)';
   const heading = (
     <TopNavHeading
       heading={menu.site.name}
-      headingHref={menu.site.href}
-      as={PageLink}
+      headingHref={siteLink.href}
+      as={siteLink.as}
       subheading={subheading}
       logo={
         logo && logoSrc && logoSrc !== failedLogo ? (
@@ -213,8 +231,9 @@ export function SiteHeader({
               width: 'auto',
               maxWidth: 160,
               objectFit: 'contain',
-              // A logo with no dark variant keeps its own light ground on a dark bar, as the web app's rail did (D39).
-              backgroundColor: (band || dark) && !logo.darkSrc ? 'var(--color-on-dark)' : undefined,
+              // Keep the mark's own ground when the band differs or the system chooses the colours (D39, D88).
+              backgroundColor: forcedColors || darkLogoGround !== darkBand ? logoPlate : undefined,
+              forcedColorAdjust: 'none',
             }}
             onError={() => setFailedLogo(logoSrc)}
           />
@@ -278,7 +297,7 @@ export function SiteHeader({
           {menu.items.length > 0 ? (
             <SideNavSection title={label} isHeaderHidden={!own}>
               {menu.items.map(item => (
-                <PlaceRow key={item.id} item={item} selected={selected} current={own ? null : current} />
+                <PlaceRow key={item.id} item={item} selected={selected} current={own ? null : current} home={home} />
               ))}
             </SideNavSection>
           ) : null}
@@ -304,8 +323,7 @@ export function SiteHeader({
                     <TopNavItem
                       key={item.id}
                       label={item.label}
-                      href={item.href}
-                      as={PageLink}
+                      {...bandLink(item.href, home)}
                       isSelected={item.id === selected}
                     />
                   ))}
@@ -329,9 +347,7 @@ export function SiteHeader({
                       <TopNavItem
                         key={link.id}
                         label={link.label}
-                        href={link.href}
-                        // The host's own pages go through its router; every other link loads its page.
-                        as={own ? undefined : PageLink}
+                        {...(own ? { href: link.href } : bandLink(link.href, home))}
                         isSelected={link.id === current}
                       >
                         {counted(link)}
@@ -353,24 +369,25 @@ function PlaceRow({
   item,
   selected,
   current,
+  home,
 }: {
   item: SiteMenuItem;
   selected: string | null;
   current: string | null;
+  home: URL | undefined;
 }) {
   const children = item.children ?? [];
   if (!children.length)
-    return <SideNavItem label={item.label} href={item.href} as={PageLink} isSelected={item.id === selected} />;
+    return <SideNavItem label={item.label} {...bandLink(item.href, home)} isSelected={item.id === selected} />;
   return (
     <SideNavItem
       label={item.label}
-      href={item.href}
-      as={PageLink}
+      {...bandLink(item.href, home)}
       isSelected={item.id === selected}
       collapsible={{ defaultIsCollapsed: item.id !== selected }}
     >
       {children.map(link => (
-        <SideNavItem key={link.id} label={link.label} href={link.href} as={PageLink} isSelected={link.id === current} />
+        <SideNavItem key={link.id} label={link.label} {...bandLink(link.href, home)} isSelected={link.id === current} />
       ))}
     </SideNavItem>
   );

@@ -391,14 +391,19 @@ test.describe('Hem’s line', () => {
     expect(api.asked).toHaveLength(0);
     await page.goBack();
     await expect(heading(page, 1, GREETING)).toBeVisible();
-    // A question half written is kept while the person looks at another page.
+    // Either home link keeps the question half written while the person looks at another page.
     await hemLine(page).fill('Vem är på plats?');
-    await rail(page)
-      .getByRole('link', { name: /^Att göra/ })
-      .click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
-    await rail(page).getByRole('link', { name: 'Start', exact: true }).click();
-    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+    for (const home of [
+      rail(page).getByRole('link', { name: 'Start', exact: true }),
+      page.getByRole('banner').getByRole('link', { name: /Startsidan/ }),
+    ]) {
+      await rail(page)
+        .getByRole('link', { name: /^Att göra/ })
+        .click();
+      await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
+      await home.click();
+      await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+    }
     await askButton(page).click();
     await expect(page.getByRole('log')).toContainText('Tio personer är på plats i dag.');
     await expect(page).toHaveURL(/\/conversations\/konversation$/);

@@ -4,6 +4,7 @@ import { contrastRatio, parseThemeFile, themeFromAccent } from '@clew/contracts'
 import { NEUTRAL_BRANDING, readBranding, type Branding } from '../../packages/ui/src/branding';
 import {
   clewComponentCSS,
+  createAskFieldTheme,
   createClewTheme,
   createHeaderBandTheme,
   resolveClewTokens,
@@ -182,8 +183,42 @@ describe('the appearance the browser draws (D98)', () => {
     for (const theme of [createClewTheme(NEUTRAL_BRANDING), createClewTheme(custom)]) {
       expect(theme.tokens['--font-family-heading']).toContain('Raleway Variable');
       expect(theme.tokens['--font-family-body']).toMatch(/^Arial/);
+      expect(theme.tokens['--text-heading-1-weight']).toBe('800');
+      expect(theme.components?.button?.base).toMatchObject({ fontWeight: 'var(--text-heading-1-weight)' });
       expect(theme.tokens['--radius-container']).toBe('1rem');
       expect(theme.components?.card?.base).toMatchObject({ boxShadow: 'var(--shadow-low)' });
+    }
+  });
+
+  test('the question keeps the assistant colour for focus where it contrasts with the card', () => {
+    const branding = readBranding({
+      revision: 1,
+      theme: { colors: { info: ['#ffffff', '#9dceff'], 'on-info': ['#000000', '#111111'] } },
+    });
+    expect(createAskFieldTheme(branding).tokens['--focus-outline-color']).toBe('light-dark(#1b1b1b, #9dceff)');
+  });
+
+  test('a previously saved tint stays legible in each appearance and keeps the installation’s readable ink', () => {
+    const branding = readBranding({
+      revision: 2,
+      theme: {
+        colors: {
+          'text-blue': ['#eeeeee', '#eeeeee'],
+          'background-blue': ['#eeeeee', '#222222'],
+          'text-green': ['#003311', '#112211'],
+          'background-green': ['#f5fff5', '#112211'],
+        },
+      },
+    });
+    const light = resolveClewTokens(branding, 'light');
+    const dark = resolveClewTokens(branding, 'dark');
+    expect(light['--color-text-green']).toBe('#003311');
+    expect(dark['--color-text-blue']).toBe('#eeeeee');
+    for (const tokens of [light, dark]) {
+      for (const hue of ['blue', 'green']) {
+        const ratio = contrastRatio(tokens[`--color-text-${hue}`]!, tokens[`--color-background-${hue}`]!);
+        expect(ratio).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 

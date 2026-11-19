@@ -1,7 +1,7 @@
-import { defineTheme, generateThemeCSS } from '@astryxdesign/core/theme';
-import { resolveThemeTokens } from '@astryxdesign/core/theme/tokens';
+import { defineTheme, generateThemeCSS, type DefinedTheme } from '@astryxdesign/core/theme';
+import { resolveThemeToken, resolveThemeTokens } from '@astryxdesign/core/theme/tokens';
 import { neutralPalettes, neutralTheme } from '@astryxdesign/theme-neutral';
-import { THEME_BASE_COLORS, contrastRatio } from '@clew/contracts';
+import { THEME_BASE_COLORS, contrastRatio, isThemeHex, type ThemeColors, type ThemeMode } from '@clew/contracts';
 import type { Branding } from './branding';
 
 const { red, green, white, neutral } = neutralPalettes;
@@ -201,13 +201,12 @@ const clewBaseTheme = defineTheme({
       'variant:blue': { boxShadow: 'inset 0 0 0 2px var(--color-border-blue), var(--shadow-low)' },
       // Hem's question (D130 item 14, `start.tsx`): the field, its mark and its button stand in one pill on the card's
       // ground with the assistant's blue as its edge and the card's shadow, as the startsidan prototype draws its ask
-      // field. The pill shows the focus of the field in it (2.4.7): a 2 px edge in the assistant's blue, which the
-      // theme file holds to 3:1 on the surface as a mark. `ai-mark` is the round mark at the pill's start.
+      // field. Its focus outline survives forced colours. createAskFieldTheme chooses its colour against the card.
       'variant:ask': {
         backgroundColor: 'var(--color-background-card)',
         borderRadius: 'var(--radius-full)',
         boxShadow: 'inset 0 0 0 1px var(--color-border-blue), var(--shadow-low)',
-        ':focus-within': { boxShadow: 'inset 0 0 0 2px var(--color-info), var(--shadow-low)' },
+        ':focus-within': { outline: '2px solid var(--focus-outline-color)', outlineOffset: '-3px' },
       },
       'variant:ai-mark': {
         backgroundColor: 'var(--color-info)',
@@ -241,7 +240,7 @@ const clewBaseTheme = defineTheme({
     // button is the prototype's quiet one: the card's ground, an edge and the accent's words, so it reads as a button
     // on the tinted page and on a white card alike.
     button: {
-      base: { fontFamily: 'var(--font-family-heading)', fontWeight: 'var(--font-weight-bold)' },
+      base: { fontFamily: 'var(--font-family-heading)', fontWeight: 'var(--text-heading-1-weight)' },
       'variant:secondary': {
         backgroundColor: 'var(--color-background-card)',
         color: 'var(--color-text-accent)',
@@ -320,6 +319,19 @@ const themes = new Map<string, ClewTheme>(),
   bands = new Map<string, ClewTheme>(),
   asks = new Map<string, ClewTheme>();
 
+const whiteReadsOn = (ground: string) => contrastRatio(white, ground) >= 4.5;
+
+/** Theme files saved before the tinted status badges could set either hue without a contrast check. */
+function tintInk(colors: ThemeColors, hue: 'blue' | 'green'): [string, string] {
+  const ink = colors[`text-${hue}`] ?? THEME_BASE_COLORS[`text-${hue}`];
+  const ground = colors[`background-${hue}`] ?? THEME_BASE_COLORS[`background-${hue}`];
+  const at = (mode: 0 | 1) => {
+    if (contrastRatio(ink[mode], ground[mode]) >= 4.5) return ink[mode];
+    return whiteReadsOn(ground[mode]) ? white : neutral.light[0];
+  };
+  return [at(0), at(1)];
+}
+
 /**
  * The installation's theme (D98): Clew's base with the colours an administrator saved, each as Astryx's own
  * `[light, dark]` pair. The colours arrive validated (known tokens, opaque hex, contrast held against the base); the
@@ -336,6 +348,8 @@ export function createClewTheme(branding: Branding): ClewTheme {
       extends: clewBaseTheme,
       tokens: {
         ...Object.fromEntries(Object.entries(colors).map(([token, pair]) => ['--color-' + token, [pair[0], pair[1]]])),
+        '--color-text-blue': tintInk(colors, 'blue'),
+        '--color-text-green': tintInk(colors, 'green'),
         ...(colors.accent ? { '--focus-outline-color': [colors.accent[0], colors.accent[1]] } : {}),
       } as Tokens,
     });
@@ -360,9 +374,9 @@ export function createHeaderBandTheme(branding: Branding): ClewTheme {
   const band = inverted ?? (colors?.accent ? colors.accent[0] : neutral.light[10]);
   // The pair the theme file was checked with: its own on-accent, else the base's, which is what the page draws.
   const on = inverted
-    ? contrastRatio('#ffffff', inverted) >= 4.5
-      ? '#ffffff'
-      : '#000000'
+    ? whiteReadsOn(inverted)
+      ? white
+      : neutral.light[0]
     : colors?.accent
       ? (colors['on-accent'] ?? THEME_BASE_COLORS['on-accent'])[0]
       : neutral.light[100];
@@ -412,6 +426,12 @@ export function createHeaderBandTheme(branding: Branding): ClewTheme {
   return theme;
 }
 
+/** Logo variants follow the painted surface, including a fixed band in either page appearance. */
+export function isDarkHeaderBand(band: DefinedTheme, mode: ThemeMode): boolean {
+  const ground = resolveThemeToken(band, '--color-background-surface', { mode });
+  return isThemeHex(ground) ? whiteReadsOn(ground) : mode === 'dark';
+}
+
 /**
  * The theme inside Hem's ask pill (D130 item 14): the field in it has no edge or ground of its own, since the pill
  * around it is the field a person sees, and the pill shows its focus. Nested inside the page's theme, as the header's
@@ -421,9 +441,16 @@ export function createAskFieldTheme(branding: Branding): ClewTheme {
   const key = themeKey(branding);
   let theme = asks.get(key);
   if (theme) return theme;
+  const colors = branding.theme?.colors;
+  const info = colors?.info ?? THEME_BASE_COLORS.info;
+  const card = colors?.['background-card'] ?? THEME_BASE_COLORS['background-card'];
+  const accentText = colors?.['text-accent'] ?? THEME_BASE_COLORS['text-accent'];
+  // The accent text is validated on the card. Use it where the assistant colour disappears against that ground.
+  const focus = (mode: 0 | 1) => (contrastRatio(info[mode], card[mode]) >= 3 ? info[mode] : accentText[mode]);
   theme = defineTheme({
     name: `clew-ask-field-${branding.theme?.colors ? key : 'neutral'}`,
     extends: createClewTheme(branding),
+    tokens: { '--focus-outline-color': [focus(0), focus(1)] },
     components: {
       'text-input': {
         base: {

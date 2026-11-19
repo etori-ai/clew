@@ -48,7 +48,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
         if (expectedLogo) {
           const logo = heading.getByRole('img', { name: expectedLogo.alt, exact: true });
           await expect(logo).toBeVisible();
-          // On the band the ground is dark in both appearances, so the dark variant is drawn where there is one.
+          // These fixtures have a dark band in both appearances.
           await expect(logo).toHaveAttribute('src', expectedLogo.darkSrc ?? expectedLogo.src);
           await expect(logo).toHaveJSProperty('complete', true);
           const shape = await logo.evaluate((img: HTMLImageElement) => ({
@@ -71,6 +71,27 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
         await expect(page).toHaveURL('/');
       });
     }
+
+  for (const savedProfile of ['sundsvall', 'custom'] as const)
+    test(`a pale band uses the light-ground ${savedProfile} logo in both appearances`, async ({ page, api }) => {
+      const saved = savedBranding(savedProfile);
+      const theme = saved.appearance.theme!;
+      const logo = saved.appearance.logo!;
+      Object.assign(api, saved);
+      api.appearance = {
+        ...saved.appearance,
+        theme: { ...theme, colors: { ...theme.colors, 'background-inverted': ['#ffffff', '#000000'] } },
+      };
+      await open(page, '/');
+      const image = page.getByRole('banner').getByRole('img', { name: logo.alt });
+      for (const mode of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme: mode });
+        const heading = page.getByRole('main').getByRole('heading', { level: 1 }).first();
+        await expect(heading).toHaveCSS('color', mode === 'light' ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)');
+        await expect(image).toHaveAttribute('src', logo.src);
+        await expect(image).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      }
+    });
 
   if (expectedLogo)
     test('a failed image request leaves a named, working home link', async ({ page, api: _ }) => {

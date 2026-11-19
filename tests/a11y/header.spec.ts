@@ -2,6 +2,7 @@ import {
   desktop,
   expect,
   expectNoAxeViolations,
+  hemLine,
   open,
   openNav,
   pagesNav,
@@ -10,6 +11,7 @@ import {
   test,
 } from './support';
 import type { SiteHeaderView } from '@clew/contracts';
+import intranetMenu from '../../connectors/intranet/menu.json';
 
 /**
  * The shared header on the web app (D88, D130): the band with the installation's name, Clew's Start (D116; the server
@@ -41,6 +43,29 @@ test.describe('the shared header on every page', () => {
       }),
     );
   });
+  test('the intranet’s white logo keeps its dark ground on a pale band and in forced colours', async ({
+    page,
+    api,
+  }) => {
+    api.header = { ...fromConnector(), logo: intranetMenu.logo };
+    api.appearance = {
+      ...api.appearance,
+      revision: 1,
+      theme: { name: null, colors: { 'background-inverted': ['#ffffff', '#000000'] } },
+    };
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const logo = page.getByRole('banner').getByRole('img', { name: intranetMenu.logo.alt });
+    await expect(logo).toHaveAttribute('src', intranetMenu.logo.src);
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme });
+      await expect(logo).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+    }
+    await page.setViewportSize(phone);
+    await page.emulateMedia({ colorScheme: 'light', forcedColors: 'active' });
+    await expect(logo).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+  });
+
   test('the band holds the name, the connector logo, the places and the person; Clew’s own pages stand under the band', async ({
     page,
     api,
@@ -81,6 +106,87 @@ test.describe('the shared header on every page', () => {
     expect((await places.boundingBox())!.y).toBeLessThan((await pages.boundingBox())!.y);
     await expectNoAxeViolations(page);
   });
+  for (const viewport of [desktop, phone])
+    test(`a connector’s Start and absolute site address return to the unfinished question at ${viewport.width}px`, async ({
+      page,
+      api,
+      baseURL,
+    }) => {
+      api.header = fromConnector();
+      api.header.menu.site.href = new URL('/', baseURL).href;
+      await page.setViewportSize(viewport);
+      await open(page, '/');
+      await hemLine(page).fill('Vilka är på plats?');
+      await (await openNav(page)).getByRole('link', { name: /^Att göra/ }).click();
+      await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
+      const places =
+        viewport === phone ? await openNav(page) : page.getByRole('navigation', { name: 'Huvudmeny', exact: true });
+      await places.getByRole('link', { name: 'Start', exact: true }).click();
+      await expect(hemLine(page)).toHaveValue('Vilka är på plats?');
+      await (await openNav(page)).getByRole('link', { name: /^Att göra/ }).click();
+      await expect(page).toHaveURL('/todo');
+      await page
+        .getByRole('banner')
+        .getByRole('link', { name: /Intranätet/ })
+        .click();
+      await expect(hemLine(page)).toHaveValue('Vilka är på plats?');
+    });
+
+  test('a connector’s site link loads the intranet’s own page on the shared origin', async ({ page, api }) => {
+    api.header = fromConnector();
+    api.header.menu.site.href = '/intranat/organisation';
+    await page.route('**/intranat/organisation', route =>
+      route.fulfill({ contentType: 'text/html', body: '<h1>Intranätets organisation</h1>' }),
+    );
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    await page
+      .getByRole('banner')
+      .getByRole('link', { name: /Intranätet/ })
+      .click();
+    await expect(page.getByRole('heading', { name: 'Intranätets organisation' })).toBeVisible();
+  });
+
+  test('the phone drawer closes on Enter and on Back when only the queue filter changes', async ({ page, api: _ }) => {
+    await page.setViewportSize(phone);
+    await open(page, '/todo?tab=done');
+    for (const before of ['/todo?tab=done', '/todo']) {
+      await expect(page).toHaveURL(before);
+      const drawer = await openNav(page);
+      await drawer.getByRole('link', { name: /^Att göra/ }).press('Enter');
+      await expect(drawer).toBeHidden();
+      await expect(page).toHaveURL('/todo');
+    }
+    const drawer = await openNav(page);
+    await page.goBack();
+    await expect(page).toHaveURL('/todo?tab=done');
+    await expect(drawer).toBeHidden();
+  });
+
+  test('opening a drawer link in a new tab keeps the original drawer and unfinished question', async ({
+    page,
+    context,
+    api,
+  }) => {
+    // The second tab reads its own session and queue through the same API fixture.
+    await context.route('**/api/**', route => api.handle(route));
+    await page.setViewportSize(phone);
+    await open(page, '/');
+    await hemLine(page).fill('Vilka är på plats?');
+    const drawer = await openNav(page);
+    const [queue] = await Promise.all([
+      context.waitForEvent('page'),
+      drawer.getByRole('link', { name: /^Att göra/ }).click({ modifiers: ['ControlOrMeta'] }),
+    ]);
+    await expect(queue).toHaveURL('/todo');
+    await expect(queue.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
+    await queue.close();
+    await expect(page).toHaveURL('/');
+    await expect(drawer).toBeVisible();
+    await drawer.getByRole('button', { name: 'Stäng navigering' }).click();
+    await expect(hemLine(page)).toHaveValue('Vilka är på plats?');
+  });
+
   test('without a header connector the band is the heading row alone, and Start stands first among Clew’s pages (D130)', async ({
     page,
     api: _,

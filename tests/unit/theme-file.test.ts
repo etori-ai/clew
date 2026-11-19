@@ -166,6 +166,19 @@ describe('the theme file and the base it is checked against (D98)', () => {
     });
   });
 
+  test('uploading a tint checks its text against its ground in each appearance, including an inherited half', () => {
+    const problems = problemsOf(
+      file(
+        { 'text-blue': color(THEME_BASE_COLORS['background-blue'][0]), 'background-green': color('#ffffff') },
+        { 'text-blue': color('#ffffff'), 'background-green': color(THEME_BASE_COLORS['text-green'][1]) },
+      ),
+    );
+    expect(problems.map(p => [p.code, p.token, p.mode])).toEqual([
+      ['contrast', 'text-blue', 'light'],
+      ['contrast', 'text-green', 'dark'],
+    ]);
+  });
+
   test('two colours make a theme only when white reads on the strong one and black on the pale one', () => {
     expect(checkThemeContrast(themeFromAccent('#005595', '#daeff1').colors)).toEqual([]);
     const weak = checkThemeContrast(themeFromAccent('#7fb2d9', '#daeff1').colors);

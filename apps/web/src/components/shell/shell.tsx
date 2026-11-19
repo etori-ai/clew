@@ -1,7 +1,7 @@
 import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { SessionUser } from '@clew/contracts';
+import type { SessionUser, SiteHeaderView } from '@clew/contracts';
 import {
   AppShell,
   Button,
@@ -16,8 +16,9 @@ import {
   useToast,
   HStack,
 } from '@clew/ui';
+import type { HeaderLogo } from '@clew/ui/branding';
 import { createHeaderBandTheme } from '@clew/ui/theme';
-import { SiteHeader, SiteHeaderPerson, selectedItem, type SiteMenu } from '@clew/site-header';
+import { SiteHeader, SiteHeaderPerson, selectedItem, type SiteHeaderLogo, type SiteMenu } from '@clew/site-header';
 import { useBranding } from '../../branding';
 import { headerQuery, threadsQuery } from '../../queries';
 import { useAnnounceSilentSources } from './silent-sources';
@@ -58,16 +59,9 @@ export function settingsHref(pathname: string, search: string): string {
   return `${pathname}?${q.toString()}`;
 }
 
-type Logo = Readonly<{ src: string; alt: string; darkSrc?: string }>;
-/**
- * The logo the shared header draws: the connector's when it gives one, else the installation's own (D98). The
- * connector's is its own band's logo (D88, Sundsvall's white dragon), so on the band it is drawn as given, never on the
- * light plate a logo without a dark variant gets; off the band (the phone's bar) the installation's own, which has a
- * variant for each ground.
- */
-export function headerLogo(shared: Logo | null | undefined, own: Logo | null, mobile: boolean): Logo | null {
-  if (!shared) return own;
-  return mobile ? (own ?? shared) : { ...shared, darkSrc: shared.src };
+/** A connector supplies the mark for its dark band (D88), while an installation can supply a variant for each ground (D98). */
+export function headerLogo(shared: SiteHeaderView['logo'] | undefined, own: HeaderLogo | null): SiteHeaderLogo | null {
+  return shared ? { ...shared, ground: 'dark' } : own;
 }
 
 /**
@@ -80,7 +74,7 @@ export function InstallationLogo({
   height = 28,
   decorative = false,
 }: {
-  logo: Logo | null;
+  logo: HeaderLogo | null;
   height?: number;
   decorative?: boolean;
 }) {
@@ -155,7 +149,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   // The band's theme (D88) is the installation's (D98), built once per saved theme.
   const branding = useBranding();
   const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
-  const logo = headerLogo(shared?.logo, branding.logo, false);
+  const logo = headerLogo(shared?.logo, branding.logo);
   // A system that does not answer is said where its content is missing, never at the top of the page (D116, amended
   // 2026-11-12); the first time it is seen silent in the session it is said once (4.1.3).
   useAnnounceSilentSources();
@@ -258,6 +252,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
             menu={menu}
             selected={selected}
             location={here}
+            hostNavigation={{ homeHref: START_PAGE.href, locationKey: location.key }}
             logo={logo}
             band={bandTheme}
             contentWidth={SHELL_WIDTH}
