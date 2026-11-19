@@ -17,13 +17,17 @@ import {
   LayoutHeader,
   LayoutPanel,
   Link,
+  ResizeHandle,
   ScrollableArea,
   SparklesIcon,
   StackItem,
   Text,
   VStack,
+  percent,
+  pixel,
   useEntryAnimation,
   useMediaQuery,
+  useResizable,
 } from '@clew/ui';
 import { besideQuery, mobileQuery, shortQuery } from '../media';
 import { asksBeside, withAsk, withoutAsk } from '../panel-address';
@@ -87,8 +91,17 @@ export interface AskAbout {
   /** False where a phone's head has no room for the button (Kalender's two full rows); the page asks elsewhere there. */
   onPhone?: boolean | undefined;
 }
-/** The assistant's pane (D130 rule 11; canvas boards AskRegister and AskArende): Astryx's recommended panel width. */
+/**
+ * The assistant's pane (D130 rule 11; canvas boards AskRegister and AskArende): it opens at Astryx's recommended panel
+ * width and is dragged, or moved with the arrow keys on its grip, between the limits the pane beside a conversation has
+ * (the product owner asked on 2026-11-19 why it could not be resized as Astryx's panels can). The width is kept in the
+ * browser.
+ */
 const ASK_PANE = 400;
+const ASK_PANE_MIN = 360;
+const ASK_PANE_MAX = 720;
+/** The most of the sheet the pane may take, in percent, so the page keeps the larger part. */
+const ASK_PANE_SHARE = 40;
 /** What a key pressed in the pane belongs to rather than the pane: a menu, a list box or a dialog over it. */
 const OWNS_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
 /** A field the person types in: where the press has put the focus once the box has it. */
@@ -214,6 +227,14 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
   const talk = usePageConversation(subject, { onAnswer: response => about.onAnswer?.(response) });
   const whole = useOpenAsConversation(talk);
   const open = model && !mobile && asksBeside(search) && !frame.end;
+  // Astryx's resizable region (`useResizable`), as the pane beside a conversation and Att göra's reading pane have it:
+  // one width for every page, remembered in the browser.
+  const region = useResizable({
+    defaultSize: ASK_PANE,
+    minSize: ASK_PANE_MIN,
+    maxSize: percent(ASK_PANE_SHARE, { max: pixel(ASK_PANE_MAX) }),
+    autoSaveId: 'clew:assistant-pane',
+  });
   const button = useRef<HTMLButtonElement>(null);
   // Who changed the pane last: the person's press (the box takes the focus), ✕, Esc or the button again (the focus goes
   // back to the button), or nobody here (the address: nothing moves).
@@ -319,30 +340,40 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
   const titled = frame.title !== undefined && frame.title !== null;
   const pane =
     open && beside ? (
-      <LayoutPanel
-        width={ASK_PANE}
-        padding={0}
-        hasDivider
-        isScrollable={false}
-        role="complementary"
-        label="Assistenten"
-      >
-        <VStack
-          height="100%"
-          onKeyDown={e => {
-            // Esc inside a menu, a list or a dialog is theirs; a bare Esc closes the pane.
-            if (e.key !== 'Escape' || (e.target as HTMLElement).closest(OWNS_ESCAPE)) return;
-            e.stopPropagation();
-            close();
-          }}
+      <>
+        {/* The grip draws the line between the page and the pane, so the pane draws none of its own. */}
+        <ResizeHandle
+          direction="horizontal"
+          isReversed
+          hasDivider
+          resizable={region.props}
+          label="Ändra assistentens bredd"
+        />
+        <LayoutPanel
+          width={region.size}
+          padding={0}
+          hasDivider={false}
+          isScrollable={false}
+          role="complementary"
+          label="Assistenten"
         >
-          {content}
-        </VStack>
-      </LayoutPanel>
+          <VStack
+            height="100%"
+            onKeyDown={e => {
+              // Esc inside a menu, a list or a dialog is theirs; a bare Esc closes the pane.
+              if (e.key !== 'Escape' || (e.target as HTMLElement).closest(OWNS_ESCAPE)) return;
+              e.stopPropagation();
+              close();
+            }}
+          >
+            {content}
+          </VStack>
+        </LayoutPanel>
+      </>
     ) : null;
   return (
     // Where the content draws the title (a register's view, D74), the button goes to that line through the context.
-    <PageFrameContext.Provider value={{ askButton: titled ? null : askButton, paneWidth: pane ? ASK_PANE : 0 }}>
+    <PageFrameContext.Provider value={{ askButton: titled ? null : askButton, paneWidth: pane ? region.size : 0 }}>
       <FrameBody {...frame} askButton={titled ? askButton : null} askPane={pane} />
       {!beside && !mobile && (
         <Drawer

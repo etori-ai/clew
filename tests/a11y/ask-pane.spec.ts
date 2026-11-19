@@ -113,6 +113,38 @@ test.describe('the assistant’s pane beside a register', () => {
     expect(api.asked.at(-1)!.conversationId).toBe(ASKED);
   });
 
+  test('the pane’s width is the person’s own: its grip takes the arrow keys, the pane follows, and the width is kept over a reload and on another page', async ({
+    page,
+  }) => {
+    await open(page, directory);
+    await button(page).click();
+    // Astryx's resize handle between the page and the pane: a separator that says the width and takes the keyboard.
+    const grip = page.getByRole('separator', { name: 'Ändra assistentens bredd' });
+    await expect(grip).toHaveAttribute('aria-valuenow', '400');
+    await grip.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(grip).not.toHaveAttribute('aria-valuenow', '400');
+    const wider = Number(await grip.getAttribute('aria-valuenow'));
+    expect(wider).toBeGreaterThan(400);
+    expect(Math.round((await pane(page).boundingBox())!.width)).toBe(wider);
+    // The page gives the room and never scrolls sideways.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(
+      0,
+    );
+    await expectNoAxeViolations(page);
+    await page.reload();
+    await expect(page.getByRole('separator', { name: 'Ändra assistentens bredd' })).toHaveAttribute(
+      'aria-valuenow',
+      String(wider),
+    );
+    // One width for every page: Nyheter's pane opens as wide.
+    await open(page, '/tools/clew.news?ask=1');
+    await expect(page.getByRole('separator', { name: 'Ändra assistentens bredd' })).toHaveAttribute(
+      'aria-valuenow',
+      String(wider),
+    );
+  });
+
   test('Back closes the pane and Forward opens it again without moving the focus; Esc, ✕ and the button again close it and give the focus back to the button', async ({
     page,
   }) => {

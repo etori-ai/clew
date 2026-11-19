@@ -337,6 +337,33 @@ test.describe('a booking started on the grid (D58)', () => {
 });
 
 test.describe('an entry opened from the grid (D112 item 9)', () => {
+  test('the pane’s width is the person’s own: its grip takes the arrow keys, the grid gives the room, and the width is kept over a reload', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(WIDE);
+    await open(page, '/calendar');
+    await page.locator('.clew-cal-event').first().focus();
+    await page.keyboard.press('Enter');
+    const panel = page.getByRole('complementary', { name: 'Morgonmöte ledningsgrupp' });
+    const grip = page.getByRole('separator', { name: 'Ändra rutans bredd' });
+    await expect(grip).toHaveAttribute('aria-valuenow', '440');
+    await grip.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(grip).not.toHaveAttribute('aria-valuenow', '440');
+    const wider = Number(await grip.getAttribute('aria-valuenow'));
+    expect(wider).toBeGreaterThan(440);
+    expect(Math.round((await panel.boundingBox())!.width)).toBe(wider);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(
+      0,
+    );
+    await expectNoAxeViolations(page);
+    await page.reload();
+    await expect(page.getByRole('separator', { name: 'Ändra rutans bredd' })).toHaveAttribute(
+      'aria-valuenow',
+      String(wider),
+    );
+  });
   test('Enter on a meeting opens it in the panel beside the grid with its facts and own buttons; Escape returns focus to the meeting', async ({
     page,
     api: _,

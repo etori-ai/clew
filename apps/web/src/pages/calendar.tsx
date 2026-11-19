@@ -29,6 +29,7 @@ import {
   LayoutFooter,
   LayoutHeader,
   LayoutPanel,
+  ResizeHandle,
   Link,
   MetadataList,
   MetadataListItem,
@@ -38,8 +39,11 @@ import {
   Text,
   VStack,
   agendaItems,
+  percent,
+  pixel,
   useAnnounce,
   useMediaQuery,
+  useResizable,
   type AgendaItem,
   type CalendarView,
 } from '@clew/ui';
@@ -426,6 +430,14 @@ function PaneFrame({
  * Narrower, short (1.4.10) or on a phone it is a drawer.
  */
 const PANE = 440;
+/**
+ * The limits the pane is dragged between, the ones every pane beside a page has (the assistant's, the one beside a
+ * conversation): never narrower than a form's fields need, never more than this share of the sheet, so the grid keeps
+ * the larger part.
+ */
+const PANE_MIN = 360;
+const PANE_MAX = 720;
+const PANE_SHARE = 40;
 /** What a key pressed in the pane belongs to rather than the pane: a menu, a list box or a dialog over it. */
 const OWNS_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
@@ -928,26 +940,50 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       opener.current = active;
     if (!(active instanceof HTMLElement && active.matches(TYPING))) paneFocus.current?.focus();
   }, [besideId]);
+  // The pane's width is the person's own (Astryx's `useResizable`), kept in the browser.
+  const region = useResizable({
+    defaultSize: PANE,
+    minSize: PANE_MIN,
+    maxSize: percent(PANE_SHARE, { max: pixel(PANE_MAX) }),
+    autoSaveId: 'clew:calendar-pane',
+  });
   // The drawer keeps the last thing while it slides away, so its heading is never empty (axe: empty-heading).
   const lastShown = useRef<Shown | null>(null);
   if (shown) lastShown.current = shown;
   const drawn = shown ?? lastShown.current;
   const pane =
     beside && shown ? (
-      <LayoutPanel width={PANE} padding={0} hasDivider isScrollable={false} role="complementary" label={shown.title}>
-        <VStack
-          ref={paneRegion}
-          height="100%"
-          onKeyDown={e => {
-            // Esc inside a menu, a list or a dialog is theirs; a bare Esc lets go of what the pane holds.
-            if (e.key !== 'Escape' || (e.target as HTMLElement).closest(OWNS_ESCAPE)) return;
-            e.stopPropagation();
-            closePane();
-          }}
+      <>
+        {/* The grip draws the line between the grid and the pane, so the pane draws none of its own. */}
+        <ResizeHandle
+          direction="horizontal"
+          isReversed
+          hasDivider
+          resizable={region.props}
+          label="Ändra rutans bredd"
+        />
+        <LayoutPanel
+          width={region.size}
+          padding={0}
+          hasDivider={false}
+          isScrollable={false}
+          role="complementary"
+          label={shown.title}
         >
-          <PaneFrame shown={shown} headingRef={paneFocus as Ref<HTMLHeadingElement>} onClose={closePane} />
-        </VStack>
-      </LayoutPanel>
+          <VStack
+            ref={paneRegion}
+            height="100%"
+            onKeyDown={e => {
+              // Esc inside a menu, a list or a dialog is theirs; a bare Esc lets go of what the pane holds.
+              if (e.key !== 'Escape' || (e.target as HTMLElement).closest(OWNS_ESCAPE)) return;
+              e.stopPropagation();
+              closePane();
+            }}
+          >
+            <PaneFrame shown={shown} headingRef={paneFocus as Ref<HTMLHeadingElement>} onClose={closePane} />
+          </VStack>
+        </LayoutPanel>
+      </>
     ) : undefined;
   const drawer = beside ? null : (
     <Drawer
