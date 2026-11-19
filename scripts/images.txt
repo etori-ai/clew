@@ -1,0 +1,30 @@
+# The container images this repository builds: one line each, the image's name, its Dockerfile and its build
+# context, all from the repository root. scripts/images-build.sh reads it, and so can any pipeline.
+#
+# name                           dockerfile                              context
+clew-server                      apps/server/Dockerfile                  .
+clew-web                         apps/web/Dockerfile                     .
+
+# Connectors written for a real system
+clew-connector-nextcloud-approval connectors/nextcloud-approval/Dockerfile connectors/nextcloud-approval
+clew-connector-moodle            connectors/moodle/Dockerfile            connectors/moodle
+clew-connector-supportmanagement connectors/supportmanagement/Dockerfile connectors/supportmanagement
+clew-connector-pob               connectors/pob/Dockerfile               connectors/pob
+clew-connector-qlik              connectors/qlik/Dockerfile              connectors/qlik
+clew-connector-eneo              connectors/eneo/Dockerfile              connectors/eneo
+
+# Examples and the durability fixture
+clew-connector-hello             connectors/hello/Dockerfile             connectors/hello
+clew-connector-phonebook         connectors/phonebook/Dockerfile         connectors/phonebook
+clew-connector-reference         connectors/reference/Dockerfile         connectors/reference
+
+# The fixture connectors of the development stack (D61): made-up systems, for a test installation only
+clew-connector-hr                connectors/hr/Dockerfile                connectors/hr
+clew-connector-finance           connectors/finance/Dockerfile           connectors/finance
+clew-connector-incidents         connectors/incidents/Dockerfile         connectors/incidents
+clew-connector-communication     connectors/communication/Dockerfile     connectors/communication
+clew-connector-timesheet         connectors/timesheet/Dockerfile         connectors/timesheet
+clew-connector-payroll           connectors/payroll/Dockerfile           connectors/payroll
+clew-connector-servicedesk       connectors/servicedesk/Dockerfile       connectors/servicedesk
+clew-connector-intranet          connectors/intranet/Dockerfile          connectors/intranet
+clew-connector-appraisals        connectors/appraisals/Dockerfile        connectors/appraisals

@@ -1567,6 +1567,15 @@
       "status": "provisional (Oliver Borgström, 2026-11-18; first chosen 2026-11-11 and built on the branch `prototype-look`, PR #40, which did not land; accepted once a manager outside the team has used it)",
       "date": "2026-11-18",
       "area": "ui, product"
+    },
+    {
+      "key": "D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root",
+      "number": 131,
+      "path": "docs/decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
+      "title": "D131 · Clew builds a server image and a web image from the repository root",
+      "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them)",
+      "date": "2026-11-17",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -2370,6 +2379,12 @@
     {
       "path": "docs/decisions/D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md",
       "title": "D130 · Clew's look and layout are the startsidan prototype's, built with Astryx",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
+      "title": "D131 · Clew builds a server image and a web image from the repository root",
       "category": "decision-history",
       "headings": []
     },
@@ -3494,6 +3509,7 @@
       "headings": [
         "Observability",
         "Operations",
+        "Container images",
         "Model configuration"
       ]
     },

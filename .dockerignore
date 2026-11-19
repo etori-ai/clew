@@ -1,0 +1,19 @@
+# The build context of apps/server/Dockerfile and apps/web/Dockerfile is the repository root.
+# What neither image needs stays out of it. The connectors stay in: the server reads two of their manifests as the
+# examples of the protocol it serves (apps/server/src/routes/protocol.ts). A connector's own image builds from its
+# own folder and has no use for this file.
+.git
+.github
+.claude
+.devcontainer
+**/node_modules
+**/dist
+docs
+site
+tests
+test-results
+playwright-report
+**/.env
+**/.env.*
+**/*.tsbuildinfo
+**/.DS_Store
