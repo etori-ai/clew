@@ -10,8 +10,9 @@ import {
   reflowProblems,
   test,
 } from './support';
-import type { SiteHeaderView } from '@clew/contracts';
+import type { InstallationTheme, SiteHeaderView } from '@clew/contracts';
 import intranetMenu from '../../connectors/intranet/menu.json' with { type: 'json' };
+import { contrastRatio, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 
 /**
  * The shared header on the web app (D88, D130): the band with the installation's name, Clew's Start (D116; the server
@@ -48,22 +49,42 @@ test.describe('the shared header on every page', () => {
     api,
   }) => {
     api.header = { ...fromConnector(), logo: intranetMenu.logo };
-    api.appearance = {
-      ...api.appearance,
-      revision: 1,
-      theme: { name: null, colors: { 'background-inverted': ['#ffffff', '#000000'] } },
+    const theme: InstallationTheme = {
+      name: null,
+      colors: {
+        'background-inverted': ['#ffffff', '#000000'],
+        'on-light': ['#ffffff', '#ffffff'],
+        'on-dark': ['#000000', '#000000'],
+      },
     };
+    expect(parseThemeFile(themeFileOf(theme))).toEqual({ ok: true, theme });
+    api.appearance = { ...api.appearance, revision: 1, theme };
     await page.setViewportSize(desktop);
     await open(page, '/calendar');
     const logo = page.getByRole('banner').getByRole('img', { name: intranetMenu.logo.alt });
     await expect(logo).toHaveAttribute('src', intranetMenu.logo.src);
+    const contrastWithWhiteMark = async () => {
+      const pixel = await logo.evaluate(img => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        ctx.fillStyle = getComputedStyle(img).backgroundColor;
+        ctx.fillRect(0, 0, 1, 1);
+        return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+      });
+      const plate =
+        '#' +
+        pixel
+          .slice(0, 3)
+          .map(c => c.toString(16).padStart(2, '0'))
+          .join('');
+      return pixel[3] === 255 ? contrastRatio('#ffffff', plate) : 0;
+    };
     for (const colorScheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme });
-      await expect(logo).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+      await expect.poll(contrastWithWhiteMark).toBeGreaterThanOrEqual(4.5);
     }
     await page.setViewportSize(phone);
     await page.emulateMedia({ colorScheme: 'light', forcedColors: 'active' });
-    await expect(logo).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+    await expect.poll(contrastWithWhiteMark).toBeGreaterThanOrEqual(4.5);
   });
 
   test('the band holds the name, the connector logo, the places and the person; Clew’s own pages stand under the band', async ({
@@ -136,7 +157,7 @@ test.describe('the shared header on every page', () => {
     api.header = fromConnector();
     api.header.menu.site.href = '/intranat/organisation';
     await page.route('**/intranat/organisation', route =>
-      route.fulfill({ contentType: 'text/html', body: '<h1>Intranätets organisation</h1>' }),
+      route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<h1>Intranätets organisation</h1>' }),
     );
     await page.setViewportSize(desktop);
     await open(page, '/calendar');
@@ -144,6 +165,7 @@ test.describe('the shared header on every page', () => {
       .getByRole('banner')
       .getByRole('link', { name: /Intranätet/ })
       .click();
+    await expect(page).toHaveURL('/intranat/organisation');
     await expect(page.getByRole('heading', { name: 'Intranätets organisation' })).toBeVisible();
   });
 

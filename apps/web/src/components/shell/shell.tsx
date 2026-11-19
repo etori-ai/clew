@@ -13,12 +13,20 @@ import {
   VStack,
   signOut,
   useAppearance,
+  useMediaQuery,
   useToast,
   HStack,
 } from '@clew/ui';
 import type { HeaderLogo } from '@clew/ui/branding';
-import { createHeaderBandTheme } from '@clew/ui/theme';
-import { SiteHeader, SiteHeaderPerson, selectedItem, type SiteHeaderLogo, type SiteMenu } from '@clew/site-header';
+import { createHeaderBandTheme, logoPlate } from '@clew/ui/theme';
+import {
+  SiteHeader,
+  SiteHeaderPerson,
+  selectedItem,
+  useDarkSiteHeader,
+  type SiteHeaderLogo,
+  type SiteMenu,
+} from '@clew/site-header';
 import { useBranding } from '../../branding';
 import { headerQuery, threadsQuery } from '../../queries';
 import { useAnnounceSilentSources } from './silent-sources';
@@ -78,9 +86,11 @@ export function InstallationLogo({
   height?: number;
   decorative?: boolean;
 }) {
-  const { mode } = useAppearance();
+  const darkSurface = useDarkSiteHeader();
+  const forcedColors = useMediaQuery('(forced-colors: active)');
   const [failed, setFailed] = useState<string | null>(null);
-  const src = logo ? (mode === 'dark' && logo.darkSrc ? logo.darkSrc : logo.src) : undefined;
+  const darkArtworkGround = darkSurface && !!logo?.darkSrc;
+  const src = darkArtworkGround ? logo?.darkSrc : logo?.src;
   if (!logo || !src || src === failed) return undefined;
   return (
     // Its height is the row's measure and its width follows the mark, as the shared header draws it.
@@ -94,7 +104,8 @@ export function InstallationLogo({
         maxWidth: (160 / 28) * height,
         objectFit: 'contain',
         // A logo with no dark variant keeps its own light ground in the dark appearance (D39).
-        backgroundColor: mode === 'dark' && !logo.darkSrc ? 'var(--color-on-dark)' : undefined,
+        backgroundColor: logoPlate(darkArtworkGround, darkSurface, forcedColors),
+        forcedColorAdjust: 'none',
       }}
       onError={() => setFailed(src)}
     />

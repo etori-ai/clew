@@ -432,6 +432,12 @@ export function isDarkHeaderBand(band: DefinedTheme, mode: ThemeMode): boolean {
   return isThemeHex(ground) ? whiteReadsOn(ground) : mode === 'dark';
 }
 
+/** The artwork needs its original ground when the surface differs or forced colours replace it. */
+export function logoPlate(darkArtworkGround: boolean, darkSurface: boolean, forcedColors: boolean): string | undefined {
+  if (darkArtworkGround === darkSurface && !forcedColors) return undefined;
+  return darkArtworkGround ? neutral.light[0] : white;
+}
+
 /**
  * The theme inside Hem's ask pill (D130 item 14): the field in it has no edge or ground of its own, since the pill
  * around it is the field a person sees, and the pill shows its focus. Nested inside the page's theme, as the header's

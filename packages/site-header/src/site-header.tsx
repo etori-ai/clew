@@ -11,7 +11,7 @@ import { Badge } from '@astryxdesign/core/Badge';
 import { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
 import { useMediaQuery } from '@astryxdesign/core/hooks';
 import { DEFAULT_WIDTH_BREAKPOINTS, Theme, ThemeContext, type DefinedTheme } from '@astryxdesign/core/theme';
-import { isDarkHeaderBand } from '@clew/ui/theme';
+import { isDarkHeaderBand, logoPlate } from '@clew/ui/theme';
 import { selectedItem, type SiteMenu, type SiteMenuItem } from './menu';
 
 /**
@@ -211,7 +211,6 @@ export function SiteHeader({
   const forcedColors = useMediaQuery('(forced-colors: active)');
   const logoSrc = logo && darkBand ? (logo.darkSrc ?? logo.src) : logo?.src;
   const darkLogoGround = logo?.ground === 'dark' || (darkBand && !!logo?.darkSrc);
-  const logoPlate = darkLogoGround ? 'var(--color-on-light)' : 'var(--color-on-dark)';
   const heading = (
     <TopNavHeading
       heading={menu.site.name}
@@ -232,7 +231,7 @@ export function SiteHeader({
               maxWidth: 160,
               objectFit: 'contain',
               // Keep the mark's own ground when the band differs or the system chooses the colours (D39, D88).
-              backgroundColor: forcedColors || darkLogoGround !== darkBand ? logoPlate : undefined,
+              backgroundColor: logoPlate(darkLogoGround, darkBand, forcedColors),
               forcedColorAdjust: 'none',
             }}
             onError={() => setFailedLogo(logoSrc)}
