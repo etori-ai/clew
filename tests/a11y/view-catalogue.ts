@@ -7,27 +7,36 @@ import { manifest as phonebook } from '../../connectors/phonebook/connector.mjs'
 import { manifest as qlik } from '../../connectors/qlik/connector.mjs';
 import { createManifest as supportmanagement } from '../../connectors/supportmanagement/connector.mjs';
 
-type Manifest = { capabilities: Array<{ name: string; kind: string; title: string; view?: { kind: View['kind'] } }> };
+type Manifest = {
+  capabilities: Array<{ name: string; kind: string; title: string; model?: boolean; view?: { kind: View['kind'] } }>;
+};
+/** A manifest's reads as the registry lists them: one the manifest offers the model is the assistant's (`Registry.views`). */
 const reads = (m: Manifest): ViewEntry[] =>
   m.capabilities
     .filter(c => c.kind === 'read')
-    .map(c => ({ capability: c.name, title: c.title, ...(c.view ? { kind: c.view.kind } : {}) }));
+    .map(c => ({
+      capability: c.name,
+      title: c.title,
+      ...(c.view ? { kind: c.view.kind } : {}),
+      ...(c.model === true ? { assistant: true as const } : {}),
+    }));
 
 /**
  * Every read the signed-in person may open (D116), as `/api/areas` lists them under `views`: the development stack's
  * fixture connectors from their own manifests, and Clew's own reads with the kinds they declare. It decides whether a
  * view opened on a page leads to the view's own page (a table, a list) or lies beside the page; a test that takes a
- * read away from the person removes it here.
+ * read away from the person removes it here. `assistant` marks the reads of Clew's own that the assistant may make for
+ * the person (D130 rule 4): the pane beside a page that shows any other read says so; a test offers one with it.
  */
 export const fixtureViews = (): ViewEntry[] => [
   ...[hr, communication, incidents, finance, phonebook, qlik, supportmanagement()].flatMap(m =>
     reads(m as unknown as Manifest),
   ),
   { capability: 'clew.search', title: 'Källor' },
-  { capability: 'clew.errands', title: 'Mina ärenden', kind: 'list' },
-  { capability: 'clew.requests', title: 'Beställningar och felanmälningar', kind: 'list' },
+  { capability: 'clew.errands', title: 'Mina ärenden', kind: 'list', assistant: true },
+  { capability: 'clew.requests', title: 'Beställningar och felanmälningar', kind: 'list', assistant: true },
   { capability: 'servicedesk.request', title: 'Beställning', kind: 'detail' },
-  { capability: 'clew.news', title: 'Nyheter', kind: 'list' },
+  { capability: 'clew.news', title: 'Nyheter', kind: 'list', assistant: true },
   { capability: 'calendar.today', title: 'Dagens möten' },
   { capability: 'calendar.week', title: 'Hela veckan' },
   { capability: 'calendar.day', title: 'Dagen' },
@@ -42,6 +51,7 @@ export const fixtureViews = (): ViewEntry[] => [
     title: 'Krav som inte uppfylls',
     kind: 'table',
     page: '/competence/matrix?only=attention',
+    assistant: true,
   },
-  { capability: 'competence.holdings', title: 'Mina kompetenser', kind: 'list' },
+  { capability: 'competence.holdings', title: 'Mina kompetenser', kind: 'list', assistant: true },
 ];

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Chip, Thread } from '@clew/contracts';
-import { conversationFor, listSubject } from '../src/components/page-conversation';
+import { conversationFor, listSubject, pageSubject, sourceReads } from '../src/components/page-conversation';
 
 type Message = Thread['messages'][number];
 const asked = (chips: Chip[], id = 'q'): Message => ({
@@ -115,5 +115,179 @@ describe('a list’s subject in the words of the pane (D130 rules 4 and 10)', ()
       'Fråga om kompetenser för Anna Lindqvist',
     );
     expect(listSubject(read, 'IT-ärenden').placeholder).toBe('Fråga om IT-ärenden');
+  });
+});
+
+describe('a page’s subject goes with the reads the assistant may make, and says which it may not (D130 rule 4)', () => {
+  const views = [
+    { capability: 'people.reports', title: 'Mina medarbetare', assistant: true as const },
+    { capability: 'talks.talks', title: 'Utvecklingssamtal', assistant: true as const },
+    { capability: 'hr.presenceAll', title: 'Frånvaro' },
+    { capability: 'qlik.sickLeave', title: 'Sjukfrånvaro' },
+  ];
+  const still = 'Du kan ändå fråga om annat som du har tillgång till.';
+  test('every read the assistant may make is a capability chip, once, named by the page or by the read’s own title', () => {
+    const subject = pageSubject({
+      key: 'staff',
+      title: 'Medarbetare',
+      reads: [
+        { capability: 'people.reports', own: true, label: 'Medarbetare' },
+        { capability: 'talks.talks', source: 'Utvecklingssamtal', own: true },
+        { capability: 'talks.talks', source: 'Utvecklingssamtal', own: true },
+      ],
+      views,
+    })!;
+    expect(subject.chips).toEqual([
+      { ref: 'capability:people.reports', kind: 'capability', label: 'Medarbetare' },
+      { ref: 'capability:talks.talks', kind: 'capability', label: 'Utvecklingssamtal' },
+    ]);
+    expect(subject.closed).toBeUndefined();
+    expect(subject.key).toBe('staff');
+    expect(subject.search).toBe('');
+    expect(subject.about).toBe('Om Medarbetare');
+    expect(subject.placeholder).toBe('Fråga om medarbetare');
+    expect(subject.label).toBe('medarbetare');
+  });
+  test('a read of another system the assistant may not make is named by its system; the rest still go', () => {
+    const subject = pageSubject({
+      key: 'units',
+      title: 'Läget',
+      reads: [
+        { capability: 'talks.talks', source: 'Utvecklingssamtal', own: true },
+        { capability: 'qlik.sickLeave', source: 'Qlik' },
+        { capability: 'hr.presenceAll', source: 'Personalsystemet' },
+        { capability: 'qlik.sickLeave', source: 'Qlik' },
+      ],
+      views,
+    })!;
+    expect(subject.chips.map(c => c.ref)).toEqual(['capability:talks.talks']);
+    expect(subject.closed).toBe('Assistenten kan inte läsa det som Qlik och Personalsystemet visar här.');
+  });
+  test('a read the person may not call, absent from their reads, is closed as well; one of Clew’s own by its name', () => {
+    const subject = pageSubject({
+      key: 'staff',
+      title: 'Medarbetare',
+      reads: [
+        { capability: 'boarding.plans', own: true, label: 'Introduktion och avslut' },
+        { capability: 'talks.talks', source: 'Utvecklingssamtal', own: true },
+        { capability: 'hr.presenceAll', source: 'Personalsystemet' },
+      ],
+      views,
+    })!;
+    expect(subject.chips.map(c => c.ref)).toEqual(['capability:talks.talks']);
+    expect(subject.closed).toBe(
+      'Assistenten kan inte läsa introduktion och avslut och det som Personalsystemet visar här.',
+    );
+  });
+  test('where nothing can be read, the line says so and that the assistant still answers about the rest', () => {
+    // A lens of another system with no overview the assistant may make: named by its system.
+    const lens = pageSubject({
+      key: 'lens:hr.presence',
+      title: 'Frånvaro',
+      reads: [{ capability: null, source: 'Personalsystemet' }],
+      views,
+      search: '?lens=hr.presence',
+    })!;
+    expect(lens.chips).toEqual([]);
+    expect(lens.closed).toBe(`Assistenten kan inte läsa det som Personalsystemet visar här. ${still}`);
+    expect(lens.key).toBe('lens:hr.presence');
+    expect(lens.search).toBe('?lens=hr.presence');
+    // Clew's own among what is closed: what is shown, in general.
+    const own = pageSubject({
+      key: 'boarding',
+      title: 'Introduktion och avslut',
+      reads: [{ capability: 'boarding.plans', own: true, label: 'Introduktion och avslut' }],
+      views,
+    })!;
+    expect(own.chips).toEqual([]);
+    expect(own.closed).toBe(`Assistenten kan inte läsa det som visas här. ${still}`);
+  });
+  test('a page whose content is never the assistant’s says why, whatever its reads', () => {
+    const search = pageSubject({
+      key: 'competence:search',
+      title: 'Kompetenssökning',
+      reads: [{ capability: 'people.reports', own: true }],
+      views,
+      named: 'kompetenser',
+      never: 'search',
+    })!;
+    expect(search.chips).toEqual([]);
+    expect(search.closed).toBe(
+      `Assistenten läser aldrig din sökning eller det den hittar: sökningen görs bara av dig, här på sidan. ${still}`,
+    );
+    expect(search.about).toBe('Om Kompetenssökning');
+    expect(search.placeholder).toBe('Fråga om kompetenser');
+    expect(search.label).toBe('kompetenser');
+  });
+  test('the box asks about what the page names, and nothing is known before the person’s reads are', () => {
+    const queue = pageSubject({
+      key: 'todo:needs-you',
+      title: 'Att göra · Behöver dig',
+      reads: [{ capability: 'people.reports', own: true, label: 'Att göra' }],
+      views,
+      named: 'ärendena',
+    })!;
+    expect(queue.about).toBe('Om Att göra · Behöver dig');
+    expect(queue.placeholder).toBe('Fråga om ärendena');
+    expect(queue.chips).toEqual([{ ref: 'capability:people.reports', kind: 'capability', label: 'Att göra' }]);
+    expect(pageSubject({ key: 'tools', title: 'Alla verktyg', reads: [], views: undefined })).toBeNull();
+    // A page that shows no read yet (a register with nothing in it) says nothing about what is closed.
+    const empty = pageSubject({ key: 'units', title: 'Läget', reads: [], views })!;
+    expect(empty.chips).toEqual([]);
+    expect(empty.closed).toBeUndefined();
+  });
+});
+
+describe('a source about people or units is read through its overviews (D127, D130 rule 4)', () => {
+  test('each overview of the source’s connector is a read, named as the source', () => {
+    expect(
+      sourceReads({
+        capability: 'dialogue.unit',
+        source: 'Dialogstöd',
+        title: 'Uppföljningsdialog',
+        own: true,
+        overviews: ['dialogue.units'],
+      }),
+    ).toEqual([
+      {
+        capability: 'dialogue.units',
+        source: 'Dialogstöd',
+        own: true,
+        label: 'Uppföljningsdialog',
+        about: 'dialogue.unit',
+      },
+    ]);
+  });
+  test('a source with none is a read the assistant cannot make, which the pane names', () => {
+    const reads = sourceReads({ capability: 'qlik.unit', source: 'Qlik', title: 'Sjukfrånvaro' });
+    expect(reads).toEqual([
+      { capability: null, source: 'Qlik', own: false, label: 'Sjukfrånvaro', about: 'qlik.unit' },
+    ]);
+    expect(pageSubject({ key: 'units', title: 'Läget', reads, views: [] })!.closed).toBe(
+      'Assistenten kan inte läsa det som Qlik visar här. Du kan ändå fråga om annat som du har tillgång till.',
+    );
+  });
+  test('a source with no overview is not said closed while the assistant may make another read of its system', () => {
+    const reads = [
+      ...sourceReads({ capability: 'competence.unit', source: 'Clew', title: 'Kompetens', own: true }),
+      ...sourceReads({ capability: 'qlik.unit', source: 'Qlik', title: 'Sjukfrånvaro' }),
+    ];
+    const views = [
+      { capability: 'competence.coverage', title: 'Kompetenstäckning', assistant: true as const },
+      { capability: 'qlik.unit', title: 'Sjukfrånvaro' },
+    ];
+    const subject = pageSubject({ key: 'units', title: 'Läget', reads, views })!;
+    // No chip for it: the model picks the system's tool itself. Only the system with no read for the assistant is named.
+    expect(subject.chips).toEqual([]);
+    expect(subject.closed).toBe(
+      'Assistenten kan inte läsa det som Qlik visar här. Du kan ändå fråga om annat som du har tillgång till.',
+    );
+  });
+  test('a read Clew joins across systems says nothing about another: its source is closed without an overview', () => {
+    const reads = sourceReads({ capability: 'clew.talkUnits', source: 'Clew', title: 'Utvecklingssamtal', own: true });
+    const views = [{ capability: 'clew.news', title: 'Nyheter', assistant: true as const }];
+    expect(pageSubject({ key: 'units', title: 'Läget', reads, views })!.closed).toBe(
+      'Assistenten kan inte läsa det som visas här. Du kan ändå fråga om annat som du har tillgång till.',
+    );
   });
 });

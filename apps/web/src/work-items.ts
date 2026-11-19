@@ -17,6 +17,7 @@ import { executionKind } from './execution-status';
 import { DOT } from './dot';
 import { settlingUntil } from './mutations';
 import { wayBack } from './person-address';
+import { ASK_PARAM } from './panel-address';
 
 /**
  * Att göra (D112 item 3): the queue's piles, named as the address names them (D43). Behöver dig is the first and is
@@ -44,7 +45,11 @@ export interface TodoState {
   item?: string | null;
 }
 const TODO_KEYS: Record<keyof TodoState, string> = { tab: 'tab', area: 'area', filter: 'filter', item: 'item' };
-/** `/todo` with `next` applied over `search`; whatever else the address holds (a review over the page) is kept. */
+/**
+ * `/todo` with `next` applied over `search`; whatever else the address holds (a review over the page) is kept. An item
+ * opened in the reading pane takes the end slot from the assistant's pane (D130 rule 5), so the address lets go of it
+ * (`ask`): closing the item leaves the queue as it was before the pane was opened.
+ */
 export function todoHref(next: TodoState, search: URLSearchParams | string = ''): string {
   const q = new URLSearchParams(search);
   for (const key of Object.keys(next) as (keyof TodoState)[]) {
@@ -53,6 +58,7 @@ export function todoHref(next: TodoState, search: URLSearchParams | string = '')
     if (value === null || value === '' || (key === 'tab' && value === 'needs-you')) q.delete(TODO_KEYS[key]);
     else q.set(TODO_KEYS[key], value);
   }
+  if (next.item) q.delete(ASK_PARAM);
   const s = q.toString();
   return s ? `/todo?${s}` : '/todo';
 }

@@ -42,3 +42,12 @@ export function useColumnQuery(query: string): boolean {
   const { paneWidth } = useContext(PageFrameContext);
   return useMediaQuery(shiftQuery(query, paneWidth));
 }
+
+/**
+ * `useColumnQuery` for a page whose own component draws its frame, and so stands outside it: the part inside the frame
+ * that follows the column is drawn by `children`, told whether the query holds there (D130 rule 11). It draws nothing of
+ * its own.
+ */
+export function InColumn({ query, children }: { query: string; children: (matches: boolean) => ReactNode }): ReactNode {
+  return children(useColumnQuery(query));
+}

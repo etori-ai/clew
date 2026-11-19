@@ -67,6 +67,7 @@ import {
 } from '../competence-address';
 import { useHeldRelations } from '../capabilities';
 import {
+  areasQuery,
   competenceMatrixQuery,
   competenceSearchOptionsQuery,
   competenceSearchQuery,
@@ -79,6 +80,8 @@ import { levelLabel } from '../components/register-holding';
 import { personPageFrom } from '../person-address';
 import { CompetenceHeader, managesFrom, untilWords } from './competence-parts';
 import { COMPETENCE_TAB, PersonalFrame } from './staff-parts';
+import { pageSubject } from '../components/page-conversation';
+import { InColumn } from '../components/page-frame-context';
 
 /** The rail's width and the tab's gutters, which the result's least width does not count. */
 const SIDE_NAV = 260;
@@ -222,7 +225,9 @@ function HoldingsLink({ row, from }: { row: CompetenceSearchRow; from: string })
  * headers Astryx's sortable ones, its count a status that is read out when it changes; the file holds what the screen
  * shows, every page of it. Every search, every person opened and every file is logged on the server (D121 item 5), a
  * search read once per address while the page is mounted, and the page says so. A Table where it fits, its rows as a
- * list on a phone and where the columns do not fit, with "Sortera" in place of the headers. Anyone
+ * list on a phone and where the columns do not fit the page's column (narrower while the assistant's pane stands beside
+ * it, D130 rule 11), with "Sortera" in place of the headers. The pane beside the search says before anything is asked
+ * that the assistant reads none of it (D122 item 5). Anyone
  * without the relation, or with the module off for them, is refused by the server, the page says why, and nothing is
  * searched or logged.
  */
@@ -234,6 +239,7 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
   const location = useLocation();
   const searcher = useHeldRelations().includes('registrar');
   const options = useQuery(competenceSearchOptionsQuery);
+  const views = useQuery(areasQuery).data?.views;
   const off = options.isError && refused(options.error);
   // The matrix's tab follows the server's answer to its read, and the session's role until it answers, as on the
   // place's other pages (D99).
@@ -504,12 +510,22 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
       renderCell: r => <HoldingsLink row={r.row} from={from} />,
     },
   ];
-  // The rows are a table where its columns fit beside the rail, else a list.
+  // The rows are a table where its columns fit in the column beside the rail, else a list: while the assistant's pane
+  // stands beside the page the column is that much narrower (D130 rule 11). The page draws its frame, so the parts that
+  // follow the column read it inside the frame (`InColumn`).
   const { tableMinWidth } = resolveColumnWidths(
     columns.map(c => ({ key: c.key, ...(c.width ? { width: c.width } : {}) })),
   );
-  const fits = useMediaQuery(`(min-width: ${SIDE_NAV + tableMinWidth + 2 * PADDING}px)`);
-  const narrow = mobile || !fits;
+  const tableQuery = `(min-width: ${SIDE_NAV + tableMinWidth + 2 * PADDING}px)`;
+  // The assistant beside the search reads none of it (D122 item 5): the pane says so before anything is asked (D130).
+  const subject = pageSubject({
+    key: 'competence:search',
+    title: 'Kompetenssökning',
+    reads: [],
+    views,
+    named: 'kompetenser',
+    never: 'search',
+  });
   const unreadable =
     asked.unreadable === 'types'
       ? `Adressen anger fler än ${COMPETENCE_SEARCH_TYPES_MAX} kompetenser, och en sökning gäller högst ${COMPETENCE_SEARCH_TYPES_MAX}.`
@@ -520,7 +536,7 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
           : null;
 
   return (
-    <PersonalFrame user={user} admin={admin} tab={COMPETENCE_TAB} label="Kompetenssökning">
+    <PersonalFrame user={user} admin={admin} tab={COMPETENCE_TAB} subject={subject} label="Kompetenssökning">
       <VStack gap={5} width="100%">
         <CompetenceHeader
           title="Kompetenssökning"
@@ -670,21 +686,27 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
                     öppnas från en länk eller laddas om.
                   </Text>
                   <HStack gap={2} wrap="wrap" vAlign="center">
-                    {data && data.total > 1 && (narrow || several) && (
-                      <Selector
-                        label="Sortera"
-                        isLabelHidden
-                        size="sm"
-                        presentation="adaptive"
-                        options={sortable}
-                        value={sortable.some(o => o.value === order) ? order : 'name:asc'}
-                        onChange={(value: string) => {
-                          const [sort, by] = value.split(':') as [CompetenceSearchSort, CompetenceSearchOrder];
-                          show({ sort, order: by });
-                        }}
-                        renderValue={o => `Sortera: ${o.label}`}
-                      />
-                    )}
+                    <InColumn query={tableQuery}>
+                      {fits =>
+                        data &&
+                        data.total > 1 &&
+                        (mobile || !fits || several) && (
+                          <Selector
+                            label="Sortera"
+                            isLabelHidden
+                            size="sm"
+                            presentation="adaptive"
+                            options={sortable}
+                            value={sortable.some(o => o.value === order) ? order : 'name:asc'}
+                            onChange={(value: string) => {
+                              const [sort, by] = value.split(':') as [CompetenceSearchSort, CompetenceSearchOrder];
+                              show({ sort, order: by });
+                            }}
+                            renderValue={o => `Sortera: ${o.label}`}
+                          />
+                        )
+                      }
+                    </InColumn>
                     {narrowed && <Button size="sm" variant="ghost" label="Rensa filter" onClick={clear} />}
                     {data && data.total > 0 && (
                       <Button
@@ -776,57 +798,61 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
               />
             ) : (
               <VStack gap={0} aria-busy={result.isPlaceholderData}>
-                {narrow ? (
-                  <List aria-label={`Personer med ${names}`} hasDividers>
-                    {rows.map(row => (
-                      <ListItem
-                        key={row.personId}
-                        label={<PersonName row={row} href={personOf(row)} />}
-                        endContent={<HoldingsLink row={row} from={from} />}
-                        description={
-                          <VStack gap={1} hAlign="start">
-                            <Text type="supporting">{unitsOf(row)}</Text>
-                            {several || !one ? (
-                              shown.map((t, i) => (
-                                <HStack key={t.id} gap={2} vAlign="center" wrap="wrap">
-                                  <Text type="supporting">{`${t.name}:`}</Text>
-                                  {row.held[i] &&
-                                    (isSkill(t) ? (
-                                      <Level held={row.held[i]} />
-                                    ) : (
-                                      <>
-                                        <Status held={row.held[i]} />
-                                        <Text type="supporting">{until(row.held[i])}</Text>
-                                      </>
-                                    ))}
-                                </HStack>
-                              ))
-                            ) : row.held[0] ? (
-                              <>
-                                <HStack gap={2} vAlign="center" wrap="wrap">
-                                  <Status held={row.held[0]} />
-                                  <Level held={row.held[0]} />
-                                </HStack>
-                                <Text type="supporting">{`Giltigt till: ${until(row.held[0])}`}</Text>
-                              </>
-                            ) : null}
-                          </VStack>
-                        }
+                <InColumn query={tableQuery}>
+                  {fits =>
+                    mobile || !fits ? (
+                      <List aria-label={`Personer med ${names}`} hasDividers>
+                        {rows.map(row => (
+                          <ListItem
+                            key={row.personId}
+                            label={<PersonName row={row} href={personOf(row)} />}
+                            endContent={<HoldingsLink row={row} from={from} />}
+                            description={
+                              <VStack gap={1} hAlign="start">
+                                <Text type="supporting">{unitsOf(row)}</Text>
+                                {several || !one ? (
+                                  shown.map((t, i) => (
+                                    <HStack key={t.id} gap={2} vAlign="center" wrap="wrap">
+                                      <Text type="supporting">{`${t.name}:`}</Text>
+                                      {row.held[i] &&
+                                        (isSkill(t) ? (
+                                          <Level held={row.held[i]} />
+                                        ) : (
+                                          <>
+                                            <Status held={row.held[i]} />
+                                            <Text type="supporting">{until(row.held[i])}</Text>
+                                          </>
+                                        ))}
+                                    </HStack>
+                                  ))
+                                ) : row.held[0] ? (
+                                  <>
+                                    <HStack gap={2} vAlign="center" wrap="wrap">
+                                      <Status held={row.held[0]} />
+                                      <Level held={row.held[0]} />
+                                    </HStack>
+                                    <Text type="supporting">{`Giltigt till: ${until(row.held[0])}`}</Text>
+                                  </>
+                                ) : null}
+                              </VStack>
+                            }
+                          />
+                        ))}
+                      </List>
+                    ) : (
+                      <Table<Row>
+                        data={rows.map(row => ({ id: row.personId, row }))}
+                        idKey="id"
+                        columns={columns}
+                        plugins={{ sort: sortPlugin }}
+                        density="balanced"
+                        hasHover
+                        rowIndexStart={(data.page - 1) * data.pageSize + 1}
+                        rowCount={data.total}
                       />
-                    ))}
-                  </List>
-                ) : (
-                  <Table<Row>
-                    data={rows.map(row => ({ id: row.personId, row }))}
-                    idKey="id"
-                    columns={columns}
-                    plugins={{ sort: sortPlugin }}
-                    density="balanced"
-                    hasHover
-                    rowIndexStart={(data.page - 1) * data.pageSize + 1}
-                    rowCount={data.total}
-                  />
-                )}
+                    )
+                  }
+                </InColumn>
               </VStack>
             )}
             {data && data.total > COMPETENCE_SEARCH_PAGE_SIZES[0] && (

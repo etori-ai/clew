@@ -155,6 +155,14 @@ export class Units {
   cards: EntityCard[] = [];
   /** Whether the school has the fritidshem under it in the reader's reporting line (D117); none unless a test says so. */
   withBelow = false;
+  /**
+   * The reads of a source's connector that answer its rows without keys (`EntitySource.overviews`, D127), by the
+   * source's capability: what the assistant beside Läget reads a column through (D130 rule 4). None unless a test says.
+   */
+  overviews: Record<string, string[]> = {};
+  private sources(sections: EntitySource[]): EntitySource[] {
+    return sections.map(s => (this.overviews[s.capability] ? { ...s, overviews: this.overviews[s.capability] } : s));
+  }
   detail(id: string): EntityDetail | undefined {
     if (id === ENTITY_UNIT.id)
       return {
@@ -168,7 +176,7 @@ export class Units {
         relation: 'member',
         ...(this.withBelow ? { below: [{ key: BELOW_UNIT.id, name: BELOW_UNIT.label }] } : {}),
         actions: this.actions,
-        sections: [sickSource, talkUnitSource],
+        sections: this.sources([sickSource, talkUnitSource]),
         cards: this.cards,
       };
     if (this.withBelow && id === BELOW_UNIT.id)
@@ -183,7 +191,7 @@ export class Units {
         relation: 'below',
         above: { key: ENTITY_UNIT.id, name: ENTITY_UNIT.label },
         actions: [],
-        sections: [sickSource, talkUnitSource],
+        sections: this.sources([sickSource, talkUnitSource]),
         cards: [],
       };
     if (id === MEMBER_UNIT.id)
@@ -198,7 +206,7 @@ export class Units {
         relation: 'member',
         actions: [],
         // A source about a unit that has no row for this one says nothing; the page then has nothing more to show.
-        sections: [talkUnitSource],
+        sections: this.sources([talkUnitSource]),
         cards: [],
       };
     return undefined;

@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { Chip, ConversationResponse, Prepared, Thread, ThreadMessage, ViewRef } from '@clew/contracts';
+import type { Chip, ConversationResponse, Prepared, Thread, ThreadMessage, ViewEntry, ViewRef } from '@clew/contracts';
 import { ChatLayout, HStack, Link, StackItem, Text, VStack } from '@clew/ui';
 import { areasQuery, threadsQuery } from '../queries';
 import { declaredPage, viewPageHref } from '../view-address';
@@ -10,6 +10,7 @@ import { Transcript } from './conversation';
 import {
   ConversationContext,
   INERT_CONVERSATION,
+  type ChipRef,
   type ConversationState,
   type ThingSubject,
 } from './conversation-context';
@@ -64,8 +65,138 @@ export function conversationFor(
  * as written ("Kompetenser för Anna Lindqvist").
  */
 export function listSubject(read: ThingSubject, title: string): PageSubject {
-  const named = /^\p{Lu}\p{Lu}/u.test(title) ? title : title.charAt(0).toLocaleLowerCase('sv-SE') + title.slice(1);
+  const named = lowered(title);
   return { ...read, label: named, about: `Om ${title}`, placeholder: `Fråga om ${named}` };
+}
+/** A title as words in a sentence: its first letter lowered, unless the word is written in capitals ("IT-ärenden"). */
+const lowered = (title: string) =>
+  /^\p{Lu}\p{Lu}/u.test(title) ? title : title.charAt(0).toLocaleLowerCase('sv-SE') + title.slice(1);
+
+/** One read a page shows (D130 rule 4), as `pageSubject` is given it. */
+export interface PageRead {
+  /**
+   * The read the assistant would make to read what the page shows: a list's own read, or the overview that answers a
+   * lens's rows without keys (D127). Null where there is none it could make (a lens of another system with no overview).
+   */
+  capability: string | null;
+  /** The system the read is from, by its Swedish name (`EntitySource.source`); absent for Clew's own domain. */
+  source?: string | undefined;
+  /** Clew's own domain (`EntitySource.own`): never named by a system in the line that says what is closed. */
+  own?: boolean | undefined;
+  /** The chip's words; the read's own title (`ViewEntry.title`) when absent. */
+  label?: string | undefined;
+  /**
+   * The source's own read about a person or a unit (`EntitySource.capability`), which takes keys and is never a tool.
+   * Where the assistant has no overview of it but may make another read of the same system (a capability is named
+   * `<connector>.<verb>`), the page does not say the system is closed: the assistant can read from it, with a tool the
+   * model picks itself (`competence.coverage` for a unit's competence, which takes the unit and so is no overview).
+   */
+  about?: string | undefined;
+}
+/**
+ * What a source about a person or a unit shows, as the reads the assistant could make for it (D130 rule 4): a source's
+ * own read takes keys and is never a tool, so the assistant reads its rows through the overviews of the same connector
+ * that answer them without keys (`EntitySource.overviews`, D127). A source with none is a read it cannot make, named by
+ * its system, or by its title for Clew's own.
+ */
+export function sourceReads(source: {
+  capability: string;
+  source: string;
+  title: string;
+  own?: true | undefined;
+  overviews?: readonly string[] | undefined;
+}): PageRead[] {
+  const of = { source: source.source, own: !!source.own, label: source.title, about: source.capability };
+  return source.overviews?.length
+    ? source.overviews.map(capability => ({ capability, ...of }))
+    : [{ capability: null, ...of }];
+}
+/** The prefix of the reads Clew joins across systems (`clew.errands`, `clew.news`): a profile, not a system. */
+const JOINED = 'clew.';
+/** Where the assistant may make no read on a page at all, said once (D122 item 5: the competence search). */
+export type NeverRead = 'search';
+const conjunction = new Intl.ListFormat('sv-SE', { type: 'conjunction' });
+/** Said under the pane's heading wherever nothing on the page can be read: the pane still answers. */
+const STILL = 'Du kan ändå fråga om annat som du har tillgång till.';
+const NEVER: Record<NeverRead, string> = {
+  search: 'Assistenten läser aldrig din sökning eller det den hittar: sökningen görs bara av dig, här på sidan.',
+};
+
+/**
+ * A page's subject (D130 rules 1 and 4), from its key, its title, the reads it shows and the person's reads (`views`
+ * of `/api/areas`): a read the assistant may make for the person (`ViewEntry.assistant`) goes with every question as a
+ * capability chip, so the server can tell the model which tool reads the open list; any other read, one the person may
+ * not call (absent from `views`) among them, is closed, and the pane says so under its heading before anything is
+ * asked. A source about a person or a unit with no overview the assistant may make is closed only when the assistant may
+ * make no read of that system at all (`PageRead.about`). A closed read of another system is named by its system ("Assistenten kan inte läsa det som Qlik visar här."),
+ * one of Clew's own by its name; where nothing on the page can be read, the line says so in general and that the
+ * assistant still answers about the rest (`STILL`). `never` is a page whose content is never the assistant's to read,
+ * with the reason in words. The words of the pane are `listSubject`'s, from the title, or `named` where the box asks
+ * about something other than the title says ("Fråga om ärendena" on Att göra). Null until the person's reads are known.
+ */
+export function pageSubject(page: {
+  key: string;
+  title: string;
+  reads: readonly PageRead[];
+  views: readonly Pick<ViewEntry, 'capability' | 'title' | 'assistant'>[] | undefined;
+  /** The conversation's page's address part (`ThingSubject.search`): a lens beside the conversation (`?lens=`). */
+  search?: string | undefined;
+  /** What the box asks about, where it is not the title in lower case. */
+  named?: string | undefined;
+  never?: NeverRead | undefined;
+}): PageSubject | null {
+  const { key, title, reads, views, search = '', named, never } = page;
+  if (!views) return null;
+  const offered = (capability: string | null) =>
+    capability ? views.find(v => v.capability === capability && v.assistant === true) : undefined;
+  // Another read of the same system that the assistant may make: the system is then not closed to it. Clew's joined
+  // reads (`clew.<profile>`) are no one system, so one of them says nothing about another.
+  const reaches = (about: string | undefined) => {
+    const system = about?.includes('.') ? about.slice(0, about.indexOf('.') + 1) : null;
+    return !!system && system !== JOINED && views.some(v => v.assistant === true && v.capability.startsWith(system));
+  };
+  const chips: ChipRef[] = [];
+  const closed: PageRead[] = [];
+  for (const read of never ? [] : reads) {
+    const view = offered(read.capability);
+    if (!view) {
+      if (!reaches(read.about)) closed.push(read);
+    } else if (!chips.some(c => c.ref === `capability:${view.capability}`))
+      chips.push({ ref: `capability:${view.capability}`, kind: 'capability', label: read.label ?? view.title });
+  }
+  const subject = listSubject({ key, label: title, chips, search }, title);
+  const words = named ?? subject.label;
+  const unique = (names: (string | undefined)[]) => [...new Set(names.filter((n): n is string => !!n))];
+  const systems = unique(closed.filter(r => !r.own && r.source).map(r => r.source));
+  // Nothing the page shows can be read; a page that shows no read (an empty register) has nothing to say about it.
+  const nothing = chips.length === 0 && closed.length > 0;
+  let line: string | undefined;
+  if (never) line = `${NEVER[never]} ${STILL}`;
+  else if (nothing)
+    line =
+      // Only other systems are closed: they are named. Anything of Clew's own among them: what is shown, in general.
+      systems.length && closed.every(r => !r.own && r.source)
+        ? `Assistenten kan inte läsa det som ${conjunction.format(systems)} visar här. ${STILL}`
+        : `Assistenten kan inte läsa det som visas här. ${STILL}`;
+  else if (closed.length) {
+    const nameOf = (r: PageRead) => r.label ?? views.find(v => v.capability === r.capability)?.title;
+    const own = closed.filter(r => r.own || !r.source).map(nameOf);
+    const parts = [
+      ...unique(own.map(n => n && lowered(n))),
+      ...(systems.length ? [`det som ${conjunction.format(systems)} visar`] : []),
+    ];
+    // A read of Clew's own with no name to say it by: the line still says that not all of the page can be read.
+    line =
+      parts.length && own.every(Boolean)
+        ? `Assistenten kan inte läsa ${conjunction.format(parts)} här.`
+        : 'Assistenten kan inte läsa allt som visas här.';
+  }
+  return {
+    ...subject,
+    label: words,
+    placeholder: `Fråga om ${words}`,
+    ...(line ? { closed: line } : {}),
+  };
 }
 
 /** The conversation beside a page: what it is about, and the conversation's state as the pane's parts read it. */

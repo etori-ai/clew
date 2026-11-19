@@ -70,13 +70,13 @@ export function WayBack({ back }: { back: WayBackTarget }) {
 /**
  * Whether and about what a page has "Fråga assistenten" (D130 rule 1): every page says, so leaving it out is a type error
  * and no page can forget the assistant. `subject` is what the page shows (null until the page knows it, while its data
- * loads); `none` is a page with no button and why (Administration, where nothing is a read the assistant may make; the
- * assistant's own pages, Hem, Ny fråga and a conversation; a frame that is no page of the person's work, the first
- * load's or a missing calendar's); `later` is a page that still draws its own way to ask until its stage of the plan
- * moves it into the frame (registers and Läget, things' pages, Att göra), and goes when the last one has moved.
+ * loads, and while a pane of the page's own holds the end slot: Att göra's item); `none` is a page with no button and
+ * why (Administration, where nothing is a read the assistant may make; the assistant's own pages, Hem, Ny fråga and a
+ * conversation; a frame that is no page of the person's work, the first load's or a missing calendar's); `later` is a
+ * thing's page, which still draws its own way to ask until its stage of the plan (stage 3) moves it into the frame, and
+ * goes when it has moved. The registers, Läget and Att göra's queue are in the frame since stage 2.
  */
-export type PageAsk =
-  AskAbout | { none: 'administration' | 'assistant' | 'no-page' } | { later: 'registers' | 'things' | 'todo' };
+export type PageAsk = AskAbout | { none: 'administration' | 'assistant' | 'no-page' } | { later: 'things' };
 /** A page with the frame's button and pane (D130 rules 1 to 4). */
 export interface AskAbout {
   subject: PageSubject | null;

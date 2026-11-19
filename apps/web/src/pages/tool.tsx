@@ -17,7 +17,7 @@ import { PanelBody, answersWithRowsOf } from '../components/panel';
 import { useView, viewSubject } from '../components/view-read';
 import { AskClew } from '../components/thing-panel';
 import { PageFrame, WayBack } from '../components/page-frame';
-import { listSubject } from '../components/page-conversation';
+import { pageSubject } from '../components/page-conversation';
 import { PageHeader } from '../components/page-header';
 import { ContentArrival, ContentSkeleton } from '../components/loading';
 
@@ -259,7 +259,21 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   // assistant beside it is about (D130 rule 4), and the frame's "Fråga assistenten" ends that title line.
   return (
     <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <PageFrame ask={{ subject: read && listSubject(read, title) }} label={title || 'Vyn'}>
+      <PageFrame
+        ask={{
+          // The list's own read: a chip when the assistant may make it for the person, and otherwise the pane says under
+          // its heading that it cannot read what the system shows here (D130 rule 4, `ViewEntry.assistant`).
+          subject:
+            read &&
+            pageSubject({
+              key: read.key,
+              title,
+              reads: [{ capability, label: title, ...(tool?.source ? { source: tool.source } : {}) }],
+              views,
+            }),
+        }}
+        label={title || 'Vyn'}
+      >
         <VStack gap={4}>
           {missing ? (
             <EmptyState

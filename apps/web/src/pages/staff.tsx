@@ -3,17 +3,17 @@ import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from '
 import { useQueries, useQuery } from '@tanstack/react-query';
 import type { EntityList, SessionUser } from '@clew/contracts';
 import { Button, EmptyState, HStack, Text, TextInput, VStack, useAnimatedLayout, useMediaQuery } from '@clew/ui';
-import { entityListQuery, entityRowsQuery } from '../queries';
+import { areasQuery, entityListQuery, entityRowsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { mobileQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { RegisterHolding } from '../components/register-holding';
-import { AskClew } from '../components/thing-panel';
+import { pageSubject, sourceReads } from '../components/page-conversation';
 import { useEntityAction } from '../entity-actions';
 import { fromCardsBeside, fromPersonBeside, insideClew, overlayRedirect, sourceTab } from '../person-address';
 import { peopleReadHref } from '../view-address';
-import { answerOf, silentOf, sourcesRead, valueCounts, type Answer } from './staff-model';
+import { answerOf, silentOf, sourcesRead, staffReads, valueCounts, type Answer } from './staff-model';
 import {
   ALL_TAB,
   AllUnit,
@@ -177,17 +177,25 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
         .filter(Boolean)
         .join(' · ')
     : '';
-  // "Fråga assistenten" on a lens's tab (D126 rule 5): a conversation about the people under that lens (`?lens=`).
-  const ask = lens ? (
-    <AskClew
-      subject={{
+  // What the assistant beside the tab is about (D130 rule 4): under a lens its source, read through its overviews, with
+  // the lens beside the conversation it opens as (`?lens=`); on Medarbetare the people and the columns' sources.
+  const views = useQuery(areasQuery).data?.views;
+  const subject = lens
+    ? pageSubject({
         key: `lens:${lens.capability}`,
-        label: lens.title.toLocaleLowerCase('sv-SE'),
-        chips: [],
+        title: lens.title,
+        reads: sourceReads(lens),
+        views,
         search: `?lens=${encodeURIComponent(lens.capability)}`,
-      }}
-    />
-  ) : null;
+      })
+    : list || listQ.isError
+      ? pageSubject({
+          key: 'staff',
+          title: 'Medarbetare',
+          reads: staffReads(list ?? { columns: [], lenses: [] }),
+          views,
+        })
+      : null;
   const searchField =
     list && list.groups.some(g => g.entities.length > 0) ? (
       <TextInput
@@ -208,12 +216,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
       user={user}
       admin={admin}
       tab={lens?.capability ?? ALL_TAB}
-      end={
-        <>
-          {searchField}
-          {ask}
-        </>
-      }
+      subject={subject}
+      end={searchField}
       badges={badges}
       label={lens ? lens.title : 'Medarbetare'}
     >

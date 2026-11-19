@@ -106,7 +106,7 @@ function talkSystem(id: string, source: string, answers: Answers): Connector {
     // The profile's input (D96 item 8): `person` is a plain string, so Clew can resolve it (D117).
     input: (name.endsWith('.commitments') ? CommitmentsInputSchema : {}) as never,
     output: {} as never,
-    // Even a source that asks to be a tool is not one (D96 item 6).
+    // Even a source that asks to be a tool is not one (D96 item 6), but for the built-in module's round (D122 item 3).
     model: true,
     scope,
     run: async (_actor: Actor, input: unknown) => {
@@ -580,15 +580,17 @@ describe('clew.talks and clew.commitments', () => {
     expect(refused).toContain('reviews:talks');
   });
 
-  test('neither composite nor any source of the profile is a model tool', () => {
+  test('neither composite nor any source of the profile but the built-in round is a model tool', () => {
     const { registry } = world([
       talkSystem(TALKS_CONNECTOR, 'Clew', {}),
       talkSystem('appraisals', 'Samtalssystemet', {}),
     ]);
     for (const actor of [hillevi, mikael]) {
       const names = registry.tools(actor).map(t => t.name);
-      for (const name of ['clew.talks', 'clew.commitments', 'talks.talks', 'talks.commitments', 'appraisals.talks'])
+      for (const name of ['clew.talks', 'clew.commitments', 'talks.commitments', 'appraisals.talks'])
         expect(names).not.toContain(name);
     }
+    // The built-in module's round is opened (D122 item 3, D130 rule 4), for whoever may read it.
+    expect(registry.tools(hillevi).map(t => t.name)).toContain('talks.talks');
   });
 });

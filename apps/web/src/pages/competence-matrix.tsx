@@ -66,13 +66,20 @@ import {
 import { useAdminAction } from '../mutations';
 import { usePageTitle } from '../page-title';
 import { personPageFrom } from '../person-address';
-import { competenceApprovalQuery, competenceMatrixQuery, competenceSkillQuery, competenceTypesQuery } from '../queries';
+import {
+  areasQuery,
+  competenceApprovalQuery,
+  competenceMatrixQuery,
+  competenceSkillQuery,
+  competenceTypesQuery,
+} from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage, refused } from '../query-policy';
 import { registerHref } from '../register-address';
 import { useHeldRelations } from '../capabilities';
 import { mobileQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
+import { pageSubject } from '../components/page-conversation';
 import { DialogFrame } from '../components/dialog-frame';
 import { LevelField, RegisterHolding, levelLabel } from '../components/register-holding';
 import {
@@ -97,6 +104,15 @@ import { COMPETENCE_TAB, PersonalFrame } from './staff-parts';
 const TITLE_ID = 'matris-rubrik';
 /** The table's name: what it holds, as the view's heading says it. */
 const TABLE_NAME = 'Medarbetarnas kompetens';
+/**
+ * What the matrix shows, as the reads the assistant could make for it (D130 rule 4): what is required and not met,
+ * what the reports hold, and how the units are covered.
+ */
+const MATRIX_READS = [
+  { capability: 'competence.attention', own: true, label: 'Krav som inte uppfylls' },
+  { capability: 'competence.holdings', own: true, label: 'Kompetenser' },
+  { capability: 'competence.coverage', own: true, label: 'Kompetenstäckning' },
+];
 const cellKey = (personId: string, typeId: string) => personId + '\n' + typeId;
 /** The key of a registration's own way in, its name, in the list of what waits, among the page's controls. */
 const awaitingKey = (holdingId: string) => 'awaiting\n' + holdingId;
@@ -740,6 +756,9 @@ function SkillDialog({
 export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   usePageTitle('Kompetens · Personal');
   const mobile = useMediaQuery(mobileQuery);
+  const views = useQuery(areasQuery).data?.views;
+  // The assistant beside the matrix (D130 rule 4) reads it through the competence reads it may make for the reader.
+  const subject = pageSubject({ key: 'competence:matrix', title: TABLE_NAME, reads: MATRIX_READS, views });
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const client = useQueryClient();
@@ -975,7 +994,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     ) : undefined;
 
   return (
-    <PersonalFrame user={user} admin={admin} tab={COMPETENCE_TAB} label={TABLE_NAME}>
+    <PersonalFrame user={user} admin={admin} tab={COMPETENCE_TAB} subject={subject} label={TABLE_NAME}>
       <VStack gap={5} width="100%">
         <CompetenceHeader
           title={COMPETENCE_PAGE_TITLES.matrix}

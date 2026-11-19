@@ -74,6 +74,32 @@ export function dialogueUsecases(deps: DialogueDeps) {
     if (!unit) throw new ForbiddenError(NOT_FOLLOWED);
     return unit;
   }
+  /**
+   * These units' dialogue in short, one row per key in the order given: the assessed areas that need action or watching
+   * and the open and overdue activities. The caller passes only units the persona follows up.
+   */
+  async function standings(persona: AuthenticatedContext, wanted: readonly string[]): Promise<UnitStanding[]> {
+    if (!wanted.length) return [];
+    const today = stockholmDate(now().toISOString());
+    return deps.store.transaction(async tx => {
+      const areas = await tx.areas(persona.organisationId),
+        assessments = await tx.assessments(persona.organisationId, wanted),
+        activities = await tx.activities(persona.organisationId, wanted);
+      const configured = new Set(areas.map(a => a.key));
+      return wanted.map(key => {
+        const own = activities.filter(a => a.unitId === key && a.doneAt === null && configured.has(a.areaKey));
+        const tones = areas.map(area => ({ title: area.title, tone: areaTone(area, key, assessments) }));
+        return {
+          key,
+          alert: tones.filter(t => t.tone === 'alert').map(t => t.title),
+          warn: tones.filter(t => t.tone === 'warn').map(t => t.title),
+          assessed: tones.some(t => t.tone !== undefined),
+          open: own.length,
+          overdue: own.filter(a => isOverdue(a, today)).length,
+        };
+      });
+    });
+  }
   async function areaOf(tx: DialogueTx, organisationId: string, key: string) {
     const area = (await tx.areas(organisationId)).find(a => a.key === key);
     if (!area) throw new DialogueError(NO_AREA);
@@ -178,27 +204,22 @@ export function dialogueUsecases(deps: DialogueDeps) {
      */
     async aboutUnits(persona: AuthenticatedContext, keys: readonly string[]): Promise<UnitStanding[]> {
       const units = await followed(persona);
-      const wanted = [...new Set(keys)].filter(k => units.has(k));
-      if (!wanted.length) return [];
-      const today = stockholmDate(now().toISOString());
-      return deps.store.transaction(async tx => {
-        const areas = await tx.areas(persona.organisationId),
-          assessments = await tx.assessments(persona.organisationId, wanted),
-          activities = await tx.activities(persona.organisationId, wanted);
-        const configured = new Set(areas.map(a => a.key));
-        return wanted.map(key => {
-          const own = activities.filter(a => a.unitId === key && a.doneAt === null && configured.has(a.areaKey));
-          const tones = areas.map(area => ({ title: area.title, tone: areaTone(area, key, assessments) }));
-          return {
-            key,
-            alert: tones.filter(t => t.tone === 'alert').map(t => t.title),
-            warn: tones.filter(t => t.tone === 'warn').map(t => t.title),
-            assessed: tones.some(t => t.tone !== undefined),
-            open: own.length,
-            overdue: own.filter(a => isOverdue(a, today)).length,
-          };
-        });
-      });
+      return standings(
+        persona,
+        [...new Set(keys)].filter(k => units.has(k)),
+      );
+    },
+    /**
+     * The dialogue of every unit the persona follows up, in short (`dialogue.units`, D130 rule 4): the same rows as
+     * `aboutUnits` gives for each of them, with the unit's name, by name in Swedish order. Someone who follows up no
+     * unit has none. Reads, so no audit row.
+     */
+    async units(persona: AuthenticatedContext): Promise<Array<UnitStanding & { label: string }>> {
+      const units = await followed(persona);
+      const rows = await standings(persona, [...units.keys()]);
+      return rows
+        .map(r => ({ ...r, label: units.get(r.key)!.label }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'sv') || a.key.localeCompare(b.key));
     },
     /** The open activities the persona owns, with the unit each is on: what the owner's card opens. */
     async mine(persona: AuthenticatedContext) {

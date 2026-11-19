@@ -104,8 +104,6 @@ export interface DeclaredViewProps {
   onShowAll?: () => void;
   /** Where "Visa allt" leads, as a link (a list's own page, D116); with it `onShowAll` is not needed. */
   showAllHref?: string | undefined;
-  /** A tool page's own control after the view's (D112 item 7: "Fråga assistenten"), at the end of the title's line. */
-  pageAction?: ReactNode;
   /**
    * Whether a row's own read is the one open beside the page (D112 item 6, board Tool: the inspector): that row is the
    * current one, marked on the row and on its name.
@@ -807,7 +805,6 @@ export function DeclaredView({
   titleId,
   onShowAll,
   showAllHref,
-  pageAction,
   isOpen,
   section,
   part,
@@ -848,16 +845,7 @@ export function DeclaredView({
   // many rows there are at the bar's end. Any other placement keeps the one view header (D71).
   const header = title ? (
     <VStack gap={4}>
-      <PageHeader
-        title={title}
-        {...(titleId ? { titleId } : {})}
-        end={
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            <SourceChip view={view} />
-            {pageAction}
-          </HStack>
-        }
-      />
+      <PageHeader title={title} {...(titleId ? { titleId } : {})} end={<SourceChip view={view} />} />
       {count !== null && (
         <HStack gap={3} vAlign="center" wrap="wrap">
           {controls && (

@@ -236,7 +236,11 @@ function world() {
 }
 const read = <T>(registry: Registry, p: AuthenticatedContext, name: string, input: unknown = {}) =>
   registry.run<T>(audiencedActorOf(p), name, input);
-const PROFILE = ['clew.talks', 'clew.commitments', 'talks.talks', 'talks.commitments'];
+/**
+ * The reads of the talks profile that never reach the model (D96 item 6): the composites, every system's action points
+ * and another system's round. The built-in module's round, `talks.talks`, is opened (D122 item 3, D130 rule 4).
+ */
+const PROFILE = ['clew.talks', 'clew.commitments', 'talks.commitments'];
 const noProfileTool = (registry: Registry, actor: Actor) =>
   expect(registry.tools(actor).filter(t => PROFILE.includes(t.name) || t.name.startsWith('appraisals.'))).toEqual([]);
 
@@ -295,6 +299,11 @@ describe('the talks wiring (D96 items 7 to 9)', () => {
     expect(area.figure).toMatchObject({ label: 'Utvecklingssamtal hållna', value: '1 av 5' });
     noProfileTool(w.registry, audiencedActorOf(hillevi));
     noProfileTool(w.registry, audiencedActorOf(anna));
+    // The built-in round is the manager's to have read for them, and the browser is told so; never an employee's.
+    const tools = (p: AuthenticatedContext) => w.registry.tools(audiencedActorOf(p)).map(t => t.name);
+    expect(tools(hillevi)).toContain('talks.talks');
+    expect(tools(anna)).not.toContain('talks.talks');
+    expect(w.registry.views(audiencedActorOf(hillevi)).find(v => v.capability === 'talks.talks')?.assistant).toBe(true);
   });
 
   test('switched off by an administrator, the enabled appraisal system answers read-only with its links; with neither, the composites are not offered', async () => {

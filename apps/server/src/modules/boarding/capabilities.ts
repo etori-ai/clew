@@ -17,12 +17,16 @@ import type { BoardingUsecases, PersonStanding } from './usecases';
 
 /**
  * The boarding module as Clew's built-in connector (D124): kind `core`, bundled and switched off until an
- * administrator switches it on. It answers two reads and suggests: `boarding.person`, where each of the reader's
- * reports stands (a section on the person's page, a lens and a column on Personal), `boarding.plan`, one plan with its
- * items (what an item's card opens, and the plan's page), and a scan that suggests an introduction for a report whose
- * employment starts soon. No read is a model tool, no view declares a `ref` (a title a manager typed is free text about
- * a person), and nothing here writes: an owned domain's own writes are routes, not ledger executions (D96). The use
- * cases come built from composition (D25).
+ * administrator switches it on. It answers three reads and suggests: `boarding.person`, where each of the reader's
+ * reports stands (a section on the person's page, a lens and a column on Personal), `boarding.plans`, the same rows for
+ * every report with the report's name (what the assistant reads beside Introduktion och avslut), `boarding.plan`, one
+ * plan with its items (what an item's card opens, and the plan's page), and a scan that suggests an introduction for a
+ * report whose employment starts soon. `boarding.plans` and `boarding.plan` are offered to the model (D122 item 3,
+ * D130 rule 4), read as the person and nobody more; `boarding.person` is a read about an entity and stays closed, as
+ * the loader holds every such read (D97 item 7). No view declares a `ref` (a title a manager typed is free text about a
+ * person), the module logs no read, so the assistant's reads are logged nowhere either (D122 item 6), and nothing here
+ * writes: an owned domain's own writes are routes, not ledger executions (D96). The use cases come built from
+ * composition (D25).
  */
 export const BOARDING_SOURCE = 'Clew';
 /** The suggestion card's row: who it is about, without a name (the subject carries the person). */
@@ -51,6 +55,30 @@ export const PersonBoardingOutputSchema = Type.Object(
   { rows: Type.Array(PersonBoardingRowSchema, { maxItems: ENTITY_KEYS_MAX }) },
   { additionalProperties: false },
 );
+/** The most reports `boarding.plans` lists. */
+const PLANS_MAX = 500;
+export const ReportBoardingRowSchema = Type.Object(
+  {
+    name: Type.String({ maxLength: 512 }),
+    userName: Type.String({ minLength: 1, maxLength: 256 }),
+    status: literals(STATUS_WORDS),
+    event: Type.Optional(Type.String({ maxLength: 40 })),
+    day: Type.Optional(Type.String({ maxLength: 40 })),
+    progress: Type.Optional(Type.String({ maxLength: 40 })),
+    waiting: Type.Optional(Type.String({ maxLength: 40 })),
+    /** The open plan's id, which `boarding.plan` takes as `plan`. Absent when there is no plan. */
+    plan: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
+  },
+  { additionalProperties: false },
+);
+export const ReportsBoardingOutputSchema = Type.Object(
+  {
+    rows: Type.Array(ReportBoardingRowSchema, { maxItems: PLANS_MAX }),
+    /** How many reports with a plan or a missing one there are beyond the rows given. */
+    omitted: Type.Optional(Type.Integer({ minimum: 1 })),
+  },
+  { additionalProperties: false },
+);
 /**
  * Where a report stands (D97): the plan's state as a badge (an overdue item warns, a start no plan covers alerts, a
  * plan whose items are all done is done), the event and its day beside it, how many items are done, and how many wait
@@ -77,6 +105,25 @@ export const personBoardingView: View = {
     { key: 'progress', label: 'Klara' },
     { key: 'waiting', label: 'Väntar på dig', format: 'status', tones: { '*': 'warn' }, beside: true },
   ],
+  open: { capability: BOARDING_CONNECTOR + '.plan', title: 'Planen', params: { plan: 'plan' } },
+};
+/**
+ * Where every report stands (Introduktion och avslut, D130 rule 4): the report's name, then the same words as
+ * `boarding.person`, and the plan's id, the one handle `boarding.plan` takes, drawn last so the model reads it too. A row
+ * names its person (`subject`), and `boarding.person` answers the same rows asked by key (D127).
+ */
+export const reportsBoardingView: View = {
+  kind: 'list',
+  title: 'name',
+  noun: { one: 'person', other: 'personer' },
+  empty: 'Ingen av dina medarbetare har någon introduktion eller något avslut på gång.',
+  fields: [
+    { key: 'name', label: 'Namn' },
+    ...(personBoardingView.kind === 'list' ? personBoardingView.fields : []),
+    { key: 'plan', label: 'Planens id' },
+  ],
+  subject: { entity: 'person', key: 'userName' },
+  byKey: BOARDING_CONNECTOR + '.person',
   open: { capability: BOARDING_CONNECTOR + '.plan', title: 'Planen', params: { plan: 'plan' } },
 };
 /** One plan's items as a list: what the card's read unfolds into. The page groups the same rows by phase. */
@@ -136,9 +183,11 @@ export function boardingConnector(
     name: BOARDING_CONNECTOR + '.plan',
     kind: 'read',
     title: 'Plan',
-    model: false,
+    // Offered to the model (D122 item 3): one plan as the person may read it, every item for its manager and the person
+    // it concerns, only their own items for anyone else with items in it.
+    model: true,
     description:
-      'En introduktion eller ett avslut med sina uppgifter: för chefen och den som planen gäller, och för den som har uppgifter i den.',
+      'En introduktion eller ett avslut med sina uppgifter: varje uppgift, om den är klar, försenad eller att göra, sista dag, när i planen den ligger och vem som ansvarar för den. Ange planens id som plan; id:t står på raden för medarbetaren i Introduktion och avslut för dina medarbetare. Chefen och den som planen gäller läser alla uppgifter, den som har uppgifter i planen bara sina egna. Om någon annans plan svarar den inte.',
     input: BoardingPlanInputSchema,
     output: BoardingPlanOutputSchema,
     view: planView,
@@ -167,6 +216,31 @@ export function boardingConnector(
       rows: (await boarding.aboutPeople(await persona(actor), input.keys)).map(personRow),
     }),
   };
+  // Offered to the model (D122 item 3, D130 rule 4): what Introduktion och avslut shows of the reader's reports, and
+  // nobody else's. The model reads the rows here, since `boarding.person` takes keys and is never a tool.
+  const plans: Capability<Record<string, never>> = {
+    name: BOARDING_CONNECTOR + '.plans',
+    kind: 'read',
+    title: 'Introduktion och avslut för dina medarbetare',
+    model: true,
+    description:
+      'Var varje medarbetare du är chef för står i sin introduktion eller sitt avslut: namnet, planens läge (pågår, försenad, klar, eller plan saknas inför en första dag), dagen planen gäller, hur många uppgifter som är klara och hur många som väntar på dig, och planens id. Bara medarbetare med en plan eller en som saknas finns med. Tar ingen indata. Svarar med inga rader för den som inte är chef. Varje rad har medarbetarens användarnamn; planens id tar Plan som plan.',
+    input: Type.Object({}, { additionalProperties: false }),
+    output: ReportsBoardingOutputSchema,
+    view: reportsBoardingView,
+    // Whoever the server counts as having reports, as `boarding.person` (D99): the use case answers for reports only.
+    scope: () => true,
+    run: async actor => {
+      const rows = await boarding.reportStandings(await persona(actor));
+      return {
+        rows: rows.slice(0, PLANS_MAX).map(s => {
+          const { key, ...row } = personRow(s);
+          return { name: s.name, userName: key, ...row };
+        }),
+        ...(rows.length > PLANS_MAX ? { omitted: rows.length - PLANS_MAX } : {}),
+      };
+    },
+  };
   return {
     id: BOARDING_CONNECTOR,
     kind: 'core',
@@ -180,7 +254,7 @@ export function boardingConnector(
         schedules: [],
       },
     ],
-    capabilities: [plan as Capability, aboutPerson as Capability],
+    capabilities: [plan as Capability, aboutPerson as Capability, plans as Capability],
     /**
      * Clew suggests, the manager starts (D124): one card for each report whose employment starts within the
      * suggestion window with no introduction that covers it. The card names nobody, in its title, summary, reason or

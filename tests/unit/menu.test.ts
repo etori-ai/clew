@@ -381,13 +381,42 @@ describe('every read a person may open is a view with a page of its own (D116)',
     const r = registry();
     r.govern('phonebook', on());
     expect(r.views(audiencedActorOf(hassan))).toEqual([
-      { capability: 'phonebook.directory', title: 'Sök i telefonboken', kind: 'table' },
-      { capability: 'phonebook.team', title: 'Mitt teams kontaktlista', kind: 'list' },
+      // A read the assistant may make for the person says so (D130 rule 4): it is among the model's tools for them.
+      { capability: 'phonebook.directory', title: 'Sök i telefonboken', kind: 'table', assistant: true },
+      { capability: 'phonebook.team', title: 'Mitt teams kontaktlista', kind: 'list', assistant: true },
       { capability: 'phonebook.person', title: 'Kontaktkort', kind: 'detail' },
-      { capability: 'phonebook.search', title: 'Sök person', kind: 'list' },
+      { capability: 'phonebook.search', title: 'Sök person', kind: 'list', assistant: true },
       // A read that declares no view is listed without a kind: it opens beside the page, and a page if it has rows.
       { capability: 'phonebook.fetch', title: 'Hämta person' },
     ]);
+  });
+  test('a read is marked for the assistant exactly when it is among the model’s tools for the person (D130 rule 4)', () => {
+    const r = registry();
+    const marked = () =>
+      r
+        .views(audiencedActorOf(hassan))
+        .filter(v => v.assistant)
+        .map(v => v.capability);
+    const tools = () =>
+      r
+        .tools(audiencedActorOf(hassan))
+        .filter(t => t.kind === 'read')
+        .map(t => t.name);
+    r.govern('phonebook', on());
+    expect(marked()).toEqual(tools());
+    expect(marked()).toContain('phonebook.directory');
+    // The read's own switch on Anslutna system (D122 item 4): still a view, no longer the assistant's.
+    r.govern('phonebook', on({ capabilities: { 'phonebook.directory': { model: false } } }));
+    expect(r.views(audiencedActorOf(hassan)).find(v => v.capability === 'phonebook.directory')).toEqual({
+      capability: 'phonebook.directory',
+      title: 'Sök i telefonboken',
+      kind: 'table',
+    });
+    expect(marked()).toEqual(tools());
+    // The connector's assistant switch: every read stays a view, none is the assistant's.
+    r.govern('phonebook', on({ toolsEnabled: false }));
+    expect(r.views(audiencedActorOf(hassan)).length).toBeGreaterThan(0);
+    expect(marked()).toEqual([]);
   });
   test('a read the person may not call is missing, exactly as one that does not exist', () => {
     const r = registry();

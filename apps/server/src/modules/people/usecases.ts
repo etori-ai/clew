@@ -1570,6 +1570,24 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
           unit: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel } : null,
         };
       }),
+    /**
+     * The titles of these people of the reader's organisation (`people.reports`, D130 rule 4), by id: the titles their
+     * employments carry, each once, or the core title where none does (as the person's page shows them). Someone
+     * without a title, deactivated or of another organisation is absent. Nothing else of an employment is read out: no
+     * type, date or percentage. Read on every call, never cached.
+     */
+    titles: (persona: AuthenticatedContext, ids: readonly string[]): Promise<Map<string, string>> =>
+      deps.store.transaction(async tx => {
+        const titles = new Map<string, string>();
+        for (const id of new Set(ids)) {
+          const found = await tx.readUser(persona.organisationId, id);
+          if (!found || !found.enabled) continue;
+          const own = [...new Set(found.employments.flatMap(row => (row.title ? [row.title] : [])))];
+          const title = own.length ? own.join(', ') : found.title;
+          if (title) titles.set(id, title);
+        }
+        return titles;
+      }),
   };
 }
 export type StaffUsecases = ReturnType<typeof staffUsecases>;

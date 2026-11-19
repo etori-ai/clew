@@ -1,6 +1,6 @@
 # D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides
 
-**Status:** provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas "Clew · the assistant beside every page", where a register, Läget, a work item's page and Att göra were drawn with the pane open at 1366 px and 1728 px, and answered four of the review's five questions the same day. Stage 1 is built (2026-11-18): the frame's button and pane on a tool's list or table and on Kalender, the conversation drawn there by the same parts as on the conversation's page, the subject stored with the conversation and found again, and the rail's rule. It was tried on the development stack with its local model: asked beside a register, reloaded, opened as a conversation. Every other page still has its own button or none. Nothing outside the repository has tested it, and no manual screen-reader pass is made) · **Date:** 2026-11-18 · **Area:** ui, product
+**Status:** provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas "Clew · the assistant beside every page", where a register, Läget, a work item's page and Att göra were drawn with the pane open at 1366 px and 1728 px, and answered four of the review's five questions the same day. Stage 1 is built (2026-11-18): the frame's button and pane on a tool's list or table and on Kalender, the conversation drawn there by the same parts as on the conversation's page, the subject stored with the conversation and found again, and the rail's rule. It was tried on the development stack with its local model: asked beside a register, reloaded, opened as a conversation. Stage 2 is built (2026-11-19): every register and Läget (Nyheter, Personal's tabs with the lenses, the competence matrix and search, Introduktion och avslut, Läget, Alla verktyg, Alla samtal and Att göra's queue while no item is open) says its subject to the frame, the reads of Clew's own domains that they show are offered to the assistant, the browser is told which reads the assistant may make (`ViewEntry.assistant`) and the pane says under its heading where it may make none. Asked beside Läget on the development stack, the local model read the follow-up dialogue of the reader's units and answered in the pane. A thing's page and Att göra's item still have their own button. Nothing outside the repository has tested it, and no manual screen-reader pass is made) · **Date:** 2026-11-18 · **Area:** ui, product
 
 **Context.** Where the assistant is asked has been decided four times and reversed three: beside the page was
 rejected in [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md), chosen in
@@ -83,9 +83,29 @@ system's assistant has its own panel beside a conversation).
 
 **Not built, and what is still open.**
 
-- Every page but a tool's list or table and Kalender. The frame's `ask` says so page by page (`later`): the other
-  registers and Läget, with their reads opened (stage 2); a thing's page, where the facts move above the read, and
-  what the server is told stands open (stage 3, its own decision first); Att göra's item (stage 4).
+- A thing's page and Att göra's item. The frame's `ask` says so page by page (`later`): a thing's page, where the
+  facts move above the read, and what the server is told stands open (stage 3, its own decision first); Att göra's
+  item, which keeps its own "Fråga assistenten" until then (stage 4).
+- What was opened in stage 2, read by read, is the table "Clew's own reads and the model" in
+  [capability surfaces](../architecture/capability-surfaces.md): `dialogue.units` and `dialogue.activities`,
+  `boarding.plans` and `boarding.plan`, the open round `talks.talks`, `people.reports`, `clew.tools` and
+  `clew.conversations`. Of the talks domain only the round is offered, where each report stands: an action point's
+  text and another system's round stay closed (D96 item 6, which D122 item 3 amends this far and no further). The
+  registrar's search stays closed (D122 item 5), and its pane says so.
+- When the pane says a system is closed. A list's own read is closed when the assistant may not make it. A source
+  about a person or a unit (a lens, a column of Personal or Läget) is read through the read that answers the same
+  rows without keys (D127); with none, the pane says the system is closed only when the assistant may make no read
+  of that system at all. The pane can therefore stay silent about a column the assistant reads only in part. A read
+  Clew joins across systems (`clew.<profile>`) is no one system, so a column from one is said closed without an
+  overview: on Läget the pane says it cannot read utvecklingssamtal, although the assistant reads the round person
+  by person (`talks.talks`).
+- `people.reports` cannot be switched off for the assistant on Administration › Anslutna system, since the `people`
+  connector has no row there (as `people.me` and `people.directory`): a gap against D122 item 4.
+- The model reads only the fields a view draws, so `boarding.plans` draws the plan's id and `clew.tools` and
+  `clew.conversations` an address as plain text where they are drawn as a view. A field the model reads and a
+  person is not shown does not exist.
+- None of the domains opened in stage 2 logs a read, so the assistant's reads of them are logged nowhere either
+  (D122 item 6 asks for it only where a person's read is logged).
 - The other system's assistant's panel (D128) still has a renderer of its own.
 - The pane shows what the shared transcript shows: the time, the model that answered and what was read. The canvas
   draws none of those; whether they stay is the owner's to say.

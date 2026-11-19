@@ -81,7 +81,8 @@ import { reviewedAction } from '../components/card';
 import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
 import { itemSubject } from '../components/view-read';
 import { AskClew } from '../components/thing-panel';
-import type { ThingSubject } from '../components/conversation-context';
+import { pageSubject } from '../components/page-conversation';
+import { asksBeside } from '../panel-address';
 import { PageFrame } from '../components/page-frame';
 
 const EMPTY_THREADS: Thread[] = [];
@@ -160,7 +161,9 @@ function aboutOf(thread: Thread): string | null {
  * is the current one (`aria-current`) with Astryx's row status in its gutter. The pane is the item at its narrow width
  * (`WorkItem`): the source line, its title as the link to its page and the buttons under it that never scroll away, then
  * the facts, "Varför ser jag detta?" and "Händelser". Where the pane does not fit beside the list (the template measures
- * the page's own box) there is no pane: a row leads to the item's page.
+ * the page's own box) there is no pane: a row leads to the item's page. With no item open, the frame's "Fråga
+ * assistenten" opens the assistant's pane beside the queue (D130), about the pile; an item opened takes the end slot
+ * and the address lets go of the assistant's pane (`todoHref`), so closing the item leaves the queue as it was.
  */
 export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -275,6 +278,13 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   useLayoutEffect(() => {
     if (known && single && itemId) navigate(itemPageHref(itemId, href({ item: null })), { replace: true });
   }, [known, single, itemId]);
+  // An item in the reading pane has the end slot (D130 rule 5). An address that also holds the assistant's pane (typed,
+  // or kept from before) shows the item, and lets go of the pane in its place, so closing the item does not open it.
+  const reading = !single && !!itemId;
+  const asking = asksBeside(search);
+  useLayoutEffect(() => {
+    if (reading && asking) navigate(href({ item: itemId }), { replace: true });
+  }, [reading, asking]);
 
   // The focus follows what the pane shows (2.4.3): the item's heading when one is chosen, the row that opened it when
   // it closes, or the row after it when the item left the pile with its own button (Avfärda, Inte nu).
@@ -398,15 +408,20 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     </HStack>
   );
 
-  // "Fråga assistenten" about the pile (D126 rule 5): a list is no thing beside the conversation, so it goes as one chip, the
-  // read of Att göra (`clew.work`). A reference, not a copy of the rows: Clew reads the pile as it is when it answers,
-  // however many items it holds (a chip per card took the first eight and dropped the rest).
-  const queueSubject: ThingSubject = {
-    key: `todo:${tab}`,
-    label: 'ärendena',
-    chips: [{ ref: 'capability:clew.work', kind: 'capability' as const, label: 'Att göra' }],
-    search: '',
-  };
+  // The frame's "Fråga assistenten" about the pile (D130 rule 4): a list is no thing beside the conversation, so it goes
+  // as one chip, the read of Att göra (`clew.work`). A reference, not a copy of the rows: Clew reads the pile as it is
+  // when it answers, however many items it holds (a chip per card took the first eight and dropped the rest). While an
+  // item stands in the reading pane the page's own pane has the end slot (rule 5) and there is no subject, so the frame
+  // draws no button: the item has its own "Fråga assistenten" until its stage moves it into the frame.
+  const queueSubject = reading
+    ? null
+    : pageSubject({
+        key: `todo:${tab}`,
+        title: `Att göra · ${tabTitle[tab]}`,
+        reads: [{ capability: 'clew.work', own: true, label: 'Att göra' }],
+        views: areasQ.data?.views,
+        named: 'ärendena',
+      });
 
   const empty: Record<TodoTab, string> = {
     'needs-you': 'Inget behöver dig just nu.',
@@ -607,7 +622,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
    * The item beside the list (board Att göra): the work item at its narrow width, its ✕ in its own title row. A
    * calendar proposal keeps its own card (D27) with ✕ above it, as does an item that is not there.
    */
-  const reading =
+  const readingPane =
     item && !item.proposals.length ? (
       <VStack ref={paneRef} height={short ? undefined : '100%'} onKeyDown={escape}>
         {cardBody(item, {
@@ -630,17 +645,12 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       {/* The one page frame (D126): the title, its counts, the filters and the piles in the header, and the queue and
           its reading pane side by side inside the same column, the list in a card as Hem's lists are. */}
       <PageFrame
-        ask={{ later: 'todo' }}
+        ask={{ subject: queueSubject }}
         layoutRef={surfaceRef}
         title="Att göra"
         titleId="att-gora"
         meta={countsLine ?? undefined}
-        actions={
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            {filters}
-            <AskClew subject={queueSubject} />
-          </HStack>
-        }
+        actions={filters}
         tabs={
           <TabList hasDivider={false} isFullBleed value={tab} onChange={() => {}} aria-label="Urval">
             {todoTabs.map(t => {
@@ -659,7 +669,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
         }
         label={tabTitle[tab]}
         end={
-          single || !itemId ? undefined : (
+          !reading ? undefined : (
             <>
               {/* The handle comes before the pane, whose inline-start edge it drags; `hasDivider` is the handle's. */}
               <ResizeHandle
@@ -677,7 +687,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
                 role="complementary"
                 label="Valt ärende"
               >
-                {reading}
+                {readingPane}
               </LayoutPanel>
             </>
           )

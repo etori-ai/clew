@@ -10,8 +10,8 @@ import { useRail } from '../components/nav';
 import { viewOpenHref, withViewInput } from '../view-address';
 import { useShownForTheWayBack } from '../way-back';
 import { DeclaredView } from '../components/view';
-import { useView, viewSubject } from '../components/view-read';
-import { AskClew } from '../components/thing-panel';
+import { useView } from '../components/view-read';
+import { pageSubject } from '../components/page-conversation';
 import { PageHeader } from '../components/page-header';
 import { ContentArrival, ContentSkeleton } from '../components/loading';
 import { PageFrame } from '../components/page-frame';
@@ -27,9 +27,9 @@ const TITLE = 'Nyheter';
  * address a tool has (`/tools/clew.news`, D42), whether or not an administrator placed it in the rail under Verktyg
  * (D40): Hem's "Alla nyheter" leads here for everyone with a news source, and a placed row marks itself current here.
  * Drawn as the tool's page draws a view (`tool.tsx`, D112 item 6): the one page header, the view by the one renderer
- * (D38), a piece of news as its own page (D126 rule 1: its name is the link, nothing opens beside the list), "Fråga
- * Clew" starting a conversation about the list (rule 5). A person with no news source is told there is none, as a tool
- * that is not theirs is.
+ * (D38), a piece of news as its own page (D126 rule 1: its name is the link, nothing opens beside the list), and the
+ * frame's "Fråga assistenten" with the assistant's pane beside the list (D130), about the list's read. A person with no
+ * news source is told there is none, as a tool that is not theirs is.
  */
 export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const short = useMediaQuery(shortQuery);
@@ -51,11 +51,16 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
   const main = useView(NEWS_CAPABILITY, inputJson, { title, address });
   const list = main.shown?.capability === NEWS_CAPABILITY ? main.shown : null;
   const missing = !!main.failed && refused(main.failed);
-  // The news is a list, a page of its own (D116): the conversation about it goes on without it beside.
+  // The news is a list, a page of its own (D116): the pane beside it is about its read (D130 rule 4), under the key a
+  // tool's list has, so a conversation asked about it before is found again.
   const subject = missing
     ? null
-    : viewSubject({ capability: NEWS_CAPABILITY, title, input: main.shown?.input ?? {} }, true);
-  const ask = <AskClew subject={subject} />;
+    : pageSubject({
+        key: `view:${NEWS_CAPABILITY}`,
+        title,
+        reads: [{ capability: NEWS_CAPABILITY, own: true, label: title }],
+        views: areas?.views,
+      });
   const heading = missing ? 'Inga nyheter för dig' : title;
   usePageTitle(heading, heading);
   const failed =
@@ -63,7 +68,7 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       {/* A register (D126 rule 8) in the one page frame: the view draws its own title line (D74) in the column. */}
-      <PageFrame ask={{ later: 'registers' }} label={title}>
+      <PageFrame ask={{ subject }} label={title}>
         <VStack gap={4}>
           {missing ? (
             <EmptyState
@@ -75,7 +80,7 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
           ) : (
             <>
               {/* The one page header (D74): the view draws it once it has arrived; until then the title stands alone. */}
-              {!list?.spec && <PageHeader title={title} end={ask} />}
+              {!list?.spec && <PageHeader title={title} />}
               {failed && (
                 <Banner
                   status="error"
@@ -96,7 +101,6 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
                       headingLevel={2}
                       tableQuery={tableQuery}
                       title={title}
-                      pageAction={ask}
                       onInput={next =>
                         navigate(withViewInput(location.pathname, location.search, next), { replace: true })
                       }

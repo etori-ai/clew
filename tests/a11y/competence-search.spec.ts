@@ -99,9 +99,11 @@ test.describe('Kompetens › Kompetenssökning', () => {
         await expect(page.getByRole('heading', { level: 2, name: 'Välj en kompetens' })).toBeVisible();
         await expect(page.getByText('Varje sökning, nedladdning och öppnad person loggas')).toBeVisible();
         await expect(page.getByText('också när en sökning öppnas från en länk eller laddas om')).toBeVisible();
+        // The search's own card, the innermost that holds the fields: the page's sheet is a card too (D126 item 12).
         const card = (await page
           .locator('.astryx-card')
           .filter({ has: form(page) })
+          .last()
           .boundingBox())!;
         const fields = (await form(page).boundingBox())!;
         // The card's own padding is all that stands above the fields.

@@ -358,7 +358,8 @@ function Plan({
     ) : (
       <ContentSkeleton />
     );
-    body = frame === 'tab' ? state : <PageFrame ask={{ later: 'registers' }}>{state}</PageFrame>;
+    // A state of a plan's page, a thing's (D126 rule 1): it asks as a thing's page will (D130, stage 3).
+    body = frame === 'tab' ? state : <PageFrame ask={{ later: 'things' }}>{state}</PageFrame>;
   } else {
     const here = pageOnly(pathname, search);
     const plans = person?.plans ?? [];

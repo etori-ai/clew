@@ -28,11 +28,13 @@ import {
 } from '@clew/ui';
 import { BOARDING_PATH, boardingHref } from '../boarding-address';
 import { anchorDay, overdueWords, planLine, plansWords, progressWords, shortDay } from '../boarding';
-import { boardingPlansQuery, boardingSuggestionsQuery } from '../queries';
+import { areasQuery, boardingPlansQuery, boardingSuggestionsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { mobileQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
+import { pageSubject } from '../components/page-conversation';
+import { useColumnQuery } from '../components/page-frame-context';
 import { BOARDING_TAB, PERSONAL_TITLE_ID, PersonalFrame } from './staff-parts';
 
 const TITLE = 'Introduktion och avslut';
@@ -53,6 +55,7 @@ const WIDTHS = {
 /**
  * The window width from which the table keeps every column's least width beside the rail; narrower, the plans are the
  * rows a phone draws, so the page never scrolls sideways for them (1.4.10) and a name is never read apart from its plan.
+ * Moved by the assistant's pane while it stands beside the page (`useColumnQuery`, D130 rule 11).
  */
 const TABLE_MIN = resolveColumnWidths(Object.entries(WIDTHS).map(([key, width]) => ({ key, width }))).tableMinWidth;
 const tableQuery = `(min-width: ${SIDE_NAV + TABLE_MIN + 2 * PADDING}px)`;
@@ -84,10 +87,9 @@ const late = (plan: BoardingPlanSummary) =>
  * reload leaves it where the browser puts it.
  */
 export function BoardingListPage({ user, admin }: { user: SessionUser; admin: boolean }) {
-  const mobile = useMediaQuery(mobileQuery);
-  const wide = useMediaQuery(tableQuery);
   usePageTitle(`${TITLE} · Personal`);
   const plansQ = useQuery(boardingPlansQuery);
+  const views = useQuery(areasQuery).data?.views;
   const plans = plansQ.data;
   const manages = !!plans && (plans.manages || plans.rows.length > 0);
   const suggestionsQ = useQuery({ ...boardingSuggestionsQuery, enabled: manages });
@@ -163,12 +165,20 @@ export function BoardingListPage({ user, admin }: { user: SessionUser; admin: bo
           </HStack>
         )}
         {manages && suggestions.length > 0 && <Suggested rows={suggestions} />}
-        {manages && <Plans rows={plans.rows} narrow={mobile || !wide} />}
+        {manages && <Plans rows={plans.rows} />}
       </>
     );
 
+  // What the assistant beside the tab is about (D130 rule 4): the plans, as the assistant reads them.
+  const subject = pageSubject({
+    key: 'boarding',
+    title: TITLE,
+    reads: [{ capability: 'boarding.plans', own: true, label: TITLE }],
+    views,
+  });
+
   return (
-    <PersonalFrame user={user} admin={admin} tab={BOARDING_TAB} label={TITLE}>
+    <PersonalFrame user={user} admin={admin} tab={BOARDING_TAB} subject={subject} label={TITLE}>
       <VStack gap={5} width="100%">
         {body}
       </VStack>
@@ -267,10 +277,13 @@ function Suggested({ rows }: { rows: BoardingSuggestion[] }) {
 
 /**
  * The open plans the reader manages or holds, nearest day first as the server orders them: a table of the person (the
- * link to the plan), the event, its day, how many items are done and a badge where any is late; `narrow`, the same
- * facts as a row per plan with the name on top. With none, where plans are started.
+ * link to the plan), the event, its day, how many items are done and a badge where any is late; on a phone and where
+ * the column does not keep the table's columns (`tableQuery`), the same facts as a row per plan with the name on top.
+ * With none, where plans are started.
  */
-function Plans({ rows, narrow }: { rows: BoardingPlanSummary[]; narrow: boolean }) {
+function Plans({ rows }: { rows: BoardingPlanSummary[] }) {
+  const mobile = useMediaQuery(mobileQuery);
+  const narrow = mobile || !useColumnQuery(tableQuery);
   const name = (plan: BoardingPlanSummary) => (
     <Link href={planHref(plan)} weight="semibold" hasUnderline>
       {plan.name}

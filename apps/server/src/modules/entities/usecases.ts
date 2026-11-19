@@ -29,9 +29,11 @@ import {
   unitRelation,
   sectionsOf,
   unitRef,
+  reportRows,
   type Checked,
+  type ReportRow,
 } from './domain';
-import { DEFAULT_BUDGET, type EntityDeps } from './model';
+import { DEFAULT_BUDGET, type EntityDeps, type ReportDirectory } from './model';
 
 type Answer = ({ status: 'ok' } & Checked) | { status: 'unavailable' | 'timeout' };
 type Found = Pick<EntityDetail, 'entity' | 'relation' | 'profile' | 'below' | 'above'>;
@@ -289,6 +291,23 @@ export function entityUsecases(deps: EntityDeps) {
 
   return { list, rows, detail, section };
 }
+/**
+ * `people.reports` (D130 rule 4): the people Personal lists for the reader, the list `GET /api/entities/person` draws
+ * (`groupsOf`), each once with the units that list them and their title. For whoever manages a unit; someone who
+ * manages none has nobody on the list. Nothing else of a person is read: no HR data, no source is asked. Reads, so no
+ * audit row.
+ */
+export function reportUsecases(deps: { directory: ReportDirectory }) {
+  return {
+    async reports(persona: AuthenticatedContext): Promise<ReportRow[]> {
+      const reach = await deps.directory.reach(persona);
+      const ids = groupsOf('person', reach).flatMap(group => group.entities.map(person => person.key));
+      const titles = ids.length ? await deps.directory.titles(persona, ids) : new Map<string, string>();
+      return reportRows(reach, titles);
+    },
+  };
+}
+export type ReportUsecases = ReturnType<typeof reportUsecases>;
 const TIMEOUT = Symbol('timeout');
 const FAILED = Symbol('failed');
 /** Where a reader stands who is asked about themself: their own record is enough, nobody else is read. */

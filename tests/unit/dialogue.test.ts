@@ -14,6 +14,7 @@ import { memoryDialogueStore, type MemoryDialogueStore } from '../../apps/server
 import {
   MyActivitiesOutputSchema,
   UnitDialogueOutputSchema,
+  UnitsDialogueOutputSchema,
   dialogueConnector,
   unitDialogueView,
 } from '../../apps/server/src/modules/dialogue/capabilities';
@@ -678,14 +679,15 @@ describe('the built-in connector', () => {
       }),
     );
 
-  test('it passes the registry validation, its reads are no model tools, and the unit read opens the dialogue drawer', () => {
+  test('it passes the registry validation, the read about a unit is no model tool, and it opens the dialogue drawer', () => {
     const connector = dialogueConnector(dialogue, async () => ingrid);
     expect(() => registry()).not.toThrow();
     expect(connector).toMatchObject({ id: 'dialogue', kind: 'core', source: 'Uppföljningsdialog' });
     const reads = connector.capabilities;
     expect(reads.map(c => [c.name, c.kind, c.model, menuEligible(c)])).toEqual([
       ['dialogue.unit', 'read', false, false],
-      ['dialogue.activities', 'read', false, true],
+      ['dialogue.units', 'read', true, true],
+      ['dialogue.activities', 'read', true, true],
     ]);
     for (const c of reads) {
       expect(viewProblem(c, reads)).toBeUndefined();
@@ -709,7 +711,63 @@ describe('the built-in connector', () => {
       tone('state', 'Bra'),
       tone('state', 'Inte bedömd'),
     ]).toEqual(['alert', 'warn', 'ok', 'none']);
-    expect(registry().tools(actor(ingrid))).toEqual([]);
+    // Läget's list and the reader's own activities are offered (D122 item 3, D130 rule 4), the read about a unit never.
+    expect(
+      registry()
+        .tools(actor(ingrid))
+        .map(t => t.name),
+    ).toEqual(['dialogue.units', 'dialogue.activities']);
+    // An employee follows up no unit: only their own activities.
+    expect(
+      registry()
+        .tools(actor(anna))
+        .map(t => t.name),
+    ).toEqual(['dialogue.activities']);
+    const views = registry().views(actor(ingrid));
+    expect(views.filter(v => v.assistant).map(v => v.capability)).toEqual(['dialogue.units', 'dialogue.activities']);
+    expect(views.find(v => v.capability === 'dialogue.unit')).not.toHaveProperty('assistant');
+  });
+
+  test('dialogue.units answers every unit the reader follows up by name, in the words of dialogue.unit, and no other unit (D130 rule 4)', async () => {
+    const r = registry();
+    await dialogue.assess(ingrid, 'u-skola', { area: 'operations', dimension: 'mission', tone: 'alert' });
+    await dialogue.assess(olle, 'u-other', { area: 'digital', tone: 'warn' });
+    await dialogue.addActivity(ingrid, 'u-skola', { area: 'operations', text: 'A', dueOn: '2026-11-01' });
+    const output = (await r.run(actor(ingrid), 'dialogue.units', {})) as { rows: Array<Record<string, unknown>> };
+    expect(checkContract(UnitsDialogueOutputSchema, output)).toBe(true);
+    // Her own unit and the one below it, by name in Swedish order; Olle's unit is not hers to follow up.
+    expect(output).toEqual({
+      rows: [
+        {
+          unitId: 'u-skola',
+          name: 'Bergsåkers skola',
+          open: '1 öppen aktivitet',
+          alert: 'Åtgärd krävs: Verksamhet',
+          overdue: '1 försenad',
+        },
+        { unitId: 'u-top', name: 'Grundskola', state: 'Inte bedömd' },
+      ],
+    });
+    // The same rows as the read by key answers (D127).
+    const byKey = (await r.run(actor(ingrid), 'dialogue.unit', { keys: ['u-skola', 'u-top'] })) as {
+      rows: Array<Record<string, unknown>>;
+    };
+    const asKeyed = output.rows.map(({ unitId, name: _, ...words }): Record<string, unknown> => ({
+      key: unitId,
+      ...words,
+    }));
+    expect(asKeyed).toEqual([...byKey.rows].sort((a, b) => String(a.key).localeCompare(String(b.key))));
+    // Hillevi follows up her own unit alone; Olle his; an employee is refused, as for the read by key.
+    expect(((await r.run(actor(hillevi), 'dialogue.units', {})) as { rows: unknown[] }).rows).toEqual([
+      expect.objectContaining({ unitId: 'u-skola' }),
+    ]);
+    expect(await r.run(actor(olle), 'dialogue.units', {})).toEqual({
+      rows: [{ unitId: 'u-other', name: 'Annan enhet', warn: 'Bevaka: Digital transformation' }],
+    });
+    await expect(r.run(actor(anna), 'dialogue.units', {})).rejects.toThrow('Du saknar behörighet för åtgärden.');
+    // A manager whose units are gone follows up nothing: no rows, no refusal.
+    followed.set('olle', []);
+    expect(await r.run(actor(olle), 'dialogue.units', {})).toEqual({ rows: [] });
   });
 
   test('dialogue.unit answers one row per unit the reader follows up, naming the areas that need action or watching', async () => {

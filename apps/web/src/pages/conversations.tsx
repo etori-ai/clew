@@ -18,7 +18,7 @@ import {
   type TableColumn,
 } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
-import { threadsQuery } from '../queries';
+import { areasQuery, threadsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { groupThreads } from '../stream';
@@ -31,6 +31,7 @@ import { titled, useConversation } from '../components/conversation-context';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { LinkRow } from '../components/work-row';
 import { PageFrame } from '../components/page-frame';
+import { pageSubject } from '../components/page-conversation';
 
 type Row = {
   id: string;
@@ -57,7 +58,10 @@ function lastChanged(at: string, day: string) {
  * whom it is with where that is another system's assistant (D125: its name and its system, as the conversation's own
  * header says it), when it last changed and, only where the data says something about it, its state (the answer being
  * written, a draft that waits for the person), as the rail's dot says it. On a phone the rows are a list, each one
- * link. Nothing is stored here: the list is the session's conversations from the same cache as the rail (D33).
+ * link. Nothing is stored here: the list is the session's conversations from the same cache as the rail (D33). The
+ * frame's "Fråga assistenten" opens the assistant's pane beside the list (D130), about the person's conversations
+ * (`clew.conversations`); while it stands there the table scrolls sideways inside its card where its columns do not fit
+ * the narrower column (Astryx's scroll region), and the page never does (1.4.10).
  */
 export function ConversationsPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -66,6 +70,14 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
   usePageTitle('Samtal');
   const talk = useConversation();
   const read = useQuery(threadsQuery);
+  const views = useQuery(areasQuery).data?.views;
+  // What the pane beside the page is about (D130 rule 4): the person's conversations, as the assistant reads them.
+  const subject = pageSubject({
+    key: 'conversations',
+    title: 'Alla samtal',
+    reads: [{ capability: 'clew.conversations', own: true, label: 'Alla samtal' }],
+    views,
+  });
   const threads = read.data?.threads ?? EMPTY;
   const day = today();
   const answering = talk.pending ? (talk.conversation?.id ?? null) : null;
@@ -190,7 +202,7 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
-        ask={{ later: 'registers' }}
+        ask={{ subject }}
         title="Samtal"
         meta={read.data ? (rows.length === 1 ? '1 samtal' : `${rows.length} samtal`) : undefined}
         actions={<Button label="Ny fråga" variant="primary" href="/conversations/new" />}

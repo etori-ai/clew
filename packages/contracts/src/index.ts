@@ -992,6 +992,12 @@ export const ViewEntrySchema = object({
    * it declares none), so a page offers to open it for a person only where the server would answer (D124).
    */
   admits: Type.Optional(Type.Array(Type.String())),
+  /**
+   * The assistant may make this read for the person (D130 rule 4): it is among the tools the model is offered for
+   * them, the read's own `model`, its connector's assistant switch and the read's switch all allowing it (D122 item
+   * 4). Absent where it may not, so the pane beside a page that shows the read says so before anything is asked.
+   */
+  assistant: Type.Optional(Type.Literal(true)),
 });
 export type ViewEntry = Static<typeof ViewEntrySchema>;
 /** Whether a view answers with rows (a `table` or a `list`): a list a person works through, which is a page (D116). */

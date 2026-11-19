@@ -1,7 +1,7 @@
 import {
   acceptsEmptyInput,
   answerCards,
-  workItems,
+  personThreads,
   bundledIds,
   holdingsReader,
   internalIds,
@@ -298,10 +298,11 @@ holdingsPort.admitted = async (connectorId, personIds) => {
 };
 holdingsPort.reaches = (connectorId, organisationId) =>
   organisationInAudiences(organisationId, copyAudiences(connectorId));
-// A person's work items as a read (`clew.work`): what the stream's read boundary lets them see today. A capability's
-// actor does not carry the version of the person's authority, which an item from a source is checked against, so the
-// person is read again with their current grant, as for an answer's card below.
-workItems.list = async (actor, now) => {
+// A person's own threads for the reads over them (`clew.work`, `clew.conversations`): what the stream's read boundary
+// lets them see today, their own and nobody else's. A capability's actor does not carry the version of the person's
+// authority, which an item from a source is checked against, so the person is read again with their current grant, as
+// for an answer's card below.
+personThreads.list = async (actor, now) => {
   const persona = await systemContext(actor.id, 'system:work-list');
   return persona ? threadAccess(store, registry).list(persona, now) : [];
 };
