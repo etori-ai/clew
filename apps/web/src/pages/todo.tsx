@@ -61,6 +61,7 @@ import {
   fromClewItself,
   itemPageHref,
   needsYouOf,
+  openDeadline,
   rowFacts,
   sourcesNotice,
   tabOf,
@@ -109,14 +110,13 @@ const PANE_SHARE = 0.55;
 
 /**
  * The width of the box the page was given, as the `table-inbox` template measures it (`useSurfaceWidth`, D112 gap 4):
- * every decision here is about that box, not the window, which also holds the rail. The first read is synchronous,
- * before paint, and `offsetWidth` is the laid-out width as the observer reports it after that.
+ * The frame can replace that box when the reading pane opens or closes. Measure each new node before paint and
+ * observe it until it is replaced.
  */
 function useSurfaceWidth() {
-  const ref = useRef<HTMLDivElement>(null);
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
-    const node = ref.current;
     if (!node) return;
     const { paddingInlineStart, paddingInlineEnd } = getComputedStyle(node);
     setWidth(node.offsetWidth - parseFloat(paddingInlineStart) - parseFloat(paddingInlineEnd));
@@ -126,8 +126,8 @@ function useSurfaceWidth() {
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
-  return [ref, width] as const;
+  }, [node]);
+  return [setNode, width] as const;
 }
 
 /**
@@ -215,8 +215,9 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const pileOf = (t: Thread): TodoTab => todoTabs.find(p => piles[p].some(x => x.id === t.id)) ?? 'needs-you';
   const tab: TodoTab = search.has('tab') ? tabOf(search.get('tab')) : item ? pileOf(item) : 'needs-you';
   const words = filter.trim().toLocaleLowerCase('sv-SE');
+  const inArea = (t: Thread) => !area || t.area === area;
   const matches = (t: Thread) =>
-    (!area || t.area === area) &&
+    inArea(t) &&
     (!words || `${t.title} ${t.trigger.reason} ${t.trigger.source}`.toLocaleLowerCase('sv-SE').includes(words));
   const rows = piles[tab].filter(matches);
 
@@ -245,7 +246,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
 
   // The template's measure: the page's own box decides whether the pane stands beside the list.
   const [surfaceRef, pageWidth] = useSurfaceWidth();
-  // The sheet fills what the rail leaves (D126 item 12), so the page's own box is what the list and the pane divide.
+  // The list and the pane divide the page's measured content box.
   const surfaceWidth = pageWidth;
   const isMeasured = surfaceWidth > 0;
   const single = isMeasured ? surfaceWidth < SINGLE_SURFACE_BELOW : mobile;
@@ -347,14 +348,16 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const sourcesLine = sourcesNotice(threadsQ.data?.sources);
   const silent = useSilentSources();
   const silentWords = silent.list.length ? `${silent.list.map(silentLine).join('. ')}.` : null;
-  const count = (t: TodoTab) => piles[t].filter(x => !area || x.area === area).length;
+  // A source with a last successful read can contribute its saved work even during a failed refetch.
+  const countsKnown = !!threadsQ.data && !threadsQ.data.sources?.some(s => !s.lastSuccess);
+  const count = (t: TodoTab) => piles[t].filter(inArea).length;
   // The counts line under the title (board Att göra): what needs the person and what waits on others; what is done is
   // not a call to look.
-  const countsLine = loading ? null : `${count('needs-you')} behöver dig · ${count('waiting')} väntar på andra`;
+  const countsLine = countsKnown ? `${count('needs-you')} behöver dig · ${count('waiting')} väntar på andra` : null;
   // On a phone the strip has the short words (board PhoneInbox: "Väntar"), so the three with their counts fit 320 px
   // under the text-spacing overrides (1.4.12).
   const tabBadge = (t: TodoTab) => {
-    if (t === 'done' || loading) return undefined;
+    if (t === 'done' || !countsKnown) return undefined;
     const n = count(t);
     if (!n) return undefined;
     return (
@@ -526,17 +529,15 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   );
   // Beside its reading pane the list stands in the frame's card and draws none of its own.
   const beside = !!itemId && !single;
-  // What is overdue among what needs the person: its due badge is the error's.
-  const overdue = piles['needs-you'].filter(
-    t => (!area || t.area === area) && rowFacts(t, now, todayDate).due?.variant === 'error',
-  ).length;
+  // Due today and overdue share a badge colour. Only an open item due before the Stockholm day is overdue.
+  const overdue = piles['needs-you'].filter(t => inArea(t) && (openDeadline(t, todayDate)?.days ?? 0) < 0).length;
   /**
    * The piles as key figures over the list (D130 item 19), as the reference opens Mina aktiviteter: what needs the
    * person, how much of it is overdue, what waits on others and what is done, each leading to its pile. Not drawn
    * beside the reading pane, where the list and the item share the page.
    */
   const figures =
-    loading || beside ? null : (
+    !countsKnown || beside ? null : (
       <FigureRow>
         <KeyFigure
           label="Behöver dig"
@@ -574,7 +575,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     <BoardCard
       id="todo-pile"
       title={tabTitle[tab]}
-      count={loading ? undefined : count(tab)}
+      count={rows.length}
       countLabel="ärenden"
       tools={filters}
       bare={beside}
