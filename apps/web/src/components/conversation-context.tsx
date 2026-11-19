@@ -10,7 +10,15 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import type { Chip, ClewObject, ConversationResponse, HandoverAssistant, Verb, Thread } from '@clew/contracts';
+import type {
+  Chip,
+  ClewObject,
+  ConversationResponse,
+  HandoverAssistant,
+  OpenThing,
+  Verb,
+  Thread,
+} from '@clew/contracts';
 import { useLocation, useMatch, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAnnounce, type ChatComposerInputHandle } from '@clew/ui';
@@ -87,9 +95,10 @@ export interface ConversationState {
   /**
    * Sends a question. `about` is what the conversation's page is about by its address (the thing beside the
    * transcript): it goes with every question there, as the chips in the drawer do, without being drawn in the drawer.
+   * `thing` is a person, a unit or a record beside it, told to the server as what stands open (D131 item 1).
    */
-  submit(raw: string, from?: AskFrom, about?: ChipRef[]): Promise<void>;
-  ask(text: string, from?: AskFrom, about?: ChipRef[]): void;
+  submit(raw: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing): Promise<void>;
+  ask(text: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing): void;
   /** Stoppa (D36): the turn is aborted, nothing is saved, and the question goes back in the box. */
   stop(): void;
   performActions(actions: ClewAction[]): Promise<void>;
@@ -215,6 +224,8 @@ interface Question {
   chips: Chip[];
   /** The one of the chips that stands open beside the transcript. */
   beside?: string;
+  /** The person, the unit or the record beside the transcript (D131 item 1). */
+  thing?: OpenThing;
   current: Conversation | null;
   from?: AskFrom;
 }
@@ -459,6 +470,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         // To another system's assistant the person's words go alone: nothing of the conversation follows them.
         chips: how.to ? [] : used,
         beside: how.to ? undefined : question.beside,
+        thing: how.to ? undefined : question.thing,
         current,
         handed: how.to ?? undefined,
         ...(how.suggested ? { suggested: true } : {}),
@@ -490,7 +502,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     [send, onConversation, navigate, announce],
   );
   const submit = useCallback(
-    async (raw: string, from?: AskFrom, about?: ChipRef[]) => {
+    async (raw: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing) => {
       const text = plainText(raw);
       const used = [
         ...new Map(
@@ -514,6 +526,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           text,
           chips: used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip),
           ...(beside ? { beside } : {}),
+          ...(thing ? { thing } : {}),
           current,
           ...(from ? { from } : {}),
         },
@@ -536,7 +549,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     if (o) void dispatch(o.question, { own: true });
   }, [dispatch]);
   const ask = useCallback(
-    (text: string, from?: AskFrom, about?: ChipRef[]) => void submit(text, from, about),
+    (text: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing) => void submit(text, from, about, thing),
     [submit],
   );
   // The panel beside the conversation: one question at a time to another system's assistant, in the same conversation.

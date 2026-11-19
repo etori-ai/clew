@@ -3636,6 +3636,25 @@ export const ExecutionSummarySchema = object({
   compensates: Type.Union([Type.String(), Type.Null()]),
 });
 export type ExecutionSummary = Static<typeof ExecutionSummarySchema>;
+/** The longest a record's input may be as JSON for it to be sent as the open thing (D131 item 1). */
+export const OPEN_THING_INPUT_MAX = 2000;
+/**
+ * The thing that stands open on the page a question is asked beside (D131 item 1): a person or a unit by Clew's id, a
+ * record by its read and the input that draws it. It says only which thing: the server resolves it again on every turn,
+ * as the asker, and a thing it cannot resolve for them is told to the model as nothing. A work item and a calendar entry
+ * are not sent this way: they go as the chip that stands open (`ConversationInput.beside`).
+ */
+export const OpenThingSchema = Type.Union([
+  object({ kind: Type.Literal('person'), id: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }) }),
+  object({ kind: Type.Literal('unit'), id: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }) }),
+  object({
+    kind: Type.Literal('record'),
+    capability: Type.String({ minLength: 1, maxLength: 120 }),
+    /** The read's input as the page's address holds it; refused when its JSON is longer than `OPEN_THING_INPUT_MAX`. */
+    input: Type.Record(Type.String(), Type.Unknown()),
+  }),
+]);
+export type OpenThing = Static<typeof OpenThingSchema>;
 /**
  * A question conversation that was asked beside a page (D130 rule 6): the subject the page gave it, so the pane finds
  * the person's latest conversation about that subject again on any device, the words that say what it is about (Alla
@@ -3646,6 +3665,8 @@ export const AskedBesideSchema = object({
   subject: Type.String({ minLength: 1, maxLength: 1200 }),
   label: Type.String({ minLength: 1, maxLength: 200 }),
   openedAt: Type.Union([instant, Type.Null()]),
+  /** The thing the page showed (D131 item 1), kept so every later turn of the conversation is about it. */
+  thing: Type.Optional(OpenThingSchema),
 });
 export type AskedBeside = Static<typeof AskedBesideSchema>;
 /** Every thread answers "varför ser jag detta?" with trigger, source and time. */
@@ -4772,6 +4793,12 @@ export const ConversationInput = object({
     object({ subject: AskedBesideSchema.properties.subject, label: AskedBesideSchema.properties.label }),
   ),
   conversationId: Type.Optional(id),
+  /**
+   * The thing that stands open where the question is asked (D131 item 1): on a thing's page beside the assistant's pane,
+   * or beside the transcript on the conversation's page. The server resolves it as the asker; with `page`, a
+   * conversation this question starts keeps it (`AskedBeside.thing`).
+   */
+  thing: Type.Optional(OpenThingSchema),
   /**
    * Send this turn to a source's assistant (`HandoverAssistant.id`) and not to Clew's own. The text goes unchanged, and
    * `chips` are then what the person chose to send with it, each checked on the server before anything leaves.

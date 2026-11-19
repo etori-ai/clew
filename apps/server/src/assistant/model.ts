@@ -82,8 +82,9 @@ export interface PromptContext {
   week: number;
   objects: string[];
   /**
-   * What stands open in the pane beside the transcript as the question is asked, in the same lines as `objects`: the
-   * prompt says it is the thing the person means by "the open item", "the card" or "the pane".
+   * What stands open beside the conversation as the question is asked: the thing of the page the assistant's pane
+   * stands beside (D131), then the chip that stands open in the pane beside the transcript, in the same lines as
+   * `objects`. The prompt says it is the thing the person means by "the page", "the open item", "the card" or "the pane".
    */
   beside?: string[];
   /** The work item's actions may be filled in as a draft (D112 item 8): the prompt says how and that nothing is sent. */
@@ -98,7 +99,7 @@ export interface PromptContext {
    * The asker manages people (D115): the lines about the people the question names, and whether the model may look a
    * name up itself. Absent for someone who manages nobody.
    */
-  people?: { lines: string[]; lookup: boolean };
+  people?: { lines: string[]; lookup: boolean; open?: boolean };
   /**
    * What earlier answers in the conversation read, one line per answer: when, which reads and how many rows each
    * answered. Never what they held: the model reads again for a question about facts.
@@ -146,18 +147,23 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Nämn källor som inte svarade, om sökverktyget rapporterar några.',
     '- Avsluta med en sista rad "Följdfrågor: fråga ett | fråga två | fråga tre": högst tre korta frågor personen kan ställa härnäst. Bara när sökverktyget användes.',
   ];
-  if (ctx.people)
+  if (ctx.people) {
+    // The person whose page stands open is told with what is open beside the conversation (D131 item 2).
+    const where = ctx.people.open
+      ? '"Medarbetare som personen nämnde" eller, för medarbetaren vars sida står öppen, under "Öppet bredvid samtalet"'
+      : '"Medarbetare som personen nämnde"';
     lines.push(
       'När personen frågar om en medarbetare:',
       ...(ctx.people.lookup
         ? [
-            '- Vem det är står under "Medarbetare som personen nämnde". Står det inte där, slå upp namnet som personen skrev det med verktyget clew__findPerson.',
+            `- Vem det är står under ${where}. Står det inte där, slå upp namnet som personen skrev det med verktyget clew__findPerson.`,
           ]
-        : ['- Vem det är står under "Medarbetare som personen nämnde".']),
+        : [`- Vem det är står under ${where}.`]),
       '- Kan namnet vara flera medarbetare: räkna upp namnen och fråga vem personen menar. Heter ingen så: säg det.',
       '- Uppgifter om medarbetarnas hälsa och frånvaro lämnas inte till dig. Utgå från det personen själv skrev, gissa aldrig och fråga aldrig om diagnos.',
       '- Frågar personen vad hen ska göra: läs rutinen med det verktyg som har den och säg kort vad den säger att chefen gör nu. Finns ett öppet ärende om medarbetaren, peka på det och på dess knapp; ärendet visas för personen i samtalet.',
     );
+  }
   // Where another system's assistant covers the question it comes before searching or answering: the rules stand with
   // the others, ahead of the search rules, so a question about rules and routines is not searched for first. The person
   // is asked before anything is sent, so the model is told to suggest when in doubt (D125 item 11).
@@ -196,7 +202,7 @@ export function systemPrompt(ctx: PromptContext): string {
   if (ctx.beside?.length)
     lines.push(
       '',
-      'Öppet i rutan bredvid samtalet just nu (skriver personen "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
+      'Öppet bredvid samtalet just nu (skriver personen "sidan", "personen", "medarbetaren", "enheten", "den öppna posten", "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
       ...ctx.beside.map(o => `- ${o}`),
     );
   if (ctx.objects.length)

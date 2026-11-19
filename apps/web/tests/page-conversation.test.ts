@@ -1,6 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import type { Chip, Thread } from '@clew/contracts';
-import { conversationFor, listSubject, pageSubject, sourceReads } from '../src/components/page-conversation';
+import { OPEN_THING_INPUT_MAX, type Chip, type EntitySource, type Thread } from '@clew/contracts';
+import {
+  SUBJECT_MAX,
+  UNNAMED_PERSON,
+  conversationFor,
+  entityPageSubject,
+  itemPageSubject,
+  listSubject,
+  pageSubject,
+  pageTurn,
+  recordKey,
+  recordSubject,
+  recordThing,
+  sourceReads,
+  stableJson,
+} from '../src/components/page-conversation';
+import { turnInput } from '../src/components/turns';
 
 type Message = Thread['messages'][number];
 const asked = (chips: Chip[], id = 'q'): Message => ({
@@ -289,5 +304,234 @@ describe('a source about people or units is read through its overviews (D127, D1
     expect(pageSubject({ key: 'units', title: 'Läget', reads, views })!.closed).toBe(
       'Assistenten kan inte läsa det som visas här. Du kan ändå fråga om annat som du har tillgång till.',
     );
+  });
+});
+
+describe('a record is one conversation per record, by its read and its input (D131 item 1)', () => {
+  test('the input is one text whatever order its address wrote it in; arrays keep theirs', () => {
+    expect(stableJson({ b: 1, a: { d: [2, 1], c: 'x' } })).toBe('{"a":{"c":"x","d":[2,1]},"b":1}');
+    expect(stableJson({ a: undefined, b: null })).toBe('{"b":null}');
+    expect(recordKey('supplier.card', { id: '42', year: 2026 })).toBe(
+      recordKey('supplier.card', { year: 2026, id: '42' }),
+    );
+  });
+  test('two records of one read are two subjects, and neither is the list’s', () => {
+    const a = recordKey('supplier.card', { id: '42' });
+    const b = recordKey('supplier.card', { id: '43' });
+    expect(a).toBe('view:supplier.card:{"id":"42"}');
+    expect(a).not.toBe(b);
+    expect(a).not.toBe('view:supplier.card');
+  });
+  test('an input too long for the subject is kept as its digest, the same for the same input and within the limit', () => {
+    const long = { text: 'x'.repeat(SUBJECT_MAX) };
+    const key = recordKey('docs.document', long);
+    expect(key).toMatch(/^view:docs\.document#[0-9a-f]{16}$/);
+    expect(key.length).toBeLessThanOrEqual(SUBJECT_MAX);
+    expect(recordKey('docs.document', { text: 'x'.repeat(SUBJECT_MAX) })).toBe(key);
+    expect(recordKey('docs.document', { text: 'y'.repeat(SUBJECT_MAX) })).not.toBe(key);
+  });
+  test('the record is the thing with its input; one whose input the server would refuse is told as nothing', () => {
+    expect(recordThing('supplier.card', { id: '42' })).toEqual({
+      kind: 'record',
+      capability: 'supplier.card',
+      input: { id: '42' },
+    });
+    expect(recordThing('docs.document', { text: 'x'.repeat(OPEN_THING_INPUT_MAX) })).toBeUndefined();
+  });
+  test('a record’s conversation is found by its key alone, never by the read’s chip another record shares', () => {
+    const chip: Chip = { ref: 'capability:supplier.card', kind: 'capability', label: 'Leverantör' };
+    const other = thread('om-42', '2026-11-18T10:00:00.000Z', [asked([chip]), answer], 'question', {
+      subject: recordKey('supplier.card', { id: '42' }),
+      label: 'Om Acme AB',
+      openedAt: null,
+    });
+    const mine = { key: recordKey('supplier.card', { id: '43' }), chips: [chip], thing: { kind: 'record' as const } };
+    expect(conversationFor([other], mine)).toBeNull();
+    expect(conversationFor([other], { ...mine, key: recordKey('supplier.card', { id: '42' }) })?.id).toBe('om-42');
+  });
+});
+
+describe('a thing’s page says what stands open (D131 items 1 to 7)', () => {
+  const views = [
+    { capability: 'supplier.card', title: 'Leverantör', assistant: true as const },
+    { capability: 'qlik.card', title: 'Rapport' },
+    { capability: 'boarding.plan', title: 'Planen', assistant: true as const },
+    { capability: 'talks.talks', title: 'Utvecklingssamtal', assistant: true as const },
+  ];
+  const source = (s: Partial<EntitySource> & Pick<EntitySource, 'capability' | 'source' | 'title'>) =>
+    ({ connector: s.capability.split('.')[0]!, view: { kind: 'record' }, ...s }) as EntitySource;
+  test('a work item’s page and its review: the key it was always asked under, its chip as what stands open, no thing', () => {
+    const subject = itemPageSubject({ id: 'ledighet-1', title: 'Ledighetsansökan från Anna Lindqvist' });
+    expect(subject).toMatchObject({
+      key: 'thread:ledighet-1',
+      about: 'Om ärendet Ledighetsansökan från Anna Lindqvist',
+      placeholder: 'Fråga om ärendet',
+      search: '?card=ledighet-1',
+    });
+    expect(subject.thing).toBeUndefined();
+    expect(pageTurn(subject)).toEqual({
+      chips: [{ ref: 'thread:ledighet-1', kind: 'thread', label: 'Ledighetsansökan från Anna Lindqvist' }],
+      beside: 'thread:ledighet-1',
+      page: { subject: 'thread:ledighet-1', label: 'Om ärendet Ledighetsansökan från Anna Lindqvist' },
+    });
+  });
+  test('a record the assistant may read: its chip, its thing, its name as written, and it stands beside the conversation', () => {
+    const subject = recordSubject({
+      capability: 'supplier.card',
+      input: { id: '42' },
+      name: 'Acme AB',
+      title: 'Leverantör',
+      source: 'Ekonomisystemet',
+      views,
+      search: '?open=supplier.card',
+    })!;
+    expect(subject.about).toBe('Om Acme AB');
+    expect(subject.placeholder).toBe('Fråga om Acme AB');
+    expect(subject.closed).toBeUndefined();
+    expect(pageTurn(subject)).toEqual({
+      chips: [{ ref: 'capability:supplier.card', kind: 'capability', label: 'Leverantör' }],
+      beside: 'capability:supplier.card',
+      page: { subject: 'view:supplier.card:{"id":"42"}', label: 'Om Acme AB' },
+      thing: { kind: 'record', capability: 'supplier.card', input: { id: '42' } },
+    });
+  });
+  test('a record the assistant may not read: no chip, the thing still goes, and the pane names the system', () => {
+    const subject = recordSubject({
+      capability: 'qlik.card',
+      input: { report: 'r1' },
+      name: 'Sjukfrånvaro oktober',
+      title: 'Rapport',
+      source: 'Qlik',
+      views,
+      search: '',
+    })!;
+    expect(subject.chips).toEqual([]);
+    expect(subject.thing).toEqual({ kind: 'record', capability: 'qlik.card', input: { report: 'r1' } });
+    expect(subject.closed).toBe(
+      'Assistenten kan inte läsa det som Qlik visar här. Du kan ändå fråga om annat som du har tillgång till.',
+    );
+    expect(recordSubject({ capability: 'qlik.card', input: {}, name: 'x', views: undefined, search: '' })).toBeNull();
+  });
+  test('a plan is a record of boarding.plan, said in Clew’s own words with the read’s own title on its chip', () => {
+    const subject = recordSubject({
+      capability: 'boarding.plan',
+      input: { plan: 'p1' },
+      name: 'Introduktion för Anna Lindqvist',
+      common: true,
+      views,
+      search: '',
+    })!;
+    expect(subject.key).toBe('view:boarding.plan:{"plan":"p1"}');
+    expect(subject.about).toBe('Om Introduktion för Anna Lindqvist');
+    expect(subject.placeholder).toBe('Fråga om introduktion för Anna Lindqvist');
+    expect(subject.chips).toEqual([{ ref: 'capability:boarding.plan', kind: 'capability', label: 'Planen' }]);
+    expect(subject.thing).toEqual({ kind: 'record', capability: 'boarding.plan', input: { plan: 'p1' } });
+  });
+  test('a person: one subject for every tab, the person by Clew’s id, no chip, and a section’s system named', () => {
+    const sections = [
+      source({
+        capability: 'talks.person',
+        source: 'Clew',
+        title: 'Utvecklingssamtal',
+        own: true,
+        overviews: ['talks.talks'],
+      }),
+      source({ capability: 'hr.absence', source: 'Personalsystemet', title: 'Frånvaro' }),
+    ];
+    const subject = entityPageSubject({
+      kind: 'person',
+      id: 'p-anna',
+      name: 'Anna Lindqvist',
+      relation: 'managed',
+      sections,
+      views,
+      tab: 'hr.absence',
+    })!;
+    expect(subject.key).toBe('person:p-anna');
+    expect(subject.about).toBe('Om Anna Lindqvist');
+    expect(subject.placeholder).toBe('Fråga om Anna Lindqvist');
+    expect(subject.search).toBe('?person=p-anna&section=hr.absence');
+    expect(subject.closed).toBe('Assistenten kan inte läsa det som Personalsystemet visar här.');
+    expect(pageTurn(subject)).toEqual({
+      chips: [],
+      page: { subject: 'person:p-anna', label: 'Om Anna Lindqvist' },
+      thing: { kind: 'person', id: 'p-anna' },
+    });
+    // Another tab is the same subject.
+    expect(
+      entityPageSubject({ kind: 'person', id: 'p-anna', name: 'Anna Lindqvist', relation: 'managed', sections, views })!
+        .key,
+    ).toBe('person:p-anna');
+  });
+  test('the page of someone the reader neither is nor manages says the assistant is not told who it is, and still sends them', () => {
+    const colleague = entityPageSubject({
+      kind: 'person',
+      id: 'p-olle',
+      name: 'Olle Berg',
+      relation: 'colleague',
+      sections: [],
+      views,
+    })!;
+    expect(colleague.closed).toBe(UNNAMED_PERSON);
+    expect(colleague.thing).toEqual({ kind: 'person', id: 'p-olle' });
+    const closedToo = entityPageSubject({
+      kind: 'person',
+      id: 'p-olle',
+      name: 'Olle Berg',
+      relation: 'colleague',
+      sections: [source({ capability: 'hr.absence', source: 'Personalsystemet', title: 'Frånvaro' })],
+      views,
+    })!;
+    expect(closedToo.closed).toBe(
+      `${UNNAMED_PERSON} Assistenten kan inte läsa det som Personalsystemet visar här. Du kan ändå fråga om annat som du har tillgång till.`,
+    );
+    for (const relation of ['self', 'managed'] as const)
+      expect(
+        entityPageSubject({ kind: 'person', id: 'p', name: 'N', relation, sections: [], views })!.closed,
+      ).toBeUndefined();
+  });
+  test('a unit: its key and id, no chip, and no line about who it is', () => {
+    const subject = entityPageSubject({
+      kind: 'unit',
+      id: 'u-1',
+      name: 'Bergsåkers skola',
+      relation: 'member',
+      sections: [],
+      views,
+    })!;
+    expect(subject.key).toBe('unit:u-1');
+    expect(subject.search).toBe('?unit=u-1');
+    expect(subject.chips).toEqual([]);
+    expect(subject.thing).toEqual({ kind: 'unit', id: 'u-1' });
+    expect(subject.closed).toBeUndefined();
+    expect(
+      entityPageSubject({ kind: 'unit', id: 'u-1', name: 'x', relation: 'manages', sections: [], views: undefined }),
+    ).toBeNull();
+  });
+});
+
+describe('the thing goes with a question to Clew, never to another system’s assistant (D131 item 1)', () => {
+  const thing = { kind: 'person' as const, id: 'p-anna' };
+  const page = { subject: 'person:p-anna', label: 'Om Anna Lindqvist' };
+  test('asked of Clew, the request carries the thing and the page', () => {
+    expect(turnInput({ text: 'Hur går det?', chips: [], current: null, own: true, page, thing })).toEqual({
+      text: 'Hur går det?',
+      chips: [],
+      own: true,
+      page,
+      thing,
+    });
+  });
+  test('handed to another system’s assistant, neither the thing nor the page nor what stands open goes', () => {
+    const request = turnInput({
+      text: 'Hur går det?',
+      chips: [],
+      beside: 'thread:t1',
+      current: { id: 'c1', title: 'x', messages: [] },
+      handed: { id: 'kunskap:hr', name: 'HR-assistenten', source: 'Kunskapsbanken' },
+      page,
+      thing,
+    });
+    expect(request).toEqual({ text: 'Hur går det?', chips: [], conversationId: 'c1', assistant: 'kunskap:hr' });
   });
 });

@@ -15,12 +15,12 @@ import { CONTACT, FRITIDS, JOHAN_EMAIL, MELLANSTADIET, People } from './person-d
 /**
  * The person as a page (D126 rule 1, board Person; D97 item 5): the thing's page, with the way back, the avatar, the
  * name with the title and the unit, the actions under the name (the first as the primary, the second as a secondary,
- * Fråga assistenten, the rest under Fler åtgärder), the person's sections as tabs that are links with their own address
- * (`?section=`), and the facts (Anställning, Kontakt, Enhet) in the end panel, above the read where the window is
- * narrow. Nothing opens over or beside the page (rule 3): a work item is its own page, the talk is its tab, and a
- * propose's dialog comes before anything is created (rule 4). `person-data.ts` answers the person and their sections,
- * with Johan's profile, Kontakt and the talk's action points beside the mock's sources and Kompetenssystemet silent
- * until a test lets it answer. Keyboard, focus, announcements, axe and reflow.
+ * the rest under Fler åtgärder, the frame's Fråga assistenten after them), the person's sections as tabs that are links
+ * with their own address (`?section=`), and the facts (Anställning, Kontakt, Enhet) in the end panel, above the read
+ * where the window is narrow. Nothing opens over or beside the page (rule 3): a work item is its own page, the talk is
+ * its tab, and a propose's dialog comes before anything is created (rule 4). `person-data.ts` answers the person and
+ * their sections, with Johan's profile, Kontakt and the talk's action points beside the mock's sources and
+ * Kompetenssystemet silent until a test lets it answer. Keyboard, focus, announcements, axe and reflow.
  */
 const wide = { width: 1440, height: 900 };
 const tablet = { width: 1024, height: 768 };
@@ -64,7 +64,8 @@ test.describe('the person as a page', () => {
     await expect(main.getByText('Lärare 4–6 · Bergsåkers skola', { exact: true })).toBeVisible();
     // The avatar is decoration: the name beside it says who it is.
     await expect(main.locator('.astryx-avatar').first()).toHaveAttribute('aria-hidden', 'true');
-    // The actions: the first as the primary, the second as a secondary, Fråga assistenten, the rest under Fler åtgärder.
+    // The actions: the first as the primary, the second as a secondary, the rest under Fler åtgärder; the frame's Fråga
+    // assistenten ends the line (D131 item 9).
     await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toBeVisible();
     await expect(main.getByRole('button', { name: 'Registrera frånvaro', exact: true })).toBeVisible();
     await expect(main.getByRole('button', { name: 'Fråga assistenten' })).toBeVisible();
@@ -330,10 +331,11 @@ test.describe('the person on a phone', () => {
 });
 
 /**
- * One conversation per person, not one per tab (the product owner, 2026-11-14): "Fråga assistenten" on any of a person's tabs
- * lands on a conversation about the person, titled "Fråga om <name>" before anything is written, with the person beside
- * it drawn with the page's parts and tabs; the tab it came from is only the pane's first tab. Changing the pane's tab
- * changes its address and nothing else; Esc in the pane lets go of the person and keeps the conversation.
+ * One conversation per person, not one per tab (the product owner, 2026-11-14): "Öppna som samtal" in the assistant's pane
+ * on any of a person's tabs (D131 item 9) lands on a conversation about the person, titled "Fråga om <name>" before
+ * anything is written, with the person beside it drawn with the page's parts and tabs; the tab it came from is only the
+ * pane's first tab. Changing the pane's tab changes its address and nothing else; Esc in the pane lets go of the person
+ * and keeps the conversation.
  */
 test.describe('a conversation about a person', () => {
   test.use({ viewport: wide });
@@ -351,6 +353,10 @@ test.describe('a conversation about a person', () => {
     ] as const) {
       await open(page, `/people/johan?section=${section}&from=%2Fstaff`);
       await page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' }).click();
+      await page
+        .getByRole('complementary', { name: 'Assistenten' })
+        .getByRole('link', { name: 'Öppna som samtal' })
+        .click();
       // The address carries the person; the tab only says what the pane shows first.
       await expect(page).toHaveURL(`/conversations/new?person=johan&section=${section}`);
       await expect(page.getByRole('heading', { level: 1, name: 'Fråga om Johan Byström' })).toBeVisible();

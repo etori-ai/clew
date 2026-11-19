@@ -33,7 +33,7 @@ import { besideQuery, mobileQuery, shortQuery } from '../media';
 import { asksBeside, withAsk, withoutAsk } from '../panel-address';
 import { useModelConfigured } from './conversation-context';
 import { PageTalk, useOpenAsConversation, usePageConversation, type PageSubject } from './page-conversation';
-import { PageFrameContext } from './page-frame-context';
+import { PageFrameContext, useFactsInColumn } from './page-frame-context';
 import { useAskAbout } from './thing-panel';
 
 /**
@@ -73,14 +73,14 @@ export function WayBack({ back }: { back: WayBackTarget }) {
 
 /**
  * Whether and about what a page has "Fråga assistenten" (D130 rule 1): every page says, so leaving it out is a type error
- * and no page can forget the assistant. `subject` is what the page shows (null until the page knows it, while its data
- * loads, and while a pane of the page's own holds the end slot: Att göra's item); `none` is a page with no button and
- * why (Administration, where nothing is a read the assistant may make; the assistant's own pages, Hem, Ny fråga and a
- * conversation; a frame that is no page of the person's work, the first load's or a missing calendar's); `later` is a
- * thing's page, which still draws its own way to ask until its stage of the plan (stage 3) moves it into the frame, and
- * goes when it has moved. The registers, Läget and Att göra's queue are in the frame since stage 2.
+ * and no page can forget the assistant. `subject` is what the page shows: its list (the registers, Läget and Att göra's
+ * queue since stage 2) or its thing (a work item, its review, a record, a person, a unit and a plan since stage 3, D131),
+ * null until the page knows it (while its data loads, on a thing's missing page) and while a pane of the page's own
+ * holds the end slot (Att göra's item). `none` is a page with no button and why: Administration, where nothing is a
+ * read the assistant may make; the assistant's own pages, Hem, Ny fråga and a conversation; a frame that is no page of
+ * the person's work, the first load's or a missing calendar's.
  */
-export type PageAsk = AskAbout | { none: 'administration' | 'assistant' | 'no-page' } | { later: 'things' };
+export type PageAsk = AskAbout | { none: 'administration' | 'assistant' | 'no-page' };
 /** A page with the frame's button and pane (D130 rules 1 to 4). */
 export interface AskAbout {
   subject: PageSubject | null;
@@ -144,7 +144,10 @@ interface PageFrameProps {
   facts?: ReactNode;
   /** The facts' landmark name: "Uppgifter", or what the panel holds (the review's "Hittills"). */
   factsLabel?: string;
-  /** False where the page places the facts in its narrow column itself (a work item's read). */
+  /**
+   * False where the page places the facts in its narrow column itself (a work item's read, the review's "Hittills"),
+   * by `useFactsInColumn`, which says when the frame no longer draws them beside the column.
+   */
   factsAbove?: boolean;
   /**
    * A pane of the page's own in the end slot (a `LayoutPanel`), where the page has no facts' panel: Att göra's reading
@@ -207,7 +210,8 @@ export function PageFrame(props: PageFrameProps) {
  * the pane and the button again take it away. It holds the assistant's heading, what it is about in words, where the
  * assistant cannot read (`subject.closed`) and "Öppna som samtal", then the conversation and the box (`PageTalk`). From
  * `besideQuery` it stands beside the page in the end slot, which the page's own pane wins while it holds something
- * (Kalender's entry, rule 5); the column then draws its narrow layout (`useColumnQuery`, the facts above the read).
+ * (Kalender's entry, rule 5); the column then draws its narrow layout (`useColumnQuery`; a thing's facts above its
+ * read, `useFactsInColumn`, D131 item 9).
  * Narrower or short it is Astryx's drawer over the page; on a phone the button leads to the conversation's page with
  * the subject, as "Fråga assistenten" did before (D126 rule 5).
  *
@@ -433,7 +437,7 @@ function FrameBody({
 }) {
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
-  const narrow = useMediaQuery(narrowPageQuery);
+  const factsInColumn = useFactsInColumn(narrowPageQuery);
   const tight = useMediaQuery(tightQuery);
   const pin = pinned ?? !short;
   const gutter = tight ? 4 : 6;
@@ -515,11 +519,11 @@ function FrameBody({
       </VStack>
     </LayoutHeader>
   ) : undefined;
-  // The facts and the assistant's pane share the end slot: while the pane is open the facts stand above the read, as
-  // where the window is narrow (D130 rule 11).
-  const panelFacts = !!facts && !narrow && !askPane;
+  // The facts and the assistant's pane share the end slot: while the pane stands beside the page the facts stand above
+  // the read, as where the window is narrow (D130 rule 11, D131 item 9; `useFactsInColumn`).
+  const panelFacts = !!facts && !factsInColumn;
   const column =
-    facts && (narrow || askPane) && factsAbove ? (
+    facts && factsInColumn && factsAbove ? (
       <VStack gap={6}>
         <VStack as="section" gap={4} aria-label={factsLabel}>
           {facts}

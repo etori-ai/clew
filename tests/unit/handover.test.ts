@@ -732,7 +732,7 @@ describe('an assistant beside the conversation, and a source that still hands ba
 });
 
 describe('a question on its way to another assistant is held when it names the person\u2019s staff or cards (D125 item 13)', () => {
-  const managed = [{ key: 'anna', name: 'Anna Lindqvist', unit: 'Skönsmons skola' }];
+  const managed = [{ key: 'anna', userName: 'anna', name: 'Anna Lindqvist', unit: 'Skönsmons skola' }];
   test('a managed person\u2019s name holds it: nothing is sent or saved, and the person\u2019s yes sends it and is recorded', async () => {
     const w = world({ people: managed });
     const held = await w.assistant

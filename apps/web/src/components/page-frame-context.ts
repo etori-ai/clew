@@ -1,5 +1,5 @@
-import { createContext, useContext, type ReactNode } from 'react';
-import { useMediaQuery } from '@clew/ui';
+import { createContext, createElement, useContext, type ReactNode } from 'react';
+import { HStack, useMediaQuery } from '@clew/ui';
 
 /**
  * What the page frame hands to the parts drawn inside it (D130 rules 1 and 11). Its own file, so the parts that read it
@@ -18,6 +18,15 @@ export const PageFrameContext = createContext<PageFrameContext>({ askButton: nul
 
 /** The frame's "Fråga assistenten" for a title line drawn inside the page's content (D130 rule 1). */
 export const useFrameAskButton = (): ReactNode => useContext(PageFrameContext).askButton;
+/**
+ * The frame's "Fråga assistenten" where a page draws its head in its column and no `PageHeader` (the review on a phone):
+ * after the title, as the frame puts a thing's actions under the title on a phone. Nothing where the frame draws the
+ * button itself or draws none.
+ */
+export function FrameAskButton(): ReactNode {
+  const button = useFrameAskButton();
+  return button ? createElement(HStack, null, button) : null;
+}
 
 /**
  * A window query with its widths moved by `by` pixels: `(min-width: 1280px)` with 400 is `(min-width: 1680px)`. Only
@@ -50,4 +59,28 @@ export function useColumnQuery(query: string): boolean {
  */
 export function InColumn({ query, children }: { query: string; children: (matches: boolean) => ReactNode }): ReactNode {
   return children(useColumnQuery(query));
+}
+
+/**
+ * Whether a thing's facts stand in its column rather than in the end panel beside it (D130 rule 11, D131 item 9): where
+ * the window is narrow (`query`, the page's narrow line), and whenever the assistant's pane stands beside the page, since
+ * the pane then holds the end slot the facts' panel had. This is not the column's width: at 1728 px the column beside
+ * the pane is still wider than the narrow line, and the facts have nowhere else to stand. The frame places its `facts`
+ * by it, and a page that places its facts in its column itself (a work item's read, the review's "Hittills") asks the
+ * same, so the two never disagree.
+ */
+export function useFactsInColumn(query: string): boolean {
+  const { paneWidth } = useContext(PageFrameContext);
+  const narrow = useMediaQuery(query);
+  return narrow || paneWidth > 0;
+}
+/** `useFactsInColumn` for a page whose own component draws its frame, read inside the frame as `InColumn` is. */
+export function FactsInColumn({
+  query,
+  children,
+}: {
+  query: string;
+  children: (inColumn: boolean) => ReactNode;
+}): ReactNode {
+  return children(useFactsInColumn(query));
 }

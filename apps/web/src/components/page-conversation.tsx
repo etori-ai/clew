@@ -1,10 +1,23 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { Chip, ConversationResponse, Prepared, Thread, ThreadMessage, ViewEntry, ViewRef } from '@clew/contracts';
+import {
+  OPEN_THING_INPUT_MAX,
+  type Chip,
+  type ConversationResponse,
+  type EntityDetail,
+  type EntitySource,
+  type OpenThing,
+  type Prepared,
+  type Thread,
+  type ThreadMessage,
+  type ViewEntry,
+  type ViewRef,
+} from '@clew/contracts';
 import { ChatLayout, HStack, Link, StackItem, Text, VStack } from '@clew/ui';
 import { areasQuery, threadsQuery } from '../queries';
 import { declaredPage, viewPageHref } from '../view-address';
+import { entitySubject, type EntitySubjectKind } from '../conversation-about';
 import { Composer } from './composer';
 import { Transcript } from './conversation';
 import {
@@ -15,7 +28,8 @@ import {
   type ThingSubject,
 } from './conversation-context';
 import { askAboutHref, useAskAbout } from './thing-panel';
-import { conversationOf, useTurns } from './turns';
+import { conversationOf, useTurns, type Send } from './turns';
+import { itemSubject } from './view-read';
 
 /**
  * What the assistant beside a page is about (D130 rule 4): the thing or the list the page shows, as "Fråga assistenten"
@@ -28,6 +42,11 @@ export interface PageSubject extends ThingSubject {
   placeholder: string;
   /** Where the assistant cannot read what the page shows: the line that says so before anything is asked (D130 rule 4). */
   closed?: string | undefined;
+  /**
+   * The thing that stands open on the page (D131 item 1): a person, a unit or a record, sent with every question so the
+   * server can resolve it as the asker. A work item and a calendar entry have none: they go as their chip (`beside`).
+   */
+  thing?: OpenThing | undefined;
 }
 
 /**
@@ -36,11 +55,13 @@ export interface PageSubject extends ThingSubject {
  * subject it was asked on. A conversation from before that was kept is found by its question instead: one asked with
  * the subject's chip, as the server keeps the chips on a question (`MessageMeta.chips`). A read of a range
  * (`capability:calendar.week`) is the same chip for every week: there the chip's label, the week or the day it was asked
- * about, tells them apart. Read from the conversations the browser already holds (the thread list, D33).
+ * about, tells them apart. A record is found by its key alone (D131 item 1): its chip names its read, which every
+ * record of the read shares, so a conversation found by the chip could be about another record. Read from the
+ * conversations the browser already holds (the thread list, D33).
  */
 export function conversationFor(
   threads: readonly Thread[],
-  subject: Pick<ThingSubject, 'key' | 'chips'>,
+  subject: Pick<PageSubject, 'key' | 'chips'> & { thing?: Pick<OpenThing, 'kind'> | undefined },
 ): Thread | null {
   const newest = (match: (t: Thread) => boolean) => {
     let found: Thread | null = null;
@@ -51,7 +72,7 @@ export function conversationFor(
   const beside = newest(t => t.askedBeside?.subject === subject.key);
   if (beside) return beside;
   const chip = subject.chips[0];
-  if (!chip) return null;
+  if (!chip || subject.thing?.kind === 'record') return null;
   const asked = (m: ThreadMessage) =>
     m.role === 'user' &&
     !!m.meta?.chips?.some(c => c.ref === chip.ref && (chip.kind !== 'capability' || c.label === chip.label));
@@ -199,6 +220,157 @@ export function pageSubject(page: {
   };
 }
 
+/** The longest subject a conversation keeps (`AskedBeside.subject`). */
+export const SUBJECT_MAX = 1200;
+/**
+ * A value as JSON with every object's keys in order, so one input is one text however its address wrote it: the same
+ * record is the same subject whether its input said `{ "a", "b" }` or `{ "b", "a" }`. Arrays keep their order.
+ */
+export function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(v => (v === undefined ? 'null' : stableJson(v))).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+/** A 64-bit digest of a text, as 16 hex digits: the same text gives the same digest in every browser. */
+function digest(text: string): string {
+  let h1 = 0xdeadbeef,
+    h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+}
+/**
+ * A record's subject (D131 item 1): its read and the input that draws it, so two records of one read are two
+ * conversations (`view:supplier.card:{"id":"42"}`). A list is its read alone (`view:<capability>`, `viewSubject`). An
+ * input too long for the subject to keep (`SUBJECT_MAX`) is kept as its digest instead (`view:<capability>#<16 hex>`):
+ * the same input still finds the same conversation.
+ */
+export function recordKey(capability: string, input: Record<string, unknown>): string {
+  const json = stableJson(input);
+  const key = `view:${capability}:${json}`;
+  return key.length <= SUBJECT_MAX ? key : `view:${capability}#${digest(json)}`;
+}
+/**
+ * A record as the thing that stands open (D131 item 1): its read and its input. None where the input is longer than the
+ * server takes (`OPEN_THING_INPUT_MAX`): the record is then told as nothing, as one the server cannot resolve.
+ */
+export function recordThing(capability: string, input: Record<string, unknown>): OpenThing | undefined {
+  return stableJson(input).length <= OPEN_THING_INPUT_MAX ? { kind: 'record', capability, input } : undefined;
+}
+
+/**
+ * A work item's page and its review (D131 item 1, board AskArende): about the item, by the key "Fråga assistenten" has
+ * always asked it under (`thread:<id>`), so a conversation asked about it before is found again; its chip stands open
+ * (`beside`) and the item stands beside the conversation it opens as (`?card=`). No `thing`: the chip is how a work item
+ * is told.
+ */
+export function itemPageSubject(thread: { id: string; title: string }): PageSubject {
+  return { ...itemSubject(thread), about: `Om ärendet ${thread.title}`, placeholder: 'Fråga om ärendet' };
+}
+
+/**
+ * A record's page (D131 items 1 and 6): one conversation per record (`recordKey`), the record as the thing that stands
+ * open, and the read's chip only where the assistant may make the read for the person (`pageSubject`, whose line says
+ * so where it may not). The pane says it by the record's own name, as written (a supplier, a person's name); the record
+ * stands beside the conversation it opens as (`search`, `?open=`).
+ */
+export function recordSubject(page: {
+  capability: string;
+  input: Record<string, unknown>;
+  /** The record's own name, the page's title. */
+  name: string;
+  /** The read's title, its chip's words; the read's own (`ViewEntry.title`) when absent. */
+  title?: string | undefined;
+  /** The system the read is from, by its Swedish name; absent for Clew's own domain. */
+  source?: string | undefined;
+  /** The name is Clew's own words (a plan's "Introduktion för …"): lowered in a sentence, as a list's title is. */
+  common?: boolean | undefined;
+  views: readonly Pick<ViewEntry, 'capability' | 'title' | 'assistant'>[] | undefined;
+  /** The conversation's page's address part: the record beside it (`?open=`), or nothing for a read whose rows are a page. */
+  search: string;
+}): PageSubject | null {
+  const { capability, input, name, title, source, common = false, views, search } = page;
+  const subject = pageSubject({
+    key: recordKey(capability, input),
+    title: name,
+    ...(common ? {} : { named: name }),
+    reads: [{ capability, ...(title ? { label: title } : {}), ...(source ? { source } : {}) }],
+    views,
+    search,
+  });
+  const thing = recordThing(capability, input);
+  return subject && { ...subject, ...(thing ? { thing } : {}) };
+}
+
+/**
+ * Said under the pane's heading on the page of a person the reader neither is nor manages (D131 item 4): the server
+ * names nobody to the model there, and the reader is told so before anything is asked.
+ */
+export const UNNAMED_PERSON = 'Assistenten får inte veta vem sidan gäller, eftersom du inte är chef för personen.';
+
+/**
+ * A person's or a unit's page (D131 items 1 to 5 and 7): one subject for every tab (`person:<id>`, `unit:<id>`, as
+ * "Fråga assistenten" asked about them), the person or the unit by Clew's id as the thing that stands open, and no chip:
+ * what a source says about them is never the assistant's (D97 item 7), so the pane names a section's system it cannot
+ * read otherwise by the rule of D130's stage 2 (`sourceReads`). On the page of a person the reader neither is nor
+ * manages (`relation` `colleague`) the pane also says that the assistant is not told who it is (`UNNAMED_PERSON`); the
+ * thing still goes, and the server decides. They stand beside the conversation the pane opens as (`?person=`, `?unit=`,
+ * with the tab the pane shows first).
+ */
+export function entityPageSubject(page: {
+  kind: EntitySubjectKind;
+  /** Clew's id: the person's or the unit's, as their page's address names them. */
+  id: string;
+  name: string;
+  relation: EntityDetail['relation'];
+  sections: readonly EntitySource[];
+  views: readonly Pick<ViewEntry, 'capability' | 'title' | 'assistant'>[] | undefined;
+  /** The tab the pane beside the conversation shows first, where it has it. */
+  tab?: string | null | undefined;
+}): PageSubject | null {
+  const { kind, id, name, relation, sections, views, tab } = page;
+  const ask = entitySubject(kind, id, tab);
+  const subject = pageSubject({
+    key: ask.key,
+    title: name,
+    named: name,
+    reads: sections.flatMap(sourceReads),
+    views,
+    search: ask.search,
+  });
+  if (!subject) return null;
+  const unnamed = kind === 'person' && relation === 'colleague' ? UNNAMED_PERSON : undefined;
+  const closed = [unnamed, subject.closed].filter(Boolean).join(' ');
+  const { closed: _read, ...rest } = subject;
+  return { ...rest, chips: [], thing: { kind, id }, ...(closed ? { closed } : {}) };
+}
+
+/**
+ * What goes with every question asked in the pane beside a page: the subject's chips, the first of them as what stands
+ * open (`beside`); the page's subject by its key and in its words (`page`), so a conversation the question starts is
+ * kept as asked beside it (D130 rule 6), found again on any device and left out of the rail until opened; and the thing
+ * that stands open, where the page has one (`thing`, D131 item 1), which the server resolves as the asker on every turn.
+ */
+export function pageTurn(subject: PageSubject): Pick<Send, 'chips' | 'beside' | 'page' | 'thing'> {
+  const chips = subject.chips.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip);
+  return {
+    chips,
+    ...(chips[0] ? { beside: chips[0].ref } : {}),
+    page: { subject: subject.key, label: subject.about.slice(0, 200) },
+    ...(subject.thing ? { thing: subject.thing } : {}),
+  };
+}
+
 /** The conversation beside a page: what it is about, and the conversation's state as the pane's parts read it. */
 export interface PageConversation {
   subject: PageSubject | null;
@@ -214,8 +386,8 @@ const noop = () => undefined;
  * becoming a drawer and back. It is the app's inert conversation (`INERT_CONVERSATION`) with turns of its own over it:
  * the drawer, `@`, another system's assistant, a new conversation and closing are the conversation's page's and stay
  * inert here, and nothing here navigates. Every question goes with the subject's chips, as what stands open
- * (`beside`), with the page's subject (`page`) and as Clew's own turn (`own`): it is never offered to another system's
- * assistant. The person's newest
+ * (`beside`), with the page's subject (`page`), with the thing that stands open where there is one (`thing`, D131 item
+ * 1) and as Clew's own turn (`own`): it is never offered to another system's assistant. The person's newest
  * conversation about the subject is shown and continued (`conversationFor`); with none, the first question makes one,
  * listed under Alla samtal like any other. Another subject stops a turn still running and lets go of the words in the
  * box. `onAnswer` hears each finished turn, so the page can make ready what the answer prepared (Kalender, D129).
@@ -227,10 +399,12 @@ export function usePageConversation(
   const threads = useQuery(threadsQuery).data?.threads ?? EMPTY;
   const key = subject?.key ?? null;
   const chip = subject?.chips[0];
+  const kind = subject?.thing?.kind;
   const found = useMemo(
-    () => (key ? conversationFor(threads, { key, chips: chip ? [chip] : [] }) : null),
+    () =>
+      key ? conversationFor(threads, { key, chips: chip ? [chip] : [], ...(kind ? { thing: { kind } } : {}) }) : null,
     // The key and the chip's fields, not the object: a page builds its subject anew on every render.
-    [threads, key, chip?.ref, chip?.kind, chip?.label],
+    [threads, key, chip?.ref, chip?.kind, chip?.label, kind],
   );
   const turns = useTurns(noop);
   const { reset, send, abortTurn, input } = turns;
@@ -255,18 +429,13 @@ export function usePageConversation(
   answered.current = opts?.onAnswer;
   const submit = useCallback(
     async (raw: string) => {
-      const thing = about.current;
+      const subject = about.current;
       const text = raw.replace(/\s+/g, ' ').trim();
-      if (!thing || !text) return;
-      const chips = thing.chips.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip);
+      if (!subject || !text) return;
       await send({
         raw,
         text,
-        chips,
-        ...(chips[0] ? { beside: chips[0].ref } : {}),
-        // What the page shows, by its key and in its words: a conversation this question starts is kept as asked
-        // beside it (D130 rule 6), so it is found again on any device and stays out of the rail until opened.
-        page: { subject: thing.key, label: thing.about.slice(0, 200) },
+        ...pageTurn(subject),
         current: continued.current,
         own: true,
         onAnswered: response => answered.current?.(response),

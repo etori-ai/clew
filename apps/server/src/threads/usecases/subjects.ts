@@ -9,7 +9,7 @@ import {
 } from '@clew/contracts';
 import type { Registry } from '@clew/connectors';
 import { visibleThread } from '../access';
-import type { SubjectErasure, ThreadStore } from '../model';
+import type { ConversationErasure, SubjectErasure, ThreadStore } from '../model';
 
 /**
  * The cards about an entity (D97 items 5 and 6): a card's rows may name a person or a unit, and Clew keeps an index from
@@ -66,6 +66,8 @@ export interface SubjectErasureDeps {
 }
 /** The audit action of an erased subject. */
 export const SUBJECT_ERASED = 'thread.subject_erased';
+/** The audit action of the conversations asked beside an erased person's page (D131 item 8), as each domain names its own. */
+export const CONVERSATIONS_ERASED = 'conversation.person_erased';
 
 export function subjectErasure({ store, clock, people }: SubjectErasureDeps) {
   /**
@@ -76,11 +78,15 @@ export function subjectErasure({ store, clock, people }: SubjectErasureDeps) {
    * the entity names it again on its next scan. A person id the people table does not hold (a user name, a typo) and a
    * person who is still active erase nothing and write no audit row: only a person the source has deactivated is erased
    * (D123 item 3). A unit is erased by any id, since a removed unit may still be named. `actor` is the operator's.
+   *
+   * A person's erasure also deletes whole every conversation asked beside their page (D131 item 8), whoever asked it:
+   * the one conversation Clew can tie to the person with certainty, and likely to quote what Clew knows about them. In
+   * the same transaction, with an audit row of its own about the person (`conversation.person_erased`), counts only.
    */
   async function eraseSubject(
     actor: string,
     subject: Subject,
-  ): Promise<SubjectErasure | { refused: 'unknown' | 'active' }> {
+  ): Promise<(SubjectErasure & Partial<ConversationErasure>) | { refused: 'unknown' | 'active' }> {
     if (subject.entity === 'person') {
       const enabled = await people.enabled(subject.key);
       if (enabled === undefined) return { refused: 'unknown' };
@@ -96,7 +102,16 @@ export function subjectErasure({ store, clock, people }: SubjectErasureDeps) {
         at,
         details: { entity: subject.entity, ...erased },
       });
-      return erased;
+      if (subject.entity !== 'person') return erased;
+      const beside = await tx.eraseConversationsBeside(subject.key);
+      await tx.writeAudit({
+        actor,
+        action: CONVERSATIONS_ERASED,
+        subject: `person:${subject.key}`,
+        at,
+        details: { ...beside },
+      });
+      return { ...erased, ...beside };
     });
   }
   return { eraseSubject };

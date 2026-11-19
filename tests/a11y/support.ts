@@ -210,6 +210,8 @@ export class MockApi {
     confirmed?: boolean;
     /** The page the question was asked beside (`ConversationInput.page`, D130): its subject and its words. */
     page?: { subject: string; label: string };
+    /** The thing that stands open where the question was asked (`ConversationInput.thing`, D131 item 1). */
+    thing?: { kind: string; id?: string; capability?: string; input?: Record<string, unknown> };
   }[] = [];
   /** The conversations the conversation's page marked as opened (`POST /conversations/:id/opened`, D130 rule 6). */
   opened: string[] = [];
@@ -1686,6 +1688,7 @@ export class MockApi {
         confirmed?: boolean;
         side?: boolean;
         page?: { subject: string; label: string };
+        thing?: { kind: string; id?: string; capability?: string; input?: Record<string, unknown> };
       };
       this.asked.push(body);
       await this.answerHeld;
@@ -1718,9 +1721,19 @@ export class MockApi {
         : conversation(
             this.threads,
             body.text,
-            // Asked in place, a new conversation is one per thing, as the server makes a new one per question asked.
+            // Asked in place, a new conversation is one per thing, as the server makes a new one per question asked: by
+            // the thing that stands open where there is one (D131: a person, a unit, one record of a read), else by
+            // what stands open beside it.
             body.conversationId ??
-              (body.own && body.beside ? 'om-' + body.beside.replace(/[^A-Za-z0-9]/g, '-') : undefined),
+              (body.own && (body.thing || body.beside)
+                ? 'om-' +
+                  (body.thing
+                    ? [body.thing.kind, body.thing.id ?? body.thing.capability, JSON.stringify(body.thing.input ?? '')]
+                        .join('-')
+                        .replace(/[^A-Za-z0-9]+/g, '-')
+                        .replace(/-+$/, '')
+                    : body.beside!.replace(/[^A-Za-z0-9]/g, '-'))
+                : undefined),
             body.beside,
           );
       // The server keeps the chips a question went with on it (`MessageMeta.chips`): how a page finds the

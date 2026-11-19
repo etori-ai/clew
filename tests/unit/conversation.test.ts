@@ -16,6 +16,7 @@ import { memoryObligations, memoryProposalStore } from '../../apps/server/src/mo
 import { calendarUsecases } from '../../apps/server/src/modules/calendar/usecases/samtal';
 import { assistantUsecases, TurnStopped } from '../../apps/server/src/assistant';
 import { speaksOf } from '../../apps/server/src/assistant/people';
+import { CONVERSATIONS_ERASED, subjectErasure } from '../../apps/server/src/threads/usecases/subjects';
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
 import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
@@ -63,7 +64,10 @@ const members = ['Anna Lindqvist', 'Erik Sandström'].map(name => {
   const first = name.split(' ')[0]!.toLowerCase();
   return { personId: first, ref: 'memory:account:' + first, email: first + '@clew.test', name };
 });
-/** The people Hillevi manages (D115), by the user names the HR fixture knows them by; an employee manages nobody. */
+/**
+ * The people Hillevi manages (D115), by the user names the HR fixture knows them by; an employee manages nobody. In this
+ * world a person's id is their user name (D122).
+ */
 const directory: ManagedPerson[] = [
   ['anna', 'Anna Lindqvist'],
   ['erik', 'Erik Sandström'],
@@ -72,7 +76,7 @@ const directory: ManagedPerson[] = [
   ['per', 'Per Lindahl'],
   ['karin', 'Karin Lindqvist'],
   ['lena', 'Lena Öhman'],
-].map(([key, name]) => ({ key: key!, name: name!, unit: 'Skönsmons skola' }));
+].map(([key, name]) => ({ key: key!, userName: key!, name: name!, unit: 'Skönsmons skola' }));
 function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) {
   const registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
@@ -1354,7 +1358,7 @@ describe('the assistant prepares a move or a cancellation of the open meeting, t
  * person added to the box stays under "Du tittar på". The turn's audit row names the chips as before.
  */
 describe('the thing open beside the transcript is told to the model as that', () => {
-  const OPEN = 'Öppet i rutan bredvid samtalet just nu';
+  const OPEN = 'Öppet bredvid samtalet just nu';
   const ADDED = 'Du tittar på (det personen lagt till i samtalet):';
   async function asked(input: { beside?: string; both?: boolean }) {
     const prompts: string[] = [];
@@ -1388,7 +1392,7 @@ describe('the thing open beside the transcript is told to the model as that', ()
     expect(turn.assistant).toBe('model');
     expect(system).toContain(
       OPEN +
-        ' (skriver personen "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
+        ' (skriver personen "sidan", "personen", "medarbetaren", "enheten", "den öppna posten", "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
     );
     expect(under(system, OPEN)).toContain(`Ärende "${invoices.title}"`);
     expect(system).not.toContain(ADDED);
@@ -2127,5 +2131,158 @@ describe('a question asked beside a page (D130 rule 6)', () => {
     expect(await w.assistant.markOpened(hillevi, card.id)).toBeUndefined();
     expect(w.store.audit).toHaveLength(before);
     expect((await w.threads.threadFor(hillevi, turn.conversationId))!.askedBeside!.openedAt).toBeNull();
+  });
+});
+
+/**
+ * What stands open on a person's page is told to the model by Clew (D131 items 1 to 4): one of the asker's people as a
+ * person the conversation names, the asker's own page as theirs, anyone else's as nothing. The page names the person by
+ * Clew's id alone; the server resolves it as the asker on every turn, and a conversation asked beside the page keeps it,
+ * so a later turn is about the person wherever it is continued. Erasing the person deletes those conversations (item 8).
+ */
+describe('a person whose page stands open (D131)', () => {
+  const OPEN = 'Öppet bredvid samtalet just nu';
+  const ANNA =
+    'Sidan om medarbetaren Anna Lindqvist på Skönsmons skola, användarnamn anna, som personen är chef för. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Avfärda).';
+  /** What a source holds about Anna's health, as the rehab card's summary and row say it: never handed to the model. */
+  const HEALTH = ['Namnet visas i personalsystemet', 'korta perioder sedan', 'Sjuk ·', '"periods"', 'hr:emp:1001'];
+  const annasPage = {
+    page: { subject: 'person:anna', label: 'Anna Lindqvist' },
+    thing: { kind: 'person' as const, id: 'anna' },
+  };
+  /** A model the test plays that reads nothing and keeps what it is told and offered. */
+  function listening() {
+    const systems: string[] = [];
+    const offered: string[][] = [];
+    const generate: ModelGenerate = async ({ system, tools }) => {
+      systems.push(system);
+      offered.push(Object.keys(tools));
+      return { text: 'Boka omtankesamtalet med knappen i ärendet.', toolCalls: [] };
+    };
+    return { generate, systems, offered };
+  }
+  async function rehab(w: ReturnType<typeof world>) {
+    await w.threads.ensureThreads(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'hr:rehab:hr:emp:1001')!;
+  }
+
+  test('one of the asker’s people: who she is and her work, and every card about her by title alone from the first turn', async () => {
+    const m = listening();
+    const w = world({ generate: m.generate });
+    const card = await rehab(w);
+    // The question names nobody; the card it points at is about her, so it is handed as her work is.
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Vad ska jag tänka på inför samtalet?',
+      chips: [{ ref: 'thread:' + card.id, kind: 'thread', label: card.title }],
+      ...annasPage,
+    });
+    const [system] = m.systems;
+    expect(system).toContain(OPEN + ' (skriver personen "sidan", "personen", "medarbetaren"');
+    expect(system).toContain('\n- ' + ANNA);
+    expect(system).toContain(
+      'Du tittar på (det personen lagt till i samtalet):\n- Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu:',
+    );
+    for (const marker of HEALTH) expect(system).not.toContain(marker);
+    // The rules say where she is told, and she is among those the lookup resolves.
+    expect(system).toContain(
+      '- Vem det är står under "Medarbetare som personen nämnde" eller, för medarbetaren vars sida står öppen, under "Öppet bredvid samtalet". Står det inte där, slå upp namnet som personen skrev det med verktyget clew__findPerson.',
+    );
+    expect(m.offered[0]).toContain('clew__findPerson');
+    // The conversation keeps which person, by id alone; the audit row says a person stood open, never who.
+    expect(turn.thread.askedBeside).toEqual({ ...annasPage.page, openedAt: null, thing: annasPage.thing });
+    const row = w.store.audit.at(-1)!;
+    expect(row).toMatchObject({ action: 'conversation.asked', details: { askedBeside: true, thing: 'person' } });
+    expect(JSON.stringify(row)).not.toContain('Anna');
+    expect(JSON.stringify(row)).not.toContain('"anna"');
+  });
+
+  test('her one work item is the one the model may draft on and is drawn when the answer speaks of it; a later turn without the page is still about her', async () => {
+    const m = listening();
+    const w = world({ generate: m.generate });
+    const card = await rehab(w);
+    const first = await w.assistant.converse(hillevi, { text: 'Kan du fylla i det till torsdag?', ...annasPage });
+    expect(m.offered[0]).toContain('clew__draftAction');
+    expect(first.thread.messages.at(-1)!.meta!.cards).toEqual([card.id]);
+    w.advance(60_000);
+    // The conversation's page sends no thing: the conversation kept it.
+    await w.assistant.converse(hillevi, { text: 'Och vad gör jag sedan?', conversationId: first.conversationId });
+    expect(m.systems[1]).toContain('\n- ' + ANNA);
+    for (const marker of HEALTH) expect(m.systems[1]).not.toContain(marker);
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.replied', details: { thing: 'person' } });
+  });
+
+  test('the asker’s own page is theirs; anyone else’s page names nobody, as does any page for someone who manages nobody', async () => {
+    const m = listening();
+    const w = world({ generate: m.generate });
+    await rehab(w);
+    await w.assistant.converse(hillevi, {
+      text: 'Vad har jag kvar att göra?',
+      thing: { kind: 'person', id: 'hillevi' },
+    });
+    expect(m.systems[0]).toContain(`${OPEN} (skriver personen "sidan"`);
+    expect(m.systems[0]).toContain(
+      '\n- Personens egen sida. Gäller frågan sidan, gäller den personen själv: läs med verktygen utan att ange någon medarbetare, så svarar de för personen.',
+    );
+    expect(m.systems[0]).not.toContain('Sidan om medarbetaren');
+    // Someone she does not manage, an id of nobody, and her report's page asked from an employee who manages nobody.
+    for (const [who, id] of [
+      [hillevi, 'olle'],
+      [hillevi, 'nobody'],
+      [hassan, 'anna'],
+    ] as const) {
+      const before = m.systems.length;
+      const turn = await w.assistant.converse(who, { text: 'Vad behöver jag veta?', thing: { kind: 'person', id } });
+      expect(turn.assistant).toBe('model');
+      expect(m.systems).toHaveLength(before + 1);
+      const system = m.systems.at(-1)!;
+      expect(system).not.toContain(OPEN);
+      expect(system).not.toContain('Anna Lindqvist');
+      expect(system).not.toContain('användarnamn');
+      expect(system).not.toContain(id);
+    }
+  });
+
+  test('erasing her deletes every conversation asked beside her page, whoever asked; the rest stay, and one audit row counts them', async () => {
+    const w = world();
+    const beside = (who: AuthenticatedContext, id: string) =>
+      w.assistant.converse(who, {
+        text: 'visa fakturor',
+        page: { subject: 'person:' + id, label: id },
+        thing: { kind: 'person', id },
+      });
+    const mine = await beside(hillevi, 'anna');
+    const theirs = await beside(hassan, 'anna');
+    const erik = await beside(hillevi, 'erik');
+    const plain = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
+    const erasure = subjectErasure({
+      store: w.store,
+      clock: () => new Date(T0),
+      // Anna has been deactivated by the source; everyone else is active.
+      people: { enabled: async id => id !== 'anna' },
+    });
+    expect(await erasure.eraseSubject('operator:cli', { entity: 'person', key: 'anna' })).toMatchObject({
+      conversations: 2,
+      messages: 4,
+    });
+    const left = w.store.dump().map(r => r.thread.id);
+    expect(left).not.toContain(mine.conversationId);
+    expect(left).not.toContain(theirs.conversationId);
+    expect(left).toEqual(expect.arrayContaining([erik.conversationId, plain.conversationId]));
+    expect(await w.threads.threadFor(hassan, theirs.conversationId)).toBeUndefined();
+    expect(w.store.audit.filter(e => e.action === CONVERSATIONS_ERASED)).toEqual([
+      {
+        actor: 'operator:cli',
+        action: CONVERSATIONS_ERASED,
+        subject: 'person:anna',
+        at: T0,
+        details: { conversations: 2, messages: 4 },
+      },
+    ]);
+    // Erik's is his own: erasing Anna again finds nothing, and says so with zero counts.
+    expect(await erasure.eraseSubject('operator:cli', { entity: 'person', key: 'anna' })).toMatchObject({
+      conversations: 0,
+      messages: 0,
+    });
+    expect(w.store.dump().map(r => r.thread.id)).toEqual(expect.arrayContaining([erik.conversationId]));
   });
 });

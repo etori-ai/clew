@@ -82,6 +82,39 @@ export function workItemLine(t: Thread, now: string): string {
   );
 }
 /**
+ * What stands open on a thing's page as Clew resolved it for the asker this turn (D131), other than one of the asker's
+ * people, whose line is `openPersonLine`: the asker's own page (item 3), a unit they manage or follow up (item 5), a
+ * record read for the model as a tool call would have read it (item 6), or a record the model cannot read. Whatever
+ * resolves to nothing for the asker (a colleague's page, a unit they do not follow up) has no line at all.
+ */
+export type OpenThingLine =
+  | { kind: 'own' }
+  | { kind: 'unit'; id: string; name: string }
+  | { kind: 'record'; capability: string; title: string; source: string; reading: unknown }
+  | { kind: 'unread'; read?: { title: string; source: string } };
+/**
+ * The Swedish line for what stands open, for the block beside the conversation, where "sidan", "enheten" and "den
+ * öppna posten" are this thing. A record is handed as its view lets a model read it (`modelReading`), never with the
+ * input the page drew it with: that input may name a person by a key, and the record is read again every turn.
+ */
+export function openThingLine(open: OpenThingLine): string {
+  switch (open.kind) {
+    case 'own':
+      return 'Personens egen sida. Gäller frågan sidan, gäller den personen själv: läs med verktygen utan att ange någon medarbetare, så svarar de för personen.';
+    case 'unit':
+      return `Sidan om enheten ${open.name}, enhetens id ${open.id}, som personen är chef för eller följer upp. Ett verktyg som tar en enhet läser den med id:t ${open.id}.`;
+    case 'record':
+      return (
+        `Den öppna posten "${open.title}" (${open.source}), läst nu med verktyget ${open.capability} så som sidan visar den. ` +
+        `Gäller frågan den öppna posten, svara utifrån detta: ${JSON.stringify(open.reading)}`
+      );
+    case 'unread':
+      return open.read
+        ? `Den öppna posten "${open.read.title}" (${open.read.source}) kan du inte läsa. Gäller frågan den, säg att du inte kan läsa den.`
+        : 'Det som står öppet på sidan kan du inte läsa. Gäller frågan det, säg att du inte kan läsa det som visas.';
+  }
+}
+/**
  * Swedish lines for the system prompt's "Du tittar på" block. Names appear here only because the person pointed at the
  * object. `now` (an instant) decides whether a card's undo window is still open; chips are resolved again every turn, so
  * the state is the card's as it is now, not as it was when it was added. A card `guards` answers for is about a person

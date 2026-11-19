@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { rowMark, type AuthenticatedContext, type Thread, type View } from '../../packages/contracts/src/index';
+import {
+  OPEN_THING_INPUT_MAX,
+  rowMark,
+  type AuthenticatedContext,
+  type Chip,
+  type ConversationInput,
+  type Thread,
+  type TurnEvent,
+  type View,
+} from '../../packages/contracts/src/index';
 import {
   READING_CHARS,
   READING_ROWS,
@@ -15,7 +24,7 @@ import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapt
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { memoryPersonKeys } from '../person-keys';
 import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
-import { personKey, reportsByUnit } from '../../apps/server/src/modules/entities/domain';
+import { followedUnits, personKey, reportsByUnit, unitRelation } from '../../apps/server/src/modules/entities/domain';
 import { memoryCompetenceStore } from '../../apps/server/src/modules/competence/adapters/memory';
 import {
   attentionView,
@@ -26,7 +35,7 @@ import { competenceUsecases } from '../../apps/server/src/modules/competence/use
 import { calendarConnector } from '../../apps/server/src/modules/calendar/connector';
 import { workCapabilities } from '../../apps/server/src/modules/work/capabilities';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
-import { assistantUsecases, type AssistantDeps } from '../../apps/server/src/assistant';
+import { assistantUsecases, type AssistantDeps, type TurnObserver } from '../../apps/server/src/assistant';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
 import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
 import { fixtureConnectors } from '../fixture-connectors';
@@ -286,28 +295,46 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
     log: (...args) => {
       logged.push(args);
     },
-    // Composition's binding (D115): the people Personal lists for the asker, co-managers included.
+    // Composition's binding (D115): the people Personal lists for the asker, co-managers included, by Clew's id with
+    // the user name a read that takes a person is given (D122).
     people: async persona =>
       (await d.staff.reach(persona)).managed.flatMap(unit =>
         unit.people.flatMap(p => {
-          const key = personKey(p);
-          return key ? [{ key, name: p.name, unit: unit.unitLabel }] : [];
+          const userName = personKey(p);
+          return userName ? [{ key: p.id, userName, name: p.name, unit: unit.unitLabel }] : [];
         }),
       ),
+    // Composition's binding (D131 item 5): the units the asker manages or follows up below, never one they are only on.
+    units: async persona => {
+      const reach = await d.staff.reach(persona);
+      return followedUnits(reach)
+        .filter(u => unitRelation(reach, u.unitId) !== 'member')
+        .map(u => ({ id: u.unitId, name: u.unitLabel }));
+    },
   };
   const assistant = assistantUsecases(deps);
-  /** One question as this person, in a conversation of its own or one going on; the turn, its audit row and its message. */
+  /**
+   * One question as this person, in a conversation of its own or one going on, with what stands open on the page
+   * (`more`); the turn, its audit row and its message.
+   */
   const ask = async (
     who: string,
     text: string,
     conversationId?: string,
-    chips?: { ref: string; kind: 'capability'; label: string }[],
+    chips?: Chip[],
+    more: Pick<ConversationInput, 'thing' | 'page' | 'beside'> = {},
+    observer?: TurnObserver,
   ) => {
-    const turn = await assistant.converse(d.persona(who), {
-      text,
-      ...(conversationId ? { conversationId } : {}),
-      ...(chips ? { chips } : {}),
-    });
+    const turn = await assistant.converse(
+      d.persona(who),
+      {
+        text,
+        ...(conversationId ? { conversationId } : {}),
+        ...(chips ? { chips } : {}),
+        ...more,
+      },
+      observer,
+    );
     return {
       turn,
       audit: threads.audit.at(-1)!,
@@ -317,7 +344,7 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
       body: turn.thread.messages.at(-1)!.body,
     };
   };
-  return { d, registry, competence, store, ask, model, logged, freeAsked };
+  return { d, registry, competence, store, threads, ask, model, logged, freeAsked };
 }
 
 const competenceTools = (offered: string[]) => offered.filter(t => t.startsWith('competence__')).sort();
@@ -1075,5 +1102,173 @@ describe('what the model reads of a read, for every connector', () => {
     expect(read.antal).toBe(80);
     expect(read.rader.length + read.utelämnade).toBe(80);
     expect(read.utelämnade).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * What stands open on a unit's page or a record's (D131 items 5 and 6), resolved on the server as the asker on every
+ * turn: a unit they manage or follow up by its name and id, any other unit as nothing; a record read for the model as
+ * the assistant's read for the asker, handed as the model would have been handed it had it called the read; a read it
+ * may not make, or one that is refused, told as one it cannot read. Never the input the page drew a record with.
+ */
+describe('what stands open on a unit’s or a record’s page (D131)', () => {
+  const OPEN = 'Öppet bredvid samtalet just nu';
+  const unit = (id: string) => ({ thing: { kind: 'unit' as const, id } });
+  const record = (capability: string, input: Record<string, unknown>) => ({
+    thing: { kind: 'record' as const, capability, input },
+  });
+  const named = (w: Awaited<ReturnType<typeof world>>, capability: string) => {
+    const found = w.registry.find(capability)!;
+    return { title: found.capability.title, source: found.connector.source };
+  };
+  const ANNAS_HLR = {
+    antal: 1,
+    rader: [
+      {
+        Kompetens: 'HLR',
+        Status: 'utgånget',
+        'Giltigt till': '10 januari 2026',
+        Utfärdat: '10 januari 2024',
+        Område: 'Akut',
+      },
+    ],
+  };
+
+  test('a unit the asker manages or follows up below is told by its name and id; any other unit is told as nothing', async () => {
+    const w = await world();
+    const { audit } = await w.ask('hillevi', 'Hur ser täckningen ut?', undefined, undefined, unit('unit-skola'));
+    expect(w.model.systems.at(-1)).toContain(
+      `${OPEN} (skriver personen "sidan", "personen", "medarbetaren", "enheten"`,
+    );
+    expect(w.model.systems.at(-1)).toContain(
+      '\n- Sidan om enheten Bergsåkers skola, enhetens id unit-skola, som personen är chef för eller följer upp. Ett verktyg som tar en enhet läser den med id:t unit-skola.',
+    );
+    expect(audit.details).toMatchObject({ thing: 'unit' });
+    expect(JSON.stringify(audit)).not.toContain('unit-skola');
+    await w.ask('hillevi', 'Hur ser täckningen ut?', undefined, undefined, unit('unit-fritids'));
+    expect(w.model.systems.at(-1)).toContain('\n- Sidan om enheten Fritids, enhetens id unit-fritids, som personen');
+    // A unit elsewhere, an id of nothing, and the unit an employee is only on.
+    for (const [who, id] of [
+      ['hillevi', 'unit-ekonomi'],
+      ['hillevi', 'nothing'],
+      ['anna', 'unit-skola'],
+    ] as const) {
+      await w.ask(who, 'Hur ser det ut?', undefined, undefined, unit(id));
+      expect(w.model.systems.at(-1)).not.toContain(OPEN);
+      expect(w.model.systems.at(-1)).not.toContain(id);
+    }
+  });
+
+  test('a record whose read the assistant may make is read as the asker, for the assistant, and handed as a tool call would have been, on every turn', async () => {
+    const w = await world();
+    const { title, source } = named(w, 'competence.holdings');
+    const chip = { ref: 'capability:competence.holdings', kind: 'capability' as const, label: title };
+    const events: TurnEvent[] = [];
+    const page = { subject: 'tool:competence.holdings?person=anna', label: 'Annas kompetenser' };
+    const { turn, audit, meta } = await w.ask(
+      'hillevi',
+      'Vad behöver förnyas?',
+      undefined,
+      [chip],
+      { ...record('competence.holdings', { person: 'anna' }), beside: chip.ref, page },
+      { emit: e => void events.push(e) },
+    );
+    const system = w.model.systems.at(-1)!;
+    expect(system).toContain(
+      `\n- Den öppna posten "${title}" (${source}), läst nu med verktyget competence.holdings så som sidan visar den. Gäller frågan den öppna posten, svara utifrån detta: ${JSON.stringify(ANNAS_HLR)}`,
+    );
+    // The chip that names the same read is not told as well, as a read the model should make itself; the input the
+    // page drew the record with is never told.
+    expect(system).not.toContain('Förmågan "');
+    expect(system).not.toContain('"person"');
+    // The assistant's read for her (D122 items 5 and 6): logged as a person's read is, with the fact that the
+    // assistant made it, shown as a step and counted among the turn's reads, never with a row in the audit.
+    expect(w.store.readLog().map(r => [r.readerId, r.relation, r.caller, r.kind, r.personId, r.rows])).toEqual([
+      ['hillevi', 'managed', 'assistant', 'person', 'anna', 1],
+    ]);
+    expect(events.flatMap(e => (e.type === 'step' ? [[e.step.capability, e.step.status, e.step.title]] : []))).toEqual([
+      ['competence.holdings', 'running', title],
+      ['competence.holdings', 'complete', title],
+    ]);
+    expect(audit.details).toMatchObject({
+      thing: 'record',
+      tools: [],
+      reads: [{ capability: 'competence.holdings', rows: 1 }],
+    });
+    for (const content of ['HLR', 'Akut', 'anna']) expect(JSON.stringify(audit)).not.toContain(content);
+    expect(meta.reads).toEqual([{ capability: 'competence.holdings', rows: 1 }]);
+    expect(turn.answer.source).toBe(source);
+    // The card under the answer is that read with the page's input, not a second read without it.
+    expect(turn.view).toMatchObject({ capability: 'competence.holdings', input: { person: 'anna' } });
+    // Kept with the conversation, which thing only, and read again on the next turn wherever it is continued.
+    expect(turn.thread.askedBeside).toEqual({
+      ...page,
+      openedAt: null,
+      ...record('competence.holdings', { person: 'anna' }),
+    });
+    await w.ask('hillevi', 'Och sedan?', turn.conversationId);
+    expect(w.model.systems.at(-1)).toContain(JSON.stringify(ANNAS_HLR));
+    expect(w.store.readLog()).toHaveLength(2);
+  });
+
+  test('a read refused for whom it names is told as one the model cannot read, and the turn goes on', async () => {
+    const w = await world();
+    const { title, source } = named(w, 'competence.holdings');
+    const { turn, audit } = await w.ask(
+      'hillevi',
+      'Vad har hon för kompetenser?',
+      undefined,
+      undefined,
+      record('competence.holdings', { person: 'karin' }),
+    );
+    expect(turn.assistant).toBe('model');
+    expect(w.model.systems.at(-1)).toContain(
+      `\n- Den öppna posten "${title}" (${source}) kan du inte läsa. Gäller frågan den, säg att du inte kan läsa den.`,
+    );
+    expect(audit.details).toMatchObject({ reads: [{ capability: 'competence.holdings', failed: true }] });
+    expect(w.store.readLog()).toEqual([]);
+  });
+
+  test('a read the assistant may not make is not made: named when the person may make it, said as nothing otherwise', async () => {
+    const w = await world();
+    w.registry.govern('competence', { ...openGovernance(), capabilities: { 'competence.holdings': { model: false } } });
+    const holdings = named(w, 'competence.holdings');
+    const { audit } = await w.ask(
+      'hillevi',
+      'Vad har hon för kompetenser?',
+      undefined,
+      undefined,
+      record('competence.holdings', { person: 'anna' }),
+    );
+    expect(w.model.systems.at(-1)).toContain(
+      `\n- Den öppna posten "${holdings.title}" (${holdings.source}) kan du inte läsa. Gäller frågan den, säg att du inte kan läsa den.`,
+    );
+    expect(audit.details).not.toHaveProperty('reads');
+    // A read about an entity is never the assistant's (D97 item 7), on its page as anywhere.
+    const about = named(w, 'competence.person');
+    await w.ask('hillevi', 'Vad står det?', undefined, undefined, record('competence.person', { keys: ['anna'] }));
+    expect(w.model.systems.at(-1)).toContain(
+      `\n- Den öppna posten "${about.title}" (${about.source}) kan du inte läsa.`,
+    );
+    // A read nobody has is not said to exist.
+    await w.ask('hillevi', 'Vad står det?', undefined, undefined, record('nothing.here', {}));
+    expect(w.model.systems.at(-1)).toContain(
+      '\n- Det som står öppet på sidan kan du inte läsa. Gäller frågan det, säg att du inte kan läsa det som visas.',
+    );
+    expect(w.model.systems.at(-1)).not.toContain('nothing.here');
+    expect(w.store.readLog()).toEqual([]);
+  });
+
+  test('a record whose input is longer than a page may send is refused before anything is read or kept', async () => {
+    const w = await world();
+    const before = w.threads.audit.length;
+    const long = record('competence.holdings', { person: 'anna', note: 'x'.repeat(OPEN_THING_INPUT_MAX) });
+    await expect(
+      w.ask('hillevi', 'Vad står det?', undefined, undefined, { ...long, page: { subject: 'x', label: 'x' } }),
+    ).rejects.toThrow('Det som står öppet på sidan är för stort för att skickas med frågan.');
+    expect(w.threads.audit).toHaveLength(before);
+    expect(w.threads.dump()).toEqual([]);
+    expect(w.model.systems).toEqual([]);
+    expect(w.store.readLog()).toEqual([]);
   });
 });

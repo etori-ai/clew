@@ -10,6 +10,7 @@ import type {
   MessageMeta,
   ModelCall,
   ModelRef,
+  OpenThing,
   Prepared,
   SearchResult,
   SourceCitation,
@@ -20,14 +21,14 @@ import type {
   View,
   ViewRef,
 } from '@clew/contracts';
-import { viewRows } from '@clew/contracts';
+import { OPEN_THING_INPUT_MAX, viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
-import { audiencedActorOf, answersOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
+import { audiencedActorOf, answersOf, modelReading, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import { cardRows, namedItems, type CardRows } from './card';
-import { resolveChips, type ResolvedChips } from './chips';
-import { serialiseContext } from './context';
+import { resolveChips, type ResolvedChips, type ResolvedObject } from './chips';
+import { openThingLine, serialiseContext, type OpenThingLine } from './context';
 import { routeFixed } from './fixed';
 import {
   headingFollowUps,
@@ -47,6 +48,7 @@ import { listObjects } from './objects';
 import { openedPath } from './opened';
 import {
   namedWork,
+  openPersonLine,
   PERSON_TOOL,
   peopleInTurn,
   peopleLines,
@@ -155,6 +157,32 @@ export const heardBody = (m: Pick<Thread['messages'][number], 'role' | 'body' | 
 };
 const whyLine = (t: Thread) =>
   `Varför nu? ${t.trigger.reason.replace(/\.$/, '')}. Källa: ${t.trigger.source}, ${new Date(t.trigger.at).toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })}.`;
+/**
+ * The thing the page says stands open (D131 item 1), as Clew keeps it: which thing and nothing else the browser sent
+ * with it. A record's input longer than `OPEN_THING_INPUT_MAX` as JSON is refused, never cut, so a read is never made
+ * with an input the page did not mean.
+ */
+function pageThing(thing: OpenThing | undefined): OpenThing | undefined {
+  if (!thing) return undefined;
+  if (thing.kind === 'person') return { kind: 'person', id: thing.id };
+  if (thing.kind === 'unit') return { kind: 'unit', id: thing.id };
+  if ((JSON.stringify(thing.input ?? {}) ?? '').length > OPEN_THING_INPUT_MAX)
+    throw new InputError('Det som står öppet på sidan är för stort för att skickas med frågan.');
+  return { kind: 'record', capability: thing.capability, input: thing.input ?? {} };
+}
+/** A record that stands open, read for the model this turn (D131 item 6): what the read answered, kept for the turn alone. */
+interface StandingRecord {
+  capability: string;
+  input: Record<string, unknown>;
+  output: unknown;
+  title: string;
+  source: string;
+}
+/** What stands open on the page, as resolved for the asker this turn: its line, and the record's read when one was made. */
+interface StandingOpen {
+  line?: OpenThingLine;
+  record?: StandingRecord;
+}
 
 /**
  * The assistant (D8, D12, D25): one conversation turn at a time, over ports. Chips are the explicit context; a
@@ -254,6 +282,56 @@ export function assistantUsecases(deps: AssistantDeps) {
     };
     const turn: Turn = { emit, signal: observer.signal, run, reads };
     return turn;
+  }
+  /**
+   * What stands open on a thing's page, resolved as the asker for this turn (D131): the asker's own page (item 3), a
+   * unit they manage or follow up (item 5), or a record (item 6). One of the asker's people is in `PeopleInTurn.open`
+   * (item 2); anyone else's page and any other unit resolve to nothing, and nothing is told. A record is read only when
+   * its read is among the asker's tools: through the turn's runner, as the assistant's read for the asker (D122 items 5
+   * and 6), its input validated by the registry as a tool call's is, shown as a step and counted among the turn's reads.
+   * A read that is not offered, is refused or fails is told as one the model cannot read, and never ends the turn.
+   */
+  async function standingOpen(
+    persona: AuthenticatedContext,
+    thing: OpenThing | undefined,
+    turn: Turn,
+  ): Promise<StandingOpen> {
+    if (!thing) return {};
+    if (thing.kind === 'person') return thing.id === persona.id ? { line: { kind: 'own' } } : {};
+    if (thing.kind === 'unit') {
+      const id = thing.id;
+      const unit = (await deps.units?.(persona))?.find(u => u.id === id);
+      return unit ? { line: { kind: 'unit', id: unit.id, name: unit.name } } : {};
+    }
+    const actor = audiencedActorOf(persona);
+    // Only a read: a propose or an execute that stands open is never run from a conversation.
+    const offered = registry.tools(actor).find(t => t.name === thing.capability && t.kind === 'read');
+    if (!offered) {
+      // Named by its title only where the person may make the read themself; one they may not is not said to exist.
+      const own = registry.allowed(actor, thing.capability);
+      return {
+        line: {
+          kind: 'unread',
+          ...(own ? { read: { title: own.capability.title, source: own.connector.source } } : {}),
+        },
+      };
+    }
+    const read = { title: offered.title, source: offered.source };
+    try {
+      const output = await turn.run(thing.capability, thing.input);
+      return {
+        line: {
+          kind: 'record',
+          capability: thing.capability,
+          ...read,
+          // What the model would have been handed had it called the read itself (`buildTools`).
+          reading: modelReading(offered.view, offered.title, output),
+        },
+        record: { capability: thing.capability, input: thing.input, output, ...read },
+      };
+    } catch {
+      return { line: { kind: 'unread', read } };
+    }
   }
   /**
    * The draft a started work item is shown with. What the assistant gave the propose is the person's to review: where
@@ -515,12 +593,23 @@ export function assistantUsecases(deps: AssistantDeps) {
     model: ResolvedModel,
     turn: Turn,
     people: PeopleInTurn,
+    /** The thing that stands open on the page the question is asked beside (D131), as the browser named it. */
+    thing: OpenThing | undefined,
     /** The assistants of other systems this turn may be handed to (D125 item 11); none when it may not be. */
     routable: HandoverAssistant[] = [],
   ): Promise<Produced | ModelUnavailableOutcome | HandedOutcome> {
     if (!models.health.available(model.providerId)) return { unavailable: 'provider marked down' };
     const tools = model.tools ? registry.tools(audiencedActorOf(persona)) : [];
     const now = clock();
+    // What stands open on the page, resolved as the asker (D131): one of their people, their own page, a unit, a record
+    // read for the model. Told first among what stands open beside the conversation; nothing for what resolves to nobody.
+    const standing = await standingOpen(persona, thing, turn);
+    const openPerson = openPersonLine(people, now.toISOString());
+    const thingLines = [...(openPerson ? [openPerson] : []), ...(standing.line ? [openThingLine(standing.line)] : [])];
+    // The read that draws the open record is told once, as read: the chip that names the same read would tell the model
+    // to read it itself, without the input the page drew it with.
+    const sameRead = (o: ResolvedObject) =>
+      thing?.kind === 'record' && o.kind === 'capability' && o.name === thing.capability;
     // The one work item the conversation is about may have its actions filled in as a draft (D112 item 8): only what
     // the person may do, only with a model that uses tools, and nothing is sent. Without one chipped, the one work item
     // about the one person the question names is that item (D115).
@@ -574,6 +663,17 @@ export function assistantUsecases(deps: AssistantDeps) {
     // answer made, when and how many rows each answered. Never what a read held: a question about facts reads again.
     const recent = history.slice(-20);
     const earlier = earlierReads(recent, now.toISOString());
+    // What stands open beside the conversation: the page's thing, then the chip open in the pane beside the transcript.
+    const beside = [
+      ...thingLines,
+      ...(chips.beside
+        ? serialiseContext(
+            chips.objects.filter(o => o.ref === chips.beside && !sameRead(o)),
+            now.toISOString(),
+            people.guards,
+          )
+        : []),
+    ];
     const system = systemPrompt({
       name: persona.name,
       role: persona.role,
@@ -582,22 +682,16 @@ export function assistantUsecases(deps: AssistantDeps) {
       week: weekNumber(displayDate(now.toISOString())),
       // What stands open beside the transcript is said as that, apart from what the person added to the conversation.
       objects: serialiseContext(
-        chips.objects.filter(o => o.ref !== chips.beside),
+        chips.objects.filter(o => o.ref !== chips.beside && !sameRead(o)),
         now.toISOString(),
         people.guards,
       ),
-      ...(chips.beside
-        ? {
-            beside: serialiseContext(
-              chips.objects.filter(o => o.ref === chips.beside),
-              now.toISOString(),
-              people.guards,
-            ),
-          }
-        : {}),
+      ...(beside.length ? { beside } : {}),
       drafts: draftable.length > 0,
       prepares: !!meeting,
-      ...(people.people.length ? { people: { lines: peopleLines(people, now.toISOString()), lookup } } : {}),
+      ...(people.people.length
+        ? { people: { lines: peopleLines(people, now.toISOString()), lookup, ...(openPerson ? { open: true } : {}) } }
+        : {}),
       ...(earlier.length ? { earlier } : {}),
       ...(model.tools && routable.length ? { assistants: routable.map(assistantLine) } : {}),
     });
@@ -661,10 +755,14 @@ export function assistantUsecases(deps: AssistantDeps) {
       const answered: ReadRecord[] = answer.reads.length
         ? answer.reads.filter(r => !r.failed)
         : reads.filter(c => !(isRecord(c.output) && 'error' in c.output));
-      const sourced = answered.filter(c => c.capability !== PERSON_TOOL);
-      const source = sourced.length
-        ? [...new Set(sourced.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'))].join(', ')
-        : 'Assistenten';
+      // The record that stands open, read for the model (D131 item 6), is one of the systems the turn read.
+      const sourced = [
+        ...(standing.record ? [standing.record.source] : []),
+        ...answered
+          .filter(c => c.capability !== PERSON_TOOL)
+          .map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'),
+      ];
+      const source = sourced.length ? [...new Set(sourced)].join(', ') : 'Assistenten';
       const searched = answered.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
       // A source and a time the model wrote at the end anyway are cut: they stand under the answer, from the turn.
       const parsed = parseAnswer(answer.body, [...registry.list().map(c => c.source), 'Startsidan', 'Assistenten']);
@@ -693,17 +791,26 @@ export function assistantUsecases(deps: AssistantDeps) {
       if (pointedTool?.view && view?.capability === pointedTool.name) {
         // An answer that names some of the rows (the late ones, the invoices) keeps the card on those rows.
         if (namedRows?.show === 'none') shownRows = { count: namedRows.count, show: 'all' };
-      } else if (pointedTool?.view && !view) {
+      } else if (
+        pointedTool?.view &&
+        !view &&
+        // The record that stands open is drawn from the read made for the model, with the page's input; when that read
+        // was not made it is not made again here without it.
+        (!(thing?.kind === 'record' && thing.capability === pointedTool.name) ||
+          standing.record?.capability === pointedTool.name)
+      ) {
         // Only the read the person pointed at is made for a card. A follow-up without a chip that the model answers
         // from what was said is not read again here: such a turn makes no read (a logged read least of all).
         try {
-          const output = await turn.run(pointedTool.name, {});
-          const rows = cardRows(pointedTool.view, {}, output, parsed.body);
+          const made = standing.record?.capability === pointedTool.name ? standing.record : undefined;
+          const input = made?.input ?? {};
+          const output = made ? made.output : await turn.run(pointedTool.name, {});
+          const rows = cardRows(pointedTool.view, input, output, parsed.body);
           if (rows) {
             items = namedItems(pointedTool.view, output, parsed.body);
             card = {
               capability: pointedTool.name,
-              input: {},
+              input,
               title: pointedTool.title,
               source: pointedTool.source,
               declared: true,
@@ -786,6 +893,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     // Handed to an assistant of another system: the person's words go there unchanged and Clew's own model is not
     // asked. Its answer stands as its own; Clew never answers in its place unasked.
     if (input.assistant) return handOver(persona, input, observer);
+    const asked = pageThing(input.thing);
     const turn = turnFor(persona, observer);
     const chips: Chip[] = input.chips ?? [];
     const resolved = await resolveChips(deps, persona, chips, input.beside);
@@ -793,12 +901,17 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (input.conversationId && (!existing || existing.kind !== 'question'))
       throw new InputError('Samtalet finns inte.');
     const history = existing?.messages ?? [];
-    // The people the question names among those the asker manages, and the asker's open work about them (D115).
+    // The thing that stands open (D131 item 1): what the page says now, else what the conversation kept from the page it
+    // was asked beside, so every later turn is about it wherever it is continued. Resolved again below, as the asker.
+    const thing = asked ?? existing?.askedBeside?.thing;
+    // The people the question names among those the asker manages, and the asker's open work about them (D115); a
+    // person whose page stands open is one of them when the asker manages them (D131 item 2).
     const people = await peopleInTurn(
       deps,
       persona,
       input.text,
       history.filter(m => m.role === 'user').map(m => m.body),
+      thing?.kind === 'person' ? thing.id : undefined,
     );
     // The cards this turn is about (H1): the chipped cards, else the open cards the question names. Asking for a card and
     // being told about it land on the same card. A card the conversation already shows is not drawn again: that one is live.
@@ -827,9 +940,10 @@ export function assistantUsecases(deps: AssistantDeps) {
     const fallback = model ? 'unavailable' : 'router';
     let fallbackReason: string | undefined;
     if (!produced && model) {
-      // The assistants the model may hand this question to (D125 item 11): only a question with nothing attached and
-      // no card named, since nothing of the conversation may follow it. A conversation may have an exchange with more
-      // than one of them. A source that does not answer in time offers none, and Clew answers.
+      // The assistants the model may hand this question to (D125 item 11): only a question with nothing attached, no
+      // card named and nothing standing open on the page, since nothing of the conversation may follow it. A
+      // conversation may have an exchange with more than one of them. A source that does not answer in time offers
+      // none, and Clew answers.
       const routable =
         observer.offers &&
         !input.own &&
@@ -837,10 +951,11 @@ export function assistantUsecases(deps: AssistantDeps) {
         deps.handover &&
         !chips.length &&
         !named.length &&
-        !people.named.length
+        !people.named.length &&
+        !thing
           ? (await deps.handover.list(persona).catch(() => [])).slice(0, ROUTABLE_MAX)
           : [];
-      const outcome = await modelPath(persona, input.text, history, context, model, turn, people, routable);
+      const outcome = await modelPath(persona, input.text, history, context, model, turn, people, thing, routable);
       // The model suggests an assistant of another system: the person is asked before anything leaves Clew, and the
       // turn ends here with nothing saved, as a stopped one does.
       if ('handTo' in outcome) {
@@ -864,9 +979,12 @@ export function assistantUsecases(deps: AssistantDeps) {
     const byModel = produced.assistant === 'model';
     const answered = produced.body;
     const pointed = [...chippedCards, ...named].map(t => t.id);
-    const about = namedWork(people)
-      .filter(t => !byModel || speaksOf(answered, t.title))
-      .map(t => t.id);
+    // The work about the person whose page stands open (D131 item 2) is drawn as a looked-up person's is: under a
+    // model's answer that speaks of it. Without a model nothing can tell, and the page shows it already.
+    const about = [
+      ...namedWork(people).filter(t => !byModel || speaksOf(answered, t.title)),
+      ...(byModel && people.open ? people.work(people.open).filter(t => speaksOf(answered, t.title)) : []),
+    ].map(t => t.id);
     const cards = [...new Set([...pointed, ...about, ...(produced.cards ?? [])])]
       .filter(id => !shown.has(id))
       .slice(0, 3);
@@ -923,9 +1041,12 @@ export function assistantUsecases(deps: AssistantDeps) {
     const askedMeta: MessageMeta = {
       ...(chips.length ? { chips, refs } : {}),
     };
-    // Only a conversation this question starts is kept as asked beside the page; on one that exists `page` says nothing (D130).
+    // Only a conversation this question starts is kept as asked beside the page; on one that exists `page` says nothing
+    // (D130). It keeps the thing the page showed (D131 item 1): which thing, never what the browser said about it.
     const beside: AskedBeside | undefined =
-      !existing && input.page ? { subject: input.page.subject, label: input.page.label, openedAt: null } : undefined;
+      !existing && input.page
+        ? { subject: input.page.subject, label: input.page.label, openedAt: null, ...(asked ? { thing: asked } : {}) }
+        : undefined;
     await store.transaction(async tx => {
       if (!existing) {
         await tx.insertThread({
@@ -975,6 +1096,8 @@ export function assistantUsecases(deps: AssistantDeps) {
           tools: (produced!.toolCalls ?? []).map(c => c.capability),
           // Asked in the pane beside a page (D130): that it was, never the page's subject or its words (D91).
           ...(beside ? { askedBeside: true } : {}),
+          // What kind of thing stood open on the page (D131), never which: a read made of a record is among `reads`.
+          ...(thing ? { thing: thing.kind } : {}),
           // Every read the turn made through the registry, with its count or that it failed; never a row (D122 item 8).
           ...(turn.reads.length ? { reads: turn.reads } : {}),
           ...(produced!.view ? { view: produced!.view.capability } : {}),

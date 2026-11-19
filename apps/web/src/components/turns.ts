@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type {
   Chip,
+  ConversationInput,
   ConversationResponse,
   Handover,
   HandoverAssistant,
+  OpenThing,
   ThreadMessage,
   TurnStep,
   Thread,
@@ -91,6 +93,12 @@ export interface Send {
    * and the rail leaves it out until it is opened as a conversation; on a conversation that exists it says nothing.
    */
   page?: { subject: string; label: string } | undefined;
+  /**
+   * The thing that stands open where the question is asked (D131 item 1): a person, a unit or a record on its page
+   * beside the pane, or beside the transcript on the conversation's page. Only which thing: the server resolves it as
+   * the asker. Never with a question to another system's assistant.
+   */
+  thing?: OpenThing | undefined;
   /** Clew suggests another system's assistant for this question: the host hears it and asks the person. */
   onOffer?: (assistant: HandoverAssistant, held?: 'person' | 'card') => void;
   /** The question is drawn: the host puts the transcript where it belongs. */
@@ -100,6 +108,37 @@ export interface Send {
   /** Whether the box takes the focus back when the turn has ended; it does unless the host says otherwise. */
   refocus?: () => boolean;
 }
+/**
+ * The request one question goes as (`ConversationInput`): what stands open (`beside`), the page it was asked beside
+ * (`page`) and the thing that stands open there (`thing`, D131 item 1) go with a question to Clew only; to another
+ * system's assistant the words go with the chips the person chose and nothing of the page.
+ */
+export function turnInput({
+  text,
+  chips,
+  beside,
+  current,
+  handed,
+  suggested,
+  own,
+  confirmed,
+  page,
+  thing,
+}: Omit<Send, 'raw'>): ConversationInput {
+  return {
+    text,
+    chips,
+    ...(beside && !handed ? { beside } : {}),
+    ...(current ? { conversationId: current.id } : {}),
+    ...(handed ? { assistant: handed.id } : {}),
+    ...(handed && suggested ? { suggested: true as const } : {}),
+    ...(own ? { own: true as const } : {}),
+    ...(handed && confirmed ? { confirmed: true as const } : {}),
+    ...(page && !handed ? { page } : {}),
+    ...(thing && !handed ? { thing } : {}),
+  };
+}
+
 /** The turn machinery a box and its transcript share: one conversation, its turn on its way, and what an answer offers. */
 export interface Turns {
   conversation: Conversation | null;
@@ -171,22 +210,8 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   // Leaving the page stops the turn too: an answer must not pull the person back to a conversation they left.
   useEffect(() => () => inflight.current?.abort(), []);
   const send = useCallback(
-    async ({
-      raw,
-      text,
-      chips,
-      beside,
-      current,
-      handed,
-      suggested,
-      own,
-      confirmed,
-      page,
-      onOffer,
-      onStart,
-      onAnswered,
-      refocus,
-    }: Send) => {
+    async (request: Send) => {
+      const { raw, text, chips, current, handed, suggested, onOffer, onStart, onAnswered, refocus } = request;
       if (!text || busyRef.current) return;
       if (!current) {
         setConversation(null);
@@ -213,17 +238,7 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
       announce(handed ? `Frågar ${handed.name} …` : 'Söker svar …');
       try {
         const response = await api.converseStream(
-          {
-            text,
-            chips,
-            ...(beside && !handed ? { beside } : {}),
-            ...(current ? { conversationId: current.id } : {}),
-            ...(handed ? { assistant: handed.id } : {}),
-            ...(handed && suggested ? { suggested: true as const } : {}),
-            ...(own ? { own: true as const } : {}),
-            ...(handed && confirmed ? { confirmed: true as const } : {}),
-            ...(page && !handed ? { page } : {}),
-          },
+          turnInput(request),
           event => {
             // The turn went to another system's assistant: what follows is drawn as that assistant's from its first word.
             if (event.type === 'handed') setPending(p => p && { ...p, handed: event.assistant, answer: '' });

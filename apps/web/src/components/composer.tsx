@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClewObject } from '@clew/contracts';
+import type { ClewObject, OpenThing } from '@clew/contracts';
 import {
   AreaGlyph,
   Button,
@@ -142,10 +142,13 @@ export type ComposerPlace = 'landing' | 'conversation' | 'pane';
 export function Composer({
   place,
   about,
+  thing,
   placeholder: aboutPlaceholder,
 }: {
   place: ComposerPlace;
   about?: ChipRef[] | undefined;
+  /** The person, the unit or the record beside the transcript, which goes with every question as what stands open (D131). */
+  thing?: OpenThing | undefined;
   /** What the empty box says in a conversation about someone ("Fråga om Johan"); else whom it writes to. */
   placeholder?: string | undefined;
 }) {
@@ -219,7 +222,7 @@ export function Composer({
     <ChatComposer
       value={talk.value}
       onChange={talk.setValue}
-      onSubmit={text => void talk.submit(text, from, about)}
+      onSubmit={text => void talk.submit(text, from, about, thing)}
       isDisabled={talk.busy && !talk.pending}
       /* While a turn runs the send button is Stop (D126 item 5); a suggestion waiting for the person's answer is no turn to stop. */
       isStopShown={!!talk.pending && !talk.pending.offer}
@@ -268,7 +271,7 @@ export function Composer({
                     variant="ghost"
                     label={v.label}
                     isDisabled={talk.busy}
-                    onClick={() => talk.ask(v.label, from, about)}
+                    onClick={() => talk.ask(v.label, from, about, thing)}
                   />
                 ))}
               </HStack>

@@ -22,7 +22,8 @@ const address = (pathname: string, query: URLSearchParams) => {
   const q = query.toString();
   return q ? `${pathname}?${q}` : pathname;
 };
-const parse = (json: string | null): Record<string, unknown> => {
+/** A read's input as an address holds it (`input`, `open-input`): its object, or none for anything else. */
+export const addressInput = (json: string | null): Record<string, unknown> => {
   try {
     const v: unknown = json ? JSON.parse(json) : {};
     return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -30,6 +31,7 @@ const parse = (json: string | null): Record<string, unknown> => {
     return {};
   }
 };
+const parse = addressInput;
 
 /** The view's own page: its input, the name it was opened under and the page it was opened from. */
 export function viewPageHref(view: ViewTarget, from?: string | null): string {

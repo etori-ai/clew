@@ -1567,6 +1567,15 @@
       "status": "provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas \"Clew",
       "date": "2026-11-18",
       "area": "ui, product"
+    },
+    {
+      "key": "D131-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew",
+      "number": 131,
+      "path": "docs/decisions/D131-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md",
+      "title": "D131 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed",
+      "status": "provisional (the product owner chose its three open points on 2026-11-19: on a person's page the assistant is told who the person is; what another system shows about a person or a unit stays closed for now; a conversation asked beside a person's page is deleted when the person is erased. Built the same day: a work item, the review, a record, a person, a unit and a plan ask through the frame's button and pane, the browser names the thing and the server resolves it on every turn, and `subject-erase` deletes the conversations asked beside a person. Tried on the development stack with its local model: beside a report's page \"hon\" was read as that person, her competences were read with her user name and the open work about her was named by title; beside a plan's page the plan was read and its overdue items named; beside a service desk request, whose read the assistant may not make, the pane said so. Nothing outside the repository has tested it, and no manual screen-reader pass is made)",
+      "date": "2026-11-19",
+      "area": "assistant, ui, identity"
     }
   ],
   "documents": [
@@ -2370,6 +2379,12 @@
     {
       "path": "docs/decisions/D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
       "title": "D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D131-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md",
+      "title": "D131 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed",
       "category": "decision-history",
       "headings": []
     },

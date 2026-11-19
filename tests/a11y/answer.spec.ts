@@ -233,15 +233,22 @@ test.describe('the cards in a conversation', () => {
 });
 
 /**
- * A conversation about a thing (D126 rules 2 and 5, board Samtal): "Fråga assistenten" on a thing's page lands on a new
- * conversation's page, `/conversations/new` with the thing in its address. The header names the thing, the thing stands
+ * A conversation about a thing (D126 rules 2 and 5, board Samtal): "Öppna som samtal" in the assistant's pane on a thing's
+ * page (D131 item 9) lands on a new conversation's page, `/conversations/new` with the thing in its address, before
+ * anything is asked in the pane. The header names the thing, the thing stands
  * beside the transcript drawn with the queue's pane's parts, the box has the focus and nothing is sent until the person
  * writes; the question then goes with the thing. ✕ lets go of the thing and keeps the conversation. Narrower, the thing
  * is one link away in the header.
  */
 test.describe('a conversation about a thing', () => {
   const TITLE = 'Attestera 3 fakturor, 48 200 kr';
-  test('"Fråga assistenten" lands on an empty conversation with the thing beside it, and nothing is sent until the person writes', async ({
+  /** The thing's page asks through the frame's pane (D131 item 9), which leads to the conversation's page. */
+  const asConversation = async (page: Page) => {
+    await page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' }).click();
+    // Beside the page from 1340 px, a drawer over it below: the same pane either way.
+    await page.getByRole('link', { name: 'Öppna som samtal' }).click();
+  };
+  test('"Öppna som samtal" lands on an empty conversation with the thing beside it, and nothing is sent until the person writes', async ({
     page,
     api,
   }) => {
@@ -249,7 +256,7 @@ test.describe('a conversation about a thing', () => {
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     await open(page, '/items/fakturor');
-    await page.getByRole('button', { name: 'Fråga assistenten' }).first().click();
+    await asConversation(page);
     await expect(page).toHaveURL(/\/conversations\/new\?card=fakturor$/);
     // The page says what it is before anything is written (the product owner, 2026-11-14): never "Nytt samtal" for a
     // conversation about a thing.
@@ -303,14 +310,15 @@ test.describe('a conversation about a thing', () => {
     api: _,
   }) => {
     await open(page, '/items/fakturor');
-    await page.getByRole('button', { name: 'Fråga assistenten' }).first().click();
+    await asConversation(page);
     const pane = page.getByRole('complementary', { name: TITLE });
     await pane.getByRole('link', { name: TITLE }).focus();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/conversations\/new$/);
     await expect(composer(page)).toBeFocused();
+    // Back to the item's page as it stood, the assistant's pane open beside it.
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/items\/fakturor$/);
+    await expect(page).toHaveURL(/\/items\/fakturor\?ask=1$/);
   });
   test('the pane has a menu over what the conversation has named, a row where the item was drawn, and a width of its own', async ({
     page,

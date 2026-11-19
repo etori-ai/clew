@@ -7,8 +7,11 @@
  * settings (DATABASE_URL); no route and no `package.json` entry. Audited (`thread.subject_erased`, counts only) with the
  * actor `operator:cli`, about `person:<person id>` or `unit:<unit id>`. The erasure writes no user name, but it does not
  * reach the rest of the audit trail: every `scim.user.*` row about the person still holds the `userName` and
- * `externalId` it was written with, until `scripts/person-erase.ts` erases the person last (D123). It cannot be undone,
- * so it needs `--confirm`.
+ * `externalId` it was written with, until `scripts/person-erase.ts` erases the person last (D123). A person's erasure
+ * also deletes whole every conversation asked beside their page, whoever asked it (D131 item 8), in the same
+ * transaction, audited as `conversation.person_erased` about `person:<person id>`, counts only; a conversation started
+ * on the conversation's own page about them is not kept as asked beside it and is not found. It cannot be undone, so it
+ * needs `--confirm`.
  *
  *   bun scripts/subject-erase.ts person <person id> --confirm
  *   bun scripts/subject-erase.ts unit <unit id> --confirm
@@ -48,7 +51,7 @@ if (
 }
 if (!args.includes('--confirm')) {
   console.error(
-    `Erasing ${entity} "${key}" from every card removes it from the rows and cards that name it, in every person's stream, and cannot be undone. Run again with --confirm to erase.`,
+    `Erasing ${entity} "${key}" from every card removes it from the rows and cards that name it, in every person's stream${entity === 'person' ? ", and deletes every conversation asked beside the person's page" : ''}, and cannot be undone. Run again with --confirm to erase.`,
   );
   process.exit(2);
 }
@@ -61,12 +64,20 @@ try {
         : `Person "${key}" is still active: only a person the source has deactivated is erased (D68 item 1). Nothing was erased and nothing was audited.`,
     );
     process.exitCode = 1;
-  } else if (!erased.cards)
-    console.log(`No card names ${entity} "${key}": nothing was changed. Audited as ${entity}:${key}.`);
-  else
-    console.log(
-      `Erased ${entity} "${key}" from ${erased.cards} cards: ${erased.rows} rows and ${erased.cardSubjects} card subjects no longer name it. Audited as ${entity}:${key}.`,
-    );
+  } else {
+    // The conversations asked beside a person's page (D131 item 8) are said only when there were any.
+    const conversations = erased.conversations
+      ? ` Deleted ${erased.conversations} conversations asked beside the person's page, with ${erased.messages ?? 0} messages.`
+      : '';
+    if (!erased.cards)
+      console.log(
+        `No card names ${entity} "${key}": ${conversations ? 'no card was changed.' + conversations : 'nothing was changed.'} Audited as ${entity}:${key}.`,
+      );
+    else
+      console.log(
+        `Erased ${entity} "${key}" from ${erased.cards} cards: ${erased.rows} rows and ${erased.cardSubjects} card subjects no longer name it.${conversations} Audited as ${entity}:${key}.`,
+      );
+  }
 } catch (error) {
   // Neither the check of the person, made before the transaction, nor the transaction wrote anything. A query's own
   // error is its cause; the wrapper's message repeats the statement.

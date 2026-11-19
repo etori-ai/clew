@@ -452,6 +452,8 @@ describe("erasing a person's key from the cards", () => {
       cards: 1,
       rows: 1,
       cardSubjects: 0,
+      conversations: 0,
+      messages: 0,
     });
     const after = (await w.store.readThread('hillevi', sick))!;
     expect(after.items).toEqual([row('sick:1', 'Erik Sund sjuk 10–11 nov')]);
@@ -479,6 +481,8 @@ describe("erasing a person's key from the cards", () => {
       cards: 1,
       rows: 1,
       cardSubjects: 0,
+      conversations: 0,
+      messages: 0,
     });
     expect(await w.store.threadsNaming('hillevi', [person('erik')])).toEqual([]);
   });
@@ -514,8 +518,16 @@ describe("erasing a person's key from the cards", () => {
       cards: 1,
       rows: 1,
       cardSubjects: 0,
+      conversations: 0,
+      messages: 0,
     });
-    expect(await w.erasure.eraseSubject('operator:cli', person('bo'))).toEqual({ cards: 1, rows: 1, cardSubjects: 0 });
+    expect(await w.erasure.eraseSubject('operator:cli', person('bo'))).toEqual({
+      cards: 1,
+      rows: 1,
+      cardSubjects: 0,
+      conversations: 0,
+      messages: 0,
+    });
   });
   test('a failure after the audit row leaves every subject and no audit row behind', async () => {
     const w = world();

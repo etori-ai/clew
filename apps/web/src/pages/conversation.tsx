@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Thread, ViewRef } from '@clew/contracts';
+import type { OpenThing, Thread, ViewRef } from '@clew/contracts';
 import {
   AreaMark,
   Button,
@@ -34,7 +34,7 @@ import { errorMessage } from '../query-policy';
 import { keys } from '../query-keys';
 import { applyThread } from '../thread-cache';
 import { withCard, withoutPanel } from '../panel-address';
-import { lensTabHref, openedAsPage, opensAsPage, viewOpenHref, viewPageHref } from '../view-address';
+import { addressInput, lensTabHref, openedAsPage, opensAsPage, viewOpenHref, viewPageHref } from '../view-address';
 import { itemPageHref } from '../work-items';
 import { personPageHref, unitPageHref } from '../person-address';
 import { useMarks } from '../marks';
@@ -64,6 +64,7 @@ import { useView } from '../components/view-read';
 import { BriefSkeleton } from '../components/brief';
 import { EventDialog } from '../components/calendar/event-dialog';
 import { PageFrame, type EntryStyle } from '../components/page-frame';
+import { recordThing } from '../components/page-conversation';
 import { EntityPane } from './entity-pane';
 
 /**
@@ -144,6 +145,11 @@ export interface About {
   chips: ChipRef[];
   /** A person or a unit: said under the first question, and a person's first name in the empty box. */
   entity?: { kind: EntitySubjectKind; name: string | null };
+  /**
+   * The person, the unit or the record the address puts beside the transcript, as the thing that stands open (D131
+   * item 1): it goes with every question here, as the same thing does from its page's pane. A work item goes as its chip.
+   */
+  thing?: OpenThing;
   /** The pane beside the transcript, and its landmark's name; absent for what has no pane. */
   pane?: { label: string; body: ReactNode; scrolls: boolean };
 }
@@ -294,6 +300,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       // With the thing in the pane, the question says it stands open beside the transcript: the assistant reads "det
       // öppna ärendet" as it. Where no pane is drawn it goes along as before, as what the conversation is about.
       about={paneShown ? about.chips.map(c => ({ ...c, beside: true as const })) : about.chips}
+      thing={about.thing}
       placeholder={
         about.entity?.kind === 'person' && about.entity.name ? askPersonPlaceholder(about.entity.name) : undefined
       }
@@ -576,12 +583,16 @@ function useAbout({
         )}
       </VStack>
     );
+    // One record (not a read whose rows are a page, which leads to its page) is the thing that stands open, with the
+    // input the address draws it with (D131 item 1).
+    const record = rows ? undefined : recordThing(open, addressInput(q.get('open-input')));
     return {
       subject: true,
       name: title,
       href,
       chips: [{ ref: 'capability:' + open, kind: 'capability', label: title }],
       ...(rows ? {} : { pane: { label: title, body, scrolls: true } }),
+      ...(record ? { thing: record } : {}),
     };
   }
   if (entity) {
@@ -595,6 +606,8 @@ function useAbout({
       href: page(entity.key, { ...(entity.tab ? { section: entity.tab } : {}), from: here }),
       chips: [],
       entity: { kind: entity.kind, name },
+      // The person or the unit by Clew's id, as their page's pane tells it (D131 item 1).
+      thing: { kind: entity.kind, id: entity.key },
       pane: {
         label: name ?? (entity.kind === 'person' ? 'Personen' : 'Enheten'),
         body: (

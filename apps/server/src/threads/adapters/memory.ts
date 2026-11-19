@@ -169,6 +169,17 @@ export function memoryThreadStore(): MemoryThreadStore {
       }
       return erased;
     },
+    async eraseConversationsBeside(personId) {
+      const erased = { conversations: 0, messages: 0 };
+      for (const [id, { thread }] of threads) {
+        const open = thread.askedBeside?.thing;
+        if (thread.kind !== 'question' || open?.kind !== 'person' || open.id !== personId) continue;
+        threads.delete(id);
+        erased.conversations++;
+        erased.messages += thread.messages.length;
+      }
+      return erased;
+    },
   };
   const store: MemoryThreadStore = {
     readTimer: tx.readTimer,

@@ -1,6 +1,6 @@
 # D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides
 
-**Status:** provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas "Clew · the assistant beside every page", where a register, Läget, a work item's page and Att göra were drawn with the pane open at 1366 px and 1728 px, and answered four of the review's five questions the same day. Stage 1 is built (2026-11-18): the frame's button and pane on a tool's list or table and on Kalender, the conversation drawn there by the same parts as on the conversation's page, the subject stored with the conversation and found again, and the rail's rule. It was tried on the development stack with its local model: asked beside a register, reloaded, opened as a conversation. Stage 2 is built (2026-11-19): every register and Läget (Nyheter, Personal's tabs with the lenses, the competence matrix and search, Introduktion och avslut, Läget, Alla verktyg, Alla samtal and Att göra's queue while no item is open) says its subject to the frame, the reads of Clew's own domains that they show are offered to the assistant, the browser is told which reads the assistant may make (`ViewEntry.assistant`) and the pane says under its heading where it may make none. Asked beside Läget on the development stack, the local model read the follow-up dialogue of the reader's units and answered in the pane. A thing's page and Att göra's item still have their own button. Nothing outside the repository has tested it, and no manual screen-reader pass is made) · **Date:** 2026-11-18 · **Area:** ui, product
+**Status:** provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas "Clew · the assistant beside every page", where a register, Läget, a work item's page and Att göra were drawn with the pane open at 1366 px and 1728 px, and answered four of the review's five questions the same day. Stage 1 is built (2026-11-18): the frame's button and pane on a tool's list or table and on Kalender, the conversation drawn there by the same parts as on the conversation's page, the subject stored with the conversation and found again, and the rail's rule. It was tried on the development stack with its local model: asked beside a register, reloaded, opened as a conversation. Stage 2 is built (2026-11-19): every register and Läget (Nyheter, Personal's tabs with the lenses, the competence matrix and search, Introduktion och avslut, Läget, Alla verktyg, Alla samtal and Att göra's queue while no item is open) says its subject to the frame, the reads of Clew's own domains that they show are offered to the assistant, the browser is told which reads the assistant may make (`ViewEntry.assistant`) and the pane says under its heading where it may make none. Asked beside Läget on the development stack, the local model read the follow-up dialogue of the reader's units and answered in the pane. Stage 3 is built (2026-11-19), as [D131](D131-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md) decides it: a work item, the review, a record, a person, a unit and a plan ask through the frame, and no page can say `later` any more. Att göra's item still has its own button. Nothing outside the repository has tested it, and no manual screen-reader pass is made) · **Date:** 2026-11-18 · **Area:** ui, product
 
 **Context.** Where the assistant is asked has been decided four times and reversed three: beside the page was
 rejected in [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md), chosen in
@@ -83,9 +83,7 @@ system's assistant has its own panel beside a conversation).
 
 **Not built, and what is still open.**
 
-- A thing's page and Att göra's item. The frame's `ask` says so page by page (`later`): a thing's page, where the
-  facts move above the read, and what the server is told stands open (stage 3, its own decision first); Att göra's
-  item, which keeps its own "Fråga assistenten" until then (stage 4).
+- Att göra's item, which keeps its own "Fråga assistenten" (stage 4). A thing's page was stage 3 and is D131's.
 - What was opened in stage 2, read by read, is the table "Clew's own reads and the model" in
   [capability surfaces](../architecture/capability-surfaces.md): `dialogue.units` and `dialogue.activities`,
   `boarding.plans` and `boarding.plan`, the open round `talks.talks`, `people.reports`, `clew.tools` and
@@ -109,10 +107,6 @@ system's assistant has its own panel beside a conversation).
 - The other system's assistant's panel (D128) still has a renderer of its own.
 - The pane shows what the shared transcript shows: the time, the model that answered and what was read. The canvas
   draws none of those; whether they stay is the owner's to say.
-- Erasing a person does not reach `askedBeside`. It has to before a person's page gets the pane, since the subject
-  or its words could then name the person.
-- What the server is told stands open is a work item or a calendar entry today. A record with its input, a person, a
-  unit and a list are not yet subjects the assistant is given.
 - An action on a row of a view is not something a connector can declare
   ([open questions](../maintainers/open-questions.md)); rule 8 is met today for a work item, a person or a unit, and
   for Kalender's own two.

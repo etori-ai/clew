@@ -506,20 +506,23 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
 
 /**
  * The opened person's or unit's actions under its name (D126 rule 1, board Person), every one of them: the first as the
- * primary button, the second as a secondary one, "Fråga assistenten" (`ask`) as a ghost after them, and the rest under "Fler
- * åtgärder", grouped by the system they act in, as the row menu on Personal is (artboard A3). On a phone one button,
- * "Åtgärder", the width of the column, holds them all, with "Fråga assistenten" under it. A propose opens the action dialog,
+ * primary button, the second as a secondary one, what the page adds of its own after them (`extra`: the reader's own
+ * Inställningar), and the rest under "Fler åtgärder", grouped by the system they act in, as the row menu on Personal is
+ * (artboard A3). On a phone one button, "Åtgärder", the width of the column, holds them all, with `extra` under it. The
+ * page frame draws "Fråga assistenten" after them (D131 item 9). A propose opens the action dialog,
  * and nothing is created before its last button; an execute opens its work item with the decision over it
  * (`entity-actions.ts`). A source's refusal is said aloud and stands under the buttons until the next action. They hold
  * what can be done about the entity, never a choice of where Clew shows it, and never a way into a source's page, which
  * is a link in its section.
  */
-export function EntityActions({ detail, mobile, ask }: { detail: EntityDetail; mobile: boolean; ask?: ReactNode }) {
+export function EntityActions({ detail, mobile, extra }: { detail: EntityDetail; mobile: boolean; extra?: ReactNode }) {
   const { start, error, dialog } = useEntityAction();
   const { kind, key, name } = detail.entity;
   const actions = detail.actions;
   const run = (a: EntityAction) => start(a, { kind, key, name });
   const refusal = error ? <Text as="p">{error}</Text> : null;
+  // Nothing to act on: no empty group before the frame's "Fråga assistenten", which then starts the line.
+  if (!actions.length && !extra && !refusal) return dialog;
   if (mobile)
     return (
       <VStack gap={2}>
@@ -538,7 +541,7 @@ export function EntityActions({ detail, mobile, ask }: { detail: EntityDetail; m
             items={actionMenuItems(actions, run)}
           />
         )}
-        {ask && <HStack>{ask}</HStack>}
+        {extra && <HStack>{extra}</HStack>}
         {refusal}
         {dialog}
       </VStack>
@@ -551,7 +554,7 @@ export function EntityActions({ detail, mobile, ask }: { detail: EntityDetail; m
       <HStack gap={2} wrap="wrap" vAlign="center">
         {first && <Button variant="primary" label={first.title} onClick={() => run(first)} />}
         {second && <Button variant="secondary" label={second.title} onClick={() => run(second)} />}
-        {ask}
+        {extra}
         {rest.length > 0 && (
           <MoreMenu
             label={`Fler åtgärder för ${name}`}

@@ -55,6 +55,7 @@ import { ApiError, api } from '../api';
 import {
   BOARDING_LENS_HREF,
   BOARDING_PATH,
+  PLAN_READ,
   boardingHref,
   personReadOf,
   planOf,
@@ -99,6 +100,7 @@ import { EntityPage, PageSection, RailSection, type PageSectionEntry } from '../
 import { DialogFrame } from '../components/dialog-frame';
 import { StartPlanDialog } from '../components/boarding-start';
 import { PageFrame } from '../components/page-frame';
+import { recordSubject } from '../components/page-conversation';
 
 /**
  * One person's introduction or leaving as a page (D124, D116 rule 11: a list a person works through is a page), at
@@ -358,8 +360,9 @@ function Plan({
     ) : (
       <ContentSkeleton />
     );
-    // A state of a plan's page, a thing's (D126 rule 1): it asks as a thing's page will (D130, stage 3).
-    body = frame === 'tab' ? state : <PageFrame ask={{ later: 'things' }}>{state}</PageFrame>;
+    // A state of a plan's page, a thing's (D126 rule 1): while it loads, and when the plan is missing, it has no subject
+    // yet and no button (D131).
+    body = frame === 'tab' ? state : <PageFrame ask={{ subject: null }}>{state}</PageFrame>;
   } else {
     const here = pageOnly(pathname, search);
     const plans = person?.plans ?? [];
@@ -590,6 +593,22 @@ function Plan({
         </VStack>
       ) : (
         <EntityPage
+          // What the assistant beside the plan is about (D131 item 6): the plan, a record of `boarding.plan` with its
+          // id as the input, one conversation per plan. A person with no plan yet, offered a start, has no subject.
+          ask={{
+            subject: detail
+              ? recordSubject({
+                  capability: PLAN_READ,
+                  input: { plan: detail.plan.id },
+                  name: title ?? name,
+                  common: true,
+                  views: areas?.views,
+                  // The read answers with rows, so it is a page of its own and never beside a conversation (D116): the
+                  // conversation it opens as goes on with the read's chip alone.
+                  search: '',
+                })
+              : null,
+          }}
           back={back}
           title={title ?? name}
           subtitle={detail ? `${anchorWord[detail.plan.event]} ${longDay(detail.plan.anchorOn)}` : undefined}
@@ -904,7 +923,7 @@ function Redirecting({
   if (to) return <Navigate replace to={to} />;
   return (
     <Shell user={user} nav={nav}>
-      <PageFrame ask={{ later: 'things' }}>{missing ? <PlanMissing /> : <ContentSkeleton />}</PageFrame>
+      <PageFrame ask={{ subject: null }}>{missing ? <PlanMissing /> : <ContentSkeleton />}</PageFrame>
     </Shell>
   );
 }

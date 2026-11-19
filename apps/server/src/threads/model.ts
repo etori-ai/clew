@@ -142,6 +142,12 @@ export interface ThreadTx {
    * id, compared exactly (D122). Neither `updatedAt` nor anything the person decided on moves.
    */
   eraseSubject(subject: Subject): Promise<SubjectErasure>;
+  /**
+   * Delete whole every conversation asked beside this person's page (D131 item 8): each thread of kind `question` whose
+   * `askedBeside.thing` is the person, by Clew's key, their id, compared exactly (D122), whoever asked it, with its
+   * messages. A conversation beside a unit or a record is left, whatever its input names.
+   */
+  eraseConversationsBeside(personId: string): Promise<ConversationErasure>;
 }
 /**
  * Whose a source's key is (D122, composition: the people module's user reads). A row or an action arrives naming a person
@@ -159,6 +165,11 @@ export interface SubjectErasure {
   cards: number;
   rows: number;
   cardSubjects: number;
+}
+/** What `eraseConversationsBeside` deleted: the conversations and the messages they held. Counts only. */
+export interface ConversationErasure {
+  conversations: number;
+  messages: number;
 }
 /** A thread found by the entities it names (D97 item 6), with those it names among the ones asked. */
 export interface NamingThread {

@@ -15,9 +15,8 @@ import { placeOfRead, useRail, type RailCurrent } from '../components/nav';
 import { DeclaredView } from '../components/view';
 import { PanelBody, answersWithRowsOf } from '../components/panel';
 import { useView, viewSubject } from '../components/view-read';
-import { AskClew } from '../components/thing-panel';
 import { PageFrame, WayBack } from '../components/page-frame';
-import { pageSubject } from '../components/page-conversation';
+import { pageSubject, recordSubject } from '../components/page-conversation';
 import { PageHeader } from '../components/page-header';
 import { ContentArrival, ContentSkeleton } from '../components/loading';
 
@@ -78,8 +77,9 @@ function placeOf(from: string | null): RailCurrent {
  * the view's own search field and choice and the count under it, then the rows. The name in a row is the link to the
  * row's own read, its page (rule 4); a row never opens a panel.
  * One thing (a record, a contact card, a text, a document) is a thing's page (rule 1, the `work-item-detail`
- * template): the way back and the title, "Fråga assistenten" under it, the read in the column and a record's facts in the end
- * panel, above the read where the window is narrow. The view is drawn by the one renderer (D38).
+ * template): the way back and the title with the frame's "Fråga assistenten" at the end of its line (D131: the pane is
+ * about this record, `recordSubject`), the read in the column and a record's facts in the end panel, above the read
+ * where the window is narrow and while the pane stands beside the page. The view is drawn by the one renderer (D38).
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   // 1.4.10: with 480 px or less in height nothing is pinned beside the page.
@@ -185,9 +185,6 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   // One thing (D126 rule 1): the thing's page, as a work item's is drawn.
   const thing = tool?.spec && ONE_THING.has(tool.spec.kind) ? tool : null;
   if (thing?.spec && !missing) {
-    // "Fråga assistenten" (D126 rule 5): a new conversation with the thing beside it, until things' pages move into the
-    // frame (the plan's stage 3).
-    const ask = <AskClew subject={read} />;
     const spec = thing.spec;
     const split = hasBody(spec);
     // A record's name is its own title (the supplier, the person); the read it was opened under says what it is.
@@ -196,6 +193,20 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
         ? (thing.output as Record<string, unknown>)[spec.title]
         : undefined;
     const name = typeof own === 'string' && own.trim() ? own : title;
+    // What the assistant beside the record is about (D131 items 1 and 6): this record, its read and its input, one
+    // conversation per record; the read's chip where the assistant may make it, and the line where it may not. It stands
+    // beside the conversation the pane opens as (`?open=`).
+    const subject =
+      read &&
+      recordSubject({
+        capability,
+        input: thing.input,
+        name,
+        title,
+        source: thing.source ?? spec.source,
+        views,
+        search: read.search,
+      });
     const part = (which: 'facts' | 'body') => (
       <DeclaredView
         view={spec}
@@ -220,7 +231,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       // page that finds the link it was left by on the way back (`useFocusOnTheWayBack`, 2.4.3).
       <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
         <PageFrame
-          ask={{ later: 'things' }}
+          ask={{ subject }}
           back={back}
           trail={
             <Text type="supporting" color="secondary">
@@ -229,13 +240,8 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
           }
           title={name}
           titleId={TITLE_ID}
-          // The thing's actions under its title: a read has none of its own here but the question about it.
-          below={
-            <VStack gap={4}>
-              <HStack gap={2}>{ask}</HStack>
-              {banner}
-            </VStack>
-          }
+          // A read has no actions of its own here; the frame's "Fråga assistenten" ends the title's line.
+          below={banner || undefined}
           label={title || 'Vyn'}
           scrollTabStop
           facts={
@@ -268,7 +274,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
             pageSubject({
               key: read.key,
               title,
-              reads: [{ capability, label: title, ...(tool?.source ? { source: tool.source } : {}) }],
+              reads: [{ capability, label: title, source: tool?.source ?? tool?.spec?.source }],
               views,
             }),
         }}

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { EntityKind, Subject, ThreadItem } from '@clew/contracts';
 import { database, schema, type Transaction } from '@clew/db';
 import { listThreads, toThread, unresolvedThreads } from '@clew/db/threads';
@@ -184,6 +184,24 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
       ),
     );
     return erased;
+  },
+  async eraseConversationsBeside(personId) {
+    // The thing a conversation was asked beside is kept in `asked_beside` as written (D131 item 1): containment matches
+    // the kind and the id exactly. An operator's rare erasure reads the conversations without an index of its own.
+    const beside = and(
+      eq(threads.kind, 'question'),
+      sql`${threads.askedBeside} @> ${JSON.stringify({ thing: { kind: 'person', id: personId } })}::jsonb`,
+    );
+    // Locked in id order, as the other erasure takes its threads, then deleted with what hangs on them.
+    const rows = await tx.select({ id: threads.id }).from(threads).where(beside).orderBy(threads.id).for('update');
+    if (!rows.length) return { conversations: 0, messages: 0 };
+    const ids = rows.map(r => r.id);
+    const [counted] = await tx
+      .select({ messages: count() })
+      .from(threadMessages)
+      .where(inArray(threadMessages.threadId, ids));
+    await tx.delete(threads).where(inArray(threads.id, ids));
+    return { conversations: rows.length, messages: counted?.messages ?? 0 };
   },
   async addMessage(threadId, message) {
     await tx.insert(threadMessages).values({

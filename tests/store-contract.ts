@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Subject, Thread } from '../packages/contracts/src/index';
+import type { OpenThing, Subject, Thread } from '../packages/contracts/src/index';
 import type { AuditEntry, NewThread, ThreadStore, WorkflowStart } from '../apps/server/src/threads/model';
 import { reminderStart, reminderWorkflowId } from '../apps/server/src/threads/domain';
 
@@ -603,6 +603,82 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect((await store.readThread(b, theirs.id))!.items.map(i => i.subject)).toEqual([undefined, other]);
       expect((await store.threadsNaming(b, [other])).map(n => n.thread.id)).toEqual([theirs.id]);
       expect(await store.transaction(tx => tx.eraseSubject(gone))).toEqual({ cards: 0, rows: 0, cardSubjects: 0 });
+    });
+    test('erasing a person deletes whole every conversation asked beside their page, whoever asked, and nothing else (D131 item 8)', async () => {
+      const {
+        store,
+        people: [a, b],
+        auditFor,
+      } = await make();
+      const run = unique();
+      const gone = `Anna.L-${run}`,
+        kept = `erik-${run}`;
+      const beside = (thing?: OpenThing) => ({
+        subject: `person:${gone}`,
+        label: 'Anna Lindqvist',
+        openedAt: null,
+        ...(thing ? { thing } : {}),
+      });
+      const question = (personId: string, thing?: OpenThing) =>
+        draft(personId, {
+          kind: 'question',
+          topic: 'question',
+          connector: 'clew',
+          area: 'fragor',
+          title: 'Vad har Anna kvar att göra?',
+          items: [],
+          actions: [],
+          deadline: null,
+          ...(thing === undefined ? {} : { askedBeside: beside(thing) }),
+        });
+      const mine = question(a, { kind: 'person', id: gone }),
+        theirs = question(b, { kind: 'person', id: gone });
+      // Kept: another person whose id differs only in case (D122), another person, a unit and a record whose input names
+      // the person (erasure does not look inside an input), a conversation asked beside nothing, and a work item.
+      const keptThreads = [
+        question(a, { kind: 'person', id: gone.toLowerCase() }),
+        question(a, { kind: 'person', id: kept }),
+        question(b, { kind: 'unit', id: gone }),
+        question(a, { kind: 'record', capability: 'hr.person', input: { person: gone } }),
+        question(b),
+        draft(a, { askedBeside: beside({ kind: 'person', id: gone }) }),
+      ];
+      await store.transaction(async tx => {
+        for (const t of [mine, theirs, ...keptThreads]) await tx.insertThread(t);
+        for (const t of [mine, theirs, keptThreads[0]!]) {
+          await tx.addMessage(t.id, { role: 'user', body: 'Vad har Anna kvar att göra?', at: plus(T0, 1000) });
+          await tx.addMessage(t.id, { role: 'assistant', body: 'Hon har ett ärende kvar.', at: plus(T0, 1000) });
+        }
+      });
+      // Read back as written: the thing is kept with the conversation's subject.
+      expect((await store.readThread(a, mine.id))!.askedBeside).toEqual(beside({ kind: 'person', id: gone }));
+      const entry = { actor: 'operator:cli', action: 'conversation.person_erased', subject: 'person:' + gone, at: T0 };
+      await expect(
+        store.transaction(async tx => {
+          await tx.eraseConversationsBeside(gone);
+          await tx.writeAudit(entry);
+          throw new Error('after the audit row');
+        }),
+      ).rejects.toThrow('after the audit row');
+      expect((await store.readThread(a, mine.id))!.messages).toHaveLength(2);
+      expect((await store.readThread(b, theirs.id))!.messages).toHaveLength(2);
+      expect(await auditFor('person:' + gone)).toEqual([]);
+      expect(await store.transaction(tx => tx.eraseConversationsBeside(gone.toUpperCase()))).toEqual({
+        conversations: 0,
+        messages: 0,
+      });
+      expect(await store.transaction(tx => tx.eraseConversationsBeside(gone))).toEqual({
+        conversations: 2,
+        messages: 4,
+      });
+      expect(await store.readThread(a, mine.id)).toBeUndefined();
+      expect(await store.readThread(b, theirs.id)).toBeUndefined();
+      for (const t of keptThreads) expect((await store.readThread(t.personId, t.id))?.id).toBe(t.id);
+      expect((await store.readThread(a, keptThreads[0]!.id))!.messages).toHaveLength(2);
+      expect(await store.transaction(tx => tx.eraseConversationsBeside(gone))).toEqual({
+        conversations: 0,
+        messages: 0,
+      });
     });
     test('an audit row and a job commit with the writes they belong to, and roll back with them', async () => {
       const {

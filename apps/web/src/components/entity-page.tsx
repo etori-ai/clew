@@ -2,7 +2,7 @@ import { useId, type ReactNode, type Ref } from 'react';
 import { useNavigate } from 'react-router';
 import { Heading, HStack, StackItem, Tab, TabList, TabMenu, Text, VStack, useMediaQuery } from '@clew/ui';
 import { mobileQuery } from '../media';
-import { PageFrame } from './page-frame';
+import { PageFrame, type PageAsk } from './page-frame';
 
 /**
  * A thing's page for a person, a unit or a plan (D126 rule 1, board Person, the `work-item-detail` composition the work
@@ -111,6 +111,7 @@ export interface PageSectionEntry {
 }
 
 export function EntityPage({
+  ask,
   back,
   place,
   crumbs,
@@ -126,6 +127,8 @@ export function EntityPage({
   headingRef,
   meta,
 }: {
+  /** What the frame's "Fråga assistenten" asks about: the person, the unit or the plan (D131). */
+  ask: PageAsk;
   /** The way back, named; none for an address that names no page Clew can name. */
   back: { label: string; href: string } | null;
   /** Where the entity stands, after the way back on the trail's line ("Bergsåkers skola"). */
@@ -137,7 +140,7 @@ export function EntityPage({
   title: string;
   /** The line under the name: a person's title and unit, "Enhet" for a unit. */
   subtitle?: ReactNode;
-  /** The actions about the entity and "Fråga assistenten". */
+  /** The actions about the entity; the frame's "Fråga assistenten" ends their line. */
   actions?: ReactNode;
   /** The thing's tabs (`TabList`), under its name, at the foot of the header. */
   tabs?: ReactNode;
@@ -168,7 +171,7 @@ export function EntityPage({
   // at the end of the name's line, the tabs, the read in the column and the facts in the end panel.
   return (
     <PageFrame
-      ask={{ later: 'things' }}
+      ask={ask}
       back={back}
       trail={
         crumbs || place ? (

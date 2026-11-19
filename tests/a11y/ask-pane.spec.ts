@@ -11,9 +11,10 @@ import {
   type MockApi,
 } from './support';
 import { menuRows } from './phonebook';
-import { PRESENCE_LENS, TALK_LENS, newsOutput, talkSource } from './data';
-import { BoardingMock } from './boarding';
+import { ENTITY_UNIT, PRESENCE_LENS, TALK_LENS, newsOutput, talkSource } from './data';
+import { ANNA, BoardingMock, PLAN } from './boarding';
 import { competenceTypes, largeMatrix, searchHolders, withSkills } from './competence';
+import { People } from './person-data';
 import { SICK_UNIT, Units } from './unit-data';
 
 /**
@@ -594,5 +595,351 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
     await expect(pane(page)).toHaveCount(0);
     await expect(frameButton(page)).toHaveCount(0);
+  });
+});
+
+/**
+ * Stage 3 (D131): a thing's page asks through the frame too. A work item, its review, a record, a person, a unit and a
+ * plan each say what stands open; the frame's button is the only "Fråga assistenten" on the page (the thing's own among
+ * its actions is gone, item 9); the pane opens about the thing in its words, with the facts above the read (the review's
+ * "Hittills" after its step, as where the window is narrow), and the page never scrolls sideways. A question carries the
+ * thing that stands open (`thing`: a person or a unit by Clew's id, a record by its read and input), and for a work item
+ * its chip as what stands open, with no `thing`.
+ */
+const record = (ref: string) =>
+  `/tools/phonebook.person?input=${encodeURIComponent(JSON.stringify({ ref }))}&title=Kontaktkort`;
+const ANNA_CARD = record('person:p1003');
+const HILLEVI_CARD = record('person:p1001');
+const REVIEW = '/items/fakturor/review?from=%2Fitems%2Ffakturor';
+/** The invoice card as a connector that asks for a review one row at a time declares it (D70, `review.spec.ts`). */
+const reviewed = (api: MockApi) => {
+  const card = api.threads.find(t => t.id === 'fakturor')!;
+  card.actions = card.actions.map(a =>
+    a.id === 'approve' ? { ...a, review: 'each' as const, preview: 'finance.preview' } : a,
+  );
+};
+const THINGS: Array<{
+  name: string;
+  path: string;
+  about: string;
+  box: string;
+  /** Text of the facts and text of the read after them, in the column while the pane is open; none without facts. */
+  order?: [string, string];
+  setup?: (api: MockApi, page: Page) => void | Promise<void>;
+}> = [
+  {
+    name: 'a work item',
+    path: '/items/ledighet',
+    about: 'Om ärendet Ledighetsansökan från Johan Byström',
+    box: 'Fråga om ärendet',
+    order: ['Uppgifter', 'Varför ser jag detta?'],
+  },
+  {
+    name: 'the review of a work item',
+    path: REVIEW,
+    about: 'Om ärendet Attestera 3 fakturor, 48 200 kr',
+    box: 'Fråga om ärendet',
+    // "Hittills" follows the step, as it does where the window is narrow.
+    order: ['Underlag från Ekonomisystemet', 'Hittills'],
+    setup: reviewed,
+  },
+  { name: 'a record', path: ANNA_CARD, about: 'Om Anna Lindqvist', box: 'Fråga om Anna Lindqvist' },
+  {
+    name: 'a person',
+    path: '/people/johan?from=%2Fstaff',
+    about: 'Om Johan Byström',
+    box: 'Fråga om Johan Byström',
+    order: ['Anställning', 'Behöver dig'],
+    setup: (_, page) => new People().route(page),
+  },
+  {
+    name: 'a unit',
+    path: `/units/${ENTITY_UNIT.id}`,
+    about: `Om ${ENTITY_UNIT.label}`,
+    box: `Fråga om ${ENTITY_UNIT.label}`,
+    order: ['Detaljer', 'Läget'],
+    setup: (_, page) => new Units().route(page),
+  },
+  {
+    name: 'a plan',
+    path: `/boarding/${ANNA}?from=%2Fstaff`,
+    about: 'Om Introduktion för Anna Lindqvist',
+    box: 'Fråga om introduktion för Anna Lindqvist',
+    order: ['Detaljer', 'Före första dagen'],
+    setup: api => {
+      api.boarding = new BoardingMock();
+    },
+  },
+];
+/** Where a text stands on the page: the first of it in the main column, never in the assistant's pane. */
+const top = async (page: Page, text: string) =>
+  (await page
+    .getByRole('main')
+    .getByText(text, { exact: true })
+    .and(page.locator(':not([role="complementary"] *)'))
+    .first()
+    .boundingBox())!.y;
+const ask3 = async (page: Page, box: string, question: string) => {
+  const field = pane(page).getByRole('textbox', { name: box });
+  await field.fill(question);
+  await field.press('Enter');
+  await expect(pane(page).getByText(question, { exact: true })).toBeVisible();
+};
+
+test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D131)', () => {
+  test.use({ viewport: WIDE });
+
+  for (const t of THINGS)
+    test(`${t.name}: the frame’s button is the only one on the page, the pane says what stands open, the facts stand above the read, and nothing scrolls sideways`, async ({
+      page,
+      api,
+    }) => {
+      await t.setup?.(api, page);
+      await open(page, t.path);
+      const toggle = frameButton(page);
+      await expect(toggle).toHaveCount(1);
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      // The thing's own "Fråga assistenten" among its actions is gone (D131 item 9).
+      await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(1);
+      await toggle.click();
+      await expect(page).toHaveURL(/[?&]ask=1(&|$)/);
+      await expect(pane(page)).toBeVisible();
+      await expect(pane(page).getByText(t.about, { exact: true })).toBeVisible();
+      await expect(pane(page).getByRole('textbox', { name: t.box })).toBeFocused();
+      // The pane has the end slot: no other panel stands beside the column, and the facts stand in it, above the read.
+      await expect(page.getByRole('complementary')).toHaveCount(1);
+      if (t.order) {
+        const [facts, read] = t.order;
+        expect(await top(page, facts)).toBeLessThan(await top(page, read));
+      }
+      expect(await sideways(page)).toBe(0);
+      await expectNoAxeViolations(page);
+    });
+
+  test('at 1366 px, beside the page, and at 1728 px no thing’s page scrolls sideways', async ({ page, api }) => {
+    for (const width of [1366, 1728]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const t of THINGS) {
+        await t.setup?.(api, page);
+        await open(page, `${t.path}${t.path.includes('?') ? '&' : '?'}ask=1`);
+        await expect(pane(page).getByText(t.about, { exact: true })).toBeVisible();
+        expect(await sideways(page), `${t.name} at ${width}`).toBe(0);
+      }
+    }
+  });
+
+  test('a person’s page sends the person by Clew’s id with every question, and no chip about them', async ({
+    page,
+    api,
+  }) => {
+    await new People().route(page);
+    await open(page, `/people/johan?section=${PRESENCE_LENS}&from=%2Fstaff`);
+    await frameButton(page).click();
+    // What Clew's own talks and the other systems show about him stays closed (D131 item 7), said before anything is asked.
+    await expect(pane(page).getByText(/^Assistenten kan inte läsa/)).toBeVisible();
+    await expect(pane(page).getByText(/^Assistenten får inte veta vem sidan gäller/)).toHaveCount(0);
+    await ask3(page, 'Fråga om Johan Byström', 'Hur går det för honom?');
+    expect(api.asked.at(-1)).toMatchObject({
+      chips: [],
+      own: true,
+      page: { subject: 'person:johan', label: 'Om Johan Byström' },
+      thing: { kind: 'person', id: 'johan' },
+    });
+    expect(api.asked.at(-1)!.beside).toBeUndefined();
+    // Another tab is the same conversation.
+    await open(page, `/people/johan?section=${TALK_LENS}&from=%2Fstaff&ask=1`);
+    await expect(pane(page).getByText('Hur går det för honom?', { exact: true })).toBeVisible();
+  });
+
+  test('the page of someone the reader does not manage says the assistant is not told who it is, and still sends the person', async ({
+    page,
+    api,
+  }) => {
+    const people = new People();
+    people.colleague = true;
+    await people.route(page);
+    await open(page, '/people/johan');
+    await frameButton(page).click();
+    await expect(
+      pane(page).getByText(/^Assistenten får inte veta vem sidan gäller, eftersom du inte är chef för personen\./),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+    await ask3(page, 'Fråga om Johan Byström', 'Vad gör han?');
+    expect(api.asked.at(-1)!.thing).toEqual({ kind: 'person', id: 'johan' });
+  });
+
+  test('Öppna som samtal from a person’s page leads to the conversation with the person beside it, and a question there carries the person', async ({
+    page,
+    api,
+  }) => {
+    await new People().route(page);
+    await open(page, '/people/johan?from=%2Fstaff');
+    await frameButton(page).click();
+    await ask3(page, 'Fråga om Johan Byström', 'Hur går det för honom?');
+    await pane(page).getByRole('link', { name: 'Öppna som samtal' }).click();
+    await expect(page).toHaveURL(/\/conversations\/om-person-johan\?person=johan$/);
+    await expect(page.getByRole('complementary', { name: 'Johan Byström' })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Hur går det för honom?', { exact: true }).first()).toBeVisible();
+    const box = page.getByRole('combobox', { name: 'Svara i samtalet' });
+    await box.fill('Och hans frånvaro?');
+    await box.press('Enter');
+    await expect(page.getByRole('log').getByText('Och hans frånvaro?', { exact: true })).toBeVisible();
+    expect(api.asked.at(-1)).toMatchObject({
+      text: 'Och hans frånvaro?',
+      conversationId: 'om-person-johan',
+      thing: { kind: 'person', id: 'johan' },
+    });
+  });
+
+  test('a unit’s page sends the unit by Clew’s id', async ({ page, api }) => {
+    await new Units().route(page);
+    await open(page, `/units/${ENTITY_UNIT.id}`);
+    await frameButton(page).click();
+    await ask3(page, `Fråga om ${ENTITY_UNIT.label}`, 'Hur ser det ut?');
+    expect(api.asked.at(-1)).toMatchObject({
+      chips: [],
+      page: { subject: `unit:${ENTITY_UNIT.id}`, label: `Om ${ENTITY_UNIT.label}` },
+      thing: { kind: 'unit', id: ENTITY_UNIT.id },
+    });
+  });
+
+  test('a record’s page sends the record with its input and its read’s chip where the assistant may make it; two records of one read are two conversations', async ({
+    page,
+    api,
+  }) => {
+    offer(api, 'phonebook.person', 'Kontaktkort');
+    await open(page, ANNA_CARD);
+    await frameButton(page).click();
+    await expect(pane(page).getByText(/^Assistenten kan inte läsa/)).toHaveCount(0);
+    await ask3(page, 'Fråga om Anna Lindqvist', 'Vem är hennes chef?');
+    const anna = api.asked.at(-1)!;
+    expect(anna).toMatchObject({
+      chips: [{ ref: 'capability:phonebook.person', kind: 'capability', label: 'Kontaktkort' }],
+      beside: 'capability:phonebook.person',
+      page: { subject: 'view:phonebook.person:{"ref":"person:p1003"}', label: 'Om Anna Lindqvist' },
+      thing: { kind: 'record', capability: 'phonebook.person', input: { ref: 'person:p1003' } },
+    });
+    expect(anna.conversationId).toBeUndefined();
+    // Another record of the same read: a conversation of its own, not Anna's.
+    await open(page, `${HILLEVI_CARD}&ask=1`);
+    await expect(pane(page).getByText('Om Hillevi Berg', { exact: true })).toBeVisible();
+    await expect(pane(page).getByText('Vem är hennes chef?', { exact: true })).toHaveCount(0);
+    await ask3(page, 'Fråga om Hillevi Berg', 'Vem är hennes chef?');
+    const hillevi = api.asked.at(-1)!;
+    expect(hillevi.conversationId).toBeUndefined();
+    expect(hillevi.thing).toEqual({ kind: 'record', capability: 'phonebook.person', input: { ref: 'person:p1001' } });
+    // Back on Anna's card her conversation is there again, and goes on.
+    await open(page, `${ANNA_CARD}&ask=1`);
+    await expect(pane(page).getByText('Vem är hennes chef?', { exact: true })).toBeVisible();
+    await ask3(page, 'Fråga om Anna Lindqvist', 'Och hennes rum?');
+    expect(api.asked.at(-1)!.conversationId).toBe('om-record-phonebook-person-ref-person-p1003');
+  });
+
+  test('a record the assistant may not read says so by its system, and the record still goes', async ({
+    page,
+    api,
+  }) => {
+    await open(page, ANNA_CARD);
+    await frameButton(page).click();
+    await expect(
+      pane(page).getByText(
+        'Assistenten kan inte läsa det som Telefonboken visar här. Du kan ändå fråga om annat som du har tillgång till.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await ask3(page, 'Fråga om Anna Lindqvist', 'Vem är hon?');
+    expect(api.asked.at(-1)).toMatchObject({
+      chips: [],
+      thing: { kind: 'record', capability: 'phonebook.person', input: { ref: 'person:p1003' } },
+    });
+  });
+
+  test('a plan is a record of boarding.plan by its id', async ({ page, api }) => {
+    api.boarding = new BoardingMock();
+    await open(page, `/boarding/${ANNA}?from=%2Fstaff`);
+    await frameButton(page).click();
+    await ask3(page, 'Fråga om introduktion för Anna Lindqvist', 'Vad är försenat?');
+    expect(api.asked.at(-1)).toMatchObject({
+      page: { subject: `view:boarding.plan:{"plan":"${PLAN}"}`, label: 'Om Introduktion för Anna Lindqvist' },
+      thing: { kind: 'record', capability: 'boarding.plan', input: { plan: PLAN } },
+    });
+  });
+
+  test('a work item’s page and its review go with the item’s chip as what stands open, no thing, and are one conversation', async ({
+    page,
+    api,
+  }) => {
+    reviewed(api);
+    await open(page, '/items/fakturor');
+    await frameButton(page).click();
+    await ask3(page, 'Fråga om ärendet', 'Vilken är störst?');
+    expect(api.asked.at(-1)).toMatchObject({
+      chips: [{ ref: 'thread:fakturor', kind: 'thread', label: 'Attestera 3 fakturor, 48 200 kr' }],
+      beside: 'thread:fakturor',
+      page: { subject: 'thread:fakturor', label: 'Om ärendet Attestera 3 fakturor, 48 200 kr' },
+    });
+    expect(api.asked.at(-1)!.thing).toBeUndefined();
+    // The review is about the same item: the same conversation.
+    await open(page, `${REVIEW}&ask=1`);
+    await expect(pane(page).getByText('Vilken är störst?', { exact: true })).toBeVisible();
+  });
+});
+
+test.describe('a thing’s page on a phone (D130 rule 11, D131 item 1)', () => {
+  test.use({ viewport: phone });
+
+  test('the button leads to the conversation with the thing beside its address, and a question there carries the thing', async ({
+    page,
+    api,
+  }) => {
+    for (const [path, address] of [
+      ['/items/ledighet', '/conversations/new?card=ledighet'],
+      [`/units/${ENTITY_UNIT.id}`, `/conversations/new?unit=${ENTITY_UNIT.id}`],
+      [
+        ANNA_CARD,
+        `/conversations/new?open=phonebook.person&open-title=Kontaktkort&open-input=${encodeURIComponent('{"ref":"person:p1003"}')}`,
+      ],
+    ] as const) {
+      if (path.startsWith('/units')) await new Units().route(page);
+      await open(page, path);
+      await page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' }).click();
+      await expect(page).toHaveURL(address);
+    }
+    // The record stands beside the conversation by its address: a question there carries it.
+    const box = page.getByRole('combobox', { name: 'Svara i samtalet' });
+    await box.fill('Vem är hon?');
+    await box.press('Enter');
+    await expect(page.getByRole('log').getByText('Vem är hon?', { exact: true })).toBeVisible();
+    expect(api.asked.at(-1)!.thing).toEqual({
+      kind: 'record',
+      capability: 'phonebook.person',
+      input: { ref: 'person:p1003' },
+    });
+  });
+
+  test('a person’s button leads to the conversation about them, which carries the person', async ({ page, api }) => {
+    await new People().route(page);
+    await open(page, '/people/johan?from=%2Fstaff');
+    await page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' }).click();
+    await expect(page).toHaveURL('/conversations/new?person=johan');
+    const box = page.getByRole('combobox', { name: 'Svara i samtalet' });
+    await box.fill('Hur går det?');
+    await box.press('Enter');
+    await expect(page.getByRole('log').getByText('Hur går det?', { exact: true })).toBeVisible();
+    expect(api.asked.at(-1)).toMatchObject({ chips: [], thing: { kind: 'person', id: 'johan' } });
+  });
+
+  test('the review on a phone has the frame’s button under its title', async ({ page, api }) => {
+    reviewed(api);
+    await open(page, REVIEW);
+    const button = page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' });
+    await expect(button).toHaveCount(1);
+    const [t, b] = await Promise.all([
+      page.getByRole('heading', { level: 1, name: 'Granska 3 rader' }).boundingBox(),
+      button.boundingBox(),
+    ]);
+    expect(b!.y).toBeGreaterThan(t!.y + t!.height);
+    await button.click();
+    await expect(page).toHaveURL('/conversations/new?card=fakturor');
   });
 });

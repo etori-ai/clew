@@ -55,6 +55,8 @@ import {
 } from './card';
 import { StaleMark, silentLine, useSilentSources } from './silent-sources';
 import { PageFrame, narrowPageQuery } from './page-frame';
+import { FactsInColumn } from './page-frame-context';
+import { itemPageSubject } from './page-conversation';
 import { FoldedSection, ItemSection } from './item-section';
 
 export { whenWord } from '../when-word';
@@ -747,22 +749,20 @@ export function WorkItem({
  * StatusPanel): in the header the way back (to where the person came from when Clew can name it, else Att göra) with
  * the source beside it, the title as the page's heading with when it is due while it is the person's to decide, and the
  * buttons or the status notice directly under it; the read in the column; the facts under "Uppgifter" in the end panel,
- * 340 px beside the column, and as the read's first section at 1024 px and below. On a short screen nothing is pinned
- * and the page scrolls as one (1.4.10).
+ * 340 px beside the column, and as the read's first section at 1024 px and below and while the assistant's pane stands
+ * beside the page (`FactsInColumn`, D131 item 9, board AskArende). The frame draws "Fråga assistenten" at the end of the
+ * title's line, about the item (`itemPageSubject`); the item's own buttons have none here. On a short screen nothing is
+ * pinned and the page scrolls as one (1.4.10).
  */
 export function WorkItemPage({
   thread,
   back,
   onChange,
-  ask,
 }: {
   thread: Thread;
   back: { label: string; href: string };
   onChange: (thread: Thread) => void;
-  /** "Fråga assistenten" (`AskClew`), after the decisions. */
-  ask?: ReactNode;
 }) {
-  const narrow = useMediaQuery(narrowPageQuery);
   const item = useWorkItem(thread, onChange);
   // The page opens on its heading (2.4.3), once per item: what the person came for.
   useEffect(() => {
@@ -771,11 +771,11 @@ export function WorkItemPage({
   }, [thread.id]);
   const day = today();
   // The one page frame (D126): the way back with the source beside it, the title with when it is due, the buttons or
-  // the notice directly under it, the read in the column and the facts in the end panel; at 1024 px and below the read
-  // places the facts itself, first.
+  // the notice directly under it, the read in the column and the facts in the end panel; at 1024 px and below, and while
+  // the assistant's pane has the end slot, the read places the facts itself, first.
   return (
     <PageFrame
-      ask={{ later: 'things' }}
+      ask={{ subject: itemPageSubject(thread) }}
       back={back}
       trail={
         <Text type="supporting" color="secondary">
@@ -792,7 +792,6 @@ export function WorkItemPage({
             actions={item.actions}
             readHref={item.readHref}
             omit={item.omit}
-            ask={ask}
             titleRef={item.title}
             reviewShown={item.rowsShown}
           />
@@ -812,14 +811,18 @@ export function WorkItemPage({
       factsAbove={false}
     >
       {/* The sections are the page's second level, drawn at the size the board gives them (board Ärende). */}
-      <Read
-        thread={thread}
-        item={item}
-        level={2}
-        gap={8}
-        idBase="item"
-        facts={narrow ? <Facts thread={thread} item={item} columns="multi" /> : undefined}
-      />
+      <FactsInColumn query={narrowPageQuery}>
+        {inColumn => (
+          <Read
+            thread={thread}
+            item={item}
+            level={2}
+            gap={8}
+            idBase="item"
+            facts={inColumn ? <Facts thread={thread} item={item} columns="multi" /> : undefined}
+          />
+        )}
+      </FactsInColumn>
     </PageFrame>
   );
 }

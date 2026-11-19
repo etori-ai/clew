@@ -15,9 +15,8 @@ import { Shell, shortQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
 import { WorkItemPage } from '../components/work-item';
 import { cardBody } from '../components/card-panel';
-import { itemSubject } from '../components/view-read';
-import { AskClew } from '../components/thing-panel';
 import { PageFrame } from '../components/page-frame';
+import { itemPageSubject } from '../components/page-conversation';
 
 /**
  * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`): the item's own address, reached by its name
@@ -75,21 +74,20 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
     },
     [threadId, navigate],
   );
-  // "Fråga assistenten" (D126 rule 5): a new conversation with the item beside it.
-  const ask = thread ? <AskClew subject={itemSubject(thread)} /> : null;
   let body;
-  if (thread && !thread.proposals.length)
-    body = <WorkItemPage thread={thread} back={back} onChange={onChange} ask={ask} />;
-  // The calendar's proposals keep their own card (D27, D112 item 9), under the way back and the item's title.
+  if (thread && !thread.proposals.length) body = <WorkItemPage thread={thread} back={back} onChange={onChange} />;
+  // The calendar's proposals keep their own card (D27, D112 item 9), under the way back and the item's title; the frame
+  // draws "Fråga assistenten" about the item at the end of the title's line, as on every work item's page (D131).
   else if (thread)
     body = (
-      <PageFrame ask={{ later: 'things' }} back={back} title={thread.title} actions={ask}>
+      <PageFrame ask={{ subject: itemPageSubject(thread) }} back={back} title={thread.title}>
         {cardBody(thread, { place: 'pane', level: 2, onChange })}
       </PageFrame>
     );
+  // Until the item is read, and when it is missing, the page has no subject yet and no button.
   else
     body = (
-      <PageFrame ask={{ later: 'things' }}>
+      <PageFrame ask={{ subject: null }}>
         {missing ? (
           <EmptyState
             headingLevel={1}
