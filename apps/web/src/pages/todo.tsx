@@ -13,37 +13,41 @@ import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-q
 import { isSnoozed, sameSubject, streamGroup, type Area, type SessionUser, type Thread } from '@clew/contracts';
 import {
   Badge,
-  Card,
+  BoardCard,
   DropdownMenu,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   EmptyState,
+  FigureRow,
   HStack,
   Icon,
   IconButton,
   InboxIcon,
+  KeyFigure,
   LayoutPanel,
   Link,
+  pixel,
+  proportional,
+  registerTable,
   ResizeHandle,
+  SECTION_GAP,
   StatusMark,
   Tab,
   Table,
+  type TableColumn,
+  type TablePlugin,
   TabList,
   Text,
   TextInput,
   Token,
-  VStack,
-  VisuallyHidden,
-  XMarkIcon,
-  pixel,
-  proportional,
   useAnnounce,
   useMediaQuery,
   useResizable,
   useTableRowStatus,
   useToast,
-  type TableColumn,
-  type TablePlugin,
+  VisuallyHidden,
+  VStack,
+  XMarkIcon,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { areasQuery, threadsQuery } from '../queries';
@@ -57,6 +61,7 @@ import {
   fromClewItself,
   itemPageHref,
   needsYouOf,
+  openDeadline,
   rowFacts,
   sourcesNotice,
   tabOf,
@@ -68,21 +73,20 @@ import {
   type RowFacts,
   type TodoTab,
 } from '../work-items';
-import { useRail } from '../components/nav';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { silentLine, staleWhy, useSilentSources } from '../components/silent-sources';
-import { BriefSkeleton } from '../components/brief';
-import { AsyncContent } from '../components/loading';
-import { cardBody } from '../components/card-panel';
+import { useNav } from '../components/shell/nav';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { silentLine, staleWhy, useSilentSources } from '../components/shell/silent-sources';
+import { BriefSkeleton } from '../components/work/brief';
+import { cardBody } from '../components/work/card-panel';
 import { whenWord } from '../when-word';
 import { DOT } from '../dot';
 import { statusOf, type ItemStatus } from '../status-of';
-import { reviewedAction } from '../components/card';
-import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
-import { itemSubject } from '../components/view-read';
-import { AskClew } from '../components/thing-panel';
-import type { ThingSubject } from '../components/conversation-context';
-import { PageFrame } from '../components/page-frame';
+import { reviewedAction } from '../components/work/card';
+import { ReceiptNotice, receiptMessage } from '../components/work/receipt-notice';
+import { itemSubject } from '../components/views/view-read';
+import { AskClew } from '../components/conversation/thing-panel';
+import type { ThingSubject } from '../components/conversation/conversation-context';
+import { PageFrame } from '../components/shell/page-frame';
 
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
@@ -106,14 +110,13 @@ const PANE_SHARE = 0.55;
 
 /**
  * The width of the box the page was given, as the `table-inbox` template measures it (`useSurfaceWidth`, D112 gap 4):
- * every decision here is about that box, not the window, which also holds the rail. The first read is synchronous,
- * before paint, and `offsetWidth` is the laid-out width as the observer reports it after that.
+ * The frame can replace that box when the reading pane opens or closes. Measure each new node before paint and
+ * observe it until it is replaced.
  */
 function useSurfaceWidth() {
-  const ref = useRef<HTMLDivElement>(null);
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
-    const node = ref.current;
     if (!node) return;
     const { paddingInlineStart, paddingInlineEnd } = getComputedStyle(node);
     setWidth(node.offsetWidth - parseFloat(paddingInlineStart) - parseFloat(paddingInlineEnd));
@@ -123,8 +126,8 @@ function useSurfaceWidth() {
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
-  return [ref, width] as const;
+  }, [node]);
+  return [setNode, width] as const;
 }
 
 /**
@@ -212,12 +215,13 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const pileOf = (t: Thread): TodoTab => todoTabs.find(p => piles[p].some(x => x.id === t.id)) ?? 'needs-you';
   const tab: TodoTab = search.has('tab') ? tabOf(search.get('tab')) : item ? pileOf(item) : 'needs-you';
   const words = filter.trim().toLocaleLowerCase('sv-SE');
+  const inArea = (t: Thread) => !area || t.area === area;
   const matches = (t: Thread) =>
-    (!area || t.area === area) &&
+    inArea(t) &&
     (!words || `${t.title} ${t.trigger.reason} ${t.trigger.source}`.toLocaleLowerCase('sv-SE').includes(words));
   const rows = piles[tab].filter(matches);
 
-  const nav = useRail({ current: { surface: 'todo' }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'todo' }, admin, manager: user.role === 'manager' });
   usePageTitle('Att göra');
   // Back from an item's page that sent its item away: the row after it, among the rows drawn before it went.
   const location = useLocation();
@@ -242,7 +246,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
 
   // The template's measure: the page's own box decides whether the pane stands beside the list.
   const [surfaceRef, pageWidth] = useSurfaceWidth();
-  // The sheet fills what the rail leaves (D126 item 12), so the page's own box is what the list and the pane divide.
+  // The list and the pane divide the page's measured content box.
   const surfaceWidth = pageWidth;
   const isMeasured = surfaceWidth > 0;
   const single = isMeasured ? surfaceWidth < SINGLE_SURFACE_BELOW : mobile;
@@ -344,14 +348,16 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const sourcesLine = sourcesNotice(threadsQ.data?.sources);
   const silent = useSilentSources();
   const silentWords = silent.list.length ? `${silent.list.map(silentLine).join('. ')}.` : null;
-  const count = (t: TodoTab) => piles[t].filter(x => !area || x.area === area).length;
+  // A source with a last successful read can contribute its saved work even during a failed refetch.
+  const countsKnown = !!threadsQ.data && !threadsQ.data.sources?.some(s => !s.lastSuccess);
+  const count = (t: TodoTab) => piles[t].filter(inArea).length;
   // The counts line under the title (board Att göra): what needs the person and what waits on others; what is done is
   // not a call to look.
-  const countsLine = loading ? null : `${count('needs-you')} behöver dig · ${count('waiting')} väntar på andra`;
+  const countsLine = countsKnown ? `${count('needs-you')} behöver dig · ${count('waiting')} väntar på andra` : null;
   // On a phone the strip has the short words (board PhoneInbox: "Väntar"), so the three with their counts fit 320 px
   // under the text-spacing overrides (1.4.12).
   const tabBadge = (t: TodoTab) => {
-    if (t === 'done' || loading) return undefined;
+    if (t === 'done' || !countsKnown) return undefined;
     const n = count(t);
     if (!n) return undefined;
     return (
@@ -445,7 +451,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const columns: TableColumn<QueueRow>[] = [
     {
       key: 'title',
-      header: 'Ärende',
+      header: <Text type="eyebrow">Ärende</Text>,
       width: proportional(3),
       renderCell: r => (
         <VStack gap={0.5}>
@@ -465,7 +471,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     },
     {
       key: 'source',
-      header: 'Från',
+      header: <Text type="eyebrow">Från</Text>,
       width: pixel(150),
       // An item from Clew itself names no system (`fromClewItself`): Clew is not a system the person goes to.
       renderCell: r =>
@@ -479,7 +485,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     // beside the dot, or the dot alone, whose name still says it in full.
     {
       key: 'status',
-      header: 'Status',
+      header: <Text type="eyebrow">Status</Text>,
       // On a phone the mark wraps under its dot rather than push the table past the screen (1.4.10).
       width: pixel(mobile ? 120 : 180),
       renderCell: r => (
@@ -521,8 +527,61 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       }) as TablePlugin<QueueRow>,
     [itemId, navigate],
   );
+  // Beside its reading pane the list stands in the frame's card and draws none of its own.
+  const beside = !!itemId && !single;
+  // Due today and overdue share a badge colour. Only an open item due before the Stockholm day is overdue.
+  const overdue = piles['needs-you'].filter(t => inArea(t) && (openDeadline(t, todayDate)?.days ?? 0) < 0).length;
+  /**
+   * The piles as key figures over the list (D130 item 19), as the reference opens Mina aktiviteter: what needs the
+   * person, how much of it is overdue, what waits on others and what is done, each leading to its pile. Not drawn
+   * beside the reading pane, where the list and the item share the page.
+   */
+  const figures =
+    !countsKnown || beside ? null : (
+      <FigureRow>
+        <KeyFigure
+          label="Behöver dig"
+          value={String(count('needs-you'))}
+          href={href({ tab: 'needs-you', item: null })}
+          name={`Behöver dig: ${count('needs-you')} ärenden`}
+        />
+        <KeyFigure
+          label="Försenade"
+          value={String(overdue)}
+          tone={overdue ? 'error' : undefined}
+          href={href({ tab: 'needs-you', item: null })}
+          name={`Försenade: ${overdue} ärenden`}
+        />
+        <KeyFigure
+          label="Väntar på andra"
+          value={String(count('waiting'))}
+          href={href({ tab: 'waiting', item: null })}
+          name={`Väntar på andra: ${count('waiting')} ärenden`}
+        />
+        <KeyFigure
+          label="Klart"
+          value={String(count('done'))}
+          tone={count('done') ? 'success' : undefined}
+          href={href({ tab: 'done', item: null })}
+          name={`Klart: ${count('done')} ärenden`}
+        />
+      </FigureRow>
+    );
+  /**
+   * The pile as the reference draws a list (D130 item 19): one card with its heading inside, the pile's name and how
+   * many it holds, the filters under the heading, and the table inside the card's inset.
+   */
   const list = (
-    <AsyncContent pending={loading} fallback={<BriefSkeleton compact={mobile} />} gap={4}>
+    <BoardCard
+      id="todo-pile"
+      title={tabTitle[tab]}
+      count={rows.length}
+      countLabel="ärenden"
+      tools={filters}
+      bare={beside}
+      pending={loading}
+      pendingLabel="Hämtar ärendena …"
+    >
       {(sourcesLine && rows.length > 0) || failed || rows.length === 0 ? (
         <VStack gap={3}>
           {sourcesLine && rows.length > 0 && (
@@ -558,18 +617,16 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
         </VStack>
       ) : null}
       {!failed && rows.length > 0 && (
-        <Card padding={0}>
-          <Table<QueueRow>
-            aria-label={tabTitle[tab]}
-            data={tableRows}
-            columns={shownColumns}
-            idKey="id"
-            hasHover
-            plugins={itemId && !single ? { open: openStatus, rows: rowPlugin } : { rows: rowPlugin }}
-          />
-        </Card>
+        <Table<QueueRow>
+          aria-label={tabTitle[tab]}
+          data={tableRows}
+          columns={shownColumns}
+          idKey="id"
+          {...registerTable}
+          plugins={itemId && !single ? { open: openStatus, rows: rowPlugin } : { rows: rowPlugin }}
+        />
       )}
-    </AsyncContent>
+    </BoardCard>
   );
 
   /** Esc inside a menu, a list or a dialog is theirs, and so is Esc on a button whose menu is open; a bare Esc lets go of the item. */
@@ -631,15 +688,11 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           its reading pane side by side inside the same column, the list in a card as Hem's lists are. */}
       <PageFrame
         layoutRef={surfaceRef}
+        cards
         title="Att göra"
         titleId="att-gora"
         meta={countsLine ?? undefined}
-        actions={
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            {filters}
-            <AskClew subject={queueSubject} />
-          </HStack>
-        }
+        actions={<AskClew subject={queueSubject} />}
         tabs={
           <TabList hasDivider={false} isFullBleed value={tab} onChange={() => {}} aria-label="Urval">
             {todoTabs.map(t => {
@@ -682,7 +735,10 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           )
         }
       >
-        {list}
+        <VStack gap={SECTION_GAP}>
+          {figures}
+          {list}
+        </VStack>
       </PageFrame>
     </Shell>
   );

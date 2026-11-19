@@ -1,0 +1,8 @@
+{
+  "theme": "theme.tokens.json",
+  "logo": {
+    "alt": "Sundsvalls kommun",
+    "light": "../../apps/web/public/branding/sundsvall-dragon.png",
+    "dark": "../../apps/web/public/branding/sundsvall-dragon-white.png"
+  }
+}

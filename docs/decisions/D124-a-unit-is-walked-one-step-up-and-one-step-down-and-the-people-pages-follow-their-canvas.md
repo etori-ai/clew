@@ -122,8 +122,8 @@ neutral monogram and the shell layout. The canvas used D120 while it was drawn. 
   (D85), where the canvas drew a Selector; its error stands under it as its status. A mapping's capability is a
   link that narrows the people to it.
 - **The person card** ([person.tsx](../../apps/web/src/pages/person.tsx),
-  [entity-page.tsx](../../apps/web/src/components/entity-page.tsx),
-  [view.tsx](../../apps/web/src/components/view.tsx)). `DeclaredView` takes `section`: under a section the mark row is
+  [entity-page.tsx](../../apps/web/src/components/people/entity-page.tsx),
+  [view.tsx](../../apps/web/src/components/views/view.tsx)). `DeclaredView` takes `section`: under a section the mark row is
   a small heading with the read's own title (level 3 in the outline), the rows are named by it, a list has no footer,
   a state without a tone stands at the row's end in ordinary words, and a record does not repeat the name of the
   person or unit the page is about. The unit page's short list has the same heading. An employment's share of full

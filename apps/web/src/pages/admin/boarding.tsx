@@ -27,7 +27,7 @@ import { conditionWords, itemsWords, longDay, unitLabelOf } from '../../boarding
 import { boardingLayersQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
-import { mobileQuery } from '../../components/shell';
+import { mobileQuery } from '../../components/shell/shell';
 import { AdminShell } from './shell';
 
 type Layer = BoardingLayersOutput['layers'][number];

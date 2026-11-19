@@ -193,7 +193,7 @@ test.describe('users administration', () => {
       // The rail has one row for Administration (D126 rule 10), marked; the section is marked in Administration's panel.
       await expect(
         page
-          .getByRole('navigation', { name: 'Sidonavigering' })
+          .getByRole('navigation', { name: 'Mina sidor', exact: true })
           .getByRole('link', { name: 'Administration', exact: true }),
       ).toHaveAttribute('aria-current', 'page');
       await expect(

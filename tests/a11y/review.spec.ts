@@ -498,6 +498,8 @@ test.describe('the review on a phone: the same page, stacked (D73 amended 2026-1
     const img = page.getByRole('img', { name: /Energibolaget AB/ });
     await expect(img).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Underlag från ekonomisystemet' })).toBeFocused();
+    // The decision is pinned at the window's foot, so the floating way to the assistant is not drawn over it (D130).
+    await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
     const [paper, button] = [await img.boundingBox(), await verb(page).boundingBox()];
     expect(paper!.y).toBeLessThan(button!.y);
     await expect(verb(page)).toBeInViewport();

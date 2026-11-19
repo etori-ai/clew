@@ -1,0 +1,1058 @@
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  dayWord,
+  isSnoozed,
+  parseSwedishTime,
+  snoozeWhen,
+  streamGroup,
+  unresolvedExecution,
+  type AskValues,
+  type CardAction,
+  type SnoozeInput,
+  type SnoozePreset,
+  type Thread,
+  type ThreadAction,
+  type ThreadItem,
+} from '@clew/contracts';
+import {
+  AlertDialog,
+  AreaLine,
+  Button,
+  Dialog,
+  DialogHeader,
+  DropdownMenu,
+  DropdownMenuDivider,
+  DropdownMenuItem,
+  DropdownMenuSubMenu,
+  HStack,
+  Icon,
+  IconButton,
+  Link,
+  MoreMenu,
+  StackItem,
+  StatusNotice,
+  Text,
+  TextInput,
+  useAnnounce,
+  useToast,
+  VStack,
+  type StatusMove,
+} from '@clew/ui';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'react-router';
+import { today } from '@clew/calendar/dates';
+import { api, ApiError } from '../../api';
+import { confirmParts } from '../../confirm-parts';
+import { snoozePresetsQuery } from '../../queries';
+import { useDecisionSend, useSettling, useThreadAction, type RunAction } from '../../mutations';
+import { opensDialog, type ActionStep } from '../../action-path';
+import { takeActionRequest, useActionRequest } from '../../action-requests';
+import { ActionDialog } from './action-dialog';
+import { dismissed, reopened, snoozed } from '../../optimistic';
+import { invalidateStream } from '../../thread-cache';
+import { useConversation } from '../conversation/conversation-context';
+import { executionStatus } from '../../execution-status';
+import { statusOf, type ItemStatus, type StatusMoveWords } from '../../status-of';
+import { whenWord } from '../../when-word';
+import { QUEUED_LINE, silentLine, useSilentSources } from '../shell/silent-sources';
+import type { Marks } from '../../marks';
+import { reviewHref } from '../../review-address';
+import {
+  approvedOf,
+  begun,
+  leftOf,
+  nextStep,
+  reviewLeftFor,
+  reviewRows,
+  selectionAfterReview,
+  useReviewDraft,
+} from '../../review-session';
+import { entityHref } from '../../person-address';
+
+/**
+ * What a work item can do (D112 item 4), shared by every place one is drawn (`work-item.tsx`) and by its review's page
+ * (D73): its actions, the confirm they ask, the time pickers, Avfärda and Återöppna, and the row of buttons. The item's
+ * shape is `work-item.tsx`'s; this file holds no layout of its own beyond the buttons.
+ */
+export const clock = (iso: string) => new Date(iso).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
+export function useCountdown(until: string | null) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!until) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [until]);
+  if (!until) return null;
+  const left = Math.max(0, Date.parse(until) - now);
+  return left > 0 ? `${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}` : null;
+}
+/** The time left to undo, in whole minutes as the receipt says it (board ActReceipt: "9 min kvar"); null once it has run out. */
+export function useMinutesLeft(until: string | null) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!until) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [until]);
+  if (!until) return null;
+  const left = Date.parse(until) - now;
+  return left > 0 ? Math.ceil(left / 60000) : null;
+}
+/**
+ * Avfärda and Inte nu: the item leaves the queue and a toast with Ångra takes its place; reopen brings it back. The toast
+ * stays until the person closes it: Ångra is the only way back to the item, so it carries no time limit (2.2.1).
+ */
+export function useLeaveWithUndo(apply: (thread: Thread) => void) {
+  const toast = useToast();
+  return (thread: Thread, text: string, undo: () => Promise<Thread> = () => api.reopen(thread.id)) => {
+    const dismiss = toast({
+      body: text,
+      isAutoHide: false,
+      uniqueID: 'leave:' + thread.id,
+      endContent: (
+        <Button
+          size="sm"
+          variant="ghost"
+          label="Ångra"
+          clickAction={async () => {
+            apply(await undo());
+            dismiss();
+          }}
+        />
+      ),
+    });
+  };
+}
+
+/** Inte nu (D28): when the item comes back, in words. */
+export const snoozedLabel = (until: string, now = today()) => {
+  const date = new Date(until).toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' });
+  return `Tillbaka ${dayWord(date, now) === 'i dag' ? '' : dayWord(date, now) + ' '}${clock(until)}`;
+};
+/**
+ * The systems an item's rows come from (D55, artboard 10): a row's system when its ref names one the person can see. An
+ * item is a job across systems when a row is another system's than the item's; then every row carries its system.
+ */
+export function rowSystems(thread: Thread, marks: Marks) {
+  const of = new Map<string, ReturnType<Marks['ofRef']>>();
+  for (const r of [...thread.items, ...(thread.receipt?.rows ?? [])]) of.set(r.ref, marks.ofRef(r.ref));
+  const systems = new Set(thread.items.map(i => of.get(i.ref)?.connector).filter(Boolean));
+  return { of, multi: [...of.values()].some(m => m && m.connector !== thread.connector), count: systems.size };
+}
+export type RowSystems = ReturnType<typeof rowSystems>;
+/**
+ * A row of a job across systems (artboard 10): its system's glyph, the system's word, the area's word, then what it
+ * says. A receipt row says which system answered and when instead of the area ("Tidrapporteringen svarade 07:02").
+ */
+export function SystemLine({
+  mark,
+  words,
+  answered,
+}: {
+  mark: ReturnType<Marks['ofRef']>;
+  words: string;
+  answered?: string;
+}) {
+  if (!mark) return <Text type="supporting">{words}</Text>;
+  // Clew's own system is named alone ("Kalendern"): its area is the house's, not a guest's place.
+  const lead = answered
+    ? `${mark.source} svarade ${answered}`
+    : [mark.source, mark.area && mark.ordinal !== null ? mark.title : ''].filter(Boolean).join('\u00a0· ');
+  return <AreaLine icon={mark.area ? mark.icon : undefined}>{[lead, words].filter(Boolean).join('\u00a0· ')}</AreaLine>;
+}
+/** A reminder the person set that could not be scheduled, said in a sentence under the item's status. */
+export function TimerNote({ thread }: { thread: Thread }) {
+  if (thread.timers?.some(t => t.state === 'blocked'))
+    return (
+      <Text type="supporting" role="status">
+        Påminnelsen stoppades eftersom behörigheten har ändrats. Välj en ny påminnelse om den fortfarande behövs.
+      </Text>
+    );
+  if (thread.timers?.some(t => t.state === 'queued'))
+    return (
+      <Text type="supporting" role="status">
+        Påminnelsen är sparad och väntar på schemaläggning.
+      </Text>
+    );
+  return null;
+}
+/**
+ * A row's name (D97 item 6): the source's own words, and a link to the person or unit the row names when it names one,
+ * with the page it was opened on as the way back. Never a name the row did not have, and no link on the page of the
+ * person or unit it names (`entityHref`): it would lead out of the item to the page the reader is on.
+ */
+export function ItemLabel({ item, from }: { item: ThreadItem; from: string }) {
+  const href = item.subject ? entityHref(item.subject, from) : null;
+  return href ? (
+    <Link href={href} weight="semibold" hasUnderline>
+      {item.label}
+    </Link>
+  ) : (
+    <Text weight="semibold">{item.label}</Text>
+  );
+}
+
+/** The picker's rows (D29): one query for the whole page, kept a minute (snoozePresetsQuery), so every card shows the same times. */
+const EMPTY_PRESETS: SnoozePreset[] = [];
+const usePresets = () => useQuery(snoozePresetsQuery).data?.presets ?? EMPTY_PRESETS;
+type TimeChoice = SnoozeInput & { seconds?: number };
+/**
+ * A card has one time action (D49): Inte nu while it is the person's, Påminn mig while it waits on someone else. Both are
+ * this picker: the presets with the time each lands on, then "Skriv själv …" for free text in the composer's grammar,
+ * parsed as the person types so the time is shown before it is set. The rows go in a menu of their own or under ⋯; the
+ * form Dialog stays mounted outside the menu, which closes when it opens.
+ */
+function useTimeRows({
+  presets,
+  demo,
+  onPick,
+}: {
+  presets: SnoozePreset[];
+  demo?: { label: string; seconds: number };
+  onPick: (choice: TimeChoice) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const parsed = text.trim() ? parseSwedishTime(text, new Date().toISOString()) : null;
+  const when = parsed ? snoozeWhen(parsed, new Date().toISOString()) : null;
+  const rows = [
+    ...(demo
+      ? [{ id: 'demo', label: demo.label, description: 'demo', onClick: () => onPick({ seconds: demo.seconds }) }]
+      : []),
+    ...presets.map(p => ({
+      id: p.id,
+      label: p.label,
+      description: p.detail,
+      onClick: () => onPick({ preset: p.id, until: p.at }),
+    })),
+  ];
+  const own = {
+    id: 'text',
+    label: 'Skriv själv …',
+    description: '”fredag kl 9”, ”om 20 min”',
+    onClick: () => {
+      setText('');
+      setOpen(true);
+    },
+  };
+  const pick = () => {
+    if (parsed) {
+      onPick({ text, until: parsed });
+      setOpen(false);
+    }
+  };
+  const dialog = (
+    <Dialog isOpen={open} onOpenChange={setOpen} purpose="form">
+      <DialogHeader title="När ska jag ta upp det igen?" />
+      <VStack gap={3} padding={3}>
+        <TextInput
+          label="När?"
+          value={text}
+          onChange={setText}
+          placeholder="fredag kl 9"
+          description="Till exempel ”om 20 min”, ”efter lunch”, ”i morgon kl 9”, ”fredag kl 9”, ”nästa vecka”"
+          status={text.trim() && !parsed ? { type: 'error', message: 'Jag förstod inte tiden.' } : undefined}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              pick();
+            }
+          }}
+        />
+        <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
+          <Text type="supporting" role="status">
+            {when ? `Tas upp ${when}` : ' '}
+          </Text>
+          <HStack gap={2}>
+            <Button size="sm" variant="ghost" label="Avbryt" onClick={() => setOpen(false)} />
+            <Button
+              size="sm"
+              variant="primary"
+              label={when ? `Ta upp ${when}` : 'Ta upp'}
+              isDisabled={!parsed}
+              onClick={pick}
+            />
+          </HStack>
+        </HStack>
+      </VStack>
+    </Dialog>
+  );
+  return { rows, own, dialog };
+}
+type TimeRows = ReturnType<typeof useTimeRows>;
+/** Inte nu: the card leaves for the time chosen and comes back saying so (D49). Shared by the card, the row and the open thread. */
+export function useSnoozeRows({
+  thread,
+  run,
+  leave,
+}: {
+  thread: Thread;
+  run: RunAction;
+  leave: ReturnType<typeof useLeaveWithUndo>;
+}) {
+  return useTimeRows({
+    presets: usePresets(),
+    // The card leaves for the chosen time at once (D64); the toast confirms when the server has it.
+    onPick: ({ seconds: _s, ...input }) =>
+      void run(
+        async () => {
+          const t = await api.snooze(thread.id, input);
+          leave(
+            t,
+            `Jag påminner dig ${t.snoozedUntil ? snoozeWhen(t.snoozedUntil, new Date().toISOString()) : 'i morgon 06:00'}. Ärendet ligger under Väntar på andra tills dess.`,
+          );
+          return t;
+        },
+        input.until ? { optimistic: snoozed(thread, input.until) } : {},
+      ),
+  });
+}
+/** The picker as its own button: an Astryx DropdownMenu, a bottom sheet on a phone, the rows with the time as description. */
+export const TimePicker = ({
+  label,
+  rows,
+  own,
+  size = 'sm',
+}: {
+  label: string;
+  rows: TimeRows['rows'];
+  own: TimeRows['own'];
+  size?: 'sm' | 'md';
+}) => (
+  <DropdownMenu
+    button={{ label, size, variant: 'ghost' }}
+    presentation="adaptive"
+    menuMaxHeight={480}
+    items={[...rows, { type: 'divider' as const }, own]}
+  />
+);
+/** The picker as a row under ⋯: Astryx's flyout beside the row, a drilled-in view with a Back row on a phone. */
+const TimeSubMenu = ({ label, rows, own }: { label: string; rows: TimeRows['rows']; own: TimeRows['own'] }) => (
+  <DropdownMenuSubMenu label={label} menuWidth={260}>
+    {rows.map(r => (
+      <DropdownMenuItem key={r.id} label={r.label} description={r.description} onClick={r.onClick} />
+    ))}
+    <DropdownMenuDivider />
+    <DropdownMenuItem label={own.label} description={own.description} onClick={own.onClick} />
+  </DropdownMenuSubMenu>
+);
+type ActionProps = {
+  thread: Thread;
+  onChange: (thread: Thread) => void;
+};
+/**
+ * Running one of a card's actions, shared by the card, the row and the review (D73), so a decision sent from the
+ * review goes through the same confirm, the same decision endpoint (D45/D47), the same wait for the source and the same
+ * error as from the card. Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3).
+ * Action-buttons wait on their own promise. The thread an action returns goes into the cache for every screen (D33);
+ * `onChange` lets the page move focus first. `perform` says whether it ran: a confirm the person declined runs nothing.
+ * An action with `confirm` asks in an alert dialog (`confirmation`, which the caller renders): Avbryt has the focus,
+ * Esc cancels, and the dialog closes on the answer, so the focus is back on the pressed button before the card shows
+ * the wait and the source's answer, as for an action that asks nothing (D45, D64).
+ */
+export function useCardAction({
+  thread,
+  onChange,
+}: Pick<ActionProps, 'thread'> & Partial<Omit<ActionProps, 'thread'>>) {
+  const { run, apply, busy: running, error } = useThreadAction({ onChange });
+  const decision = useDecisionSend({ onChange });
+  const busy = running || decision.busy;
+  // The person's own action is on its way (D64): the card keeps the look it had, with the pressed button loading, and the
+  // status is read out once the card has come to rest or the window has ended, not for every committed step in between.
+  const held = useSettling(thread);
+  const settling = busy || held;
+  const [pressed, setPressed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!settling) setPressed(null);
+  }, [settling]);
+  const selectable = thread.items.some(i => i.selectable);
+  // The question an action asks before it runs. The one asked stays in the dialog while it closes.
+  const [asked, setAsked] = useState<ThreadAction | null>(null);
+  const answered = useRef<((yes: boolean) => void) | null>(null);
+  const question = useRef<ThreadAction | null>(null);
+  if (asked) question.current = asked;
+  // Astryx runs a button's `clickAction` as a transition, which holds every state change until the action has ended.
+  // The question is therefore asked a task later, outside it, so the dialog can open while a caller waits for the answer.
+  const ask = (action: ThreadAction) =>
+    new Promise<boolean>(resolve => {
+      answered.current = resolve;
+      setTimeout(() => setAsked(action), 0);
+    });
+  const answer = (yes: boolean) => {
+    answered.current?.(yes);
+    answered.current = null;
+    setAsked(null);
+  };
+  // The action dialog (D112 item 10): the action it is open for, the rows chosen when it opened, the step it opens at,
+  // and whether the focus goes back to the action's own button on a close (it was opened from elsewhere: an execute
+  // started on a person, an assistant's draft). It stays mounted once opened, so its close gives the focus back.
+  const [dialog, setDialog] = useState<{
+    action: CardAction;
+    refs?: string[];
+    startAt?: ActionStep;
+    open: boolean;
+    refocus: boolean;
+  } | null>(null);
+  // What the person typed, per action, kept while the work item is open and dropped with it or once sent.
+  const [drafts, setDrafts] = useState<Record<string, AskValues>>({});
+  const openDialog = (
+    action: CardAction,
+    refs: string[] | undefined,
+    options: { startAt?: ActionStep; values?: AskValues; refocus?: boolean } = {},
+  ) => {
+    if (options.values) setDrafts(d => ({ ...d, [action.id]: { ...d[action.id], ...options.values } }));
+    setDialog({
+      action,
+      ...(refs ? { refs } : {}),
+      ...(options.startAt ? { startAt: options.startAt } : {}),
+      open: true,
+      refocus: !!options.refocus,
+    });
+  };
+  const closeDialog = () => {
+    if (!dialog?.open) return;
+    setDialog({ ...dialog, open: false });
+    if (dialog.refocus) {
+      // Opened from elsewhere, the dialog gives the focus to the action's own button on the item, once it has closed.
+      const selector = `[data-action="${CSS.escape(dialog.action.id)}"][data-thread="${CSS.escape(thread.id)}"]`;
+      requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector<HTMLElement>(selector)?.focus()));
+    }
+  };
+  const sendDialog = async (values: AskValues): Promise<string | null> => {
+    if (!dialog) return null;
+    const { action, refs } = dialog;
+    const result = await decision.send(async () => {
+      const answer = await api.act(thread.id, action.id, refs, undefined, values);
+      if (answer.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
+      // Sent: the dialog closes first and the focus is back on the pressed button, which loads until the item has come
+      // to rest, before the item shows the source's answer, as for a one-press action (D64).
+      setPressed(action.id);
+      setDialog(d => (d ? { ...d, open: false } : d));
+      setDrafts(({ [action.id]: _sent, ...rest }) => rest);
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return answer.thread;
+    });
+    return result && 'error' in result ? result.error : null;
+  };
+  // The action as the item has it now: its path is resolved from the registered manifest on every read.
+  const dialogAction = dialog ? (thread.actions.find(a => a.id === dialog.action.id) ?? dialog.action) : null;
+  const actionDialog = dialog ? (
+    <ActionDialog
+      target={{ kind: 'item', thread, action: dialogAction!, ...(dialog.refs ? { refs: dialog.refs } : {}) }}
+      isOpen={dialog.open}
+      onOpenChange={open => {
+        if (!open) closeDialog();
+      }}
+      {...(dialog.startAt ? { startAt: dialog.startAt } : {})}
+      values={drafts[dialog.action.id] ?? {}}
+      onValuesChange={values => setDrafts(d => ({ ...d, [dialog.action.id]: values }))}
+      onSend={sendDialog}
+    />
+  ) : null;
+  const parts = question.current ? confirmParts(question.current) : null;
+  // The item's system does not answer: the question says that what is sent is queued and read back (D45, D47).
+  const silent = useSilentSources().of(thread.connector);
+  const confirmation = (
+    <AlertDialog
+      isOpen={asked !== null}
+      onOpenChange={open => {
+        if (!open) answer(false);
+      }}
+      title={parts?.title ?? ''}
+      description={parts ? (silent ? `${parts.description} ${QUEUED_LINE}` : parts.description) : ''}
+      actionLabel={question.current?.label ?? ''}
+      cancelLabel="Avbryt"
+      onAction={() => answer(true)}
+    />
+  );
+  const perform = async (
+    action: CardAction,
+    refs?: string[],
+    reviews?: import('@clew/contracts').ReviewEvidence[],
+  ): Promise<boolean> => {
+    if (busy) return false;
+    const chosen = selectable ? refs : undefined;
+    // An action that asks the person something or says beforehand what it writes opens the dialog; nothing is sent yet.
+    if (action.kind !== 'read' && !reviews && opensDialog(action)) {
+      openDialog(action, chosen);
+      return true;
+    }
+    if (action.confirm && !(await ask(action))) return false;
+    if (action.kind === 'read') {
+      if (action.target === 'link') {
+        await run(async () => {
+          const result = await api.act(thread.id, action.id, chosen);
+          if (result.kind === 'read' && typeof (result.output as { url?: string }).url === 'string')
+            window.open((result.output as { url: string }).url, '_blank', 'noopener');
+        });
+        return true;
+      }
+      // Any other read is a link to the read's own page, which the item draws (D126 rule 3): nothing unfolds here.
+      return true;
+    }
+    // The outcome is the source's (D45): nothing is predicted, the button stays loading until the answer has come to rest.
+    setPressed(action.id);
+    await run(
+      async () => {
+        const result = await api.act(thread.id, action.id, chosen, reviews);
+        if (result.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
+        return result.thread;
+      },
+      { settle: true },
+    );
+    return true;
+  };
+  return {
+    run,
+    apply,
+    busy,
+    settling,
+    pressed,
+    error,
+    selectable,
+    perform,
+    confirmation,
+    openDialog,
+    dialog: actionDialog,
+  };
+}
+/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which leads to the review's page (D73, amended 2026-11-12). */
+export const reviewedAction = (thread: Thread) =>
+  thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
+
+/**
+ * The work item's state in the one vocabulary (D126 item 13, `status-of.ts`), with what the page knows beside the item:
+ * the clock, whether its system answers, the minutes left to undo, whether its decision is reviewed one row at a time
+ * and whether the server still lets a dismissal be taken back.
+ */
+export function useItemStatus(thread: Thread): ItemStatus {
+  const silent = useSilentSources().of(thread.connector);
+  const undoMinutes = useMinutesLeft(thread.receipt?.undoUntil ?? null);
+  return statusOf(thread, {
+    now: new Date().toISOString(),
+    today: today(),
+    when: instant => whenWord(instant),
+    silent: silent ? silentLine(silent) : null,
+    undoMinutes,
+    reviewed: !!reviewedAction(thread),
+    reopenable: reopenable(thread),
+  });
+}
+
+/** Everything a work item can do, wherever it is drawn: run an action, snooze, dismiss, and keep the selection. */
+export function useThreadActions({ thread, onChange }: ActionProps) {
+  const {
+    run,
+    apply,
+    busy,
+    settling,
+    pressed,
+    error,
+    selectable,
+    perform: performRefs,
+    confirmation,
+    openDialog,
+    dialog,
+  } = useCardAction({
+    thread,
+    onChange,
+  });
+  // Where the decision stands is said aloud when it changes, once the person's own action has come to rest (D64): the
+  // notice's words, which say that it is queued while its system does not answer (D126 item 13). Astryx's Banner is no
+  // live region, so this is how the notice is announced.
+  const itemStatus = useItemStatus(thread);
+  const status = executionStatus(thread.execution);
+  const notice = itemStatus.notice;
+  const said = notice ? [notice.title, notice.description].filter(Boolean).join('. ') : null;
+  const lastStatus = useRef(status),
+    announce = useAnnounce({ hasReplace: true });
+  useEffect(() => {
+    if (settling || status === lastStatus.current) return;
+    lastStatus.current = status;
+    announce(said ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
+  }, [status, settling, announce, thread.receipt?.headline]);
+  // The card starts from the rows the connector marked, with a review begun on its page laid over them
+  // (`review-session.ts`): a row chosen for approval is ticked, a row left behind is not, and a row the review has not
+  // judged keeps the tick it had, so a review opened and left again changes nothing (the product owner, 2026-11-11). A
+  // change to the thread starts it over. Back from the review, the item gives the focus to the control that led there
+  // (`reviewLeftFor`, read as the item is drawn).
+  const [draft] = useReviewDraft(reviewedAction(thread) ? thread : undefined);
+  const marked = () => thread.items.filter(i => i.selected).map(i => i.ref);
+  const withDraft = () =>
+    selectionAfterReview(marked(), { approved: approvedOf(draft, thread.items), left: leftOf(draft, thread.items) });
+  const [selected, setSelected] = useState<string[]>(withDraft);
+  const [returned] = useState(() => reviewLeftFor(thread.id));
+  const seededAt = useRef(thread.updatedAt);
+  useEffect(() => {
+    if (seededAt.current === thread.updatedAt) return;
+    seededAt.current = thread.updatedAt;
+    setSelected(withDraft());
+  }, [thread.updatedAt]);
+  const client = useQueryClient();
+  const leave = useLeaveWithUndo(apply);
+  // A button waits on its action (the pressed button loads until the source has answered). An action that asks first
+  // is not waited on: the button stays as it is, enabled, while the question is open, so the focus can come back to
+  // it on Avbryt; after a yes it loads as `pressed` while the card settles.
+  const perform = (action: CardAction, refs?: string[]): Promise<void> | void => {
+    const ran = performRefs(action, refs ?? selected).then(() => undefined);
+    if (action.confirm) return;
+    return ran;
+  };
+  // An action asked for from outside the item (`requestAction`: an execute started on a person, an assistant's draft)
+  // opens in the dialog once the item is drawn with it.
+  const request = useActionRequest(thread.id);
+  useEffect(() => {
+    if (!request) return;
+    takeActionRequest(request);
+    const action = thread.actions.find(a => a.id === request.actionId);
+    if (!action || !opensDialog(action) || thread.state !== 'open') return;
+    openDialog(action, selectable ? selected : undefined, {
+      ...(request.startAt ? { startAt: request.startAt } : {}),
+      ...(request.values ? { values: request.values } : {}),
+      refocus: true,
+    });
+  }, [request]);
+  // A card whose next step is a review (D70): "Granska N" leads to the review's page, which sends once with the approved refs (D73).
+  const reviewed = reviewedAction(thread);
+  // The card leaves at once (D64); the toast with Ångra confirms when the server has it.
+  const dismiss = () =>
+    run(
+      async () => {
+        const t = await api.dismiss(thread.id);
+        leave(
+          t,
+          `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte ärendet igen. Ärendet ligger under Klart.`,
+        );
+        return t;
+      },
+      { optimistic: dismissed(thread, new Date().toISOString()) },
+    );
+  /** A person's own timer on a card that waits on someone else (D17, D49): the card stays where it is until the timer brings it back; Ångra cancels the timer. When it fires, the stream is read again. */
+  const remind = (seconds: number) =>
+    run(async () => {
+      const r = await api.remind(thread.id, seconds);
+      const when = seconds < 60 ? `om ${seconds} sekunder` : snoozeWhen(r.fireAt, new Date().toISOString());
+      leave(r.thread, `Jag påminner dig ${when}.`, () => api.cancelReminder(thread.id, r.id));
+      window.setTimeout(() => invalidateStream(client), seconds * 1000 + 1_500);
+      return r.thread;
+    });
+  /** A preset or free text parsed to an instant, or the demo's seconds. */
+  const pickRemind = (choice: TimeChoice) => {
+    const seconds =
+      choice.seconds ?? (choice.until ? Math.max(1, Math.ceil((Date.parse(choice.until) - Date.now()) / 1000)) : 0);
+    if (seconds) void remind(seconds);
+  };
+  return {
+    selected,
+    setSelected,
+    selectable,
+    busy,
+    settling,
+    pressed,
+    error,
+    run,
+    leave,
+    perform,
+    dismiss,
+    pickRemind,
+    reviewed,
+    /** The review begun on its page, if any: "Granska N" is then "Fortsätt granska". */
+    draft,
+    /** The address of this item's review the person has just left, or null: the control leading there takes the focus. */
+    returned,
+    /** The alert dialog an action with `confirm` asks in; the card and the row render it. */
+    confirmation,
+    /** The action dialog (D112 item 10) of an action that asks or says what it writes; the item renders it. */
+    dialog,
+    /** The item's state in the one vocabulary, with its notice and the moves it allows (D126 item 13). */
+    status: itemStatus,
+  };
+}
+export type Actions = ReturnType<typeof useThreadActions>;
+
+/**
+ * A read whose answer is an address out of Clew (`target: 'link'`) says on its control that it leaves (D111 rule 8):
+ * Astryx's external-link glyph after the label, named with the words Astryx's own external link says in Swedish, so the
+ * control's name is "Öppna i ekonomisystemet (öppnas i ny flik)" as a link out's is. A read inside Clew is a link to
+ * its own page instead and is not marked.
+ */
+export const leavingMark = (action: ThreadAction) =>
+  action.kind === 'read' && action.target === 'link'
+    ? { endContent: <Icon icon="externalLink" label="(öppnas i ny flik)" /> }
+    : {};
+/** "Återöppna" on an item dismissed in the last ten minutes (the server's window); the toast's Ångra does the same. */
+const reopenable = (thread: Thread) =>
+  thread.state === 'dismissed' && !!thread.handledAt && Date.now() - Date.parse(thread.handledAt) <= 10 * 60_000;
+
+/**
+ * A work item's buttons, directly under its title wherever it is drawn (D126 rule 2, boards Att göra and Ärende).
+ *
+ * A plain to-do (D126 item 13: nothing has happened and nothing is in the way) has its decisions: the one next step from
+ * the connector, filled only when the item is due today (D48), and the decisions beside it, so two opposed decisions
+ * (Godkänn and Avslå) stand side by side at every width; then "Fråga assistenten" (`ask`, a ghost button that leads to the
+ * conversation about the item, rule 5), "Lägg till i samtalet" beside a conversation's own box (D111 rule 6), and ⋯
+ * ("Fler åtgärder") with the item's reads, the rest of its actions, "Inte nu" (D49: the item's one time action while it
+ * is the person's) and Avfärda. A read is a link to its own page (D126 rule 3: nothing unfolds in the item), a read out
+ * of Clew opens in a new tab and says so. A step reviewed one row at a time is "Granska N", a link to the review's page
+ * ("Fortsätt granska" once begun; D70, D73 amended 2026-11-12).
+ *
+ * Once something has happened or is in the way, the status notice (board StatusPanel) takes the place of the buttons
+ * and of the grey sentence that stood among them: what is unresolved, why and since when, and the one move the state
+ * calls for, the move the item has always offered for it (Kontrollera status for a decision on its way or in doubt
+ * (D45, D47), the decision again for one never sent (D122), the review, Ångra while the source allows it (D70), Påminn
+ * mig while it waits on someone, Ta upp nu while it is set aside (D28), Återöppna after Avfärda). Under it stand "Fråga
+ * Clew" and ⋯ with the moves the notice does not carry and the item's reads. While the person's own action settles the
+ * buttons keep their look, the pressed one loading (D64), and the notice comes when the item has come to rest; the focus
+ * that was on a button the notice replaced goes to the item's title, which the notice stands under (2.4.3).
+ *
+ * `pinned` is a bar at the foot of a phone's page: the decisions side by side the width of the screen, everything else
+ * under ⋯. An action the item draws elsewhere (`omit`: a notice's link out, after its text) is not drawn here too.
+ */
+export function ActionRow({
+  thread,
+  actions,
+  pinned = false,
+  readHref,
+  omit,
+  ask,
+  titleRef,
+  reviewShown = false,
+  beside = false,
+}: {
+  thread: Thread;
+  actions: Actions;
+  pinned?: boolean;
+  /**
+   * The item stands in a pane beside a list or a transcript. Beside a conversation it is what the conversation is about
+   * and goes with every question, so "Lägg till i samtalet" is not offered on it.
+   */
+  beside?: boolean;
+  /** Where a read inside Clew leads: its own page (D116, D126). A read without one is pressed. */
+  readHref?: ((action: ThreadAction) => string | undefined) | undefined;
+  /** The ids of the actions the item draws in another place. */
+  omit?: readonly string[] | undefined;
+  /** "Fråga assistenten" (`AskClew`), after the decisions; absent where the item is beside its own conversation. */
+  ask?: ReactNode;
+  /** The item's title, which takes the focus when the notice replaces the button that had it. */
+  titleRef?: RefObject<HTMLHeadingElement | null> | undefined;
+  /** "Visa granskning" stands at the end of the rows' heading, so it is not drawn under ⋯ too. */
+  reviewShown?: boolean;
+}) {
+  const conversation = useConversation();
+  const chipRef = 'thread:' + thread.id;
+  const inConversation = conversation.chipped.includes(chipRef);
+  const open = thread.state === 'open';
+  const { selected, selectable, settling, pressed, perform, dismiss, run, leave, pickRemind } = actions;
+  const { reviewed, returned, status } = actions;
+  const snoozeRows = useSnoozeRows({ thread, run, leave });
+  const remindRows = useTimeRows({
+    presets: usePresets(),
+    demo: { label: 'Om 10 sekunder', seconds: 10 },
+    onPick: pickRemind,
+  });
+  const here = omit?.length ? thread.actions.filter(a => !omit.includes(a.id)) : thread.actions;
+  const primary = here.find(a => a.role === 'primary');
+  // The decisions stand as buttons; a read, wherever the connector placed it, is in the menu (the board's ⋯).
+  const isRead = (a: ThreadAction) => a.kind === 'read';
+  const decisions = here.filter(a => a.role === 'secondary' && !isRead(a)).slice(0, 2);
+  const tucked = here.filter(
+    a => a !== primary && !decisions.includes(a) && (a.role === 'overflow' || a.role === 'secondary'),
+  );
+  const reads = tucked.filter(isRead);
+  const rest = tucked.filter(a => !isRead(a));
+  const count = selected.length;
+  /** A read inside Clew leads to its page as a link (D116, D126); every other action is pressed. */
+  const pressOrLink = (a: ThreadAction) => {
+    const href = readHref?.(a);
+    return href ? { href } : { clickAction: () => perform(a) };
+  };
+  // "Attestera 2 valda" on an item whose rows are chosen (boards WorkItem and Inbox).
+  const primaryLabel = primary && selectable ? `${primary.label} ${count} valda` : primary?.label;
+  const due = streamGroup(thread, today()) === 'nu';
+  const width = pinned ? '100%' : undefined;
+  // Back from the review's page (by Back, its trail, or once it is sent), the focus is on the control that led there,
+  // wherever the item is drawn: a row under Rader, else "Granska N" (now perhaps "Fortsätt granska" or "Visa
+  // granskning"). The page puts the focus on its heading or the item's as it is drawn, a frame after the item's own
+  // effects, so this waits two.
+  const review = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!returned) return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const pressed = document.querySelector<HTMLElement>(`a[href="${CSS.escape(returned)}"]`);
+        (pressed ?? review.current)?.focus();
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [returned]);
+  // "Granska N" leads to the review's page with this page as its way back; once begun, "Fortsätt granska" leads to the
+  // first row not yet judged (`review-session.ts`).
+  const { pathname, search } = useLocation();
+  const from = pathname + search;
+  const rows = reviewRows(thread);
+  const going = open && begun(actions.draft);
+  const reviewLink = reviewHref(thread.id, { from, ...(going ? { step: nextStep(actions.draft, rows) } : {}) });
+  const primaryButton = primary ? (
+    reviewed ? (
+      <Button
+        ref={review}
+        variant={due ? 'primary' : 'secondary'}
+        label={going ? 'Fortsätt granska' : `Granska ${rows.length}`}
+        width={width}
+        href={reviewLink}
+      />
+    ) : (
+      <Button
+        variant={due ? 'primary' : 'secondary'}
+        label={primaryLabel ?? ''}
+        isDisabled={selectable && count === 0}
+        isLoading={settling && pressed === primary.id}
+        width={width}
+        {...pressOrLink(primary)}
+        data-action={primary.id}
+        data-thread={thread.id}
+        {...leavingMark(primary)}
+      />
+    )
+  ) : null;
+  const addChip = () =>
+    conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id });
+  // Only where a conversation's own box is (D112 item 7, D126 rule 2), and never on the item in the pane beside it:
+  // that one is what the conversation is about, and the assistant is told it stands open there.
+  const addToConversation =
+    conversation.hasBox && !beside ? (
+      <Button
+        variant="ghost"
+        label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'}
+        isDisabled={inConversation}
+        onClick={addChip}
+      />
+    ) : null;
+
+  // A notice takes the buttons' place once something has happened or is in the way (D126 item 13), except while the
+  // person's own action settles: the pressed button keeps loading where it was until the item has come to rest (D64).
+  const notice = status.notice;
+  const showNotice = !!notice && !(settling && pressed !== null);
+  const noticeShown = useRef(showNotice);
+  useEffect(() => {
+    const was = noticeShown.current;
+    noticeShown.current = showNotice;
+    if (was === showNotice) return;
+    // The button that had the focus is gone with the row it stood in: the title the notice stands under takes it.
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    requestAnimationFrame(() => titleRef?.current?.focus());
+  }, [showNotice]);
+  const reopen = async () => {
+    await run(() => api.reopen(thread.id), { optimistic: reopened(thread) });
+  };
+  /** A move of the state's as the notice draws it: a button that runs, a link, or the reminder's times. */
+  const moveOf = (m: StatusMoveWords): StatusMove | undefined => {
+    switch (m.kind) {
+      case 'check':
+        return { label: m.label, clickAction: () => run(() => api.checkExecution(thread.id)) };
+      case 'review':
+        return { label: m.label, href: reviewHref(thread.id, { from }), ref: review };
+      case 'undo':
+        return { label: m.label, clickAction: () => run(() => api.undoReceipt(thread.id)) };
+      case 'take-up':
+      case 'reopen':
+        return { label: m.label, clickAction: reopen };
+      case 'remind':
+        return { label: m.label, menu: [...remindRows.rows, { type: 'divider' as const }, remindRows.own] };
+      case 'decide':
+        // Decided again on the user name the person has now (D122), with the item's own next step.
+        if (!primary) return undefined;
+        if (reviewed)
+          return { label: going ? 'Fortsätt granska' : `Granska ${rows.length}`, href: reviewLink, ref: review };
+        return {
+          label: primaryLabel ?? primary.label,
+          isLoading: settling && pressed === primary.id,
+          ...pressOrLink(primary),
+          attributes: { 'data-action': primary.id, 'data-thread': thread.id },
+        };
+    }
+  };
+  /** A move the notice does not carry, as a row under ⋯. */
+  const moveRow = (m: StatusMoveWords) => {
+    if (m.kind === 'remind')
+      return <TimeSubMenu key={m.kind} label={m.label} rows={remindRows.rows} own={remindRows.own} />;
+    const move = moveOf(m);
+    if (!move) return null;
+    return (
+      <DropdownMenuItem
+        key={m.kind}
+        label={m.label}
+        {...(move.href ? { href: move.href } : { onClick: () => void move.clickAction?.() })}
+      />
+    );
+  };
+  // The decided review is seen again from the end of the rows' heading; where no rows are drawn, from ⋯.
+  const moves: StatusMoveWords[] = [
+    ...(status.review && !reviewShown ? [{ kind: 'review' as const, label: 'Visa granskning', offer: false }] : []),
+    ...status.rest,
+  ];
+
+  /**
+   * ⋯ "Fler åtgärder" (the board's MoreMenu): Astryx's MoreMenu trigger over DropdownMenu's compound rows, because
+   * MoreMenu's data rows cannot hold the "Inte nu" sub-menu. A read is a row that is a link to its page.
+   */
+  const more = ({
+    items = [...reads, ...rest],
+    time,
+    dismissable = true,
+    extra = [],
+  }: {
+    items?: ThreadAction[];
+    time?: TimeRows;
+    dismissable?: boolean;
+    /** The state's moves the notice does not carry. */
+    extra?: StatusMoveWords[];
+  }) => {
+    const menu = !!items.length || !!time || dismissable || !!extra.length;
+    return (
+      <>
+        {menu && (
+          <DropdownMenu
+            renderTrigger={trigger => (
+              <IconButton
+                {...trigger}
+                variant="ghost"
+                label="Fler åtgärder"
+                tooltip="Fler åtgärder"
+                icon={<Icon icon="moreHorizontal" />}
+              />
+            )}
+            alignment="end"
+            menuWidth={300}
+            menuMaxHeight={480}
+          >
+            {extra.map(moveRow)}
+            {items.map(a => (
+              <DropdownMenuItem
+                key={a.id}
+                label={a.label}
+                {...(readHref?.(a) ? { href: readHref(a) } : { onClick: () => void perform(a) })}
+                {...leavingMark(a)}
+              />
+            ))}
+            {time && <TimeSubMenu label="Inte nu" rows={time.rows} own={time.own} />}
+            {dismissable && (items.length > 0 || time || extra.length > 0) && <DropdownMenuDivider />}
+            {dismissable && <DropdownMenuItem label={'Avfärda · inte aktuellt'} onClick={() => void dismiss()} />}
+          </DropdownMenu>
+        )}
+        {/* The time pickers' own field asks in a dialog that stays mounted outside the menu, which closes when it opens. */}
+        {snoozeRows.dialog}
+        {remindRows.dialog}
+      </>
+    );
+  };
+
+  if (showNotice) {
+    const move = notice.move ? moveOf(notice.move) : undefined;
+    // While it waits on someone or is set aside it is still the person's to let go of (Avfärda) and its other actions
+    // stay under ⋯, as before; a decision on its way, decided or done offers its reads and the state's other moves.
+    const stillOpen =
+      open && !unresolvedExecution(thread) && (isSnoozed(thread, new Date().toISOString()) || !!thread.waitingOn);
+    const allReads = here.filter(a => a !== primary && isRead(a));
+    const menu = stillOpen ? more({ extra: moves }) : more({ items: allReads, dismissable: false, extra: moves });
+    return (
+      <VStack gap={3}>
+        <StatusNotice
+          kind={status.kind}
+          title={notice.title}
+          description={notice.description}
+          {...(move ? (notice.move!.offer ? { offer: move } : { action: move }) : {})}
+        />
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          {ask}
+          {addToConversation}
+          {menu}
+        </HStack>
+      </VStack>
+    );
+  }
+  // Set aside (D28), while the person's own Inte nu settles: the way back is the first button.
+  if (open && isSnoozed(thread, new Date().toISOString()))
+    return (
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        <Button variant="secondary" label="Ta upp nu" clickAction={reopen} />
+        {ask}
+        {more({})}
+      </HStack>
+    );
+  if (open && !thread.waitingOn) {
+    const decisionButton = (a: ThreadAction) => (
+      <Button
+        key={a.id}
+        variant="secondary"
+        label={a.label}
+        isLoading={settling && pressed === a.id}
+        width={width}
+        {...pressOrLink(a)}
+        data-action={a.id}
+        data-thread={thread.id}
+        {...leavingMark(a)}
+      />
+    );
+    // The phone's bar: the decisions side by side the width of the screen (two opposed decisions are never parted),
+    // everything else under ⋯, so their words are never cut at 320 px (1.4.10).
+    if (pinned)
+      return (
+        <HStack gap={2} vAlign="center">
+          {primaryButton && <StackItem size="fill">{primaryButton}</StackItem>}
+          {decisions.slice(0, primaryButton ? 1 : 2).map(a => (
+            <StackItem key={a.id} size="fill">
+              {decisionButton(a)}
+            </StackItem>
+          ))}
+          {more({
+            items: [...decisions.slice(primaryButton ? 1 : 2), ...reads, ...rest],
+            time: snoozeRows,
+            extra: moves,
+          })}
+        </HStack>
+      );
+    return (
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        {primaryButton}
+        {decisions.map(decisionButton)}
+        {ask}
+        {addToConversation}
+        {more({ time: snoozeRows, extra: moves })}
+      </HStack>
+    );
+  }
+  // While the person's own decision settles on an item that waits on others (D70 amended): its own timer.
+  if (open && thread.waitingOn)
+    return (
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size="md" />
+        {ask}
+        {more({})}
+      </HStack>
+    );
+  // Decided or set aside for good, while the decision settles: "Fråga assistenten" and the item's reads under ⋯.
+  const readsLeft = here.filter(a => a !== primary && isRead(a));
+  if (!readsLeft.length && !ask) return null;
+  return (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      {ask}
+      {readsLeft.length > 0 && (
+        <MoreMenu
+          label="Fler åtgärder"
+          alignment="end"
+          items={readsLeft.map(a => {
+            const href = readHref?.(a);
+            return {
+              id: a.id,
+              label: a.label,
+              ...(href ? { href } : { onClick: () => void perform(a) }),
+              ...leavingMark(a),
+            };
+          })}
+        />
+      )}
+    </HStack>
+  );
+}

@@ -1,9 +1,10 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Thread } from '@clew/contracts';
+import type { api } from './api';
 import { isLoggedQuery } from './logged-reads';
 import { keys } from './query-keys';
 
-type ThreadList = { threads: Thread[] };
+type ThreadList = Awaited<ReturnType<typeof api.threads>>;
 
 /** The stream's rule: a thread the list knows is replaced in place; a new one goes first, since the list is newest first. */
 export const upsertThread = (list: Thread[], thread: Thread): Thread[] =>
@@ -19,7 +20,7 @@ const settleFetches = async (client: QueryClient, id: string) => {
 const writeThread = (client: QueryClient, thread: Thread) => {
   client.setQueryData(keys.thread(thread.id), thread);
   client.setQueryData<ThreadList>(keys.threads, current =>
-    current ? { threads: upsertThread(current.threads, thread) } : current,
+    current ? { ...current, threads: upsertThread(current.threads, thread) } : current,
   );
 };
 

@@ -11,7 +11,7 @@ import { swedish } from '@clew/ui/locale';
 import { APPEARANCE_PREFERENCE_KEY, readAppearancePreference, type ColorMode } from '@clew/ui/appearance-preference';
 import resetCss from '@astryxdesign/core/reset.css?inline';
 import astryxCss from '@astryxdesign/core/astryx.css?inline';
-import fontsCss from '@astryxdesign/theme-neutral/fonts.css?inline';
+import fontsCss from '@fontsource-variable/raleway/wght.css?inline';
 import { SiteHeader } from './site-header';
 import { useMediaQuery } from '@astryxdesign/core/hooks';
 import { SiteHeaderPerson } from './person';

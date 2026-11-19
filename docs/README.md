@@ -10,7 +10,7 @@ Read these in order if you are new to the project:
 2. [Architecture overview](architecture/overview.md): the running components, data boundaries and end-to-end read, scan and action flows.
 3. [Implementation status](reference/status.md): what works in this checkout and what remains a fixture, proposal or release gate.
 
-[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, a thing's page, the two panes (beside Att göra's queue and beside a conversation) and the dialogs open, and how people return (D126).
+[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, a thing's page, the two panes (beside Att göra's queue and beside a conversation) and the dialogs open, and how people return (D126). [Layout measures](reference/layout-measures.md) lists the measures a page is held to and the one place each is set.
 
 The [vocabulary and entity map](reference/vocabulary.md) defines work items, cards, proposals, conversations and interface containers, and connects those terms to the current code.
 
@@ -58,7 +58,7 @@ Clew's integration contract is the connector protocol. A connector can use an MC
 | See what is undecided | [Open questions](maintainers/open-questions.md) |
 | Check what the product manager's prototype asks for and whether the architecture carries it | [Prototype parity](reference/prototype-parity.md) |
 | Check or record a dependency's licence | [Licence record](reference/licences.md) |
-| Compare a screen with its design | [Design canvases](reference/design-canvases.md) |
+| Compare a screen with the prototype or trace an interaction decision | [Layout measures](reference/layout-measures.md) · [Design canvases](reference/design-canvases.md) |
 | See every connector in the repository | [Connectors](../connectors/README.md) |
 
 ## Look up the contract

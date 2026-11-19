@@ -9,6 +9,7 @@ theme file's shape is published as [`docs/protocol/theme-file.schema.json`](../d
 |---|---|
 | [`clew/`](clew/) | Clew's own look: ink indigo as the accent on a cool paper ground, the status colours left to status; the logo is the ball of thread, indigo for light ground and pale for dark. Chosen on the canvas "Clew · one pattern, on Astryx" (2026-11-14). |
 | [`sundsvall/`](sundsvall/) | Sundsvalls kommun's published palette (checked 2026-11-05) on the mapping of D38: Vattjom dark blue as the accent, white text on strong fills and black on pale ones, the four colour pairs on the blue, green, purple and pink roles. The palette is a group of its own and the roles refer to it. The logo is the free-standing dragon, black for light ground and white for dark. |
+| [`startsidan-prototype/`](startsidan-prototype/) | The colours of the startsidan prototype's Version 1.0, the reference for Clew's look ([D130](../docs/decisions/D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md)): a tinted page under white cards, the identity blue as the accent, a lighter blue for the assistant on the info and blue roles, and the darker blue of its header on the inverted background, which the header's band reads. The dark appearance is derived; the prototype draws none. The logo is `sundsvall/`'s. |
 
 ## Trying one
 

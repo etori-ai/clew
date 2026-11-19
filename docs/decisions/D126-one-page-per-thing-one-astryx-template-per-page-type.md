@@ -2,6 +2,10 @@
 
 **Status:** provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation) · **Date:** 2026-11-14 · **Area:** ui
 
+**Current scope.** This decision governs destinations, panes, actions and focus.
+[D130](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) replaces its rail, sheet layout
+and Hem composition. Use D130 for visual comparisons.
+
 **Context.** The product owner found the interface unresolved and asked for a review of the feature set and flows as
 if Clew were a new application, preferably on Astryx's own templates
 ([review](../reviews/2026-11-14-one-pattern-on-astryx-and-the-library-question.md)). The critique counted nine ways of

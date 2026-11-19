@@ -10,6 +10,8 @@ import {
   openNav,
   reflowProblems,
   test,
+  toolRow,
+  toolsButton,
 } from './support';
 import { requestsOutput, requestsSpec } from './requests';
 import { requestCapabilities } from '../../apps/server/src/modules/requests/capabilities';
@@ -59,8 +61,11 @@ const seven: RequestsResult = {
   ...requestsOutput,
   rows: [...requestsOutput.rows, closed(4), closed(3), closed(2), closed(1)],
 };
-const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
-const row = (page: Page) => rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link', { name: LABEL });
+const rail = (page: Page) => page.getByRole('navigation', { name: 'Mina sidor', exact: true });
+/** The tool in the menu at the end of the pages' row (D130), the menu opened first. */
+const row = (page: Page) => toolRow(page, LABEL);
+/** The menu's button, named by the tool whose page is open. */
+const named = (page: Page) => rail(page).getByRole('button', { name: LABEL, exact: true });
 const serve = (page: Page, output: RequestsResult = seven) =>
   page.route('**/api/cap/clew.requests**', route =>
     route.fulfill({ json: { output, source: 'Startsidan', view: requestsSpec } }),
@@ -77,8 +82,8 @@ test.describe('Beställningar och felanmälningar as a tool', () => {
     await serve(page);
     await open(page, '/');
     await expect(page.getByRole('heading', { name: 'Beställningar och felanmälningar' })).toHaveCount(0);
-    await expect(row(page)).toHaveAttribute('href', PAGE);
-    await row(page).focus();
+    await expect(await row(page)).toHaveAttribute('href', PAGE);
+    await (await row(page)).focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(PAGE);
     await expect(heading(page, 1, 'Beställningar och felanmälningar')).toBeVisible();
@@ -93,8 +98,8 @@ test.describe('Beställningar och felanmälningar as a tool', () => {
     await expect(items.first()).toContainText('IT-servicedesken');
     await expect(main.getByText('HR-servicedesken svarade inte.')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    // The page is the tool's, so its row is the current one, though no administrator placed it.
-    await expect(row(page)).toHaveAttribute('aria-current', 'page');
+    // The page is the tool's, so the menu's button is named by it, though no administrator placed it.
+    await expect(named(page)).toBeVisible();
     await expectNoAxeViolations(page);
     // A request's name leads to the request's own page in the system it came from (D126 rule 1), never beside the list.
     await expect(main.getByRole('link', { name: 'SD-26110042 · Behörighet, Beställning' })).toHaveAttribute(
@@ -118,16 +123,16 @@ test.describe('Beställningar och felanmälningar as a tool', () => {
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(`${PAGE}?from=%2Ftools`);
     await expect(heading(page, 1, 'Beställningar och felanmälningar')).toBeVisible();
-    await expect(row(page)).toHaveAttribute('aria-current', 'page');
+    await expect(named(page)).toBeVisible();
     await page.goBack();
     await expect(page).toHaveURL('/tools');
     await expect(page.getByRole('region', { name: 'Startsidan' }).getByRole('link', { name: LABEL })).toBeFocused();
   });
 
-  test('a person without a service desk has no such tool, in the rail or on Alla verktyg', async ({ page, api }) => {
+  test('a person without a service desk has no such tool, in the menu or on Alla verktyg', async ({ page, api }) => {
     api.menu = [];
     await open(page, '/');
-    await expect(rail(page).getByRole('link', { name: LABEL })).toHaveCount(0);
+    await expect(toolsButton(page)).toHaveCount(0);
     await open(page, '/tools');
     await expect(page.getByRole('main').getByRole('link', { name: LABEL })).toHaveCount(0);
   });

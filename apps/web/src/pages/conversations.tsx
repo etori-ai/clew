@@ -2,20 +2,21 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser, Thread } from '@clew/contracts';
 import {
+  BoardCard,
   Button,
-  Card,
   EmptyState,
   HStack,
   Link,
   List,
-  StatusDot,
-  Table,
-  Text,
-  VStack,
   pixel,
   proportional,
-  useMediaQuery,
+  registerTable,
+  StatusDot,
+  Table,
   type TableColumn,
+  Text,
+  useMediaQuery,
+  VStack,
 } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
 import { threadsQuery } from '../queries';
@@ -25,12 +26,12 @@ import { groupThreads } from '../stream';
 import { conversationState } from '../work-items';
 import { aboutWords, storedAbout, talkingTo, withWords, type Recipient } from '../conversation-about';
 import { DOT } from '../dot';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { useRail } from '../components/nav';
-import { titled, useConversation } from '../components/conversation-context';
-import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { LinkRow } from '../components/work-row';
-import { PageFrame } from '../components/page-frame';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { useNav } from '../components/shell/nav';
+import { titled, useConversation } from '../components/conversation/conversation-context';
+import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
+import { LinkRow } from '../components/work/work-row';
+import { PageFrame } from '../components/shell/page-frame';
 
 type Row = {
   id: string;
@@ -61,7 +62,7 @@ function lastChanged(at: string, day: string) {
 export function ConversationsPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
-  const nav = useRail({ current: { surface: 'conversations' }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'conversations' }, admin, manager: user.role === 'manager' });
   usePageTitle('Samtal');
   const talk = useConversation();
   const read = useQuery(threadsQuery);
@@ -85,7 +86,7 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
   const all: TableColumn<Row>[] = [
     {
       key: 'title',
-      header: 'Samtal',
+      header: <Text type="eyebrow">Samtal</Text>,
       width: proportional(3, { minWidth: 240 }),
       renderCell: r => (
         <Link href={`/conversations/${r.id}`} color="primary" weight="semibold">
@@ -97,27 +98,27 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
     // work item or the view its first question went with. A person or a unit is kept by nothing in the conversation.
     {
       key: 'about',
-      header: 'Om',
+      header: <Text type="eyebrow">Om</Text>,
       width: proportional(2, { minWidth: 180 }),
       renderCell: r => (r.about ? <Text>{r.about}</Text> : null),
     },
     // Drawn only while some conversation is with another system's assistant: a column of "Clew" says nothing.
     {
       key: 'with',
-      header: 'Med',
+      header: <Text type="eyebrow">Med</Text>,
       width: proportional(1, { minWidth: 160 }),
       renderCell: r => <Text>{withWords(r.with)}</Text>,
     },
     {
       key: 'updated',
-      header: 'Senast',
+      header: <Text type="eyebrow">Senast</Text>,
       width: pixel(160),
       renderCell: r => <Text hasTabularNumbers>{lastChanged(r.thread.updatedAt, day)}</Text>,
     },
     // Drawn only while some conversation has a state to say: a column of nothing says nothing.
     {
       key: 'state',
-      header: 'Läge',
+      header: <Text type="eyebrow">Läge</Text>,
       width: pixel(180),
       // The word beside the dot, so the state is never told by its colour alone (1.4.1); the dot is named by the word.
       renderCell: r =>
@@ -155,39 +156,40 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
       description="När du frågar Clew något finns samtalet här."
       actions={<Button label="Ny fråga" href="/conversations/new" />}
     />
-  ) : mobile ? (
-    <Card padding={0}>
-      <List hasDividers aria-label="Samtal">
-        {rows.map(r => (
-          <LinkRow
-            key={r.id}
-            id={`samtal-${r.id}`}
-            itemKey={r.id}
-            href={`/conversations/${r.id}`}
-            title={titled(r.thread.title)}
-            description={[
-              r.about ? aboutWords(r.about) : null,
-              r.with ? `Med ${withWords(r.with)}` : null,
-              lastChanged(r.thread.updatedAt, day),
-              r.state?.label,
-            ]
-              .filter(Boolean)
-              .join(DOT)}
-            descriptionLines={0}
-          />
-        ))}
-      </List>
-    </Card>
   ) : (
-    // In the page's column as Hem's lists are: the table in a card (the product owner, 2026-11-14: every page has
-    // Hem's container).
-    <Card padding={0}>
-      <Table<Row> data={rows} columns={columns} idKey="id" hasHover />
-    </Card>
+    // The register as the reference draws one (D130 item 20): a card with its heading inside and how many it holds, on
+    // a phone its rows as a list, wider the table inside the card's inset with the registers' rows.
+    <BoardCard id="dina-samtal" title="Dina samtal" count={rows.length} countLabel="samtal" list={mobile}>
+      {mobile ? (
+        <List hasDividers aria-label="Samtal">
+          {rows.map(r => (
+            <LinkRow
+              key={r.id}
+              id={`samtal-${r.id}`}
+              itemKey={r.id}
+              href={`/conversations/${r.id}`}
+              title={titled(r.thread.title)}
+              description={[
+                r.about ? aboutWords(r.about) : null,
+                r.with ? `Med ${withWords(r.with)}` : null,
+                lastChanged(r.thread.updatedAt, day),
+                r.state?.label,
+              ]
+                .filter(Boolean)
+                .join(DOT)}
+              descriptionLines={0}
+            />
+          ))}
+        </List>
+      ) : (
+        <Table<Row> data={rows} columns={columns} idKey="id" {...registerTable} />
+      )}
+    </BoardCard>
   );
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        cards
         title="Samtal"
         meta={read.data ? (rows.length === 1 ? '1 samtal' : `${rows.length} samtal`) : undefined}
         actions={<Button label="Ny fråga" variant="primary" href="/conversations/new" />}

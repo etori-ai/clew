@@ -166,13 +166,21 @@ const capital = (s: string) => (s ? s[0]!.toLocaleUpperCase('sv-SE') + s.slice(1
 const weekday = (date: string) =>
   new Intl.DateTimeFormat('sv-SE', { weekday: 'long', timeZone: 'UTC' }).format(new Date(date + 'T12:00:00Z'));
 
+/** The same calendar deadline drives a row's badge and the queue's overdue total. */
+export function openDeadline(thread: Pick<Thread, 'state' | 'deadline'>, today: string) {
+  if (thread.state !== 'open' || !thread.deadline) return null;
+  const date = thread.deadline.slice(0, 10);
+  return { date, days: daysUntil(date, today) };
+}
+
 /** The due badge (boards Inbox and Main): "I dag" in red, a day this week in yellow, a later week in grey. */
 export function dueOf(thread: Thread, today: string): RowFacts['due'] {
-  if (thread.state !== 'open') return null;
-  const reminded = !!thread.remindedAt && stockholmDate(thread.remindedAt) === today;
-  if (!thread.deadline) return reminded ? { variant: 'warning', label: 'Påminnelse' } : null;
-  const date = thread.deadline.slice(0, 10);
-  const days = daysUntil(date, today);
+  const deadline = openDeadline(thread, today);
+  if (!deadline) {
+    const reminded = thread.state === 'open' && !!thread.remindedAt && stockholmDate(thread.remindedAt) === today;
+    return reminded ? { variant: 'warning', label: 'Påminnelse' } : null;
+  }
+  const { date, days } = deadline;
   if (days < 0) return { variant: 'error', label: 'Försenad' };
   if (days === 0) return { variant: 'error', label: 'I dag' };
   if (days === 1) return { variant: 'warning', label: 'I morgon' };

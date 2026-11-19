@@ -41,8 +41,8 @@ import { keys } from '../../query-keys';
 import { errorMessage } from '../../query-policy';
 import { useAdminAction } from '../../mutations';
 import { usePageTitle } from '../../page-title';
-import { DialogFrame } from '../../components/dialog-frame';
-import { mobileQuery } from '../../components/shell';
+import { DialogFrame } from '../../components/shell/dialog-frame';
+import { mobileQuery } from '../../components/shell/shell';
 import { AdminShell } from './shell';
 import { instantText } from './labels';
 

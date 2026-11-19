@@ -1,4 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { execFile } from 'node:child_process';
+import { resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { desktop, expectNoAxeViolations, narrow } from './support';
 import { brandingFixtures } from './branding-fixtures';
 
@@ -9,11 +12,9 @@ import { brandingFixtures } from './branding-fixtures';
  */
 const intranet = 'http://localhost:4175/intranat';
 
-async function openIntranet(page: Page, path: string) {
-  // The element asks the installation for its saved theme (D98); here that is Sundsvall's example theme file.
-  await page.route('**/api/appearance', route =>
-    route.fulfill({ json: { revision: 1, theme: brandingFixtures.sundsvall.theme, logo: null } }),
-  );
+async function openIntranet(page: Page, path: string, theme = brandingFixtures.sundsvall.theme) {
+  // The element asks the installation for its saved theme (D98).
+  await page.route('**/api/appearance', route => route.fulfill({ json: { revision: 1, theme, logo: null } }));
   await page.goto(`${intranet}${path}`);
   await expect(page.getByRole('navigation', { name: 'Huvudmeny' })).toBeVisible();
   await page.waitForLoadState('networkidle');
@@ -37,6 +38,23 @@ test.describe('shared header on the intranet', () => {
       .evaluate(link => getComputedStyle(link).fontFamily);
     expect(font).not.toContain('Georgia');
     await expectNoAxeViolations(page);
+  });
+
+  test('the published embed includes its heading fonts for Latin, Cyrillic and Vietnamese names', async ({ page }) => {
+    const cwd = resolve(import.meta.dirname, '../../packages/site-header');
+    await promisify(execFile)(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--logLevel', 'warn'], {
+      cwd,
+    });
+    await page.setViewportSize(desktop);
+    await openIntranet(page, '/organisation?built');
+    await expect(page.locator('script[src="/shared/site-header/site-header.js"]')).toBeAttached();
+    for (const glyph of ['Å', 'Ж', 'ệ']) {
+      const faces = await page.evaluate(
+        async text => (await document.fonts.load('800 1em "Raleway Variable"', text)).length,
+        glyph,
+      );
+      expect(faces).toBeGreaterThan(0);
+    }
   });
 
   test('a signed-in visitor gets the sections Sitevision lists for them', async ({ page, context }) => {
@@ -76,7 +94,7 @@ test.describe('shared header on the intranet', () => {
       });
     await page.emulateMedia({ colorScheme: 'dark' });
     await openIntranet(page, '/organisation');
-    // On the band (D88) the places are white in both appearances; the logo still follows the mode's variant rule.
+    // This band's dark ground calls for the white logo in both appearances.
     expect(await look()).toEqual({ logo: '/branding/sundsvall-dragon-white.png', item: 'rgb(255, 255, 255)' });
     await expectNoAxeViolations(page);
 
@@ -92,6 +110,21 @@ test.describe('shared header on the intranet', () => {
     });
     await expect(header).toHaveAttribute('data-site-header-mode', 'light');
     await expect.poll(look).toEqual({ logo: '/branding/sundsvall-dragon-white.png', item: 'rgb(255, 255, 255)' });
+  });
+
+  test('a light intranet band uses its light-ground logo in both page appearances', async ({ page }) => {
+    const theme = brandingFixtures.sundsvall.theme!;
+    await page.setViewportSize(desktop);
+    await openIntranet(page, '/organisation', {
+      ...theme,
+      colors: { ...theme.colors, 'background-inverted': ['#ffffff', '#000000'] },
+    });
+    const header = page.locator('site-header');
+    for (const mode of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      await expect(header.getByRole('img')).toHaveAttribute('src', '/branding/sundsvall-dragon.png');
+      await expect(header.getByRole('link', { name: 'Organisation' })).toHaveCSS('color', 'rgb(0, 0, 0)');
+    }
   });
 
   test('a signed-in visitor changes the colour by keyboard in their settings, and the dialog stays open', async ({

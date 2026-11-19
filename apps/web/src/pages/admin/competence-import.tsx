@@ -51,7 +51,7 @@ import { keys } from '../../query-keys';
 import { errorMessage } from '../../query-policy';
 import { useAdminAction } from '../../mutations';
 import { usePageTitle } from '../../page-title';
-import { mobileQuery } from '../../components/shell';
+import { mobileQuery } from '../../components/shell/shell';
 import { AdminShell } from './shell';
 
 /**

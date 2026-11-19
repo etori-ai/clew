@@ -38,13 +38,19 @@ import {
 } from '../person-address';
 import { TALK_PARAM } from '../talk-address';
 import { entitySubject } from '../conversation-about';
-import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell';
-import { ContentSkeleton } from '../components/loading';
-import { AskClew } from '../components/thing-panel';
-import { TalkTab } from '../components/talk-overlay';
-import { RegisterHolding } from '../components/register-holding';
-import { EntityPage, PageSection, RailSection, ThingTabs, type PageSectionEntry } from '../components/entity-page';
+import { useNav, type NavCurrent } from '../components/shell/nav';
+import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell/shell';
+import { ContentSkeleton } from '../components/shell/loading';
+import { AskClew } from '../components/conversation/thing-panel';
+import { TalkTab } from '../components/people/talk-overlay';
+import { RegisterHolding } from '../components/people/register-holding';
+import {
+  EntityPage,
+  PageSection,
+  RailSection,
+  ThingTabs,
+  type PageSectionEntry,
+} from '../components/people/entity-page';
 import {
   EntityActions,
   NeedsYouRows,
@@ -60,11 +66,11 @@ import {
   unanswered,
   useSectionAnswers,
   type SectionAnswer,
-} from '../components/entity-sections';
+} from '../components/people/entity-sections';
 import { OwnCompetence } from './competence';
 import { PlanTab } from './boarding';
 import { employmentLabel, employmentPercent, employmentTitles } from './person-model';
-import { PageFrame } from '../components/page-frame';
+import { PageFrame } from '../components/shell/page-frame';
 
 /** The rail's width and the facts' panel beside the column (`EntityPage`). */
 const SIDE_NAV = 260,
@@ -335,7 +341,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   }, [moved]);
 
   // The rail marks the place the person was opened from; without one, Personal for the reader's own people.
-  const current: RailCurrent =
+  const current: NavCurrent =
     from?.split('?')[0] === '/admin/users'
       ? { surface: 'admin', section: 'anvandare' }
       : from?.split('?')[0] === '/admin/organisation'
@@ -351,7 +357,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
                 : !from && detail?.relation === 'managed'
                   ? { surface: 'staff' }
                   : { surface: 'verktyg', view: null };
-  const nav = useRail({ current, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current, admin, manager: user.role === 'manager' });
 
   // The tabs the page has: a source's only once it has a row, or while it is on its way, or when it did not answer.
   const drawn = drawnSections(answers);

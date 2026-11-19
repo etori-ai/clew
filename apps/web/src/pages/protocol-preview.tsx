@@ -31,8 +31,8 @@ import {
 import { createQueryClient } from '../query-client';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { SectionFrame, SectionRow } from '../components/entity-sections';
-import { badgeVariant } from '../components/view';
+import { SectionFrame, SectionRow } from '../components/people/entity-sections';
+import { badgeVariant } from '../components/views/view';
 import { actionMenuItems } from '../entity-actions';
 import { markText } from './staff-model';
 import {

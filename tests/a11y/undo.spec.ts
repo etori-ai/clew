@@ -34,7 +34,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await expect(show).toHaveAttribute('href', '/todo?tab=waiting&item=samtal');
     // The person goes to Kalender with the toast still there.
     await page
-      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('navigation', { name: 'Mina sidor', exact: true })
       .getByRole('link', { name: 'Kalender', exact: true })
       .click();
     await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeVisible();

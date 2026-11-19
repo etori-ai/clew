@@ -50,19 +50,19 @@ import {
   withoutSubject,
   type EntitySubjectKind,
 } from '../conversation-about';
-import { mobileQuery, shortQuery } from '../components/shell';
-import { Composer } from '../components/composer';
-import { Transcript } from '../components/conversation';
-import { AssistantPane, AssistantsMenu } from '../components/assistant-pane';
-import { NamedMenu } from '../components/named-menu';
-import { titled, useConversation, type ChipRef } from '../components/conversation-context';
-import { drawn } from '../components/thing-panel';
-import { cardBody } from '../components/card-panel';
-import { PanelBody, answersWithRowsOf } from '../components/panel';
-import { useView } from '../components/view-read';
-import { BriefSkeleton } from '../components/brief';
+import { mobileQuery, shortQuery } from '../components/shell/shell';
+import { Composer } from '../components/conversation/composer';
+import { Transcript } from '../components/conversation/conversation';
+import { AssistantPane, AssistantsMenu } from '../components/conversation/assistant-pane';
+import { NamedMenu } from '../components/conversation/named-menu';
+import { titled, useConversation, type ChipRef } from '../components/conversation/conversation-context';
+import { drawn } from '../components/conversation/thing-panel';
+import { cardBody } from '../components/work/card-panel';
+import { PanelBody, answersWithRowsOf } from '../components/views/panel';
+import { useView } from '../components/views/view-read';
+import { BriefSkeleton } from '../components/work/brief';
 import { EventDialog } from '../components/calendar/event-dialog';
-import { PageFrame, type EntryStyle } from '../components/page-frame';
+import { PageFrame, type EntryStyle } from '../components/shell/page-frame';
 import { EntityPane } from './entity-pane';
 
 /**

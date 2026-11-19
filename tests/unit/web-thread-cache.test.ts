@@ -86,9 +86,30 @@ describe('the stream cache (D33)', () => {
   });
   test('without a loaded list nothing is written to it', async () => {
     const c = client();
+    const restore = await previewThread(c, thread({ id: 'a', state: 'dismissed' }));
+    expect(c.getQueryData(keys.threads)).toBeUndefined();
+    restore();
     await applyThread(c, thread({ id: 'a' }));
     expect(c.getQueryData(keys.threads)).toBeUndefined();
     expect((c.getQueryData(keys.thread('a')) as Thread).id).toBe('a');
+  });
+  test('source freshness and deliveries survive an optimistic thread, its rollback and the confirmed thread', async () => {
+    const c = client();
+    const a = thread({ id: 'a' });
+    const before = {
+      threads: [a],
+      sources: [{ connector: 'hr', state: 'idle', lastSuccess: null, error: 'unavailable' }],
+      deliveries: [{ id: 'd', threadId: a.id, kind: 'reminder' }],
+    };
+    c.setQueryData(keys.threads, before);
+    const updated = thread({ id: a.id, state: 'dismissed' });
+    const after = { ...before, threads: [updated] };
+    const restore = await previewThread(c, updated);
+    expect(c.getQueryData(keys.threads)).toEqual(after);
+    restore();
+    expect(c.getQueryData(keys.threads)).toEqual(before);
+    await applyThread(c, updated);
+    expect(c.getQueryData(keys.threads)).toEqual(after);
   });
   test('a list refetch that left before the mutation cannot put the old thread back', async () => {
     const c = client();

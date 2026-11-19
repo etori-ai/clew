@@ -4,7 +4,7 @@ import type { AskValues, EffectPreview, EntityAction, EntityActionStarted, Entit
 import { sessionFetch, type MoreMenu } from '@clew/ui';
 import { api } from './api';
 import { ApiError } from './api-error';
-import { ActionDialog } from './components/action-dialog';
+import { ActionDialog } from './components/work/action-dialog';
 import { useEntityStart } from './mutations';
 import { withCard } from './panel-address';
 

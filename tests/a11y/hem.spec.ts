@@ -10,6 +10,8 @@ import {
   hemLine,
   narrow,
   open,
+  openTools,
+  pagesNav,
   phone,
   reflowProblems,
   silentSaidIn,
@@ -22,17 +24,19 @@ import { menuRows } from './phonebook';
 import { Units } from './unit-data';
 
 /**
- * Hem (D126, boards Hem and HemFraga): the greeting and the day, one line to ask Clew, then "Behöver dig" beside "I dag", their cards ending
- * level, "Läget på <enhet>" for a manager and "Nyheter"; the item that asks for a read receipt as one callout above the
- * blocks, and under them the person's action points. No tool tiles, no digest sentence, no suggestion chips, nothing
- * beside or over the page: every row and tile leads to the page of what it names, with Hem as the way back.
+ * Hem (D126, D130, boards Hem and HemFraga): the greeting and the day, one line to ask Clew, the item that asks for a
+ * read receipt as one focus card, "Läget på <enhet>" for a manager, and then two columns: "Behöver dig" with the
+ * person's action points under it, and beside them "I dag" with "Nyheter" under it. No tool tiles, no digest sentence,
+ * no suggestion chips, nothing beside or over the page: every row and tile leads to the page of what it names, with
+ * Hem as the way back.
  */
-const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+const rail = pagesNav;
 const needs = (page: Page) => page.getByRole('region', { name: 'Behöver dig' });
 const today = (page: Page) => page.getByRole('region', { name: 'I dag' });
 const lage = (page: Page) => page.getByRole('region', { name: `Läget på ${user.unitLabel}` });
 const news = (page: Page) => page.getByRole('region', { name: 'Nyheter' });
-const callout = (page: Page) => page.getByRole('region', { name: 'Viktigt' });
+/** The focus card (D130 item 13): a region named by the item it lifts, its heading. */
+const callout = (page: Page) => page.getByRole('main').locator('section[aria-labelledby="fokusnyhet"]');
 const toasts = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
 /** The suite's clock stands at 09:00 in Stockholm on Wednesday 4 November (`NOW`). */
 const GREETING = 'God morgon, Testa';
@@ -44,7 +48,7 @@ const receiptItem = (api: MockApi, id = 'rutin', over: Partial<Thread> = {}): Th
     id,
     over,
   );
-/** Everything the board draws: a receipt to give, news from two sources, two tools in the rail. */
+/** Everything the board draws: a receipt to give, news from two sources, two tools in the menu. */
 function everything(api: MockApi) {
   api.threads = api.threads.map(t => (t.id === 'rutin' ? receiptItem(api) : t));
   api.news = newsOutput();
@@ -68,7 +72,7 @@ const box = async (l: Locator) => (await l.boundingBox())!;
 test.describe('Hem', () => {
   test.use({ viewport: desktop });
 
-  test('the greeting, the line to ask Clew, Behöver dig beside I dag, then Läget and Nyheter, in one heading order and nothing else', async ({
+  test('the greeting, the line to ask Clew, the focus card, Läget, then Behöver dig beside I dag with Nyheter under it, in one heading order and nothing else', async ({
     page,
     api,
   }) => {
@@ -80,7 +84,8 @@ test.describe('Hem', () => {
     ).toBeVisible();
     await expect(hemLine(page)).toHaveCount(1);
     await expect(callout(page)).toBeVisible();
-    // The callout between the line and the blocks, the two blocks side by side, Läget and Nyheter under them (board Hem).
+    // The focus card under the line, Läget under it, then the two columns: Behöver dig, and beside it I dag with
+    // Nyheter under it (D130 item 13).
     const b = await box(hemLine(page)),
       lifted = await box(callout(page)),
       n = await box(needs(page)),
@@ -88,17 +93,12 @@ test.describe('Hem', () => {
       l = await box(lage(page)),
       w = await box(news(page));
     expect(lifted.y).toBeGreaterThan(b.y + b.height);
-    expect(n.y).toBeGreaterThan(lifted.y + lifted.height);
+    expect(l.y).toBeGreaterThan(lifted.y + lifted.height);
+    expect(n.y).toBeGreaterThan(l.y + l.height);
     expect(Math.abs(d.y - n.y)).toBeLessThan(2);
     expect(d.x).toBeGreaterThanOrEqual(n.x + n.width);
-    expect(l.y).toBeGreaterThan(Math.max(n.y + n.height, d.y + d.height));
-    expect(w.y).toBeGreaterThan(l.y + l.height);
-    // The two cards end level, whichever has fewer rows (board Hem).
-    const [nc, dc] = await Promise.all([
-      box(needs(page).locator('.astryx-card').first()),
-      box(today(page).locator('.astryx-card').first()),
-    ]);
-    expect(Math.abs(nc.y + nc.height - (dc.y + dc.height))).toBeLessThan(2);
+    expect(Math.abs(w.x - d.x)).toBeLessThan(2);
+    expect(w.y).toBeGreaterThan(d.y + d.height);
     // One h1, then the blocks' h2s in the board's order, never a level skipped (the critique found h1 to h3).
     const headings = await headingsOf(page);
     expect(headings[0]).toEqual({ level: 1, text: GREETING });
@@ -107,11 +107,18 @@ test.describe('Hem', () => {
         expect(h.level, `${h.text} after ${headings[i - 1]!.text}`).toBeLessThanOrEqual(headings[i - 1]!.level + 1);
     const at = (text: string | RegExp) =>
       headings.findIndex(h => (typeof text === 'string' ? h.text === text : text.test(h.text)));
-    const order = [at('Behöver dig'), at('I dag'), at(/^Läget på /), at('Nyheter'), at(/^Mina åtgärdspunkter/)];
+    const order = [
+      at('Ny rutin för läkemedelshantering'),
+      at(/^Läget på /),
+      at('Behöver dig'),
+      at(/^Mina åtgärdspunkter/),
+      at('I dag'),
+      at('Nyheter'),
+    ];
     expect(order.every(i => i > 0)).toBe(true);
     expect([...order].sort((x, y) => x - y)).toEqual(order);
     // Gone from Hem (D126 rule 8): the tool tiles, the digest, the errands and what the person ordered (tools in the
-    // rail), the chips, and anything beside the page.
+    // menu), the chips, and anything beside the page.
     await expect(page.getByRole('region', { name: 'Verktygslådan' })).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Mina ärenden' })).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Sedan i går' })).toHaveCount(0);
@@ -121,7 +128,7 @@ test.describe('Hem', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('Behöver dig: the most urgent rows, each title the link to its item’s page with Hem as the way back, the count and Visa alla', async ({
+  test('Behöver dig: the most urgent rows, each with one link to its item’s page with Hem as the way back, the count and Visa alla', async ({
     page,
     api: _,
   }) => {
@@ -131,9 +138,9 @@ test.describe('Hem', () => {
     await expect(rows).toHaveCount(4);
     for (const i of [0, 1, 2, 3]) await expect(rows.nth(i).getByRole('link')).toHaveCount(1);
     // How many need the person in all, beside the heading, and the way to all of them in Att göra.
-    await expect(block.getByText('6', { exact: true })).toBeVisible();
+    await expect(block.getByText(/^·\s*6\s*behöver dig$/)).toBeVisible();
     await expect(block.getByRole('link', { name: 'Visa alla' })).toHaveAttribute('href', '/todo');
-    const fakturor = block.getByRole('link', { name: /^Attestera 3 fakturor/ });
+    const fakturor = block.getByRole('link', { name: /^Öppna Attestera 3 fakturor/ });
     await expect(fakturor).toHaveAttribute('href', '/items/fakturor?from=%2F');
     await expectNoAxeViolations(page);
     // A row leads to the item's page, never beside Hem (D126 rule 1), and Back returns to Hem.
@@ -168,9 +175,9 @@ test.describe('Hem', () => {
     await expect(rows).toHaveCount(3);
     // The headline is the row's one link; the sender and the day are its supporting line.
     await expect(rows.nth(0)).toContainText('Nytt lönesystem från årsskiftet');
-    await expect(rows.nth(0)).toContainText('HR · 4 november');
-    await expect(rows.nth(1)).toContainText('Barn och utbildning · 3 november');
-    await expect(rows.nth(2)).toContainText('Kommunledningen · 2 november');
+    await expect(rows.nth(0)).toContainText('4 nov. · HR');
+    await expect(rows.nth(1)).toContainText('3 nov. · Barn och utbildning');
+    await expect(rows.nth(2)).toContainText('2 nov. · Kommunledningen');
     await expect(block.getByText('Enkät om matsalen')).toHaveCount(0);
     for (const i of [0, 1, 2]) await expect(rows.nth(i).getByRole('link')).toHaveCount(1);
     // A link out of Clew says so in its name and opens a new tab (D111 rule 8).
@@ -183,11 +190,11 @@ test.describe('Hem', () => {
     await expect(inClew).toHaveAccessibleName('Så fungerar vinterns skolskjuts');
     await expect(inClew).toHaveAttribute('href', /^\/tools\/communication\.newsItem\?.*from=%2F$/);
     await expectNoAxeViolations(page);
-    await rows.nth(1).getByText('Barn och utbildning · 3 november').click();
+    await rows.nth(1).getByText('3 nov. · Barn och utbildning').click();
     await expect(page).toHaveURL(/\/tools\/communication\.newsItem\?.*from=%2F$/);
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
-    // Alla nyheter: the joined list as a tool's page, there whether or not an administrator placed it in the rail.
+    // Alla nyheter: the joined list as a tool's page, there whether or not an administrator placed it in the menu.
     await open(page, '/');
     const all = news(page).getByRole('link', { name: 'Alla nyheter' });
     await expect(all).toHaveAttribute('href', '/tools/clew.news');
@@ -199,21 +206,21 @@ test.describe('Hem', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('Alla nyheter placed in the rail by an administrator is a tool like any other, marked current on its page', async ({
+  test('Alla nyheter placed in the menu by an administrator is a tool like any other, named by the menu’s button on its page', async ({
     page,
     api,
   }) => {
     api.news = newsOutput();
     api.menu = [newsMenuRow, ...menuRows];
     await open(page, '/');
-    const row = rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link', { name: 'Nyheter' });
+    const row = (await openTools(page)).getByRole('menuitem', { name: 'Nyheter' });
     await expect(row).toHaveAttribute('href', '/tools/clew.news');
     await row.click();
     await expect(heading(page, 1, 'Nyheter')).toBeVisible();
-    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Nyheter');
+    await expect(rail(page).getByRole('button', { name: 'Nyheter', exact: true })).toBeVisible();
   });
 
-  test('without a news source there is no Nyheter block, no error, and the two blocks share the row', async ({
+  test('without a news source there is no Nyheter block, no error, and I dag stands alone in its column', async ({
     page,
     api: _,
   }) => {
@@ -222,7 +229,8 @@ test.describe('Hem', () => {
     await expect(page.getByRole('heading', { name: 'Nyheter' })).toHaveCount(0);
     const n = await box(needs(page)),
       d = await box(today(page));
-    expect(Math.abs(n.width - d.width)).toBeLessThan(2);
+    expect(Math.abs(d.y - n.y)).toBeLessThan(2);
+    expect(d.x).toBeGreaterThanOrEqual(n.x + n.width);
     // Alla nyheter by its address says there is none, as a tool that is not the person's does.
     await open(page, '/tools/clew.news');
     await expect(heading(page, 1, 'Inga nyheter för dig')).toBeVisible();
@@ -238,7 +246,10 @@ test.describe('Hem', () => {
     await open(page, '/');
     const lifted = callout(page);
     await expect(lifted).toContainText('Ny rutin för läkemedelshantering');
-    await expect(lifted).toContainText('Kommunikation · publicerad 3 november · läskvitto krävs');
+    // What it is and when it was published over the headline, and under it who published it and what it asks.
+    await expect(lifted).toContainText('Fokusnyhet · 3 november');
+    await expect(lifted.getByRole('heading', { level: 2, name: 'Ny rutin för läkemedelshantering' })).toBeVisible();
+    await expect(lifted).toContainText('Kommunikation · läskvitto krävs');
     // Läs leads to the item's page, as every row on Hem does (D126 rule 1).
     await expect(lifted.getByRole('link', { name: 'Läs', exact: true })).toHaveAttribute(
       'href',
@@ -311,16 +322,15 @@ test.describe('Hem', () => {
 
 /**
  * Hem's line (D126 items 4 and 9, board HemFraga variant a): one field, labelled "Fråga assistenten", filling the row under the
- * greeting, and the button "Fråga assistenten". Nothing is answered on Hem: Enter or the button asks the question as Hem's
+ * greeting, and the button "Fråga AI" (D130). Nothing is answered on Hem: Enter or the button asks the question as Hem's
  * composer did, and the conversation takes the column with the question in its transcript; with nothing written the
  * button opens Ny fråga and Enter does nothing. Whom to ask, the model and `@` are the conversation page's box's.
  */
 test.describe('Hem’s line', () => {
   test.use({ viewport: desktop });
-  const askButton = (page: Page) =>
-    page.getByRole('main').getByRole('button', { name: 'Fråga assistenten', exact: true });
+  const askButton = (page: Page) => page.getByRole('main').getByRole('button', { name: 'Fråga AI', exact: true });
 
-  test('a labelled field and Fråga assistenten side by side; Enter asks once, and the conversation takes the column with the question asked', async ({
+  test('a labelled field and Fråga AI side by side; Enter asks once, and the conversation takes the column with the question asked', async ({
     page,
     api,
   }) => {
@@ -365,7 +375,7 @@ test.describe('Hem’s line', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('with nothing written the button opens Ny fråga, which the rail marks; a question half written stays through a visit elsewhere, and the button asks it', async ({
+  test('with nothing written the button opens Ny fråga, where the pages mark Samtal; a question half written stays through a visit elsewhere, and the button asks it', async ({
     page,
     api,
   }) => {
@@ -377,21 +387,23 @@ test.describe('Hem’s line', () => {
     await ask.click();
     await expect(page).toHaveURL(/\/conversations\/new$/);
     await expect(page.getByRole('combobox', { name: 'Vad vill du göra' })).toBeFocused();
-    await expect(rail(page).getByRole('link', { name: 'Ny fråga', exact: true })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    await expect(rail(page).getByRole('link', { name: 'Samtal', exact: true })).toHaveAttribute('aria-current', 'page');
     expect(api.asked).toHaveLength(0);
     await page.goBack();
     await expect(heading(page, 1, GREETING)).toBeVisible();
-    // A question half written is kept while the person looks at another page.
+    // Either home link keeps the question half written while the person looks at another page.
     await hemLine(page).fill('Vem är på plats?');
-    await rail(page)
-      .getByRole('link', { name: /^Att göra/ })
-      .click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
-    await rail(page).getByRole('link', { name: /^Hem/ }).click();
-    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+    for (const home of [
+      rail(page).getByRole('link', { name: 'Start', exact: true }),
+      page.getByRole('banner').getByRole('link', { name: /Startsidan/ }),
+    ]) {
+      await rail(page)
+        .getByRole('link', { name: /^Att göra/ })
+        .click();
+      await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
+      await home.click();
+      await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+    }
     await askButton(page).click();
     await expect(page.getByRole('log')).toContainText('Tio personer är på plats i dag.');
     await expect(page).toHaveURL(/\/conversations\/konversation$/);
@@ -416,10 +428,9 @@ test.describe('Hem’s line', () => {
     const f = await box(line),
       b = await box(ask);
     expect(b.x >= f.x + f.width || b.y >= f.y + f.height).toBe(true);
-    // The button's words are drawn whole, never behind an ellipsis.
-    expect(await ask.evaluate(el => [...el.querySelectorAll('*')].every(c => c.scrollWidth <= c.clientWidth))).toBe(
-      true,
-    );
+    // Where the row is this narrow the button is its arrow alone (D130), still named and a target of its own size.
+    await expect(ask).toHaveAccessibleName('Fråga AI');
+    expect(Math.min(b.width, b.height)).toBeGreaterThanOrEqual(24);
     expect(await reflowProblems(page)).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expectNoAxeViolations(page);
@@ -462,7 +473,7 @@ test.describe('Läget on Hem', () => {
       expect(Math.abs(b.y - boxes[0]!.y), TILES[i]).toBeLessThan(2);
       if (i > 0) expect(b.x, TILES[i]).toBeGreaterThan(boxes[i - 1]!.x);
     }
-    // One shape: no bar, no area mark; the badge carries the status.
+    // One shape: no bar; the status stands in words under the value.
     await expect(block.getByRole('progressbar')).toHaveCount(0);
     await expect(tile(page, TILES[1]!)).toHaveAttribute(
       'href',
@@ -543,9 +554,9 @@ test.describe('Läget leads to a figure’s page', () => {
     await expect(main.getByRole('columnheader')).toHaveText(['Namn', 'Samtal', 'När']);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('complementary')).toHaveCount(0);
-    // The way back names Hem, and the rail stands on the place it came from.
+    // The way back names Hem, and the pages' row stands on the place it came from.
     await expect(main.getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/');
-    await expect(rail(page).locator('a[aria-current="page"]')).toContainText('Hem');
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Start');
     await expectNoAxeViolations(page);
     await page.goBack();
     await expect(page).toHaveURL('/');
@@ -663,12 +674,12 @@ test.describe('I dag when the calendar does not answer, and for a person with no
     expect(await silentSaidIn(page)).toEqual(['I dag']);
     await expect.poll(() => said(page, 'Kalendern svarar inte')).toBe(1);
     await expectNoAxeViolations(page);
-    // To Att göra and back by the rail: the session has said it once, so it is not said again.
+    // To Att göra and back by the pages' row: the session has said it once, so it is not said again.
     await rail(page)
       .getByRole('link', { name: /^Att göra/ })
       .click();
     await expect(page).toHaveURL('/todo');
-    await rail(page).getByRole('link', { name: 'Hem', exact: true }).click();
+    await rail(page).getByRole('link', { name: 'Start', exact: true }).click();
     await expect(day(page).getByText('Kalendern svarar inte', { exact: true })).toBeVisible();
     expect(await said(page, 'Kalendern svarar inte')).toBe(1);
     // The calendar answers again: Försök igen reads the day, and the meetings stand where the sentence was.
@@ -694,7 +705,7 @@ test.describe('I dag when the calendar does not answer, and for a person with no
     await expectNoAxeViolations(page);
   });
 
-  test('a person whose calendar is not switched on for them: I dag says so and who connects one, with no warning, and the rail has no Kalender', async ({
+  test('a person whose calendar is not switched on for them: I dag says so and who connects one, with no warning, and the pages have no Kalender', async ({
     page,
     api,
   }) => {
@@ -712,7 +723,7 @@ test.describe('I dag when the calendar does not answer, and for a person with no
     await expectNoAxeViolations(page);
   });
 
-  test('an account with no calendar bound: I dag says so and who binds one, and the rail keeps Kalender', async ({
+  test('an account with no calendar bound: I dag says so and who binds one, and the pages keep Kalender', async ({
     page,
     api,
   }) => {

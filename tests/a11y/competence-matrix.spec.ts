@@ -1056,7 +1056,9 @@ test.describe('Personal › Kompetens, the matrix', () => {
       await open(page, MATRIX);
       await expect(page.getByText(/Kompetens är inte påslaget i den här installationen\./).first()).toBeVisible();
       await expect(
-        page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Kompetens', exact: true }),
+        page
+          .getByRole('navigation', { name: 'Mina sidor', exact: true })
+          .getByRole('link', { name: 'Kompetens', exact: true }),
       ).toHaveCount(0);
     });
   });
