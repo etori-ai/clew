@@ -19,20 +19,12 @@ against is the instance they will register with.
    `apps/server/src/routes/protocol.ts`, mounted before the readiness guard, so they answer while the database is still
    coming up. The same two documents are committed under `docs/protocol/` by `bun run docs:generate`, and
    `docs:check` and the unit suite hold them equal to the code.
-2. **The viewer is RapiDoc, served from the image.** `rapidoc` 12.0.0 (MIT) is a dependency of `apps/server`; its
-   bundle is served at `/api/protocol/viewer.js` from `node_modules`, never from a CDN, with `load-fonts="false"` so
-   the page fetches nothing outside the installation. It is a developer page outside the product: the Astryx-only rule
-   (CLAUDE.md) governs what a person meets in Clew, and this page is met by an integrator with a terminal open. It is
-   the second sanctioned exception after D27 and, like it, named here. Swagger UI and Stoplight Elements were not
-   chosen because both pull `@scarf/scarf`, an install-time analytics package; Redoc because it pulls
-   `@redocly/redoc-opentelemetry`; Scalar because it brought 249 packages for one page. The page is English, as
-   documentation is. It is read-only (`allow-try="false"`): RapiDoc's request forms have unlabelled inputs, and the
-   document is there to be read and handed to a client or generator of the integrator's choice, not to be a client.
-   The page carries four lines of its own: RapiDoc's host `min-width: 360px` set to 0 so the page reflows at 320 px
-   (WCAG 1.4.10), its `label-operation-path` part given a colour that keeps 4.5:1 and wrapping, and a script that
-   names each request-body example textarea by its operation (RapiDoc draws them without a label). With those, axe
-   (WCAG 2.0 to 2.2 AA tags) reports no violation on the live page, the page makes no request outside the
-   installation, and `scrollWidth` at 320 px is 320.
+2. **The viewer is Scalar API Reference, served from the image** (amended 2026-11-19). The integrator reads
+   the instance's OpenAPI document and copies request examples in their chosen language. The server delivers the
+   packaged standalone script locally, with remote fonts, the hosted agent and request testing disabled. This
+   developer reference is the D60 exception to the product's Astryx-only rule. It replaces the original RapiDoc
+   viewer and its custom styles and accessibility fixes. Keyboard navigation, screen reader labels, reflow at
+   320 px and same-origin loading are acceptance checks for viewer upgrades.
 3. **Every problem is listed.** `manifestProblems` in `packages/connectors/src/remote.ts` returns the schema's errors
    one per path and then every rule between fields (id prefix, execute never a tool, views, menu, standing names);
    `parseManifest` throws on the same list, so the loader, the checker, the admin page and the dry run cannot disagree.
@@ -101,5 +93,4 @@ both directions.
 
 **Replaces.** Nothing. D21 (no SDK), D37 (no connector version; the name is the contract) and D44 (protocol 2
 rejects 1) stand; the "Versioning" section D37 refers to is item 4 here. The WCAG suite (D51) does not cover the
-viewer page: it runs against the web app with `/api` mocked, and the page is RapiDoc's, not Clew's. The axe run above
-is a one-off against the live page (HANDOVER.md says how); a RapiDoc upgrade repeats it before landing.
+viewer page: it runs against the web app with `/api` mocked, and the viewer is supplied by a dependency. Check accessibility on the live page before landing a viewer upgrade.

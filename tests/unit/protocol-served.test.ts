@@ -254,14 +254,16 @@ describe('the served protocol routes', () => {
     const page = await protocolRoutes.request('http://clew.local/');
     expect(page.status).toBe(200);
     const html = await page.text();
-    expect(html).toContain('<rapi-doc');
-    expect(html).toContain('spec-url="/api/protocol/openapi.json"');
-    expect(html).toContain('load-fonts="false"');
+    expect(html).toContain('src="/api/protocol/scalar.js"');
+    expect(html).toContain('Scalar.createApiReference');
+    expect(html).toContain("url: '/api/protocol/openapi.json'");
+    expect(html).toContain('withDefaultFonts: false');
+    expect(html).toContain('hideTestRequestButton: true');
     expect(html).not.toMatch(/https?:\/\//);
-    const script = await protocolRoutes.request('http://clew.local/viewer.js');
+    const script = await protocolRoutes.request('http://clew.local/scalar.js');
     expect(script.status).toBe(200);
     expect(script.headers.get('content-type')).toContain('javascript');
-    expect((await script.text()).length).toBeGreaterThan(100_000);
+    expect(await script.text()).toContain('@scalar/api-reference');
   });
 });
 

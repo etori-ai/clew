@@ -30,7 +30,7 @@ The web half: one action dialog (`apps/web/src/components/work/action-dialog.tsx
 
 ## Served protocol
 
-**Works in this checkout.** `/api/protocol`: OpenAPI 3.1 and JSON Schema generated from the validating code, a RapiDoc page from the image, a manifest dry run that shares descriptor rules and schema compilation with registration and lists problems or what Clew would make of the document, and the manifest field by field with examples and rules at `/protocol/manifest`, drawn by the web app from `/api/protocol/manifest-reference.json` (also [committed](../../generated/manifest-reference.md)).
+**Works in this checkout.** `/api/protocol`: OpenAPI 3.1 and JSON Schema generated from the validating code, a Scalar page from the image, a manifest dry run that shares descriptor rules and schema compilation with registration and lists problems or what Clew would make of the document, and the manifest field by field with examples and rules at `/protocol/manifest`, drawn by the web app from `/api/protocol/manifest-reference.json` (also [committed](../../generated/manifest-reference.md)).
 
 **Limits and pending work.** The viewer page is outside the WCAG suite; protocol 1 is current and the only number loaded, and it changes in place until the first release; from then on a break is a new number accepted beside the one before it for a window ([D129](../../decisions/D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md)), and no code for that window exists today.
 
