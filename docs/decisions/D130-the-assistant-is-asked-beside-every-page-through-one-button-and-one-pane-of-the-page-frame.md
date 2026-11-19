@@ -112,12 +112,15 @@ system's assistant has its own panel beside a conversation).
   person is not shown does not exist.
 - None of the domains opened in stage 2 logs a read, so the assistant's reads of them are logged nowhere either
   (D122 item 6 asks for it only where a person's read is logged).
-- The other system's assistant's panel (D128) still has a renderer of its own.
+- The other system's assistant's panel (D128) draws its exchange and its box with the shared parts since 2026-11-19
+  (`Transcript` in a third room, `aside`; the plain box, which cannot be stopped there). Its header is its own. It
+  was not tried on the development stack, which has no other system's assistant; its spec passes.
 - The pane shows what the shared transcript shows: the time, the model that answered and what was read. The canvas
   draws none of those; whether they stay is the owner's to say.
-- An action on a row of a view is not something a connector can declare
-  ([open questions](../maintainers/open-questions.md)); rule 8 is met today for a work item, a person or a unit, and
-  for Kalender's own two.
+- An action about a record is declared and run as
+  [D132](D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md)
+  decides, on the server; no page draws one yet, so rule 8 is met on screen for a work item and for Kalender's own
+  two.
 - Files: nothing exists, and whether a file a person brings is Clew's to read or the AI platform's is undecided. It is
   not part of this decision.
 - A conversation that follows the person from page to page was not chosen.

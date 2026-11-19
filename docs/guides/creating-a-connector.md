@@ -303,6 +303,16 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://appra
 
 Not available: a read about an entity is never offered to the model, the entity kinds are `person` and `unit` only, and a page inside Clew where the person writes (`about.page`) is for Clew's own domains.
 
+**An action about one of your own records.** A propose or an execute may instead be about one record of one of your reads, a request, an invoice, a booking ([D132](../decisions/D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md)): `about: { record, params }`. `record` names a read of your manifest whose view draws one record (`record`, `detail`, `text` or `document`, never a `table` or `list`), and `params` maps the action's input properties to that read's input properties, the way a view's `open.params` does for a row. The service-desk fixture's `servicedesk.comment` ([manifest](../../connectors/servicedesk/manifest.mjs)) is "Lägg till en kommentar" on a request the person made:
+
+```js
+about: { record: 'servicedesk.request', params: { ref: 'ref' } },
+asks: [{ kind: 'long-text', property: 'text', label: 'Kommentar', required: true }],
+effect: 'servicedesk.commentEffect',
+```
+
+Clew draws its button under the title of the request's page, for a person who may call it and who can read that request: Clew makes your read with the page's input, as the person, before it lists the action and again before it starts it, so a record your system does not answer them for has no actions. A list's rows get no menu. Clew fills `ref` from the page, asks for the text and runs the action as an action about a person runs: a propose becomes the person's work item, an execute runs after their decision, through the execution ledger. The action is never a model tool; the assistant may fill in the text for the request that stands open beside it, and the person sends it. Your input requires nothing but what `params` fills and what you ask, no ask names a property `params` fills, and you still check, as on every call, that the person may act on the record the input names: the fixture answers a comment on someone else's request as not found.
+
 ## 9. Ask the person, and say what a write will do
 
 Some writes need something only the person knows: when a talk is held, where, what to tell the employee. Declare it on the capability as **asks**, and Clew draws them as the first step, "Uppgifter", of one dialog wherever the action can be started: a work item's button, a person's or a unit's page, the row menu on Personal. Declare an **effect** on an execute, and the dialog's last step, "Det här händer", shows what your system will do with exactly those answers before anything is sent ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)). You never send a form or markup.

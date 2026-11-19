@@ -225,10 +225,12 @@ export const readsSummary = (view: View | undefined) => view?.modelReads === 'su
  * Where Clew would show a capability that is about an entity (D97 item 2), from the declaration alone and in the order
  * a preview lists them: an action in the entity's menu; a read as a section on the opened entity, a lens when its view
  * is a table or list, and a mark on the row when a field gives some value a `warn` or `alert` tone. Lenses, columns and
- * marks still wait for an administrator's choice; nothing here is a place by itself.
+ * marks still wait for an administrator's choice; nothing here is a place by itself. An action about a record (D132)
+ * has one place, the record's page.
  */
 export function placesOf(subject: Pick<ViewSubject, 'kind' | 'view'> & { about?: unknown }): AboutPlace[] {
   if (!subject.about) return [];
+  if (typeof subject.about === 'object' && 'record' in subject.about) return subject.kind === 'read' ? [] : ['record'];
   if (subject.kind !== 'read') return ['menu'];
   const view = subject.view;
   return [

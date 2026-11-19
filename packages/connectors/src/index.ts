@@ -2,7 +2,6 @@ import type { TSchema } from 'typebox';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type {
-  About,
   ActionPath,
   Ask,
   Area,
@@ -58,6 +57,10 @@ import {
   type DocumentContent,
   type HoldingsOutput,
   type SiteHeaderOutput,
+  aboutEntity,
+  aboutRecord,
+  type EntityAbout,
+  type RecordAbout,
 } from '@clew/contracts';
 import { Value } from 'typebox/value';
 import { connectorProblems } from './validation';
@@ -291,9 +294,10 @@ export interface Capability<I = unknown, O = unknown> {
   /**
    * What its rows concern (D97): a read asked with a batch of keys, or a propose or execute that takes one in `param`.
    * Only Clew's own connectors may add `page`, the owned domain's page where the person writes (D95, D96); a manifest
-   * cannot carry it, so a remote connector never claims a page inside Clew.
+   * cannot carry it, so a remote connector never claims a page inside Clew. Or, on a propose or an execute, one record
+   * of a read of the same connector, its input filled from the read's by `params` (D132).
    */
-  about?: About & { page?: EntityPage };
+  about?: CapabilityAbout;
   /**
    * Who may be asked about through it (D117): the relations a caller may have to a person its input names, and on a
    * capability not about a person the input property that takes the key. The registry enforces it on every path. Only
@@ -318,6 +322,13 @@ export interface Capability<I = unknown, O = unknown> {
   page?: string;
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
+/**
+ * What `Capability.about` holds (D97, D132): the entity form with the page only Clew's own connectors may name, or the
+ * record form. Each carries the other's fields as `never`, so a reader may ask any of them of either.
+ */
+export type CapabilityAbout =
+  | (EntityAbout & { page?: EntityPage; record?: never; params?: never })
+  | (RecordAbout & { entity?: never; param?: never; page?: never });
 /** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `clew.search` is never one itself. */
 export const isSearchSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.search' && connectorId !== SEARCH_CONNECTOR;
@@ -418,6 +429,23 @@ export interface AboutAction {
   core?: true;
   /** The relations it admits (D117): it is offered only on an entity the reader stands to so. */
   admits: readonly Relation[];
+}
+/**
+ * A propose or execute about a record of a read (D132) as `Registry.recordActions` names it for one person: what the
+ * record's page needs to offer it and to start it, the record's input filling `params`.
+ */
+export interface RecordAboutAction {
+  name: string;
+  connectorId: string;
+  source: string;
+  title: string;
+  kind: 'propose' | 'execute';
+  /** The action's input properties the record fills, each from the record's read input property it names. */
+  params: Record<string, string>;
+  /** What the person passes through before it runs (D112): the asks less what the record fills, the effect, the description. */
+  path: ActionPath;
+  /** The connector is one of Clew's own (`kind: 'core'`). */
+  core?: true;
 }
 /** Plain ordering of ids and names, the same in every locale. */
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -703,6 +731,8 @@ export class Registry implements HoldingsReader {
   private governed = new Map<string, Governance>();
   /** The inputs of each capability that name an entity (D117), drawn from the declarations at installation. */
   private named = new Map<string, NamedInputs>();
+  /** The index from a read to the actions about its records (D132), by name, drawn from the declarations at installation. */
+  private records = new Map<string, string[]>();
   /** What `validate` resolved, by the opaque handle it gave out (D117): redeemed once by `run`, for the same call only. */
   private resolutions = new WeakMap<
     Resolution,
@@ -803,6 +833,10 @@ export class Registry implements HoldingsReader {
     for (const c of connector.capabilities) this.capabilities.set(c.name, { connector, capability: c });
     for (const r of connector.installation ?? []) this.installationReads.set(r.name, { connector, read: r });
     for (const [name, inputs] of namedInputs(connector)) this.named.set(name, inputs);
+    for (const c of connector.capabilities) {
+      const record = c.kind === 'read' ? undefined : aboutRecord(c.about)?.record;
+      if (record) this.records.set(record, [...(this.records.get(record) ?? []), c.name]);
+    }
     this.connectors.set(connector.id, connector);
     return this;
   }
@@ -819,6 +853,8 @@ export class Registry implements HoldingsReader {
     for (const c of found.capabilities) {
       this.capabilities.delete(c.name);
       this.named.delete(c.name);
+      // An action is about a record of its own connector's read (D132): the read's entry goes with the connector.
+      this.records.delete(c.name);
     }
     for (const r of found.installation ?? []) this.installationReads.delete(r.name);
     this.connectors.delete(id);
@@ -1422,7 +1458,7 @@ export class Registry implements HoldingsReader {
           source: connector.source,
           title: capability.title,
           view: { ...rest, ...(open ? { open } : {}) } as View,
-          ...(capability.about?.page ? { page: capability.about.page } : {}),
+          ...(aboutEntity(capability.about)?.page ? { page: aboutEntity(capability.about)!.page! } : {}),
           ...(overviews.length ? { overviews } : {}),
           batch:
             typeof declared === 'number' && declared >= 1
@@ -1438,8 +1474,9 @@ export class Registry implements HoldingsReader {
   }
   /** The proposes and executes about an entity kind a person may call (D97), in the order of `aboutReads`, each with the input property that takes the key. */
   aboutActions(actor: Actor, entity: EntityKind): AboutAction[] {
-    return this.aboutCapabilities(actor, entity, false).flatMap(({ connector, capability }) =>
-      capability.kind !== 'read' && capability.about?.param
+    return this.aboutCapabilities(actor, entity, false).flatMap(({ connector, capability }) => {
+      const param = aboutEntity(capability.about)?.param;
+      return capability.kind !== 'read' && param
         ? [
             {
               name: capability.name,
@@ -1447,20 +1484,59 @@ export class Registry implements HoldingsReader {
               source: connector.source,
               title: capability.title,
               kind: capability.kind,
-              param: capability.about.param,
-              path: pathOf(capability, [capability.about.param])!,
+              param,
+              path: pathOf(capability, [param])!,
               ...(connector.kind === 'core' ? { core: true as const } : {}),
               admits: this.named.get(capability.name)?.admits ?? [],
             },
           ]
-        : [],
-    );
+        : [];
+    });
+  }
+  /**
+   * The proposes and executes about the records of one read that a person may call (D132), by name: the index from the
+   * read to the actions about its records, each kept only where the person may call it (its connector switched on and
+   * visible to them, the capability not switched off, its scope) and only while they may call the read itself. Whether
+   * they can make the read with a given record's input is the caller's to find out; this answers the same for every
+   * record of the read. Clew's core connector is skipped, as in `aboutCapabilities`.
+   */
+  recordActions(actor: Actor, read: string): RecordAboutAction[] {
+    const record = this.allowed(actor, read);
+    if (!record || record.capability.kind !== 'read' || record.connector.id === SEARCH_CONNECTOR) return [];
+    return (this.records.get(read) ?? [])
+      .flatMap(name => {
+        const found = this.capabilities.get(name);
+        const about = aboutRecord(found?.capability.about);
+        if (
+          !found ||
+          !about ||
+          about.record !== read ||
+          found.connector !== record.connector ||
+          found.capability.kind === 'read' ||
+          !this.allowed(actor, name)
+        )
+          return [];
+        const { connector, capability } = found;
+        return [
+          {
+            name,
+            connectorId: connector.id,
+            source: connector.source,
+            title: capability.title,
+            kind: capability.kind as 'propose' | 'execute',
+            params: { ...about.params },
+            path: pathOf(capability, Object.keys(about.params))!,
+            ...(connector.kind === 'core' ? { core: true as const } : {}),
+          },
+        ];
+      })
+      .sort((a, b) => compare(a.name, b.name));
   }
   private aboutCapabilities(actor: Actor, entity: EntityKind, reads: boolean) {
     return [...this.capabilities.values()]
       .filter(
         c =>
-          c.capability.about?.entity === entity &&
+          aboutEntity(c.capability.about)?.entity === entity &&
           (c.capability.kind === 'read') === reads &&
           c.connector.id !== SEARCH_CONNECTOR &&
           !!this.allowed(actor, c.capability.name),
@@ -1881,7 +1957,8 @@ export class Registry implements HoldingsReader {
    * registered or not (D96 item 6), since an action point is free text about a person and another system's round is
    * not Clew's to open.
    * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
-   * whatever a registration says. Clew's own connectors are governed here as any other (D122 item 4): the connector's
+   * whatever a registration says. Nor is an action about a record (D132 item 4): the model never names the record, and
+   * fills such an action in only for the record that stands open, through `clew.draftAction`. Clew's own connectors are governed here as any other (D122 item 4): the connector's
    * assistant switch and each read's. What the model reads of a tool's output is `modelReading` of its view.
    */
   tools(actor: Actor) {
@@ -1907,6 +1984,7 @@ export class Registry implements HoldingsReader {
       .filter(c => !isTalkSource(c.capability, c.connector.id) || isOwnRound(c.connector))
       .filter(c => c.capability.name !== TALK_COMPOSITE && c.capability.name !== COMMITMENT_COMPOSITE)
       .filter(c => !(c.capability.kind === 'read' && c.capability.about))
+      .filter(c => !aboutRecord(c.capability.about))
       .map(c => ({
         name: c.capability.name,
         title: c.capability.title,

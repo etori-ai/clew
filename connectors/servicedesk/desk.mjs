@@ -14,6 +14,11 @@
 //                                               field would), so the connector can tell the same order sent again from
 //                                               another caller's or another input under the same id
 //   findByReference(reference)                  the case filed under a reference, or null
+//   addComment({ number, author, text, reference, digest })
+//                                               adds the person's comment to a case and answers the case; a
+//                                               `reference` the desk has a comment under answers that case and adds
+//                                               nothing, as an order sent twice does, with the `digest` kept beside it
+//   findCommentByReference(reference)           the case and the comment added under a reference, or null
 //   listEquipment(person)                       the configuration items registered to a person
 //   catalogueItem(item)                         the desk's entry for an orderable value: category, group, lead days
 //
@@ -73,17 +78,22 @@ export function requestRow(serviceCase) {
     ...(data.ExpectedOn && meaning.state !== 'closed' ? { expectedAt: data.ExpectedOn } : {}),
   };
 }
-/** One case with its free text, for the person who made it: the row, the group handling it, the subject, what the person wrote and what the desk wrote last. */
+/**
+ * One case with its free text, for the person who made it: the row, the group handling it, the subject, what the person
+ * wrote, what the desk wrote last and the person's own latest comment (D132).
+ */
 export function requestDetail(serviceCase) {
   const data = serviceCase.Data;
   const latest = nonEmpty(data.Notes?.at(-1)?.Text);
   const description = nonEmpty(serviceCase.Memo);
+  const comment = nonEmpty(data.Comments?.at(-1)?.Text);
   return {
     ...requestRow(serviceCase),
     group: data.ResponsibleGroup,
     title: clip(nonEmpty(data.Subject) ?? data.Category, 200),
     ...(description ? { description: clip(description, 4000) } : {}),
     ...(latest ? { latest: clip(latest, 1000) } : {}),
+    ...(comment ? { text: clip(comment, 1000) } : {}),
   };
 }
 /** One configuration item as a row of a person's equipment: what it is, the model, the inventory number and since when. */
@@ -159,6 +169,34 @@ export function fixtureDesk({ state, clock = () => new Date() }) {
         state.set('records', all);
         return created;
       });
+    },
+    async addComment({ number, author, text, reference, digest }) {
+      return state.transaction(() => {
+        const all = records();
+        const found = all.cases.find(c => c.Data.Number === number);
+        if (!found) return null;
+        const filed = reference && found.Data.Comments?.find(c => c.Reference === reference);
+        if (filed) return found;
+        found.Data.Comments = [
+          ...(found.Data.Comments ?? []),
+          {
+            At: now(),
+            Author: author,
+            Text: text,
+            ...(reference ? { Reference: reference, ReferenceDigest: digest ?? null } : {}),
+          },
+        ];
+        state.set('records', all);
+        return found;
+      });
+    },
+    async findCommentByReference(reference) {
+      if (!reference) return null;
+      for (const serviceCase of records().cases) {
+        const comment = serviceCase.Data.Comments?.find(c => c.Reference === reference);
+        if (comment) return { serviceCase, comment };
+      }
+      return null;
     },
     async listEquipment(person) {
       return records().items.filter(i => typeof person === 'string' && fold(i.Data.AssignedTo) === fold(person));

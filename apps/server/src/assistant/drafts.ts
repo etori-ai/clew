@@ -1,5 +1,6 @@
-import type { Ask, AskValues, AuthenticatedContext, Thread } from '@clew/contracts';
+import type { Ask, AskValues, AuthenticatedContext, RecordAction, Thread } from '@clew/contracts';
 import { audiencedActorOf, answersOf, asksFor, givenBy } from '@clew/connectors';
+import { recordActionOf } from '../modules/records/domain';
 import { localInstant } from '@clew/calendar/dates';
 import type { AssistantDeps } from './ports';
 import type { ClewTool } from './model';
@@ -11,17 +12,24 @@ import type { ClewTool } from './model';
  * conversation's message, and nothing is executed: the person opens the draft in the action's own dialog and sends it
  * from there, through the human decision endpoint, which checks everything again. The tool is Clew's own and writes
  * nothing; an execute is never a tool and the decision endpoint is never reached from here.
+ *
+ * With a record standing open on the page (D131), the same tool fills in one of the actions about that record (D132
+ * item 4): the model picks the action and its values, never the record, which is the one that stands open; what the
+ * record fills is not among the asks and cannot be given.
  */
 export const DRAFT_TOOL = 'clew.draftAction';
 
-/** An action on the work item the assistant may fill in, with what it asks. */
+/** An action on the work item, or about the record that stands open, the assistant may fill in, with what it asks. */
 export interface DraftableAction {
+  /** The work item's action id; for an action about a record, its capability. */
   id: string;
   label: string;
   capability: string;
   asks: Ask[];
   /** The capability's input schema, whose property limits the values are held to. */
   input: unknown;
+  /** About a record (D132): the action as the person may take it now, for the answer's draft. */
+  record?: RecordAction;
 }
 /** What the model filled in: the action and the checked values. */
 export interface ActionDraft {
@@ -71,6 +79,34 @@ export function draftableActions(
   });
 }
 
+/**
+ * The actions about the records of `read` the person may take and that ask for something (D132 item 4), by the
+ * registry's index (`recordActions`): scope, audience and the connector switched on, as for any action. Under the same
+ * limits as a work item's: an action that asks nothing has nothing to fill in, and a reviewed execute keeps its review.
+ * Whether the person can make the record's read is the caller's to have found out.
+ */
+export function draftableRecordActions(
+  registry: Pick<AssistantDeps['registry'], 'recordActions' | 'allowed'>,
+  persona: AuthenticatedContext,
+  read: string,
+): DraftableAction[] {
+  const actor = audiencedActorOf(persona);
+  return registry.recordActions(actor, read).flatMap(action => {
+    const found = registry.allowed(actor, action.name);
+    if (!found || found.capability.kind === 'read' || found.capability.review || !action.path.asks.length) return [];
+    return [
+      {
+        id: action.name,
+        label: action.title,
+        capability: action.name,
+        asks: action.path.asks,
+        input: found.capability.input,
+        record: recordActionOf(action),
+      },
+    ];
+  });
+}
+
 /** How the model is to write one answer: the kind's form in words, for the tool's schema. */
 function hint(ask: Ask): string {
   const required = ask.required ? ' Krävs.' : '';
@@ -89,17 +125,27 @@ function hint(ask: Ask): string {
 /**
  * The tool the model drafts with. `now` decides whether a meeting time has passed, as the decision does; `drafted`
  * hears the one draft that passed (a later one in the same turn replaces it). A draft that does not pass is answered
- * with the Swedish reason, so the model can correct it; nothing is kept of it.
+ * with the Swedish reason, so the model can correct it; nothing is kept of it. `record` names the record that stands
+ * open when the actions are about it (D132): the model is told it fills in the asks only, and the record is that one.
  */
-export function draftTool(actions: DraftableAction[], now: string, drafted: (draft: ActionDraft) => void): ClewTool {
+export function draftTool(
+  actions: DraftableAction[],
+  now: string,
+  drafted: (draft: ActionDraft) => void,
+  record?: { title: string },
+): ClewTool {
   const properties: Record<string, { type: 'string'; description: string }> = {};
   for (const action of actions)
     for (const ask of action.asks) properties[ask.property] ??= { type: 'string', description: hint(ask) };
   return {
     name: DRAFT_TOOL,
     description:
-      'Fyll i en av ärendets åtgärder som ett utkast åt personen. Ingenting skickas eller sparas i något system: personen ' +
-      'granskar utkastet och skickar det själv med åtgärdens knapp. Åtgärder: ' +
+      (record
+        ? `Fyll i en av åtgärderna för den öppna posten "${record.title}" som ett utkast åt personen. Du fyller bara i ` +
+          'det åtgärden frågar efter; posten är den som står öppen bredvid samtalet och anges aldrig. Ingenting skickas ' +
+          'eller sparas i något system: personen granskar utkastet och skickar det själv med åtgärdens knapp. Åtgärder: '
+        : 'Fyll i en av ärendets åtgärder som ett utkast åt personen. Ingenting skickas eller sparas i något system: personen ' +
+          'granskar utkastet och skickar det själv med åtgärdens knapp. Åtgärder: ') +
       actions
         .map(a => `"${a.id}" (${a.label}: ${a.asks.map(x => x.label + (x.required ? ', krävs' : '')).join('; ')})`)
         .join(', ') +
@@ -120,7 +166,7 @@ export function draftTool(actions: DraftableAction[], now: string, drafted: (dra
     },
     execute: input => {
       const action = actions.find(a => a.id === input.action);
-      if (!action) return { error: 'Ärendet har ingen sådan åtgärd.' };
+      if (!action) return { error: record ? 'Posten har ingen sådan åtgärd.' : 'Ärendet har ingen sådan åtgärd.' };
       const given = isRecord(input.values) ? input.values : {};
       const values: AskValues = {};
       for (const [key, value] of Object.entries(given)) {

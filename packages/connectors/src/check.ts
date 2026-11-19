@@ -10,6 +10,7 @@ import type {
   Relation,
   Role,
 } from '@clew/contracts';
+import { aboutEntity, aboutRecord } from '@clew/contracts';
 import {
   CapabilityError,
   InstallationReadError,
@@ -156,12 +157,13 @@ const vouchedFor =
   };
 /** Nobody may be asked about by anyone: what the check signs without a person named to sign as. */
 const vouchesForNobody: RelationResolver = async () => [];
-/** Where a capability about an entity would show (D97 item 2), in the administrator's words. */
+/** Where a capability about an entity or a record would show (D97 item 2, D132 item 2), in the administrator's words. */
 const PLACE: Record<AboutPlace, (entity: EntityKind) => string> = {
   menu: e => `i menyn för en ${ENTITY[e].one}`,
   section: e => `som avsnitt när en ${ENTITY[e].one} öppnas`,
   lens: () => 'som lins över listan',
   mark: () => 'som markering på raden',
+  record: () => 'under rubriken på sidan för en post',
 };
 const worst = (a: CheckLevel, b: CheckLevel): CheckLevel =>
   a === 'fail' || b === 'fail' ? 'fail' : a === 'warn' || b === 'warn' ? 'warn' : 'ok';
@@ -384,7 +386,7 @@ export async function checkConnector(
    * no error. The rows are checked only with the keys an operator gives, signed as a person who may see them.
    */
   const probeAboutRead = async (c: Declared, row: Row) => {
-    const entity = c.about!.entity;
+    const entity = aboutEntity(c.about)!.entity;
     const head = `${c.name} about ${entity}`;
     const actors = inRoles(c);
     const keys = [...new Set(options.about?.keys ?? [])];
@@ -470,7 +472,7 @@ export async function checkConnector(
   };
   /** An action about an entity (D97): the input takes the key in `param`, and a person decides, not the model. */
   const probeAboutAction = (c: Declared, row: Row) => {
-    const { entity, param } = c.about!;
+    const { entity, param } = aboutEntity(c.about)!;
     const head = `${c.name} about ${entity}, ${c.kind}`;
     const input = (c.input as { properties?: Record<string, { type?: unknown }> }).properties;
     if (param && input?.[param]?.type === 'string') {
@@ -480,16 +482,64 @@ export async function checkConnector(
       fail(`${head}, input: param "${param ?? ''}" is not a string property of the input`);
       row.note('fail', `Fältet "${param ?? ''}" finns inte i indata.`);
     }
+    offeredToModel(c, head, "an action in an entity's menu", row);
+  };
+  /** Whether the model is offered an action a person starts from an entity or a record: a warning when it is. */
+  const offeredToModel = (c: Declared, head: string, where: string, row: Row) => {
     const offered = people.some(a => registry.tools(a).some(t => t.name === c.name));
     if (offered) {
-      warn(`${head}, model tool: offered to the model; an action in an entity's menu is a person's decision`);
+      warn(`${head}, model tool: offered to the model; ${where} is a person's decision`);
       row.note('warn', 'Erbjuds till modellen som verktyg.');
     } else {
       ok(`${head}, model tool: not offered to the model`);
       row.note('ok', 'Erbjuds inte till modellen.');
     }
   };
+  /**
+   * An action about a record of one of the connector's reads (D132): the registry indexes it under that read, for the
+   * check's people as their scopes allow, and the record fills what `params` maps. Neither the action nor the read is
+   * called: the check has no record of its own to name, and an execute runs only after a human decision.
+   */
+  const probeRecordAction = (c: Declared, row: Row) => {
+    const about = aboutRecord(c.about)!;
+    const read = manifest.capabilities.find(r => r.name === about.record);
+    const head = `${c.name} about a record of ${about.record}, ${c.kind}`;
+    const mapped = Object.entries(about.params).map(([p, from]) => (p === from ? p : `${p} from ${from}`));
+    const listed = inRoles(c).filter(a => registry.recordActions(a, about.record).some(x => x.name === c.name));
+    if (listed.length) {
+      ok(
+        `${head}: listed on the record's page for ${listed.map(a => a.role).join(' and ')}; the record fills ${mapped.join(', ')}`,
+      );
+      row.note(
+        'ok',
+        `Visas på sidan för en post ur "${read?.title ?? about.record}", där ${Object.keys(about.params)
+          .map(p => `"${p}"`)
+          .join(', ')} fylls i från posten.`,
+      );
+    } else {
+      fail(`${head}: not listed on the record's page for anyone the scopes of both admit`);
+      row.note('fail', `Visas inte på sidan för en post ur "${read?.title ?? about.record}" för någon.`);
+    }
+    offeredToModel(c, head, "an action on a record's page", row);
+  };
   for (const c of manifest.capabilities) {
+    if (aboutRecord(c.about)) {
+      const row = newRow();
+      for (const actor of people.filter(a => !inRoles(c).includes(a)))
+        try {
+          await registry.run(actor, c.name, {});
+          fail(`${c.name}: ${actor.role} is out of scope but the registry let the call through`);
+          row.note('fail', `Anropet släpptes igenom för ${ROLE[actor.role]}, som inte ska få det.`);
+        } catch {
+          ok(`${c.name}: ${actor.role} refused by scope`);
+          row.refused.push(actor.role);
+        }
+      if (c.kind === 'execute') ok(`${c.name}: execute, not a tool, not called by the check`);
+      probeRecordAction(c, row);
+      if (named.has(c.name)) admitted(c.name, named.get(c.name)!, row);
+      item(row.level, 'capabilities', c.title, rowText(row), c.name);
+      continue;
+    }
     if (c.about) {
       const row = newRow();
       // The role scope still holds: a role outside it is refused before anything is asked.
@@ -580,7 +630,7 @@ export async function checkConnector(
   // Where the capabilities about an entity would show (D97 item 2), one row per entity kind; an administrator still
   // chooses the lenses and columns.
   for (const entity of ['person', 'unit'] as const) {
-    const about = manifest.capabilities.filter(c => c.about?.entity === entity);
+    const about = manifest.capabilities.filter(c => aboutEntity(c.about)?.entity === entity);
     if (!about.length) continue;
     ok(`about ${entity}: ${about.map(c => `${c.name} (${placesOf(c).join(', ')})`).join('; ')}`);
     item(
@@ -594,6 +644,22 @@ export async function checkConnector(
               .map(p => PLACE[p](entity))
               .join(', ')}.`,
         )
+        .join(' '),
+    );
+  }
+  // The actions about a record of a read (D132): on that record's page, one sentence each.
+  const onRecords = manifest.capabilities.filter(c => aboutRecord(c.about));
+  if (onRecords.length) {
+    ok(`about a record: ${onRecords.map(c => `${c.name} (on ${aboutRecord(c.about)!.record})`).join('; ')}`);
+    item(
+      'ok',
+      'surfaces',
+      'Om poster',
+      onRecords
+        .map(c => {
+          const read = manifest.capabilities.find(r => r.name === aboutRecord(c.about)!.record);
+          return `${c.title} kan visas ${PLACE.record('person')} ur "${read?.title ?? aboutRecord(c.about)!.record}".`;
+        })
         .join(' '),
     );
   }

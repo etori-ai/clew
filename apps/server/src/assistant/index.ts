@@ -42,7 +42,14 @@ import {
   viewInput,
 } from './router';
 import { modelAnswer, systemPrompt, type ReadRecord, type ToolCallRecord } from './model';
-import { DRAFT_TOOL, draftableActions, draftTool, type ActionDraft } from './drafts';
+import {
+  DRAFT_TOOL,
+  draftableActions,
+  draftableRecordActions,
+  draftTool,
+  type ActionDraft,
+  type DraftableAction,
+} from './drafts';
 import { ownOverlaps, prepareCancelTool, prepareMoveTool, PREPARE_TOOLS, whyNotChangeable } from './prepared';
 import { listObjects } from './objects';
 import { openedPath } from './opened';
@@ -80,6 +87,8 @@ type Produced = {
   /** The work items among the rows the answer names (`namedItems`). */
   viewItems?: string[];
   draft?: NonNullable<ConversationResponse['draft']>;
+  /** An action about the record that stood open, filled in by the model and not sent (D132 item 4). */
+  recordDraft?: NonNullable<ConversationResponse['recordDraft']>;
   /** A decision of Clew's own the model filled in and nothing sent (`prepared.ts`): the last one the turn heard. */
   prepared?: Prepared;
   forslag?: { threadId: string };
@@ -178,10 +187,14 @@ interface StandingRecord {
   title: string;
   source: string;
 }
-/** What stands open on the page, as resolved for the asker this turn: its line, and the record's read when one was made. */
+/**
+ * What stands open on the page, as resolved for the asker this turn: its line, the record's read when one was made, and
+ * whether that read was the assistant's to make and was refused (`refused`), so nothing about the record is offered.
+ */
 interface StandingOpen {
   line?: OpenThingLine;
   record?: StandingRecord;
+  refused?: true;
 }
 
 /**
@@ -330,7 +343,30 @@ export function assistantUsecases(deps: AssistantDeps) {
         record: { capability: thing.capability, input: thing.input, output, ...read },
       };
     } catch {
-      return { line: { kind: 'unread', read } };
+      return { line: { kind: 'unread', read }, refused: true };
+    }
+  }
+  /**
+   * The actions about the record that stands open that the model may fill in this turn (D132 item 4): only for that
+   * record, and only when the asker can make its read with the page's input. That is known when the read was made for
+   * the model and answered; when it was the assistant's to make and was refused, nothing is offered; and when the read
+   * is not the assistant's to make, the registry is asked whether the asker may make it with that input (their scope,
+   * the input, who it names), without reaching the source. The draft writes nothing, and the record's page makes the
+   * read again before the person's own button sends it.
+   */
+  async function openRecordActions(
+    persona: AuthenticatedContext,
+    thing: Extract<OpenThing, { kind: 'record' }>,
+    standing: StandingOpen,
+  ): Promise<DraftableAction[]> {
+    if (standing.refused) return [];
+    const actions = draftableRecordActions(registry, persona, thing.capability);
+    if (!actions.length || standing.record) return actions;
+    try {
+      await registry.validate(audiencedActorOf(persona), thing.capability, thing.input);
+      return actions;
+    } catch {
+      return [];
     }
   }
   /**
@@ -612,9 +648,16 @@ export function assistantUsecases(deps: AssistantDeps) {
       thing?.kind === 'record' && o.kind === 'capability' && o.name === thing.capability;
     // The one work item the conversation is about may have its actions filled in as a draft (D112 item 8): only what
     // the person may do, only with a model that uses tools, and nothing is sent. Without one chipped, the one work item
-    // about the one person the question names is that item (D115).
+    // about the one person the question names is that item (D115). A record that stands open on the page comes first
+    // (D132 item 4): when it has actions to fill in, they are the turn's, and no work item's beside them.
     const subject = chips.primaryThread ?? personSubject(people);
-    const draftable = model.tools && subject ? draftableActions(registry, persona, subject) : [];
+    const openRecord = thing?.kind === 'record' ? thing : undefined;
+    const recordActions = model.tools && openRecord ? await openRecordActions(persona, openRecord, standing) : [];
+    const draftable = recordActions.length
+      ? recordActions
+      : model.tools && subject
+        ? draftableActions(registry, persona, subject)
+        : [];
     const drafts: { last?: ActionDraft } = {};
     // The meeting that stands open beside the conversation may be moved or cancelled as a prepared decision, only one
     // the person may change from Clew and only with a model that uses tools; nothing is saved or sent (`prepared.ts`).
@@ -634,9 +677,17 @@ export function assistantUsecases(deps: AssistantDeps) {
     const own = [
       ...(draftable.length
         ? [
-            draftTool(draftable, now.toISOString(), d => {
-              drafts.last = d;
-            }),
+            draftTool(
+              draftable,
+              now.toISOString(),
+              d => {
+                drafts.last = d;
+              },
+              // The record by its read's title, as its page heads the read; the model never names it (D132 item 4).
+              recordActions.length && openRecord
+                ? { title: registry.find(openRecord.capability)?.capability.title ?? openRecord.capability }
+                : undefined,
+            ),
           ]
         : []),
       ...(meeting
@@ -687,7 +738,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         people.guards,
       ),
       ...(beside.length ? { beside } : {}),
-      drafts: draftable.length > 0,
+      ...(draftable.length ? { drafts: recordActions.length ? ('record' as const) : ('item' as const) } : {}),
       prepares: !!meeting,
       ...(people.people.length
         ? { people: { lines: peopleLines(people, now.toISOString()), lookup, ...(openPerson ? { open: true } : {}) } }
@@ -827,6 +878,8 @@ export function assistantUsecases(deps: AssistantDeps) {
           ? headingFollowUps((searched.output as SearchResult).rows)
           : nearest(text, tools).map(t => t.title);
       const draft = drafts.last;
+      // A draft of an action about the record that stood open (D132 item 4): that record, as the page named it.
+      const recordAction = draft && openRecord ? recordActions.find(a => a.id === draft.actionId)?.record : undefined;
       // Open work about a person the model looked up is drawn only when the answer speaks of it.
       const found = [...lookedUp.values()].flatMap(p =>
         people
@@ -848,17 +901,27 @@ export function assistantUsecases(deps: AssistantDeps) {
         ...(shownRows ? { viewRows: shownRows } : {}),
         ...(items.length ? { viewItems: items } : {}),
         ...(sources?.length ? { sources } : {}),
-        ...(draft && subject
+        ...(draft && recordAction && openRecord
           ? {
-              draft: {
-                kind: 'action' as const,
-                threadId: subject.id,
-                actionId: draft.actionId,
+              recordDraft: {
+                capability: recordAction.capability,
+                record: { capability: openRecord.capability, input: openRecord.input },
                 values: draft.values,
-                thread: subject,
+                action: recordAction,
               },
+              ...begun,
             }
-          : begun),
+          : draft && subject
+            ? {
+                draft: {
+                  kind: 'action' as const,
+                  threadId: subject.id,
+                  actionId: draft.actionId,
+                  values: draft.values,
+                  thread: subject,
+                },
+              }
+            : begun),
         ...(prepared.last ? { prepared: prepared.last } : {}),
         model: { id: model.id, title: model.title },
         modelCall,
@@ -1024,6 +1087,15 @@ export function assistantUsecases(deps: AssistantDeps) {
             },
           }
         : {}),
+      ...(produced.recordDraft
+        ? {
+            recordDraft: {
+              capability: produced.recordDraft.capability,
+              record: produced.recordDraft.record,
+              values: produced.recordDraft.values,
+            },
+          }
+        : {}),
       ...(produced.prepared ? { prepared: produced.prepared } : {}),
       ...(produced.toolCalls?.length
         ? { toolCalls: produced.toolCalls.map(c => ({ capability: c.capability, input: c.input })) }
@@ -1112,6 +1184,18 @@ export function assistantUsecases(deps: AssistantDeps) {
                 },
               }
             : {}),
+          // An action about the record that stood open, filled in (D132 item 4): which action, about a record of which
+          // read, and which asks it answered. Never the values, and never the record's input, as `thing` never says
+          // which thing stood open (D131).
+          ...(produced!.recordDraft
+            ? {
+                drafted: {
+                  record: produced!.recordDraft.record.capability,
+                  action: produced!.recordDraft.capability,
+                  asks: Object.keys(produced!.recordDraft.values),
+                },
+              }
+            : {}),
           // A decision the assistant prepared and nothing sent: which kind (a move or a cancellation), about which
           // meeting. A move's time is the conversation's, as a draft's values are, and the meeting's title is never
           // the audit row's (D91).
@@ -1140,6 +1224,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(produced.view ? { view: produced.view } : {}),
       ...(produced.forslag ? { forslag: produced.forslag } : {}),
       ...(produced.draft ? { draft: produced.draft } : {}),
+      ...(produced.recordDraft ? { recordDraft: produced.recordDraft } : {}),
       ...(produced.prepared ? { prepared: produced.prepared } : {}),
       clewActions: produced.clewActions,
       ...(verbs ? { verbs } : {}),

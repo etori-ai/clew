@@ -172,7 +172,7 @@ export function startedDecision(
  */
 export const takesStarted = (
   started: { person?: { param: string } },
-  about: { entity: string; param?: string | undefined } | undefined,
+  about: { entity?: string; param?: string | undefined; record?: string } | undefined,
 ) => (about?.entity === 'person' ? about.param : undefined) === started.person?.param;
 /** The entities among `asked` that a thread's index rows name, each once. */
 export function namedAmong(named: readonly Subject[], asked: readonly Subject[]): Subject[] {

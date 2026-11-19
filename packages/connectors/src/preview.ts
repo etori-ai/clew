@@ -1,4 +1,4 @@
-import { ANY_TONE, rowsKey, type ViewField } from '@clew/contracts';
+import { ANY_TONE, aboutEntity, aboutRecord, rowsKey, type ViewField } from '@clew/contracts';
 import { menuRowOf, placesOf } from './views';
 import { manifestProblems } from './remote';
 import { RULES, anchorOf, manifestReference, shapeOf } from './reference';
@@ -42,33 +42,39 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
   const capabilities = manifest.capabilities.map((c): PreviewCapability => {
     const roles = c.scope.roles ?? BOTH;
     const needsInput = !accepts(c.input as object);
+    const entity = aboutEntity(c.about),
+      record = aboutRecord(c.about);
     const check =
       c.kind === 'execute'
         ? 'Not called: an execute runs only after a human decision.'
-        : c.kind === 'read' && c.about
-          ? `Called with { keys } as ${roles.join(' and ')}: an unknown key and keys asked by a person on another unit must answer no row and no error; the keys given to the check (--keys, signed --as a person who may see them) must come back one row per key, each carrying a key it was asked with, within the budget.`
-          : needsInput
-            ? 'Not called: it needs input. Test it against your own fixture.'
-            : `Called with {} as ${roles.join(' and ')}${roles.length < 2 ? `; the other role must be refused by scope` : ''}${c.view ? `; the ${c.view.kind} view is checked against the answer` : ''}.`;
+        : record
+          ? `Not called: it starts on a record of ${record.record}, with what about.params fills from the record's input and the person's answers.`
+          : c.kind === 'read' && entity
+            ? `Called with { keys } as ${roles.join(' and ')}: an unknown key and keys asked by a person on another unit must answer no row and no error; the keys given to the check (--keys, signed --as a person who may see them) must come back one row per key, each carrying a key it was asked with, within the budget.`
+            : needsInput
+              ? 'Not called: it needs input. Test it against your own fixture.'
+              : `Called with {} as ${roles.join(' and ')}${roles.length < 2 ? `; the other role must be refused by scope` : ''}${c.view ? `; the ${c.view.kind} view is checked against the answer` : ''}.`;
     const samples = samplesOf(c);
     return {
       name: c.name,
       kind: c.kind,
       title: c.title,
       roles,
-      tool: c.model && c.kind !== 'execute',
+      // An action about a record is never a tool (D132 item 4): the model never names the record.
+      tool: c.model && c.kind !== 'execute' && !record,
       needsInput,
       view: c.view?.kind ?? null,
       menu: menuRowOf(c) ?? null,
       check,
       ...(c.follows ? { follows: c.follows } : {}),
       ...(c.creates ? { creates: c.creates } : {}),
-      ...(c.about ? { about: c.about } : {}),
+      ...(entity ? { about: entity } : {}),
+      ...(record ? { aboutRecord: record } : {}),
       places: placesOf(c),
       openedFrom: manifest.capabilities.flatMap(o =>
         (o.view?.kind === 'table' || o.view?.kind === 'list') && o.view.open?.capability === c.name ? [o.name] : [],
       ),
-      audience: audienceOf(c, roles),
+      audience: audienceOf(c, roles, manifest),
       ...(samples ? { samples } : {}),
       ...(c.asks ? { asks: c.asks } : {}),
       ...(c.effect ? { effect: c.effect } : {}),
@@ -121,7 +127,10 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
 function pathPreviewOf(c: ManifestCapability, manifest: ConnectorManifest): ActionPathPreview {
   const execute = c.kind === 'execute';
   const state = (declared: boolean) => (declared ? ('declared' as const) : ('not-declared' as const));
-  const draftsWorkItems = manifest.scan || manifest.capabilities.some(o => o.kind === 'propose' && o.about?.param);
+  const draftsWorkItems =
+    manifest.scan || manifest.capabilities.some(o => o.kind === 'propose' && aboutEntity(o.about)?.param);
+  const param = aboutEntity(c.about)?.param;
+  const record = aboutRecord(c.about);
   const standing = manifest.areas.some(a => a.standing.includes(c.name));
   const follower = manifest.capabilities.some(o => o.kind === 'propose' && o.follows?.length);
   const input = c.input as { properties?: Record<string, Record<string, unknown>>; required?: unknown };
@@ -130,7 +139,7 @@ function pathPreviewOf(c: ManifestCapability, manifest: ConnectorManifest): Acti
   return {
     starts: [
       { place: 'work-item', state: state(draftsWorkItems), declares: 'scan: true' },
-      { place: 'entity', state: state(!!c.about?.param), declares: 'about: { entity, param }' },
+      { place: 'entity', state: state(!!param), declares: 'about: { entity, param }' },
       { place: 'question-box', state: state(standing), declares: 'areas[].standing' },
       execute
         ? { place: 'conversation', state: 'never', declares: 'model: true' }
@@ -138,6 +147,10 @@ function pathPreviewOf(c: ManifestCapability, manifest: ConnectorManifest): Acti
       execute
         ? { place: 'fact', state: state(follower), declares: 'follows, on a propose of this manifest' }
         : { place: 'fact', state: state(!!c.follows?.length), declares: 'follows' },
+      // The record's page (D132), listed only for a write that declares it, so a manifest without one reads as before.
+      ...(record
+        ? [{ place: 'record' as const, state: 'declared' as const, declares: 'about: { record, params }' }]
+        : []),
     ],
     steps: [
       { step: 'fill-in', state: state(!!c.asks?.length), declares: 'asks' },
@@ -156,16 +169,18 @@ function pathPreviewOf(c: ManifestCapability, manifest: ConnectorManifest): Acti
       const ask = c.asks?.find(a => a.property === property);
       const by: InputFiller = c.follows?.length
         ? 'fact'
-        : property === c.about?.param
+        : property === param
           ? 'entity'
-          : ask
-            ? 'person'
-            : (property === 'refs' && (schema as { type?: unknown }).type === 'array') ||
-                (property === 'reviews' && !!c.review)
-              ? 'rows'
-              : required.has(property)
-                ? 'work-item'
-                : 'source';
+          : record && Object.prototype.hasOwnProperty.call(record.params, property)
+            ? 'record'
+            : ask
+              ? 'person'
+              : (property === 'refs' && (schema as { type?: unknown }).type === 'array') ||
+                  (property === 'reviews' && !!c.review)
+                ? 'rows'
+                : required.has(property)
+                  ? 'work-item'
+                  : 'source';
       const format = typeof schema['format'] === 'string' ? `, ${schema['format']}` : '';
       return {
         property,
@@ -184,15 +199,31 @@ const NOUNS = { person: 'person', unit: 'unit' } as const;
 const whoOf = (roles: Role[], anyone: string) =>
   roles.length > 1 ? anyone : roles[0] === 'manager' ? 'A manager' : 'An employee';
 /**
- * Who would see a capability about an entity, place by place (D97), from its scope and the declaration alone. A lens and
+ * Who would see a capability about an entity or a record, place by place (D97, D132), from its scope and the declaration
+ * alone. An action about a record is on the record's page, for whoever opens one the connector answers them. A lens and
  * a mark live on a list of that kind and wait for an administrator's choice; a list of people is a manager's (Personal,
  * D94), so a read about a person that leaves managers out reaches nobody there. A section is on the opened entity, for
  * whoever opens one the connector answers a row for. An action is in the entity's menu and on its row. A read about an
  * entity is never a tool. The connector's audience (D23) narrows every place further.
  */
-function audienceOf(c: ManifestCapability, roles: Role[]): PreviewCapability['audience'] {
-  if (!c.about) return [];
-  const one = NOUNS[c.about.entity];
+function audienceOf(c: ManifestCapability, roles: Role[], manifest: ConnectorManifest): PreviewCapability['audience'] {
+  const record = aboutRecord(c.about);
+  if (record) {
+    const read = manifest.capabilities.find(r => r.name === record.record);
+    return [
+      {
+        places: ['record'],
+        who: `${whoOf(roles, 'Anyone')} who opens a record of ${record.record}${read ? ` ("${read.title}")` : ''} that the connector answers them, under its title; ${c.kind === 'execute' ? 'the action runs only after their decision' : 'the action becomes a work item they decide on'}.`,
+      },
+      {
+        places: ['tool'],
+        who: 'No. An action about a record is never offered to the model, which never names the record; the assistant may fill in what it asks for the record that stands open, and the person sends it.',
+      },
+    ];
+  }
+  const entity = aboutEntity(c.about);
+  if (!entity) return [];
+  const one = NOUNS[entity.entity];
   if (c.kind !== 'read')
     return [
       {
@@ -211,7 +242,7 @@ function audienceOf(c: ManifestCapability, roles: Role[]): PreviewCapability['au
     ];
   const listed = placesOf(c).filter((p): p is 'lens' | 'mark' => p === 'lens' || p === 'mark');
   const list =
-    c.about.entity === 'person'
+    entity.entity === 'person'
       ? roles.includes('manager')
         ? `${roles.length > 1 ? 'A person who has a list of people: a manager' : 'A manager'} on Personal, once an administrator chooses the source.`
         : "Nobody yet: the list of people is a manager's (Personal), and the scope leaves managers out."
@@ -354,6 +385,11 @@ const CAPABILITY_PROBLEMS: Array<[RegExp, string | undefined, string | ((match: 
   [/^: a read about an entity is never a tool/, 'about-never-a-tool', '.model'],
   [/^: an action about an entity names in param/, 'about-action-param', '.about.param'],
   [/^: an action about an entity requires /, 'about-action-key-alone', '.input.required'],
+  [/^: about is either \{ entity, param \} or \{ record, params \}/, undefined, '.about'],
+  [/^: a read is never about a record/, 'about-record-on-an-action', '.about.record'],
+  [/^: about\.record names /, 'about-record-one-record', '.about.record'],
+  [/^: about\.params (maps|fills) /, 'about-record-params', '.about.params'],
+  [/^: an action about a record requires only /, 'about-record-filled', '.input.required'],
   [/^: person is about people/, 'person-not-a-unit', '.person'],
   [/^: unit belongs to a capability about a unit/, 'unit-on-a-unit', '.unit'],
   [/^: only Clew's own connectors take a person by Clew's id/, undefined, '.person'],
@@ -365,7 +401,11 @@ const CAPABILITY_PROBLEMS: Array<[RegExp, string | undefined, string | ((match: 
     m => `.input.properties.${m[1]}`,
   ],
   [/^: (asks belong to a propose or an execute|a follower is asked with a fact)/, 'asks-on-an-action', '.asks'],
-  [/^: ask "([^"]*)" (is asked twice|names no property|names the input that takes)/, 'ask-names-input', 'ask:property'],
+  [
+    /^: ask "([^"]*)" (is asked twice|names no property|names the input that takes|names an input the record fills)/,
+    'ask-names-input',
+    'ask:property',
+  ],
   [/^: ask "([^"]*)" is optional, but the input requires/, 'ask-fits-input', 'ask:required'],
   [/^: ask "([^"]*)" is a choice, whose options/, 'ask-fits-input', 'ask:options'],
   [/^: ask "([^"]*)" is (a meeting|a date|text|long-text), which takes/, 'ask-fits-input', 'ask:kind'],

@@ -1,6 +1,7 @@
 // The service-desk fixture's contract (D21, D38, D123): what the asking person ordered or reported and waits for, one
-// such request with its free text, an order placed for a person from the desk's catalogue with what it will do, and the
-// equipment the desk has registered to a person. The system it stands for is a municipality's IT service desk; no
+// such request with its free text, a comment the person adds to one of their requests from its page (D132), an order
+// placed for a person from the desk's catalogue with what it will do, and the equipment the desk has registered to a
+// person. The system it stands for is a municipality's IT service desk; no
 // vendor is named (D52). connector.mjs holds the handlers, desk.mjs the source port and the one mapping to these rows.
 
 export const CONNECTOR = 'servicedesk';
@@ -55,6 +56,8 @@ const requestRow = {
 };
 const requiredRow = ['ref', 'label', 'state', 'status', 'since'];
 const text = maxLength => ({ type: 'string', minLength: 1, maxLength });
+/** The longest comment the person may add to a request (D132). */
+export const COMMENT_MAX = 1000;
 
 // The shared state (`state`) is a code for Clew to order by: Clew's combined list says it in its own words (D123 item
 // 6). The desk's own views draw the desk's own word for it, `status`, so none of them shows a code.
@@ -108,6 +111,8 @@ const request = {
       title: text(200),
       description: text(4000),
       latest: text(1000),
+      // The person's own latest comment (D132), under a key every panel can name ("Text").
+      text: text(COMMENT_MAX),
     },
     [...requiredRow, 'group', 'title'],
   ),
@@ -122,10 +127,17 @@ const request = {
       { key: 'title', label: 'Rubrik' },
       { key: 'description', label: 'Beskrivning' },
       { key: 'latest', label: 'Senast från servicedesken' },
+      { key: 'text', label: 'Din senaste kommentar' },
       { key: 'link', label: 'Öppna i IT-servicedesken', format: 'link' },
     ],
   },
 };
+
+/** A comment's input: the request it is on, by the ref the request's read takes, and what the person writes. */
+const commentInput = object({
+  ref: { type: 'string', pattern: requestRefPattern, maxLength: 200, description: 'Beställningen eller felanmälan.' },
+  text: { type: 'string', minLength: 1, maxLength: COMMENT_MAX, description: 'Kommentaren till servicedesken.' },
+});
 
 /** What every execute answers (the protocol's ExecuteResult), read back row by row. */
 export const executeResult = object(
@@ -211,6 +223,37 @@ const orderEffect = {
   model: false,
   scope: {},
   input: orderInput,
+  output: effectOutput,
+};
+
+// An action about one record (D132): "Lägg till en kommentar" on the page of a request the person made, which Clew
+// opens with `servicedesk.request` and its `ref`. Clew fills `ref` from that page and asks for the text; the desk takes a
+// comment on the caller's own request only, and the request's read shows it afterwards.
+const comment = {
+  name: 'servicedesk.comment',
+  kind: 'execute',
+  title: 'Lägg till en kommentar',
+  description:
+    'Lägger till din kommentar på beställningen eller felanmälan i IT-servicedesken, där handläggarna ser den. Bara på det du själv har beställt eller felanmält.',
+  model: false,
+  scope: {},
+  about: { record: 'servicedesk.request', params: { ref: 'ref' } },
+  execution: deduplicated,
+  input: commentInput,
+  output: executeResult,
+  asks: [{ kind: 'long-text', property: 'text', label: 'Kommentar', required: true }],
+  effect: 'servicedesk.commentEffect',
+};
+
+// What servicedesk.comment will do with the same input, checked as the comment checks it and written nowhere (D112).
+const commentEffect = {
+  name: 'servicedesk.commentEffect',
+  kind: 'read',
+  title: 'Det här händer när kommentaren läggs till',
+  description: 'Vad en kommentar gör i IT-servicedesken, utan att något skrivs.',
+  model: false,
+  scope: {},
+  input: commentInput,
   output: effectOutput,
 };
 
@@ -325,5 +368,5 @@ export const manifest = {
       schedules: [{ label: 'Beställningar och felanmälningar som inte är klara', when: 'Varje vardag 06:00' }],
     },
   ],
-  capabilities: [requests, request, order, orderEffect, lookup, person, equipment],
+  capabilities: [requests, request, comment, commentEffect, order, orderEffect, lookup, person, equipment],
 };

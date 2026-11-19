@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**135 in force**: 98 accepted and 37 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**136 in force**: 98 accepted and 38 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -62,6 +62,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) | 2026-11-13 | provisional |  |
 | [D127 · A read can say its rows are a read about people, asked for everyone, and then has one place](D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md) | 2026-11-14 | provisional |  |
 | [D129 · The connector protocol is 1, and changes in place until the first release](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) | 2026-11-18 | accepted |  |
+| [D132 · An action says which record it is about, and the assistant fills in the actions of what stands open](D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md) | 2026-11-19 | provisional |  |
 
 ## Identity
 

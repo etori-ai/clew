@@ -100,6 +100,57 @@ const aboutManifest = {
   ],
 };
 
+/**
+ * An action about one record of a read (D132), from the handwritten example: a read that draws one request, and a
+ * comment on it whose `ref` the record fills and whose text the person is asked.
+ */
+const recordManifest = {
+  protocol: 1,
+  id: 'servicedesk',
+  kind: 'passthrough',
+  source: 'IT-servicedesken',
+  scan: false,
+  areas: [],
+  capabilities: [
+    {
+      name: HANDWRITTEN_EXAMPLES['capabilities[].about.record'],
+      kind: 'read',
+      title: 'Beställning',
+      description: 'En beställning.',
+      input: {
+        type: 'object',
+        properties: { ref: { type: 'string' } },
+        required: ['ref'],
+        additionalProperties: false,
+      },
+      output: { type: 'object', properties: { label: { type: 'string' } }, required: ['label'] },
+      model: false,
+      scope: {},
+      view: { kind: 'detail', title: 'label', fields: [{ key: 'label', label: 'Beställning' }] },
+    },
+    {
+      name: 'servicedesk.comment',
+      kind: 'execute',
+      title: 'Lägg till en kommentar',
+      description: 'Lägger till en kommentar på beställningen.',
+      input: {
+        type: 'object',
+        properties: { ref: { type: 'string' }, text: { type: 'string' } },
+        required: ['ref', 'text'],
+        additionalProperties: false,
+      },
+      output: {},
+      model: false,
+      scope: {},
+      about: {
+        record: HANDWRITTEN_EXAMPLES['capabilities[].about.record'],
+        params: HANDWRITTEN_EXAMPLES['capabilities[].about.params'],
+      },
+      asks: [{ kind: 'long-text', property: 'text', label: 'Kommentar', required: true }],
+    },
+  ],
+};
+
 /** A learning platform that answers the holdings profile as the installation's read (D119), from the handwritten example. */
 const holdingsManifest = {
   protocol: 1,
@@ -357,6 +408,30 @@ describe('the field list', () => {
       'named-input-is-a-string',
       'about-action-start',
     ]);
+    // The record form (D132): an action about a request, which the record fills and the person writes; the two forms
+    // are told apart by the property each requires.
+    expect(manifestProblems(recordManifest, 'servicedesk')).toEqual([]);
+    expect(() =>
+      new Registry().register(remoteConnector(parseManifest(recordManifest, 'servicedesk'), transport)),
+    ).not.toThrow();
+    expect(byPath['capabilities[].about']!.type).toBe('object with `entity` or `record`');
+    expect(byPath['capabilities[].about.entity']!.variants).toEqual(['entity']);
+    expect(byPath['capabilities[].about.record']).toMatchObject({
+      variants: ['record'],
+      required: true,
+      example: 'servicedesk.request',
+    });
+    expect(byPath['capabilities[].about.params']).toMatchObject({
+      variants: ['record'],
+      required: true,
+      type: 'map of string to string',
+      example: { ref: 'ref' },
+    });
+    expect(byPath['capabilities[].about.params']!.rules.map(r => r.id)).toEqual([
+      'about-record-params',
+      'about-record-filled',
+      'about-record-start',
+    ]);
   });
   test('the job recipe is a working exchange: three manifests that load, an envelope and answers that validate, steps that name their own connector', () => {
     const example = reference.recipes.find(r => r.id === 'job-follower')!.example as {
@@ -592,6 +667,32 @@ describe('the rules', () => {
       }),
       'hr',
     ],
+    // The record form of `about` (D132), on a manifest whose comment is about a request.
+    'about-record-on-an-action': [
+      broken(recordManifest, m => {
+        m.capabilities[0].about = { record: 'servicedesk.request', params: { ref: 'ref' } };
+      }),
+      'servicedesk',
+    ],
+    'about-record-one-record': [
+      broken(recordManifest, m => {
+        m.capabilities[0].view = { kind: 'list', title: 'label', fields: [{ key: 'label', label: 'Beställning' }] };
+      }),
+      'servicedesk',
+    ],
+    'about-record-params': [
+      broken(recordManifest, m => {
+        m.capabilities[1].about.params = { ref: 'nowhere' };
+      }),
+      'servicedesk',
+    ],
+    'about-record-filled': [
+      broken(recordManifest, m => {
+        m.capabilities[1].input.properties.note = { type: 'string' };
+        m.capabilities[1].input.required.push('note');
+      }),
+      'servicedesk',
+    ],
     // The installation's reads (D119), on a manifest that declares the holdings profile.
     'installation-profile': [
       broken(holdingsManifest, m => {
@@ -625,6 +726,7 @@ describe('the rules', () => {
       });
     for (const m of examples) expect(manifestProblems(m, m.id)).toEqual([]);
     expect(manifestProblems(holdingsManifest, 'lms')).toEqual([]);
+    expect(manifestProblems(recordManifest, 'servicedesk')).toEqual([]);
   });
 });
 

@@ -33,6 +33,8 @@ export function shapeOf(schema: Schema): string {
     const key = discriminator(variants);
     if (key)
       return `object, one of \`${key}\`: ${variants.map(v => JSON.stringify(v.properties[key].const)).join(' / ')}`;
+    const named = variantNames(variants);
+    if (named) return `object with ${named.map(n => `\`${n}\``).join(' or ')}`;
     return variants.map(shapeOf).join(' / ');
   }
   if (schema.type === 'array') return `array of ${shapeOf(schema.items ?? {})}`;
@@ -90,12 +92,26 @@ function walk(schema: Schema, path: string, required: boolean, depth: number, ou
   });
   children(schema, path, depth, out);
 }
+/**
+ * The variants of a union of objects that no constant tells apart, each named by the property only it requires (`about`:
+ * `entity` or `record`, D132); undefined when they are not objects or one has no such property.
+ */
+function variantNames(variants: Schema[]): string[] | undefined {
+  if (!variants.every(v => v.type === 'object' && v.properties)) return undefined;
+  const names = variants.map(v =>
+    ((v.required as string[] | undefined) ?? []).find(name =>
+      variants.every(o => o === v || !((o.required as string[] | undefined) ?? []).includes(name)),
+    ),
+  );
+  return names.every((n): n is string => !!n) ? names : undefined;
+}
 function children(schema: Schema, path: string, depth: number, out: FieldEntry[]) {
   if (schema.type === 'array') return children(schema.items ?? {}, path + '[]', depth, out);
   const variants: Schema[] | undefined = schema.anyOf ?? schema.oneOf;
   const key = variants && discriminator(variants);
-  if (variants && key) {
-    const names = variants.map(v => String(v.properties[key].const));
+  const named = variants && !key ? variantNames(variants) : undefined;
+  if (variants && (key || named)) {
+    const names = key ? variants.map(v => String(v.properties[key].const)) : named!;
     const merged = new Map<string, { schema: Schema; present: string[]; required: string[] }>();
     variants.forEach((v, i) => {
       for (const [name, s] of Object.entries(v.properties as Record<string, Schema>)) {
@@ -209,6 +225,8 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].about': { entity: 'person' },
   'capabilities[].about.entity': 'person',
   'capabilities[].about.param': 'person',
+  'capabilities[].about.record': 'servicedesk.request',
+  'capabilities[].about.params': { ref: 'ref' },
   'capabilities[].person': { param: 'person', admits: ['self', 'managed'] },
   'capabilities[].person.param': 'person',
   'capabilities[].person.admits': ['self', 'managed'],
@@ -468,6 +486,38 @@ export const RULES: Rule[] = [
     text: "On a `propose` or `execute` that declares `about`, the input requires `param`, and every other property it requires is one the capability asks for (`asks`, D112). Anything else is optional, with a default the source chooses, so the entity's menu can start the action with the key and the person's answers, without the model (D8).",
   },
   {
+    id: 'about-record-on-an-action',
+    title: 'Only a propose or an execute is about a record',
+    fields: ['capabilities[].about.record', 'capabilities[].kind'],
+    enforced: 'loader',
+    decision: 'D132',
+    text: "The record form of `about`, `{ record, params }`, belongs to a `propose` or an `execute`. A read is about an entity or about nothing: a record's own page draws it.",
+  },
+  {
+    id: 'about-record-one-record',
+    title: 'An action is about one record of a read of this manifest',
+    fields: ['capabilities[].about.record', 'capabilities[].view'],
+    enforced: 'loader',
+    decision: 'D132',
+    text: "`about.record` names a `read` of this manifest whose view draws one record: `record`, `detail`, `text` or `document`. A read that answers rows (`table`, `list`), or one without a view, cannot be the record an action is about; a row's name opens the record, and the action stands on that page.",
+  },
+  {
+    id: 'about-record-params',
+    title: "params maps the action's input to the record's",
+    fields: ['capabilities[].about.params', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D132',
+    text: "`about.params` maps at least one property of this action's input schema to a property of the input schema of the read `about.record` names, the mirror of a view's `open.params`. Clew fills each from the input the record's page was read with; the person is never asked for one, so no ask names one.",
+  },
+  {
+    id: 'about-record-filled',
+    title: 'An action about a record starts with the record and what it asks',
+    fields: ['capabilities[].about.params', 'capabilities[].input', 'capabilities[].asks'],
+    enforced: 'loader',
+    decision: 'D132',
+    text: "On a `propose` or `execute` about a record, every property the input requires is one `about.params` fills or one the capability asks for (`asks`, D112). Anything else is optional, with a default the source chooses, so the record's page can start the action with the record's input and the person's answers, without the model (D8).",
+  },
+  {
     id: 'person-param',
     title: 'A capability that names a person says where',
     fields: ['capabilities[].person', 'capabilities[].person.param', 'capabilities[].about', 'capabilities[].input'],
@@ -522,7 +572,7 @@ export const RULES: Rule[] = [
     fields: ['capabilities[].asks[].property', 'capabilities[].input'],
     enforced: 'loader',
     decision: 'D112',
-    text: "Each ask names, once, a property the input schema declares under `properties`, and never the one `about.param` fills with the entity's key.",
+    text: "Each ask names, once, a property the input schema declares under `properties`, and never the one `about.param` fills with the entity's key or one `about.params` fills from the record (D132).",
   },
   {
     id: 'ask-fits-input',
@@ -681,6 +731,14 @@ export const RULES: Rule[] = [
     enforced: 'call',
     decision: 'D97',
     text: "When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }` and, for a propose that asks, the person's answers. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Clew starts it only on someone the action admits (`person.admits`, D117); refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety and the answers to its asks. The same request while the card is open gives the same card.",
+  },
+  {
+    id: 'about-record-start',
+    title: "An action about a record stands on the record's page and runs as every action does",
+    fields: ['capabilities[].about.record', 'capabilities[].about.params', 'capabilities[].kind'],
+    enforced: 'call',
+    decision: 'D132',
+    text: "Clew shows the action under the title of the record's page, for a person who may call it and who can make the record's read with the page's input; Clew makes that read as the person before it lists the action and again before it starts it, so a record the source does not answer them has no actions. A list's rows get no menu. Clew fills the properties `about.params` maps from the page's input, asks the rest, and sends nothing before the dialog's last button: a `propose` is run as the person and its `ThreadDraft` becomes their work item; an `execute` becomes a work item whose button is the human decision, decided at once when it is sent from the dialog, and runs only after it, through the execution ledger with its write safety and its audit row. It is never offered to the model as a tool, whatever `model` says: the assistant may fill in what the action asks for the record that stands open beside it (`clew.draftAction`), never the record itself and never sending it. Check on your side that the person may act on the record the input names, as on any call.",
   },
   {
     id: 'action-input-filled',

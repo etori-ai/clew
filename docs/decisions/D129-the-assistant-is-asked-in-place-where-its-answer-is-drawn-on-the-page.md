@@ -70,6 +70,8 @@ item 2, whose panel is no longer "the one box outside D126 item 4's two homes".
   item 8) and for a person or a unit (D97), and for nothing else: a row or a record of a view, which is what a meeting
   is, has no actions. The general form is one mechanism, an action declared on an object with what it asks, drafted
   by the one tool for whatever stands open, with the calendar declaring its own the same way. That is a change to the
-  connector protocol and gets its own decision ([open questions](../maintainers/open-questions.md)).
+  connector protocol and got its own decision on 2026-11-19,
+  [D132](D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md);
+  the calendar's two kinds move onto it in that record's item 5, which is not built.
 - Moving a proposal (a samtal) by asking. Its "Flytta …" is the form as built.
 - On a phone "Fråga assistenten" starts a conversation as before: the forms are dialogs there.

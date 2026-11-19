@@ -1848,33 +1848,68 @@
                 "description": "How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input."
               },
               "about": {
-                "type": "object",
-                "required": [
-                  "entity"
-                ],
-                "properties": {
-                  "entity": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "const": "person"
-                      },
-                      {
-                        "type": "string",
-                        "const": "unit"
-                      }
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "entity"
                     ],
-                    "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id."
+                    "properties": {
+                      "entity": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "person"
+                          },
+                          {
+                            "type": "string",
+                            "const": "unit"
+                          }
+                        ],
+                        "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id."
+                      },
+                      "param": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                        "maxLength": 40,
+                        "description": "On a `propose` or `execute` only: the string property of the input that takes the key of the one entity it acts on. A read takes its keys in `keys` and declares none."
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "About a person or a unit (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer."
                   },
-                  "param": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
-                    "maxLength": 40,
-                    "description": "On a `propose` or `execute` only: the string property of the input that takes the key of the one entity it acts on. A read takes its keys in `keys` and declares none."
+                  {
+                    "type": "object",
+                    "required": [
+                      "record",
+                      "params"
+                    ],
+                    "properties": {
+                      "record": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                        "maxLength": 80,
+                        "description": "A `read` of this connector that answers one record: its view is `record`, `detail`, `text` or `document`, never rows. The action shows on that record's page, under its title."
+                      },
+                      "params": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^[A-Za-z][A-Za-z0-9_]*$": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                            "maxLength": 80
+                          }
+                        },
+                        "maxProperties": 20,
+                        "additionalProperties": false,
+                        "description": "At least one entry: an input property of this action, mapped to the input property of `record` it is filled from. Clew fills each from the input the record's page was read with; the person is never asked for one, and an answer for one is refused."
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "About one record of a read (D132). Only on a `propose` or `execute`. Clew lists the action on the record's page for a person who may call it and who can make the record's read with that input, fills the mapped properties from it and asks the rest (`asks`). A `propose` becomes a work item; an `execute` runs after the person's decision, as every execute does. The assistant may fill it in for the record that stands open (`clew.draftAction`), never send it."
                   }
-                },
-                "additionalProperties": false,
-                "description": "What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer."
+                ],
+                "description": "What the capability concerns, in one of two forms. `{ entity, param? }` (D97): a person or a unit. `{ record, params }` (D132): on a `propose` or an `execute` only, one record of a read of this connector, the action's inputs filled from the record's. A source says what, never where: Clew places it from the declaration."
               },
               "person": {
                 "type": "object",
@@ -2170,7 +2205,7 @@
                 },
                 "minItems": 1,
                 "maxItems": 6,
-                "description": "On a `propose` or `execute` (D112): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action's dialog, \"Fyll i\", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action's own `input` on a work item, or the entity (`about.param`). An answer for anything not asked is refused."
+                "description": "On a `propose` or `execute` (D112): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action's dialog, \"Fyll i\", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action's own `input` on a work item, the entity (`about.param`) or the record (`about.params`, D132). An answer for anything not asked is refused."
               },
               "effect": {
                 "type": "string",

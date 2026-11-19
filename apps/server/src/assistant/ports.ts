@@ -183,7 +183,16 @@ export interface AssistantDeps {
   store: ThreadStore;
   registry: Pick<
     Registry,
-    'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'visible' | 'capabilitiesFor' | 'connector'
+    | 'tools'
+    | 'areas'
+    | 'list'
+    | 'find'
+    | 'allowed'
+    | 'visible'
+    | 'capabilitiesFor'
+    | 'connector'
+    | 'recordActions'
+    | 'validate'
   >;
   /**
    * Run a read through the registry as the person, on the assistant's behalf: every call the assistant makes says so

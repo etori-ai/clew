@@ -87,8 +87,11 @@ export interface PromptContext {
    * `objects`. The prompt says it is the thing the person means by "the page", "the open item", "the card" or "the pane".
    */
   beside?: string[];
-  /** The work item's actions may be filled in as a draft (D112 item 8): the prompt says how and that nothing is sent. */
-  drafts?: boolean;
+  /**
+   * The work item's actions (`item`, D112 item 8) or the actions about the record that stands open (`record`, D132 item
+   * 4) may be filled in as a draft: the prompt says how, what the model fills in, and that nothing is sent.
+   */
+  drafts?: 'item' | 'record';
   /**
    * The meeting open beside the conversation may be moved or cancelled as a prepared decision (`prepared.ts`): the
    * prompt says to read the day before a move, that the person decides either themselves, and that it is done where
@@ -178,11 +181,17 @@ export function systemPrompt(ctx: PromptContext): string {
       '- Exempel: "Hur många semesterdagar har man rätt till?" lämnas till en assistent för personalfrågor. "Hur många semesterdagar har jag kvar?" svarar du på själv.',
       '- När du anropar clew__handOver skriver du inget eget svar.',
     );
-  if (ctx.drafts)
+  if (ctx.drafts === 'item')
     lines.push(
       'När personen vill att en av ärendets åtgärder görs:',
       '- Fyll i den med verktyget clew__draftAction, efter att ha läst det du behöver (till exempel lediga tider i kalendern).',
       '- Säg sedan i en mening vad du fyllt i och att inget är skickat: personen granskar utkastet och skickar själv.',
+    );
+  if (ctx.drafts === 'record')
+    lines.push(
+      'När personen vill att en av den öppna postens åtgärder görs:',
+      '- Fyll i den med verktyget clew__draftAction. Du fyller bara i det åtgärden frågar efter, med det personen sagt; posten är den som står öppen bredvid samtalet och anges inte.',
+      '- Säg sedan i en mening vad du fyllt i och att inget är skickat: personen granskar utkastet och skickar själv med åtgärdens knapp på postens sida.',
     );
   if (ctx.prepares)
     lines.push(
