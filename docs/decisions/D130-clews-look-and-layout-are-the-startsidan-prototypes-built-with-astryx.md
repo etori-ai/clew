@@ -46,7 +46,11 @@ it, nothing opens over a page. The comparison this rests on is
    stand Clew's own pages, on every one of Clew's addresses: Att göra with its count, Kalender, for a manager Personal
    and Läget, Samtal, Administration for a person who holds a section of it, and at the row's end "Verktyg", a menu
    with the first tools and Alla verktyg. On a phone the header's own "Meny" lists every page and the places. Hem is
-   the header's Start and the logo.
+   the header's Start and the logo. The row marks the page that is open, Start on Hem and on a page opened from Hem;
+   while a tool's page is open the menu's button is named by that tool, so the row still says where the person is.
+   The person on the band opens their settings, and "Min sida" there leads to their own page, which the rail's foot
+   led to before. Before the session is known the row already holds the pages every person has (Start and Att göra),
+   so nothing under the header moves when the rest take their places.
 7. **Hem is a board on the ground.** Its greeting, its line to ask and its cards stand on the page's ground, not on a
    sheet. In the prototype's order: the focus news, the unit's key figures, and then the board's two columns, the wide
    one with what needs the person and a narrow one of 360 px with the day and the news; under 1180 px they stand one
@@ -63,7 +67,11 @@ it, nothing opens over a page. The comparison this rests on is
    the label in small capitals with an arrow when the tile leads somewhere, the value large in its tone's colour, and
    a line with the tone's word and the comparison. No badge, outline or tint.
 10. **A floating "Fråga AI"** stands in the lower corner of every page but a conversation's, which has its box. It
-    starts a new question about the page the person is on, as the rail's "Ny fråga" did; on Hem see item 14.
+    starts a new question about the page the person is on, as the rail's "Ny fråga" did; on Hem see item 14. It
+    stands over the page, so three rules keep it out of the way (WCAG 2.2 AA, 2026-11-19): it is the last stop of
+    the page for the keyboard; while the keyboard's focus is on a control that more than half lies under it, it
+    stands in the other lower corner (2.4.11); and it is not drawn on a page that pins controls of its own at the
+    window's foot (the review's decision, `PageFrame`'s `footer`), which it would lie over.
 
 11. **A badge is a chip**, as the prototype draws one: 6 px corners, the heading face in bold, and for a status a
     tint with its colour's own words in place of a filled surface (error on red, warning on yellow, success on green,
@@ -86,10 +94,13 @@ it, nothing opens over a page. The comparison this rests on is
     the pill shows the field's focus as a 2 px edge in the assistant's blue. The assistant's button is a `Button`
     variant, `ai`: a pill in the theme's info colour. The floating button of item 10 is the same button and reads
     "Fråga AI"; on Hem it is there too and leads to Hem's own line, which takes the focus, as the prototype's does.
+    Hem then has two buttons that read "Fråga AI", so the floating one is named by what it does there ("Fråga AI:
+    gå till frågefältet") for a screen reader.
 
 15. **The band's end and a key figure's foot.** On the band the person is their name in bold over their unit with a
-    mark that the row opens something, and the reminders' count is a badge beside the bell. A key figure names the
-    area it is from on a line of its own under its status.
+    mark that the row opens something, and the reminders' count is a badge beside the bell. Each is named by what
+    it shows and what it opens (2.5.3): "Testa Testsson, Skönsmons skola, inställningar", "Påminnelser: 2". A key
+    figure names the area it is from on a line of its own under its status.
 
 16. **Personal is the prototype's register.** Over it the unit's key figures (`KeyFigure`, the tile Hem's figures
     share): how many people it lists, and for each lens how many of them need the reader, in that need's colour,
@@ -135,8 +146,10 @@ dig.
   no height in a `TopNavHeading`'s logo slot, and the slot holds nothing else that draws a line.
 - Astryx places nothing in a corner of the window: `Button` has `elevation`, which the `ButtonFloating` template
   uses, and no position. The floating button of item 10 is that button in one element with one inline `style`
-  (`position: fixed` and its two insets, `apps/web/src/components/shell/assistant-corner.tsx`). This is the exception
-  `CLAUDE.md` asks a decision to record before anything custom is written; nothing else is positioned by hand.
+  (`position: fixed` and its two insets, `apps/web/src/components/shell/assistant-corner.tsx`), and the same file
+  holds the rule that moves it off the control the keyboard is on (it reads where the focus is when the focus
+  moves). This is the exception `CLAUDE.md` asks a decision to record before anything custom is written; nothing
+  else is positioned by hand.
 
 **Why.** Oliver Borgström asked on 2026-11-18 for the same look and layout as the startsidan prototype, and whether
 to build Clew's own components for it. Composing Clew's components from Astryx's keeps the rule that makes Clew one

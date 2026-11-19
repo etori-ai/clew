@@ -2399,15 +2399,18 @@ export const composer = (page: Page) =>
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
 /** "Inte nu" on the first work item, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {
-  // A card keeps Inte nu in view; a row is one link to its work item (D112), so the first row's item is opened first:
-  // from Hem in the panel beside Hem or the drawer over it (D112, amended 2026-11-12), from Att göra in the reading pane,
-  // each an article named by the item, or alone as its page where neither fits. Inte nu stands among its buttons there.
+  // A card keeps Inte nu in view; a row has one link to its work item (D112), so the first row's item is opened first:
+  // from Att göra in the reading pane, an article named by the item, from Hem as its own page (D126 rule 1). Inte nu
+  // stands among its buttons there.
   const button = page.getByRole('main').getByRole('button', { name: 'Inte nu', exact: true }).first();
   if (await button.isVisible()) await button.click();
   else {
-    // A row of Hem's list or of Att göra's table (D126): its name is its one link.
-    const row = page.getByRole('main').locator('li, tbody tr').getByRole('link').first();
-    const title = ((await row.textContent()) ?? '').trim();
+    // A work item's row (`#work-<id>`) has one link: on Hem "Öppna", named with the row's title (D130), in Att göra's
+    // table and its list on a phone the title itself (D126).
+    const row = page.getByRole('main').locator('[id^="work-"]').getByRole('link').first();
+    const title = ((await row.getAttribute('aria-label')) ?? (await row.textContent()) ?? '')
+      .trim()
+      .replace(/^Öppna /, '');
     await row.click();
     const article = page.getByRole('article', { name: `Ärende: ${title}`, exact: true });
     const alone = page.getByRole('main').getByRole('heading', { level: 1, name: title, exact: true });
@@ -2458,13 +2461,49 @@ export const heading = (page: Page, level: number, name: string) =>
   page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
 export const announcements = (page: Page) =>
   page.evaluate(() => (window as unknown as { announcements: string[] }).announcements);
-/** The areas live in the shell's SideNav (D31); below the shell's breakpoint AppShell keeps it in a modal drawer that this opens. */
+/**
+ * Clew's own pages (D130): the row under the shared header's band, a navigation landmark named "Mina sidor". There is
+ * no rail. Without a header connector Start stands first in it; with one, Start is a place of the band ("Huvudmeny").
+ */
+export const pagesNav = (page: Page) => page.getByRole('navigation', { name: 'Mina sidor', exact: true });
+/**
+ * Where a person reaches Clew's pages: the row under the band, and below the header's breakpoint the drawer its "Meny"
+ * opens, which lists every page, the tools among them, and then the places.
+ */
 export async function openNav(page: Page) {
-  const toggle = page.getByRole('button', { name: 'Öppna navigering' });
-  if (!(await toggle.isVisible())) return page.getByRole('navigation', { name: 'Sidonavigering' });
+  const toggle = page.getByRole('button', { name: 'Meny', exact: true });
+  if (!(await toggle.isVisible())) return pagesNav(page);
   await toggle.click();
-  return page.getByRole('dialog', { name: 'Navigering' });
+  // Named by the site, which a header connector may name: found by its own way out.
+  const drawer = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: 'Stäng navigering' }) });
+  await expect(drawer).toBeVisible();
+  return drawer;
 }
+/**
+ * The tools on a wide window (D130): a menu at the end of the pages' row. Its button is named "Verktyg", or by the
+ * tool whose page is open, so it is found by what it opens.
+ */
+export const toolsButton = (page: Page) => pagesNav(page).locator('button[aria-haspopup="menu"]');
+/** Opens the tools' menu where it is closed and answers it; on a phone the tools are rows of the drawer (`openNav`). */
+export async function openTools(page: Page) {
+  const menu = page.getByRole('menu');
+  if (!(await menu.isVisible())) await toolsButton(page).click();
+  await expect(menu).toBeVisible();
+  return menu;
+}
+/** A tool's row in the tools' menu, the menu opened first. */
+export const toolRow = async (page: Page, label: string) =>
+  (await openTools(page)).getByRole('menuitem', { name: label, exact: true });
+/**
+ * The signed-in person on the band (D87, D130): a button named by what it shows, the name and on a wide window the
+ * unit, and by what it opens, the settings; in its dialog "Min sida" leads to the person's own page.
+ */
+export const personButton = (page: Page) =>
+  page.getByRole('banner').getByRole('button', { name: /^Testa Testsson, (.+, )?inställningar$/ });
+/** The reminders' bell on the band (D88): named by how many are due, or by that they could not be read. */
+export const bell = (page: Page) => page.getByRole('banner').getByRole('button', { name: /^Påminnelser/ });
+/** The search (D126's "Sök"): its button on the band, which opens the command palette over the page. */
+export const searchButton = (page: Page) => page.getByRole('button', { name: 'Sök', exact: true });
 /** The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow. */
 const dockOf = (page: Page) =>
   page.evaluate(() => {
@@ -2658,8 +2697,11 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
       visited.push(active);
       const r = active.getBoundingClientRect();
       const name = `${active.tagName.toLowerCase()} "${(active.getAttribute('aria-label') ?? active.textContent ?? '').trim().slice(0, 50)}" at ${Math.round(r.left)},${Math.round(r.top)}`;
+      // Hem's line draws its ring round the pill that holds the field and its button (D130, `variant:ask`), six
+      // boxes out from the input; every other control is ringed within three.
+      const reach = active.matches('input') ? 6 : 3;
       const ring = (el: Element | null, depth: number): boolean => {
-        if (!el || depth > 3) return false;
+        if (!el || depth > reach) return false;
         const s = getComputedStyle(el);
         // An Astryx field (TextInput, Typeahead) draws its ring as an inset shadow on the wrapper around the input; an elevation shadow is never inset.
         const fieldRing =

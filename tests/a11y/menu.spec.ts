@@ -1,19 +1,31 @@
 import type { MenuEntry, Thread } from '@clew/contracts';
-import { desktop, expect, expectNoAxeViolations, narrow, open, openNav, phone, reflowProblems, test } from './support';
+import {
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  narrow,
+  open,
+  openNav,
+  openTools,
+  pagesNav,
+  phone,
+  reflowProblems,
+  searchButton,
+  test,
+} from './support';
 import { menuRow, menuRows } from './phonebook';
 
 /**
- * The rail (D126 item 10, board RailOrder variant b, "Arbetet först"): Sök alone at the top, then "Mitt arbete" (Hem,
- * Att göra, Kalender), "Min enhet" for a manager (Personal, Läget), "Verktyg" (D40, D112 item 1: the views an
- * administrator chose as tools, the first four, then "Alla verktyg", the page of every tool) and "Fråga assistenten" (Ny fråga
- * first, the three newest conversations, then "Alla samtal"). A tool's row leads to
- * the tool's own page (D42), as Kalender does; the page itself and Alla verktyg are tested in `tools.spec.ts`. The test person is a manager; `staff.spec.ts`
- * owns Personal. The shared header (D88) marks Start as the current place on every page of Clew, so "the current row" is
- * asked of the rail, where one row is current at a time.
+ * Clew's pages and its tools (D130, D126 rule 7): under the shared header's band the row "Mina sidor" holds Start,
+ * Att göra, Kalender, for a manager Personal and Läget, and Samtal; at the row's end "Verktyg" is a menu with the views
+ * an administrator chose as tools (D40, D112 item 1), the first four, then "Alla verktyg", the page of every tool. A
+ * tool leads to its own page (D42), as Kalender does; the page itself and Alla verktyg are tested in `tools.spec.ts`,
+ * the row's order and its keyboard in `shell.spec.ts`. The test person is a manager; `staff.spec.ts` owns Personal.
+ * While a tool's page is open the menu's button is named by that tool, so the row still says where the person is. On a
+ * phone the header's "Meny" lists every page, the tools among them.
  * The phone book's rows are named by its real manifest; they are in the menu only where a test puts them, as they are in
  * the product only where an administrator chose them.
  */
-const rail = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
 const tool = (label: string, n: number): MenuEntry => ({
   connector: 'verktyg-' + n,
   source: 'System ' + n,
@@ -23,113 +35,80 @@ const tool = (label: string, n: number): MenuEntry => ({
   icon: (['book', 'document', 'chart', 'people', 'clock', 'link', 'search'] as const)[n % 7]!,
 });
 
-test.describe('the rail’s order', () => {
-  test.use({ viewport: desktop });
-
-  test('the work first: Sök alone at the top, then Mitt arbete, Min enhet, Verktyg and Fråga assistenten with Ny fråga first, each a named group in one navigation landmark, and the keyboard follows the same order', async ({
-    page,
-    api,
-  }) => {
-    api.menu = [menuRow];
-    await open(page, '/');
-    await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(1);
-    const nav = rail(page);
-    // The groups stand in this order, each named; the first holds Sök and nothing else.
-    const names = ['Börja', 'Mitt arbete', 'Min enhet', 'Verktyg', 'Fråga assistenten'];
-    const tops: number[] = [];
-    for (const name of names) tops.push((await nav.getByRole('group', { name, exact: true }).boundingBox())!.y);
-    expect(tops).toEqual([...tops].sort((a, b) => a - b));
-    const first = nav.getByRole('group', { name: 'Börja', exact: true });
-    await expect(first.getByRole('button')).toHaveText(['Sök']);
-    await expect(first.getByRole('link')).toHaveCount(0);
-    // Ny fråga heads the conversations it starts, and "Samtal" is no longer a group of its own.
-    const ask = nav.getByRole('group', { name: 'Fråga assistenten', exact: true });
-    await expect(ask.getByRole('link')).toHaveText(['Ny fråga', 'Vem är på plats i dag?', 'Alla samtal']);
-    await expect(ask.getByRole('link', { name: 'Ny fråga' })).toHaveAttribute('href', '/conversations/new');
-    await expect(nav.getByRole('group', { name: 'Samtal', exact: true })).toHaveCount(0);
-    await expectNoAxeViolations(page);
-    // From Sök the keyboard reaches every row in the order the rail draws them, top to bottom.
-    const drawn = await nav.locator('a[href], button').evaluateAll(list =>
-      list
-        .filter(el => (el as HTMLElement).checkVisibility())
-        .sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y)
-        .map(el => el.getAttribute('aria-label') ?? (el.textContent ?? '').replace(/\s+/g, ' ').trim()),
-    );
-    const order = drawn.slice(drawn.indexOf('Sök'));
-    await nav.getByRole('button', { name: 'Sök', exact: true }).focus();
-    const reached: string[] = [];
-    for (let i = 0; i < order.length; i++) {
-      reached.push(
-        await page.evaluate(() => {
-          const el = document.activeElement!;
-          return el.getAttribute('aria-label') ?? (el.textContent ?? '').replace(/\s+/g, ' ').trim();
-        }),
-      );
-      await page.keyboard.press('Tab');
-    }
-    expect(reached).toEqual(order);
-  });
-});
-
 test.describe('Verktyg in the menu', () => {
   test.use({ viewport: desktop });
 
-  // The suite's person is a manager, so Personal (D94) stands among the places, after the calendar, before the tools.
-  test("the section is named and holds the chosen views of a connector in alphabetical order, after Clew's places, and has no axe violations", async ({
+  // The suite's person is a manager, so Personal (D94) stands among the pages, after the calendar.
+  test("the menu is named and holds the chosen views of a connector in alphabetical order, after Clew's pages, and has no axe violations", async ({
     page,
     api,
   }) => {
     api.menu = menuRows;
     await open(page, '/');
-    const section = rail(page).getByRole('group', { name: 'Verktyg' });
-    await expect(section.getByRole('link')).toHaveText(['Mitt team', 'Telefonbok', 'Alla verktyg']);
-    await expect(rail(page).getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
-    await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/phonebook.team');
-    await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute(
+    const nav = pagesNav(page);
+    const button = nav.getByRole('button', { name: 'Verktyg', exact: true });
+    await expect(button).toHaveAttribute('aria-haspopup', 'menu');
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
+    await expect(nav.getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
+    // The tools are not links of the row: the menu holds them.
+    await expect(nav.getByRole('link', { name: 'Telefonbok' })).toHaveCount(0);
+    // After Clew's pages, at the end of their row.
+    expect((await button.boundingBox())!.x).toBeGreaterThan(
+      (await nav.getByRole('link', { name: 'Samtal', exact: true }).boundingBox())!.x,
+    );
+    await button.focus();
+    await page.keyboard.press('Enter');
+    const menu = page.getByRole('menu');
+    await expect(menu.getByRole('menuitem')).toHaveText(['Mitt team', 'Telefonbok', 'Alla verktyg']);
+    await expect(menu.getByRole('menuitem', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/phonebook.team');
+    await expect(menu.getByRole('menuitem', { name: 'Telefonbok' })).toHaveAttribute(
       'href',
       '/tools/phonebook.directory',
     );
-    // The areas, the administration and the way out stay below it.
-    const order = await rail(page).getByRole('link').allTextContents();
-    expect(order.indexOf('Telefonbok')).toBeGreaterThan(order.indexOf('Kalender'));
     await expectNoAxeViolations(page);
+    // Esc closes the menu and gives the focus back to its button (2.4.3).
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(button).toBeFocused();
   });
 
-  test('without a tool there is no Verktyg; Mitt arbete holds Hem, Att göra and Kalender, and a manager’s Min enhet Personal and Läget', async ({
+  test('without a tool there is no Verktyg; the row holds Start, Att göra and Kalender, a manager’s Personal and Läget, and Samtal', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
-    await expect(rail(page).getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
-    const mine = rail(page).getByRole('group', { name: 'Mitt arbete' });
-    await expect(mine.getByRole('link')).toHaveText([/^Hem/, /^Att göra/, 'Kalender']);
-    const unit = rail(page).getByRole('group', { name: 'Min enhet' });
-    await expect(unit.getByRole('link')).toHaveText(['Personal', 'Läget']);
-    await expect(unit.getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
+    const nav = pagesNav(page);
+    await expect(nav.getByRole('button', { name: 'Verktyg', exact: true })).toHaveCount(0);
+    await expect(nav.getByRole('link')).toHaveText([/^Start$/, /^Att göra/, 'Kalender', 'Personal', 'Läget', 'Samtal']);
+    await expect(nav.getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
     // Läget is the unit the manager follows up, or the list of them when there are several or none is known.
-    await expect(unit.getByRole('link', { name: 'Läget' })).toHaveAttribute('href', '/units');
-    // Kompetens, Introduktion och avslut and Dialogstöd are tabs of Personal (D126), no rows of their own.
+    await expect(nav.getByRole('link', { name: 'Läget' })).toHaveAttribute('href', '/units');
+    await expect(nav.getByRole('link', { name: 'Samtal', exact: true })).toHaveAttribute('href', '/conversations');
+    // Kompetens, Introduktion och avslut and Dialogstöd are tabs of Personal (D126), no pages of their own.
     for (const gone of ['Kompetens', 'Introduktion och avslut', 'Dialogstöd'])
-      await expect(rail(page).getByRole('link', { name: gone, exact: true })).toHaveCount(0);
+      await expect(nav.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
 
-  test('an employee has no Min enhet', async ({ page, api }) => {
+  test('an employee has no Personal and no Läget', async ({ page, api }) => {
     api.employee = true;
     await open(page, '/');
-    await expect(rail(page).getByRole('link', { name: /^Hem/ })).toBeVisible();
-    await expect(rail(page).getByRole('group', { name: 'Min enhet' })).toHaveCount(0);
-    await expect(rail(page).getByRole('link', { name: 'Personal', exact: true })).toHaveCount(0);
-    await expect(rail(page).getByRole('link', { name: 'Läget', exact: true })).toHaveCount(0);
+    const nav = pagesNav(page);
+    await expect(nav.getByRole('link', { name: 'Start', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Personal', exact: true })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Läget', exact: true })).toHaveCount(0);
   });
 
-  test('the row opens the tool as a page by keyboard, not in the side panel, and is marked as current', async ({
+  test('the menu opens the tool as a page by keyboard, not in a panel, and its button is named by the open tool', async ({
     page,
     api,
   }) => {
     api.menu = [menuRow];
     await open(page, '/');
-    const row = rail(page).getByRole('link', { name: 'Telefonbok' });
+    const nav = pagesNav(page);
+    await nav.getByRole('button', { name: 'Verktyg', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    const row = page.getByRole('menu').getByRole('menuitem', { name: 'Telefonbok' });
     await row.focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/tools\/phonebook\.directory$/);
@@ -137,26 +116,29 @@ test.describe('Verktyg in the menu', () => {
     await expect(page.getByRole('searchbox', { name: 'Sök i telefonboken' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page).toHaveTitle('Telefonbok · Startsidan');
-    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Telefonbok');
+    // No page of the row is the open one; the menu's button says which tool is.
+    await expect(nav.locator('a[aria-current="page"]')).toHaveCount(0);
+    await expect(nav.getByRole('button', { name: 'Telefonbok', exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
-    // Kalender is the same kind of row: one tool is current at a time.
-    await rail(page).getByRole('link', { name: 'Kalender' }).click();
-    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Kalender');
+    // Kalender is a page of the row: one place is said to be open at a time.
+    await nav.getByRole('link', { name: 'Kalender' }).click();
+    await expect(nav.locator('a[aria-current="page"]')).toHaveText('Kalender');
+    await expect(nav.getByRole('button', { name: 'Verktyg', exact: true })).toBeVisible();
   });
 
-  test("from the calendar the row leads to the tool's page too", async ({ page, api }) => {
+  test("from the calendar the menu leads to the tool's page too", async ({ page, api }) => {
     api.menu = [menuRow];
     await open(page, '/calendar');
-    await rail(page).getByRole('link', { name: 'Telefonbok' }).click();
+    await (await openTools(page)).getByRole('menuitem', { name: 'Telefonbok' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
-  test("the menu's search finds a tool by its name and opens its page", async ({ page, api }) => {
+  test('the search finds a tool by its name and opens its page', async ({ page, api }) => {
     api.menu = [menuRow];
     await open(page, '/');
-    // Sök is a row of the rail (board Sidebar) that opens Astryx's command palette over the page.
-    await rail(page).getByRole('button', { name: 'Sök', exact: true }).click();
+    // Sök stands on the band and opens Astryx's command palette over the page.
+    await searchButton(page).click();
     const search = page
       .getByRole('dialog', { name: 'Sök i samtal och ärenden' })
       .getByRole('combobox', { name: 'Sök i samtal och ärenden' });
@@ -167,7 +149,7 @@ test.describe('Verktyg in the menu', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
   });
 
-  test('more than four tools: four show, and Alla verktyg leads to the page of every tool, marked while it is open; the one opened from it is marked in the rail', async ({
+  test('more than four tools: four show, and Alla verktyg leads to the page of every tool, named by the menu’s button while it is open, as the tool opened from it is', async ({
     page,
     api,
   }) => {
@@ -175,17 +157,18 @@ test.describe('Verktyg in the menu', () => {
       a.label.localeCompare(b.label, 'sv'),
     );
     await open(page, '/');
-    const section = rail(page).getByRole('group', { name: 'Verktyg' });
-    await expect(section.getByRole('link')).toHaveText(['Avtal', 'Blanketter', 'Diarium', 'Fordon', 'Alla verktyg']);
-    const all = section.getByRole('link', { name: 'Alla verktyg' });
+    const nav = pagesNav(page);
+    const menu = await openTools(page);
+    await expect(menu.getByRole('menuitem')).toHaveText(['Avtal', 'Blanketter', 'Diarium', 'Fordon', 'Alla verktyg']);
+    const all = menu.getByRole('menuitem', { name: 'Alla verktyg' });
     await expect(all).toHaveAttribute('href', '/tools');
     await all.focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL('/tools');
     await expect(page.getByRole('heading', { level: 1, name: 'Alla verktyg' })).toBeVisible();
-    await expect(all).toHaveAttribute('aria-current', 'page');
+    await expect(nav.getByRole('button', { name: 'Alla verktyg', exact: true })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    // Every tool is a tile, the two the rail does not show among them.
+    // Every tool is a tile, the two the menu does not show among them.
     const main = page.getByRole('main');
     await expect(main.getByRole('heading', { level: 3 })).toHaveCount(6);
     await expectNoAxeViolations(page);
@@ -193,16 +176,16 @@ test.describe('Verktyg in the menu', () => {
     await main.getByRole('heading', { level: 3, name: 'Telefonbok' }).click();
     await expect(page).toHaveURL('/tools/phonebook.directory?from=%2Ftools');
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
-    // The tool open now is a row of the rail while it is open, marked as the current page.
-    await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute('aria-current', 'page');
+    // The tool open now names the menu's button, whether or not the menu lists it among its first four.
+    await expect(nav.getByRole('button', { name: 'Telefonbok', exact: true })).toBeVisible();
   });
 });
 
 /**
- * Fråga assistenten in the rail (D126 item 10): Ny fråga, the three newest conversations, the open one marked, and "Alla
- * samtal", the register of every conversation, where each title is the link to it.
+ * Samtal among the pages (D130): the register of every conversation, where each title is the link to it. The row marks
+ * Samtal on the register and on a conversation's own page.
  */
-test.describe('Fråga assistenten in the rail and Alla samtal', () => {
+test.describe('Samtal among the pages and the register', () => {
   const conversations = (base: Thread): Thread[] =>
     ['Första frågan', 'Andra frågan', 'Tredje frågan', 'Fjärde frågan'].map((title, i) => ({
       ...base,
@@ -212,7 +195,7 @@ test.describe('Fråga assistenten in the rail and Alla samtal', () => {
       updatedAt: `2026-11-0${4 - i}T07:00:00.000Z`,
     }));
 
-  test('Ny fråga, the three newest and Alla samtal; the register lists every one, each title its link, with no axe violations', async ({
+  test('Samtal leads to the register, which lists every conversation, each title its link, with no axe violations; a conversation’s page keeps Samtal marked', async ({
     page,
     api,
   }) => {
@@ -220,16 +203,11 @@ test.describe('Fråga assistenten in the rail and Alla samtal', () => {
     const base = api.threads.find(t => t.kind === 'question')!;
     api.threads = [...api.threads.filter(t => t.kind !== 'question'), ...conversations(base)];
     await open(page, '/');
-    const section = rail(page).getByRole('group', { name: 'Fråga assistenten' });
-    await expect(section.getByRole('link')).toHaveText([
-      'Ny fråga',
-      'Första frågan',
-      'Andra frågan',
-      'Tredje frågan',
-      'Alla samtal',
-    ]);
-    const all = section.getByRole('link', { name: 'Alla samtal' });
+    const nav = pagesNav(page);
+    const all = nav.getByRole('link', { name: 'Samtal', exact: true });
     await expect(all).toHaveAttribute('href', '/conversations');
+    // The conversations themselves are not pages of the row.
+    await expect(nav.getByRole('link', { name: 'Första frågan' })).toHaveCount(0);
     await all.click();
     await expect(page).toHaveURL('/conversations');
     await expect(page.getByRole('heading', { level: 1, name: 'Samtal' })).toBeVisible();
@@ -240,17 +218,9 @@ test.describe('Fråga assistenten in the rail and Alla samtal', () => {
     const oldest = main.getByRole('link', { name: 'Fjärde frågan', exact: true });
     await expect(oldest).toHaveAttribute('href', '/conversations/samtal-4');
     await expectNoAxeViolations(page);
-    // The open conversation is marked in the rail, first in the place of the newest when it is older.
     await oldest.click();
     await expect(page).toHaveURL('/conversations/samtal-4');
-    await expect(section.getByRole('link', { name: 'Fjärde frågan' })).toHaveAttribute('aria-current', 'page');
-    await expect(section.getByRole('link')).toHaveText([
-      'Ny fråga',
-      'Fjärde frågan',
-      'Första frågan',
-      'Andra frågan',
-      'Alla samtal',
-    ]);
+    await expect(all).toHaveAttribute('aria-current', 'page');
   });
 
   test('at 320 px the register is a list of links and nothing reflows past the edge', async ({ page, api }) => {
@@ -267,21 +237,35 @@ test.describe('Fråga assistenten in the rail and Alla samtal', () => {
 });
 
 test.describe('Verktyg on a phone', () => {
-  test("the row is in the drawer and opens the tool's page, its rows as a list", async ({ page, api }) => {
+  test("the tool is a row of the drawer with Clew's pages and opens the tool's page, its rows as a list", async ({
+    page,
+    api,
+  }) => {
     await page.setViewportSize(phone);
     api.menu = [menuRow];
     await open(page, '/');
     const drawer = await openNav(page);
-    await expect(drawer.getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText([
+    // Every page, the tools last among them.
+    await expect(drawer.getByRole('group', { name: 'Mina sidor' }).getByRole('link')).toHaveText([
+      /^Start$/,
+      /^Att göra/,
+      'Kalender',
+      'Personal',
+      'Läget',
+      'Samtal',
       'Telefonbok',
       'Alla verktyg',
     ]);
-    await expect(drawer.getByRole('link', { name: 'Kalender' })).toBeVisible();
     await expectNoAxeViolations(page);
     await drawer.getByRole('link', { name: 'Telefonbok' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
     await expect(page.getByRole('list', { name: 'Telefonboken' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The drawer marks the tool that is open.
+    await expect((await openNav(page)).getByRole('link', { name: 'Telefonbok' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
   test('at 320 px the tool shows its whole name in the drawer and the page does not scroll sideways', async ({
     page,

@@ -1,10 +1,17 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Card } from '@astryxdesign/core/Card';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack, VStack } from '@astryxdesign/core/Layout';
 import { Skeleton } from '@astryxdesign/core/Skeleton';
 import { Text } from '@astryxdesign/core/Text';
 import { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
+import { useEntryAnimation } from '@astryxdesign/core/hooks';
+
+/** A card's content once its first answer is here, with Astryx's entry motion, as `ContentArrival` draws a region. */
+function Arrived({ children }: { children: ReactNode }) {
+  const entry = useEntryAnimation('fadeIn');
+  return <VStack xstyle={entry ?? undefined}>{children}</VStack>;
+}
 
 /**
  * A card on a board (D130 item 13), as the startsidan prototype draws one: its heading inside the card with how many it
@@ -12,7 +19,8 @@ import { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
  * A region named by its heading. `list` is for content that is rows with their own inset (an Astryx `List`), so a row's
  * words stand on the heading's line; `flush` for a table, which reaches the card's edges, and `tools` for a register's
  * search under the heading. While its first answer is on its way the card keeps its shape with placeholder
- * lines (`pending`, D36).
+ * lines (`pending`, D36), and the answer then takes their place with Astryx's entry motion; what is in the card from
+ * the first paint does not animate, and reduced motion shows it at once.
  */
 export function BoardCard({
   id,
@@ -54,6 +62,9 @@ export function BoardCard({
   pendingLabel?: string;
   children: ReactNode;
 }) {
+  // Whether the card has waited for its content: only then does the content arrive.
+  const waited = useRef(pending);
+  if (pending) waited.current = true;
   const block = (
     <VStack as="section" aria-labelledby={id} aria-busy={pending} height="100%">
       <HStack
@@ -94,6 +105,8 @@ export function BoardCard({
               </VStack>
             ))}
           </VStack>
+        ) : waited.current ? (
+          <Arrived>{children}</Arrived>
         ) : (
           children
         )}

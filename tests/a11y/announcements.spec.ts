@@ -23,10 +23,13 @@ test.describe('4.1.3 status messages', () => {
 
   test('moving between pages is spoken, and so is the system Att göra is narrowed to', async ({ page, api: _ }) => {
     await open(page, '/calendar');
-    await page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Hem/ }).click();
+    await page
+      .getByRole('navigation', { name: 'Mina sidor', exact: true })
+      .getByRole('link', { name: 'Start', exact: true })
+      .click();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Hem'));
     await page
-      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('navigation', { name: 'Mina sidor', exact: true })
       .getByRole('link', { name: /^Att göra/ })
       .click();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Att göra'));
@@ -54,12 +57,12 @@ test.describe('4.1.3 status messages', () => {
     const said = async () => (await announcements(page)).filter(text => text.includes('svarar inte'));
     await open(page, '/');
     await expect.poll(said).toEqual(['Personalsystemet svarar inte']);
-    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    const rail = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
     await rail.getByRole('link', { name: /^Att göra/ }).click();
     await expect(page).toHaveURL('/todo');
     await rail.getByRole('link', { name: 'Kalender', exact: true }).click();
     await expect(page).toHaveURL(/\/calendar/);
-    await rail.getByRole('link', { name: /^Hem/ }).click();
+    await rail.getByRole('link', { name: 'Start', exact: true }).click();
     await expect(page).toHaveURL('/');
     expect(await said()).toEqual(['Personalsystemet svarar inte']);
   });

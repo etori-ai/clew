@@ -469,6 +469,9 @@ test.describe('organisation', () => {
       await expect(page).toHaveURL(/\/admin\/organisation$/);
       await expect(row(/^Hagaskolan/)).toBeFocused();
       await expect(row(/^Grundskola/)).toHaveAttribute('aria-expanded', 'true');
+      // The walk starts where the focus is, and after the tree only the floating way to the assistant is left: it is
+      // taken from the top of the page, so every stop of the page is in it.
+      await page.getByRole('link', { name: 'Hoppa till innehåll' }).focus();
       expect((await hiddenFocusStops(page)).unmarked).toEqual([]);
     });
     test('Back closes an overlay that was walked, and a branch the person folded is opened again for the unit they stand on', async ({

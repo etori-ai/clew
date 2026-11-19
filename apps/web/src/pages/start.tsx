@@ -518,7 +518,8 @@ function HemQuestion({ field, stacked }: { field: RefObject<HTMLInputElement | n
           <StackItem size="fill">
             <TextInput
               ref={field}
-              label="Vad vill du göra?"
+              // Named as the assistant's field wherever it stands ("Fråga assistenten"); what it asks is its placeholder.
+              label="Fråga assistenten"
               isLabelHidden
               size="lg"
               placeholder="Vad vill du göra?"

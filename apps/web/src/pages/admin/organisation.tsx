@@ -573,7 +573,17 @@ function PeopleGroup({
               key={p.id}
               startContent={<Avatar name={p.name} size={size} tooltip={false} aria-hidden />}
               label={<PersonNameLink person={p} />}
-              {...(under ? { description: <Text type="supporting">{under}</Text> } : {})}
+              {...(under
+                ? {
+                    // A step under the name: the line may hold a link of its own (the unit a person leads), and two
+                    // links one over the other need that much between them to be targets of their own (2.5.8).
+                    description: (
+                      <VStack paddingBlockStart={1}>
+                        <Text type="supporting">{under}</Text>
+                      </VStack>
+                    ),
+                  }
+                : {})}
               endContent={!p.enabled ? <Badge variant="neutral" label="Avstängd" /> : undefined}
             />
           );

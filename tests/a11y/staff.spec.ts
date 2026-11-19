@@ -144,7 +144,7 @@ test.describe('Personal', () => {
       });
       await open(page, '/');
       const rail = page
-        .getByRole('navigation', { name: 'Sidonavigering' })
+        .getByRole('navigation', { name: 'Mina sidor', exact: true })
         .getByRole('link', { name: 'Personal', exact: true });
       const tile = page.getByRole('region', { name: /^Läget/ }).getByRole('link', { name: /Frånvaro i dag/ });
       await tile.focus();

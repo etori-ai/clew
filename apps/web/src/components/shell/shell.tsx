@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
@@ -24,9 +24,10 @@ import { useAnnounceSilentSources } from './silent-sources';
 import { api } from '../../api';
 import { ReminderBell } from './reminders';
 import { cardOverPage, panelRedirect } from '../../panel-address';
+import { personPageHref } from '../../person-address';
 import { DELIVERY_TOAST, deliveryToast, withArrivals, type Arrival } from '../../delivery-toast';
-import type { ShellNav } from './nav';
-import { AssistantCorner } from './assistant-corner';
+import { START_PAGE_ID, type ShellNav } from './nav';
+import { WithAssistantCorner } from './assistant-corner';
 import { pageLocation, usePublishPageLocation } from '../../page-location';
 import { useFocusOnTheWayBack } from '../../way-back';
 
@@ -39,8 +40,13 @@ export const PENDING_MENU: SiteMenu = {
   site: { name: SITE_NAME, href: '/' },
   items: [],
 };
+/**
+ * The site's name as the header says it, for what a page draws with it (its trail, its closing line). A context and not
+ * a query: a page frame is also drawn before the session is known (`FirstLoad`), outside the query client.
+ */
+export const SiteName = createContext<string>(SITE_NAME);
 /** Hem among Clew's own pages, where no header connector lists a Start of its own (D130). */
-export const START_PAGE = { id: 'start', label: 'Start', href: '/' } as const;
+export const START_PAGE = { id: START_PAGE_ID, label: 'Start', href: '/' } as const;
 /** The width the header's rows and every page's column are bounded to (D130: the reference bounds both to 1280 px). */
 export const SHELL_WIDTH = 1280;
 /** The person's settings (D39) as part of the address, so a link can open them and Back never opens them again. */
@@ -142,7 +148,8 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   // lists the connector's places, Start among them, as the intranet draws its header.
   const menu = shared ? shared.menu : { ...(headerQ.data?.menu ?? PENDING_MENU), items: [] };
   const pages = shared ? nav.pages : [START_PAGE, ...nav.pages];
-  const currentPage = nav.current ?? (!shared && location.pathname === '/' ? START_PAGE.id : null);
+  // With a connector Start is a place of the band, not a page of the row, so nothing of the row is marked on Hem.
+  const currentPage = nav.current;
   const here = window.location.origin + location.pathname + location.search;
   const selected = selectedItem(menu, here);
   // The band's theme (D88) is the installation's (D98), built once per saved theme.
@@ -267,15 +274,18 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
                   description={user.unitLabel}
                   onSignOut={() => void logout()}
                   appearance={{ mode, onChange: setMode, isPersistent }}
+                  // The person's own page (D126 rule 1): with no rail, the band's person is the shell's way to it.
+                  pageHref={personPageHref(user.id)}
                 />
               </HStack>
             }
           />
         }
       >
-        {children}
-        {/* The floating way to the assistant (D130 item 14), on every page but a conversation's, which has its box. */}
-        {location.pathname.startsWith('/conversations') ? null : <AssistantCorner />}
+        {/* The floating way to the assistant (D130 item 14) stands over the page, where the page leaves it room. */}
+        <WithAssistantCorner>
+          <SiteName.Provider value={menu.site.name}>{children}</SiteName.Provider>
+        </WithAssistantCorner>
       </AppShell>
       {nav.overlay}
       {/* The settings (D39), the same composition as the band's person: the colour choice and the way out. */}

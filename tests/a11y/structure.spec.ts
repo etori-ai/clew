@@ -9,7 +9,10 @@ import {
   narrow,
   open,
   openNav,
+  pagesNav,
   phone,
+  reflowProblems,
+  searchButton,
   test,
 } from './support';
 import type { Page } from '@playwright/test';
@@ -39,102 +42,84 @@ test.describe('2.4.2 page titled', () => {
 });
 
 test.describe('1.3.1 and 2.4.6 structure', () => {
-  // Without a header connector there is no shared header (D112 item 1): the rail is the page's one navigation of places,
-  // with the installation's name as its heading; Att göra adds its piles as a navigation of their own. The header's
+  // The shared header is every page's banner (D130): its heading row, named by the site, and under the band Clew's own
+  // pages, "Mina sidor". A page of its own says where it stands ("Du är här"), and Att göra adds its piles. The header's
   // landmarks with a connector are header.spec.ts's.
   for (const [path, navigations] of [
-    ['/', 1],
-    ['/todo', 2],
-    ['/todo?tab=done', 2],
-    ['/calendar', 1],
+    ['/', ['Startsidan', 'Mina sidor']],
+    ['/todo', ['Startsidan', 'Mina sidor', 'Du är här', 'Urval']],
+    ['/todo?tab=done', ['Startsidan', 'Mina sidor', 'Du är här', 'Urval']],
+    ['/calendar', ['Startsidan', 'Mina sidor', 'Du är här']],
   ] as const)
-    test(`${path} has one h1, one main, no header without a header connector, and one rail`, async ({
-      page,
-      api: _,
-    }) => {
+    test(`${path} has one h1, one main, one banner, and every navigation landmark named`, async ({ page, api: _ }) => {
       await open(page, path);
       await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveCount(1);
       await expect(page.getByRole('main')).toHaveCount(1);
-      await expect(page.getByRole('banner')).toHaveCount(0);
-      await expect(page.getByRole('navigation')).toHaveCount(navigations);
-      const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
-      await expect(rail).toHaveCount(1);
-      await expect(rail.getByRole('link', { name: 'Startsidan' })).toHaveAttribute('href', '/');
+      const banner = page.getByRole('banner');
+      await expect(banner).toHaveCount(1);
+      expect(
+        await page.getByRole('navigation').evaluateAll(list => list.map(nav => nav.getAttribute('aria-label'))),
+      ).toEqual(navigations);
+      await expect(pagesNav(page)).toHaveCount(1);
+      await expect(banner.getByRole('link', { name: 'Startsidan' })).toHaveAttribute('href', '/');
     });
 
-  test('the rail is one navigation landmark of places and conversations (D50), in the drawer on a phone', async ({
+  test('Clew’s pages are one navigation landmark of places (D50, D130), in the drawer on a phone', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
-    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
-    await expect(rail).toHaveCount(1);
-    // The work first (D126 item 10): Sök alone at the top, and Ny fråga heads the conversations under Fråga assistenten.
-    await expect(rail.getByRole('group', { name: 'Börja' }).getByRole('button')).toHaveText(['Sök']);
-    await expect(rail.getByRole('group', { name: 'Fråga assistenten' }).getByRole('link').first()).toHaveText(
-      'Ny fråga',
-    );
-    // The places (D126 rule 7): Hem, Att göra with how much needs the person, then Kalender; the piles and the areas
-    // are Att göra's tabs and filter, not rows here, and Hem carries no word of its own (rule 8).
-    await expect(rail.getByRole('link', { name: /^Hem/ })).toHaveAttribute('href', '/');
-    await expect(rail.getByRole('link', { name: /^Hem/ })).not.toContainText('Behöver dig');
-    await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('href', '/todo');
-    await expect(rail.getByRole('link', { name: /^Att göra/ })).toContainText('6');
-    await expect(rail.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
-    // Without a tool an administrator placed there is no Verktyg (D40).
-    await expect(rail.getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
-    // Fråga assistenten is a section of the rail with the conversations as its rows; a conversation the data says nothing about
-    // has no dot.
-    const talk = rail
-      .getByRole('group', { name: 'Fråga assistenten' })
-      .getByRole('link', { name: 'Vem är på plats i dag?' });
-    await expect(talk).toHaveAttribute('href', '/conversations/fraga');
-    await expect(rail.getByRole('listitem').filter({ has: talk }).getByRole('img')).toHaveCount(0);
-    for (const gone of ['Behöver dig', 'Jag föreslår', 'Till kännedom', 'Inte nu'])
-      await expect(rail.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
-    // Every conversation is one row away, on Alla samtal (D126 rule 7).
-    await expect(rail.getByRole('link', { name: 'Alla samtal', exact: true })).toHaveAttribute(
-      'href',
-      '/conversations',
-    );
-    await expect(rail.getByRole('button', { name: 'Områden' })).toHaveCount(0);
-    await rail.getByRole('link', { name: /^Hem/ }).click();
-    await expect(rail.locator('a[aria-current="page"]')).toHaveText(/^Hem/);
-    await page.setViewportSize(phone);
-    await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(0);
-    const nav = await openNav(page);
+    const nav = pagesNav(page);
     await expect(nav).toHaveCount(1);
-    await expect(nav.getByRole('link', { name: /^Hem/ })).toBeVisible();
+    // The places (D126 rule 7): Start, Att göra with how much needs the person, then Kalender; the piles and the areas
+    // are Att göra's tabs and filter, not pages here, and Start carries no word of its own (rule 8).
+    await expect(nav.getByRole('link', { name: 'Start', exact: true })).toHaveAttribute('href', '/');
+    await expect(nav.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('href', '/todo');
+    await expect(nav.getByRole('link', { name: /^Att göra/ })).toContainText('6');
+    await expect(nav.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
+    // Without a tool an administrator placed there is no Verktyg (D40).
+    await expect(nav.getByRole('button', { name: 'Verktyg' })).toHaveCount(0);
+    // The conversations are one page away, on Samtal (D126 rule 7): none of them is a page of the row.
+    await expect(nav.getByRole('link', { name: 'Samtal', exact: true })).toHaveAttribute('href', '/conversations');
+    await expect(nav.getByRole('link', { name: 'Vem är på plats i dag?' })).toHaveCount(0);
+    for (const gone of ['Behöver dig', 'Jag föreslår', 'Till kännedom', 'Inte nu'])
+      await expect(nav.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
+    await expect(nav.getByRole('button', { name: 'Områden' })).toHaveCount(0);
+    await nav.getByRole('link', { name: 'Start', exact: true }).click();
+    await expect(nav.locator('a[aria-current="page"]')).toHaveText('Start');
+    await page.setViewportSize(phone);
+    await expect(pagesNav(page)).toHaveCount(0);
+    const drawer = await openNav(page);
+    await expect(drawer).toHaveCount(1);
+    await expect(drawer.getByRole('link', { name: 'Start', exact: true })).toBeVisible();
   });
 
-  test('Hem is one heading over the box and its blocks; a row is one link to its work item; Klart in Att göra is its rows', async ({
+  test('Hem is one heading over the box and its blocks; a row has one link to its work item; Klart in Att göra is its rows', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
     await expect(heading(page, 1, 'God morgon, Testa')).toBeVisible();
     await expect(heading(page, 2, 'Behöver dig')).toBeVisible();
-    // A row is one link to its work item's page, with Hem as the way back (D126 rule 1).
+    // A row has one link to its work item's page, with Hem as the way back (D126 rule 1): "Öppna", named with the
+    // row's title so no two links of the list are called the same (D130 item 13).
     const row = page.locator('#work-omtanke');
-    await expect(row.getByRole('link', { name: /^Omtankesamtal med Anna Lindqvist/ })).toHaveAttribute(
-      'href',
-      '/items/omtanke?from=%2F',
-    );
-    await expect(row).not.toHaveAttribute('aria-current', 'true');
-    // The whole row is the target of that one link, named by the title alone; the badge and the source stay in the row.
+    const link = row.getByRole('link');
+    await expect(link).toHaveAttribute('href', '/items/omtanke?from=%2F');
+    await expect(link).toHaveAccessibleName('Öppna Omtankesamtal med Anna Lindqvist');
+    await expect(link).toHaveText('Öppna');
     const rows = page.getByRole('list', { name: 'Behöver dig' }).getByRole('listitem');
     for (let i = 0; i < (await rows.count()); i++) await expect(rows.nth(i).getByRole('link')).toHaveCount(1);
-    await expect(row.getByRole('link')).toHaveAccessibleName('Omtankesamtal med Anna Lindqvist');
+    // The title, the badge and the source stay in the row as text.
+    await expect(row).toContainText('Omtankesamtal med Anna Lindqvist');
     await expect(row).toContainText('Personalsystemet');
-    const box = (await row.boundingBox())!;
-    expect(box.height).toBeGreaterThanOrEqual(44);
-    await row.getByText(/Tre sjukperioder på sex månader/).click();
+    // The link is a target of its own size (2.5.8).
+    const target = (await link.boundingBox())!;
+    expect(target.height).toBeGreaterThanOrEqual(24);
+    expect(target.width).toBeGreaterThanOrEqual(24);
+    await link.click();
     await expect(page).toHaveURL('/items/omtanke?from=%2F');
     await expect(page.getByRole('heading', { level: 1, name: /^Omtankesamtal med Anna Lindqvist/ })).toBeVisible();
-    await open(page, '/');
-    const edge = (await page.locator('#work-fakturor').boundingBox())!;
-    await page.mouse.click(edge.x + edge.width - 4, edge.y + edge.height / 2);
-    await expect(page).toHaveURL('/items/fakturor?from=%2F');
     await open(page, '/todo?tab=done');
     await expect(heading(page, 1, 'Att göra')).toBeVisible();
     // The queue is a table (board Att göra, the `table-inbox` template): its header row and the two items done.
@@ -150,7 +135,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
       expect(new Set(names).size).toBe(names.length);
     });
 
-  test('Hem is one heading over its line, and under the line Behöver dig and I dag side by side, then Läget, and no digest', async ({
+  test('Hem is one heading over its line, and under the line Läget, then Behöver dig and I dag side by side, and no digest', async ({
     page,
     api: _,
   }) => {
@@ -170,11 +155,13 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     expect(n.y).toBeGreaterThan(box.y + box.height);
     expect(d.x).toBeGreaterThanOrEqual(n.x + n.width);
     expect(Math.abs(d.y - n.y)).toBeLessThan(2);
-    // Läget follows the blocks (D112: kept under them until decided). "Sedan i går" is gone (2026-11-13: no digest
-    // sentences on a page): what closed is in Att göra's Klart.
+    // Läget stands over the blocks, as the startsidan prototype opens with its key figures (D130). "Sedan i går" is
+    // gone (2026-11-13: no digest sentences on a page): what closed is in Att göra's Klart.
     const lage = heading(page, 2, 'Läget på Skönsmons skola');
     await expect(lage).toBeVisible();
-    expect((await lage.boundingBox())!.y).toBeGreaterThan(n.y + n.height);
+    const l = (await lage.boundingBox())!;
+    expect(l.y).toBeGreaterThan(box.y + box.height);
+    expect(l.y).toBeLessThan(n.y);
     await expect(page.getByRole('region', { name: 'Sedan i går' })).toHaveCount(0);
     await expect(page.getByRole('tablist')).toHaveCount(0);
     await expect(today.getByRole('heading', { level: 2, name: 'I dag' })).toBeVisible();
@@ -240,10 +227,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     api: _,
   }) => {
     await open(page, '/');
-    await page
-      .getByRole('navigation', { name: 'Sidonavigering' })
-      .getByRole('button', { name: 'Sök', exact: true })
-      .click();
+    await searchButton(page).click();
     const search = page.getByRole('combobox', { name: 'Sök i samtal och ärenden' });
     await search.fill('fakturor');
     await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
@@ -257,10 +241,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     api: _,
   }) => {
     await open(page, '/calendar');
-    await page
-      .getByRole('navigation', { name: 'Sidonavigering' })
-      .getByRole('button', { name: 'Sök', exact: true })
-      .click();
+    await searchButton(page).click();
     const search = page.getByRole('combobox', { name: 'Sök i samtal och ärenden' });
     await search.fill('fakturor');
     await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
@@ -423,17 +404,17 @@ test.describe('D54 Läget: the areas’ figures from their connectors, on Hem (D
     await expect(region.getByText('Inget nytt sedan i går.')).toHaveCount(0);
     const absence = region.getByRole('link', { name: 'Sjukfrånvaro 4,2 %, Bevaka' });
     await expect(absence).toHaveAttribute('href', '/tools/hr.absenceOverview?title=Fr%C3%A5nvaro+per+person&from=%2F');
-    // The tile as drawn (board Hem): the label with one badge, the value, one note; no area mark, no bar, no view's name.
+    // The tile as drawn (D130 item 9): the label, the value, one line with the status in words and what the value is
+    // compared with, and last the area the figure is from; no badge, no bar, no view's name.
     const card = region.locator('.astryx-clickable-card').filter({ hasText: 'Sjukfrånvaro' });
-    await expect(card.getByText('Bevaka', { exact: true })).toBeVisible();
     await expect(card.getByText('4,2 %', { exact: true })).toBeVisible();
-    await expect(card.getByText('mål ≤ 4,0 % · +0,3 sedan oktober')).toBeVisible();
-    await expect(card.getByText('Personal', { exact: true })).toHaveCount(0);
+    await expect(card.getByText('Bevaka · mål ≤ 4,0 % · +0,3 sedan oktober', { exact: true })).toBeVisible();
+    await expect(card.getByText('Personal', { exact: true })).toBeVisible();
     await expect(card.getByText('Frånvaro per person', { exact: true })).toHaveCount(0);
     await expect(region.getByRole('progressbar')).toHaveCount(0);
-    // A figure with no tone has no badge.
+    // A figure with no tone says no status.
     const samtal = region.locator('.astryx-clickable-card').filter({ hasText: 'Utvecklingssamtal hållna' });
-    await expect(samtal.getByText(/^(Lugnt|Bevaka|Behöver dig)$/)).toHaveCount(0);
+    await expect(samtal.getByText(/Lugnt|Bevaka|Behöver dig/)).toHaveCount(0);
     await expectNoAxeViolations(page);
     // The whole tile opens its figure's page, without the model: a click on its text follows the link.
     await card.getByText('4,2 %', { exact: true }).click();
@@ -502,7 +483,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors, on Hem (D
     await expect(lage(page)).toHaveAttribute('aria-busy', 'true');
     await expect(lage(page)).toHaveAttribute('aria-busy', 'false', { timeout: 5000 });
   });
-  test('on a phone and at 320 px the tiles stand one under the other, and nothing overflows', async ({
+  test('on a phone the tiles stand two by two and at 320 px one under the other, whole, and nothing overflows', async ({
     page,
     api: _,
   }) => {
@@ -513,8 +494,18 @@ test.describe('D54 Läget: the areas’ figures from their connectors, on Hem (D
         .locator(TILES)
         .evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
       expect(tops).toHaveLength(4);
-      for (let i = 1; i < tops.length; i++) expect(tops[i]).toBeGreaterThan(tops[i - 1]! + 50);
+      if (viewport === phone) {
+        // Two in a row (`FigureRow`), the second pair under the first.
+        expect(tops[1]).toBe(tops[0]);
+        expect(tops[3]).toBe(tops[2]);
+        expect(tops[2]).toBeGreaterThan(tops[0]! + 50);
+      } else {
+        // At 320 px two do not fit beside each other: one under the other.
+        for (let i = 1; i < tops.length; i++) expect(tops[i]).toBeGreaterThan(tops[i - 1]! + 50);
+      }
       expect(await lage(page).evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false);
+      // No word of a tile is cut or pushed outside it (1.4.10).
+      expect(await reflowProblems(page, lage(page))).toEqual([]);
     }
   });
 });

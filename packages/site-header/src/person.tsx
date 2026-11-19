@@ -31,17 +31,23 @@ export function SiteHeaderPerson({
   description,
   onSignOut,
   appearance,
+  pageHref,
 }: {
   name: string;
   /** Under the name in the dialog: the person's unit or role, as the host knows it. */
   description?: string;
   onSignOut?: () => void;
   appearance?: SiteHeaderAppearance;
+  /**
+   * The person's own page in the host, when it has one (D130): "Min sida" in the dialog, through the host's router.
+   * Without a rail the band's person is the one place of the shell that leads there.
+   */
+  pageHref?: string;
 }) {
   const compact = useCompactSiteHeader();
   const [isOpen, setIsOpen] = useState(false);
   const avatar = <Avatar name={name} size="sm" tooltip={false} />;
-  if (!onSignOut && !appearance)
+  if (!onSignOut && !appearance && !pageHref)
     return (
       <HStack gap={2} vAlign="center">
         {avatar}
@@ -66,9 +72,11 @@ export function SiteHeaderPerson({
           />
         ) : (
           // The name in bold over the person's unit, and a mark that the row opens something, as the reference draws
-          // the person on its band (D130).
+          // the person on its band (D130). Both lines are the button's visible text, so both are in its name, in the
+          // order they are read (WCAG 2.5.3); the space between them keeps the two from running together as one word
+          // for a tool that reads the text and not the layout.
           <Button
-            label={`${name}, inställningar`}
+            label={[name, description, 'inställningar'].filter(Boolean).join(', ')}
             variant="ghost"
             size="lg"
             aria-haspopup="dialog"
@@ -78,7 +86,7 @@ export function SiteHeaderPerson({
             <VStack gap={0} hAlign="start">
               <Text weight="bold" color="inherit">
                 {name}
-              </Text>
+              </Text>{' '}
               {description ? (
                 <Text type="supporting" color="inherit">
                   {description}
@@ -111,6 +119,9 @@ export function SiteHeaderPerson({
             </RadioList>
           ) : null}
           <HStack gap={2} hAlign="end" wrap="wrap">
+            {pageHref ? (
+              <Button label="Min sida" variant="ghost" href={pageHref} onClick={() => setIsOpen(false)} />
+            ) : null}
             {onSignOut ? (
               <Button
                 label="Logga ut"

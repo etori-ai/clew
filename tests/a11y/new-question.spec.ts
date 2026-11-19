@@ -18,10 +18,10 @@ import { savedBranding } from './branding-fixtures';
  * nothing to ask about, not Hem. The installation's mark when one is saved, the greeting as the page's one level-1
  * heading, "Vad vill du ha hjälp med?" and the box with the focus; under it "Fortsätt", the person's latest
  * conversations, and "Fråga någon annan", the other systems' assistants, each only when it has something to list. The
- * rail marks Ny fråga; the first question continues on the conversation's own address, and Back leads to where the
- * person was. Keyboard, focus, announcements, axe and reflow at 320 px.
+ * floating "Fråga AI" leads here from any page (D130), and the pages' row marks Samtal; the first question continues on
+ * the conversation's own address, and Back leads to where the person was. Keyboard, focus, announcements, axe and reflow at 320 px.
  */
-const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+const rail = (page: Page) => page.getByRole('navigation', { name: 'Mina sidor', exact: true });
 const greeting = /^God (morgon|förmiddag|eftermiddag|kväll), Testa$/;
 const recipient = (page: Page, name: string) => page.getByRole('button', { name: `Till: ${name}`, exact: true });
 const others = (page: Page) => page.getByRole('region', { name: 'Fråga någon annan' });
@@ -30,25 +30,18 @@ const latest = (page: Page) => page.getByRole('region', { name: 'Fortsätt' });
 test.describe('Ny fråga is a page of its own', () => {
   test.use({ viewport: desktop });
 
-  test('the rail leads to a clean page, marked as current, with the greeting and the box focused; Hem is another place', async ({
+  test('Fråga AI leads to a clean page, Samtal marked among the pages, with the greeting and the box focused; Hem is another place', async ({
     page,
     api: _,
   }) => {
     await open(page, '/todo');
-    await rail(page).getByRole('link', { name: 'Ny fråga', exact: true }).click();
+    await page.getByRole('link', { name: 'Fråga AI', exact: true }).click();
     await expect(page).toHaveURL('/conversations/new');
     await expect(page).toHaveTitle('Ny fråga · Startsidan');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(greeting);
     await expect(page.getByText('Vad vill du ha hjälp med?', { exact: true })).toBeVisible();
     await expect(composer(page)).toBeFocused();
-    await expect(rail(page).getByRole('link', { name: 'Ny fråga', exact: true })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    await expect(rail(page).getByRole('link', { name: 'Hem', exact: true })).not.toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Samtal');
     // Nothing of Hem's: no blocks, no day line; the page's column is named in Swedish.
     await expect(page.getByRole('region', { name: 'Behöver dig' })).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'I dag' })).toHaveCount(0);
@@ -64,7 +57,7 @@ test.describe('Ny fråga is a page of its own', () => {
     api,
   }) => {
     await open(page, '/todo');
-    await rail(page).getByRole('link', { name: 'Ny fråga', exact: true }).click();
+    await page.getByRole('link', { name: 'Fråga AI', exact: true }).click();
     await composer(page).fill('Vem är på plats i dag?');
     await composer(page).press('Enter');
     await expect(page).toHaveURL(/\/conversations\/(?!new)[^/?]+$/);
@@ -99,10 +92,8 @@ test.describe('Ny fråga is a page of its own', () => {
       page.getByRole('heading', { level: 1, name: 'Fråga om Omtankesamtal med Anna Lindqvist' }),
     ).toBeVisible();
     await expect(page.getByRole('complementary', { name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
-    await expect(rail(page).getByRole('link', { name: 'Ny fråga', exact: true })).not.toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    // A question about a thing is a conversation's page too: Samtal is the place.
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Samtal');
   });
 });
 

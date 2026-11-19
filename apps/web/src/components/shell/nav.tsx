@@ -40,6 +40,8 @@ export interface ShellNav {
   overlay?: ReactNode;
 }
 const toolId = (capability: string) => 'tool:' + capability;
+/** The id of Hem among Clew's pages: the shell lists it as "Start" where no header connector does (D130). */
+export const START_PAGE_ID = 'start';
 
 /** The administration's sections (D45). The rail has one row for all of them; the administration lists them itself. */
 export type AdminSection =
@@ -262,7 +264,8 @@ export function useNav({
     current.surface === 'start'
       ? conversations
         ? 'conversations'
-        : null
+        : // Hem, and a page opened from it that stands on Hem's place: Start, where the row lists it (`START_PAGE`).
+          START_PAGE_ID
       : current.surface === 'verktyg'
         ? openCapability
           ? toolId(openCapability)

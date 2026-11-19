@@ -1,5 +1,4 @@
-import type { ReactNode, Ref } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useContext, type ReactNode, type Ref } from 'react';
 import {
   BreadcrumbItem,
   Breadcrumbs,
@@ -23,8 +22,8 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { mobileQuery, shortQuery } from '../../media';
-import { SHELL_WIDTH, SITE_NAME } from './shell';
-import { headerQuery } from '../../queries';
+import { SHELL_WIDTH, SiteName } from './shell';
+import { useClearCorner } from './assistant-corner';
 import { useBranding } from '../../branding';
 import { DOT } from '../../dot';
 
@@ -69,7 +68,7 @@ export function WayBack({ back }: { back: WayBackTarget }) {
  * not already hold. `ruled` draws the rule over it where the line ends a column that scrolls.
  */
 function Closing({ ruled }: { ruled: boolean }) {
-  const site = useQuery(headerQuery).data?.menu.site.name ?? SITE_NAME;
+  const site = useContext(SiteName);
   const organisation = useBranding().logo?.alt;
   const line = (
     <HStack gap={0} wrap="wrap">
@@ -203,6 +202,8 @@ export function PageFrame({
   const short = useMediaQuery(shortQuery);
   const narrow = useMediaQuery(narrowPageQuery);
   const tight = useMediaQuery(tightQuery);
+  // What the page pins at the window's foot is the page's to press: the floating way to the assistant gives way.
+  useClearCorner(!!footer);
   const board = plain || (cards && !end && !facts && !start && !footer);
   // A board (Hem, a register of cards) scrolls as one page under the shell's header, as the startsidan prototype's
   // pages do (D130): nothing of it stays behind. A page with panels keeps its title while its column scrolls, so the
@@ -234,7 +235,7 @@ export function PageFrame({
   // The way back and what stands beside it, a step apart with no rule between them (board Ärende).
   // A place of its own has no way back: it opens with where it stands, the site and then the page (D130 item 17), as
   // the startsidan prototype opens a page with its trail. A page reached from another keeps its named way back.
-  const site = useQuery(headerQuery).data?.menu.site.name ?? SITE_NAME;
+  const site = useContext(SiteName);
   const crumbs =
     !plain && !back && !trail && typeof title === 'string' ? (
       <Breadcrumbs label="Du är här" variant="supporting" separator="›">

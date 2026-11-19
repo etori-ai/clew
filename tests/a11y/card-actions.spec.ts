@@ -411,15 +411,25 @@ test.describe('the calendar on a phone', () => {
 
 test.describe('nothing is cut off', () => {
   for (const width of [1024, 768])
-    test(`a row and a work item keep their words beside the rail at ${width} px`, async ({ page, api: _ }) => {
+    test(`a row and a work item keep their words at ${width} px`, async ({ page, api: _ }) => {
       await page.setViewportSize({ width, height: 900 });
       await open(page, '/todo');
       await expect(page.locator('#work-omtanke').getByRole('link')).toBeVisible();
       expect(await cutOff(page.getByRole('main'))).toEqual([]);
-      // The pane does not fit beside the list at these widths: the item is its page (D126 rule 2).
       await open(page, '/todo?item=omtanke');
-      await expect(page).toHaveURL(/\/items\/omtanke/);
-      await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      if (width >= 1024) {
+        // With no rail the page has the room of the `table-inbox` template at 1024 px: the item stands beside the list.
+        await expect(page).toHaveURL('/todo?item=omtanke');
+        await expect(
+          page
+            .getByRole('complementary', { name: 'Valt ärende' })
+            .getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist', exact: true }),
+        ).toBeVisible();
+      } else {
+        // The pane does not fit beside the list at this width: the item is its page (D126 rule 2).
+        await expect(page).toHaveURL(/\/items\/omtanke/);
+        await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      }
       expect(await cutOff(page.getByRole('main'))).toEqual([]);
     });
 

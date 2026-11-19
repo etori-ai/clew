@@ -23,7 +23,8 @@ import { NOTICE_REASON, NOTICE_TEXT, asNotice } from './data';
  */
 const wide = { width: 1440, height: 900 };
 /** The page's box is under 900 px beside the rail: one surface. */
-const tablet = { width: 1024, height: 768 };
+/** Under the `table-inbox` template's own line: with no rail the pane fits beside the list from about 950 px (D130). */
+const tablet = { width: 900, height: 768 };
 const queue = (page: import('@playwright/test').Page, name = 'Behöver dig') => page.getByRole('table', { name });
 /** The queue's rows, each with its one link (the header row has none). */
 const rows = (page: import('@playwright/test').Page, name = 'Behöver dig') =>
@@ -43,7 +44,7 @@ test.describe('Att göra: the piles', () => {
     await open(page, '/todo');
     await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
     await expect(page).toHaveTitle(/^Att göra/);
-    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    const rail = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('aria-current', 'page');
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toContainText('6');
     // The tabs are the navigation pattern (no tablist): links, the current one marked, with how many as a badge.
@@ -315,8 +316,8 @@ test.describe('Hem leads to Att göra', () => {
   }) => {
     await open(page, '/');
     const block = page.getByRole('region', { name: 'Behöver dig' });
-    // How many Hem shows is Hem's (`hem.spec.ts`). A row's name is the link to its item's page, with Hem as the way back (D126 rule 1).
-    await expect(block.getByRole('link', { name: /^Attestera 3 fakturor/ })).toHaveAttribute(
+    // How many Hem shows is Hem's (`hem.spec.ts`). A row's "Öppna" is the link to its item's page, with Hem as the way back (D126 rule 1).
+    await expect(block.getByRole('link', { name: /^Öppna Attestera 3 fakturor/ })).toHaveAttribute(
       'href',
       '/items/fakturor?from=%2F',
     );

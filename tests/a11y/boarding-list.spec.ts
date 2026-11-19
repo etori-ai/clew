@@ -14,7 +14,7 @@ import { expect, expectNoAxeViolations, hiddenFocusStops, narrow, open, phone, r
 const wide = { width: 1440, height: 900 };
 const LIST = '/boarding';
 const TITLE = 'Introduktion och avslut';
-const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+const rail = (page: Page) => page.getByRole('navigation', { name: 'Mina sidor', exact: true });
 /** The place among the rail's places (no spec here holds `admin.boarding`, so there is no row of that name under Administration). */
 const place = (page: Page) => rail(page).getByRole('link', { name: TITLE, exact: true });
 const heading = (page: Page, name: string) => page.getByRole('heading', { name, exact: true });
@@ -166,7 +166,8 @@ test.describe('the list', () => {
     await expect(
       page.getByRole('heading', { level: 2, name: 'Ingen introduktion eller något avslut för dig' }),
     ).toBeVisible();
-    await expect(page.getByRole('main').getByRole('link')).toHaveText(['Till startsidan']);
+    // The page's links: where it stands, the one way on, and the floating way to the assistant.
+    await expect(page.getByRole('main').getByRole('link')).toHaveText(['Startsidan', 'Till startsidan', 'Fråga AI']);
     await expectNoAxeViolations(page);
   });
 });

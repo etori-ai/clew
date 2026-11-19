@@ -228,7 +228,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
           label="Medarbetare"
           value={String(total)}
           name={`Medarbetare ${total}`}
-          foot={peopleLine(list.groups)}
+          // Where they are: the unit, or how many units. The page's line under its title says the rest.
+          foot={list.groups.length === 1 ? list.groups[0]!.label : `${list.groups.length} enheter`}
         />
         {list.lenses.slice(0, 3).flatMap(l => {
           const answer = answers.get(l.capability);

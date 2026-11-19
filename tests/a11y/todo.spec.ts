@@ -191,11 +191,13 @@ test.describe('the panes beside the queue and the conversation', () => {
     await expect(page.getByRole('complementary')).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const main = page.getByRole('main');
-    // The directory is a tool in the rail: its page carries the row's name and the rail marks it.
+    // The directory is a tool in the menu: its page carries the tool's name and the menu's button is named by it.
     await expect(main.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
-    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).locator('a[aria-current="page"]')).toHaveText(
-      'Telefonbok',
-    );
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Mina sidor', exact: true })
+        .getByRole('button', { name: 'Telefonbok', exact: true }),
+    ).toBeVisible();
     await expect(main.getByRole('searchbox')).toHaveValue('lärare');
     await expect(main.getByRole('table')).toBeVisible();
     await expect(main.getByRole('link', { name: 'Samtalet' })).toHaveAttribute('href', conversation);
