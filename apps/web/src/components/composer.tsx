@@ -144,6 +144,7 @@ export function Composer({
   about,
   thing,
   placeholder: aboutPlaceholder,
+  stoppable = true,
 }: {
   place: ComposerPlace;
   about?: ChipRef[] | undefined;
@@ -151,6 +152,12 @@ export function Composer({
   thing?: OpenThing | undefined;
   /** What the empty box says in a conversation about someone ("Fråga om Johan"); else whom it writes to. */
   placeholder?: string | undefined;
+  /**
+   * A turn asked here can be stopped (D36): while one runs the send button is Stoppa and the field stays open. The box
+   * of another system's assistant's panel (D128) cannot call a question back once it has left Clew: it rests until the
+   * answer is in, with no Stoppa.
+   */
+  stoppable?: boolean | undefined;
 }) {
   const talk = useConversation();
   // While a conversation's own box is on the page, "Lägg till i samtalet" is offered: no other page has a box.
@@ -223,9 +230,9 @@ export function Composer({
       value={talk.value}
       onChange={talk.setValue}
       onSubmit={text => void talk.submit(text, from, about, thing)}
-      isDisabled={talk.busy && !talk.pending}
+      isDisabled={talk.busy && (!stoppable || !talk.pending)}
       /* While a turn runs the send button is Stop (D126 item 5); a suggestion waiting for the person's answer is no turn to stop. */
-      isStopShown={!!talk.pending && !talk.pending.offer}
+      isStopShown={stoppable && !!talk.pending && !talk.pending.offer}
       onStop={talk.stop}
       {...(pane ? { elevation: 'none' as const } : { density: 'compact' as const })}
       placeholder={placeholder}
@@ -254,7 +261,7 @@ export function Composer({
           {...(pane ? {} : { triggers: [trigger] })}
           placeholder={placeholder}
           onKeyDown={e => {
-            if (talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
+            if (stoppable && talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
           }}
         />
       }

@@ -509,12 +509,12 @@ const stepCall = (s: TurnStep): ChatToolCallItem => ({
   ...(s.ms !== undefined && s.status !== 'running' ? { duration: seconds(s.ms) } : {}),
 });
 /** The model's text as it is written (D36), revealed at a steady pace by Astryx's hook; with reduced motion it shows whole. */
-export function StreamingAnswer({ text }: { text: string }) {
+export function StreamingAnswer({ text, headingLevelStart = 2 }: { text: string; headingLevelStart?: 2 | 3 }) {
   const shown = useStreamingText(text, true);
   // Astryx parses what has arrived so far and fades each piece in, so a list or bold text half written is drawn as
   // what it is becoming, not as stray asterisks.
   return (
-    <Markdown density="compact" headingLevelStart={2} isStreaming>
+    <Markdown density="compact" headingLevelStart={headingLevelStart} isStreaming>
       {shown}
     </Markdown>
   );
@@ -837,6 +837,8 @@ function readCalls(
 }
 /** Clew's own turn names itself (boards Samtal and SamtalVerktyg); what it read is said by its calls. */
 const CLEW = 'Assistenten';
+/** Under a question in another system's assistant's panel that Clew sent on from the conversation (D128 item 2). */
+const FROM_CONVERSATION = 'Från samtalet med assistenten';
 /**
  * The transcript (D31; D126, boards Samtal, SamtalVerktyg, SamtalEneoFraga and SamtalEneo): the conversation in the
  * `ai-chat` template's message list. The person's chips sit above their bubble as tokens, except the thing the
@@ -851,6 +853,12 @@ const CLEW = 'Assistenten';
  * text, a few named rows as links, or one row for an action the assistant filled in: the steps while it reads, the
  * answer's words, a draft and Clew's own confirmations stay; work items become their rows; a view, a proposals' week and
  * the sources become one row each that leads to the conversation's page, where there is room for them.
+ *
+ * In the panel of another system's assistant beside a conversation (`room="aside"`, D128 item 2) it is that assistant's
+ * own exchange, drawn as beside a page: every message it is given, none of the lines that say whom the conversation
+ * turns to, and a question says only whether Clew sent it on from the conversation. The panel's heading names the
+ * assistant and leads to its system, so an answer carries the name unseen and no link of its own; what Clew says there
+ * (a system that did not answer, a question held on its way out) is named as Clew's, as in the transcript.
  */
 export function Transcript({
   onOpenView,
@@ -887,8 +895,11 @@ export function Transcript({
   asideOpen?: string | null | undefined;
   /** The address that puts a work item beside the transcript: where a row of several items leads. */
   cardHref?: ((threadId: string) => string) | undefined;
-  /** Where the transcript is drawn: the conversation's own page, or the pane beside another page (D130). */
-  room?: 'page' | 'pane';
+  /**
+   * Where the transcript is drawn: the conversation's own page, the pane beside another page (D130), or the panel of
+   * another system's assistant beside a conversation, which holds that assistant's own exchange (D128).
+   */
+  room?: 'page' | 'pane' | 'aside';
   /**
    * What stands under an answer that prepared a decision (`MessageMeta.prepared`), drawn by the page the decision is
    * made on (Kalender's "Använd tiden", D129); else the row that leads there.
@@ -916,15 +927,18 @@ export function Transcript({
   const transcriptArea = useRef<HTMLDivElement>(null);
   const animatedLayout = useAnimatedLayout({ containerRef: transcriptArea });
   if (!conversation && !pending) return null;
-  const pane = room === 'pane';
+  const pane = room !== 'page';
+  const aside = room === 'aside';
+  // An answer's headings stand under the panel's own heading in another system's assistant's panel.
+  const headingStart = aside ? 3 : 2;
   const wholeHref = conversationHref ?? (conversation ? `/conversations/${conversation.id}` : undefined);
-  // What was said in the panel beside the conversation is drawn there: the transcript is Clew's.
+  // What was said in the panel beside the conversation is drawn there (`aside`): the transcript is Clew's.
   const everything = conversation?.messages ?? [];
-  const messages = everything.filter(m => !isSide(m));
+  const messages = aside ? everything : everything.filter(m => !isSide(m));
   // An assistant the person turned to in the panel without Clew sending a question on has no card in the transcript:
   // one line stands where it first was asked, so the transcript shows that the exchange exists when it is read later.
   const joined = new Map<number, NonNullable<NonNullable<ThreadMessage['meta']>['handed']>[]>();
-  everything.forEach((m, at) => {
+  (aside ? [] : everything).forEach((m, at) => {
     const handed = m.role === 'user' ? m.meta?.handed : undefined;
     if (!handed?.side) return;
     if (everything.slice(0, at).some(x => x.meta?.handed?.side && x.meta.handed.assistant === handed.assistant)) return;
@@ -1013,10 +1027,14 @@ export function Transcript({
     ) : (
       CLEW
     );
-  /** Another system's assistant over its own answer: its mark, its name and its system's. */
-  const otherName = (who: { assistant: string; name: string; source: string }) => (
-    <AssistantName assistant={who.assistant} name={who.name} source={who.source} />
-  );
+  /** Another system's assistant over its own answer: its mark, its name and its system's; in its panel, its name unseen. */
+  const otherName = (who: { assistant: string; name: string; source: string }) =>
+    aside ? (
+      <VisuallyHidden>{who.name}</VisuallyHidden>
+    ) : (
+      <AssistantName assistant={who.assistant} name={who.name} source={who.source} />
+    );
+  const otherMark = (name: string) => (aside ? undefined : <AssistantMark name={name} />);
   /** The answer's place while nothing of it is written yet (board SamtalVerktyg). */
   const held = (
     <VStack gap={2}>
@@ -1027,7 +1045,9 @@ export function Transcript({
   const written = (m: ThreadMessage, i: number) => {
     if (m.role === 'user') {
       const handed = m.meta?.handed;
-      return question(`turn-${i}`, m.body, m.createdAt, m.meta?.chips, handed ? sentWords(handed) : undefined);
+      // In the panel a question says only that Clew sent it on from the conversation; one asked there says nothing.
+      const sent = aside ? (handed?.side ? undefined : FROM_CONVERSATION) : handed ? sentWords(handed) : undefined;
+      return question(`turn-${i}`, m.body, m.createdAt, m.meta?.chips, sent);
     }
     const other = answeredBy(m);
     const time = (
@@ -1041,12 +1061,12 @@ export function Transcript({
         <ChatMessage
           key={`turn-${i}`}
           sender="assistant"
-          avatar={<AssistantMark name={other.name} />}
+          avatar={otherMark(other.name)}
           name={otherName(other)}
           metadata={time}
         >
-          <AssistantAnswer handover={other}>
-            <Markdown density="compact" headingLevelStart={2}>
+          <AssistantAnswer handover={aside ? { ...other, link: undefined } : other}>
+            <Markdown density="compact" headingLevelStart={headingStart}>
               {keepLines(m.body)}
             </Markdown>
           </AssistantAnswer>
@@ -1091,7 +1111,7 @@ export function Transcript({
           <VStack gap={3}>
             <Markdown
               density="compact"
-              headingLevelStart={2}
+              headingLevelStart={headingStart}
               {...(m.meta?.sources?.length
                 ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const }
                 : {})}
@@ -1165,8 +1185,8 @@ export function Transcript({
             // Clew suggested the assistant and the person chose it (D126 item 6): the question stands once, says it was
             // sent on, and one line under it takes the suggestion's place. Anywhere else the person turned to another
             // system's assistant, or back to Clew, the transcript says so once, above the question (D125 item 5).
-            const routed = m.role === 'user' && m.meta?.handed?.routed ? m.meta.handed : null;
-            const line = routed ? undefined : (switchLine(messages, i) ?? handedBackLine(m));
+            const routed = !aside && m.role === 'user' && m.meta?.handed?.routed ? m.meta.handed : null;
+            const line = aside || routed ? undefined : (switchLine(messages, i) ?? handedBackLine(m));
             return [
               ...joinedLines(i),
               ...(line ? [<TurnLine key={`switch-${i}`} line={line} />] : []),
@@ -1179,7 +1199,7 @@ export function Transcript({
           // held until something is known, the capabilities it reads as calls with their status, then the text.
           ...(pending
             ? [
-                ...(!pending.suggested && pendingSwitch(messages, pending)
+                ...(!aside && !pending.suggested && pendingSwitch(messages, pending)
                   ? [<TurnLine key={`switch-${n}`} line={pendingSwitch(messages, pending)!} />]
                   : []),
                 question(
@@ -1187,7 +1207,7 @@ export function Transcript({
                   pending.text,
                   pending.at,
                   pending.chips,
-                  pending.handed ? sentWords({ ...pending.handed, routed: pending.suggested }) : undefined,
+                  !aside && pending.handed ? sentWords({ ...pending.handed, routed: pending.suggested }) : undefined,
                 ),
                 ...(pending.handed && pending.suggested
                   ? [<SuggestedLine key={`suggested-${n}`} name={pending.handed.name} source={pending.handed.source} />]
@@ -1204,7 +1224,7 @@ export function Transcript({
                   <ChatMessage
                     key={`turn-${n + 1}`}
                     sender="assistant"
-                    avatar={pending.handed ? <AssistantMark name={pending.handed.name} /> : undefined}
+                    avatar={pending.handed ? otherMark(pending.handed.name) : undefined}
                     name={
                       pending.handed
                         ? otherName({
@@ -1224,11 +1244,19 @@ export function Transcript({
                     )}
                     {pending.handed ? (
                       <AssistantAnswer handover={{ source: pending.handed.source }} isHeld={!pending.answer}>
-                        {pending.answer ? <StreamingAnswer text={keepLines(pending.answer)} /> : held}
+                        {pending.answer ? (
+                          <StreamingAnswer text={keepLines(pending.answer)} headingLevelStart={headingStart} />
+                        ) : (
+                          held
+                        )}
                       </AssistantAnswer>
                     ) : (
                       <ChatMessageBubble variant="ghost" width="100%">
-                        {pending.answer ? <StreamingAnswer text={pending.answer} /> : held}
+                        {pending.answer ? (
+                          <StreamingAnswer text={pending.answer} headingLevelStart={headingStart} />
+                        ) : (
+                          held
+                        )}
                       </ChatMessageBubble>
                     )}
                   </ChatMessage>
