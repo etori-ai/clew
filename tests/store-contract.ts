@@ -253,6 +253,32 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(tx => tx.updateThread(handed.id, { summary: 'Svar', updatedAt: plus(T0, 2000) }));
       expect((await store.readThread(a, handed.id))!.handover).toEqual(continued);
     });
+    test('the page a conversation was asked beside is kept with it, patched to opened, and absent on every other thread (D130)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const askedBeside = { subject: 'tool:clew.requests', label: 'Mina beställningar', openedAt: null };
+      const plain = draft(a, { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor' });
+      const beside = draft(a, { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor', askedBeside });
+      await store.transaction(async tx => {
+        await tx.insertThread(plain);
+        await tx.insertThread(beside);
+      });
+      expect('askedBeside' in (await store.readThread(a, plain.id))!).toBe(false);
+      expect((await store.readThread(a, beside.id))!.askedBeside).toEqual(askedBeside);
+      expect((await store.listThreads(a, T0)).find(t => t.id === beside.id)!.askedBeside).toEqual(askedBeside);
+      expect((await store.listThreads(a, T0)).find(t => t.id === plain.id)!.askedBeside).toBeUndefined();
+      const opened = { ...askedBeside, openedAt: plus(T0, 1000) };
+      await store.transaction(tx => tx.updateThread(beside.id, { askedBeside: opened }));
+      expect((await store.readThread(a, beside.id))!.askedBeside).toEqual(opened);
+      expect((await store.readThreadById(beside.id))!.askedBeside).toEqual(opened);
+      expect((await store.transaction(tx => tx.lockThread(a, beside.id)))!.askedBeside).toEqual(opened);
+      // A patch of it alone moves nothing else, and a patch that does not name it leaves it.
+      expect((await store.readThread(a, beside.id))!.updatedAt).toBe(T0);
+      await store.transaction(tx => tx.updateThread(beside.id, { summary: 'Svar', updatedAt: plus(T0, 2000) }));
+      expect((await store.readThread(a, beside.id))!.askedBeside).toEqual(opened);
+    });
     test("an action's read-receipt mark is kept with the action and read back as stored (D112)", async () => {
       const {
         store,

@@ -123,7 +123,13 @@ export function serialiseContext(
           (whyNotChangeable(o.event) ?? OWN_MEETING)
         );
       case 'capability':
-        return `Förmågan "${o.title}" (${o.source}).`;
+        // A list or a view that stands open is named with the read that draws it (D130 rule 4): asked "vad väntar de
+        // på?" beside a register, the model otherwise reads whichever list it knows best, not the one on the page.
+        return (
+          `Förmågan "${o.title}" (${o.source}), verktyget ${o.name}. ` +
+          `Gäller frågan det som visas där och verktyget finns bland dina, läs med det innan du svarar; ` +
+          `finns det inte, säg att du inte kan läsa det som visas.`
+        );
       case 'document': {
         const h = o.hit;
         const kept = [

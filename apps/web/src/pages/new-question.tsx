@@ -50,7 +50,7 @@ export function NewQuestionPage({ greeting, entry }: { greeting: string; entry: 
     return () => cancelAnimationFrame(frame);
   }, []);
   return (
-    <PageFrame entry={entry} label="Ny fråga">
+    <PageFrame ask={{ none: 'assistant' }} entry={entry} label="Ny fråga">
       <Center minHeight="100%">
         <VStack gap={10} width="100%" maxWidth={720} hAlign="stretch" paddingBlock={6}>
           <VStack gap={3} hAlign="center">

@@ -253,6 +253,38 @@ test.describe('Fråga assistenten in the rail and Alla samtal', () => {
     ]);
   });
 
+  test('a conversation asked beside a page and never opened as a conversation is not among the rail’s three, and Alla samtal lists it with what it is about (D130 rule 6)', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(desktop);
+    const base = api.threads.find(t => t.kind === 'question')!;
+    const [first, second, third, fourth] = conversations(base);
+    const beside = {
+      ...first!,
+      id: 'samtal-bredvid',
+      title: 'Vad väntar de på från mig?',
+      updatedAt: '2026-11-05T07:00:00.000Z',
+      askedBeside: { subject: 'view:clew.requests', label: 'Om Beställningar och felanmälningar', openedAt: null },
+    };
+    api.threads = [...api.threads.filter(t => t.kind !== 'question'), beside, first!, second!, third!, fourth!];
+    await open(page, '/');
+    const section = rail(page).getByRole('group', { name: 'Fråga assistenten' });
+    await expect(section.getByRole('link')).toHaveText([
+      'Ny fråga',
+      'Första frågan',
+      'Andra frågan',
+      'Tredje frågan',
+      'Alla samtal',
+    ]);
+    await section.getByRole('link', { name: 'Alla samtal' }).click();
+    const main = page.getByRole('main');
+    await expect(main.getByRole('row')).toHaveCount(6);
+    const row = main.getByRole('row').filter({ has: page.getByRole('link', { name: 'Vad väntar de på från mig?' }) });
+    await expect(row.getByRole('cell').nth(1)).toHaveText('Beställningar och felanmälningar');
+    await expectNoAxeViolations(page);
+  });
+
   test('at 320 px the register is a list of links and nothing reflows past the edge', async ({ page, api }) => {
     await page.setViewportSize(narrow);
     const base = api.threads.find(t => t.kind === 'question')!;

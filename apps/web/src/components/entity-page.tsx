@@ -168,6 +168,7 @@ export function EntityPage({
   // at the end of the name's line, the tabs, the read in the column and the facts in the end panel.
   return (
     <PageFrame
+      ask={{ later: 'things' }}
       back={back}
       trail={
         crumbs || place ? (

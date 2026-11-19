@@ -2035,3 +2035,97 @@ describe('the assistant starts a work item from a propose, the person sends it',
     expect(JSON.stringify(heard)).toContain('anmälare');
   });
 });
+describe('a question asked beside a page (D130 rule 6)', () => {
+  const page = { subject: 'tool:finance.invoices', label: 'Fakturor att attestera' };
+  test('a first question with the page starts a conversation kept as asked beside it, and its audit row says so and no more', async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor', page });
+    expect(turn.thread.askedBeside).toEqual({ ...page, openedAt: null });
+    expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === turn.conversationId)!.askedBeside).toEqual({
+      ...page,
+      openedAt: null,
+    });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      actor: 'person:hillevi',
+      action: 'conversation.asked',
+      subject: 'thread:' + turn.conversationId,
+      details: { askedBeside: true },
+    });
+    // That it was asked beside a page, never which page or its words (D91).
+    const row = JSON.stringify(w.store.audit.at(-1));
+    expect(row).not.toContain(page.subject);
+    expect(row).not.toContain(page.label);
+  });
+  test('a later question with a page says nothing on a conversation that exists, whether it was asked beside one or not', async () => {
+    const w = world();
+    const beside = await w.assistant.converse(hillevi, { text: 'visa fakturor', page });
+    const plain = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
+    w.advance(60_000);
+    const other = { subject: 'calendar:week', label: 'Veckan' };
+    const again = await w.assistant.converse(hillevi, {
+      text: 'xyzzy plugh',
+      conversationId: beside.conversationId,
+      page: other,
+    });
+    expect(again.thread.askedBeside).toEqual({ ...page, openedAt: null });
+    const still = await w.assistant.converse(hillevi, {
+      text: 'xyzzy plugh',
+      conversationId: plain.conversationId,
+      page: other,
+    });
+    expect('askedBeside' in still.thread).toBe(false);
+    const replied = w.store.audit.filter(e => e.action === 'conversation.replied');
+    expect(replied).toHaveLength(2);
+    for (const e of replied) expect(e.details).not.toHaveProperty('askedBeside');
+  });
+  test('a question without a page starts a conversation without it, as before', async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
+    expect('askedBeside' in turn.thread).toBe(false);
+    expect(w.store.audit.at(-1)!.details).not.toHaveProperty('askedBeside');
+  });
+  test('opening it marks the time once with one audit row; again, it changes nothing and writes nothing', async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor', page });
+    w.advance(60_000);
+    const openedAt = new Date(Date.parse(T0) + 60_000).toISOString();
+    const opened = await w.assistant.markOpened(hillevi, turn.conversationId);
+    expect(opened!.askedBeside).toEqual({ ...page, openedAt });
+    // What was said and when is untouched: opening does not reorder the rail.
+    expect(opened!.updatedAt).toBe(turn.thread.updatedAt);
+    expect(opened!.messages).toEqual(turn.thread.messages);
+    expect(audit(w.store, turn.conversationId)).toEqual(['conversation.asked', 'conversation.opened']);
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'person:hillevi',
+      action: 'conversation.opened',
+      subject: 'thread:' + turn.conversationId,
+      at: openedAt,
+    });
+    w.advance(60_000);
+    const again = await w.assistant.markOpened(hillevi, turn.conversationId);
+    expect(again).toEqual(opened);
+    expect(audit(w.store, turn.conversationId)).toEqual(['conversation.asked', 'conversation.opened']);
+    expect((await w.threads.threadFor(hillevi, turn.conversationId))!.askedBeside!.openedAt).toBe(openedAt);
+  });
+  test('a conversation not asked beside a page is answered as it stands, and nothing is written', async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
+    const before = w.store.audit.length;
+    const answered = await w.assistant.markOpened(hillevi, turn.conversationId);
+    expect(answered).toEqual(turn.thread);
+    expect('askedBeside' in answered!).toBe(false);
+    expect(w.store.audit).toHaveLength(before);
+  });
+  test("another person's conversation, an unknown one and a work item are refused, and nothing is written", async () => {
+    const w = world();
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor', page });
+    await w.threads.ensureThreads(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.kind === 'pushed')!;
+    const before = w.store.audit.length;
+    expect(await w.assistant.markOpened(hassan, turn.conversationId)).toBeUndefined();
+    expect(await w.assistant.markOpened(hillevi, 'nope')).toBeUndefined();
+    expect(await w.assistant.markOpened(hillevi, card.id)).toBeUndefined();
+    expect(w.store.audit).toHaveLength(before);
+    expect((await w.threads.threadFor(hillevi, turn.conversationId))!.askedBeside!.openedAt).toBeNull();
+  });
+});

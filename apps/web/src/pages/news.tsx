@@ -63,7 +63,7 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       {/* A register (D126 rule 8) in the one page frame: the view draws its own title line (D74) in the column. */}
-      <PageFrame label={title}>
+      <PageFrame ask={{ later: 'registers' }} label={title}>
         <VStack gap={4}>
           {missing ? (
             <EmptyState

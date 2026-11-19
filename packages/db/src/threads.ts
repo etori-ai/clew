@@ -57,6 +57,7 @@ export function toThread(
     items: row.items,
     ...(row.subjects?.length ? { subjects: row.subjects } : {}),
     ...(row.handover ? { handover: row.handover } : {}),
+    ...(row.askedBeside ? { askedBeside: row.askedBeside } : {}),
     actions: row.actions,
     waitingOn: row.waitingOn,
     deadline: row.deadline,

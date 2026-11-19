@@ -358,7 +358,7 @@ function Plan({
     ) : (
       <ContentSkeleton />
     );
-    body = frame === 'tab' ? state : <PageFrame>{state}</PageFrame>;
+    body = frame === 'tab' ? state : <PageFrame ask={{ later: 'registers' }}>{state}</PageFrame>;
   } else {
     const here = pageOnly(pathname, search);
     const plans = person?.plans ?? [];
@@ -903,7 +903,7 @@ function Redirecting({
   if (to) return <Navigate replace to={to} />;
   return (
     <Shell user={user} nav={nav}>
-      <PageFrame>{missing ? <PlanMissing /> : <ContentSkeleton />}</PageFrame>
+      <PageFrame ask={{ later: 'things' }}>{missing ? <PlanMissing /> : <ContentSkeleton />}</PageFrame>
     </Shell>
   );
 }

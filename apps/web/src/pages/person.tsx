@@ -384,7 +384,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   let body: ReactNode;
   if (missing || read.isError || !detail)
     body = (
-      <PageFrame>
+      <PageFrame ask={{ later: 'things' }}>
         {missing ? (
           <EmptyState
             headingLevel={1}

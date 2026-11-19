@@ -208,7 +208,11 @@ export class MockApi {
     suggested?: boolean;
     own?: boolean;
     confirmed?: boolean;
+    /** The page the question was asked beside (`ConversationInput.page`, D130): its subject and its words. */
+    page?: { subject: string; label: string };
   }[] = [];
+  /** The conversations the conversation's page marked as opened (`POST /conversations/:id/opened`, D130 rule 6). */
+  opened: string[] = [];
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   /** How long the areas take, so a test can see Läget's tiles in their shape (D54). */
@@ -1681,6 +1685,7 @@ export class MockApi {
         own?: boolean;
         confirmed?: boolean;
         side?: boolean;
+        page?: { subject: string; label: string };
       };
       this.asked.push(body);
       await this.answerHeld;
@@ -1724,8 +1729,14 @@ export class MockApi {
       if (!handed && body.own && body.beside && body.chips?.length && question)
         question.meta = { ...question.meta, chips: body.chips as Chip[] };
       // A conversation keeps the assistants it has an exchange with whoever answers the turn.
-      const before = this.threads.find(t => t.id === response.conversationId)?.handover;
+      const earlier = this.threads.find(t => t.id === response.conversationId);
+      const before = earlier?.handover;
       if (!handed && before) response.thread.handover = before;
+      // A conversation started beside a page is kept as asked beside its subject (D130 rule 6); one that exists keeps
+      // what it had.
+      if (earlier?.askedBeside) response.thread.askedBeside = earlier.askedBeside;
+      else if (!handed && !body.conversationId && body.page)
+        response.thread.askedBeside = { subject: body.page.subject, label: body.page.label, openedAt: null };
       const step = handed
         ? { id: 'steg-1', capability: 'clew.handover', title: 'Frågar HR-assistenten', source: 'Kunskapsbanken' }
         : { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };
@@ -1751,6 +1762,18 @@ export class MockApi {
       }
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
       return;
+    }
+    // The conversation's page marks a conversation asked beside a page as opened, once (D130 rule 6).
+    const opening = post ? /^\/conversations\/([^/]+)\/opened$/.exec(path) : null;
+    if (opening) {
+      const at = decodeURIComponent(opening[1]!);
+      const t = this.threads.find(t => t.id === at && t.kind === 'question');
+      if (!t) return route.fulfill({ status: 404, json: { error: 'Samtalet finns inte.' } });
+      this.opened.push(at);
+      const marked =
+        t.askedBeside && !t.askedBeside.openedAt ? { ...t, askedBeside: { ...t.askedBeside, openedAt: NOW } } : t;
+      this.threads = this.threads.map(x => (x.id === at ? marked : x));
+      return json(marked);
     }
     if (path === '/conversation') {
       const body = request.postDataJSON() as { text: string; conversationId?: string };

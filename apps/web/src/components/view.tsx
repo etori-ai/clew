@@ -45,7 +45,6 @@ import {
   pixel,
   proportional,
   useAnnounce,
-  useMediaQuery,
 } from '@clew/ui';
 import { counted, dayText, fieldValue, statusWord, type DayLength } from './panel-labels';
 import { DOT } from '../dot';
@@ -54,6 +53,7 @@ import { useMarks } from '../marks';
 import { useConversation } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
 import { PageHeader } from './page-header';
+import { useColumnQuery } from './page-frame-context';
 import { DocumentReader } from './document-reader';
 import { useLocation } from 'react-router';
 import { entityHref, recordSubject } from '../person-address';
@@ -91,7 +91,10 @@ export interface DeclaredViewProps {
   only?: readonly string[] | undefined;
   /** The outline level of a heading inside the view: 3 in the panel and under an answer, 2 on a tool's page, under its h1. */
   headingLevel?: 2 | 3;
-  /** From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. */
+  /**
+   * From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. Moved by
+   * the assistant's pane while it stands beside the page (`useColumnQuery`, D130 rule 11).
+   */
   tableQuery?: string;
   /** A tool page's title: the page's heading at level 1 with the system's badge on its line, the filter bar under it. */
   title?: string;
@@ -811,7 +814,9 @@ export function DeclaredView({
   heading,
 }: DeclaredViewProps) {
   const sectionId = useId();
-  const wide = useMediaQuery(tableQuery);
+  // The column's width, not the window's: while the assistant's pane stands beside the page, a table becomes its list
+  // (D130 rule 11).
+  const wide = useColumnQuery(tableQuery);
   const { pathname, search } = useLocation();
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
   const announce = useAnnounce({ hasReplace: true });

@@ -1,24 +1,36 @@
-import type { ReactNode, Ref } from 'react';
+import { useCallback, useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
+import { useLocation, useNavigate } from 'react-router';
+import type { ConversationResponse, Prepared } from '@clew/contracts';
 import {
+  ArrowsPointingOutIcon,
+  Button,
   Card,
   ArrowLeftIcon,
   Divider,
+  Drawer,
   Heading,
   HStack,
   Icon,
+  IconButton,
   Layout,
   LayoutContent,
   LayoutHeader,
   LayoutPanel,
   Link,
   ScrollableArea,
+  SparklesIcon,
   StackItem,
   Text,
   VStack,
   useEntryAnimation,
   useMediaQuery,
 } from '@clew/ui';
-import { mobileQuery, shortQuery } from '../media';
+import { besideQuery, mobileQuery, shortQuery } from '../media';
+import { asksBeside, withAsk, withoutAsk } from '../panel-address';
+import { useModelConfigured } from './conversation-context';
+import { PageTalk, useOpenAsConversation, usePageConversation, type PageSubject } from './page-conversation';
+import { PageFrameContext } from './page-frame-context';
+import { useAskAbout } from './thing-panel';
 
 /**
  * Hem's column (board Hem): the product owner decided on 2026-11-14 that the start page's container is every page's, so
@@ -56,47 +68,37 @@ export function WayBack({ back }: { back: WayBackTarget }) {
 }
 
 /**
- * Every page in the shell (D126, the product owner 2026-11-14: Hem's container is the one every page uses): Astryx's
- * page `Layout` in Hem's column (`PAGE_WIDTH`), its header and content at Hem's padding, so the title, the content and
- * the facts' panel stand on the same lines on every page and no page can drift. The header holds, in this order, the way
- * back with what stands beside it (`back`, `trail`), the title line (`icon`, the level-1 heading, `status` beside it,
- * `meta` under it, `actions` at its end and under it on a phone), what stands directly under the title (`below`: a work
- * item's decisions, Hem's box) and the page's tabs at its foot. The content is the column; `facts` is the end panel of
- * the `work-item-detail` template (above the column at `narrowPageQuery`), `end` a pane of the page's own (Att göra's
- * reading pane, the thing beside a conversation) and `start` a panel before the column (Administration's sections), all
- * inside the same frame. The header stays while the content scrolls; on a short screen nothing is pinned and the page
- * scrolls as one (1.4.10).
+ * Whether and about what a page has "Fråga assistenten" (D130 rule 1): every page says, so leaving it out is a type error
+ * and no page can forget the assistant. `subject` is what the page shows (null until the page knows it, while its data
+ * loads); `none` is a page with no button and why (Administration, where nothing is a read the assistant may make; the
+ * assistant's own pages, Hem, Ny fråga and a conversation; a frame that is no page of the person's work, the first
+ * load's or a missing calendar's); `later` is a page that still draws its own way to ask until its stage of the plan
+ * moves it into the frame (registers and Läget, things' pages, Att göra), and goes when the last one has moved.
  */
-export function PageFrame({
-  back,
-  trail,
-  icon,
-  title,
-  titleId,
-  titleRef,
-  status,
-  meta,
-  actions,
-  actionsOnLine = false,
-  below,
-  tabs,
-  plain = false,
-  children,
-  label,
-  facts,
-  factsLabel = 'Uppgifter',
-  factsAbove = true,
-  end,
-  start,
-  width = PAGE_WIDTH,
-  pinned,
-  bare = false,
-  bleed = false,
-  scrollTabStop = false,
-  footer,
-  entry,
-  layoutRef,
-}: {
+export type PageAsk =
+  AskAbout | { none: 'administration' | 'assistant' | 'no-page' } | { later: 'registers' | 'things' | 'todo' };
+/** A page with the frame's button and pane (D130 rules 1 to 4). */
+export interface AskAbout {
+  subject: PageSubject | null;
+  /** Hears each finished turn in the pane: the page makes ready what an answer prepared (Kalender, D129). */
+  onAnswer?: ((response: ConversationResponse) => void) | undefined;
+  /** What the page draws under an answer that prepared one of its decisions (Kalender's "Använd tiden"). */
+  prepared?: ((prepared: Prepared) => ReactNode) | undefined;
+  /** False where a phone's head has no room for the button (Kalender's two full rows); the page asks elsewhere there. */
+  onPhone?: boolean | undefined;
+}
+/** The assistant's pane (D130 rule 11; canvas boards AskRegister and AskArende): Astryx's recommended panel width. */
+const ASK_PANE = 400;
+/** What a key pressed in the pane belongs to rather than the pane: a menu, a list box or a dialog over it. */
+const OWNS_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
+/** A field the person types in: where the press has put the focus once the box has it. */
+const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
+/** How many frames the press waits for the box to be drawn (its editor may still be loading): about a second. */
+const BOX_WITHIN = 60;
+
+interface PageFrameProps {
+  /** Whether and about what the page has "Fråga assistenten" (D130 rule 1). Required, so no page can leave it out. */
+  ask: PageAsk;
   /** The way back, named; none where the page is a place of its own. */
   back?: WayBackTarget | null | undefined;
   /** After the way back on its line: where the thing stands (a source, a unit's trail). */
@@ -131,7 +133,11 @@ export function PageFrame({
   factsLabel?: string;
   /** False where the page places the facts in its narrow column itself (a work item's read). */
   factsAbove?: boolean;
-  /** A pane of the page's own in the end slot (a `LayoutPanel`), where the page has no facts' panel. */
+  /**
+   * A pane of the page's own in the end slot (a `LayoutPanel`), where the page has no facts' panel: Att göra's reading
+   * pane, Kalender's entry, the thing beside a conversation. While it holds something it has the slot, and the
+   * assistant's pane is not drawn (D130 rule 5).
+   */
   end?: ReactNode;
   /** A panel before the column (a `LayoutPanel`): Administration's sections. */
   start?: ReactNode;
@@ -158,6 +164,241 @@ export function PageFrame({
   entry?: EntryStyle;
   /** The page's own box, for a page that measures it (Att göra's `table-inbox` measure). */
   layoutRef?: Ref<HTMLDivElement>;
+}
+
+/**
+ * Every page in the shell (D126, the product owner 2026-11-14: Hem's container is the one every page uses): Astryx's
+ * page `Layout` in Hem's column (`PAGE_WIDTH`), its header and content at Hem's padding, so the title, the content and
+ * the facts' panel stand on the same lines on every page and no page can drift. The header holds, in this order, the way
+ * back with what stands beside it (`back`, `trail`), the title line (`icon`, the level-1 heading, `status` beside it,
+ * `meta` under it, `actions` at its end and under it on a phone), what stands directly under the title (`below`: a work
+ * item's decisions, Hem's box) and the page's tabs at its foot. The content is the column; `facts` is the end panel of
+ * the `work-item-detail` template (above the column at `narrowPageQuery`), `end` a pane of the page's own (Att göra's
+ * reading pane, the thing beside a conversation) and `start` a panel before the column (Administration's sections), all
+ * inside the same frame. The header stays while the content scrolls; on a short screen nothing is pinned and the page
+ * scrolls as one (1.4.10). Every page says whether it has "Fråga assistenten" (`ask`, D130 rule 1); the frame draws
+ * the button at the end of the title's line and the assistant's pane in the end slot (`AskingFrame`).
+ */
+export function PageFrame(props: PageFrameProps) {
+  const { ask, ...frame } = props;
+  return 'subject' in ask ? <AskingFrame {...frame} about={ask} /> : <FrameBody {...frame} />;
+}
+
+/**
+ * A page with "Fråga assistenten" (D130 rules 1 to 4 and 11; canvas boards AskRegister, AskArende-empty and
+ * AskArende-more). The button ends the title's line (or, where the content draws the title, that line: `PageHeader`
+ * reads it from `PageFrameContext`). It is the pane's toggle and says so (`aria-expanded`), drawn as a secondary while
+ * the pane is open. Without a model it is not drawn (D8), nor before the page knows its subject.
+ *
+ * The pane is in the address (`ask=1`): the press pushes it, so Back closes it and a reload opens it again; ✕, Esc in
+ * the pane and the button again take it away. It holds the assistant's heading, what it is about in words, where the
+ * assistant cannot read (`subject.closed`) and "Öppna som samtal", then the conversation and the box (`PageTalk`). From
+ * `besideQuery` it stands beside the page in the end slot, which the page's own pane wins while it holds something
+ * (Kalender's entry, rule 5); the column then draws its narrow layout (`useColumnQuery`, the facts above the read).
+ * Narrower or short it is Astryx's drawer over the page; on a phone the button leads to the conversation's page with
+ * the subject, as "Fråga assistenten" did before (D126 rule 5).
+ *
+ * The press gives the focus to the box; arriving by the address moves nothing; closing gives it back to the button, as
+ * does losing the pane with the focus in it. Opening says nothing aloud: the turns announce their answers. The
+ * conversation is held here (`usePageConversation`), so it stays while the pane becomes the drawer and back.
+ */
+function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about: AskAbout }) {
+  const mobile = useMediaQuery(mobileQuery);
+  const short = useMediaQuery(shortQuery);
+  const beside = useMediaQuery(besideQuery) && !short;
+  const model = useModelConfigured();
+  const navigate = useNavigate();
+  const { pathname, search } = useLocation();
+  const askAbout = useAskAbout();
+  const { subject } = about;
+  const talk = usePageConversation(subject, { onAnswer: response => about.onAnswer?.(response) });
+  const whole = useOpenAsConversation(talk);
+  const open = model && !mobile && asksBeside(search) && !frame.end;
+  const button = useRef<HTMLButtonElement>(null);
+  // Who changed the pane last: the person's press (the box takes the focus), ✕, Esc or the button again (the focus goes
+  // back to the button), or nobody here (the address: nothing moves).
+  const by = useRef<'press' | 'close' | null>(null);
+  const close = useCallback(() => {
+    by.current = 'close';
+    navigate(withoutAsk(pathname, search));
+  }, [navigate, pathname, search]);
+  const press = () => {
+    if (mobile) {
+      if (subject) askAbout(subject);
+    } else if (open) close();
+    else {
+      by.current = 'press';
+      navigate(withAsk(pathname, search));
+    }
+  };
+  const wasOpen = useRef(open);
+  const { input } = talk.state;
+  // The box takes the focus once it is drawn: the first time a page draws a box its editor may still be loading, so the
+  // press waits for it a frame at a time, never longer than `BOX_WITHIN` frames.
+  const focus = useCallback(() => {
+    let left = BOX_WITHIN;
+    const attempt = () => {
+      input.current?.focus();
+      if (!document.activeElement?.matches(TYPING) && --left > 0) requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
+  }, [input]);
+  useLayoutEffect(() => {
+    if (wasOpen.current === open) return;
+    wasOpen.current = open;
+    // Read only when the pane has changed: a page's own pane may hold the slot a moment after the press (Kalender lets
+    // go of a move being made once the address says the pane is open).
+    const how = by.current;
+    by.current = null;
+    if (open) {
+      if (how === 'press') focus();
+      return;
+    }
+    const active = document.activeElement;
+    if (how === 'close' || !active || active === document.body) button.current?.focus();
+  }, [open, focus]);
+  const drawn = model && (mobile ? about.onPhone !== false && !!subject : !!subject || open);
+  const askButton = drawn ? (
+    <Button
+      ref={button}
+      size="sm"
+      variant={open ? 'secondary' : 'ghost'}
+      label="Fråga assistenten"
+      icon={<Icon icon={SparklesIcon} size="sm" />}
+      {...(mobile ? {} : { 'aria-expanded': open })}
+      onClick={press}
+    />
+  ) : null;
+  // The pane's content, beside the page and in the drawer alike (board AskRegister): the sparkles in the accent and the
+  // heading, "Öppna som samtal" and ✕ at the end of its line, what it is about under it; the conversation over the box.
+  const content = (
+    <Layout
+      height="fill"
+      header={
+        <LayoutHeader padding={6} hasDivider>
+          <VStack gap={2}>
+            <HStack hAlign="between" vAlign="center" gap={3}>
+              <HStack gap={2} vAlign="center">
+                <Icon icon={SparklesIcon} size="sm" color="accent" />
+                <Heading level={2}>Assistenten</Heading>
+              </HStack>
+              <HStack gap={1} vAlign="center">
+                {whole && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    label="Öppna som samtal"
+                    icon={<Icon icon={ArrowsPointingOutIcon} size="sm" />}
+                    href={whole.href}
+                    {...(whole.onClick ? { onClick: whole.onClick } : {})}
+                  />
+                )}
+                <IconButton size="sm" variant="ghost" label="Stäng" icon={<Icon icon="close" />} onClick={close} />
+              </HStack>
+            </HStack>
+            {subject && (
+              <Text type="supporting" color="secondary">
+                {subject.about}
+              </Text>
+            )}
+            {subject?.closed && <Text type="supporting">{subject.closed}</Text>}
+          </VStack>
+        </LayoutHeader>
+      }
+      content={
+        <LayoutContent padding={6} isScrollable={false}>
+          <PageTalk talk={talk} prepared={about.prepared} headed />
+        </LayoutContent>
+      }
+    />
+  );
+  // The drawer keeps its content once it has been opened, so it is never empty while it slides away; before that it
+  // holds nothing, and no box waits hidden in it.
+  const drawerHeld = useRef(false);
+  if (open && !beside) drawerHeld.current = true;
+  const titled = frame.title !== undefined && frame.title !== null;
+  const pane =
+    open && beside ? (
+      <LayoutPanel
+        width={ASK_PANE}
+        padding={0}
+        hasDivider
+        isScrollable={false}
+        role="complementary"
+        label="Assistenten"
+      >
+        <VStack
+          height="100%"
+          onKeyDown={e => {
+            // Esc inside a menu, a list or a dialog is theirs; a bare Esc closes the pane.
+            if (e.key !== 'Escape' || (e.target as HTMLElement).closest(OWNS_ESCAPE)) return;
+            e.stopPropagation();
+            close();
+          }}
+        >
+          {content}
+        </VStack>
+      </LayoutPanel>
+    ) : null;
+  return (
+    // Where the content draws the title (a register's view, D74), the button goes to that line through the context.
+    <PageFrameContext.Provider value={{ askButton: titled ? null : askButton, paneWidth: pane ? ASK_PANE : 0 }}>
+      <FrameBody {...frame} askButton={titled ? askButton : null} askPane={pane} />
+      {!beside && !mobile && (
+        <Drawer
+          isOpen={open}
+          onOpenChange={next => {
+            if (!next) close();
+          }}
+          side="end"
+          width={ASK_PANE}
+          label="Assistenten"
+          padding={0}
+        >
+          {drawerHeld.current && content}
+        </Drawer>
+      )}
+    </PageFrameContext.Provider>
+  );
+}
+
+/** The frame's layout, with the assistant's button and pane when `AskingFrame` gives them. */
+function FrameBody({
+  back,
+  trail,
+  icon,
+  title,
+  titleId,
+  titleRef,
+  status,
+  meta,
+  actions,
+  actionsOnLine = false,
+  below,
+  tabs,
+  plain = false,
+  children,
+  label,
+  facts,
+  factsLabel = 'Uppgifter',
+  factsAbove = true,
+  end,
+  start,
+  width = PAGE_WIDTH,
+  pinned,
+  bare = false,
+  bleed = false,
+  scrollTabStop = false,
+  footer,
+  entry,
+  layoutRef,
+  askButton,
+  askPane,
+}: Omit<PageFrameProps, 'ask'> & {
+  /** "Fråga assistenten", last on the title's line. */
+  askButton?: ReactNode;
+  /** The assistant's pane beside the page, in the end slot the page leaves free. */
+  askPane?: ReactNode;
 }) {
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
@@ -187,8 +428,19 @@ export function PageFrame({
         {trail}
       </HStack>
     ) : null;
+  // "Fråga assistenten" ends the title's line, after the page's own actions and a step closer to them (D130 rule 1,
+  // board AskRegister), and goes under the title with them on a phone.
+  const lineEnd =
+    askButton && actions ? (
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        {actions}
+        {askButton}
+      </HStack>
+    ) : (
+      (askButton ?? actions)
+    );
   const titleLine =
-    heading || icon || actions ? (
+    heading || icon || lineEnd ? (
       <HStack gap={4} vAlign="center" wrap="wrap">
         {icon}
         <StackItem size="fill">
@@ -205,7 +457,7 @@ export function PageFrame({
             {metaLine}
           </VStack>
         </StackItem>
-        {(!mobile || actionsOnLine) && actions}
+        {(!mobile || actionsOnLine) && lineEnd}
       </HStack>
     ) : (
       metaLine
@@ -225,16 +477,18 @@ export function PageFrame({
           ) : (
             (wayLine ?? titleLine)
           )}
-          {mobile && !actionsOnLine && actions}
+          {mobile && !actionsOnLine && lineEnd}
           {below}
         </VStack>
         {tabs}
       </VStack>
     </LayoutHeader>
   ) : undefined;
-  const panelFacts = !!facts && !narrow;
+  // The facts and the assistant's pane share the end slot: while the pane is open the facts stand above the read, as
+  // where the window is narrow (D130 rule 11).
+  const panelFacts = !!facts && !narrow && !askPane;
   const column =
-    facts && narrow && factsAbove ? (
+    facts && (narrow || askPane) && factsAbove ? (
       <VStack gap={6}>
         <VStack as="section" gap={4} aria-label={factsLabel}>
           {facts}
@@ -279,7 +533,7 @@ export function PageFrame({
       {...(entry ? { xstyle: entry } : {})}
       height={pin ? 'fill' : 'auto'}
       // A page whose content runs to the sheet's edges has its header on the same edges, not on Hem's measure.
-      {...((end && !panelFacts) || bleed ? {} : { contentWidth: width })}
+      {...((end && !panelFacts) || askPane || bleed ? {} : { contentWidth: width })}
       header={header}
       start={start}
       content={content}
@@ -297,7 +551,7 @@ export function PageFrame({
             {facts}
           </LayoutPanel>
         ) : (
-          end
+          end || askPane
         )
       }
     />

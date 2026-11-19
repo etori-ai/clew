@@ -1,6 +1,6 @@
 # D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides
 
-**Status:** provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas "Clew · the assistant beside every page", where a register, Läget, a work item's page and Att göra were drawn with the pane open at 1366 px and 1728 px, and answered four of the review's five questions the same day. Nothing of it is built except Kalender's pane ([D129](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md)), which is its reference for a pane that already holds a picked thing. Nothing outside the repository has tested it, and no manual screen-reader pass is made) · **Date:** 2026-11-18 · **Area:** ui, product
+**Status:** provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas "Clew · the assistant beside every page", where a register, Läget, a work item's page and Att göra were drawn with the pane open at 1366 px and 1728 px, and answered four of the review's five questions the same day. Stage 1 is built (2026-11-18): the frame's button and pane on a tool's list or table and on Kalender, the conversation drawn there by the same parts as on the conversation's page, the subject stored with the conversation and found again, and the rail's rule. It was tried on the development stack with its local model: asked beside a register, reloaded, opened as a conversation. Every other page still has its own button or none. Nothing outside the repository has tested it, and no manual screen-reader pass is made) · **Date:** 2026-11-18 · **Area:** ui, product
 
 **Context.** Where the assistant is asked has been decided four times and reversed three: beside the page was
 rejected in [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md), chosen in
@@ -83,8 +83,14 @@ system's assistant has its own panel beside a conversation).
 
 **Not built, and what is still open.**
 
-- All of it, except Kalender's pane. The order the review proposes: the frame and one conversation component; the
-  registers and Läget, with their reads opened; a thing's page, where the facts move above the read; Att göra's item.
+- Every page but a tool's list or table and Kalender. The frame's `ask` says so page by page (`later`): the other
+  registers and Läget, with their reads opened (stage 2); a thing's page, where the facts move above the read, and
+  what the server is told stands open (stage 3, its own decision first); Att göra's item (stage 4).
+- The other system's assistant's panel (D128) still has a renderer of its own.
+- The pane shows what the shared transcript shows: the time, the model that answered and what was read. The canvas
+  draws none of those; whether they stay is the owner's to say.
+- Erasing a person does not reach `askedBeside`. It has to before a person's page gets the pane, since the subject
+  or its words could then name the person.
 - What the server is told stands open is a work item or a calendar entry today. A record with its input, a person, a
   unit and a list are not yet subjects the assistant is given.
 - An action on a row of a view is not something a connector can declare

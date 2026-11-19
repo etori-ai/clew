@@ -273,6 +273,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        ask={{ later: 'registers' }}
         title="Läget"
         meta={units.length > 0 ? (units.length === 1 ? '1 enhet' : `${units.length} enheter`) : undefined}
         label="Enheter"

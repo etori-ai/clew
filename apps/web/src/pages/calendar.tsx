@@ -8,7 +8,7 @@ import {
   useQueryClient,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import type { CalendarEvent, Prepared, Proposal, SessionUser, Thread, ThreadMessage } from '@clew/contracts';
+import type { CalendarEvent, Prepared, Proposal, SessionUser, Thread } from '@clew/contracts';
 import {
   AreaMark,
   Badge,
@@ -64,9 +64,10 @@ import { useThreadAction } from '../mutations';
 import { errorMessage, noCalendar } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
-import { ENTRY_PARAM, viewSearch, withEntry } from '../panel-address';
+import { ASK_PARAM, ENTRY_PARAM, asksBeside, viewSearch, withEntry } from '../panel-address';
 import { itemPageHref } from '../work-items';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { besideQuery } from '../media';
 import { useRail } from '../components/nav';
 import { EventDialog, type Mode } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
@@ -77,7 +78,7 @@ import { AsyncContent, ContentSkeleton } from '../components/loading';
 import type { Mark } from '../marks';
 import { AskClew } from '../components/thing-panel';
 import { useModelConfigured, type ThingSubject } from '../components/conversation-context';
-import { AskTalk, useAskInPlace } from '../components/ask-in-place';
+import { PageTalk, usePageConversation, type PageSubject } from '../components/page-conversation';
 import { PreparedRow } from '../components/conversation';
 import { SilentNotice, useSaySilent, useSilentSources } from '../components/silent-sources';
 
@@ -131,6 +132,13 @@ const combineWeeks = (results: UseQueryResult<Week>[]) => {
   };
 };
 const selectProposalThread = (data: { threads: Thread[] }) => pickProposalThread(data.threads);
+/** The same page with these of its own things in the address let go of (an entry, the assistant's pane), the rest kept. */
+const withoutOwn = (pathname: string, search: string, names: string[]) => {
+  const q = new URLSearchParams(search);
+  names.forEach(n => q.delete(n));
+  const rest = q.toString();
+  return rest ? `${pathname}?${rest}` : pathname;
+};
 const capital = (s: string) => (s ? s[0]!.toLocaleUpperCase('sv-SE') + s.slice(1) : s);
 /** A chip's ref as the server takes it (`ChipSchema`): an id outside it goes without a chip rather than failing the question. */
 const CHIP_REF = /^[a-z]+:[A-Za-z0-9:_.@-]+$/;
@@ -345,7 +353,7 @@ interface Shown {
   /** A form gives the focus to its first field when it opens; an entry to its name. */
   form: boolean;
   /**
-   * The pane holds a conversation with the assistant (`AskTalk`): its body does not scroll as one, the transcript
+   * The pane holds a conversation with the assistant (`PageTalk`): its body does not scroll as one, the transcript
    * scrolls in itself between the facts and the box.
    */
   talk?: boolean;
@@ -413,13 +421,11 @@ function PaneFrame({
   );
 }
 /**
- * The window width from which the pane stands beside the grid: the rail, the week's least column and the pane,
- * 260 + 640 + 440 px, the line the shared panel kept before D126. Narrower, short (1.4.10) or on a phone it is a drawer.
+ * The pane's width. It stands beside the grid from `besideQuery`, the rail, the week's least column and the pane,
+ * 260 + 640 + 440 px, the line the shared panel kept before D126 and every page's pane keeps now (D130 rule 11).
+ * Narrower, short (1.4.10) or on a phone it is a drawer.
  */
 const PANE = 440;
-const besideQuery = `(min-width: ${260 + 640 + PANE}px)`;
-/** The pane's id while "Fråga om veckan" holds it: one id for every range, so stepping to another week keeps the focus. */
-const RANGE_ID = 'ask:range';
 /** What a key pressed in the pane belongs to rather than the pane: a menu, a list box or a dialog over it. */
 const OWNS_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
@@ -443,11 +449,13 @@ const TITLE_ID = 'calendar-title';
  * forms are the dialogs they were. Nothing else opens beside the calendar (D126 rule 3). The assistant is asked in place
  * here, since its answer is drawn on the page itself (the product owner, 2026-11-18, boards KalFraga, KalFragaFlytt and
  * KalFragaVecka): under an entry's facts stands the person's conversation about it, found again when the entry is
- * opened again, over a box at the pane's foot; "Fråga om veckan" gives the pane to the same for the range on screen.
+ * opened again, over a box at the pane's foot. The frame's "Fråga assistenten" (D130) gives the end slot to the
+ * assistant's pane about the range on screen, the week, the day or the month: it lets go of an entry or a move standing
+ * there, a booking being made waits under it, and an entry or a form opened takes the place back.
  * An answer that prepared a move of the person's own meeting fills in "Flytta …", its block on the grid where it would
  * end up; one that prepared a cancellation asks "Ställ in mötet?". Nothing is written before the person's own button,
- * and an earlier answer makes nothing ready by itself. On a phone the question is still asked in a conversation with
- * the entry or the range beside it (D126 rule 5). The proposals are reached from "Förslag N" in the page's header, a
+ * and an earlier answer makes nothing ready by itself. On a phone the question about an entry is still asked in a
+ * conversation with the entry beside it (D126 rule 5), and the head has no room for the frame's button. The proposals are reached from "Förslag N" in the page's header, a
  * menu that leads to each one. "Ställ in …" asks in a dialog: a confirmation is what a dialog is for.
  */
 export function CalendarPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -485,8 +493,9 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const move = useMove();
   const announce = useAnnounce();
   const model = useModelConfigured();
-  // "Fråga om veckan" holds the pane by itself until it is closed, or something else takes the pane.
-  const [rangeOpen, setRangeOpen] = useState(false);
+  // The assistant's pane beside the page (D130): the frame's, in the address. While it is open the page's own pane holds
+  // nothing; a booking being made waits under it and comes back when it closes.
+  const asking = asksBeside(search);
   const title =
     view === 'day'
       ? dayLabel(anchor)
@@ -600,9 +609,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const act = (item: AgendaItem, mode: Exclude<Mode, 'view'>) =>
     mode === 'move' && !mobile ? move.start(item) : setActing({ item, mode });
   /**
-   * "Fråga om veckan", "om dagen", "om månaden" (board Calendar, the `week` state): the range on screen, with the
-   * calendar's own read of that range as its chip, is what the box in the pane asks about (the product owner,
-   * 2026-11-18), and what a conversation is about on a phone (D126 rule 5).
+   * What the frame's "Fråga assistenten" asks about (D130 rule 4, board Calendar's `week` state): the range on screen, the
+   * week, the day or the month, with the calendar's own read of that range as its chip (the product owner, 2026-11-18).
    */
   const rangeRead =
     view === 'day'
@@ -615,27 +623,46 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     chips: [{ ref: 'capability:' + rangeRead.capability, kind: 'capability', label: shortTitle }],
     search: viewSearch(rangeRead),
   };
+  /** The range in the words of the frame's pane (board KalFragaVecka): "Om vecka 45", and its box "Fråga om veckan". */
+  const rangeAsked: PageSubject = {
+    ...rangeSubject,
+    about: `Om ${shortTitle.toLocaleLowerCase('sv-SE')}`,
+    placeholder: `Fråga om ${rangeWord}`,
+  };
   /** What the box in the pane can be about: the entry being moved, else the entry in the address. */
   const paneItem = (movingId ? move.item : null) ?? entryItem;
-  /** "Fråga om veckan" holds the pane: on a phone there is no pane, and its button leads to a conversation (D126 rule 5). */
-  const rangeAsk = rangeOpen && !mobile;
   /**
-   * What the conversation and the box in the pane are about (the product owner, 2026-11-18: they stand under every
-   * entry from the start, no button opens them): the range while "Fråga om veckan" holds the pane, else the entry in the
-   * pane, or its move. A booking made by hand has none. Without a model there is no box (D8), and on a phone no pane.
+   * What the conversation and the box in the page's own pane are about (the product owner, 2026-11-18: they stand under
+   * every entry from the start, no button opens them, D130 rule 5): the entry in the pane, or its move. A booking made
+   * by hand has none. Without a model there is no box (D8), and on a phone no pane.
    */
-  const askSubject = mobile || !model ? null : rangeAsk ? rangeSubject : paneItem ? entrySubject(paneItem) : null;
-  // Another entry or another range on screen is another subject: the person's conversation about that one is shown and
-  // continued, or the next question starts one (`useAskInPlace`).
-  const ask = useAskInPlace(askSubject, response => takeAnswer(response.prepared));
-  // An entry chosen while "Fråga om veckan" holds the pane (on the grid, from Förslag) takes the pane. Compared with the
-  // entry before, since an entry that stood in the pane leaves the address only after the range has taken it.
-  const lastEntry = useRef(entryId);
+  const thingAsked = mobile || !model ? null : paneItem ? entrySubject(paneItem) : null;
+  /**
+   * The same, with the words the pane says it in (D130 rules 4 and 10): the box's words are those of boards KalFraga and
+   * KalFragaFlytt, the move form's asking for another time.
+   */
+  const askSubject: PageSubject | null = thingAsked && {
+    ...thingAsked,
+    about: `Om ${thingAsked.label} ${paneItem?.title ?? ''}`.trim(),
+    placeholder:
+      movingId && move.item
+        ? move.item.proposal
+          ? 'Fråga om förslaget'
+          : 'Be om en annan tid'
+        : paneItem?.proposal
+          ? 'Fråga om förslaget'
+          : paneItem?.event && movable(paneItem.event)
+            ? 'Fråga om mötet, eller be om en ändring'
+            : 'Fråga om mötet',
+  };
+  // Another entry on screen is another subject: the person's conversation about that one is shown and continued, or the
+  // next question starts one (`usePageConversation`). Held here, so it stays while the pane becomes the drawer and back.
+  const talk = usePageConversation(askSubject, { onAnswer: response => takeAnswer(response.prepared) });
+  // The frame's pane opened (the button, Back, a reload) lets go of a move being made, as an entry in the address is let
+  // go of by the address itself (`withAsk`).
   useEffect(() => {
-    const was = lastEntry.current;
-    lastEntry.current = entryId;
-    if (entryId && entryId !== was) setRangeOpen(false);
-  }, [entryId]);
+    if (asking && move.moving) move.close();
+  }, [asking]);
   /** Whether a day is in the range on screen. */
   const inView = (day: string) =>
     view === 'week' ? weekStart(day) === anchor : view === 'month' ? monthStart(day) === anchor : day === anchor;
@@ -660,6 +687,9 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     if (mobile) return false;
     move.start(item);
     move.setSpan({ start: prepared.start, end: prepared.end });
+    // The form takes the page's pane: the assistant's pane closes (D130 rule 5), and its conversation is found again
+    // with the button.
+    if (asking) navigate(withoutOwn(pathname, search, [ASK_PARAM]));
     announce(
       `${whenOf({ ...item, start: prepared.start, end: prepared.end })} står i formuläret Flytta ${item.title}. Inget är sparat förrän du trycker på Spara.`,
     );
@@ -671,16 +701,20 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const takeAnswer = (prepared: Prepared | undefined) => {
     if (prepared && askSubject) takePrepared(prepared, askSubject);
   };
+  /** An answer in the frame's pane, about the range: the same for a meeting of the range (`takePrepared`). */
+  const takeRangeAnswer = (prepared: Prepared | undefined) => {
+    if (prepared) takePrepared(prepared, rangeAsked);
+  };
   /**
    * Under an earlier answer in the pane, what it prepared is never made by itself (a reload never greets the person
    * with a form or a question they did not ask for): the row under it has the button that makes it ready.
    */
-  const preparedAction = (prepared: Prepared) => {
+  const preparedAction = (prepared: Prepared, about: ThingSubject | null) => {
     const item = seen.current.get(prepared.event.id);
     if (!item?.event || !movable(item.event) || (prepared.kind === 'calendar.move' && mobile)) return null;
     return {
       label: prepared.kind === 'calendar.move' ? 'Använd tiden' : 'Ställ in mötet …',
-      onPress: () => void takePrepared(prepared, askSubject),
+      onPress: () => void takePrepared(prepared, about),
     };
   };
   // "Visa i kalendern" under an answer in a conversation brings the prepared decision in the router's state, never in
@@ -762,24 +796,15 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   /**
    * The conversation about what the pane holds, and the box (the product owner, 2026-11-18; boards KalFraga,
    * KalFragaFlytt and the head and box of KalFragaVecka): the entry's facts or the form's fields at the top of the body,
-   * a rule, then the whole conversation over the box (`AskTalk`); a form's buttons stay at the foot, under the box. The
-   * box keeps its place in the tree from the entry to its move form and back, so the focus and the words in it stay. Esc
-   * and ✕ are the pane's as they were: Esc in the move form goes back to the entry, with the conversation.
+   * a rule, then the whole conversation over the box, drawn by the conversation's own parts (`PageTalk`, D130 "One
+   * component"); a form's buttons stay at the foot, under the box. The box keeps its place in the tree from the entry to
+   * its move form and back, so the focus and the words in it stay. Esc and ✕ are the pane's as they were: Esc in the
+   * move form goes back to the entry, with the conversation. Under an earlier answer that prepared a decision stands the
+   * page's own button for it (`preparedAction`).
    */
   const withAsk = (s: Shown | null): Shown | null => {
-    if (!s || !ask.subject || s.id === 'booking') return s;
-    const placeholder =
-      s.id === RANGE_ID
-        ? `Fråga om ${rangeWord}`
-        : paneItem?.proposal
-          ? 'Fråga om förslaget'
-          : s.id.startsWith('move:')
-            ? 'Be om en annan tid'
-            : paneItem?.event && movable(paneItem.event)
-              ? 'Fråga om mötet, eller be om en ändring'
-              : 'Fråga om mötet';
-    const under = (m: ThreadMessage) =>
-      m.meta?.prepared ? <PreparedRow prepared={m.meta.prepared} action={preparedAction(m.meta.prepared)} /> : null;
+    if (!s || !talk.subject || s.id === 'booking') return s;
+    const prepared = (p: Prepared) => <PreparedRow prepared={p} action={preparedAction(p, askSubject)} />;
     return {
       ...s,
       talk: true,
@@ -792,15 +817,15 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
             </>
           )}
           <StackItem size="fill">
-            <AskTalk ask={ask} placeholder={placeholder} under={under} />
+            <PageTalk talk={talk} prepared={prepared} />
           </StackItem>
         </VStack>
       ),
     };
   };
   /**
-   * What the pane holds: the move being made, else "Fråga om veckan", else the entry in the address, else the booking
-   * being made. The range comes before the entry, since the entry it replaced leaves the address a moment after.
+   * What the pane holds: the move being made, else the entry in the address, else the booking being made, which waits
+   * while the frame's pane is open (D130: the assistant's pane and the page's own take each other's place).
    */
   const shown: Shown | null = withAsk(
     movingId && move.item
@@ -813,59 +838,40 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
           foot: foot(move.error ? alert(move.error) : null, <MoveButtons move={move} />),
           form: true,
         }
-      : rangeAsk && ask.subject
-        ? {
-            // Board KalFragaVecka, its head and box: the calendar's mark and name, the range as the title, ✕; the
-            // exchange once something is asked; the box with the focus in it.
-            id: RANGE_ID,
-            source: calendarName,
-            mark: calendarMark,
-            title: shortTitle,
-            body: null,
-            form: true,
-          }
-        : entryItem
-          ? entryShown(entryItem)
-          : !mobile && booking.draft
-            ? {
-                id: 'booking',
-                source: calendarName,
-                mark: calendarMark,
-                title: 'Ny bokning',
-                under: (
-                  <Text type="supporting" color="secondary">
-                    I din kalender, med inbjudan till dem du väljer.
-                  </Text>
+      : entryItem
+        ? entryShown(entryItem)
+        : !mobile && !asking && booking.draft
+          ? {
+              id: 'booking',
+              source: calendarName,
+              mark: calendarMark,
+              title: 'Ny bokning',
+              under: (
+                <Text type="supporting" color="secondary">
+                  I din kalender, med inbjudan till dem du väljer.
+                </Text>
+              ),
+              body: <BookingFields booking={booking} titleRef={paneFocus as Ref<HTMLInputElement>} />,
+              foot: foot(
+                booking.error && !booking.error.uncertain ? (
+                  alert(booking.error.text)
+                ) : (
+                  <BookingHint booking={booking} />
                 ),
-                body: <BookingFields booking={booking} titleRef={paneFocus as Ref<HTMLInputElement>} />,
-                foot: foot(
-                  booking.error && !booking.error.uncertain ? (
-                    alert(booking.error.text)
-                  ) : (
-                    <BookingHint booking={booking} />
-                  ),
-                  <BookingButtons booking={booking} />,
-                ),
-                form: true,
-              }
-            : null,
+                <BookingButtons booking={booking} />,
+              ),
+              form: true,
+            }
+          : null,
   );
   /** The entry leaves the address, everything else in it stays. */
   const closeEntry = () => {
-    const q = new URLSearchParams(search);
-    if (!q.has(ENTRY_PARAM)) return;
-    q.delete(ENTRY_PARAM);
-    const rest = q.toString();
-    navigate(rest ? `${pathname}?${rest}` : pathname);
+    if (new URLSearchParams(search).has(ENTRY_PARAM)) navigate(withoutOwn(pathname, search, [ENTRY_PARAM]));
   };
-  /**
-   * ✕ and Esc let go of what the pane holds: a move goes back to its entry (or to the range that prepared it), "Fråga om
-   * veckan" closes and a booking being made under it comes back, a booking is dropped, an entry leaves the address.
-   */
+  /** ✕ and Esc let go of what the pane holds: a move goes back to its entry, a booking is dropped, an entry leaves the address. */
   const closePane = () => {
     if (!shown) return;
     if (shown.id.startsWith('move:')) move.close();
-    else if (shown.id === RANGE_ID) setRangeOpen(false);
     else if (shown.id === 'booking') booking.close();
     else closeEntry();
   };
@@ -879,25 +885,11 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     const active = document.activeElement;
     if (!shown && active instanceof HTMLElement && active !== document.body) opener.current = active;
     if (move.moving) move.close();
-    setRangeOpen(false);
     if (!booking.draft) booking.start(at ?? nextWholeHour(new Date()));
     else if (at) booking.setSpan(at);
-    closeEntry();
-  };
-  /**
-   * "Fråga om veckan" (the product owner, 2026-11-18, board KalFragaVecka): the pane holds the box alone, with the focus
-   * in it, the way a booking takes the pane: an entry standing there leaves the address and a move is let go of; a
-   * booking being made is kept and comes back when the box is closed. What the person was on is the way back, taken here
-   * as `startBooking` takes it.
-   */
-  const openRangeAsk = () => {
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && active !== document.body && !paneRegion.current?.contains(active))
-      opener.current = active;
-    if (move.moving) move.close();
-    setRangeOpen(true);
-    ask.focusBox();
-    closeEntry();
+    // An entry standing in the pane, and the assistant's pane, give the form their place (D130 rule 5).
+    const q = new URLSearchParams(search);
+    if (q.has(ENTRY_PARAM) || asksBeside(q)) navigate(withoutOwn(pathname, search, [ENTRY_PARAM, ASK_PARAM]));
   };
   /** An entry chosen on the grid: the block of the booking being made leads back to its form, any other entry opens. */
   const openItem = (item: AgendaItem) => {
@@ -926,7 +918,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     if (besideId === null) {
       const back = opener.current;
       opener.current = null;
-      if (was !== null) (back?.isConnected ? back : document.getElementById(TITLE_ID))?.focus();
+      // The frame's pane taking the place gives the focus to its own box (D130 rule 2): nothing is given back here.
+      if (was !== null && !asking) (back?.isConnected ? back : document.getElementById(TITLE_ID))?.focus();
       return;
     }
     if (was === besideId) return;
@@ -1018,21 +1011,13 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       })}
     />
   );
-  // In the pane on a wide screen and in the drawer; a phone's head has no room for it (see the head below).
-  const askWeek = (
-    <AskClew
-      subject={rangeSubject}
-      onAsk={mobile ? undefined : openRangeAsk}
-      label={`Fråga om ${rangeWord}`}
-      size="sm"
-    />
-  );
   const bookButton = <Button variant="primary" size="sm" label="Ny bokning" onClick={() => startBooking(null)} />;
-  // The one page header (D74): the title first, what can be done at the end of its line. A phone has two rows: the
-  // title with what can be done, and under it where in time with how it is shown, 44 px controls under a finger. The
-  // controls are Astryx's `sm`, as the toolbar that held them made them (28 px, under the heading's 32 px line). Both
-  // rows are full at 375 px, so "Fråga om veckan" is not on a phone's head (it would make a third row and push the week
-  // down); an entry opened on a phone still has "Fråga assistenten" among its buttons in the drawer.
+  // The one page header (D74): the title first, what can be done at the end of its line, and the frame's "Fråga
+  // assistenten" last (D130 rule 1). A phone has two rows: the title with what can be done, and under it where in time
+  // with how it is shown, 44 px controls under a finger. The controls are Astryx's `sm`, as the toolbar that held them
+  // made them (28 px, under the heading's 32 px line). Both rows are full at 375 px, so the frame draws no "Fråga
+  // assistenten" on a phone's head (`onPhone: false`; a third row would push the week down); an entry opened on a phone
+  // still has "Fråga assistenten" among its buttons in the drawer.
   // In the one page frame (D126): the title on the line every page's title stands on. Where in time stands beside the
   // title it changes (board "Förslag: veckan fyller arket"); how it is shown and what can be done at the line's end.
   const head = mobile
@@ -1071,7 +1056,6 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
               <SegmentedControlItem value="month" label="Månad" />
             </SegmentedControl>
             <HStack gap={2} vAlign="center" wrap="wrap">
-              {askWeek}
               {proposalsMenu}
               {bookButton}
             </HStack>
@@ -1084,7 +1068,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   if (withoutCalendar)
     return (
       <Shell user={user} nav={nav}>
-        <PageFrame title="Kalender" titleId={TITLE_ID}>
+        <PageFrame ask={{ none: 'no-page' }} title="Kalender" titleId={TITLE_ID}>
           <EmptyState
             headingLevel={2}
             icon={<Icon icon="calendar" size="lg" />}
@@ -1141,6 +1125,12 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   return (
     <Shell user={user} nav={nav}>
       <PageFrame
+        ask={{
+          subject: rangeAsked,
+          onAnswer: response => takeRangeAnswer(response.prepared),
+          prepared: p => <PreparedRow prepared={p} action={preparedAction(p, rangeAsked)} />,
+          onPhone: false,
+        }}
         title={head.title}
         titleId={TITLE_ID}
         status={head.status}

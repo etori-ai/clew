@@ -28,11 +28,11 @@ export function FirstLoad({ header }: { header: SiteHeaderView | null }) {
   // In the one page frame every page has (D126), so nothing moves when the page takes the placeholders' place.
   const page =
     location.pathname === '/' ? (
-      <PageFrame plain pinned={false}>
+      <PageFrame ask={{ none: 'no-page' }} plain pinned={false}>
         <HemSkeleton />
       </PageFrame>
     ) : (
-      <PageFrame>
+      <PageFrame ask={{ none: 'no-page' }}>
         <VStack gap={6}>
           <TitleSkeleton />
           {location.pathname === '/units' ? <UnitsSkeleton /> : <ContentSkeleton heading={false} />}

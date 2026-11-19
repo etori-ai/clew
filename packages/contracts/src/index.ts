@@ -3630,6 +3630,18 @@ export const ExecutionSummarySchema = object({
   compensates: Type.Union([Type.String(), Type.Null()]),
 });
 export type ExecutionSummary = Static<typeof ExecutionSummarySchema>;
+/**
+ * A question conversation that was asked beside a page (D130 rule 6): the subject the page gave it, so the pane finds
+ * the person's latest conversation about that subject again on any device, the words that say what it is about (Alla
+ * samtal), and when the person opened it as a conversation. Until then it is not among the rail's latest: a question
+ * asked beside each of ten meetings would otherwise push every longer conversation out. Absent on every other thread.
+ */
+export const AskedBesideSchema = object({
+  subject: Type.String({ minLength: 1, maxLength: 1200 }),
+  label: Type.String({ minLength: 1, maxLength: 200 }),
+  openedAt: Type.Union([instant, Type.Null()]),
+});
+export type AskedBeside = Static<typeof AskedBesideSchema>;
 /** Every thread answers "varför ser jag detta?" with trigger, source and time. */
 export const ThreadSchema = object({
   /** Clew authority under which source content was projected; absent legacy snapshots are not trusted. */
@@ -3654,6 +3666,8 @@ export const ThreadSchema = object({
   summary: Type.String(),
   /** The assistants of other systems a question conversation has an exchange with, the one asked last first. */
   handover: Type.Optional(HandoverSchema),
+  /** A question conversation asked beside a page (D130): what it is about, and when it was opened as a conversation. */
+  askedBeside: Type.Optional(AskedBesideSchema),
   items: Type.Array(ThreadItemSchema),
   /**
    * The entities a card of Clew's own is about while none of its rows may name them (D97 item 6, D96 item 6): an action
@@ -4743,6 +4757,14 @@ export const ConversationInput = object({
    * so, and reads "the open item", "the card" or "the pane" as that thing. A ref that is not among the chips says nothing.
    */
   beside: Type.Optional(ChipSchema.properties.ref),
+  /**
+   * The question is asked in the assistant's pane beside a page (D130): the page's subject, by the key the page gives
+   * it, and the words for what it is about. A conversation this question starts is kept as asked beside that subject
+   * (`Thread.askedBeside`); on a conversation that exists it says nothing.
+   */
+  page: Type.Optional(
+    object({ subject: AskedBesideSchema.properties.subject, label: AskedBesideSchema.properties.label }),
+  ),
   conversationId: Type.Optional(id),
   /**
    * Send this turn to a source's assistant (`HandoverAssistant.id`) and not to Clew's own. The text goes unchanged, and

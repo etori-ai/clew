@@ -77,7 +77,7 @@ const {
 } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
-const { ask, converse, listAssistants, listObjects, reply } = assistant;
+const { ask, converse, listAssistants, listObjects, markOpened, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const approval = ajv.compile(
   Type.Object(
@@ -500,6 +500,11 @@ api.post('/conversation/stream', async c => {
       });
     }
   });
+});
+/** The conversation's page opened a conversation asked beside a page (D130 rule 6): marked once, answered with the thread. */
+api.post('/conversations/:id/opened', async c => {
+  const thread = await markOpened(c.get('session').context, c.req.param('id'));
+  return thread ? c.json(thread) : c.json({ error: 'Samtalet finns inte.' }, 404);
 });
 /** What `@` can point at, in the box's context: `near` is a comma-separated list of the refs the person is looking at. */
 api.get('/objects', async c => {

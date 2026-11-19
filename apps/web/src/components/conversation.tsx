@@ -17,6 +17,7 @@ import type {
 import {
   AreaChip,
   AreaGlyph,
+  ArrowsPointingOutIcon,
   Avatar,
   Badge,
   Button,
@@ -66,7 +67,7 @@ import { api, ApiError } from '../api';
 import { useDecisionSend } from '../mutations';
 import { valueText, type ActionStep } from '../action-path';
 import { executionStatus } from '../execution-status';
-import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../answer-card';
+import { answerCard, figureBelongs, rowsSummary, type AnswerCard, type ViewRows } from '../answer-card';
 import { isSide, sentWords, sideCount, suggestedWords } from '../conversation-about';
 import { DOT } from '../dot';
 import { itemPageHref, rowFacts, rowLine } from '../work-items';
@@ -559,6 +560,39 @@ export function PreparedRow({
     </HStack>
   );
 }
+/**
+ * Where an answer beside a page needs more room than the pane has (D130 rules 7 and 10; canvas board AskArende-more):
+ * a view, a proposals' week and the sources an answer cites are drawn on the conversation's page, and the pane draws one
+ * row that says what it is and leads there. It is also where a person meets what the conversation's page is for.
+ */
+function NeedsRoom({ words, href }: { words: string[]; href: string }) {
+  return (
+    <Card variant="muted" padding={3}>
+      <HStack hAlign="between" vAlign="center" gap={3} wrap="wrap">
+        <VStack gap={0.5}>
+          {words.map(w => (
+            <Text key={w} type="supporting" color="secondary">
+              {w}
+            </Text>
+          ))}
+        </VStack>
+        <Button
+          size="sm"
+          variant="secondary"
+          label="Visa i samtalet"
+          icon={<Icon icon={ArrowsPointingOutIcon} size="sm" />}
+          href={href}
+        />
+      </HStack>
+    </Card>
+  );
+}
+/** What a view under an answer is, in words for the row that leads to it: its title and how many rows it holds. */
+const viewWords = (card: Extract<AnswerCard, { kind: 'open' | 'folded' }>) =>
+  [card.view.title, rowsSummary(card.rows)].filter(Boolean).join(DOT);
+/** What an answer cites, in words for that row: the first source, and how many more. */
+const sourceWords = (sources: SourceCitation[]) =>
+  sources.length === 1 ? `Källa: ${sources[0]!.label}` : `Källor: ${sources[0]!.label} och ${sources.length - 1} till`;
 /** The proposals' week in the transcript (D32): the week's meetings with the drawn times among them, as a list in a ghost bubble, after the `ai-chat` template's card-in-a-bubble. */
 function ProposalWeek({ thread }: { thread: Thread }) {
   const week = useQuery({ ...calendarWeekQuery(thread.week ?? ''), enabled: !!thread.week });
@@ -812,6 +846,11 @@ const CLEW = 'Assistenten';
  * confirm is plain content in a ghost bubble (one warning badge, the rows, two buttons), and what was done is a system
  * message with Ångra. The answer is the card (H1): a turn about an open card draws that card in the turn, under its
  * sentence, with the card's own rows and buttons; it is drawn once per conversation and stays live.
+ *
+ * Beside a page (`room="pane"`, D130 "One component" and rule 7) the same transcript is drawn compact, and an answer is
+ * text, a few named rows as links, or one row for an action the assistant filled in: the steps while it reads, the
+ * answer's words, a draft and Clew's own confirmations stay; work items become their rows; a view, a proposals' week and
+ * the sources become one row each that leads to the conversation's page, where there is room for them.
  */
 export function Transcript({
   onOpenView,
@@ -822,6 +861,9 @@ export function Transcript({
   asideHref,
   asideOpen,
   cardHref,
+  room = 'page',
+  prepared,
+  conversationHref,
 }: {
   onOpenView: (view: ViewRef) => void;
   renderCard: (thread: Thread) => ReactNode;
@@ -845,6 +887,15 @@ export function Transcript({
   asideOpen?: string | null | undefined;
   /** The address that puts a work item beside the transcript: where a row of several items leads. */
   cardHref?: ((threadId: string) => string) | undefined;
+  /** Where the transcript is drawn: the conversation's own page, or the pane beside another page (D130). */
+  room?: 'page' | 'pane';
+  /**
+   * What stands under an answer that prepared a decision (`MessageMeta.prepared`), drawn by the page the decision is
+   * made on (Kalender's "Använd tiden", D129); else the row that leads there.
+   */
+  prepared?: ((prepared: Prepared) => ReactNode) | undefined;
+  /** The conversation's own page, where an answer that needs room is drawn (the pane only; D130 rules 6 and 7). */
+  conversationHref?: string | undefined;
 }) {
   const talk = useConversation();
   const markOf = useObjectMark();
@@ -865,6 +916,8 @@ export function Transcript({
   const transcriptArea = useRef<HTMLDivElement>(null);
   const animatedLayout = useAnimatedLayout({ containerRef: transcriptArea });
   if (!conversation && !pending) return null;
+  const pane = room === 'pane';
+  const wholeHref = conversationHref ?? (conversation ? `/conversations/${conversation.id}` : undefined);
   // What was said in the panel beside the conversation is drawn there: the transcript is Clew's.
   const everything = conversation?.messages ?? [];
   const messages = everything.filter(m => !isSide(m));
@@ -1023,6 +1076,14 @@ export function Transcript({
     // names it and opens the action's dialog itself.
     const drafted = isActionDraft(m.meta?.draft) ? m.meta!.draft!.threadId : null;
     const cards = (m.meta?.cards ?? []).filter(id => id !== drafted);
+    const sources = m.meta?.sources ?? [];
+    // Beside a page, what needs room is said in one row that leads to the conversation's page (D130 rule 7).
+    const roomy = pane
+      ? [
+          ...(card && card.kind !== 'button' ? [viewWords(card)] : []),
+          ...(sources.length ? [sourceWords(sources)] : []),
+        ]
+      : [];
     return (
       <ChatMessage key={`turn-${i}`} sender="assistant" name={clewName(m)}>
         {calls.length > 0 && <ChatToolCalls calls={calls} />}
@@ -1037,9 +1098,10 @@ export function Transcript({
             >
               {m.body}
             </Markdown>
-            {m.meta?.prepared && <PreparedRow prepared={m.meta.prepared} />}
-            {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
-            {cards.length > 1 || (cards.length > 0 && m.meta?.cardsAs === 'rows') ? (
+            {m.meta?.prepared && (prepared ? prepared(m.meta.prepared) : <PreparedRow prepared={m.meta.prepared} />)}
+            {!pane && m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
+            {/* A whole work item has no room beside a page: there one item is a row too, its name the link to it. */}
+            {cards.length > 1 || (cards.length > 0 && (pane || m.meta?.cardsAs === 'rows')) ? (
               <TurnCardRows
                 ids={cards}
                 hrefFor={id => cardHref?.(id) ?? itemPageHref(id, window.location.pathname + window.location.search)}
@@ -1047,14 +1109,18 @@ export function Transcript({
             ) : (
               cards.map(id => <TurnCard key={id} id={id} render={renderCard} />)
             )}
-            <AnswerView
-              card={card}
-              at={m.createdAt}
-              animatedLayout={animatedLayout}
-              hrefFor={viewHref}
-              onShowAll={() => onOpenView(m.meta!.view!)}
-            />
-            {(card?.kind === 'button' || m.meta?.sources?.length) && (
+            {pane ? (
+              roomy.length > 0 && wholeHref && <NeedsRoom words={roomy} href={wholeHref} />
+            ) : (
+              <AnswerView
+                card={card}
+                at={m.createdAt}
+                animatedLayout={animatedLayout}
+                hrefFor={viewHref}
+                onShowAll={() => onOpenView(m.meta!.view!)}
+              />
+            )}
+            {(card?.kind === 'button' || (!pane && m.meta?.sources?.length)) && (
               <HStack gap={2} wrap="wrap">
                 {card?.kind === 'button' && (
                   <Button
@@ -1063,7 +1129,7 @@ export function Transcript({
                     {...(viewHref ? { href: viewHref(m.meta!.view!) } : { onClick: () => onOpenView(m.meta!.view!) })}
                   />
                 )}
-                {m.meta?.sources && m.meta.sources.length > 0 && (
+                {!pane && m.meta?.sources && m.meta.sources.length > 0 && (
                   <Button
                     size="sm"
                     label="Lägg under Behöver dig"
@@ -1093,7 +1159,7 @@ export function Transcript({
   };
   return (
     <VStack gap={3} ref={transcriptArea}>
-      <ChatMessageList density="balanced" align="bottom" isStreaming={busy}>
+      <ChatMessageList density={pane ? 'compact' : 'balanced'} align="bottom" isStreaming={busy}>
         {[
           ...messages.flatMap((m, i) => {
             // Clew suggested the assistant and the person chose it (D126 item 6): the question stands once, says it was
@@ -1170,9 +1236,21 @@ export function Transcript({
               ]
             : []),
         ]}
-        {!pending && weekThread && weekThread.proposals.some(p => p.status === 'proposed') && (
-          <ProposalWeek thread={weekThread} />
-        )}
+        {!pending &&
+          weekThread &&
+          weekThread.proposals.some(p => p.status === 'proposed') &&
+          (!pane ? (
+            <ProposalWeek thread={weekThread} />
+          ) : (
+            weekThread.week &&
+            wholeHref && (
+              <ChatMessage sender="assistant" name={<VisuallyHidden>{CLEW}</VisuallyHidden>}>
+                <ChatMessageBubble variant="ghost" width="100%">
+                  <NeedsRoom words={[`Vecka ${weekNumber(weekThread.week)} med förslagen`]} href={wholeHref} />
+                </ChatMessageBubble>
+              </ChatMessage>
+            )
+          ))}
         {!pending && latest && latest.clewActions.length > 0 && (
           <ChatMessage sender="assistant" name={<VisuallyHidden>{CLEW}</VisuallyHidden>}>
             {/* A proposal waits for a decision: the same "att bekräfta" as a draft on a card, nothing is done until the black button. */}

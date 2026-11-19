@@ -775,6 +775,7 @@ export function WorkItemPage({
   // places the facts itself, first.
   return (
     <PageFrame
+      ask={{ later: 'things' }}
       back={back}
       trail={
         <Text type="supporting" color="secondary">

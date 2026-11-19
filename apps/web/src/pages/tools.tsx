@@ -159,6 +159,7 @@ export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: 
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        ask={{ later: 'registers' }}
         title="Alla verktyg"
         meta={
           read.data && all.length > 0

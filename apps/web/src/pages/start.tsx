@@ -406,6 +406,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     // nothing is pinned (1.4.10): the page grows with its content and the shell's main region scrolls the whole page.
     return (
       <PageFrame
+        ask={{ none: 'assistant' }}
         entry={entry}
         plain
         pinned={!mobile && !short}

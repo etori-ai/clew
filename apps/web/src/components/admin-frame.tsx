@@ -88,7 +88,7 @@ export function AdminSectionsList() {
   const area = useRef<HTMLDivElement>(null);
   const animatedLayout = useAnimatedLayout({ containerRef: area });
   return (
-    <PageFrame title="Administration" label="Administration">
+    <PageFrame ask={{ none: 'administration' }} title="Administration" label="Administration">
       <VStack ref={area}>
         <List density="spacious" aria-label="Administration" animatedLayout={animatedLayout}>
           {sections.map(r => (
@@ -163,6 +163,7 @@ export function AdminFrame({
       : null;
   return (
     <PageFrame
+      ask={{ none: 'administration' }}
       back={back}
       trail={
         typeof thing?.place === 'string' ? (

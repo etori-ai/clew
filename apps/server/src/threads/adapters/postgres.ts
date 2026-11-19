@@ -118,6 +118,7 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
         items: t.items,
         subjects: t.subjects ?? [],
         handover: t.handover ?? null,
+        askedBeside: t.askedBeside ?? null,
         actions: t.actions,
         waitingOn: t.waitingOn,
         deadline: t.deadline,

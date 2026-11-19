@@ -17,10 +17,14 @@ import { PanelBody, answersWithRowsOf } from '../components/panel';
 import { useView, viewSubject } from '../components/view-read';
 import { AskClew } from '../components/thing-panel';
 import { PageFrame, WayBack } from '../components/page-frame';
+import { listSubject } from '../components/page-conversation';
 import { PageHeader } from '../components/page-header';
 import { ContentArrival, ContentSkeleton } from '../components/loading';
 
-/** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
+/**
+ * The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the
+ * same rows as a list. The view moves the line by the assistant's pane while it stands beside the page (D130 rule 11).
+ */
 const tableQuery = '(min-width: 1280px)';
 /** The kinds of read that are one thing (D126 rule 1): drawn as a thing's page, not as a register. */
 const ONE_THING: ReadonlySet<PanelViewSpec['kind']> = new Set(['record', 'detail', 'document', 'text']);
@@ -70,8 +74,9 @@ function placeOf(from: string | null): RailCurrent {
  * stands when the view is no tool of its own. A read the person may not open, and one that does not exist, both say
  * "Verktyget finns inte" and nothing else, and are not asked for.
  * A list or a table is a register (D126 rule 8, board Personal, the `table-page` template): the name as the heading
- * with the system's badge and "Fråga assistenten" on its line, the view's own search field and choice and the count under it,
- * then the rows. The name in a row is the link to the row's own read, its page (rule 4); a row never opens a panel.
+ * with the system's badge and the frame's "Fråga assistenten" on its line (D130: the assistant's pane beside the list),
+ * the view's own search field and choice and the count under it, then the rows. The name in a row is the link to the
+ * row's own read, its page (rule 4); a row never opens a panel.
  * One thing (a record, a contact card, a text, a document) is a thing's page (rule 1, the `work-item-detail`
  * template): the way back and the title, "Fråga assistenten" under it, the read in the column and a record's facts in the end
  * panel, above the read where the window is narrow. The view is drawn by the one renderer (D38).
@@ -134,16 +139,15 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     manager: user.role === 'manager',
   });
   const tool = main.shown?.capability === capability ? main.shown : null;
-  // "Fråga assistenten" (D126 rule 5): a new conversation about the view as it stands; a list goes as its chip alone, one
-  // thing stands beside the conversation.
-  const subject =
+  // What the view is asked about with: its read's chip; a list goes as its chip alone, one thing stands beside the
+  // conversation.
+  const read =
     ready && title
       ? viewSubject(
           { capability, title, input: main.shown?.input ?? {} },
           opensAsPage(views, capability) || answersWithRowsOf(tool?.spec, tool?.output),
         )
       : null;
-  const ask = <AskClew subject={subject} />;
   const heading = missing ? 'Verktyget finns inte' : title || null;
   usePageTitle(heading, heading ?? false);
   // Arrived from a link on another page, the person starts at the heading (2.4.3): the page they left took the focus
@@ -181,6 +185,9 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   // One thing (D126 rule 1): the thing's page, as a work item's is drawn.
   const thing = tool?.spec && ONE_THING.has(tool.spec.kind) ? tool : null;
   if (thing?.spec && !missing) {
+    // "Fråga assistenten" (D126 rule 5): a new conversation with the thing beside it, until things' pages move into the
+    // frame (the plan's stage 3).
+    const ask = <AskClew subject={read} />;
     const spec = thing.spec;
     const split = hasBody(spec);
     // A record's name is its own title (the supplier, the person); the read it was opened under says what it is.
@@ -213,6 +220,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       // page that finds the link it was left by on the way back (`useFocusOnTheWayBack`, 2.4.3).
       <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
         <PageFrame
+          ask={{ later: 'things' }}
           back={back}
           trail={
             <Text type="supporting" color="secondary">
@@ -247,10 +255,11 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     );
   }
   // A register (D126 rule 8): the view draws its own title line with its controls and its count (D74), so the way back
-  // and the title stand in the frame's column, on the lines every page's title stands on.
+  // and the title stand in the frame's column, on the lines every page's title stands on. Its list is what the
+  // assistant beside it is about (D130 rule 4), and the frame's "Fråga assistenten" ends that title line.
   return (
     <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <PageFrame label={title || 'Vyn'}>
+      <PageFrame ask={{ subject: read && listSubject(read, title) }} label={title || 'Vyn'}>
         <VStack gap={4}>
           {missing ? (
             <EmptyState
@@ -264,7 +273,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
               {trail}
               {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
               {title
-                ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} end={ask} />
+                ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} />
                 : !failed && <Skeleton height={32} width={200} />}
               {banner}
               {tool ? (
@@ -279,7 +288,6 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                       tableQuery={tableQuery}
                       title={title}
                       titleId={TITLE_ID}
-                      pageAction={ask}
                       /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the page. */
                       onInput={next =>
                         navigate(withViewInput(location.pathname, location.search, next), { replace: true })

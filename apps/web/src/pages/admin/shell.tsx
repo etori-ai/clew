@@ -85,7 +85,7 @@ export function AdminIndexPage({ user }: { user: SessionUser }) {
   return (
     <Shell user={user} nav={nav}>
       {sections.length === 0 ? (
-        <PageFrame>
+        <PageFrame ask={{ none: 'administration' }}>
           {settled ? (
             <EmptyState
               headingLevel={1}

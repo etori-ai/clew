@@ -649,6 +649,7 @@ export function PersonalFrame({
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        ask={{ later: 'registers' }}
         title="Personal"
         titleId={PERSONAL_TITLE_ID}
         meta={groups.length > 0 ? peopleLine(groups) : undefined}

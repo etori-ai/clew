@@ -1,4 +1,5 @@
 import type {
+  AskedBeside,
   AskValues,
   AuthenticatedContext,
   Chip,
@@ -43,6 +44,7 @@ import { modelAnswer, systemPrompt, type ReadRecord, type ToolCallRecord } from 
 import { DRAFT_TOOL, draftableActions, draftTool, type ActionDraft } from './drafts';
 import { ownOverlaps, prepareCancelTool, prepareMoveTool, PREPARE_TOOLS, whyNotChangeable } from './prepared';
 import { listObjects } from './objects';
+import { openedPath } from './opened';
 import {
   namedWork,
   PERSON_TOOL,
@@ -921,6 +923,9 @@ export function assistantUsecases(deps: AssistantDeps) {
     const askedMeta: MessageMeta = {
       ...(chips.length ? { chips, refs } : {}),
     };
+    // Only a conversation this question starts is kept as asked beside the page; on one that exists `page` says nothing (D130).
+    const beside: AskedBeside | undefined =
+      !existing && input.page ? { subject: input.page.subject, label: input.page.label, openedAt: null } : undefined;
     await store.transaction(async tx => {
       if (!existing) {
         await tx.insertThread({
@@ -934,6 +939,9 @@ export function assistantUsecases(deps: AssistantDeps) {
           connector: 'clew',
           area: 'fragor',
           summary: produced!.body,
+          // Asked in the pane beside a page (D130 rule 6): the conversation keeps the page's subject, so the pane finds
+          // it again on any device, and stays out of the rail's latest until it is opened as a conversation.
+          ...(beside ? { askedBeside: beside } : {}),
           items: [],
           actions: [],
           waitingOn: null,
@@ -965,6 +973,8 @@ export function assistantUsecases(deps: AssistantDeps) {
           shape: produced!.shape,
           chips: refs,
           tools: (produced!.toolCalls ?? []).map(c => c.capability),
+          // Asked in the pane beside a page (D130): that it was, never the page's subject or its words (D91).
+          ...(beside ? { askedBeside: true } : {}),
           // Every read the turn made through the registry, with its count or that it failed; never a row (D122 item 8).
           ...(turn.reads.length ? { reads: turn.reads } : {}),
           ...(produced!.view ? { view: produced!.view.capability } : {}),
@@ -1056,6 +1066,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     converse,
     ask,
     reply,
+    /** The conversation's page marks a conversation asked beside a page as opened (D130 rule 6); idempotent. */
+    markOpened: openedPath(deps),
     listObjects: (persona: AuthenticatedContext, q: string, near: string[] = []) => listObjects(deps, persona, q, near),
     /** The assistants of other systems the person may hand a conversation to; none when no source has any for them. */
     listAssistants: async (persona: AuthenticatedContext) => (await deps.handover?.list(persona)) ?? [],

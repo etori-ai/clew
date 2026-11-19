@@ -204,7 +204,9 @@ export function useRail({
       auxiliaryData: { href: toolHref(e.capability), detail: e.source, group: 'Verktyg' },
     }));
     const items: SearchableItem<Found>[] = [
-      ...g.questions.map(t => ({
+      // Every conversation is found, also one asked beside a page and not yet opened, which only the rail's latest
+      // leave out (D130 rule 6).
+      ...g.allQuestions.map(t => ({
         id: 'samtal:' + t.id,
         label: t.title,
         auxiliaryData: { href: `/conversations/${t.id}`, detail: '', group: 'Samtal' },
@@ -241,11 +243,13 @@ export function useRail({
   // The first tools, and the one open now when it is further down the list, so the page the person is on stays marked.
   const openTool = menu.slice(TOOLS_SHOWN).find(e => e.capability === openCapability);
   const tools = [...menu.slice(0, TOOLS_SHOWN), ...(openTool ? [openTool] : [])];
-  // The newest conversations, and the one open now first in their place when it is older, as the board marks it.
+  // The newest conversations, and the one open now first in their place when it is older, as the board marks it. One
+  // asked beside a page stands among them once it has been opened as a conversation (D130 rule 6); the one on screen is
+  // marked at once, before its page has said so.
   const latest = g.questions.slice(0, CONVERSATIONS_SHOWN);
   const openConversation = latest.some(t => t.id === current.conversationId)
     ? undefined
-    : g.questions.find(t => t.id === current.conversationId);
+    : g.allQuestions.find(t => t.id === current.conversationId);
   const conversations = openConversation ? [openConversation, ...latest.slice(0, CONVERSATIONS_SHOWN - 1)] : latest;
   // The search (board Shell's "Sök"): Astryx's command palette over the page, opened from its row in the rail. A pick
   // opens what it found: a work item where a work item opens from the page the person is on, anything else at its address.
@@ -373,8 +377,8 @@ export function useRail({
               />
             );
           })}
-          {/* The register of every conversation, once there is one to list. */}
-          {g.questions.length > 0 && (
+          {/* The register of every conversation, once there is one to list, also one only asked beside a page. */}
+          {g.allQuestions.length > 0 && (
             <SideNavItem
               label="Alla samtal"
               icon={ChatBubbleLeftRightIcon}

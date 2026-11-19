@@ -123,7 +123,7 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
   const reviewing = !!live && !!action && step !== null;
   // The review names the tab itself while it is drawn (`Review`); the page's other states name it here.
   usePageTitle(reviewing ? null : missing ? 'Ärendet finns inte' : live && action ? 'Steget finns inte' : null);
-  const message = (content: ReactNode) => <PageFrame>{content}</PageFrame>;
+  const message = (content: ReactNode) => <PageFrame ask={{ later: 'things' }}>{content}</PageFrame>;
   let body: ReactNode;
   if (reviewing) body = <Review key={threadId} live={live} action={action} step={step} from={from} back={back} />;
   else if (live && action)
@@ -853,11 +853,12 @@ function Review({
     </VStack>
   );
   return mobile ? (
-    <PageFrame label="Granskningen" scrollTabStop footer={footer}>
+    <PageFrame ask={{ later: 'things' }} label="Granskningen" scrollTabStop footer={footer}>
       {column}
     </PageFrame>
   ) : (
     <PageFrame
+      ask={{ later: 'things' }}
       back={back}
       trail={trailLine}
       title={title}

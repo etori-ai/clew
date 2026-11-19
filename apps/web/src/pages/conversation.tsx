@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Thread, ViewRef } from '@clew/contracts';
@@ -29,6 +29,7 @@ import {
   type AgendaItem,
 } from '@clew/ui';
 import { areasQuery, entityDetailQuery, entityListQuery, threadQuery, threadsQuery } from '../queries';
+import { api } from '../api';
 import { errorMessage } from '../query-policy';
 import { keys } from '../query-keys';
 import { applyThread } from '../thread-cache';
@@ -171,6 +172,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   const marks = useMarks();
   // An entry opened from a day beside the conversation (D32): the calendar's own dialog, over the page.
   const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
+  useOpenedHere(pathname);
   /** ✕, or Esc in the pane: the thing leaves the address, the conversation stays, and the box has the focus. */
   const closePane = useCallback(() => {
     navigate(addressEntity(search) ? withoutSubject(pathname, search) : withoutPanel(pathname, search));
@@ -328,7 +330,15 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   if (short)
     return (
       <>
-        <PageFrame entry={entry} title={heading} titleId="samtal" meta={meta} actions={assistants} label="Samtalet">
+        <PageFrame
+          ask={{ none: 'assistant' }}
+          entry={entry}
+          title={heading}
+          titleId="samtal"
+          meta={meta}
+          actions={assistants}
+          label="Samtalet"
+        >
           {aside ?? (
             <VStack gap={4}>
               {body}
@@ -342,6 +352,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   return (
     <>
       <PageFrame
+        ask={{ none: 'assistant' }}
         entry={entry}
         title={heading}
         titleId="samtal"
@@ -394,6 +405,29 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       {dialog}
     </>
   );
+}
+
+/**
+ * A conversation asked beside a page is opened as a conversation when its page shows it (D130 rule 6): the page says so
+ * once, and the answer goes into the cache (D33), so the rail lists it among the latest from then on. Only for one not
+ * marked yet; a failure is left alone, and the next visit says it again.
+ */
+function useOpenedHere(pathname: string) {
+  const client = useQueryClient();
+  const id = /^\/conversations\/([^/]+)$/.exec(pathname)?.[1];
+  const shownId = id && id !== 'new' ? decodeURIComponent(id) : null;
+  const listed = useQuery(threadsQuery).data?.threads.find(t => t.id === shownId);
+  const single = useQuery({ ...threadQuery(shownId ?? ''), enabled: !!shownId && !listed }).data;
+  const shown = listed ?? single;
+  const said = useRef(new Set<string>());
+  useEffect(() => {
+    if (!shown?.askedBeside || shown.askedBeside.openedAt || said.current.has(shown.id)) return;
+    said.current.add(shown.id);
+    api
+      .conversationOpened(shown.id)
+      .then(thread => applyThread(client, thread))
+      .catch(() => said.current.delete(shown.id));
+  }, [shown, client]);
 }
 
 /** What the address says the conversation is about, and the pane that draws it. */

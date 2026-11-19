@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { HStack, Heading, StackItem, VStack } from '@clew/ui';
+import { useFrameAskButton } from './page-frame-context';
 
 /**
  * The one page header (D74): every surface in the shell opens with it. The first line is the surface's title at level 1
@@ -32,6 +33,9 @@ export function PageHeader({
   /** The second line: the mark row or the subtitle, in supporting text. */
   meta?: ReactNode;
 }) {
+  // The page frame's "Fråga assistenten" stands last on the title's line, after the surface's own controls (D130 rule 1):
+  // the frame cannot draw it where the content draws the title.
+  const ask = useFrameAskButton();
   const heading = (
     <Heading level={1} {...(titleId ? { id: titleId, tabIndex: -1 } : {})}>
       {title}
@@ -50,6 +54,7 @@ export function PageHeader({
         )}
       </StackItem>
       {end}
+      {ask}
     </HStack>
   );
   return meta ? (

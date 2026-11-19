@@ -68,6 +68,8 @@ test.describe('the three views', () => {
     await open(page, '/calendar');
     for (const day of ['mån 2 nov', 'tis 3 nov', 'ons 4 nov', 'tors 5 nov', 'fre 6 nov'])
       await expect(heading(page, 2, day)).toBeVisible();
+    // The head's two rows are full on a phone: the frame draws no "Fråga assistenten" there (D130, `onPhone: false`).
+    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     // The view switch is an adaptive menu on a phone (D31 §5).
     await page.getByRole('button', { name: 'Vy: Vecka' }).click();
     await page.getByRole('menuitem', { name: 'Dag' }).click();
@@ -366,7 +368,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(page).not.toHaveURL(/entry=/);
     await expect(block).toBeFocused();
   });
-  test('a meeting someone else organises says so and has no organiser’s buttons; the box under it asks about it in place, and Öppna samtalet leads to the conversation', async ({
+  test('a meeting someone else organises says so and has no organiser’s buttons; the box under it asks about it in place, and Öppna som samtal leads to the conversation', async ({
     page,
     api,
   }) => {
@@ -425,7 +427,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     expect(asked.own).toBe(true);
     expect(asked.conversationId).toBeUndefined();
     await expectNoAxeViolations(page);
-    await panel.getByRole('link', { name: 'Öppna samtalet' }).click();
+    await panel.getByRole('link', { name: 'Öppna som samtal' }).click();
     await expect(page).toHaveURL(/\/conversations\/om-event-rektorsmote/);
     await expect(page.getByText('Vad står på agendan?', { exact: true }).first()).toBeVisible();
   });
@@ -454,7 +456,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     expect(api.asked.at(-1)!.conversationId).toMatch(/^om-event-v\d$/);
     // The meeting's facts stay at the top of the pane, and the conversation has one way to its page.
     await expect(panel.getByText('Mona Berg', { exact: true })).toBeVisible();
-    await expect(panel.getByRole('link', { name: 'Öppna samtalet' })).toHaveCount(1);
+    await expect(panel.getByRole('link', { name: 'Öppna som samtal' })).toHaveCount(1);
     await expectNoAxeViolations(page);
     // Closed and opened again, the meeting has its conversation.
     await page.keyboard.press('Escape');
@@ -535,7 +537,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await box.fill('Flytta till torsdag eftermiddag');
     await box.press('Enter');
     const form = page.getByRole('complementary', { name: 'Flytta Morgonmöte ledningsgrupp' });
-    await form.getByRole('link', { name: 'Öppna samtalet' }).click();
+    await form.getByRole('link', { name: 'Öppna som samtal' }).click();
     await expect(page).toHaveURL(/\/conversations\/om-event-v\d/);
     // Under the answer: the prepared time in words, and the way to the calendar. Nothing is saved from here.
     await expect(page.getByText(/^Torsdag 5 november\s·\s13:00–13:30$/)).toBeVisible();
@@ -587,19 +589,23 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await dialog.getByRole('button', { name: 'Ja, ställ in' }).click();
     await expect.poll(() => sent.length).toBe(1);
   });
-  test('Fråga om veckan gives the pane to the week: the box has the focus, the question goes with the week’s read, and Esc gives the focus back', async ({
+  test('the frame’s Fråga assistenten gives the pane to the week: the box has the focus, the question goes with the week’s read, and Esc gives the focus back (D130)', async ({
     page,
     api,
   }) => {
     await page.setViewportSize(WIDE);
     await open(page, '/calendar');
-    const button = page.getByRole('button', { name: 'Fråga om veckan' });
+    // One button, the same on every page, at the end of the title's line: the old "Fråga om veckan" is gone.
+    await expect(page.getByRole('button', { name: 'Fråga om veckan' })).toHaveCount(0);
+    const button = page.getByRole('button', { name: 'Fråga assistenten' });
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
     await button.click();
-    const pane = page.getByRole('complementary', { name: 'Vecka 45', exact: true });
-    await expect(pane.getByText('Kalendern', { exact: true })).toBeVisible();
+    const pane = page.getByRole('complementary', { name: 'Assistenten', exact: true });
+    await expect(pane.getByText('Om vecka 45', { exact: true })).toBeVisible();
     const box = pane.getByRole('textbox', { name: 'Fråga om veckan' });
     await expect(box).toBeFocused();
-    await expect(page).toHaveURL(/\/calendar/);
+    await expect(page).toHaveURL(/\/calendar\?ask=1$/);
+    await expect(button).toHaveAttribute('aria-expanded', 'true');
     await expectNoAxeViolations(page);
     await box.fill('Vad händer i veckan?');
     await box.press('Enter');
@@ -608,9 +614,67 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     expect(asked.chips).toEqual([{ ref: 'capability:calendar.week', kind: 'capability', label: 'Vecka 45' }]);
     expect(asked.beside).toBe('capability:calendar.week');
     expect(asked.own).toBe(true);
+    expect(asked.page).toEqual({ subject: 'range:week:2026-11-02', label: 'Om vecka 45' });
     await page.keyboard.press('Escape');
     await expect(pane).toHaveCount(0);
+    await expect(page).not.toHaveURL(/ask=1/);
     await expect(button).toBeFocused();
+  });
+  test('an entry opened takes the place of the assistant’s pane, and the button lets go of the entry (D130 rule 5)', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(WIDE);
+    await open(page, '/calendar');
+    const button = page.getByRole('button', { name: 'Fråga assistenten' });
+    await button.click();
+    const pane = page.getByRole('complementary', { name: 'Assistenten', exact: true });
+    await expect(pane).toBeVisible();
+    await page.locator('.clew-cal-event').first().click();
+    const entry = page.getByRole('complementary', { name: 'Morgonmöte ledningsgrupp', exact: true });
+    await expect(entry).toBeVisible();
+    await expect(pane).toHaveCount(0);
+    await expect(page).toHaveURL(/entry=/);
+    await expect(page).not.toHaveURL(/ask=1/);
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
+    await button.click();
+    await expect(pane).toBeVisible();
+    await expect(entry).toHaveCount(0);
+    await expect(page).not.toHaveURL(/entry=/);
+    await expect(pane.getByRole('textbox', { name: 'Fråga om veckan' })).toBeFocused();
+    // Back gives the entry its place again.
+    await page.goBack();
+    await expect(entry).toBeVisible();
+    await expect(pane).toHaveCount(0);
+  });
+  test('the pane says in plain words what asking here does, and an answer that needs room is one row that leads to the conversation (D130 rules 7 and 10)', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(WIDE);
+    await open(page, '/calendar');
+    await page.getByRole('button', { name: 'Fråga assistenten' }).click();
+    const pane = page.getByRole('complementary', { name: 'Assistenten', exact: true });
+    // Before anything is asked: what asking here does, and what opening it as a conversation adds.
+    await expect(
+      pane.getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
+    ).toBeVisible();
+    await expect(pane.getByText(/^Öppnar du frågan som ett samtal får den hela sidan/)).toBeVisible();
+    await expect(pane.getByRole('link', { name: 'Öppna som samtal' })).toHaveCount(1);
+    const box = pane.getByRole('textbox', { name: 'Fråga om veckan' });
+    await box.fill('Sök lärare i telefonboken');
+    await box.press('Enter');
+    await expect(pane.getByText('Sök i telefonboken: 2 rader.')).toBeVisible();
+    await expect(pane.getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.')).toHaveCount(
+      0,
+    );
+    // The view is drawn on the conversation's page: here one row names it and leads there.
+    await expect(pane.getByText('Sök i telefonboken', { exact: true })).toBeVisible();
+    const row = pane.getByRole('link', { name: 'Visa i samtalet' });
+    await expect(row).toHaveCount(1);
+    await expectNoAxeViolations(page);
+    await row.click();
+    await expect(page).toHaveURL(/\/conversations\/[^/?]+/);
   });
   test('cancelling opens the entry’s dialog at the question, asks once, inline, and is spoken when done', async ({
     page,

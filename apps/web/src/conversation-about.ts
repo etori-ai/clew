@@ -171,3 +171,13 @@ export function storedAbout(thread: Pick<Thread, 'messages'>): string[] {
   const first = thread.messages.find(m => m.role === 'user');
   return [...new Set((first?.meta?.chips ?? []).map(c => c.label).filter(Boolean))];
 }
+
+/**
+ * What a conversation is about, as Alla samtal says it under "Om": the page's words for what it was asked beside (D130
+ * rule 6, "Om Beställningar och felanmälningar" read as "Beställningar och felanmälningar"), else what its first
+ * question went with ("Attestera 3 fakturor"); null when it keeps neither.
+ */
+export function listedAbout(thread: Pick<Thread, 'askedBeside' | 'messages'>): string | null {
+  const beside = thread.askedBeside?.label.replace(/^om\s+/i, '').trim();
+  return beside || storedAbout(thread).join(', ') || null;
+}

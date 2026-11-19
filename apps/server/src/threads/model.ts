@@ -32,6 +32,7 @@ export type ThreadPatch = Partial<
     | 'remindedAt'
     | 'snoozedUntil'
     | 'handover'
+    | 'askedBeside'
   >
 >;
 export interface NewMessage {

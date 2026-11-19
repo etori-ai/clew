@@ -83,13 +83,13 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
   // The calendar's proposals keep their own card (D27, D112 item 9), under the way back and the item's title.
   else if (thread)
     body = (
-      <PageFrame back={back} title={thread.title} actions={ask}>
+      <PageFrame ask={{ later: 'things' }} back={back} title={thread.title} actions={ask}>
         {cardBody(thread, { place: 'pane', level: 2, onChange })}
       </PageFrame>
     );
   else
     body = (
-      <PageFrame>
+      <PageFrame ask={{ later: 'things' }}>
         {missing ? (
           <EmptyState
             headingLevel={1}

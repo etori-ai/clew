@@ -30,6 +30,7 @@ import type {
   ProviderHealth,
   Receipt,
   Subject,
+  AskedBeside,
   Handover,
   ThreadAction,
   ThreadItem,
@@ -329,6 +330,9 @@ export const threads = pgTable(
     subjects: jsonb('subjects').$type<Subject[]>().notNull().default([]),
     // The source's assistant a question conversation was handed to, with the source's own key for it: null for every other thread.
     handover: jsonb('handover').$type<Handover>(),
+    // A question conversation asked beside a page (D130): its subject, what it is about and when it was opened as a
+    // conversation. Null for every other thread.
+    askedBeside: jsonb('asked_beside').$type<AskedBeside>(),
     actions: jsonb('actions').$type<ThreadAction[]>().notNull().default([]),
     waitingOn: text('waiting_on'),
     deadline: text('deadline'),
