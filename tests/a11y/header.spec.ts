@@ -11,7 +11,7 @@ import {
   test,
 } from './support';
 import type { SiteHeaderView } from '@clew/contracts';
-import intranetMenu from '../../connectors/intranet/menu.json';
+import intranetMenu from '../../connectors/intranet/menu.json' with { type: 'json' };
 
 /**
  * The shared header on the web app (D88, D130): the band with the installation's name, Clew's Start (D116; the server
