@@ -4611,6 +4611,12 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-19-prototype-shell-follow-up.md",
+      "title": "Follow-up review of the prototype shell and registers",
+      "category": "review-history",
+      "headings": []
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",
