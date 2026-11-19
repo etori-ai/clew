@@ -82,7 +82,7 @@ test('session verification has a named loading state without protected content',
   await expect(page.getByText('Hämtar sidan …', { exact: true })).toHaveCount(0);
 });
 
-test('while the session is checked the shell stands in its final shape: the band as it will be, the rail and the page as placeholders', async ({
+test('while the session is checked the shell stands in its final shape: the band as it will be, the pages’ row at its height and the page as placeholders', async ({
   page,
   api,
 }) => {
@@ -104,7 +104,9 @@ test('while the session is checked the shell stands in its final shape: the band
   // The header is public, so the band stands with its name and places; no spinner on an empty page.
   const banner = page.getByRole('banner');
   await expect(banner.getByRole('link', { name: 'Organisation' })).toBeVisible();
-  await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toBeVisible();
+  // The pages' row stands with the page every person has; the rest come with the session, after it.
+  const pages = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
+  await expect(pages.getByRole('link')).toHaveText(['Att göra']);
   // Läget's own placeholder (D126 rule 10: the units the reader follows up, under Min enhet), where the page will be.
   await expect(page.getByRole('main').getByRole('status').filter({ hasText: 'Hämtar enheterna …' })).toBeAttached();
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);
@@ -117,6 +119,8 @@ test('while the session is checked the shell stands in its final shape: the band
   release();
   await expect(page.getByRole('heading', { level: 1, name: 'Läget' })).toBeVisible();
   expect(await place()).toEqual(before);
+  await expect(pages.getByRole('link').first()).toHaveText(/^Att göra/);
+  await expect(pages.getByRole('link', { name: 'Läget', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 
 test('coming back to the window asks about the session without hiding a page confirmed moments ago', async ({
@@ -143,10 +147,10 @@ for (const tab of ['waiting', 'done']) {
   test(`the ${tab} pile does not claim to be empty before its first response`, async ({ page, api: _ }) => {
     const release = await hold(page, '**/api/threads');
     await page.goto('/todo?tab=' + tab);
-    await expect(page.getByText('Hämtar det som behöver dig …')).toBeAttached();
+    await expect(page.getByText('Hämtar ärendena …')).toBeAttached();
     await expect(page.getByText('Tomt här', { exact: true })).toHaveCount(0);
     release();
-    await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
+    await expect(page.getByText('Hämtar ärendena …')).toHaveCount(0);
   });
 }
 
@@ -195,7 +199,11 @@ test('reduced motion disables the content entrance', async ({ page, api: _ }) =>
   await expect(page.getByText('Hämtar det som behöver dig …')).toBeAttached();
   release();
   await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
-  const content = page.getByRole('region', { name: 'Behöver dig' }).locator('[aria-busy="false"] > div').first();
+  // What arrived in the card: the box Astryx's entry motion is drawn on, around the rows.
+  const content = page
+    .getByRole('region', { name: 'Behöver dig' })
+    .getByRole('list', { name: 'Behöver dig' })
+    .locator('xpath=..');
   expect(await content.evaluate(el => getComputedStyle(el).animationName)).toBe('none');
 });
 
@@ -223,7 +231,10 @@ test('a background refresh preserves content, focus and the composer draft', asy
     window.EventSource = Changes as unknown as typeof EventSource;
   });
   await open(page, '/');
-  const content = page.getByRole('region', { name: 'Behöver dig' }).locator('[aria-busy="false"] > div').first();
+  const content = page
+    .getByRole('region', { name: 'Behöver dig' })
+    .getByRole('list', { name: 'Behöver dig' })
+    .locator('xpath=..');
   expect(await content.evaluate(el => getComputedStyle(el).animationName)).not.toBe('none');
   await content.evaluate(el => el.setAttribute('data-kept', 'yes'));
   await composer(page).fill('Behåll min fråga');

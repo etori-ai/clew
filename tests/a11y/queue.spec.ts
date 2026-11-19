@@ -23,7 +23,8 @@ import { NOTICE_REASON, NOTICE_TEXT, asNotice } from './data';
  */
 const wide = { width: 1440, height: 900 };
 /** The page's box is under 900 px beside the rail: one surface. */
-const tablet = { width: 1024, height: 768 };
+/** Under the `table-inbox` template's own line: with no rail the pane fits beside the list from about 950 px (D130). */
+const tablet = { width: 900, height: 768 };
 const queue = (page: import('@playwright/test').Page, name = 'Behöver dig') => page.getByRole('table', { name });
 /** The queue's rows, each with its one link (the header row has none). */
 const rows = (page: import('@playwright/test').Page, name = 'Behöver dig') =>
@@ -36,6 +37,28 @@ const row = (page: import('@playwright/test').Page, title: string) =>
 test.describe('Att göra: the piles', () => {
   test.use({ viewport: wide });
 
+  test('only items due before the Stockholm day count as overdue', async ({ page, api }) => {
+    // It is already 4 November in Stockholm, still 3 November in UTC.
+    await page.clock.setFixedTime(new Date('2026-11-03T23:15:00Z'));
+    const invoice = api.threads.find(t => t.id === 'fakturor')!;
+    api.threads = ['2026-11-03', '2026-11-04', '2026-11-05'].map(deadline => ({
+      ...invoice,
+      id: deadline,
+      deadline,
+    }));
+    await open(page, '/todo');
+    await expect(page.getByRole('link', { name: 'Behöver dig: 3 ärenden', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Försenade: 1\b/ })).toBeVisible();
+  });
+
+  test('a failed first read cannot report zero work', async ({ page, api: _ }) => {
+    await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: 'Tillfälligt fel' } }));
+    await open(page, '/todo');
+    await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Försenade:/ })).toHaveCount(0);
+    await expect(page.getByText('0 behöver dig · 0 väntar på andra', { exact: true })).toHaveCount(0);
+  });
+
   test('the piles are tabs that lead to their address, each with its rows; the rail says how much needs the person', async ({
     page,
     api: _,
@@ -43,7 +66,7 @@ test.describe('Att göra: the piles', () => {
     await open(page, '/todo');
     await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
     await expect(page).toHaveTitle(/^Att göra/);
-    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    const rail = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('aria-current', 'page');
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toContainText('6');
     // The tabs are the navigation pattern (no tablist): links, the current one marked, with how many as a badge.
@@ -109,6 +132,8 @@ test.describe('Att göra: the piles', () => {
     await filter.fill('fakt');
     await expect(page).toHaveURL(/\/todo\?filter=fakt$/);
     await expect(rows(page)).toHaveCount(1);
+    const card = page.locator('section[aria-labelledby="todo-pile"]');
+    await expect(card.getByText(/^· 1\b/)).toBeVisible();
     await expect.poll(() => announcements(page)).toContainEqual('1 ärenden');
     await filter.fill('');
     await expect(rows(page)).toHaveCount(6);
@@ -216,6 +241,12 @@ test.describe('Att göra: the reading pane', () => {
     await pane.getByRole('button', { name: 'Stäng ärendet' }).click();
     await expect(page).toHaveURL(/\/todo$/);
     await expect(pane).toHaveCount(0);
+    // Closing the deep-linked pane replaces its measured element. The next row follows the new width.
+    await page.setViewportSize(tablet);
+    const next = row(page, 'Ledighetsansökan från Johan Byström');
+    await expect(next).toHaveAttribute('href', '/items/ledighet?from=%2Ftodo');
+    await next.click();
+    await expect(page).toHaveURL('/items/ledighet?from=%2Ftodo');
   });
 
   test('an item that is no longer among the person’s says so in the pane', async ({ page, api: _ }) => {
@@ -315,8 +346,8 @@ test.describe('Hem leads to Att göra', () => {
   }) => {
     await open(page, '/');
     const block = page.getByRole('region', { name: 'Behöver dig' });
-    // How many Hem shows is Hem's (`hem.spec.ts`). A row's name is the link to its item's page, with Hem as the way back (D126 rule 1).
-    await expect(block.getByRole('link', { name: /^Attestera 3 fakturor/ })).toHaveAttribute(
+    // How many Hem shows is Hem's (`hem.spec.ts`). A row's "Öppna" is the link to its item's page, with Hem as the way back (D126 rule 1).
+    await expect(block.getByRole('link', { name: /^Öppna Attestera 3 fakturor/ })).toHaveAttribute(
       'href',
       '/items/fakturor?from=%2F',
     );
@@ -406,6 +437,7 @@ test.describe('Att göra when a system does not answer', () => {
       { connector: 'finance', state: 'idle', lastSuccess: null, error: 'timeout' },
     ];
     await open(page, '/todo');
+    await expect(page.getByRole('link', { name: /^Försenade:/ })).toHaveCount(0);
     await expect(page.locator('#work-omtanke')).toContainText('· kan vara gammal');
     await expect(page.locator('#work-fakturor')).toContainText('· kan vara gammal');
     expect(await rows(page).filter({ hasNotText: 'kan vara gammal' }).count()).toBeGreaterThan(0);
@@ -436,6 +468,8 @@ test.describe('Att göra when a system does not answer', () => {
     api.sources = [{ connector: 'hr', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' }];
     await open(page, '/todo');
     await expect(page.getByRole('heading', { level: 2, name: 'Inväntar källornas besked' })).toBeVisible();
+    // The most recent successful read is still a usable snapshot even though the source is unavailable now.
+    await expect(page.getByRole('link', { name: 'Försenade: 0 ärenden', exact: true })).toBeVisible();
     await expect(page.getByText('Personalsystemet svarar inte sedan 06:00.', { exact: true })).toBeVisible();
     await expect(page.getByText('Inget behöver dig just nu.', { exact: true })).toHaveCount(0);
     await expectNoAxeViolations(page);

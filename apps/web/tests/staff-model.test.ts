@@ -210,9 +210,10 @@ describe('Personal (D97)', () => {
   test('the count line names the unit, or how many units there are', () => {
     // Board Personal: the unit first, then how many.
     expect(peopleLine(list.groups)).toBe('Bergsåkers skola\u00a0· 6 medarbetare');
-    expect(peopleLine([...list.groups, { id: 'u2', label: 'Fritids', entities: [person('lena')] }])).toBe(
-      '2 enheter\u00a0· 7 medarbetare',
-    );
+    // Anna is assigned to both units but remains one person in the register.
+    expect(
+      peopleLine([...list.groups, { id: 'u2', label: 'Fritids', entities: [person('anna'), person('lena')] }]),
+    ).toBe('2 enheter\u00a0· 7 medarbetare');
   });
 });
 

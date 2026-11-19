@@ -35,7 +35,7 @@ import { user } from './data';
 const OWN = '/competence';
 /** The reader's own page at its Kompetens tab, where `/competence` leads (D126 rule 7). */
 const OWN_PAGE = `/people/${user.id}?section=competence`;
-const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+const rail = (page: Page) => page.getByRole('navigation', { name: 'Mina sidor', exact: true });
 /** The reader's own page as the server answers it: theirs, with nothing about them from a source (relation `self`). */
 test.beforeEach(async ({ page, api: _ }) => {
   await page.route(

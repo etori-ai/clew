@@ -32,7 +32,7 @@ const resultSchema = object(
   ['headline', 'rows'],
 );
 export const manifest = {
-  protocol: 3,
+  protocol: 1,
   id: 'reference',
   kind: 'passthrough',
   source: 'Testkälla',

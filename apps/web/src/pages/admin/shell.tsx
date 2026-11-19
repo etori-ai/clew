@@ -2,10 +2,10 @@ import type { ReactNode } from 'react';
 import { Navigate } from 'react-router';
 import type { SessionUser } from '@clew/contracts';
 import { Button, EmptyState, Layout, LayoutContent, useMediaQuery } from '@clew/ui';
-import { useRail } from '../../components/nav';
-import { Shell, mobileQuery } from '../../components/shell';
-import { AsyncContent, ContentSkeleton } from '../../components/loading';
-import { PageFrame } from '../../components/page-frame';
+import { useNav } from '../../components/shell/nav';
+import { Shell, mobileQuery } from '../../components/shell/shell';
+import { AsyncContent, ContentSkeleton } from '../../components/shell/loading';
+import { PageFrame } from '../../components/shell/page-frame';
 import { usePageTitle } from '../../page-title';
 import {
   AdminFrame,
@@ -14,9 +14,9 @@ import {
   useAdminSections,
   type AdminSection,
   type AdminThing,
-} from '../../components/admin-frame';
+} from '../../components/shell/admin-frame';
 
-export type { AdminSection } from '../../components/admin-frame';
+export type { AdminSection } from '../../components/shell/admin-frame';
 
 /**
  * The administration surface (D23, D24) on the shared shell (D31): the rail keeps one row for it, and every page is
@@ -48,7 +48,7 @@ export function AdminShell({
   children: ReactNode;
 }) {
   // Only an administrator reaches this shell: `main.tsx` draws NotAdmin for anyone else.
-  const nav = useRail({ current: { surface: 'admin' }, admin: true, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'admin' }, admin: true, manager: user.role === 'manager' });
   const own = adminSection(section);
   return (
     <Shell user={user} nav={nav}>
@@ -77,7 +77,7 @@ export function AdminShell({
 export function AdminIndexPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery(mobileQuery);
   const { sections, settled } = useAdminSections();
-  const nav = useRail({ current: { surface: 'admin' }, admin: true, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'admin' }, admin: true, manager: user.role === 'manager' });
   // The sections without a module stand first, so the first one is known before `/api/areas` has answered.
   const first = sections[0];
   usePageTitle(mobile || !first ? 'Administration' : null);

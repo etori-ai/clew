@@ -82,7 +82,7 @@ export const PERSON = 'person';
 /** A competence's column key. */
 export const typeKey = (typeId: string) => `type:${typeId}`;
 const PERSON_PX = 200;
-const CELL_PX = 124;
+const CELL_PX = 136;
 /**
  * The pinned column of names, and each competence's column: as wide as a cell's one control, its longest word a badge
  * ("Går ut snart") or a skill's level ("Grundläggande"): at 1280 px six columns are in view where a cell of a word, a day

@@ -32,7 +32,7 @@ A `view` describes meaning, not layout. The directory is a `table`; the team is 
 
 Clew renders the same declaration in a panel, below an answer and, if selected by an administrator, on a tool page; [Where things open](where-things-open.md) says which opens where. A read with a view and no required input can be offered under Verktyg. Its optional `menu` supplies a short label and icon; it does not publish itself in the menu. No frontend code is needed for another connector using these supported view kinds.
 
-The view rules live in [views.ts](../../packages/connectors/src/views.ts); the renderer is [view.tsx](../../apps/web/src/components/view.tsx). The schema currently supports `table`, `list`, `detail` and `text`. A text view names a Markdown string property; this is content, not an HTML app or a layout extension.
+The view rules live in [views.ts](../../packages/connectors/src/views.ts); the renderer is [view.tsx](../../apps/web/src/components/views/view.tsx). The schema currently supports `table`, `list`, `detail` and `text`. A text view names a Markdown string property; this is content, not an HTML app or a layout extension.
 
 ## Control what reaches the model
 

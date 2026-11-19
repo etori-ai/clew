@@ -192,7 +192,7 @@ test('reset retires pending work, preserves unknown effects and receipts, blocks
 
 test('bootstrap leaves an existing disabled connector and disabled scoped binding unchanged', async () => {
   const manifest = {
-    protocol: 2,
+    protocol: 1,
     id: connectorId,
     kind: 'passthrough',
     source: 'Test',

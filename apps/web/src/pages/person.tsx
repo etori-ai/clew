@@ -19,7 +19,9 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { ApiError } from '../api';
-import { areasQuery, boardingPlansQuery, entityDetailQuery } from '../queries';
+import { adminQueries, areasQuery, boardingPlansQuery, entityDetailQuery } from '../queries';
+import { useHeldCapabilities } from '../capabilities';
+import { statusLabel, statusOf } from '../user-status';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import {
@@ -36,13 +38,19 @@ import {
 } from '../person-address';
 import { TALK_PARAM } from '../talk-address';
 import { entitySubject } from '../conversation-about';
-import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell';
-import { ContentSkeleton } from '../components/loading';
-import { AskClew } from '../components/thing-panel';
-import { TalkTab } from '../components/talk-overlay';
-import { RegisterHolding } from '../components/register-holding';
-import { EntityPage, PageSection, RailSection, ThingTabs, type PageSectionEntry } from '../components/entity-page';
+import { useNav, type NavCurrent } from '../components/shell/nav';
+import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell/shell';
+import { ContentSkeleton } from '../components/shell/loading';
+import { AskClew } from '../components/conversation/thing-panel';
+import { TalkTab } from '../components/people/talk-overlay';
+import { RegisterHolding } from '../components/people/register-holding';
+import {
+  EntityPage,
+  PageSection,
+  RailSection,
+  ThingTabs,
+  type PageSectionEntry,
+} from '../components/people/entity-page';
 import {
   EntityActions,
   NeedsYouRows,
@@ -58,11 +66,11 @@ import {
   unanswered,
   useSectionAnswers,
   type SectionAnswer,
-} from '../components/entity-sections';
+} from '../components/people/entity-sections';
 import { OwnCompetence } from './competence';
 import { PlanTab } from './boarding';
 import { employmentLabel, employmentPercent, employmentTitles } from './person-model';
-import { PageFrame } from '../components/page-frame';
+import { PageFrame } from '../components/shell/page-frame';
 
 /** The rail's width and the facts' panel beside the column (`EntityPage`). */
 const SIDE_NAV = 260,
@@ -106,7 +114,8 @@ export function nameLine(detail: EntityDetail): string | undefined {
  * The facts of a person's page (board Person: Anställning, Kontakt), the end panel beside the read and above it where
  * the window is narrow. Anställning: each employment's title where there are several, its unit, form, start and share
  * of full time with its bar, and "Chef: Du" for the reader's own report. Kontakt: how the person is reached and the
- * user name the directory knows them by (D124 item 7: in code type). Enhet: their unit, a link to its page where the
+ * user name the directory knows them by (D124 item 7: in code type), and for a reader with `admin.users` whether the
+ * person has signed in (Inloggning), which Administration › Användare no longer shows as a column. Enhet: their unit, a link to its page where the
  * server says the reader may open it (D117). Nothing the directory has not given is drawn.
  */
 function PersonFacts({ detail, from }: { detail: EntityDetail; from: string | null }) {
@@ -122,6 +131,9 @@ function PersonFacts({ detail, from }: { detail: EntityDetail; from: string | nu
   );
   const unit = entity.unit;
   const here = personPageHref(entity.key, { from });
+  // The person's row as Användare reads it, asked for by id; only for a reader the server lets read that list.
+  const administers = useHeldCapabilities().includes('admin.users');
+  const account = useQuery({ ...adminQueries.usersPage({ personId: entity.key }), enabled: administers }).data?.rows[0];
   return (
     <VStack gap={8}>
       {(employments.length > 0 || relation === 'managed') && (
@@ -191,6 +203,11 @@ function PersonFacts({ detail, from }: { detail: EntityDetail; from: string | nu
           <MetadataListItem label="Användarnamn">
             <Text type="code">{entity.sourceKey}</Text>
           </MetadataListItem>
+          {account && (
+            <MetadataListItem label="Inloggning">
+              <Text>{statusLabel[statusOf(account)]}</Text>
+            </MetadataListItem>
+          )}
         </MetadataList>
       </RailSection>
       {unit && (
@@ -324,7 +341,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   }, [moved]);
 
   // The rail marks the place the person was opened from; without one, Personal for the reader's own people.
-  const current: RailCurrent =
+  const current: NavCurrent =
     from?.split('?')[0] === '/admin/users'
       ? { surface: 'admin', section: 'anvandare' }
       : from?.split('?')[0] === '/admin/organisation'
@@ -340,7 +357,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
                 : !from && detail?.relation === 'managed'
                   ? { surface: 'staff' }
                   : { surface: 'verktyg', view: null };
-  const nav = useRail({ current, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current, admin, manager: user.role === 'manager' });
 
   // The tabs the page has: a source's only once it has a row, or while it is on its way, or when it did not answer.
   const drawn = drawnSections(answers);

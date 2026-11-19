@@ -20,8 +20,8 @@ import { entityDetailQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { NEEDS_YOU, personPageHref, unitPageHref } from '../person-address';
 import { paneTabHref, type EntitySubjectKind } from '../conversation-about';
-import { ContentSkeleton } from '../components/loading';
-import { PageSection, ThingTabs } from '../components/entity-page';
+import { ContentSkeleton } from '../components/shell/loading';
+import { PageSection, ThingTabs } from '../components/people/entity-page';
 import {
   NeedsYouRows,
   PersonSourceBody,
@@ -29,7 +29,7 @@ import {
   UnitSourceBody,
   drawnSections,
   useSectionAnswers,
-} from '../components/entity-sections';
+} from '../components/people/entity-sections';
 import { OVERVIEW, OverviewSection, entityTabs, nameLine } from './person';
 
 /** A source's fuller read is never a table in the pane: its 440 px hold it as a list. */
@@ -50,6 +50,7 @@ export function EntityPane({
   tab: wanted,
   onClose,
   onKeyDown,
+  tools,
 }: {
   kind: EntitySubjectKind;
   entityKey: string;
@@ -57,6 +58,8 @@ export function EntityPane({
   tab: string | null;
   onClose: () => void;
   onKeyDown: (e: KeyboardEvent) => void;
+  /** What stands before ✕ in the header: the menu over what the conversation has named. */
+  tools?: ReactNode;
 }) {
   const { pathname, search } = useLocation();
   const here = pathname + search;
@@ -69,8 +72,12 @@ export function EntityPane({
   const pending = answers.some(a => a.source.capability === wanted && a.query.isPending);
   const tab = wanted && (tabs.some(t => t.value === wanted) || pending) ? wanted : OVERVIEW;
   const tabHref = (value: string) => paneTabHref(pathname, search, value === OVERVIEW ? null : value);
+  // What stands before ✕ (the menu over what the conversation has named) keeps its place beside it in every state.
   const close = (
-    <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={onClose} />
+    <HStack gap={1} vAlign="center">
+      {tools}
+      <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={onClose} />
+    </HStack>
   );
   if (!detail) {
     const missing = read.isError && read.error instanceof ApiError && read.error.status === 404;

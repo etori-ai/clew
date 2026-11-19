@@ -55,6 +55,40 @@ async function openSnoozeRows(page: Page) {
 }
 
 test.describe('2.4.7 focus visible', () => {
+  test('Hem’s question shows focus when the assistant colour matches the card and under forced colours', async ({
+    page,
+    api,
+  }) => {
+    api.appearance = {
+      ...api.appearance,
+      revision: 1,
+      theme: { name: null, colors: { info: ['#ffffff', '#1b1b1b'], 'on-info': ['#000000', '#ffffff'] } },
+    };
+    await open(page, '/');
+    const field = page.getByRole('textbox', { name: 'Fråga assistenten' });
+    const pill = page.locator('[data-variant="ask"]').filter({ has: field });
+    for (const colorScheme of ['light', 'dark'] as const) {
+      for (const forcedColors of ['none', 'active'] as const) {
+        await page.emulateMedia({ colorScheme, forcedColors });
+        await field.focus();
+        await expect(pill).toHaveCSS('outline-style', 'solid');
+        await expect(pill).toHaveCSS('outline-width', '2px');
+        if (forcedColors === 'none') {
+          const ink = colorScheme === 'light' ? 'rgb(27, 27, 27)' : 'rgb(241, 241, 241)';
+          await expect(pill).toHaveCSS('outline-color', ink);
+        } else {
+          const visible = await pill.evaluate(el => {
+            const style = getComputedStyle(el);
+            return style.outlineColor !== style.backgroundColor;
+          });
+          expect(visible).toBe(true);
+        }
+        await field.blur();
+        await expect(pill).toHaveCSS('outline-style', 'none');
+      }
+    }
+  });
+
   for (const path of ['/', '/todo', '/todo?tab=done', '/calendar'])
     test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
       await open(page, path);

@@ -780,6 +780,10 @@ const digest = (text: string) => {
   };
   return pass(0x811c9dc5) + pass(0x050c5d1f);
 };
+/** The most work items a message keeps the ids of (`MessageMeta.viewItems`): a menu's worth. */
+export const VIEW_ITEMS_MAX = 8;
+/** A row's ref when the row is a work item: `thread:<id>` (`MessageMeta.viewItems`, and the link the web draws for it). */
+export const ITEM_REF = 'thread:';
 /** The shape of a row's mark: what a conversation's message may keep of a row (`MessageMeta.viewRows`). */
 export const ROW_MARK = '^[0-9a-f]{16}$';
 /**
@@ -3344,6 +3348,13 @@ export const MessageMetaSchema = object({
       marks: Type.Optional(Type.Array(Type.String({ pattern: ROW_MARK }), { maxItems: 50 })),
     }),
   ),
+  /**
+   * The work items among the rows the answer names, by their ids: a row is a work item when its ref says so
+   * (`thread:<id>`, as `clew.work` gives its rows). Kept so that what a conversation's answers are about can be named
+   * without making the read again (the menu on the pane beside the conversation). Ids, as `cards`, never what a row
+   * holds; the browser names only those the person's own stream still has.
+   */
+  viewItems: Type.Optional(Type.Array(id, { maxItems: VIEW_ITEMS_MAX })),
   draft: Type.Optional(DraftSchema),
   toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
   /**
@@ -4191,18 +4202,25 @@ export const PROVISIONED_KEY_LENGTH = 512;
  * D100: the most a question about the people may hold. The page holds what it sends to the same limits, so that
  * nothing a person types or an address names is refused as a malformed request.
  */
-export const USERS_QUERY_LIMITS = { text: 200, unitId: PROVISIONED_KEY_LENGTH, page: 1_000_000 } as const;
+export const USERS_QUERY_LIMITS = {
+  text: 200,
+  unitId: PROVISIONED_KEY_LENGTH,
+  personId: PROVISIONED_KEY_LENGTH,
+  page: 1_000_000,
+} as const;
 /**
  * D100: one page of Administration › Användare, asked for in a request body so that a searched name is never part of
  * an address. Every part narrows the list further. `text` is words matched without regard to case against the name,
  * the title, the user name, the e-mail and the titles of the person's employments (D110, D114), each word in one of
  * them. `unitId` is a unit with everything below it in the tree. `role` is a role on some unit, and with `unitId` on
- * one of those units.
+ * one of those units. `personId` is one person by id: the person page asks for that person's row this way, to show an
+ * administrator whether they have signed in.
  */
 export const UsersAdminQuery = Type.Object(
   {
     text: Type.Optional(Type.String({ maxLength: USERS_QUERY_LIMITS.text })),
     unitId: Type.Optional(Type.String({ minLength: 1, maxLength: USERS_QUERY_LIMITS.unitId })),
+    personId: Type.Optional(Type.String({ minLength: 1, maxLength: USERS_QUERY_LIMITS.personId })),
     role: Type.Optional(RoleSchema),
     status: Type.Optional(literals(USER_STATUSES)),
     capability: Type.Optional(CapabilitySchema),
@@ -4275,8 +4293,6 @@ export const ConnectorHealthSchema = object({
     Type.Literal('manifest-invalid'),
     Type.Literal('secret-rejected'),
     Type.Literal('untested'),
-    // Loaded on the previous protocol for its window (D60): it works, and must move to the current one.
-    Type.Literal('protocol-outdated'),
   ]),
   at: Type.String(),
   detail: Type.Optional(Type.String()),
@@ -4685,6 +4701,11 @@ export type Attention = Static<typeof AttentionSchema>;
 export const ConversationInput = object({
   text: Type.String({ minLength: 1, maxLength: 400, pattern: '^[^\\r\\n]+$' }),
   chips: Type.Optional(Type.Array(ChipSchema, { maxItems: 8 })),
+  /**
+   * The one of `chips` that stands open in the pane beside the transcript as the question is asked: the model is told
+   * so, and reads "the open item", "the card" or "the pane" as that thing. A ref that is not among the chips says nothing.
+   */
+  beside: Type.Optional(ChipSchema.properties.ref),
   conversationId: Type.Optional(id),
   /**
    * Send this turn to a source's assistant (`HandoverAssistant.id`) and not to Clew's own. The text goes unchanged, and

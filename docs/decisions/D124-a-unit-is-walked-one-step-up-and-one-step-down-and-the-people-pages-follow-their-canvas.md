@@ -38,6 +38,10 @@ destination, so the freeze on new surface
    rätta i katalogen", with one row per problem and the state's badge first.
 5. **Användare.** People come first and the catalogues last. A state that is in order is a word, and colour marks
    only what an administrator must act on. Capabilities are Astryx Tokens.
+   - Whether a person has signed in is not a column (product owner, 2026-11-18). The Status filter still finds it,
+     "Ingen åtkomst" and "Avstängd" stand as a badge beside the name, and the person's page says it under Kontakt
+     ("Inloggning") for a reader with `admin.users`, read as that person's row of the list (`personId`). The table's
+     1267 px threshold was kept.
    - The table shows from a window 1267 px wide and is a list below that: the rail's 260, the page's gutters of
      64, and the 943 the table needs for its columns' floors, its border and a scroll bar.
    - "Lägg till" is always enabled. A press with a field left empty shows each empty field's error under it and
@@ -118,8 +122,8 @@ neutral monogram and the shell layout. The canvas used D120 while it was drawn. 
   (D85), where the canvas drew a Selector; its error stands under it as its status. A mapping's capability is a
   link that narrows the people to it.
 - **The person card** ([person.tsx](../../apps/web/src/pages/person.tsx),
-  [entity-page.tsx](../../apps/web/src/components/entity-page.tsx),
-  [view.tsx](../../apps/web/src/components/view.tsx)). `DeclaredView` takes `section`: under a section the mark row is
+  [entity-page.tsx](../../apps/web/src/components/people/entity-page.tsx),
+  [view.tsx](../../apps/web/src/components/views/view.tsx)). `DeclaredView` takes `section`: under a section the mark row is
   a small heading with the read's own title (level 3 in the outline), the rows are named by it, a list has no footer,
   a state without a tone stands at the row's end in ordinary words, and a record does not repeat the name of the
   person or unit the page is about. The unit page's short list has the same heading. An employment's share of full

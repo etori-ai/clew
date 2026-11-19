@@ -60,7 +60,7 @@ import {
   statusOf,
 } from './labels';
 import { AdminShell } from './shell';
-import { DialogFrame } from '../../components/dialog-frame';
+import { DialogFrame } from '../../components/shell/dialog-frame';
 import { DOT } from '../../dot';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */
@@ -328,15 +328,11 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     >
       {unhealthy && (
         <Banner
-          status={c.health.status === 'unreachable' || c.health.status === 'protocol-outdated' ? 'warning' : 'error'}
+          status={c.health.status === 'unreachable' ? 'warning' : 'error'}
           container="section"
           collapsible={false}
           title={`${c.source}: ${healthLabel[c.health.status].toLowerCase()}${c.health.at ? ' sedan ' : ''}`}
-          description={
-            c.health.status === 'protocol-outdated'
-              ? `Anslutningen fungerar, men Clew läser dess protokoll bara under en övergångstid och den behöver uppdateras.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}` : ''}`
-              : `Ärenden och figurer visas från senast kända läge.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}.` : ''}`
-          }
+          description={`Ärenden och figurer visas från senast kända läge.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}.` : ''}`}
           endContent={<Timestamp value={c.health.at} format="date_time" />}
         />
       )}

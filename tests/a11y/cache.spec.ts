@@ -19,7 +19,7 @@ test.describe('D33 the browser cache', () => {
     // Hem draws no card since D112, so no picker reads its times there (D29).
     expect(count('/api/snooze/presets')).toBe(0);
     await page
-      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('navigation', { name: 'Mina sidor', exact: true })
       .getByRole('link', { name: 'Kalender', exact: true })
       .click();
     await expect(heading(page, 1, 'Vecka')).toBeVisible();

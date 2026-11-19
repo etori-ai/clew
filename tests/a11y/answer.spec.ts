@@ -12,7 +12,7 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { competenceConversation } from './data';
+import { NOW, competenceConversation } from './data';
 import { competenceTypes } from './competence';
 
 test.use({ viewport: desktop });
@@ -192,7 +192,8 @@ test.describe('the cards in a conversation', () => {
     await expectNoAxeViolations(page);
     // The person goes back up the history to the older answer. (At the foot of the conversation ChatLayout follows the
     // newest message and scrolls to it as the card grows: the Astryx gap in docs/maintainers/open-questions.md.)
-    const box = (await log.boundingBox())!;
+    // The wheel is turned over what scrolls, the conversation's own column: the log itself is taller than the window.
+    const box = (await page.locator('.astryx-chat-layout').boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, -2000);
     await expect(folded).toBeInViewport();
@@ -259,6 +260,10 @@ test.describe('a conversation about a thing', () => {
     // The pane's title is the link to the item's page, the decisions stand under it, and it has no "Fråga assistenten".
     await expect(pane.getByRole('link', { name: TITLE })).toHaveAttribute('href', /^\/items\/fakturor\?from=/);
     await expect(pane.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
+    // Nor "Lägg till i samtalet": the thing beside the transcript goes with every question as it is.
+    await expect(pane.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
+    // A conversation about one thing has nothing else to put beside it: no menu that leads nowhere.
+    await expect(pane.getByRole('button', { name: 'Annat i samtalet' })).toHaveCount(0);
     await expect(composer(page)).toBeFocused();
     await expect(page.getByRole('log')).toHaveCount(0);
     expect(api.asked).toHaveLength(0);
@@ -272,7 +277,12 @@ test.describe('a conversation about a thing', () => {
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
     await expect(page.getByRole('log')).toContainText('Tio personer är på plats i dag.');
-    expect(api.asked.at(-1)).toMatchObject({ text: 'Vem är på plats?', chips: [{ ref: 'thread:fakturor' }] });
+    // It also says that the thing stands open beside the transcript, so the assistant reads "det öppna ärendet" as it.
+    expect(api.asked.at(-1)).toMatchObject({
+      text: 'Vem är på plats?',
+      chips: [{ ref: 'thread:fakturor' }],
+      beside: 'thread:fakturor',
+    });
     // Once asked, the question is the title and the line under it says what the conversation is about.
     await expect(page.getByText(`Samtal med assistenten\u00a0· om ${TITLE}`, { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/conversations\/konversation\?card=fakturor$/);
@@ -283,6 +293,11 @@ test.describe('a conversation about a thing', () => {
     await expect(page).toHaveURL(/\/conversations\/konversation$/);
     await expect(page.getByRole('complementary', { name: TITLE })).toHaveCount(0);
     await expect(composer(page)).toBeFocused();
+    // With nothing beside the transcript a question goes alone.
+    await composer(page).fill('Vem är på plats?');
+    await composer(page).press('Enter');
+    await expect(page.getByRole('log').getByText('Tio personer är på plats i dag.')).toHaveCount(2);
+    expect(api.asked.at(-1)).toEqual({ text: 'Vem är på plats?', chips: [], conversationId: 'konversation' });
   });
   test('Esc in the pane lets go of the thing, and Esc in the conversation leads back to where it was asked', async ({
     page,
@@ -297,6 +312,146 @@ test.describe('a conversation about a thing', () => {
     await expect(composer(page)).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/items\/fakturor$/);
+  });
+  test('the pane has a menu over what the conversation has named, a row where the item was drawn, and a width of its own', async ({
+    page,
+    api,
+  }) => {
+    const OTHER = 'Ledighetsansökan från Johan Byström';
+    // A conversation whose answers are about two work items, one each.
+    api.threads.push({
+      ...api.threads.find(t => t.id === 'fraga')!,
+      id: 'tva-saker',
+      title: 'Vad väntar på mig?',
+      messages: [
+        { id: 'm1', role: 'user', body: 'Vad väntar på mig?', createdAt: NOW },
+        {
+          id: 'm2',
+          role: 'assistant',
+          body: 'Tre fakturor att attestera.',
+          createdAt: NOW,
+          meta: { cards: ['fakturor'] },
+        },
+        { id: 'm3', role: 'user', body: 'Något mer?', createdAt: NOW },
+        { id: 'm4', role: 'assistant', body: 'En ledighetsansökan.', createdAt: NOW, meta: { cards: ['ledighet'] } },
+      ],
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, '/conversations/tva-saker?card=fakturor');
+    const log = page.getByRole('log');
+    let pane = page.getByRole('complementary', { name: TITLE });
+    await expect(pane.getByRole('link', { name: TITLE })).toBeVisible();
+    // One item, one place: where the item beside the transcript was drawn, a row says where it is. The other is drawn.
+    await expect(log.getByText('Visas bredvid samtalet', { exact: true })).toHaveCount(1);
+    await expect(log.getByRole('link', { name: TITLE })).toHaveCount(0);
+    await expect(log.getByRole('link', { name: OTHER })).toBeVisible();
+    await expectNoAxeViolations(page);
+
+    // The menu: by kind and with how many, each row a link, the thing beside the transcript now said as such.
+    await pane.getByRole('button', { name: 'Annat i samtalet' }).click();
+    const menu = page.getByRole('menu', { name: 'Annat i samtalet' });
+    await expect(
+      menu.getByRole('group', { name: 'Ärenden · 2' }).or(menu.getByRole('group', { name: 'Ärenden · 2' })),
+    ).toBeVisible();
+    await expect(menu.getByRole('menuitem')).toHaveCount(2);
+    await expect(menu.getByRole('menuitem', { name: new RegExp(TITLE) })).toContainText('Visas nu');
+    await expect(menu.getByRole('menuitem', { name: new RegExp(OTHER) })).toHaveAttribute(
+      'href',
+      '/conversations/tva-saker?card=ledighet',
+    );
+    await expectNoAxeViolations(page);
+    // A row puts its thing beside the transcript in the place of the one that stood there; the menu on it has the focus.
+    // Opened with the pointer, the menu takes the first arrow key on its first row.
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await expect(menu.getByRole('menuitem', { name: new RegExp(OTHER) })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/conversations\/tva-saker\?card=ledighet$/);
+    pane = page.getByRole('complementary', { name: OTHER });
+    await expect(pane.getByRole('link', { name: OTHER })).toBeVisible();
+    await expect(pane.getByRole('button', { name: 'Annat i samtalet' })).toBeFocused();
+    await expect(log.getByText('Visas bredvid samtalet', { exact: true })).toHaveCount(1);
+    await expect(log.getByRole('link', { name: TITLE })).toBeVisible();
+    await expect(log.getByRole('link', { name: OTHER })).toHaveCount(0);
+
+    // "Visa här" lets the pane go of the item: the answer draws it again, and its title there has the focus.
+    await log.getByRole('button', { name: 'Visa här' }).click();
+    await expect(page).toHaveURL(/\/conversations\/tva-saker$/);
+    await expect(page.getByRole('complementary')).toHaveCount(0);
+    await expect(log.getByRole('heading', { name: OTHER })).toBeFocused();
+    await expect(log.getByText('Visas bredvid samtalet', { exact: true })).toHaveCount(0);
+
+    // The pane's width is the person's own: the grip takes the arrow keys, and the width is kept over a reload.
+    await open(page, '/conversations/tva-saker?card=fakturor');
+    const grip = page.getByRole('separator', { name: 'Ändra rutans bredd' });
+    await expect(grip).toHaveAttribute('aria-valuenow', '440');
+    await grip.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(grip).not.toHaveAttribute('aria-valuenow', '440');
+    const wider = Number(await grip.getAttribute('aria-valuenow'));
+    expect(wider).toBeGreaterThan(440);
+    expect(Math.round((await page.getByRole('complementary', { name: TITLE }).boundingBox())!.width)).toBe(wider);
+    await page.reload();
+    await expect(page.getByRole('separator', { name: 'Ändra rutans bredd' })).toHaveAttribute(
+      'aria-valuenow',
+      String(wider),
+    );
+    await expectNoAxeViolations(page);
+  });
+  test('the menu leads to the work items an answer names among its rows, and to what the person has put beside the conversation', async ({
+    page,
+    api,
+  }) => {
+    const OTHER = 'Ledighetsansökan från Johan Byström';
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // An answer that names two work items among the rows of a list keeps their ids (`viewItems`): with the first one
+    // beside the transcript the menu already leads to the other.
+    api.threads.push({
+      ...api.threads.find(t => t.id === 'fraga')!,
+      id: 'forsenade',
+      title: 'Vilka är försenade?',
+      messages: [
+        { id: 'm1', role: 'user', body: 'Vilka är försenade?', createdAt: NOW },
+        {
+          id: 'm2',
+          role: 'assistant',
+          body: 'Två ärenden är försenade.',
+          createdAt: NOW,
+          meta: { viewItems: ['fakturor', 'ledighet'] },
+        },
+      ],
+    });
+    // With nothing beside the transcript the header says how many the conversation holds, and is the way to the pane.
+    await open(page, '/conversations/forsenade');
+    await expect(page.getByRole('complementary')).toHaveCount(0);
+    const held = page.getByRole('button', { name: /^I samtalet\s·\s2$/ });
+    await held.click();
+    const all = page.getByRole('menu', { name: /^I samtalet/ });
+    await expect(all.getByRole('menuitem')).toHaveCount(2);
+    await expectNoAxeViolations(page);
+    await all.getByRole('menuitem', { name: new RegExp(TITLE) }).click();
+    await expect(page).toHaveURL(/\/conversations\/forsenade\?card=fakturor$/);
+    // The button stays where it is, and so does the focus; the pane has its own menu to the other item.
+    await expect(held).toBeFocused();
+    await page.getByRole('complementary', { name: TITLE }).getByRole('button', { name: 'Annat i samtalet' }).click();
+    await expect(page.getByRole('menu', { name: 'Annat i samtalet' }).getByRole('menuitem')).toHaveCount(2);
+    await page.keyboard.press('Escape');
+    // The conversation's answers name no work item (they may name theirs only through a list's rows): with one thing
+    // beside it there is nowhere else to lead.
+    await open(page, '/conversations/fraga?card=fakturor');
+    await expect(page.getByRole('complementary', { name: TITLE }).getByRole('link', { name: TITLE })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Annat i samtalet' })).toHaveCount(0);
+    // A second thing beside it: the menu now leads back to the first, also after a reload.
+    await open(page, '/conversations/fraga?card=ledighet');
+    const pane = page.getByRole('complementary', { name: OTHER });
+    await pane.getByRole('button', { name: 'Annat i samtalet' }).click();
+    const menu = page.getByRole('menu', { name: 'Annat i samtalet' });
+    await expect(menu.getByRole('menuitem')).toHaveCount(2);
+    await expect(menu.getByRole('menuitem', { name: new RegExp(OTHER) })).toContainText('Visas nu');
+    await menu.getByRole('menuitem', { name: new RegExp(TITLE) }).click();
+    await expect(page).toHaveURL(/\/conversations\/fraga\?card=fakturor$/);
+    await expect(page.getByRole('complementary', { name: TITLE }).getByRole('link', { name: TITLE })).toBeVisible();
+    await expectNoAxeViolations(page);
   });
   for (const [layout, viewport] of [
     ['a laptop', { width: 1024, height: 768 }],

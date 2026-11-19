@@ -14,9 +14,9 @@ places with their own pages, in the protocol's `SiteHeaderOutput` shape; a place
 is listed to that role only. A person the file lists no place for is answered `denied` with HTTP 403, as a content
 system that lists nothing for someone answers, and Clew draws its own header for them. Edit the file, or point
 `INTRANET_MENU_FILE` at another, and restart the service (`sh scripts/compose.sh restart intranet` in the development
-stack). The logo is a path on Clew's origin (`/branding/…`, served from `apps/web/public`) or an https address. The
-band's colour is not in this file: that is the installation's saved theme (Administration › Utseende, D98), since a
-connector may not choose the page's colours (D88).
+stack). Supply the logo for a dark ground as a path on Clew's origin (`/branding/…`, served from `apps/web/public`)
+or an https address. On a pale band, Clew gives the logo a dark plate. The installation chooses the band's colour
+in Administration › Utseende (D88, D98).
 
 Run it beside Clew with the development stack (`bun run dev:connectors` registers it on port 4049), or on its own:
 

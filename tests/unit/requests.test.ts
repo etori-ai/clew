@@ -188,7 +188,7 @@ const list = (registry: Registry, actor: Actor, context = {}) =>
 const requestRef = { type: 'string', pattern: '^request:desk:[A-Za-z0-9-]+$' };
 /** A service desk outside Clew as its manifest declares it: the list and the read of one request. */
 const deskManifest = {
-  protocol: 3,
+  protocol: 1,
   id: 'desk',
   kind: 'passthrough',
   source: 'IT-servicedesken',
@@ -535,7 +535,7 @@ describe('clew.requests', () => {
     ).toEqual(['clew.errands', 'clew.requests']);
   });
 
-  test('a connector outside Clew declares the profile in its manifest on protocol 3 and is listed over the protocol', async () => {
+  test('a connector outside Clew declares the profile in its manifest and is listed over the protocol', async () => {
     const manifest = deskManifest;
     expect(manifestProblems(manifest, 'desk')).toEqual([]);
     // The name fixes the shape: the list is about the person who asks and about nobody else (D97).

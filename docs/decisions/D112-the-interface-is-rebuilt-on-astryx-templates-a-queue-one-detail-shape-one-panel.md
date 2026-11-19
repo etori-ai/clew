@@ -2,6 +2,10 @@
 
 **Status:** provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone); items 6 and 7 refined by [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) (2026-11-12, provisional: a tool's page is every view's page, and the panel holds a view only when the view is one thing; a list or a table opened anywhere is its page); item 3's row gains the state's word by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) item 9 (2026-11-13, provisional, built), and item 5's person page is redrawn by its item 6 (not built); the one panel with the assistant in it (item 7, and "Öppna som sida"), the rail of item 1 and Hem's blocks as item 2 drew them are replaced by [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) (2026-11-14, provisional: one page per thing, a pane only beside the queue and beside a conversation, the assistant on Hem and the conversation's page) · **Date:** 2026-11-11 · **Area:** ui
 
+For current page and pane behaviour, follow [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md).
+[D130](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) replaces item 1's rail with
+the shared header and sets the visual reference for these pages.
+
 **Context.** Views, cards and navigation had grown by amendment (D50, D53, D63, D66, D72, D83, D97, D111) and were
 hard to hold together. The product owner asked for a fresh approach drawn only from what Astryx already ships, saw it
 on the canvas [Clew · a fresh start on Astryx templates](https://claude.ai/artifact/22VoDaxdttcxZMq2C4ijpa), and

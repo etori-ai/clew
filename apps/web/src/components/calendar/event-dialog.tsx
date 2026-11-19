@@ -21,10 +21,10 @@ import { dayLabel, displayDate, localClock, localInstant, shortDayLabel, timeRan
 import { api } from '../../api';
 import { useThreadAction } from '../../mutations';
 import { keys } from '../../query-keys';
-import { mobileQuery } from '../shell';
-import { AddToConversation } from '../add-to-conversation';
-import { useConversation } from '../conversation-context';
-import { DialogFrame } from '../dialog-frame';
+import { mobileQuery } from '../shell/shell';
+import { AddToConversation } from '../conversation/add-to-conversation';
+import { useConversation } from '../conversation/conversation-context';
+import { DialogFrame } from '../shell/dialog-frame';
 
 export type Mode = 'view' | 'move' | 'cancel';
 type Props = {

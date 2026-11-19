@@ -146,10 +146,13 @@ test.describe('a row is one link; the steps are on the open work item', () => {
   });
 
   test('a card put in the box says so on its button and on its line', async ({ page, api: _ }) => {
-    // Where a box is on the page: the card beside a conversation (Hem holds no card since D112).
+    // Where a box is on the page: a card an answer draws in a conversation (Hem holds no card since D112; the item in
+    // the pane beside the conversation goes with every question and is not put in the box).
     await page.setViewportSize({ width: 1440, height: 900 });
-    await open(page, '/conversations/fraga?card=omtanke');
-    const card = page.locator('#card-omtanke');
+    await open(page, '/conversations/fraga');
+    await composer(page).fill('Vad ska jag attestera?');
+    await composer(page).press('Enter');
+    const card = page.getByRole('log').locator('#thread-fakturor');
     await card.getByRole('button', { name: 'Lägg till i samtalet' }).click();
     await expect(card).toContainText('I samtalet');
     await expect(composer(page)).toBeVisible();
@@ -165,13 +168,19 @@ test.describe('a row is one link; the steps are on the open work item', () => {
     }) => {
       await page.emulateMedia({ reducedMotion });
       await page.setViewportSize({ width: 1440, height: 900 });
-      await open(page, '/conversations/fraga?card=omtanke');
-      await page.locator('#card-omtanke').getByRole('button', { name: 'Lägg till i samtalet' }).click();
-      const remove = page.getByRole('button', { name: 'Ta bort Omtankesamtal med Anna Lindqvist' });
+      await open(page, '/conversations/fraga');
+      await composer(page).fill('Vad ska jag attestera?');
+      await composer(page).press('Enter');
+      await page
+        .getByRole('log')
+        .locator('#thread-fakturor')
+        .getByRole('button', { name: 'Lägg till i samtalet' })
+        .click();
+      const remove = page.getByRole('button', { name: 'Ta bort Attestera 3 fakturor, 48 200 kr' });
       await expect(remove).toBeVisible();
       await expect(composer(page)).toBeFocused();
       await expect(page.getByRole('status').filter({ hasText: 'är med i samtalet' })).toContainText(
-        'Omtankesamtal med Anna Lindqvist är med i samtalet',
+        'Attestera 3 fakturor, 48 200 kr är med i samtalet',
       );
       // The chip and the drawer around it, up to the box's region: what entered is animated, or nothing is.
       const animations = await remove.evaluate(el => {
@@ -402,15 +411,25 @@ test.describe('the calendar on a phone', () => {
 
 test.describe('nothing is cut off', () => {
   for (const width of [1024, 768])
-    test(`a row and a work item keep their words beside the rail at ${width} px`, async ({ page, api: _ }) => {
+    test(`a row and a work item keep their words at ${width} px`, async ({ page, api: _ }) => {
       await page.setViewportSize({ width, height: 900 });
       await open(page, '/todo');
       await expect(page.locator('#work-omtanke').getByRole('link')).toBeVisible();
       expect(await cutOff(page.getByRole('main'))).toEqual([]);
-      // The pane does not fit beside the list at these widths: the item is its page (D126 rule 2).
       await open(page, '/todo?item=omtanke');
-      await expect(page).toHaveURL(/\/items\/omtanke/);
-      await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      if (width >= 1024) {
+        // With no rail the page has the room of the `table-inbox` template at 1024 px: the item stands beside the list.
+        await expect(page).toHaveURL('/todo?item=omtanke');
+        await expect(
+          page
+            .getByRole('complementary', { name: 'Valt ärende' })
+            .getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist', exact: true }),
+        ).toBeVisible();
+      } else {
+        // The pane does not fit beside the list at this width: the item is its page (D126 rule 2).
+        await expect(page).toHaveURL(/\/items\/omtanke/);
+        await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      }
       expect(await cutOff(page.getByRole('main'))).toEqual([]);
     });
 

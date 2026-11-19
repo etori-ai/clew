@@ -17,8 +17,16 @@ import type {
   View,
 } from '@clew/contracts';
 import { ENTITY_COLUMNS_MAX } from '@clew/contracts';
-import { menuRowOf, type Actor, type Connector, type Governance, type Registry } from '@clew/connectors';
-import { healthOf, type ConnectorManifest } from '@clew/connectors/protocol';
+import {
+  deniedGovernance,
+  menuRowOf,
+  type Actor,
+  type Connector,
+  type Governance,
+  type Registry,
+} from '@clew/connectors';
+import type { ConnectorManifest } from '@clew/connectors/protocol';
+import { parseManifest } from '@clew/connectors/remote';
 import { ForbiddenError, InputError } from '../../context';
 import { describeBundled } from '../describe';
 import type {
@@ -114,7 +122,7 @@ export function connectorUsecases(deps: AdminDeps) {
       return { status: /Invalid connector manifest/.test(text) ? 'manifest-invalid' : 'unreachable', at, detail: text };
     }
     const failed = report.findings.filter(f => f.level === 'fail');
-    if (!failed.length) return healthOf(report.manifest, at);
+    if (!failed.length) return { status: 'ok', at };
     // A service that refuses our assertion says so in the protocol's words ('Ogiltigt behörighetsbevis.'), or by not refusing a foreign one.
     return {
       status: failed.some(f => /behörighetsbevis|secret|401/i.test(f.text)) ? 'secret-rejected' : 'manifest-invalid',
@@ -125,10 +133,20 @@ export function connectorUsecases(deps: AdminDeps) {
   /** Put a remote row's connector in the live registry from its stored manifest and apply its governance. */
   const applyLive = (row: ConnectorRecord, manifest?: ConnectorManifest) => {
     if (!row.bundled) {
-      const m = manifest ?? manifestOf(row);
       if (row.state === 'draft') {
         live.unregister(row.id);
         return;
+      }
+      let m = manifest;
+      if (!m && row.manifest !== undefined && row.manifest !== null) {
+        // A stored manifest goes live only as the loader reads it: one it refuses, on a number this Clew does not load or
+        // for any other reason, is not registered, and what is live of it is governed shut, as the reconciler does.
+        try {
+          m = parseManifest(row.manifest, row.id);
+        } catch {
+          if (registry.connector(row.id)) registry.govern(row.id, deniedGovernance());
+          return;
+        }
       }
       if (m) live.register({ id: row.id, url: row.url!, secret: secrets.open(row.secret!, row.id), manifest: m }, m);
     }

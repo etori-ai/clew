@@ -31,8 +31,8 @@ import { anchorDay, overdueWords, planLine, plansWords, progressWords, shortDay 
 import { boardingPlansQuery, boardingSuggestionsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { mobileQuery } from '../components/shell';
-import { ContentSkeleton } from '../components/loading';
+import { mobileQuery } from '../components/shell/shell';
+import { ContentSkeleton } from '../components/shell/loading';
 import { BOARDING_TAB, PERSONAL_TITLE_ID, PersonalFrame } from './staff-parts';
 
 const TITLE = 'Introduktion och avslut';

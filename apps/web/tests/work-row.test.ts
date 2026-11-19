@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Thread } from '@clew/contracts';
-import { rowFacts, rowLine, whyOf } from '../src/work-items';
+import { openDeadline, rowFacts, rowLine, whyOf } from '../src/work-items';
 
 const NOW = '2026-11-10T09:00:00.000Z';
 const TODAY = '2026-11-10';
@@ -33,6 +33,17 @@ const thread = (values: Partial<Thread> = {}): Thread => ({
 const line = (values: Partial<Thread>) => rowLine(rowFacts(thread(values), NOW, TODAY));
 
 describe("a work item's row says its state in words (WCAG 1.4.1)", () => {
+  test('a deadline is overdue only before today and while the item is open', () => {
+    for (const [date, days] of [
+      ['2026-11-09', -1],
+      [TODAY, 0],
+      ['2026-11-11', 1],
+    ] as const) {
+      expect(openDeadline(thread({ deadline: date }), TODAY)).toEqual({ date, days });
+    }
+    expect(openDeadline(thread({ deadline: '2026-11-09', state: 'handled' }), TODAY)).toBeNull();
+    expect(openDeadline(thread({ deadline: null, remindedAt: NOW }), TODAY)).toBeNull();
+  });
   test('the state begins the supporting line, held to its separator by a no-break space, then why the item is here', () => {
     expect(
       rowLine({

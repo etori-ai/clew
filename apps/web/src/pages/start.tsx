@@ -6,24 +6,26 @@ import {
   ArrowRightIcon,
   Badge,
   Banner,
+  BoardCard,
   Button,
   Card,
-  Grid,
-  Heading,
+  CARD_GAP,
   HStack,
   Icon,
   Link,
-  List,
   SparklesIcon,
   StackItem,
   StatusNotice,
+  StatusRow,
   Text,
   TextInput,
-  VStack,
+  Theme,
   useAnnounce,
+  useAppearance,
   useEntryAnimation,
   useMediaQuery,
   useToast,
+  VStack,
 } from '@clew/ui';
 import { dayLabel, today } from '@clew/calendar/dates';
 import { errorMessage, noCalendar } from '../query-policy';
@@ -33,7 +35,7 @@ import { useReceiptArrivals } from '../linger';
 import { declaredPage, viewPageHref, type ViewTarget } from '../view-address';
 import { itemPageHref, needsYouOf, rowFacts, sourcesNotice, todoHref } from '../work-items';
 import { DOT } from '../dot';
-import { useConversation, type AskFrom } from '../components/conversation-context';
+import { useConversation, type AskFrom } from '../components/conversation/conversation-context';
 import { ConversationPage } from './conversation';
 import { NewQuestionPage } from './new-question';
 import { ASSISTANT_PARAM, asksAbout } from '../conversation-about';
@@ -47,23 +49,27 @@ function Entering({ children }: { children: (entry: EntryStyle) => ReactNode }) 
   const entry = useEntryAnimation('fadeIn');
   return <>{children(entry ?? undefined)}</>;
 }
-import { toolHref, useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
-import { BriefSkeleton } from '../components/brief';
-import { LinkRow } from '../components/work-row';
-import { MyCommitments } from '../components/my-commitments';
-import { NoCalendar, TodayCard, TodayCardSkeleton, TodayHeading } from '../components/today';
-import { silentLine, staleWhy, useSaySilent, useSilentSources } from '../components/silent-sources';
-import { Lage } from '../components/lage';
-import { NewsBlock } from '../components/news';
-import { FocusNews, focusOf } from '../components/focus-news';
+import { toolHref, useNav, type NavCurrent } from '../components/shell/nav';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { ReceiptNotice, receiptMessage } from '../components/work/receipt-notice';
+import { MyCommitments } from '../components/work/my-commitments';
+import { NoCalendar, TodayCard } from '../components/hem/today';
+import { hemLine } from '../components/shell/assistant-corner';
+import { silentLine, staleWhy, useSaySilent, useSilentSources } from '../components/shell/silent-sources';
+import { Lage } from '../components/hem/lage';
+import { NewsBlock } from '../components/hem/news';
+import { FocusNews, focusOf } from '../components/hem/focus-news';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
-import { PageFrame, type EntryStyle } from '../components/page-frame';
+import { PageFrame, type EntryStyle } from '../components/shell/page-frame';
+import { createAskFieldTheme } from '@clew/ui/theme';
+import { useBranding } from '../branding';
 
 /** How many work items Hem shows under "Behöver dig" (board Hem): the most urgent; every one is in Att göra. */
 const ON_HEM = 4;
+/** The board's narrow column (D130), as wide as the reference's, and the window width under which the board is one column. */
+const SIDE_COLUMN = 360;
+const stackedBoardQuery = '(max-width: 1180px)';
 /** Hem's address, the way back from every page Hem leads to (D116). */
 const HEM = '/';
 const EMPTY_THREADS: Thread[] = [];
@@ -103,6 +109,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: with 480 px or less in height nothing is docked; the row joins the page and the whole page scrolls (D31 item 7).
   const short = useMediaQuery(shortQuery);
+  // The board's two columns need the room the reference gives them; under it the blocks stand one under the other.
+  const stacked = useMediaQuery(stackedBoardQuery);
   // Every read is a query (D33): one cache shared by the page, the cards, the rail and the conversation. A mutation writes the thread it returns into it (thread-cache.ts).
   const client = useQueryClient();
   const threadsQ = useQuery(threadsQuery);
@@ -142,7 +150,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const announce = useAnnounce();
   // Hem's line (`HemQuestion`), and the box on the page: the conversation's own while its transcript has the column,
   // else the line.
-  const line = useRef<HTMLInputElement | null>(null);
+  const line = hemLine;
   const focusBox = () => (talk.open ? talk.focus() : line.current?.focus());
   // A card's own button changed it (in the pane beside a conversation, in an answer, in the callout): when that took
   // the focused button away, the focus goes to the item's title where the item is beside the transcript, else back to
@@ -199,12 +207,12 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day and the model's status are extras.
   const failed = [threadsQ, areasQ].find(q => q.isError && q.data === undefined);
   const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.') : null;
-  const railCurrent: RailCurrent = { surface: 'start', conversationId, conversation: talk.open, newQuestion: fresh };
+  const railCurrent: NavCurrent = { surface: 'start', conversationId, conversation: talk.open, newQuestion: fresh };
   // A conversation names itself in the tab (`ConversationPage`: its question, or before one what it is about); Hem is
   // named and spoken here.
   usePageTitle(talk.open ? null : 'Hem');
   const manager = user.role === 'manager';
-  const nav = useRail({ current: railCurrent, admin, manager });
+  const nav = useNav({ current: railCurrent, admin, manager });
 
   const assistantDown = !!assistant && assistant.configured && !assistant.available;
   const sources = threadsQ.data?.sources;
@@ -247,108 +255,108 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     return [own ? null : mark.source, state, stale ? staleWhy(facts.why) : facts.why].filter(Boolean).join(DOT);
   };
   /**
-   * "Behöver dig" (D112 item 2; D126, board Hem): the most urgent work items as rows in a card, the count beside the
-   * heading and the way to all of them in Att göra. A row's title is the link to the item's page and its due day the
-   * badge at its end. While the cards load the block keeps its shape; with nothing to draw it says so in the card, which
-   * ends level with I dag's beside it.
+   * "Behöver dig" (D112 item 2; D130 item 13): the most urgent work items as rows in a board card, the count after the
+   * heading and the way to all of them in Att göra. A row has an edge in its due day's colour, the due day as its badge
+   * and "Öppna", the link to the item's page. While the cards load the card keeps its shape; with nothing to draw it
+   * says so in the card.
    */
   const needsBlock = (
-    <VStack gap={3} as="section" aria-labelledby="behover-dig">
-      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <HStack gap={2} vAlign="center">
-          <Heading id="behover-dig" tabIndex={-1} level={2}>
-            Behöver dig
-          </Heading>
-          {!loadingThreads && needsYou.length > 0 && <Badge variant="error" label={String(needsYou.length)} />}
-        </HStack>
-        {!loadingThreads && <Link href={todoHref({})}>Visa alla</Link>}
-      </HStack>
-      <RowCard pending={loadingThreads} fallback={<BriefSkeleton compact />}>
-        <Card padding={0} height="100%">
-          {(sourcesLine || first.length === 0) && (
-            <VStack gap={1} padding={4}>
-              {sourcesLine && (
-                <Text as="p" role="status">
-                  {sourcesLine}
-                </Text>
-              )}
-              {first.length === 0 && (
-                <Text as="p" color="secondary">
-                  {sourcesLine || silent.list.length
-                    ? 'Inväntar källornas besked.'
-                    : focus
-                      ? 'Inget mer behöver dig just nu.'
-                      : 'Inget behöver dig just nu.'}
-                </Text>
-              )}
-              {/* With nothing to draw, the system that does not answer is named where its work items would be. */}
-              {first.length === 0 && silent.list.length > 0 && (
-                <Text as="p" type="supporting">
-                  {`${silent.list.map(silentLine).join('. ')}.`}
-                </Text>
-              )}
-            </VStack>
+    <BoardCard
+      id="behover-dig"
+      title="Behöver dig"
+      count={loadingThreads ? undefined : needsYou.length}
+      countLabel="behöver dig"
+      action={loadingThreads ? undefined : <Link href={todoHref({})}>Visa alla</Link>}
+      pending={loadingThreads}
+      pendingLabel="Hämtar det som behöver dig …"
+    >
+      {(sourcesLine || first.length === 0) && (
+        <VStack gap={1}>
+          {sourcesLine && (
+            <Text as="p" role="status">
+              {sourcesLine}
+            </Text>
           )}
-          {first.length > 0 && (
-            <List hasDividers aria-label="Behöver dig">
-              {first.map(t => {
-                const due = rowFacts(t, now, todayDate).due;
-                return (
-                  <LinkRow
-                    key={t.id}
-                    id={`work-${t.id}`}
-                    itemKey={t.id}
-                    href={itemHref(t.id)}
-                    title={t.title}
-                    description={lineOf(t)}
-                    descriptionLines={0}
-                    endContent={due ? <Badge variant={due.variant} label={due.label} /> : undefined}
-                  />
-                );
-              })}
-            </List>
+          {first.length === 0 && (
+            <Text as="p" color="secondary">
+              {sourcesLine || silent.list.length
+                ? 'Inväntar källornas besked.'
+                : focus
+                  ? 'Inget mer behöver dig just nu.'
+                  : 'Inget behöver dig just nu.'}
+            </Text>
           )}
-        </Card>
-      </RowCard>
-    </VStack>
+          {/* With nothing to draw, the system that does not answer is named where its work items would be. */}
+          {first.length === 0 && silent.list.length > 0 && (
+            <Text as="p" type="supporting">
+              {`${silent.list.map(silentLine).join('. ')}.`}
+            </Text>
+          )}
+        </VStack>
+      )}
+      {first.length > 0 && (
+        <VStack gap={2} role="list" aria-label="Behöver dig">
+          {first.map(t => {
+            const due = rowFacts(t, now, todayDate).due;
+            return (
+              <VStack key={t.id} role="listitem">
+                <StatusRow
+                  id={`work-${t.id}`}
+                  status={due?.variant === 'error' ? 'error' : due?.variant === 'warning' ? 'warning' : 'neutral'}
+                  title={t.title}
+                  meta={lineOf(t)}
+                  href={itemHref(t.id)}
+                  end={due ? <Badge variant={due.variant} label={due.label} /> : undefined}
+                />
+              </VStack>
+            );
+          })}
+        </VStack>
+      )}
+    </BoardCard>
   );
   /**
-   * "I dag" (board Hem): the day as the calendar family draws it (D32), with the way to Kalender. It is always drawn: a
-   * day that cannot be read says why in the block (D116, amended 2026-11-12) instead of leaving its place to the others.
-   * Its card ends level with Behöver dig's beside it.
+   * "I dag" (D130 item 13): the day as the calendar family draws it (D32) in a board card, with the way to Kalender. It
+   * is always drawn: a day that cannot be read says why in the card (D116, amended 2026-11-12) instead of leaving its
+   * place to the others.
    */
   const dayBlock = (
-    <VStack gap={3} as="section" aria-labelledby="i-dag">
-      <TodayHeading calendar={!withoutCalendar} />
-      <RowCard pending={loadingThreads || (dayQ.isPending && !calendarHidden)} fallback={<TodayCardSkeleton />}>
-        <TodayCard
-          view={withoutCalendar ? null : day}
-          threads={threads}
-          itemHref={itemHref}
-          notice={
-            withoutCalendar ? (
-              <NoCalendar hidden={calendarHidden} />
-            ) : calendarSilent ? (
-              // The status vocabulary's notice (D126 item 13): it failed, since when, and the one move, Försök igen.
-              <StatusNotice
-                kind="failed"
-                title={silentLine({ source: calendarName, since: calendarSince })}
-                description="Dagens bokningar kan inte visas."
-                action={{
-                  label: 'Försök igen',
-                  isLoading: dayQ.isFetching,
-                  clickAction: () => void dayQ.refetch(),
-                }}
-              />
-            ) : undefined
-          }
-        />
-      </RowCard>
-    </VStack>
+    <BoardCard
+      id="i-dag"
+      title="I dag"
+      list
+      action={withoutCalendar ? undefined : <Link href="/calendar">Kalender</Link>}
+      pending={loadingThreads || (dayQ.isPending && !calendarHidden)}
+      pendingLabel="Hämtar i dag …"
+    >
+      <TodayCard
+        bare
+        view={withoutCalendar ? null : day}
+        threads={threads}
+        itemHref={itemHref}
+        notice={
+          withoutCalendar ? (
+            <NoCalendar hidden={calendarHidden} />
+          ) : calendarSilent ? (
+            // The status vocabulary's notice (D126 item 13): it failed, since when, and the one move, Försök igen.
+            <StatusNotice
+              kind="failed"
+              title={silentLine({ source: calendarName, since: calendarSince })}
+              description="Dagens bokningar kan inte visas."
+              action={{
+                label: 'Försök igen',
+                isLoading: dayQ.isFetching,
+                clickAction: () => void dayQ.refetch(),
+              }}
+            />
+          ) : undefined
+        }
+      />
+    </BoardCard>
   );
-  /** Hem's blocks (board Hem), in its order: the callout, the two blocks side by side, Läget, Nyheter, the action points. */
+  /** Hem's blocks, in the reference's order (D130): the callout, Läget, and the board's two columns. */
   const blocks = (
-    <VStack gap={8}>
+    <VStack gap={CARD_GAP}>
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}
@@ -356,12 +364,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       )}
       {/* Fokusnyhet (board Hem10): one callout above the blocks, while an item asks for the person's read receipt. */}
       {focus && <FocusNews thread={focus} href={itemHref(focus.id)} onChange={replace} />}
-      {/* The two blocks side by side where they fit, one under the other where they do not. */}
-      <Grid columns={{ minWidth: 380, max: 2 }} gap={6}>
-        {needsBlock}
-        {dayBlock}
-      </Grid>
-      {/* Läget (D54, D117): a manager's unit, each tile leading to the page of what it counts. */}
+      {/* Läget (D54, D117) before the work, as the reference's board has its key figures (D130): a manager's unit, each
+          tile leading to the page of what it counts. */}
       {manager && (
         <Lage
           areas={areas}
@@ -377,10 +381,30 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           }
         />
       )}
-      <NewsBlock hrefFor={pageHref} />
-      {/* The person's own action points (D96 item 7), under the board's parts and drawn as its blocks are, until they
-          are rows in Att göra; Mina ärenden (D90) is a tool in the rail (D126 rule 8). */}
-      <MyCommitments />
+      {/* The board (D130 item 13), as the reference lays it out: what needs the person in the wide column, and beside
+          it a narrow one with the day and the news. Where the window is too narrow for both, one under the other. */}
+      {stacked ? (
+        <VStack gap={CARD_GAP}>
+          {needsBlock}
+          {dayBlock}
+          <NewsBlock hrefFor={pageHref} />
+          <MyCommitments />
+        </VStack>
+      ) : (
+        <HStack gap={CARD_GAP} vAlign="start">
+          <StackItem size="fill">
+            <VStack gap={CARD_GAP}>
+              {needsBlock}
+              {/* The person's own action points (D96 item 7), drawn as a block, until they are rows in Att göra. */}
+              <MyCommitments />
+            </VStack>
+          </StackItem>
+          <VStack gap={CARD_GAP} width={SIDE_COLUMN}>
+            {dayBlock}
+            <NewsBlock hrefFor={pageHref} />
+          </VStack>
+        </HStack>
+      )}
     </VStack>
   );
   // The box is a new one as Ny fråga gives way to the transcript, and as it comes back: the focus goes with it (D31).
@@ -401,14 +425,13 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const column = (entry: EntryStyle) => {
     if (fresh) return <NewQuestionPage greeting={greetingOf(user.name, new Date())} entry={entry} />;
     if (talk.open) return <ConversationPage entry={entry} onChange={replace} />;
-    // Hem (D126, board Hem): the greeting, the day line and the line to ask Clew in the frame's header (the line
-    // anchored under the heading, D53), pinned while the blocks scroll under them. On a phone and on a short screen
-    // nothing is pinned (1.4.10): the page grows with its content and the shell's main region scrolls the whole page.
+    // Hem (D130): the greeting, the day line and the line to ask in the frame's header, and the board under them.
+    // Nothing is pinned: the whole page scrolls under the shell's header, as the reference's start page does, and the
+    // floating "Fråga AI" leads back to the line from anywhere on it.
     return (
       <PageFrame
         entry={entry}
         plain
-        pinned={!mobile && !short}
         title={greetingOf(user.name, new Date())}
         titleId="hem"
         meta={dayLine(todayDate, user.unitLabel)}
@@ -454,30 +477,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
 }
 
-/** A block's card once its first answer is here, with Astryx's entry motion, as `ContentArrival` draws a region. */
-function Arrived({ children }: { children: ReactNode }) {
-  const entry = useEntryAnimation('fadeIn');
-  return (
-    <VStack height="100%" xstyle={entry ?? undefined}>
-      {children}
-    </VStack>
-  );
-}
-/**
- * The card under a block's heading in the row Behöver dig and I dag share (board Hem): its placeholder until the first
- * answer, as `AsyncContent` has it, and then the card, which takes the height the row gives it, so the two cards end
- * level whichever has fewer rows. On a phone, one block under the other, each is as tall as its rows.
- */
-function RowCard({ pending, fallback, children }: { pending: boolean; fallback: ReactNode; children: ReactNode }) {
-  return (
-    <StackItem size="fill">
-      <VStack height="100%" aria-busy={pending}>
-        {pending ? fallback : <Arrived>{children}</Arrived>}
-      </VStack>
-    </StackItem>
-  );
-}
-
 /** What Hem's line hands the conversation: nothing to ask about, and Hem as the place Esc leads back to. */
 const FROM_HEM: AskFrom = { chips: [], search: '' };
 /**
@@ -492,6 +491,9 @@ const FROM_HEM: AskFrom = { chips: [], search: '' };
 function HemQuestion({ field, stacked }: { field: RefObject<HTMLInputElement | null>; stacked: boolean }) {
   const talk = useConversation();
   const navigate = useNavigate();
+  const { mode } = useAppearance();
+  const branding = useBranding();
+  const askTheme = useMemo(() => createAskFieldTheme(branding), [branding]);
   const written = talk.value.trim() !== '';
   const ask = () => {
     if (written && !talk.busy) void talk.submit(talk.value, FROM_HEM);
@@ -504,46 +506,46 @@ function HemQuestion({ field, stacked }: { field: RefObject<HTMLInputElement | n
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [field]);
-  const input = (
-    <TextInput
-      ref={field}
-      label="Fråga assistenten"
-      isLabelHidden
-      size="lg"
-      startIcon={SparklesIcon}
-      placeholder="Vad vill du göra?"
-      value={talk.value}
-      onChange={talk.setValue}
-      onEnter={ask}
-      enterKeyHint="send"
-      status={talk.error ? { type: 'error', message: talk.error } : undefined}
-    />
-  );
-  const button = (
-    <Button
-      label="Fråga assistenten"
-      variant="primary"
-      size="lg"
-      endContent={<Icon icon={ArrowRightIcon} />}
-      isLoading={talk.busy}
-      {...(stacked ? { width: '100%' } : {})}
-      onClick={() => {
-        if (written) return ask();
-        talk.newConversation({ from: HEM, stay: true });
-        navigate('/conversations/new');
-      }}
-    />
-  );
-  return stacked ? (
-    <VStack gap={2} hAlign="stretch">
-      {input}
-      {button}
-    </VStack>
-  ) : (
-    <HStack gap={2} vAlign="center">
-      <StackItem size="fill">{input}</StackItem>
-      {button}
-    </HStack>
+  // The field, its mark and its button stand in one pill (D130 item 14), as the reference draws its ask field: a card
+  // in the theme's `ask` variant, and inside it a nested theme in which the field has no edge of its own.
+  return (
+    <Theme theme={askTheme} mode={mode}>
+      <Card variant="ask" padding={2}>
+        <HStack gap={3} vAlign="center" paddingInlineStart={stacked ? 1 : 3}>
+          <Card variant="ai-mark" padding={2}>
+            <Icon icon={SparklesIcon} color="inherit" />
+          </Card>
+          <StackItem size="fill">
+            <TextInput
+              ref={field}
+              // Named as the assistant's field wherever it stands ("Fråga assistenten"); what it asks is its placeholder.
+              label="Fråga assistenten"
+              isLabelHidden
+              size="lg"
+              placeholder="Vad vill du göra?"
+              value={talk.value}
+              onChange={talk.setValue}
+              onEnter={ask}
+              enterKeyHint="send"
+              status={talk.error ? { type: 'error', message: talk.error } : undefined}
+            />
+          </StackItem>
+          {/* On a phone the button is its arrow alone, named "Fråga AI": its words would be cut in the pill (1.4.10). */}
+          <Button
+            label="Fråga AI"
+            variant="ai"
+            size="lg"
+            {...(stacked ? { isIconOnly: true, icon: <Icon icon={ArrowRightIcon} color="inherit" /> } : {})}
+            isLoading={talk.busy}
+            onClick={() => {
+              if (written) return ask();
+              talk.newConversation({ from: HEM, stay: true });
+              navigate('/conversations/new');
+            }}
+          />
+        </HStack>
+      </Card>
+    </Theme>
   );
 }
 

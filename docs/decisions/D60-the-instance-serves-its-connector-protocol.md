@@ -1,6 +1,6 @@
 # D60 · The instance serves its connector protocol, and a protocol break keeps the number before it
 
-**Status:** accepted, built 2026-11-06 · **Date:** 2026-11-06 · **Area:** integrations
+**Status:** accepted, built 2026-11-06; item 4 amended by [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) (2026-11-18): until the first release the protocol is 1 and changes in place, and numbering and the window apply from the first release on · **Date:** 2026-11-06 · **Area:** integrations
 
 **Decision.** A running Clew publishes the connector protocol it speaks, generated from the objects it validates with,
 under `/api/protocol`, public and without a session. There is no Clew SDK (D21 stands); what an integrator builds

@@ -1,3 +1,4 @@
+import './theme-variants';
 import type { ReactNode } from 'react';
 import { LayerProvider } from '@astryxdesign/core/Layer';
 import { InternationalizationProvider } from '@astryxdesign/core/i18n';
@@ -6,8 +7,8 @@ import type { Branding } from './branding';
 import { swedish } from './locale';
 export { DocumentSurface } from './document';
 export type { DocumentPosition } from './document';
-export { MetricView, SeriesView, ActivityView } from './presentation';
-export { CompletionMark, CompletionFeedback } from './completion';
+export { MetricView, SeriesView, ActivityView } from './components/presentation';
+export { CompletionMark, CompletionFeedback } from './components/completion';
 // One status vocabulary (D126 item 13): the mark in a row, the badge beside a title, the notice under one.
 export {
   STATUS,
@@ -20,7 +21,7 @@ export {
   type StatusMove,
   type StatusTone,
   type StatusWords,
-} from './status';
+} from './components/status';
 
 // Strictly Astryx: this package re-exports the components the app composes with and owns the shared providers.
 export { Button } from '@astryxdesign/core/Button';
@@ -60,6 +61,7 @@ export {
 } from '@astryxdesign/core/Layout';
 export { SideNav, SideNavItem, SideNavSection, SideNavHeading } from '@astryxdesign/core/SideNav';
 export { ResizeHandle, useResizable } from '@astryxdesign/core/Resizable';
+export { percent } from '@astryxdesign/core/Resizable/utils';
 export { useLayer } from '@astryxdesign/core/Layer';
 export {
   DropdownMenu,
@@ -199,14 +201,18 @@ export {
 } from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 // The area mark (D71): the system's hue in registration order, the area's icon, the word always beside them.
-export { AreaChip, AreaGlyph, AreaLine, SystemSwatch, clewIcon, swatchWords } from './mark';
+export { AreaChip, AreaGlyph, AreaLine, AreaMark, SystemSwatch, clewIcon, swatchWords } from './components/mark';
 export { hueOf, hueWord, ordinalWord, systemHues, type SystemHue } from './system-hues';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';
 // The calendar family (D32): the page's grid, the embedded day and list, the date picker, and the one item mapping.
 export { DayStrip, EventList, DatePicker } from './calendar-embeds';
 export { agendaItems, CHOSEN_ID, PROPOSAL_MARK } from './agenda-items';
-export { FigureLine, FigureTile, FigureTileSkeleton } from './figure';
+export { FigureLine, FigureTile, FigureTileSkeleton } from './components/figure';
+export { BoardCard } from './components/board-card';
+export { KeyFigure } from './components/key-figure';
+export { StatusRow, type RowStatus } from './components/status-row';
+export { CARD_GAP, FIGURES_IN_A_ROW, FigureRow, PersonAvatar, SECTION_GAP, registerTable } from './components/measures';
 export {
   figureItems,
   retryWhen,

@@ -99,7 +99,7 @@ test.describe('a figure tile’s whole status on Hem', () => {
   // Läget's tiles on Hem (D126, board Hem) say a figure's status in one Astryx Badge, one line, and a word wider than
   // its room would end in an ellipsis: at 320 px the tiles stand one per row, so every status of the mock ("Behöver
   // dig" the longest) is drawn whole, with or without the text-spacing overrides. At 350 px, just under where two tiles
-  // start, the spaced word still fits its one tile. A tile carries no area mark since D126, so the status is its chip.
+  // start, the spaced word still fits its one tile. The status is the first words of the tile's line (D130 item 9).
   const spacing =
     '* { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important; } p { margin-bottom: 2em !important; }';
   test('every figure tile shows its whole status at 320 px, 640 and 256 high, and spaced at 350 px', async ({
@@ -115,14 +115,15 @@ test.describe('a figure tile’s whole status on Hem', () => {
       await page.setViewportSize(viewport);
       await open(page, '/');
       if (overrides) await page.addStyleTag({ content: overrides });
-      await expect(lage.locator('.astryx-badge').first()).toBeVisible();
-      const chips = await lage.locator('.astryx-badge').evaluateAll(list =>
+      // The status stands in words first in the line under the value (D130 item 9): "Bevaka · mål ≤ 4,0 % · …".
+      const lines = lage.getByText(/^(Behöver dig|Bevaka|Lugnt)(\s·|$)/);
+      await expect(lines.first()).toBeVisible();
+      const chips = await lines.evaluateAll(list =>
         list.map(el => {
-          const label = el.lastElementChild as HTMLElement;
           const box = el.getBoundingClientRect();
           return {
-            name: label.textContent,
-            cut: label.scrollWidth > label.clientWidth + 1,
+            name: /^(Behöver dig|Bevaka|Lugnt)/.exec(el.textContent ?? '')![1],
+            cut: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1,
             inside: box.left >= 0 && box.right <= document.documentElement.clientWidth,
           };
         }),

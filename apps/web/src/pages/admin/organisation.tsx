@@ -35,12 +35,12 @@ import {
 } from '@clew/ui';
 import { ApiError } from '../../api';
 import { DOT } from '../../dot';
-import { PersonNameLink } from '../../components/person-name-link';
+import { PersonNameLink } from '../../components/people/person-name-link';
 import { adminQueries } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
-import { AsyncContent, ContentSkeleton } from '../../components/loading';
-import { mobileQuery, shortQuery } from '../../components/shell';
+import { AsyncContent, ContentSkeleton } from '../../components/shell/loading';
+import { mobileQuery, shortQuery } from '../../components/shell/shell';
 import { AdminShell } from './shell';
 
 /**
@@ -573,7 +573,17 @@ function PeopleGroup({
               key={p.id}
               startContent={<Avatar name={p.name} size={size} tooltip={false} aria-hidden />}
               label={<PersonNameLink person={p} />}
-              {...(under ? { description: <Text type="supporting">{under}</Text> } : {})}
+              {...(under
+                ? {
+                    // A step under the name: the line may hold a link of its own (the unit a person leads), and two
+                    // links one over the other need that much between them to be targets of their own (2.5.8).
+                    description: (
+                      <VStack paddingBlockStart={1}>
+                        <Text type="supporting">{under}</Text>
+                      </VStack>
+                    ),
+                  }
+                : {})}
               endContent={!p.enabled ? <Badge variant="neutral" label="Avstängd" /> : undefined}
             />
           );

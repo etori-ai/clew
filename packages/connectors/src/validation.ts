@@ -10,7 +10,7 @@ import {
 } from '@clew/contracts';
 import { menuProblem, viewProblem, type ViewSubject } from './views';
 import { namedInputs, plainStringProperty } from './named';
-import { INSTALLATION_PROFILES, PROTOCOL_VERSION, protocolTerms } from './protocol';
+import { INSTALLATION_PROFILES } from './protocol';
 
 /** Rules shared by manifest preview, remote loading and in-process registration. No installation state. */
 interface Descriptor {
@@ -380,10 +380,7 @@ export function connectorProblems(
   }
   // Every input that names a person or a unit, declared or not, is a plain string property (D117), so what the loader
   // let in is what the registry resolves: never an array, an object or a property the schema does not list.
-  // A connector on the previous protocol (D60) is held to it: the registry still refuses anything but a string at every call.
-  for (const [name, inputs] of protocolTerms(connector.protocol ?? PROTOCOL_VERSION).strictNamedInputs
-    ? namedInputs(connector)
-    : []) {
+  for (const [name, inputs] of namedInputs(connector)) {
     const c = connector.capabilities.find(x => x.name === name)!;
     for (const param of inputs.params)
       if (!plainStringProperty(c.input, param))
@@ -392,12 +389,8 @@ export function connectorProblems(
         );
   }
   // The reads Clew makes as the installation (D119): a profile Clew knows, named for this connector, unique across both
-  // lists, of the profile's shape. Added under protocol 3, so a manifest on 2 cannot declare one.
+  // lists, of the profile's shape.
   const installation = connector.installation ?? [];
-  if (installation.length && !protocolTerms(connector.protocol ?? PROTOCOL_VERSION).installation)
-    problems.push(
-      `Installation reads were added under protocol 3 (D119); a manifest on protocol ${connector.protocol} cannot declare installation.`,
-    );
   for (const read of installation) {
     if (names.has(read.name)) problems.push(`Capability ${read.name} is already registered.`);
     names.add(read.name);
@@ -438,10 +431,6 @@ export function connectorProblems(
   if (connector.assistants) {
     const list = connector.assistants.list;
     const c = connector.capabilities.find(x => x.name === list);
-    if (!protocolTerms(connector.protocol ?? PROTOCOL_VERSION).assistants)
-      problems.push(
-        `The assistants profile was added under protocol 3; a manifest on protocol ${connector.protocol} cannot declare assistants.`,
-      );
     if (!c) problems.push(`Assistants names unknown capability ${list}.`);
     else if (c.kind !== 'read') problems.push(`Assistants capability ${c.name} must be a read.`);
     else {

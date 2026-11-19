@@ -459,7 +459,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
 test.describe('Kalender when the calendar does not answer, and for a person with no calendar', () => {
   const said = async (page: Page, words: string) =>
     (await announcements(page)).filter(text => text.includes(words)).length;
-  const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+  const rail = (page: Page) => page.getByRole('navigation', { name: 'Mina sidor', exact: true });
 
   test('the head says that the calendar does not answer, with Försök igen, which reads the week again; nothing is drawn as a free week, and it is said once', async ({
     page,

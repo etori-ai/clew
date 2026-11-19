@@ -11,6 +11,8 @@ export interface ResolvedChips {
   objects: ResolvedObject[];
   threads: Map<string, Thread>;
   primaryThread?: Thread;
+  /** The ref of the object that stands open beside the transcript as the question is asked, when it is one of them. */
+  beside?: string;
 }
 
 const gone = () => new InputError('Något du pekade på finns inte längre.');
@@ -19,6 +21,8 @@ export async function resolveChips(
   deps: AssistantDeps,
   persona: AuthenticatedContext,
   chips: Chip[],
+  /** The chip the person has open beside the transcript (`ConversationInput.beside`). */
+  beside?: string,
 ): Promise<ResolvedChips> {
   const access = threadAccess(deps.store, deps.registry);
   const objects: ResolvedObject[] = [];
@@ -87,5 +91,6 @@ export async function resolveChips(
     objects,
     threads,
     ...(ids.length === 1 && objects.every(o => 'thread' in o) ? { primaryThread: threads.get(ids[0]!) } : {}),
+    ...(beside && objects.some(o => o.ref === beside) ? { beside } : {}),
   };
 }

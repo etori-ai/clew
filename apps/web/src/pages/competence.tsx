@@ -32,9 +32,9 @@ import { competenceOwnQuery, viewQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage, refused } from '../query-policy';
 import { OWN_COMPETENCE, personPageHref } from '../person-address';
-import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { AddOwnHolding, ChangeOwnSkill, levelLabel } from '../components/register-holding';
-import { DeclaredView } from '../components/view';
+import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
+import { AddOwnHolding, ChangeOwnSkill, levelLabel } from '../components/people/register-holding';
+import { DeclaredView } from '../components/views/view';
 import { COMPETENCE_PAGE_TITLES, CompetenceHeader, UNTIL_FURTHER_NOTICE, cellDay } from './competence-parts';
 
 /** The read behind the page: `competence.holdings` with no input answers the reader's own (D108, relation `self`). */

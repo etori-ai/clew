@@ -18,8 +18,8 @@ const wide = { width: 1440, height: 900 };
  * One page per thing (D126 rules 1 to 3): nothing lies beside or over a page, and a pane exists in two places only,
  * beside Att göra's queue and beside a conversation. A work item opened from Att göra is in its reading pane
  * (`queue.spec.ts`); the item is drawn there as it is drawn everywhere, so its own reads and its rows' links are tested
- * here, in the pane. Opening is not asking (D111 rule 6): beside a conversation an item goes into the box only with
- * "Lägg till i samtalet".
+ * here, in the pane. The item beside a conversation goes with every question and is never put in the box; a card an
+ * answer draws goes into the box with "Lägg till i samtalet".
  */
 test.describe('the panes beside the queue and the conversation', () => {
   test.use({ viewport: wide });
@@ -55,27 +55,34 @@ test.describe('the panes beside the queue and the conversation', () => {
     await expect(composer(page)).toBeVisible();
   });
 
-  test('opening a card leaves the box as it was; Lägg till i samtalet puts it in, with its verbs, and its X lets go of the chip, not of the card', async ({
+  test('the item beside a conversation is not put in the box: it has no Lägg till i samtalet; a card an answer draws has, with its verbs, and its X lets go of the chip', async ({
     page,
-    api: _,
+    api,
   }) => {
     // The card's verbs, so the test sees when they show: only for the chip, never for the card merely open (D111 rule 6).
     await page.route('**/api/threads/fakturor/verbs', route =>
       route.fulfill({ json: { verbs: [{ id: 'why', label: 'Varför nu?', kind: 'why', threadId: 'fakturor' }] } }),
     );
     // Beside a conversation, where a box is on the page (Hem holds no card since D112: its cards are Att göra's).
-    await open(page, '/conversations/fraga?card=fakturor');
+    await open(page, '/conversations/fraga?card=omtanke');
     // The pane beside a conversation is named by the thing it holds (D126 rule 2).
-    const panel = page.getByRole('complementary', { name: 'Attestera 3 fakturor, 48 200 kr' });
-    const card = panel.locator('#card-fakturor');
-    await expect(card.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
-    // Opening is not asking: no token and no verbs about the card.
+    const panel = page.getByRole('complementary', { name: 'Omtankesamtal med Anna Lindqvist' });
+    await expect(panel.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
+    // The item in the pane is what the conversation is about: it goes with every question, the assistant is told it
+    // stands open there, and nothing puts it in the box. No token and no verbs about it either.
+    await expect(panel.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await expect(page.getByText(/^Fråga om ärendet/)).toHaveCount(0);
     await expect(page.getByRole('group', { name: 'Objekt i samtalet' })).toHaveCount(0);
     await expect(page.getByRole('group', { name: 'Om ärendet' })).toHaveCount(0);
     expect(await announcements(page)).not.toContainEqual(expect.stringContaining('Om ärendet'));
-    // "Lägg till i samtalet" is the one way in: the chip enters the drawer, the box has the focus, the chip is said aloud,
-    // and with nothing typed the card's verbs are offered under the box.
+    // A question goes with the item in the pane, and says that it is the thing open beside the transcript.
+    await composer(page).fill('Vad ska jag attestera?');
+    await composer(page).press('Enter');
+    const card = page.getByRole('log').locator('#thread-fakturor');
+    await expect(card.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    expect(api.asked.at(-1)).toMatchObject({ chips: [{ ref: 'thread:omtanke' }], beside: 'thread:omtanke' });
+    // On a card an answer draws, "Lägg till i samtalet" is the way into the box: the chip enters the drawer, the box
+    // has the focus, the chip is said aloud, and with nothing typed the card's verbs are offered under the box.
     await card.getByRole('button', { name: 'Lägg till i samtalet' }).click();
     const remove = page.getByRole('button', { name: 'Ta bort Attestera 3 fakturor, 48 200 kr' });
     await expect(remove).toBeVisible();
@@ -88,12 +95,12 @@ test.describe('the panes beside the queue and the conversation', () => {
       page.getByRole('group', { name: 'Om ärendet' }).getByRole('button', { name: 'Varför nu?' }),
     ).toBeVisible();
     await expectNoAxeViolations(page);
-    // The chip's X lets go of the chip and gives the focus to the field; the card stays open beside the conversation.
+    // The chip's X lets go of the chip and gives the focus to the field; the item stays open beside the conversation.
     await remove.click();
     await expect(remove).toHaveCount(0);
     await expect(composer(page)).toBeFocused();
     await expect(page.getByRole('group', { name: 'Om ärendet' })).toHaveCount(0);
-    await expect(page).toHaveURL(/\/conversations\/fraga\?card=fakturor$/);
+    await expect(page).toHaveURL(/\/conversations\/fraga\?card=omtanke$/);
     await expect(card.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
   });
 
@@ -184,11 +191,13 @@ test.describe('the panes beside the queue and the conversation', () => {
     await expect(page.getByRole('complementary')).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const main = page.getByRole('main');
-    // The directory is a tool in the rail: its page carries the row's name and the rail marks it.
+    // The directory is a tool in the menu: its page carries the tool's name and the menu's button is named by it.
     await expect(main.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
-    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).locator('a[aria-current="page"]')).toHaveText(
-      'Telefonbok',
-    );
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Mina sidor', exact: true })
+        .getByRole('button', { name: 'Telefonbok', exact: true }),
+    ).toBeVisible();
     await expect(main.getByRole('searchbox')).toHaveValue('lärare');
     await expect(main.getByRole('table')).toBeVisible();
     await expect(main.getByRole('link', { name: 'Samtalet' })).toHaveAttribute('href', conversation);

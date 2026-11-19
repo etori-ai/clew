@@ -80,6 +80,11 @@ export interface PromptContext {
   now: Date;
   week: number;
   objects: string[];
+  /**
+   * What stands open in the pane beside the transcript as the question is asked, in the same lines as `objects`: the
+   * prompt says it is the thing the person means by "the open item", "the card" or "the pane".
+   */
+  beside?: string[];
   /** The work item's actions may be filled in as a draft (D112 item 8): the prompt says how and that nothing is sent. */
   drafts?: boolean;
   /**
@@ -98,7 +103,10 @@ export interface PromptContext {
    */
   assistants?: string[];
 }
-/** The Swedish system prompt: who is asking, what day it is, the rules, and the chipped objects as "Du tittar på". */
+/**
+ * The Swedish system prompt: who is asking, what day it is, the rules, what stands open beside the transcript, and the
+ * chipped objects as "Du tittar på".
+ */
 export function systemPrompt(ctx: PromptContext): string {
   const date = ctx.now.toLocaleDateString('sv-SE', {
     weekday: 'long',
@@ -171,6 +179,12 @@ export function systemPrompt(ctx: PromptContext): string {
     );
   if (ctx.assistants?.length)
     lines.push('', 'Assistenter du kan lämna frågan till:', ...ctx.assistants.map(o => `- ${o}`));
+  if (ctx.beside?.length)
+    lines.push(
+      '',
+      'Öppet i rutan bredvid samtalet just nu (skriver personen "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
+      ...ctx.beside.map(o => `- ${o}`),
+    );
   if (ctx.objects.length)
     lines.push('', 'Du tittar på (det personen lagt till i samtalet):', ...ctx.objects.map(o => `- ${o}`));
   if (ctx.people?.lines.length)

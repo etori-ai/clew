@@ -1,6 +1,6 @@
 # Connector protocol reference
 
-This page describes the protocol implemented in this checkout. The version and field reference are [generated from source](../generated/README.md); the complete language-neutral contract is [connector-protocol.schema.json](../protocol/connector-protocol.schema.json), and the routes on both sides are [connector-protocol.openapi.json](../protocol/connector-protocol.openapi.json). Protocol 3 is current; protocol 2 is still accepted for a window (see [Contract changes](#contract-changes)). Implement the shapes under `$defs`; the bundle itself has no root request shape to validate against.
+This page describes the protocol implemented in this checkout. The version and field reference are [generated from source](../generated/README.md); the complete language-neutral contract is [connector-protocol.schema.json](../protocol/connector-protocol.schema.json), and the routes on both sides are [connector-protocol.openapi.json](../protocol/connector-protocol.openapi.json). Protocol 1 is current and the only number accepted (see [Contract changes](#contract-changes)). Implement the shapes under `$defs`; the bundle itself has no root request shape to validate against.
 
 ## Served by the instance
 
@@ -86,7 +86,7 @@ A page carries at most 100 rows and a row at most 500 holdings. An account that 
 holdings; an account the page does not answer for has no row. Say `withdrawalsReported: false` when your system leaves
 things out without saying so: Clew then never reads a missing holding as revoked. Answer a cursor you no longer know as
 `invalid`: Clew starts again from the first page. Keep a page well inside Clew's ten seconds. The loader refuses a
-manifest on protocol 2 that declares `installation`, a name that is not one of the profiles, and a declaration whose
+name that is not one of the profiles, and a declaration whose
 input takes anything but an optional string `cursor` or whose output is not the profile's (no field it lacks, bounds no
 wider). Clew checks every answer against the declaration and the profile; of a refusal it keeps the error's `code` and
 says it in its own words, never your `message`. The conformance check reads the first two pages as Clew does, reports
@@ -213,17 +213,17 @@ A successful execute's `output` has the `ExecuteResult` shape: a headline, per-r
 
 ## Contract changes
 
-`protocol` in a manifest is the version of this contract, not of the connector ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md), item 4). An additive change (a new optional field, a looser constraint) keeps the number. A break is a new number, and Clew then loads the new number and the one before it for a stated window, showing a connector on the older one with a warning in administration rather than refusing it. The exception is a security change, which retires the old number at once: protocol 2 rejects protocol 1, because shared-secret identity signing was replaced by installation keys (D44), and there is no fallback. The served documents carry `x-clew-protocol` with the current, accepted, deprecated and retired numbers, and a refused manifest names the number and the reason.
+`protocol` in a manifest is the version of this contract, not of the connector ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md), item 4). Until the first release there is one version, 1, and the contract changes in place: a change, breaking or not, keeps the number and changes every connector in this repository in the same commit ([D129](../decisions/D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md)). A manifest on any other number is refused, naming the number and the one this instance loads. The served documents carry `x-clew-protocol` with the current and accepted numbers.
 
-**Protocol 3 is a break** ([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md), 2026-11-12), so it is a new number and 2 stays accepted for a window that closes by a decision of its own, no earlier than the first release after that day. What breaks, and what a connector on 2 must change to declare 3:
+From the first release a break (a removed or renamed field, a new required one, a changed meaning) is a new number, and Clew loads it and the one before it for a stated window, showing a connector on the older one with a warning in administration rather than refusing it. A security change retires the old number at once. An additive change (a new optional field, a looser constraint) keeps the number.
 
-- `CallRequest` and `DocumentReadRequest` are closed objects, and gained `about`: a connector that validates the request body against the published schema of 2 refuses every call that carries it. Use the schema of 3. Clew never sends `about` to a connector whose manifest says 2.
-- Every request assertion carries `body` (the SHA-256 of the exact request body, base64url) and, on `/clew/capabilities/{name}`, `capability`. Verify both against the request: the [verifier](../../connectors/hello/verification.mjs) of 3 does when it is handed the request, and refuses an assertion without them, so a connector built from it answers 401 to a Clew that speaks only 2. An older Clew also refuses a manifest that says 3, which is the clearer of the two failures.
-- The loader refuses a manifest on 3 in which an input that names a person or a unit, declared or not (the `person` of a `<id>.commitments` read included), is not a plain string property of the input schema. A manifest on 2 is loaded without this rule; the registry still refuses anything but a string there at every call.
+What a connector must do today, beyond the shapes:
 
-**`installation` is additive to 3** ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md), 2026-11-12): an optional manifest field, a route and request shape of its own, and new `$defs`; checked against the published schema of 3, nothing a connector without installation reads receives or declares changed. A manifest on 2 cannot declare it.
+- Validate request bodies against the published schema: `CallRequest` and `DocumentReadRequest` are closed objects and carry `about` when the input names people or units.
+- Verify every request assertion against the request: its `body` claim is the SHA-256 of the exact request body (base64url) and, on `/clew/capabilities/{name}`, its `capability` claim is that name. The [verifier](../../connectors/hello/verification.mjs) does when it is handed the request, and refuses an assertion without them.
+- Make every input that names a person or a unit, declared or not (the `person` of a `<id>.commitments` read included), a plain string property of the input schema; the loader refuses a manifest otherwise, and the registry refuses anything but a string there at every call.
 
-A connector on 2 is loaded, works, gets no `about`, and shows as "Följer ett äldre protokoll" in Administration › Anslutna system (health `protocol-outdated`, with the window and these steps) and as a warning in the conformance check. The differences live in one function, `protocolTerms` in `packages/connectors/src/protocol.ts`. Update the verifier, trusted Clew URL and manifest before refreshing the registration. Keep the transport secret separate from signing authority.
+Update the verifier, trusted Clew URL and manifest before refreshing the registration. Keep the transport secret separate from signing authority.
 
 Keep existing capability names and schemas compatible with stored cards and callers. Use a new capability name for a breaking contract and keep the old behavior while consumers migrate. This is integration guidance, not an automatic compatibility guarantee. The proposed capability deprecation metadata and dependency-aware compatibility UI are not implemented. There is no connector `version` or `deprecated` field in the current manifest. Version your deployment images independently.
 
