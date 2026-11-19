@@ -12,13 +12,14 @@ export const hemLine = createRef<HTMLInputElement>();
  * Whether the keyboard's focus is on something the button would hide where it rests, the lower corner at the end of
  * the line: more than half of the focused control lies under it. The button stands over the page, so a control the
  * browser has just scrolled into view at the window's lower edge can be under it (2.4.11); the button then stands in
- * the other corner for as long as the focus is there. Read on every move of the focus, once the browser has scrolled.
+ * the other corner for as long as the focus is there. Scrolling and resizing can move a focused control under it too.
  */
 function useYieldToFocus(corner: { current: HTMLDivElement | null }): boolean {
   const [yields, setYields] = useState(false);
   useEffect(() => {
-    let frame = 0;
+    let frame: number | undefined;
     const read = () => {
+      frame = undefined;
       const box = corner.current;
       const active = document.activeElement;
       if (!box || !active || active === document.body) return setYields(false);
@@ -35,14 +36,18 @@ function useYieldToFocus(corner: { current: HTMLDivElement | null }): boolean {
       const covered = across > 0 && down > 0 ? across * down : 0;
       setYields(covered > (a.width * a.height) / 2);
     };
-    const onFocus = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(read);
+    const scheduleRead = () => {
+      if (frame === undefined) frame = requestAnimationFrame(read);
     };
-    document.addEventListener('focusin', onFocus);
+    document.addEventListener('focusin', scheduleRead);
+    document.addEventListener('scroll', scheduleRead, true);
+    window.addEventListener('resize', scheduleRead);
+    scheduleRead();
     return () => {
-      document.removeEventListener('focusin', onFocus);
-      cancelAnimationFrame(frame);
+      document.removeEventListener('focusin', scheduleRead);
+      document.removeEventListener('scroll', scheduleRead, true);
+      window.removeEventListener('resize', scheduleRead);
+      if (frame !== undefined) cancelAnimationFrame(frame);
     };
   }, [corner]);
   return yields;
@@ -120,7 +125,7 @@ export function useClearCorner(clear: boolean) {
  * conversation's, which has its own box, and a page that keeps the lower edge for its own controls (`useClearCorner`).
  */
 export function WithAssistantCorner({ children }: { children: ReactNode }) {
-  const { pathname } = useLocation();
+  const { open } = useConversation();
   const [claims, setClaims] = useState(0);
   const claim = useCallback(() => {
     setClaims(n => n + 1);
@@ -129,7 +134,7 @@ export function WithAssistantCorner({ children }: { children: ReactNode }) {
   return (
     <ClearCorner.Provider value={claim}>
       {children}
-      {pathname.startsWith('/conversations') || claims > 0 ? null : <AssistantCorner />}
+      {open || claims > 0 ? null : <AssistantCorner />}
     </ClearCorner.Provider>
   );
 }

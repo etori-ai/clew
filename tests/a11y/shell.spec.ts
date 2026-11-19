@@ -317,6 +317,25 @@ test('a failed reminder read is explicit and can be retried', async ({ page, api
   await expect(list.getByText('Inga aktuella påminnelser')).toBeVisible();
 });
 
+test('a failed refresh keeps the visible reminder count in the bell’s accessible name', async ({ page, api }) => {
+  api.threads = api.threads.map(t => (t.id === 'ledighet' || t.id === 'fakturor' ? { ...t, remindedAt: NOW } : t));
+  await open(page, '/calendar');
+  const reminders = bell(page);
+  await expect(reminders).toHaveAccessibleName('Påminnelser: 2');
+  await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: 'Tillfälligt fel' } }));
+  // Opening the queue after the cached read is stale refreshes it in the same session.
+  await page.clock.setFixedTime(new Date(Date.parse(NOW) + 60_000));
+  await pagesNav(page)
+    .getByRole('link', { name: /^Att göra/ })
+    .click();
+  await expect(reminders).toHaveAccessibleName('Påminnelser: 2 – kunde inte uppdateras');
+  await expect(reminders).toContainText('2');
+  await reminders.click();
+  const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
+  await expect(list.getByText('Tillfälligt fel')).toBeVisible();
+  await expect(list.getByRole('list', { name: 'Aktuella påminnelser' }).getByRole('link')).toHaveCount(2);
+});
+
 test('a blocked browser preference stays usable without claiming it was saved', async ({ page, api: _ }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'localStorage', {
@@ -549,6 +568,57 @@ test.describe('the floating way to the assistant', () => {
       await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Fråga AI', exact: true })).toHaveCount(0);
     });
+
+  test('the conversation register offers the corner and a pending first answer on Hem hides it', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/conversations');
+    await expect(corner(page)).toHaveAttribute('href', '/conversations/new');
+    await pagesNav(page).getByRole('link', { name: 'Start', exact: true }).click();
+    const line = page.getByRole('textbox', { name: 'Fråga assistenten', exact: true });
+    const release = api.holdAnswer();
+    await line.fill('Vem är på plats?');
+    await line.press('Enter');
+    await expect(page.getByRole('log')).toContainText('Vem är på plats?');
+    await expect(page).toHaveURL('/');
+    await expect(corner(page)).toHaveCount(0);
+    release();
+    await expect(page).toHaveURL('/conversations/konversation');
+    await expect(corner(page)).toHaveCount(0);
+  });
+
+  test('the corner follows a focused link as scrolling and resizing change its position', async ({ page, api: _ }) => {
+    await page.setViewportSize(narrow);
+    await open(page, '/');
+    const link = page.getByRole('region', { name: 'I dag' }).getByRole('link', { name: 'Kalender', exact: true });
+    const button = corner(page);
+    const cornerSide = () =>
+      button.evaluate(el => {
+        const r = el.getBoundingClientRect();
+        return r.left + r.width / 2 < document.documentElement.clientWidth / 2 ? 'left' : 'right';
+      });
+    await page.keyboard.press('Tab');
+    await link.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await link.focus();
+    const center = await link.evaluate(async el => {
+      // Let the focus settle before the wheel moves the same link under the resting button.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    await expect(link).toBeFocused();
+    expect(await cornerSide()).toBe('right');
+    const resting = (await button.boundingBox())!;
+    await page.mouse.move(center.x, center.y);
+    await page.mouse.wheel(0, center.y - (resting.y + resting.height / 2));
+    await expect.poll(cornerSide).toBe('left');
+    await expect(link).toBeFocused();
+
+    await page.setViewportSize({ ...narrow, height: narrow.height + 160 });
+    await expect.poll(cornerSide).toBe('right');
+    await expect(link).toBeFocused();
+  });
 
   for (const [path, viewport] of [
     ['/', desktop],

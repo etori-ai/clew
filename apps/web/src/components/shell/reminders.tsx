@@ -33,7 +33,8 @@ import { cardOverPage } from '../../panel-address';
 function useReminders() {
   const threadsQ = useQuery(threadsQuery);
   const reminders = activeReminders(threadsQ.data?.threads ?? [], new Date().toISOString());
-  const name = threadsQ.isError ? 'Påminnelser – kunde inte uppdateras' : `Påminnelser: ${reminders.length}`;
+  const label = threadsQ.data ? `Påminnelser: ${reminders.length}` : 'Påminnelser';
+  const name = threadsQ.isError ? `${label} – kunde inte uppdateras` : label;
   return { threadsQ, reminders, name };
 }
 
