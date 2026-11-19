@@ -564,8 +564,8 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
       beside: 'capability:clew.work',
       page: { subject: 'todo:needs-you', label: 'Om Att göra · Behöver dig' },
     });
-    // An item opened: the reading pane has the end slot, the address names the item and not the pane, and the only
-    // "Fråga assistenten" is the item's own.
+    // An item opened: the reading pane has the end slot, the address names the item and not the pane, and no button
+    // asks the assistant: the box stands under the item (rule 5).
     const first = table.getByRole('row').nth(1).getByRole('link').first();
     await first.click();
     const reading = page.getByRole('complementary', { name: 'Valt ärende' });
@@ -573,8 +573,8 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await expect(page).toHaveURL(/\/todo\?item=[^&]+$/);
     await expect(pane(page)).toHaveCount(0);
     await expect(frameButton(page)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(1);
-    await expect(reading.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
+    await expect(reading.getByRole('textbox', { name: 'Fråga om ärendet' })).toBeVisible();
     await expectNoAxeViolations(page);
     // Closed, the queue is as it was before the pane was opened, with the frame's button back.
     await reading
@@ -584,6 +584,99 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await expect(page).toHaveURL(/\/todo$/);
     await expect(pane(page)).toHaveCount(0);
     await expect(frameButton(page)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('Att göra, an item in the reading pane (rule 5): its name has the focus, the box stands at the pane’s foot under the read, a question goes with the item as what stands open and is answered there, and a reload finds the conversation again', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/todo');
+    const table = page.getByRole('table', { name: 'Behöver dig' });
+    await table.getByRole('row').nth(1).getByRole('link').first().click();
+    const reading = page.getByRole('complementary', { name: 'Valt ärende' });
+    const id = new URL(page.url()).searchParams.get('item')!;
+    // Opening the item gives the focus to its name, never to the box.
+    await expect(reading.getByRole('heading', { level: 2 }).first()).toBeFocused();
+    const field = reading.getByRole('textbox', { name: 'Fråga om ärendet' });
+    await expect(field).toBeVisible();
+    await expect(field).not.toBeFocused();
+    // Two parts: the read scrolls in the upper one, the conversation and its box are the lower one, at the pane's foot.
+    const read = reading.locator('[aria-label="Ärendet"]');
+    const readBox = (await read.boundingBox())!;
+    const fieldBox = (await field.boundingBox())!;
+    const paneBox = (await reading.boundingBox())!;
+    expect(fieldBox.y).toBeGreaterThan(readBox.y + readBox.height);
+    // Under the field stand only the box's own row with Skicka and the pane's inset.
+    expect(paneBox.y + paneBox.height - (fieldBox.y + fieldBox.height)).toBeLessThan(120);
+    // Before anything is asked the part says what asking here does (rule 10).
+    await expect(
+      reading.getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+    await field.fill('Vad händer om jag godkänner?');
+    await field.press('Enter');
+    await expect(reading.getByText('Vad händer om jag godkänner?', { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/todo\\?item=${id}$`));
+    const asked = api.asked.at(-1)!;
+    expect(asked.chips).toEqual([expect.objectContaining({ ref: `thread:${id}`, kind: 'thread' })]);
+    expect(asked.beside).toBe(`thread:${id}`);
+    expect(asked.page).toMatchObject({ subject: `thread:${id}` });
+    expect(asked.thing).toBeUndefined();
+    // The item is still at its facts: the read did not move while the answer came.
+    expect(await read.evaluate(el => el.scrollTop)).toBe(0);
+    await expectNoAxeViolations(page);
+    // A reload shows the item with the conversation under it, and moves no focus into the box.
+    await page.reload();
+    await expect(reading.getByText('Vad händer om jag godkänner?', { exact: true })).toBeVisible();
+    await expect(reading.getByRole('textbox', { name: 'Fråga om ärendet' })).not.toBeFocused();
+    await expect(reading.getByRole('link', { name: 'Öppna som samtal' })).toHaveAttribute(
+      'href',
+      new RegExp(`^/conversations/[^?]+\\?card=${id}$`),
+    );
+  });
+
+  test('Att göra, an item in the reading pane: the height of the conversation is the person’s own, by Astryx’s grip and the arrow keys, and is kept over a reload', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/todo');
+    await page.getByRole('table', { name: 'Behöver dig' }).getByRole('row').nth(1).getByRole('link').first().click();
+    const reading = page.getByRole('complementary', { name: 'Valt ärende' });
+    const grip = reading.getByRole('separator', { name: 'Ändra samtalets höjd' });
+    await expect(grip).toHaveAttribute('aria-valuenow', '260');
+    const read = reading.locator('[aria-label="Ärendet"]');
+    const before = (await read.boundingBox())!.height;
+    await grip.focus();
+    await page.keyboard.press('ArrowUp');
+    await expect(grip).not.toHaveAttribute('aria-valuenow', '260');
+    const higher = Number(await grip.getAttribute('aria-valuenow'));
+    expect(higher).toBeGreaterThan(260);
+    // The read gives the room, and never all of it: the conversation takes at most its share of the pane.
+    const after = (await read.boundingBox())!.height;
+    expect(after).toBeLessThan(before);
+    expect(after).toBeGreaterThan(40);
+    expect(Number(await grip.getAttribute('aria-valuemax'))).toBeLessThan((await reading.boundingBox())!.height / 2);
+    await expectNoAxeViolations(page);
+    await page.reload();
+    await expect(reading.getByRole('separator', { name: 'Ändra samtalets höjd' })).toHaveAttribute(
+      'aria-valuenow',
+      String(higher),
+    );
+  });
+
+  test('Att göra, an item in the reading pane with no model to ask: no box and no grip, the item as it was', async ({
+    page,
+    api,
+  }) => {
+    api.modelChoices = 0;
+    await open(page, '/todo');
+    await page.getByRole('table', { name: 'Behöver dig' }).getByRole('row').nth(1).getByRole('link').first().click();
+    const reading = page.getByRole('complementary', { name: 'Valt ärende' });
+    await expect(reading.getByRole('heading', { level: 2 }).first()).toBeFocused();
+    await expect(reading.getByRole('textbox')).toHaveCount(0);
+    await expect(reading.getByRole('separator', { name: 'Ändra samtalets höjd' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
   });
 
   test('Att göra: an address with an item and the pane shows the item, and lets go of the pane in its place', async ({

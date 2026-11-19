@@ -629,6 +629,7 @@ export function WorkItem({
   ask,
   marked,
   tools,
+  under,
 }: {
   thread: Thread;
   place: ItemPlace;
@@ -643,6 +644,11 @@ export function WorkItem({
   marked?: boolean;
   /** Beside a conversation: what stands before ✕ at the end of the title's row (the menu over what the conversation has named). */
   tools?: ReactNode;
+  /**
+   * In a reading pane: a part of its own under the read, at the pane's foot (Att göra's conversation with the assistant
+   * and its box, D130 rule 5). The read scrolls above it; on a short screen it follows the read in the one flow.
+   */
+  under?: ReactNode;
 }) {
   const short = useMediaQuery(shortQuery);
   const idBase = place === 'answer' ? 'thread' : 'card';
@@ -726,6 +732,7 @@ export function WorkItem({
             {read}
           </ScrollableArea>
         </StackItem>
+        {under}
       </VStack>
     );
   return (
@@ -740,6 +747,7 @@ export function WorkItem({
       {head}
       <Divider />
       {read}
+      {under}
     </VStack>
   );
 }

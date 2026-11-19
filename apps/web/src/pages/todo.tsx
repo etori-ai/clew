@@ -35,6 +35,7 @@ import {
   VStack,
   VisuallyHidden,
   XMarkIcon,
+  percent,
   pixel,
   proportional,
   useAnnounce,
@@ -79,9 +80,8 @@ import { DOT } from '../dot';
 import { statusOf, type ItemStatus } from '../status-of';
 import { reviewedAction } from '../components/card';
 import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
-import { itemSubject } from '../components/view-read';
-import { AskClew } from '../components/thing-panel';
-import { pageSubject } from '../components/page-conversation';
+import { PageTalk, itemPageSubject, pageSubject, usePageConversation } from '../components/page-conversation';
+import { useModelConfigured } from '../components/conversation-context';
 import { asksBeside } from '../panel-address';
 import { PageFrame } from '../components/page-frame';
 
@@ -104,6 +104,15 @@ const SINGLE_SURFACE_BELOW = 900;
 const PANE_MIN = 440;
 const LIST_MIN = 300;
 const PANE_SHARE = 0.55;
+/**
+ * The conversation with the assistant under an item in the reading pane (D130 rule 5; the product owner, 2026-11-19: two
+ * parts, as Kalender's pane has them): a part of its own at the pane's foot, its height the person's to drag with
+ * Astryx's grip, never more than this share of the pane's height, so the head and the read keep the larger part, and
+ * never lower than its box and a line or two over it need.
+ */
+const TALK = 260;
+const TALK_MIN = 200;
+const TALK_SHARE = 45;
 
 /**
  * The width of the box the page was given, as the `table-inbox` template measures it (`useSurfaceWidth`, D112 gap 4):
@@ -289,6 +298,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   // The focus follows what the pane shows (2.4.3): the item's heading when one is chosen, the row that opened it when
   // it closes, or the row after it when the item left the pile with its own button (Avfärda, Inte nu).
   const paneRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const shown = useRef<string | null>(null);
   const after = useRef<string | null>(null);
   changedRef.current = (thread: Thread) => {
@@ -598,6 +608,46 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     e.stopPropagation();
     close();
   };
+  // The conversation about the item in the pane (D130 rules 5 and 6), held here so it stays while the item is read:
+  // the person's latest conversation about the item is found again, and the next question continues it. Only where the
+  // pane holds a work item and there is a model to ask; a calendar proposal keeps its own card (D27).
+  const model = useModelConfigured();
+  const talkAbout = model && reading && item && !item.proposals.length ? itemPageSubject(item) : null;
+  const talk = usePageConversation(talkAbout);
+  const talkRegion = useResizable({
+    direction: 'vertical',
+    defaultSize: TALK,
+    minSize: TALK_MIN,
+    maxSize: percent(TALK_SHARE, { min: pixel(TALK_MIN) }),
+    // The share is of the pane, not of the window (Astryx resolves a percentage against the viewport without this): of
+    // the panel itself, which has the pane's whole height from its first frame. What it holds does not, while the item
+    // is on its way, and a share of that would clamp the height to its floor and keep it.
+    containerRef: panelRef,
+    autoSaveId: 'clew:todo-talk',
+  });
+  /**
+   * The conversation and its box, the pane's second part (board AskAttGora's box at the pane's foot): Astryx's grip
+   * draws the line between the read and it and takes the arrow keys. On a short screen the pane is one flow (1.4.10),
+   * so the part keeps its least height under the read and has no grip.
+   */
+  const talkPart = !talkAbout ? undefined : short ? (
+    <VStack height={TALK_MIN} paddingBlockStart={6}>
+      <PageTalk talk={talk} />
+    </VStack>
+  ) : (
+    <>
+      <ResizeHandle
+        direction="vertical"
+        isReversed
+        hasDivider
+        resizable={talkRegion.props}
+        label="Ändra samtalets höjd"
+      />
+      <VStack height={talkRegion.size} padding={6} paddingBlockStart={4}>
+        <PageTalk talk={talk} />
+      </VStack>
+    </>
+  );
   /** What the pane says when the item is not there: still on its way, unreadable, or gone. */
   const missing = threadsQ.isError ? (
     <Text as="p" role="alert">
@@ -630,7 +680,8 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           level: 2,
           onChange,
           onClose: close,
-          ask: <AskClew subject={itemSubject(item)} />,
+          // The assistant is asked in the box under the item, so the item has no button for it here.
+          ...(talkPart ? { under: talkPart } : {}),
         })}
       </VStack>
     ) : (
@@ -681,6 +732,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
                 label="Ändra bredden på ärendet"
               />
               <LayoutPanel
+                ref={panelRef}
                 resizable={pane.props}
                 padding={0}
                 isScrollable={short || !item || !!item.proposals.length}

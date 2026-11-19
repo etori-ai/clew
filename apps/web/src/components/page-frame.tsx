@@ -100,7 +100,7 @@ export interface AskAbout {
 const ASK_PANE = 400;
 const ASK_PANE_MIN = 360;
 const ASK_PANE_MAX = 720;
-/** The most of the sheet the pane may take, in percent, so the page keeps the larger part. */
+/** The most of the window's width the pane may take, in percent, so the page keeps the larger part. */
 const ASK_PANE_SHARE = 40;
 /** What a key pressed in the pane belongs to rather than the pane: a menu, a list box or a dialog over it. */
 const OWNS_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
