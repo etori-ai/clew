@@ -180,7 +180,7 @@ describe('the assistants a person may hand a conversation to', () => {
       parseManifest({ ...(helloManifest as object), assistants: { list: 'hello.missing' } }, 'hello'),
     ).toThrow(/unknown capability/);
     expect(() => parseManifest({ ...(helloManifest as object), protocol: 2 }, 'hello')).toThrow(
-      /protocol 2 cannot declare assistants/,
+      /protocol: 2 is not accepted/,
     );
   });
 });

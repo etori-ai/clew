@@ -110,6 +110,7 @@ test.describe('users administration', () => {
           'Arbete',
           'Jour',
           'Användarnamn',
+          'Inloggning',
         ]);
         const value = facts.getByRole('definition');
         await expect(value.nth(0)).toHaveText('Rektor');
@@ -203,7 +204,8 @@ test.describe('users administration', () => {
       ).toHaveAttribute('aria-current', 'true');
       const people = page.getByRole('table').first();
       // The unit and the role are columns of their own: where a person is and what they are there are two questions.
-      await expect(people.getByRole('columnheader')).toHaveText(['Person', 'Enhet', 'Roll', 'Behörigheter', 'Status']);
+      // Whether a person has signed in is on their page, not a column here.
+      await expect(people.getByRole('columnheader')).toHaveText(['Person', 'Enhet', 'Roll', 'Behörigheter']);
       const hillevi = people.getByRole('row', { name: /Hillevi Berg/ }).getByRole('cell');
       await expect(hillevi.nth(1)).toHaveText('Bergsåkers skola');
       await expect(hillevi.nth(2)).toHaveText('Chef');
@@ -211,11 +213,16 @@ test.describe('users administration', () => {
       await expect(omar.nth(1)).toHaveText('Ingen enhet');
       await expect(omar.nth(2)).toHaveText('');
       await expect(people.getByText('Administrera användare', { exact: true })).toBeVisible();
-      await expect(people.getByText('Har loggat in', { exact: true })).toHaveCount(2);
-      await expect(people.getByText('Inte inloggad ännu', { exact: true })).toBeVisible();
-      await expect(people.getByText('Ingen åtkomst', { exact: true })).toBeVisible();
-      // A state that is in order is a word; only what an administrator must act on is a mark with a colour.
+      await expect(people.getByText('Har loggat in', { exact: true })).toHaveCount(0);
+      await expect(people.getByText('Inte inloggad ännu', { exact: true })).toHaveCount(0);
+      // Only what an administrator must act on is marked, as a badge beside the name.
       await expect(people.locator('.astryx-badge')).toHaveText(['Ingen åtkomst']);
+      await expect(
+        people
+          .getByRole('row', { name: /Ingen åtkomst/ })
+          .getByRole('cell')
+          .first(),
+      ).toContainText('Ingen åtkomst');
       // The table is named by its heading, and a capability is a token.
       await expect(page.getByRole('table', { name: 'Personer' })).toBeVisible();
       await expect(people.locator('.astryx-token')).toHaveText([
@@ -357,8 +364,9 @@ test.describe('users administration', () => {
       ).toHaveCount(0);
       // The title is the catalogue's word and the role is Clew's: both are on the row, and neither stands in for the other.
       await expect(cells(/Hillevi Berg/).nth(2)).toHaveText('Chef');
-      // A catalogue that sends no title leaves the name and the user name, and no words about what is missing.
-      await expect(cells(/Omar Ny/).first()).toHaveText(/Omar Ny\s*omar$/);
+      // A catalogue that sends no title leaves the name and the user name, and no words about what is missing; Omar has
+      // no access, which stands as a badge beside the name.
+      await expect(cells(/Omar Ny/).first()).toHaveText(/Omar Ny\s*Ingen åtkomst\s*omar$/);
       await filters(page).getByRole('searchbox', { name: 'Sök person' }).pressSequentially('rektor');
       await expect(readout(page)).toHaveText('1 av 4 personer');
       await expect(people.locator('tbody tr')).toHaveText([/Hillevi Berg/]);
@@ -819,7 +827,7 @@ test.describe('users administration', () => {
       expect(await table.evaluate(el => el.scrollWidth <= (el.parentElement?.clientWidth ?? 0) + 1)).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       // A capability's token stays inside its cell: one too long for the column ends in an ellipsis (D124's canvas),
-      // and never runs into the status beside it.
+      // and never runs past the edge of its cell.
       for (const token of await table.locator('.astryx-token').all()) {
         const [box, cell] = await Promise.all([token.boundingBox(), token.locator('xpath=ancestor::td').boundingBox()]);
         expect(box!.x + box!.width).toBeLessThanOrEqual(cell!.x + cell!.width);

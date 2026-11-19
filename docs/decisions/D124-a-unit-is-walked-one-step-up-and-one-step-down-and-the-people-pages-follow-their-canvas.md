@@ -38,6 +38,10 @@ destination, so the freeze on new surface
    rätta i katalogen", with one row per problem and the state's badge first.
 5. **Användare.** People come first and the catalogues last. A state that is in order is a word, and colour marks
    only what an administrator must act on. Capabilities are Astryx Tokens.
+   - Whether a person has signed in is not a column (product owner, 2026-11-18). The Status filter still finds it,
+     "Ingen åtkomst" and "Avstängd" stand as a badge beside the name, and the person's page says it under Kontakt
+     ("Inloggning") for a reader with `admin.users`, read as that person's row of the list (`personId`). The table's
+     1267 px threshold was kept.
    - The table shows from a window 1267 px wide and is a list below that: the rail's 260, the page's gutters of
      64, and the 943 the table needs for its columns' floors, its border and a scroll bar.
    - "Lägg till" is always enabled. A press with a field left empty shows each empty field's error under it and

@@ -40,6 +40,11 @@ export interface ChipRef {
   kind: Chip['kind'];
   label: string;
   threadId?: string;
+  /**
+   * The thing stands open in the pane beside the transcript now: the question says so (`ConversationInput.beside`), so
+   * the assistant reads "the open item" as it. Never set on what the person added to the box.
+   */
+  beside?: true;
 }
 export type ClewAction = ConversationResponse['clewActions'][number];
 export interface Conversation {
@@ -250,6 +255,8 @@ interface Question {
   raw: string;
   text: string;
   chips: Chip[];
+  /** The one of the chips that stands open beside the transcript. */
+  beside?: string;
   current: Conversation | null;
   from?: AskFrom;
 }
@@ -258,6 +265,8 @@ interface Send {
   raw: string;
   text: string;
   chips: Chip[];
+  /** The one of the chips that stands open beside the transcript; never with a question to another system's assistant. */
+  beside?: string | undefined;
   /** The conversation the question continues; null starts a new one. */
   current: Conversation | null;
   /** The assistant of another system the question goes to; absent, Clew's own answers. */
@@ -337,6 +346,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
       raw,
       text,
       chips,
+      beside,
       current,
       handed,
       suggested,
@@ -376,6 +386,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
           {
             text,
             chips,
+            ...(beside && !handed ? { beside } : {}),
             ...(current ? { conversationId: current.id } : {}),
             ...(handed ? { assistant: handed.id } : {}),
             ...(handed && suggested ? { suggested: true as const } : {}),
@@ -760,6 +771,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         text,
         // To another system's assistant the person's words go alone: nothing of the conversation follows them.
         chips: how.to ? [] : used,
+        beside: how.to ? undefined : question.beside,
         current,
         handed: how.to ?? undefined,
         ...(how.suggested ? { suggested: true } : {}),
@@ -808,11 +820,13 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       // A question asked where no transcript is on the page starts a conversation of its own (D50): the box on the
       // landing is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is.
       const current = openRef.current ? conversation : null;
+      const beside = about?.find(c => c.beside)?.ref;
       await dispatch(
         {
           raw,
           text,
           chips: used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip),
+          ...(beside ? { beside } : {}),
           current,
           ...(from ? { from } : {}),
         },

@@ -153,17 +153,19 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
   const events = week.data?.events ?? EMPTY_EVENTS;
   const chipRef = 'thread:' + thread.id;
   const inConversation = talk.chipped.includes(chipRef);
-  // The menus' first item where the page has a question box, and no item where it has none (D111 rule 6).
-  const addItems = talk.hasBox
-    ? [
-        {
-          id: 'add',
-          label: inConversation ? 'I samtalet' : 'Lägg till i samtalet',
-          isDisabled: inConversation,
-          onClick: () => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id }),
-        },
-      ]
-    : [];
+  // The menus' first item where the page has a question box, and no item where it has none (D111 rule 6) or on the
+  // card in the pane beside a conversation: that one is what the conversation is about and goes with every question.
+  const addItems =
+    talk.hasBox && !beside
+      ? [
+          {
+            id: 'add',
+            label: inConversation ? 'I samtalet' : 'Lägg till i samtalet',
+            isDisabled: inConversation,
+            onClick: () => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id }),
+          },
+        ]
+      : [];
   const draft = thread.messages.at(-1)?.meta?.draft;
   useEffect(() => {
     setSelected(seed());

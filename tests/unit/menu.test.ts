@@ -1,13 +1,12 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { SignJWT } from 'jose';
+import { assertionFor, testJwks } from '../connector-authority';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import {
   audiencedActorOf,
   menuEligible,
   menuProblem,
   menuRowOf,
-  type Actor,
   type Capability,
   type Connector,
 } from '../../packages/connectors/src/index';
@@ -60,15 +59,8 @@ const mikael = persona('mikael', 'employee', 'unit-it', ['admin.connectors']),
   hassan = persona('hassan', 'employee', 'unit-skola');
 const SECRET = 'test-secret-test-secret';
 const T0 = '2026-11-05T12:00:00.000Z';
-const sign = (secret: string, aud: string) => (actor: Actor) =>
-  new SignJWT({ actor })
-    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-    .setIssuer('clew')
-    .setAudience(aud)
-    .setSubject(actor.id)
-    .setIssuedAt()
-    .setExpirationTime('2m')
-    .sign(new TextEncoder().encode(secret));
+// The installation's RS256 assertion, as Clew signs it (D44); a label other than SECRET is another issuer's key.
+const sign = (secret: string, aud: string) => assertionFor(aud, secret);
 const search = {
   connector: 'phonebook',
   source: 'Telefonboken',
@@ -96,8 +88,9 @@ const withoutHints = { ...base, capabilities: base.capabilities.map(({ menu: _me
 function world() {
   const registry = new Registry();
   const store = memoryConnectorStore();
-  const phonebook = createTelefonbok({ secret: SECRET });
+  const phonebook = createTelefonbok({ jwks: testJwks, secret: SECRET });
   const hello = createHello({
+    jwks: testJwks,
     secret: SECRET,
     clewUrl: 'http://clew',
     fetch: async () => Response.json({ output: { events: [] } }),

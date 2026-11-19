@@ -24,6 +24,7 @@ export function ItemSection({
   count,
   end,
   divided = true,
+  of,
   children,
 }: {
   id: string;
@@ -36,12 +37,18 @@ export function ItemSection({
   end?: ReactNode;
   /** The rule above it; not on the first section, under the rule its thing's head already draws. */
   divided?: boolean;
+  /**
+   * The id of the thing's own title, where several things can stand on one page (a work item in an answer, with another
+   * beside the transcript or in another answer): the section is then named by its heading and the thing, so two
+   * "Uppgifter" are two regions a screen reader can tell apart.
+   */
+  of?: string | undefined;
   children: ReactNode;
 }) {
   return (
     <>
       {divided && <Divider />}
-      <VStack as="section" gap={3} aria-labelledby={id}>
+      <VStack as="section" gap={3} aria-labelledby={of ? `${id} ${of}` : id}>
         <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
           <HStack gap={2} vAlign="center">
             <Heading id={id} level={3} accessibilityLevel={level as 2 | 3 | 4 | 5}>
@@ -68,6 +75,7 @@ export function FoldedSection({
   count,
   countWord,
   quiet = false,
+  of,
   children,
 }: {
   title: string;
@@ -76,6 +84,8 @@ export function FoldedSection({
   countWord?: string;
   /** Its name in the body size: a section that explains, not one that is worked in ("Varför ser jag detta?"). */
   quiet?: boolean;
+  /** The id of the thing's own title, where several things can stand on one page (`ItemSection`). */
+  of?: string | undefined;
   children: ReactNode;
 }) {
   const id = useId();
@@ -84,7 +94,7 @@ export function FoldedSection({
   return (
     <>
       <Divider />
-      <VStack ref={area} as="section" aria-labelledby={id}>
+      <VStack ref={area} as="section" aria-labelledby={of ? `${id} ${of}` : id}>
         <Collapsible
           defaultIsOpen={false}
           animatedLayout={animatedLayout}

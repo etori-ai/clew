@@ -50,6 +50,7 @@ export function EntityPane({
   tab: wanted,
   onClose,
   onKeyDown,
+  tools,
 }: {
   kind: EntitySubjectKind;
   entityKey: string;
@@ -57,6 +58,8 @@ export function EntityPane({
   tab: string | null;
   onClose: () => void;
   onKeyDown: (e: KeyboardEvent) => void;
+  /** What stands before ✕ in the header: the menu over what the conversation has named. */
+  tools?: ReactNode;
 }) {
   const { pathname, search } = useLocation();
   const here = pathname + search;
@@ -69,8 +72,12 @@ export function EntityPane({
   const pending = answers.some(a => a.source.capability === wanted && a.query.isPending);
   const tab = wanted && (tabs.some(t => t.value === wanted) || pending) ? wanted : OVERVIEW;
   const tabHref = (value: string) => paneTabHref(pathname, search, value === OVERVIEW ? null : value);
+  // What stands before ✕ (the menu over what the conversation has named) keeps its place beside it in every state.
   const close = (
-    <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={onClose} />
+    <HStack gap={1} vAlign="center">
+      {tools}
+      <IconButton label="Stäng" variant="ghost" icon={<Icon icon={XMarkIcon} size="sm" />} onClick={onClose} />
+    </HStack>
   );
   if (!detail) {
     const missing = read.isError && read.error instanceof ApiError && read.error.status === 404;

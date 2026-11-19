@@ -1,5 +1,5 @@
 {
-  "protocol": 3,
+  "protocol": 1,
   "id": "incidents",
   "kind": "passthrough",
   "source": "Avvikelsesystemet",

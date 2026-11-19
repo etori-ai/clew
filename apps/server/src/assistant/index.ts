@@ -23,7 +23,7 @@ import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import { audiencedActorOf, answersOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
-import { cardRows, type CardRows } from './card';
+import { cardRows, namedItems, type CardRows } from './card';
 import { resolveChips, type ResolvedChips } from './chips';
 import { serialiseContext } from './context';
 import { routeFixed } from './fixed';
@@ -71,6 +71,8 @@ type Produced = {
   view?: ViewRef;
   /** Which rows of the view the card draws (`cardRows`). */
   viewRows?: CardRows;
+  /** The work items among the rows the answer names (`namedItems`). */
+  viewItems?: string[];
   draft?: NonNullable<ConversationResponse['draft']>;
   forslag?: { threadId: string };
   clewActions: ClewAction[];
@@ -549,7 +551,21 @@ export function assistantUsecases(deps: AssistantDeps) {
       unitLabel: persona.unitLabel,
       now,
       week: weekNumber(displayDate(now.toISOString())),
-      objects: serialiseContext(chips.objects, now.toISOString(), people.guards),
+      // What stands open beside the transcript is said as that, apart from what the person added to the conversation.
+      objects: serialiseContext(
+        chips.objects.filter(o => o.ref !== chips.beside),
+        now.toISOString(),
+        people.guards,
+      ),
+      ...(chips.beside
+        ? {
+            beside: serialiseContext(
+              chips.objects.filter(o => o.ref === chips.beside),
+              now.toISOString(),
+              people.guards,
+            ),
+          }
+        : {}),
       drafts: draftable.length > 0,
       ...(people.people.length ? { people: { lines: peopleLines(people, now.toISOString()), lookup } } : {}),
       ...(earlier.length ? { earlier } : {}),
@@ -638,6 +654,9 @@ export function assistantUsecases(deps: AssistantDeps) {
         .find(t => t?.view && (t.view.kind === 'list' || t.view.kind === 'table'));
       let card = view;
       let shownRows = namedRows;
+      // The work items the answer names among its read's rows (`namedItems`), so the pane beside the conversation can
+      // lead to each of them: of the read the answer rests on, or of the pointed read made for the card below.
+      let items = view && declaredView ? namedItems(declaredView, answer.viewOutput, parsed.body) : [];
       if (pointedTool?.view && view?.capability === pointedTool.name) {
         // An answer that names some of the rows (the late ones, the invoices) keeps the card on those rows.
         if (namedRows?.show === 'none') shownRows = { count: namedRows.count, show: 'all' };
@@ -645,8 +664,10 @@ export function assistantUsecases(deps: AssistantDeps) {
         // Only the read the person pointed at is made for a card. A follow-up without a chip that the model answers
         // from what was said is not read again here: such a turn makes no read (a logged read least of all).
         try {
-          const rows = cardRows(pointedTool.view, {}, await turn.run(pointedTool.name, {}), parsed.body);
+          const output = await turn.run(pointedTool.name, {});
+          const rows = cardRows(pointedTool.view, {}, output, parsed.body);
           if (rows) {
+            items = namedItems(pointedTool.view, output, parsed.body);
             card = {
               capability: pointedTool.name,
               input: {},
@@ -684,6 +705,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         followUps,
         ...(card ? { view: card } : {}),
         ...(shownRows ? { viewRows: shownRows } : {}),
+        ...(items.length ? { viewItems: items } : {}),
         ...(sources?.length ? { sources } : {}),
         ...(draft && subject
           ? {
@@ -731,7 +753,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (input.assistant) return handOver(persona, input, observer);
     const turn = turnFor(persona, observer);
     const chips: Chip[] = input.chips ?? [];
-    const resolved = await resolveChips(deps, persona, chips);
+    const resolved = await resolveChips(deps, persona, chips, input.beside);
     const existing = input.conversationId ? await access.read(persona, input.conversationId) : undefined;
     if (input.conversationId && (!existing || existing.kind !== 'question'))
       throw new InputError('Samtalet finns inte.');
@@ -836,6 +858,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       },
       ...(produced.view ? { view: produced.view } : {}),
       ...(produced.viewRows ? { viewRows: produced.viewRows } : {}),
+      ...(produced.viewItems?.length ? { viewItems: produced.viewItems } : {}),
       ...(produced.draft
         ? {
             draft: {

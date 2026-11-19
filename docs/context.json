@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "generatedBy": "scripts/docs.ts",
   "pathBase": "repository-root",
-  "protocolVersion": 3,
+  "protocolVersion": 1,
   "authorityOrder": [
     "implementation-and-behavioral-tests",
     "generated-contracts-and-examples",
@@ -808,7 +808,7 @@
       "number": 60,
       "path": "docs/decisions/D60-the-instance-serves-its-connector-protocol.md",
       "title": "D60 · The instance serves its connector protocol, and a protocol break keeps the number before it",
-      "status": "accepted, built 2026-11-06",
+      "status": "accepted, built 2026-11-06; item 4 amended by [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) (2026-11-18): until the first release the protocol is 1 and changes in place, and numbering and the window apply from the first release on",
       "date": "2026-11-06",
       "area": "integrations"
     },
@@ -1384,7 +1384,7 @@
       "number": 117,
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
       "title": "D117 · The core decides who a source may be asked about, on every call, and signs the relation",
-      "status": "provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule \"a user can view and edit their own data and nothing else; a manager their employees'\", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation)",
+      "status": "provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule \"a user can view and edit their own data and nothing else; a manager their employees'\", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation; item 10's protocol 3 is protocol 1 and its window for 2 is closed since [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md), 2026-11-18)",
       "date": "2026-11-12",
       "area": "integrations, identity"
     },
@@ -1420,7 +1420,7 @@
       "number": 119,
       "path": "docs/decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md",
       "title": "D119 · The installation reads as itself, through a read no person can reach",
-      "status": "provisional (built 2026-11-12 on branch `holdings-caller` for D108 item 9's copy of every source's holdings; accepted once a connector outside the repository answers an installation read and the competence register's copy has run on it)",
+      "status": "provisional (built 2026-11-12 on branch `holdings-caller` for D108 item 9's copy of every source's holdings; accepted once a connector outside the repository answers an installation read and the competence register's copy has run on it; item 5's refusal of `installation` in a manifest on 2 removed by [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) on 2026-11-18, which loads protocol 1 only; this record's protocol 3 is that 1)",
       "date": "2026-11-12",
       "area": "integrations, identity"
     },
@@ -1519,7 +1519,7 @@
       "number": 125,
       "path": "docs/decisions/D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md",
       "title": "D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question",
-      "status": "provisional (the product owner's statements of 2026-11-13 and 2026-11-14, in substance: an assistant in another system is indivisible, so Clew asks it and never reaches into its knowledge; only the person's own message and what they choose goes there, and Clew adds and rewrites nothing; the handover is the person's own choice, sticky and visible; what may leave the Clew chat is closed by default and opened by a mark from the source; a person may send data about themselves and never about another person. They approved the plan this record follows on 2026-11-14. Items 1 to 9 are built on the hello connector's example assistant and against recorded answers of Eneo's API; item 10 is not built, and of item 11 the source's own finding read is not; item 13's hold knows names and card titles only; Eneo serves the protocol itself (item 9) and a real Eneo assistant has answered through it, by the person's pick and by the model's choice, on one development machine. Nothing outside the repository has tested it: no real Eneo has been asked. Items 5 and 12 and item 13's warning line are replaced by [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) (2026-11-16, provisional): the box only ever goes to Clew and the assistant is talked to in a panel beside the conversation)",
+      "status": "provisional (the product owner's statements of 2026-11-13 and 2026-11-14, in substance: an assistant in another system is indivisible, so Clew asks it and never reaches into its knowledge; only the person's own message and what they choose goes there, and Clew adds and rewrites nothing; the handover is the person's own choice, sticky and visible; what may leave the Clew chat is closed by default and opened by a mark from the source; a person may send data about themselves and never about another person. They approved the plan this record follows on 2026-11-14. Items 1 to 9 are built on the hello connector's example assistant and against recorded answers of Eneo's API; item 10 is not built, and of item 11 the source's own finding read is not; item 13's hold knows names and card titles only; Eneo serves the protocol itself (item 9) and a real Eneo assistant has answered through it, by the person's pick and by the model's choice, on one development machine. Nothing outside the repository has tested it: no real Eneo has been asked. Items 5 and 12 and item 13's warning line are replaced by [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) (2026-11-16, provisional): the box only ever goes to Clew and the assistant is talked to in a panel beside the conversation; item 1's rule that a manifest on 2 cannot declare `assistants` removed by [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) on 2026-11-18, which loads protocol 1 only; this record's protocol 3 is that 1)",
       "date": "2026-11-14",
       "area": "assistant, integrations"
     },
@@ -1549,6 +1549,15 @@
       "status": "provisional (the product owner chose it on 2026-11-16 from the canvas \"Clew",
       "date": "2026-11-16",
       "area": "ui, product"
+    },
+    {
+      "key": "D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release",
+      "number": 129,
+      "path": "docs/decisions/D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md",
+      "title": "D129 · The connector protocol is 1, and changes in place until the first release",
+      "status": "accepted (product owner, 2026-11-18)",
+      "date": "2026-11-18",
+      "area": "integrations"
     },
     {
       "key": "D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx",
@@ -2343,6 +2352,12 @@
     {
       "path": "docs/decisions/D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md",
       "title": "D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md",
+      "title": "D129 · The connector protocol is 1, and changes in place until the first release",
       "category": "decision-history",
       "headings": []
     },

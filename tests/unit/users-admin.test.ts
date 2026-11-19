@@ -264,9 +264,15 @@ describe('Användare', () => {
     store.state.grants.get('mikael')!.capabilities = ['admin.users'];
     expect(await names({ capability: 'admin.users' })).toEqual(['Mikael Lund']);
     expect(await names({ capability: 'admin.users', role: 'manager' })).toEqual([]);
+    // One person by id, as the person's page asks for the row that says whether they have signed in.
+    expect(await names({ personId: 'mikael' })).toEqual(['Mikael Lund']);
+    expect(await names({ personId: 'mikael', status: 'signed-in' })).toEqual([]);
+    expect(await names({ personId: 'nobody' })).toEqual([]);
+    expect(await names({ personId: 'mikael\u0000' })).toEqual([]);
     // Another organisation's people are nobody here, whatever is asked.
     store.state.users.set('ulla', { ...store.state.users.get('mikael')!, id: 'ulla', organisationId: 'elsewhere' });
     expect(await names({})).toEqual(['Hillevi Berg', 'Mikael Lund', 'Zara Avstängd']);
+    expect(await names({ personId: 'ulla' })).toEqual([]);
   });
   test('a unit is asked for with everything below it in the tree, and with a role as one assignment', async () => {
     const { usecases, admin, store } = stack(),

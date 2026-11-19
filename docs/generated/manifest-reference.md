@@ -2,7 +2,7 @@
 
 # Manifest field reference
 
-Protocol **3**. One entry per field of the connector manifest: what it does, its type, whether it is required, its constraints, an example and what it must agree with. Generated from the schema the instance validates with, so nothing here is a field that does not exist. The Swedish in examples is what a person reads in Clew; everything else in a manifest is English.
+Protocol **1**. One entry per field of the connector manifest: what it does, its type, whether it is required, its constraints, an example and what it must agree with. Generated from the schema the instance validates with, so nothing here is a field that does not exist. The Swedish in examples is what a person reads in Clew; everything else in a manifest is English.
 
 A running Clew draws this page at `/protocol/manifest`, serves it as data at `/api/protocol/manifest-reference.json`, the routes as OpenAPI at `/api/protocol`, and a dry run of a manifest at `POST /api/protocol/manifest` (D60). Field tables with less prose: [generated reference](README.md); the wire shapes: [JSON Schema](../protocol/connector-protocol.schema.json).
 
@@ -986,18 +986,17 @@ export const lon = {
 
 #### `protocol`
 
-The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before.
+The version of this contract the manifest is written to, not of the connector (D60). This instance loads 1, the only version until the first release (D129): the contract changes in place until then, and every connector in the repository with it.
 
-- Type: 3 / 2
+- Type: 1
 - required
 - Pairs with:
-  - **The protocol number is one this instance loads.** A manifest on a retired or unknown number is refused, naming the number, the accepted ones and the reason. This instance loads 3 and 2. ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md))
-  - **Installation reads came with protocol 3.** `installation` was added under protocol 3 as an optional field: a manifest without it is read as before, and a manifest on 2 that declares it is refused. Declare protocol 3 and carry the verifier of 3. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
+  - **The protocol number is one this instance loads.** A manifest on any other number is refused, naming the number and the ones this instance loads: 1. Until the first release there is one version, changed in place (D129). ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md))
 
 Example:
 
 ```json
-3
+1
 ```
 
 #### `id`
@@ -2840,13 +2839,12 @@ Example:
 
 #### `installation`
 
-The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it.
+The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). A manifest without it is untouched.
 
 - Type: array of object
 - optional
 - Constraints: at most 1 items
 - Pairs with:
-  - **Installation reads came with protocol 3.** `installation` was added under protocol 3 as an optional field: a manifest without it is read as before, and a manifest on 2 that declares it is refused. Declare protocol 3 and carry the verifier of 3. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
   - **Clew calls an installation read as itself, never as a person.** Clew posts an installation read to `/clew/installation/{name}` with `{ input }` and an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, with no `actor`, bound to the body and the name. Answer it to that assertion only, and answer a person's assertion there with 401: the verifier of 3 tells them apart (`verify.installation`). The read is not a capability: no page, card, tool, job or other connector's callback can name it, whoever the person is. A page of `<id>.holdings` answers every account it reaches, a row without holdings for one that holds nothing; with `withdrawalsReported: false` Clew never reads a missing holding as revoked. Answer a cursor you no longer know as `invalid`; Clew then starts again from the first page. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
 
 #### `installation[].name`
@@ -3015,7 +3013,7 @@ Example:
 
 #### `assistants`
 
-The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Added under protocol 3 as an optional field; a manifest on 2 cannot declare it.
+The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Optional: a manifest without it is untouched.
 
 - Type: object
 - optional
@@ -3065,7 +3063,7 @@ One of this manifest's read capabilities, taking no input and answering a SiteHe
 
 Where Clew applies each: when the manifest is loaded, when the connector is registered, in the conformance check, or on each call.
 
-- **The protocol number is one this instance loads** (loader; `protocol`) ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md)): A manifest on a retired or unknown number is refused, naming the number, the accepted ones and the reason. This instance loads 3 and 2.
+- **The protocol number is one this instance loads** (loader; `protocol`) ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md)): A manifest on any other number is refused, naming the number and the ones this instance loads: 1. Until the first release there is one version, changed in place (D129).
 - **The id is the registered id** (loader; `id`) ([D23](../decisions/D23-connectors-are-managed-in-the-database.md)): An administrator registers the connector under an id; a manifest with another id is refused.
 - **Every capability name starts with the id** (loader; `id`, `capabilities[].name`) ([D37](../decisions/README.md)): A capability is named `<id>.<verb>`. The name is the contract: keep it for a compatible change, choose a new name for a break.
 - **An execute is never a tool** (loader; `capabilities[].kind`, `capabilities[].model`) ([D8](../decisions/D08-every-action-works-without-the-model.md)): A capability of kind `execute` must declare `model: false`. It runs only through a human decision, and a callback cannot reach it either.
@@ -3096,7 +3094,6 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **The effect is a read of this connector that takes the same input** (loader; `capabilities[].effect`, `capabilities[].kind`, `capabilities[].model`) ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): `effect` may be declared only on an `execute`. It names a `read` of this manifest whose input schema is the execute's own and which declares `model: false`. A read writes nothing: Clew calls it before the person decides.
 - **A follower is about no entity** (loader; `capabilities[].about`, `capabilities[].follows`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `follows` and `about` exclude each other: a follower is asked with a `FactEnvelope`, not with keys.
 - **A profile read and the header are about no entity** (loader; `capabilities[].about`, `capabilities[].name`, `capabilities[].kinds`, `header.capability`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.requests`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.
-- **Installation reads came with protocol 3** (loader; `protocol`, `installation`) ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): `installation` was added under protocol 3 as an optional field: a manifest without it is read as before, and a manifest on 2 that declares it is refused. Declare protocol 3 and carry the verifier of 3.
 - **An installation read is one of the profiles Clew reads as the installation** (loader; `installation[].name`, `id`, `capabilities[].name`) ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): Each entry of `installation` is named `<id>.<profile>` for a profile Clew reads with no person behind the call: today only `<id>.holdings`. No name is both a capability and an installation read, and neither list names one twice.
 - **The holdings read takes a cursor and nothing else** (loader; `installation[].name`, `installation[].input`) ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): `<id>.holdings` takes `{}` for the first page and `{ cursor }` after: its input is an object whose only property is an optional plain string `cursor`, and it requires nothing. It never takes a key or a person: the read answers every account the source has.
 - **The holdings read answers the profile, a bounded page at a time** (loader; `installation[].output`) ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): `<id>.holdings` answers a `HoldingsOutput`: `rows`, each with a string `key` (the value of your match field for the account, what Clew compares with a user name), `holdings` and optionally `partial: true`; `withdrawalsReported`, a boolean; and `next`, the cursor of the following page, absent on the last. Each holding has `id`, `type`, `label`, `kind` and `issuedOn`, and optionally `expiresOn`, and nothing else: no name, no free text. `rows` declares `maxItems` of at most 100 and `holdings` at most 500. Clew checks every answer against the profile too.

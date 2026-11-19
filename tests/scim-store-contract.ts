@@ -754,6 +754,11 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await found({ status: 'not-signed-in' })).toEqual([zara, ake]);
         expect(await found({ capability: 'admin.users' })).toEqual([anna]);
         expect(await found({ capability: 'admin.connectors' })).toEqual([]);
+        // One person by id, as the person's page asks for their row; never one of another organisation.
+        expect(await found({ personId: zara })).toEqual([zara]);
+        expect(await found({ personId: zara, status: 'signed-in' })).toEqual([]);
+        expect(await found({ personId: other })).toEqual([]);
+        expect(await found({ personId: p + '-nobody' })).toEqual([]);
         // Every part narrows further.
         expect(await found({ words: ['a'], unitIds: [u2], status: 'not-signed-in' })).toEqual([zara, ake]);
         expect(await found({ words: ['zara'], role: 'manager' })).toEqual([]);

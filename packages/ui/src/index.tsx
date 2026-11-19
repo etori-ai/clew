@@ -61,6 +61,7 @@ export {
 } from '@astryxdesign/core/Layout';
 export { SideNav, SideNavItem, SideNavSection, SideNavHeading } from '@astryxdesign/core/SideNav';
 export { ResizeHandle, useResizable } from '@astryxdesign/core/Resizable';
+export { percent } from '@astryxdesign/core/Resizable/utils';
 export { useLayer } from '@astryxdesign/core/Layer';
 export {
   DropdownMenu,
@@ -200,7 +201,7 @@ export {
 } from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 // The area mark (D71): the system's hue in registration order, the area's icon, the word always beside them.
-export { AreaChip, AreaGlyph, AreaLine, SystemSwatch, clewIcon, swatchWords } from './components/mark';
+export { AreaChip, AreaGlyph, AreaLine, AreaMark, SystemSwatch, clewIcon, swatchWords } from './components/mark';
 export { hueOf, hueWord, ordinalWord, systemHues, type SystemHue } from './system-hues';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';

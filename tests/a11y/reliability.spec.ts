@@ -68,6 +68,33 @@ test('two tabs and a reconnect announce a persisted reminder once; Visa opens it
     await second.close();
   }
 });
+test('five deliveries at once are one toast, which leaves by itself', async ({ page, api }) => {
+  api.deliveries = api.threads.slice(0, 5).map(t => ({ id: 'delivery:' + t.id, threadId: t.id, kind: 'automatic' }));
+  await open(page, '/calendar');
+  const toasts = page.getByRole('region', { name: 'Aviseringar' });
+  await expect(toasts.getByText('Nya uppgifter finns i Att göra.', { exact: true })).toBeVisible();
+  await expect.poll(() => api.deliveryClaims.length).toBe(5);
+  // One card with one way on, however many arrived.
+  await expect(toasts.getByRole('button', { name: 'Visa', exact: true })).toHaveCount(1);
+  await expectNoAxeViolations(page);
+  // Nobody has to close it: what it said is in Att göra (2.2.1 holds, since nothing is lost with it).
+  await expect(toasts.getByRole('button', { name: 'Visa', exact: true })).toHaveCount(0, { timeout: 12_000 });
+});
+test('a reminder and new work together are one toast; Visa opens Att göra', async ({ page, api }) => {
+  const [first, second] = api.threads;
+  api.deliveries = [
+    { id: 'reminded:' + first!.id, threadId: first!.id, kind: 'reminder' },
+    { id: 'delivery:' + second!.id, threadId: second!.id, kind: 'automatic' },
+  ];
+  await open(page, '/calendar');
+  const toasts = page.getByRole('region', { name: 'Aviseringar' });
+  await expect(toasts.getByText('Påminnelser och nya uppgifter finns i Att göra.', { exact: true })).toBeVisible();
+  await expect(toasts.getByRole('button', { name: 'Visa', exact: true })).toHaveCount(1);
+  await toasts.getByRole('button', { name: 'Visa', exact: true }).click();
+  await expect(page).toHaveURL('/todo');
+  await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
+  await expect(toasts.getByRole('button', { name: 'Visa', exact: true })).toHaveCount(0);
+});
 for (const state of ['queued', 'blocked'] as const)
   test(`a ${state} timer is visible at 320 px without claiming delivery`, async ({ page, api }) => {
     const card = api.threads.find(t => t.id === 'ledighet')!;

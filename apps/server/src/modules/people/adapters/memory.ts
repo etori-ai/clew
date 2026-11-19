@@ -410,6 +410,7 @@ export function memoryProvisionStore(
       const matching = [...state.users.values()]
         .filter(u => {
           if (u.organisationId !== organisationId) return false;
+          if (search.personId !== undefined && u.id !== search.personId) return false;
           const granted = state.grants.has(u.id),
             bound = state.bindings.some(b => b.personId === u.id),
             status = !u.enabled ? 'disabled' : !granted ? 'no-access' : bound ? 'signed-in' : 'not-signed-in';

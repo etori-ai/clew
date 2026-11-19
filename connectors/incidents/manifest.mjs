@@ -107,7 +107,7 @@ const lookup = {
 };
 
 export const manifest = {
-  protocol: 3,
+  protocol: 1,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Avvikelsesystemet',

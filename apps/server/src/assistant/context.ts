@@ -26,8 +26,7 @@ function cardState(t: Thread, now: string): string {
   const primary = t.actions.find(a => a.role === 'primary');
   const secondary = t.actions.filter(a => a.role === 'secondary').slice(0, 2);
   const overflow = t.actions.filter(a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)));
-  const more = (...own: string[]) =>
-    `Fler val (${[...overflow.map(a => a.label), ...own, 'Lägg till i samtalet', 'Avfärda'].join(', ')})`;
+  const more = (...own: string[]) => `Fler val (${[...overflow.map(a => a.label), ...own, 'Avfärda'].join(', ')})`;
   const buttons = (labels: string[]) =>
     labels.length ? ` Knappar i ärendet nu: ${labels.join(', ')}.` : ' Ärendet har inga knappar nu.';
   if (t.state === 'dismissed') return ' Ärendet är avfärdat.' + buttons([]);

@@ -48,6 +48,16 @@ export function AreaChip({ ordinal, icon, label }: { ordinal: number | null; ico
     />
   );
 }
+/**
+ * The area mark on its own (D71), at the start of a pane's header beside a conversation: the colour says the system and
+ * the icon the area, as on the chip, and the source line next to it says both in words, so the mark is decoration and
+ * hidden from assistive technology (1.4.1 holds through the line). An area without an icon draws none.
+ */
+export function AreaMark({ ordinal, icon }: { ordinal: number | null; icon?: MenuIcon | undefined }) {
+  return icon ? (
+    <Badge variant={hueOf(ordinal) ?? 'house'} icon={<Icon icon={clewIcon[icon]} size="sm" />} label="" aria-hidden />
+  ) : null;
+}
 /** The area mark in a row (D71): the area's icon in secondary at the start of the meta line, always followed by the word. No hue in a row, so a list stays calm. */
 export function AreaGlyph({ icon }: { icon?: MenuIcon }) {
   return icon ? <Icon icon={clewIcon[icon]} color="secondary" size="sm" /> : null;

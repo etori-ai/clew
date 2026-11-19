@@ -376,11 +376,28 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(prompt).toContain('Ärende "Attestera 3 fakturor, 37 050 kr" (Ekonomisystemet');
     expect(prompt).toContain('Skolgrossisten · 11 200 kr · 6451 · förfaller 5 nov [vald]');
     expect(prompt).toContain(
-      'Knappar i ärendet nu: Attestera valda, Öppna i ekonomisystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
+      'Knappar i ärendet nu: Attestera valda, Öppna i ekonomisystemet, Inte nu, Fler val (Avfärda).',
     );
     expect(
       systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: [] }),
     ).not.toContain('Du tittar på');
+  });
+  test('the system prompt says what stands open beside the transcript, before what the person added', () => {
+    const prompt = systemPrompt({
+      name: 'Hillevi Berg',
+      role: 'manager',
+      unitLabel: 'Skönsmons skola',
+      now: new Date(now),
+      week: 45,
+      beside: serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: card }], now),
+      objects: ['Mötet "APT" tis 3 nov 09:00–10:00 i kalendern.'],
+    });
+    const open = prompt.indexOf('Öppet i rutan bredvid samtalet just nu (skriver personen "det öppna ärendet"');
+    const added = prompt.indexOf('Du tittar på (det personen lagt till i samtalet):');
+    expect(open).toBeGreaterThan(0);
+    expect(added).toBeGreaterThan(open);
+    expect(prompt.slice(open, added)).toContain('- Ärende "Attestera 3 fakturor, 37 050 kr" (Ekonomisystemet');
+    expect(prompt.slice(added)).toContain('- Mötet "APT"');
   });
   test('a card already acted on offers Ångra, never its own buttons, and nothing once the window has closed', () => {
     const handledAt = '2026-11-03T09:47:00.000Z',
@@ -435,9 +452,7 @@ describe('the model path only reads, and falls back when the provider fails', ()
       [{ kind: 'thread', ref: 'thread:c1', thread: { ...card, snoozedUntil: '2026-11-04T05:00:00.000Z' } }],
       now,
     );
-    expect(snoozed).toContain(
-      'Ärendet ligger under Inte nu. Knappar i ärendet nu: Ta upp nu, Fler val (Lägg till i samtalet, Avfärda).',
-    );
+    expect(snoozed).toContain('Ärendet ligger under Inte nu. Knappar i ärendet nu: Ta upp nu, Fler val (Avfärda).');
     const [waiting] = serialiseContext(
       [{ kind: 'thread', ref: 'thread:c1', thread: { ...card, waitingOn: 'Ekonomisystemet' } }],
       now,

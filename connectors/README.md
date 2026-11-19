@@ -6,7 +6,7 @@ Every folder here is one connector: an independent service that speaks the
 (`apps/server/src/routes/protocol.ts`). They are here for four different reasons, and this page says which is
 which. To write one, start with [Create a connector](../docs/guides/creating-a-connector.md).
 
-All of them use protocol 3. "Reads", "writes" and "proposes" count the capabilities in the manifest (`read`,
+All of them use protocol 1. "Reads", "writes" and "proposes" count the capabilities in the manifest (`read`,
 `execute`, `propose`); "scan" means the connector can report work that needs a person.
 
 ## A real product

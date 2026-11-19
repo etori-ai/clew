@@ -146,10 +146,13 @@ test.describe('a row is one link; the steps are on the open work item', () => {
   });
 
   test('a card put in the box says so on its button and on its line', async ({ page, api: _ }) => {
-    // Where a box is on the page: the card beside a conversation (Hem holds no card since D112).
+    // Where a box is on the page: a card an answer draws in a conversation (Hem holds no card since D112; the item in
+    // the pane beside the conversation goes with every question and is not put in the box).
     await page.setViewportSize({ width: 1440, height: 900 });
-    await open(page, '/conversations/fraga?card=omtanke');
-    const card = page.locator('#card-omtanke');
+    await open(page, '/conversations/fraga');
+    await composer(page).fill('Vad ska jag attestera?');
+    await composer(page).press('Enter');
+    const card = page.getByRole('log').locator('#thread-fakturor');
     await card.getByRole('button', { name: 'Lägg till i samtalet' }).click();
     await expect(card).toContainText('I samtalet');
     await expect(composer(page)).toBeVisible();
@@ -165,13 +168,19 @@ test.describe('a row is one link; the steps are on the open work item', () => {
     }) => {
       await page.emulateMedia({ reducedMotion });
       await page.setViewportSize({ width: 1440, height: 900 });
-      await open(page, '/conversations/fraga?card=omtanke');
-      await page.locator('#card-omtanke').getByRole('button', { name: 'Lägg till i samtalet' }).click();
-      const remove = page.getByRole('button', { name: 'Ta bort Omtankesamtal med Anna Lindqvist' });
+      await open(page, '/conversations/fraga');
+      await composer(page).fill('Vad ska jag attestera?');
+      await composer(page).press('Enter');
+      await page
+        .getByRole('log')
+        .locator('#thread-fakturor')
+        .getByRole('button', { name: 'Lägg till i samtalet' })
+        .click();
+      const remove = page.getByRole('button', { name: 'Ta bort Attestera 3 fakturor, 48 200 kr' });
       await expect(remove).toBeVisible();
       await expect(composer(page)).toBeFocused();
       await expect(page.getByRole('status').filter({ hasText: 'är med i samtalet' })).toContainText(
-        'Omtankesamtal med Anna Lindqvist är med i samtalet',
+        'Attestera 3 fakturor, 48 200 kr är med i samtalet',
       );
       // The chip and the drawer around it, up to the box's region: what entered is animated, or nothing is.
       const animations = await remove.evaluate(el => {

@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { daysUntil, sameSubject, type ItemEvent, type ReceiptRow, type Thread, type ThreadItem } from '@clew/contracts';
 import {
+  AreaMark,
   Badge,
   Button,
   Card,
@@ -380,7 +381,7 @@ function eventWords(e: ItemEvent, thread: Thread): string {
  * with when under it. Read from the item's audit rows; the person is "Du", never by name, and nobody else is named.
  * Folded by default (D126 item 13), with how many beside its name once they are read.
  */
-function Events({ thread }: { thread: Thread }) {
+function Events({ thread, of }: { thread: Thread; of?: string | undefined }) {
   const events = useQuery(itemEventsQuery(thread.id, thread.updatedAt));
   const planned = (thread.timers ?? [])
     .filter(t => t.state === 'scheduled')
@@ -427,6 +428,7 @@ function Events({ thread }: { thread: Thread }) {
     <FoldedSection
       title="Händelser"
       countWord="händelser"
+      of={of}
       count={events.data ? planned.length + events.data.events.length : undefined}
     >
       {body}
@@ -502,6 +504,7 @@ function Read({
   idBase,
   facts,
   gap = 6,
+  named,
 }: {
   thread: Thread;
   item: ItemState;
@@ -512,10 +515,16 @@ function Read({
   facts?: ReactNode;
   /** The space between the sections: the pane's step (board StatusPanel), or the page's wider one (board Ärende). */
   gap?: 6 | 8;
+  /**
+   * In an answer, where another item can stand beside the transcript or in another answer: each section is named by
+   * its heading and the item's title, so no two regions on the page share a name.
+   */
+  named?: boolean;
 }) {
   const receipt = thread.receipt;
   const status = item.actions.status;
   const id = (part: string) => `${idBase}-${thread.id}-${part}`;
+  const of = named ? id('title') : undefined;
   const rowCount = receipt?.rows.length || thread.items.length;
   // The decided review is seen again from the end of the rows' heading (board StatusPanel: "Visa granskningen").
   const reviewLink = status.review ? (
@@ -526,7 +535,7 @@ function Read({
     sections.push({
       key: 'facts',
       draw: d => (
-        <ItemSection divided={d} id={id('facts')} title="Uppgifter" level={level}>
+        <ItemSection divided={d} of={of} id={id('facts')} title="Uppgifter" level={level}>
           <Card variant="muted" padding={4}>
             {facts}
           </Card>
@@ -537,7 +546,7 @@ function Read({
     sections.push({
       key: 'notice',
       draw: d => (
-        <ItemSection divided={d} id={id('notice')} title="Meddelandet" level={level}>
+        <ItemSection divided={d} of={of} id={id('notice')} title="Meddelandet" level={level}>
           <NoticeText item={item} />
         </ItemSection>
       ),
@@ -546,7 +555,7 @@ function Read({
     sections.push({
       key: 'rows',
       draw: d => (
-        <ItemSection divided={d} id={id('rows')} title="Rader" level={level} count={rowCount} end={reviewLink}>
+        <ItemSection divided={d} of={of} id={id('rows')} title="Rader" level={level} count={rowCount} end={reviewLink}>
           {receipt?.rows.length ? <ReceiptRows thread={thread} item={item} /> : <Rows thread={thread} item={item} />}
         </ItemSection>
       ),
@@ -556,7 +565,7 @@ function Read({
   sections.push({
     key: 'why',
     draw: () => (
-      <FoldedSection title="Varför ser jag detta?" quiet>
+      <FoldedSection title="Varför ser jag detta?" quiet of={of}>
         <Why thread={thread} item={item} />
       </FoldedSection>
     ),
@@ -566,7 +575,7 @@ function Read({
       {sections.map((s, i) => (
         <Fragment key={s.key}>{s.draw(i > 0)}</Fragment>
       ))}
-      {hasEvents(thread) && <Events thread={thread} />}
+      {hasEvents(thread) && <Events thread={thread} of={of} />}
     </VStack>
   );
 }
@@ -616,6 +625,8 @@ export function WorkItem({
   onChange,
   onClose,
   ask,
+  marked,
+  tools,
 }: {
   thread: Thread;
   place: ItemPlace;
@@ -626,6 +637,10 @@ export function WorkItem({
   onClose?: () => void;
   /** "Fråga assistenten" among the buttons (`AskClew`); absent beside the conversation about the item and in its answers. */
   ask?: ReactNode;
+  /** Beside a conversation: the area's mark at the start of the header, before the source line that says it in words. */
+  marked?: boolean;
+  /** Beside a conversation: what stands before ✕ at the end of the title's row (the menu over what the conversation has named). */
+  tools?: ReactNode;
 }) {
   const short = useMediaQuery(shortQuery);
   const idBase = place === 'answer' ? 'thread' : 'card';
@@ -635,6 +650,7 @@ export function WorkItem({
   const head = (
     <VStack gap={4}>
       <HStack gap={3} vAlign="start">
+        {marked && <AreaMark ordinal={item.mark.ordinal} icon={item.mark.icon} />}
         <StackItem size="fill">
           <VStack gap={1}>
             <Text type="supporting" color="secondary">
@@ -653,13 +669,18 @@ export function WorkItem({
             </Heading>
           </VStack>
         </StackItem>
-        {onClose && (
-          <IconButton
-            variant="ghost"
-            label="Stäng ärendet"
-            icon={<Icon icon={XMarkIcon} size="sm" />}
-            onClick={onClose}
-          />
+        {(tools || onClose) && (
+          <HStack gap={1} vAlign="center">
+            {tools}
+            {onClose && (
+              <IconButton
+                variant="ghost"
+                label="Stäng ärendet"
+                icon={<Icon icon={XMarkIcon} size="sm" />}
+                onClick={onClose}
+              />
+            )}
+          </HStack>
         )}
       </HStack>
       <ActionRow
@@ -670,6 +691,7 @@ export function WorkItem({
         ask={ask}
         titleRef={item.title}
         reviewShown={item.rowsShown}
+        beside={place === 'pane'}
       />
       <Notes thread={thread} item={item} status={item.actions.status} />
     </VStack>
@@ -680,6 +702,7 @@ export function WorkItem({
       item={item}
       level={headingLevel + 1}
       idBase={idBase}
+      named={place === 'answer'}
       facts={<Facts thread={thread} item={item} columns={2} />}
     />
   );
