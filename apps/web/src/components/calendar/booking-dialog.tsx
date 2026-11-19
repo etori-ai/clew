@@ -1,5 +1,5 @@
 import { Dialog, DialogHeader } from '@clew/ui';
-import { DialogFrame } from '../dialog-frame';
+import { DialogFrame } from '../shell/dialog-frame';
 import { BookingButtons, BookingFields, BookingHint, type Booking } from './booking';
 
 /**

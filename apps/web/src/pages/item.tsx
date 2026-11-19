@@ -10,13 +10,13 @@ import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
 import { todoHref } from '../work-items';
 import { useShownForTheWayBack } from '../way-back';
-import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, shortQuery } from '../components/shell';
-import { ContentSkeleton } from '../components/loading';
-import { WorkItemPage } from '../components/work-item';
-import { cardBody } from '../components/card-panel';
-import { PageFrame } from '../components/page-frame';
-import { itemPageSubject } from '../components/page-conversation';
+import { useNav, type NavCurrent } from '../components/shell/nav';
+import { Shell, shortQuery } from '../components/shell/shell';
+import { ContentSkeleton } from '../components/shell/loading';
+import { WorkItemPage } from '../components/work/work-item';
+import { cardBody } from '../components/work/card-panel';
+import { PageFrame } from '../components/shell/page-frame';
+import { itemPageSubject } from '../components/conversation/page-conversation';
 
 /**
  * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`): the item's own address, reached by its name
@@ -51,7 +51,7 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
   const back = origin ?? (from ? { label: 'Tillbaka', href: from } : { label: 'Att göra', href: todoHref({}) });
   // The rail marks the place the item was opened from; without one, Att göra.
   const tool = toolOf(from);
-  const current: RailCurrent = from?.startsWith('/staff')
+  const current: NavCurrent = from?.startsWith('/staff')
     ? { surface: 'staff' }
     : from?.startsWith('/calendar')
       ? { surface: 'calendar' }
@@ -60,7 +60,7 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
         : from === '/' || from?.startsWith('/?') || from?.startsWith('/conversations')
           ? { surface: 'start' }
           : { surface: 'todo' };
-  const nav = useRail({ current, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current, admin, manager: user.role === 'manager' });
   usePageTitle(thread ? thread.title : missing ? 'Ärendet finns inte' : null);
   // Sent away by its own button, the item has nothing more to show here: back to where the person came from.
   const leaving = useRef(back.href);
@@ -76,8 +76,8 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
   );
   let body;
   if (thread && !thread.proposals.length) body = <WorkItemPage thread={thread} back={back} onChange={onChange} />;
-  // The calendar's proposals keep their own card (D27, D112 item 9), under the way back and the item's title; the frame
-  // draws "Fråga assistenten" about the item at the end of the title's line, as on every work item's page (D131).
+  // The calendar's proposals keep their own card (D27, D112 item 9), under the way back and the item's title; the
+  // assistant's pane is about the item, as on every work item's page (D131).
   else if (thread)
     body = (
       <PageFrame ask={{ subject: itemPageSubject(thread) }} back={back} title={thread.title}>

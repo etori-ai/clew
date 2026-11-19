@@ -50,15 +50,15 @@ import {
   withoutDecision,
   type Decision,
 } from '../review-session';
-import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { ContentSkeleton } from '../components/loading';
-import { reviewedAction, useCardAction } from '../components/card';
-import { PageFrame, WayBack, narrowPageQuery } from '../components/page-frame';
-import { FactsInColumn, FrameAskButton } from '../components/page-frame-context';
-import { itemPageSubject } from '../components/page-conversation';
-import { DocumentReader } from '../components/document-reader';
-import { ReviewRecovery } from '../components/review-recovery';
+import { useNav, type NavCurrent } from '../components/shell/nav';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { ContentSkeleton } from '../components/shell/loading';
+import { reviewedAction, useCardAction } from '../components/work/card';
+import { PageFrame, WayBack, narrowPageQuery } from '../components/shell/page-frame';
+import { FactsInColumn } from '../components/shell/page-frame-context';
+import { itemPageSubject } from '../components/conversation/page-conversation';
+import { DocumentReader } from '../components/views/document-reader';
+import { ReviewRecovery } from '../components/work/review-recovery';
 
 const decisionWord: Record<Decision, string> = { approve: 'Vald för godkännande', leave: 'Lämnas kvar' };
 /** The verb of the action, for its buttons: "Attestera valda" is "Attestera" on one row. */
@@ -72,7 +72,7 @@ const submitted = (thread: Thread) =>
 const EVIDENCE_MARGIN_MS = 60_000;
 
 /** The place in the rail the review belongs to: where its work item was shown, as the item's own page marks it. */
-function railOf(from: string | null): RailCurrent {
+function railOf(from: string | null): NavCurrent {
   const tool = toolOf(from);
   if (from?.startsWith('/staff')) return { surface: 'staff' };
   if (from?.startsWith('/calendar')) return { surface: 'calendar' };
@@ -119,7 +119,7 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
     !from || from.startsWith('/items/')
       ? { label: live?.title ?? 'Ärendet', href: from ?? itemPageHref(threadId) }
       : (origin ?? { label: 'Tillbaka', href: from });
-  const nav = useRail({ current: railOf(from), admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: railOf(from), admin, manager: user.role === 'manager' });
   const rows = live ? reviewRows(live) : [];
   const step = live && action ? stepOf(search, rows.length + 1) : null;
   const reviewing = !!live && !!action && step !== null;
@@ -757,8 +757,6 @@ function Review({
           {headLine}
         </Text>
       </VStack>
-      {/* On a phone the head is in the column, and the frame's "Fråga assistenten" stands under the title (D130 rule 1). */}
-      {mobile && <FrameAskButton />}
       {headBelow}
     </VStack>
   );

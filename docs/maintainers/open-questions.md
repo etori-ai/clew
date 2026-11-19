@@ -77,7 +77,6 @@ Each of these waits for the product owner.
 | Should a read of Clew's own be able to name a unit in its input (`unit.param`, as `person.param` names a person) and a person in its rows by Clew's id (`subject.ids`, as `person.ids` lets a core capability be asked)? Proposed beside [D127](../decisions/D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md), not built: `byKey` needs `subject`, which names a person by user name and cannot name a unit by Clew's id, so a table of units and a core read about people without user names cannot say their rows are a lens's. | 2026-11-14 | [D127](../decisions/D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md), Not covered |
 | Astryx's `Table` has no styled state for an open row. Att göra marks the row whose item is in the reading pane with `aria-current` and Astryx's row status in its gutter ("Visas bredvid"). Ask Astryx for one, or accept the gutter? Nothing custom is built against it. | 2026-11-14 | [D126](../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md), Att göra |
 | Should an installation nobody has configured look like Clew? The product owner chose Clew's own look on the canvas (ink indigo, the ball of thread), and it is the example appearance `themes/clew`, applied like any other ([D98](../decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)); an installation with no saved appearance is still Astryx Neutral ([D46](../decisions/D46-astryx-neutral-is-the-default-theme.md)). | 2026-11-14 | [D126](../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md) item 11 |
-| Påminnelser as a row of the rail under Mitt arbete: the canvas has neither the bell beside the rail's heading nor such a row, so the build put the reminders where the rail had room. Does it stay? | 2026-11-14 | [D126](../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md) rule 10, [the rail](../reference/status/interface.md#the-rail) |
 
 ## Handing a conversation to another system's assistant (D125)
 
@@ -126,9 +125,3 @@ message and the focus inset of a field with a status (`packages/ui/src/theme.ts`
 surface, so a mid-tone surface that passes for text could take them under 3:1. Adding the two pairs is a contract
 change that may refuse a file accepted today (2026-11-13,
 [Organisation, Användare and the person card](../reviews/2026-11-13-organisation-users-and-the-person-card.md)).
-
-For the product owner: a conversation in the rail tells "Svarar" from "Väntar på dig" by its dot's colour alone
-(`apps/web/src/components/nav.tsx`), with no word beside it, which WCAG 1.4.1 does not allow. A work item's row got
-its state in words by [D124](../decisions/D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md)
-item 9; the rail's row has no supporting line to hold one, so the answer is a design choice: a visible word or a
-shape per state (2026-11-13, the same review).

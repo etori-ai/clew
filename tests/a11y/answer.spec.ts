@@ -192,7 +192,8 @@ test.describe('the cards in a conversation', () => {
     await expectNoAxeViolations(page);
     // The person goes back up the history to the older answer. (At the foot of the conversation ChatLayout follows the
     // newest message and scrolls to it as the card grows: the Astryx gap in docs/maintainers/open-questions.md.)
-    const box = (await log.boundingBox())!;
+    // The wheel is turned over what scrolls, the conversation's own column: the log itself is taller than the window.
+    const box = (await page.locator('.astryx-chat-layout').boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, -2000);
     await expect(folded).toBeInViewport();

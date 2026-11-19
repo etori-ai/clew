@@ -75,13 +75,13 @@ import {
 } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { mobileQuery } from '../components/shell';
-import { levelLabel } from '../components/register-holding';
+import { mobileQuery } from '../components/shell/shell';
+import { levelLabel } from '../components/people/register-holding';
 import { personPageFrom } from '../person-address';
 import { CompetenceHeader, managesFrom, untilWords } from './competence-parts';
 import { COMPETENCE_TAB, PersonalFrame } from './staff-parts';
-import { pageSubject } from '../components/page-conversation';
-import { InColumn } from '../components/page-frame-context';
+import { pageSubject } from '../components/conversation/page-conversation';
+import { InColumn } from '../components/shell/page-frame-context';
 
 /** The rail's width and the tab's gutters, which the result's least width does not count. */
 const SIDE_NAV = 260;

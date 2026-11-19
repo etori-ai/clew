@@ -10,15 +10,15 @@ import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
 import { opensAsPage, viewOpenHref, withViewInput } from '../view-address';
 import { useShownForTheWayBack } from '../way-back';
-import { Shell, shortQuery } from '../components/shell';
-import { placeOfRead, useRail, type RailCurrent } from '../components/nav';
-import { DeclaredView } from '../components/view';
-import { PanelBody, answersWithRowsOf } from '../components/panel';
-import { useView, viewSubject } from '../components/view-read';
-import { PageFrame, WayBack } from '../components/page-frame';
-import { pageSubject, recordSubject } from '../components/page-conversation';
-import { PageHeader } from '../components/page-header';
-import { ContentArrival, ContentSkeleton } from '../components/loading';
+import { Shell, shortQuery } from '../components/shell/shell';
+import { placeOfRead, useNav, type NavCurrent } from '../components/shell/nav';
+import { DeclaredView } from '../components/views/view';
+import { PanelBody, answersWithRowsOf } from '../components/views/panel';
+import { useView, viewSubject } from '../components/views/view-read';
+import { PageFrame, WayBack } from '../components/shell/page-frame';
+import { pageSubject, recordSubject } from '../components/conversation/page-conversation';
+import { PageHeader } from '../components/shell/page-header';
+import { ContentArrival, ContentSkeleton } from '../components/shell/loading';
 
 /**
  * The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the
@@ -52,7 +52,7 @@ function nounOf(spec: { kind: string; noun?: { other: string } } | undefined): s
  * the rail (`placeOfRead`): on the place the view was opened from, as a work item's page does (`item.tsx`); with no
  * such place, on nothing.
  */
-function placeOf(from: string | null): RailCurrent {
+function placeOf(from: string | null): NavCurrent {
   const tool = toolOf(from);
   if (from?.startsWith('/staff')) return { surface: 'staff' };
   if (from?.startsWith('/calendar')) return { surface: 'calendar' };
@@ -73,12 +73,12 @@ function placeOf(from: string | null): RailCurrent {
  * stands when the view is no tool of its own. A read the person may not open, and one that does not exist, both say
  * "Verktyget finns inte" and nothing else, and are not asked for.
  * A list or a table is a register (D126 rule 8, board Personal, the `table-page` template): the name as the heading
- * with the system's badge and the frame's "Fråga assistenten" on its line (D130: the assistant's pane beside the list),
+ * with the system's badge on its line (the corner's "Fråga AI" opens the assistant's pane beside the list, D130),
  * the view's own search field and choice and the count under it, then the rows. The name in a row is the link to the
  * row's own read, its page (rule 4); a row never opens a panel.
  * One thing (a record, a contact card, a text, a document) is a thing's page (rule 1, the `work-item-detail`
- * template): the way back and the title with the frame's "Fråga assistenten" at the end of its line (D131: the pane is
- * about this record, `recordSubject`), the read in the column and a record's facts in the end panel, above the read
+ * template): the way back and the title (D131: the assistant's pane, opened by the corner's "Fråga AI", is about this
+ * record, `recordSubject`), the read in the column and a record's facts in the end panel, above the read
  * where the window is narrow and while the pane stands beside the page. The view is drawn by the one renderer (D38).
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -133,7 +133,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     : null;
   // A tool in the rail marks its row; a read of a connector with a place of its own in the rail (Kompetens, Kalender)
   // marks that place wherever it was opened from; any other view the place it was opened from.
-  const nav = useRail({
+  const nav = useNav({
     current: entry ? { surface: 'verktyg', view: capability } : (placeOfRead(capability) ?? placeOf(from)),
     admin,
     manager: user.role === 'manager',
@@ -240,7 +240,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
           }
           title={name}
           titleId={TITLE_ID}
-          // A read has no actions of its own here; the frame's "Fråga assistenten" ends the title's line.
+          // A read has no actions of its own here, and the assistant is asked from the corner (D133 item 1).
           below={banner || undefined}
           label={title || 'Vyn'}
           scrollTabStop
@@ -262,7 +262,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   }
   // A register (D126 rule 8): the view draws its own title line with its controls and its count (D74), so the way back
   // and the title stand in the frame's column, on the lines every page's title stands on. Its list is what the
-  // assistant beside it is about (D130 rule 4), and the frame's "Fråga assistenten" ends that title line.
+  // assistant beside it is about (D130 rule 4), opened by the corner's "Fråga AI".
   return (
     <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame

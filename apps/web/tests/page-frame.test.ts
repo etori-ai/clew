@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Thread } from '@clew/contracts';
 import { asksBeside, pageOnly, panelSearch, withAsk, withEntry, withoutAsk } from '../src/panel-address';
-import { shiftQuery } from '../src/components/page-frame-context';
+import { shiftQuery } from '../src/components/shell/page-frame-context';
 import { groupThreads, onlyBeside } from '../src/stream';
 import { listedAbout } from '../src/conversation-about';
 
@@ -32,7 +32,7 @@ describe('the assistant’s pane is in the address (D130 rule 2)', () => {
   });
 });
 
-describe('a breakpoint of the column follows the pane’s width (D130 rule 11)', () => {
+describe('a breakpoint of the column follows the pane’s width (D130 rule 11, D133 item 4)', () => {
   test('min-width and max-width move by the pane, anything else stays', () => {
     expect(shiftQuery('(min-width: 1280px)', 400)).toBe('(min-width: 1680px)');
     expect(shiftQuery('(max-width: 1024px)', 400)).toBe('(max-width: 1424px)');
@@ -43,10 +43,21 @@ describe('a breakpoint of the column follows the pane’s width (D130 rule 11)',
   });
   test('with the pane closed the query is the window’s', () => {
     expect(shiftQuery('(min-width: 1280px)', 0)).toBe('(min-width: 1280px)');
+    expect(shiftQuery('(min-width: 1280px)', 0, 1280)).toBe('(min-width: 1280px)');
+  });
+  test('in the shell’s column a width past the column is never reached, however wide the window', () => {
+    // The column is 1280 px at most: with 420 px of pane, a page that needs 1010 px of window never gets it.
+    expect(shiftQuery('(min-width: 1010px)', 420, 1280)).toBe('(max-width: 0px)');
+    expect(shiftQuery('(max-width: 1024px)', 420, 1280)).toBe('(min-width: 0px)');
+    // Below the column's width the window still decides.
+    expect(shiftQuery('(min-width: 768px)', 420, 1280)).toBe('(min-width: 1188px)');
+    expect(shiftQuery('(max-width: 767px)', 420, 1280)).toBe('(max-width: 1187px)');
+    expect(shiftQuery('(min-width: 860px)', 420, 1280)).toBe('(min-width: 1280px)');
+    expect(shiftQuery('(max-width: 860px)', 420, 1280)).toBe('(min-width: 0px)');
   });
 });
 
-describe('a conversation asked beside a page is in the rail once opened (D130 rule 6)', () => {
+describe('a conversation asked beside a page is among Ny fråga’s latest once opened (D130 rule 6, D133 item 10)', () => {
   const NOW = '2026-11-18T10:00:00.000Z';
   const question = (id: string, updatedAt: string, askedBeside?: Thread['askedBeside']): Thread =>
     ({
@@ -63,7 +74,7 @@ describe('a conversation asked beside a page is in the rail once opened (D130 ru
   const plain = question('vanligt', '2026-11-18T08:00:00.000Z');
   const unopened = question('bredvid', '2026-11-18T09:00:00.000Z', beside(null));
   const opened = question('oppnat', '2026-11-18T07:00:00.000Z', beside('2026-11-18T09:30:00.000Z'));
-  test('the rail’s list leaves out one never opened; Alla samtal keeps every one, newest first', () => {
+  test('the latest leave out one never opened; Alla samtal and the search keep every one, newest first', () => {
     const g = groupThreads([plain, unopened, opened], NOW, NOW.slice(0, 10));
     expect(g.questions.map(t => t.id)).toEqual(['vanligt', 'oppnat']);
     expect(g.allQuestions.map(t => t.id)).toEqual(['bredvid', 'vanligt', 'oppnat']);

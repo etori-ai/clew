@@ -14,15 +14,15 @@ export interface Groups {
   snoozed: Thread[];
   handledToday: Thread[];
   /**
-   * The person's own conversations as the rail and Ny fråga list them, newest first: without one asked beside a page
+   * The person's own conversations as Ny fråga lists its latest, newest first: without one asked beside a page
    * that has not been opened as a conversation (D130 rule 6), so ten questions beside ten meetings do not push every
    * longer conversation out.
    */
   questions: Thread[];
-  /** Every conversation of the person's, newest first, as Alla samtal lists them. */
+  /** Every conversation of the person's, newest first, as Alla samtal lists them and the search finds them (D133 item 10). */
   allQuestions: Thread[];
 }
-/** A conversation asked beside a page and not yet opened as a conversation (D130 rule 6): not among the rail's latest. */
+/** A conversation asked beside a page and not yet opened as a conversation (D130 rule 6): not among Ny fråga's latest. */
 export const onlyBeside = (t: Pick<Thread, 'askedBeside'>): boolean => !!t.askedBeside && !t.askedBeside.openedAt;
 const byDeadline = (a: Thread, b: Thread) =>
   (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.createdAt.localeCompare(b.createdAt);

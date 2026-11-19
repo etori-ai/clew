@@ -41,7 +41,7 @@ test.describe('the work item as a page', () => {
     await expect(title).toBeFocused();
     await expect(page).toHaveTitle(`${INVOICES} · Startsidan`);
     // The rail says where the page belongs: Att göra.
-    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    const rail = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('aria-current', 'page');
     // One outline: the title, then the main column's sections and the rail's, each one level under it.
     const levels = await outline(page);

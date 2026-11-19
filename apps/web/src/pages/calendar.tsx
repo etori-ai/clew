@@ -70,21 +70,21 @@ import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
 import { ASK_PARAM, ENTRY_PARAM, asksBeside, viewSearch, withEntry } from '../panel-address';
 import { itemPageHref } from '../work-items';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
 import { besideQuery } from '../media';
-import { useRail } from '../components/nav';
+import { useNav } from '../components/shell/nav';
 import { EventDialog, type Mode } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
 import { BookingButtons, BookingFields, BookingHint, useBooking } from '../components/calendar/booking';
 import { MoveButtons, MoveFields, useMove } from '../components/calendar/move';
-import { PageFrame } from '../components/page-frame';
-import { AsyncContent, ContentSkeleton } from '../components/loading';
+import { PageFrame } from '../components/shell/page-frame';
+import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
 import type { Mark } from '../marks';
-import { AskClew } from '../components/thing-panel';
-import { useModelConfigured, type ThingSubject } from '../components/conversation-context';
-import { PageTalk, usePageConversation, type PageSubject } from '../components/page-conversation';
-import { PreparedRow } from '../components/conversation';
-import { SilentNotice, useSaySilent, useSilentSources } from '../components/silent-sources';
+import { AskClew } from '../components/conversation/thing-panel';
+import { useModelConfigured, type ThingSubject } from '../components/conversation/conversation-context';
+import { PageTalk, usePageConversation, type PageSubject } from '../components/conversation/page-conversation';
+import { PreparedRow } from '../components/conversation/conversation';
+import { SilentNotice, useSaySilent, useSilentSources } from '../components/shell/silent-sources';
 
 /** The three views as the URL names them, so a view is addressable and the back button works. */
 type View = 'day' | 'week' | 'month';
@@ -461,13 +461,14 @@ const TITLE_ID = 'calendar-title';
  * forms are the dialogs they were. Nothing else opens beside the calendar (D126 rule 3). The assistant is asked in place
  * here, since its answer is drawn on the page itself (the product owner, 2026-11-18, boards KalFraga, KalFragaFlytt and
  * KalFragaVecka): under an entry's facts stands the person's conversation about it, found again when the entry is
- * opened again, over a box at the pane's foot. The frame's "Fråga assistenten" (D130) gives the end slot to the
- * assistant's pane about the range on screen, the week, the day or the month: it lets go of an entry or a move standing
- * there, a booking being made waits under it, and an entry or a form opened takes the place back.
+ * opened again, over a box at the pane's foot. The corner's "Fråga AI" (D130, D133) opens the assistant's pane about
+ * the range on screen, the week, the day or the month, at the end of the shell's column: it lets go of an entry or a
+ * move standing in the page's own pane, a booking being made waits under it, and an entry or a form opened takes the
+ * place back.
  * An answer that prepared a move of the person's own meeting fills in "Flytta …", its block on the grid where it would
  * end up; one that prepared a cancellation asks "Ställ in mötet?". Nothing is written before the person's own button,
  * and an earlier answer makes nothing ready by itself. On a phone the question about an entry is still asked in a
- * conversation with the entry beside it (D126 rule 5), and the head has no room for the frame's button. The proposals are reached from "Förslag N" in the page's header, a
+ * conversation with the entry beside it (D126 rule 5). The proposals are reached from "Förslag N" in the page's header, a
  * menu that leads to each one. "Ställ in …" asks in a dialog: a confirmation is what a dialog is for.
  */
 export function CalendarPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -491,7 +492,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       return q;
     });
   // The same frame as the start page (D31, D34), from the same cache (D33): the rail with the person's time axis.
-  const nav = useRail({ current: { surface: 'calendar' }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'calendar' }, admin, manager: user.role === 'manager' });
   const marks = useMarks();
   // The proposal thread is picked from the stream's own list, so a decision here and the item on Att göra agree.
   const threadsQ = useQuery({ ...threadsQuery, select: selectProposalThread });
@@ -621,7 +622,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const act = (item: AgendaItem, mode: Exclude<Mode, 'view'>) =>
     mode === 'move' && !mobile ? move.start(item) : setActing({ item, mode });
   /**
-   * What the frame's "Fråga assistenten" asks about (D130 rule 4, board Calendar's `week` state): the range on screen, the
+   * What the assistant's pane is about (D130 rule 4, board Calendar's `week` state): the range on screen, the
    * week, the day or the month, with the calendar's own read of that range as its chip (the product owner, 2026-11-18).
    */
   const rangeRead =
@@ -1048,12 +1049,11 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     />
   );
   const bookButton = <Button variant="primary" size="sm" label="Ny bokning" onClick={() => startBooking(null)} />;
-  // The one page header (D74): the title first, what can be done at the end of its line, and the frame's "Fråga
-  // assistenten" last (D130 rule 1). A phone has two rows: the title with what can be done, and under it where in time
+  // The one page header (D74): the title first, what can be done at the end of its line; the assistant is asked from the
+  // corner's "Fråga AI" (D133 item 1). A phone has two rows: the title with what can be done, and under it where in time
   // with how it is shown, 44 px controls under a finger. The controls are Astryx's `sm`, as the toolbar that held them
-  // made them (28 px, under the heading's 32 px line). Both rows are full at 375 px, so the frame draws no "Fråga
-  // assistenten" on a phone's head (`onPhone: false`; a third row would push the week down); an entry opened on a phone
-  // still has "Fråga assistenten" among its buttons in the drawer.
+  // made them (28 px, under the heading's 32 px line). An entry opened on a phone still has "Fråga assistenten" among
+  // its buttons in the drawer, which has no box of its own.
   // In the one page frame (D126): the title on the line every page's title stands on. Where in time stands beside the
   // title it changes (board "Förslag: veckan fyller arket"); how it is shown and what can be done at the line's end.
   const head = mobile
@@ -1165,7 +1165,6 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
           subject: rangeAsked,
           onAnswer: response => takeRangeAnswer(response.prepared),
           prepared: p => <PreparedRow prepared={p} action={preparedAction(p, rangeAsked)} />,
-          onPhone: false,
         }}
         title={head.title}
         titleId={TITLE_ID}

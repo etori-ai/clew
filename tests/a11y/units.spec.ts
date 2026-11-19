@@ -29,7 +29,7 @@ test.describe('Läget’s register, the units side by side', () => {
     await open(page, '/units');
     await expect(heading(page, 1, 'Läget')).toBeVisible();
     // Läget is a manager's place in the rail, after Personal (D126 rule 7), marked here and on every unit's page.
-    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    const rail = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
     const entry = rail.getByRole('link', { name: 'Läget', exact: true });
     await expect(entry).toHaveAttribute('href', '/units');
     await expect(entry).toHaveAttribute('aria-current', 'page');

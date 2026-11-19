@@ -60,7 +60,7 @@ import {
   statusOf,
 } from './labels';
 import { AdminShell } from './shell';
-import { DialogFrame } from '../../components/dialog-frame';
+import { DialogFrame } from '../../components/shell/dialog-frame';
 import { DOT } from '../../dot';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */

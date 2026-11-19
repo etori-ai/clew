@@ -30,10 +30,10 @@ import { MATRIX_PATH, SEARCH_PATH } from '../competence-address';
 import { useAdminAction } from '../mutations';
 import { keys } from '../query-keys';
 import { refused } from '../query-policy';
-import { DialogFrame } from '../components/dialog-frame';
-import { longDay, shortDay } from '../components/panel-labels';
-import { LevelField, isSkillType, levelLabel } from '../components/register-holding';
-import { mobileQuery } from '../components/shell';
+import { DialogFrame } from '../components/shell/dialog-frame';
+import { longDay, shortDay } from '../components/views/panel-labels';
+import { LevelField, isSkillType, levelLabel } from '../components/people/register-holding';
+import { mobileQuery } from '../components/shell/shell';
 
 /**
  * What the views of Kompetens share (D120 item 8, D126): the head of Personal's Kompetens tab with its views as tabs that

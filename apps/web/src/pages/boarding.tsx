@@ -93,14 +93,14 @@ import { usePageTitle } from '../page-title';
 import { pageOnly } from '../panel-address';
 import { OWN_PLAN, insideClew, originOf, pageSubject, personPageHref, toolOf } from '../person-address';
 import { useShownForTheWayBack } from '../way-back';
-import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { ContentSkeleton } from '../components/loading';
-import { EntityPage, PageSection, RailSection, type PageSectionEntry } from '../components/entity-page';
-import { DialogFrame } from '../components/dialog-frame';
-import { StartPlanDialog } from '../components/boarding-start';
-import { PageFrame } from '../components/page-frame';
-import { recordSubject } from '../components/page-conversation';
+import { useNav, type NavCurrent } from '../components/shell/nav';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { ContentSkeleton } from '../components/shell/loading';
+import { EntityPage, PageSection, RailSection, type PageSectionEntry } from '../components/people/entity-page';
+import { DialogFrame } from '../components/shell/dialog-frame';
+import { StartPlanDialog } from '../components/people/boarding-start';
+import { PageFrame } from '../components/shell/page-frame';
+import { recordSubject } from '../components/conversation/page-conversation';
 
 /**
  * One person's introduction or leaving as a page (D124, D116 rule 11: a list a person works through is a page), at
@@ -228,7 +228,7 @@ function Plan({
   const fromPath = from?.split('?')[0];
   // The rail marks the place the plan was opened from; opened from nothing Clew names, the manager's Personal, an item
   // owner's Att göra, and for the person themself Introduktion och avslut, where the rail's row leads them (D124 item 12).
-  const current: RailCurrent =
+  const current: NavCurrent =
     fromPath === BOARDING_PATH
       ? { surface: 'boarding' }
       : fromPath?.startsWith('/staff')
@@ -248,7 +248,7 @@ function Plan({
                     : access === 'person'
                       ? { surface: 'boarding' }
                       : { surface: 'verktyg', view: null };
-  const nav = useRail({ current, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current, admin, manager: user.role === 'manager' });
 
   // The start dialog over the page (`?start=`): only for a manager, and not for an event that already has an open plan,
   // which the server would refuse. An address that asks for one anyway is let go of.
@@ -918,7 +918,7 @@ function Redirecting({
   missing: boolean;
   to: string | null;
 }) {
-  const nav = useRail({ current: { surface: 'verktyg', view: null }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'verktyg', view: null }, admin, manager: user.role === 'manager' });
   usePageTitle(missing ? 'Planen finns inte' : null);
   if (to) return <Navigate replace to={to} />;
   return (

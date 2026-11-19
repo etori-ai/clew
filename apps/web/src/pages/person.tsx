@@ -37,12 +37,18 @@ import {
   unitPageHref,
 } from '../person-address';
 import { TALK_PARAM } from '../talk-address';
-import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell';
-import { ContentSkeleton } from '../components/loading';
-import { TalkTab } from '../components/talk-overlay';
-import { RegisterHolding } from '../components/register-holding';
-import { EntityPage, PageSection, RailSection, ThingTabs, type PageSectionEntry } from '../components/entity-page';
+import { useNav, type NavCurrent } from '../components/shell/nav';
+import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell/shell';
+import { ContentSkeleton } from '../components/shell/loading';
+import { TalkTab } from '../components/people/talk-overlay';
+import { RegisterHolding } from '../components/people/register-holding';
+import {
+  EntityPage,
+  PageSection,
+  RailSection,
+  ThingTabs,
+  type PageSectionEntry,
+} from '../components/people/entity-page';
 import {
   EntityActions,
   NeedsYouRows,
@@ -58,12 +64,12 @@ import {
   unanswered,
   useSectionAnswers,
   type SectionAnswer,
-} from '../components/entity-sections';
+} from '../components/people/entity-sections';
 import { OwnCompetence } from './competence';
 import { PlanTab } from './boarding';
 import { employmentLabel, employmentPercent, employmentTitles } from './person-model';
-import { PageFrame } from '../components/page-frame';
-import { entityPageSubject } from '../components/page-conversation';
+import { PageFrame } from '../components/shell/page-frame';
+import { entityPageSubject } from '../components/conversation/page-conversation';
 
 /** The rail's width and the facts' panel beside the column (`EntityPage`). */
 const SIDE_NAV = 260,
@@ -290,8 +296,8 @@ export function OverviewSection({ answer, href, level }: { answer: SectionAnswer
  * The person as a page (D126 rule 1, board Person; D97 item 5), at `/people/:key`, the one way a person is shown,
  * reached from a name on Personal or on any row that names them. The thing's page (`EntityPage`): the way back, their
  * avatar, name, title and unit, the actions under the name (the first as the primary, the second as a secondary, the
- * rest under "Fler åtgärder") with the frame's "Fråga assistenten" after them, which opens the assistant's pane about
- * the person beside the page (D131), then the person's
+ * rest under "Fler åtgärder"; the corner's "Fråga AI" opens the assistant's pane about the person beside the page,
+ * D131, D133), then the person's
  * sections as tabs, each a link with its own address (`?section=`, D126 rule 9): Översikt (Behöver dig and each
  * source's row in short with "Visa allt"), one tab per source that has something about them (its row and its fuller
  * read; the talk's tab is the talk itself, D126 rule 3), Ärenden (the reader's work items about them) and, on the
@@ -336,7 +342,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   }, [moved]);
 
   // The rail marks the place the person was opened from; without one, Personal for the reader's own people.
-  const current: RailCurrent =
+  const current: NavCurrent =
     from?.split('?')[0] === '/admin/users'
       ? { surface: 'admin', section: 'anvandare' }
       : from?.split('?')[0] === '/admin/organisation'
@@ -352,7 +358,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
                 : !from && detail?.relation === 'managed'
                   ? { surface: 'staff' }
                   : { surface: 'verktyg', view: null };
-  const nav = useRail({ current, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current, admin, manager: user.role === 'manager' });
 
   // The tabs the page has: a source's only once it has a row, or while it is on its way, or when it did not answer.
   const drawn = drawnSections(answers);

@@ -5,9 +5,12 @@ import {
   expectNoAxeViolations,
   narrow,
   open,
+  pagesNav,
   phone,
   reflowProblems,
   test,
+  toolRow,
+  toolsButton,
 } from './support';
 import { menuRows } from './phonebook';
 import { roomsMenuRow } from './rooms';
@@ -24,7 +27,10 @@ const directory = '/tools/phonebook.directory';
 const team = '/tools/phonebook.team';
 const wide = { width: 1440, height: 900 };
 const withInput = (input: object) => `${directory}?input=${encodeURIComponent(JSON.stringify(input))}`;
-const rail = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+const rail = pagesNav;
+/** The tools' menu's button (D130), named by the tool whose page is open. */
+const named = (page: import('@playwright/test').Page, tool: string) =>
+  rail(page).getByRole('button', { name: tool, exact: true });
 
 test.describe('a tool as a page', () => {
   test.use({ viewport: wide });
@@ -56,7 +62,7 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
     await expect(page.getByText('14 rader · Telefonboken')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Telefonbok');
+    await expect(named(page, 'Telefonbok')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(wide.width);
     await expectNoAxeViolations(page);
   });
@@ -72,7 +78,7 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('columnheader')).toHaveText(['Rum', 'Platser', 'Utrustning']);
     await expect(page.getByRole('row')).toHaveCount(8);
     await expect(page.getByText('7 rader · Kalendern')).toBeVisible();
-    await expect(rail(page).getByRole('link', { name: 'Mötesrum' })).toHaveAttribute('aria-current', 'page');
+    await expect(named(page, 'Mötesrum')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
@@ -83,7 +89,7 @@ test.describe('a tool as a page', () => {
   }) => {
     api.menu = menuRows;
     await open(page, '/');
-    await rail(page).getByRole('link', { name: 'Telefonbok' }).click();
+    await (await toolRow(page, 'Telefonbok')).click();
     const field = page.getByRole('searchbox', { name: 'Sök i telefonboken' });
     await field.fill('lärare');
     await expect(page.getByRole('row')).toHaveCount(3);
@@ -162,7 +168,7 @@ test.describe('a tool as a page', () => {
     api.menu = menuRows;
     await open(page, directory);
     await expect(page.getByRole('row')).toHaveCount(15);
-    await rail(page).getByRole('link', { name: 'Mitt team' }).click();
+    await (await toolRow(page, 'Mitt team')).click();
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Mitt team');
     await expect(page.getByRole('list', { name: 'Telefonboken' }).getByRole('listitem')).toHaveCount(5);
     await expect(page.getByRole('table')).toHaveCount(0);
@@ -170,11 +176,11 @@ test.describe('a tool as a page', () => {
     // A view without controls has a filter bar of its count alone.
     await expect(page.getByRole('main').getByText('5 kontakter', { exact: true })).toBeVisible();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Mitt team'));
-    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Mitt team');
+    await expect(named(page, 'Mitt team')).toBeVisible();
     await expectNoAxeViolations(page);
   });
 
-  test('a view not placed in the rail has a page of its own all the same, under its own title or the one it was opened under (D116)', async ({
+  test('a view not placed in the menu has a page of its own all the same, under its own title or the one it was opened under (D116)', async ({
     page,
     api: _,
   }) => {
@@ -184,15 +190,16 @@ test.describe('a tool as a page', () => {
     await expect(title).toHaveText('Sök i telefonboken');
     await expect(page).toHaveTitle('Sök i telefonboken · Startsidan');
     await expect(page.getByRole('row')).toHaveCount(15);
-    // Opened from nowhere it names no way back, and the rail marks nothing under Verktyg.
+    // Opened from nowhere it names no way back, and neither a page nor a tool is said to be open.
     await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveCount(0);
     await expect(rail(page).locator('a[aria-current="page"]')).toHaveCount(0);
+    await expect(toolsButton(page)).toHaveCount(0);
     await expectNoAxeViolations(page);
-    // Opened from Hem under another name: that name, Hem as the way back, and Hem marked in the rail.
+    // Opened from Hem under another name: that name, Hem as the way back, and Start marked among the pages.
     await open(page, `${directory}?title=Telefonlistan&from=%2F`);
     await expect(title).toHaveText('Telefonlistan');
     await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/');
-    await expect(rail(page).locator('a[aria-current="page"]')).toContainText('Hem');
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Start');
     // Its own search keeps the name and the way back.
     await page.getByRole('searchbox', { name: 'Sök i telefonboken' }).fill('lärare');
     await expect(page.getByRole('row')).toHaveCount(3);
@@ -248,10 +255,7 @@ test.describe('a tool as a page', () => {
 });
 
 test.describe("a tool's page on a smaller screen", () => {
-  test('beside the rail on a laptop the rows are a table, one line a person, and nothing scrolls sideways', async ({
-    page,
-    api,
-  }) => {
+  test('on a laptop the rows are a table, one line a person, and nothing scrolls sideways', async ({ page, api }) => {
     await page.setViewportSize(desktop);
     api.menu = menuRows;
     await open(page, directory);
@@ -311,10 +315,10 @@ test.describe("a tool's page on a smaller screen", () => {
 });
 
 /**
- * Alla verktyg (D126 rule 7, the `library` template): every tool the person may open, where the rail's first four end.
+ * Alla verktyg (D126 rule 7, the `library` template): every tool the person may open, where the menu's first four end.
  * The title and how many there are, a search field that narrows the tiles in place, the tiles in sections by the
  * system they belong to, each tile the link to its tool's page with the catalogue as its way back, and at the foot the
- * intranet's own page of tools when the shared header names one. The rail's row leads here and is marked while it is open.
+ * intranet's own page of tools when the shared header names one. The menu's last row leads here, and the menu's button is named by it while it is open.
  */
 test.describe('Alla verktyg', () => {
   test.use({ viewport: wide });
@@ -323,19 +327,19 @@ test.describe('Alla verktyg', () => {
     catalogue(page).getByRole('link', { name, exact: true });
   const field = (page: import('@playwright/test').Page) => page.getByRole('searchbox', { name: 'Sök bland verktygen' });
 
-  test('every tool by its system, each tile its link with its icon, name, what it is and system; the rail’s row marked; one heading order', async ({
+  test('every tool by its system, each tile its link with its icon, name, what it is and system; the menu’s button named by it; one heading order', async ({
     page,
     api,
   }) => {
     api.menu = [...menuRows, roomsMenuRow];
     await open(page, '/');
-    const all = rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link', { name: 'Alla verktyg' });
+    const all = await toolRow(page, 'Alla verktyg');
     await expect(all).toHaveAttribute('href', '/tools');
     await all.click();
     await expect(page).toHaveURL('/tools');
     await expect(page).toHaveTitle('Alla verktyg · Startsidan');
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Alla verktyg');
-    await expect(all).toHaveAttribute('aria-current', 'page');
+    await expect(named(page, 'Alla verktyg')).toBeVisible();
     await expect(catalogue(page).getByText('3 verktyg', { exact: true })).toBeVisible();
     // A section per system, Clew's own (the calendar's house mark) before the systems in their registered order.
     const sections = catalogue(page).getByRole('region');
@@ -400,7 +404,7 @@ test.describe('Alla verktyg', () => {
     await expect(page).toHaveURL('/tools/phonebook.directory?from=%2Ftools');
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Telefonbok');
+    await expect(named(page, 'Telefonbok')).toBeVisible();
     await page.goBack();
     await expect(page).toHaveURL('/tools');
     await expect(tile(page, 'Telefonbok')).toBeFocused();
@@ -423,12 +427,12 @@ test.describe('Alla verktyg', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('without a tool the page says so, with no field, and the rail has no Verktyg', async ({ page, api }) => {
+  test('without a tool the page says so, with no field, and the pages have no Verktyg', async ({ page, api }) => {
     api.menu = [];
     await open(page, '/tools');
     await expect(page.getByRole('heading', { level: 2, name: 'Inga verktyg för dig än' })).toBeVisible();
     await expect(field(page)).toHaveCount(0);
-    await expect(rail(page).getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
+    await expect(toolsButton(page)).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
 

@@ -126,6 +126,10 @@ export const THEME_BASE_COLORS = {
   success: ['#198100', '#64af4c'],
   'on-success': ['#ffffff', '#111111'],
   'text-success': ['#2f7d33', '#90ca90'],
+  'background-blue': ['#b9d7ff', '#253c5a'],
+  'text-blue': ['#003978', '#a1caff'],
+  'background-green': ['#f6fbf8', '#192b19'],
+  'text-green': ['#00490b', '#90ca90'],
   track: ['#ccd3db', '#5a5e66'],
 } as const satisfies ThemeColors;
 type PairToken = keyof typeof THEME_BASE_COLORS;
@@ -153,6 +157,8 @@ export const THEME_CONTRAST_PAIRS: ReadonlyArray<readonly [foreground: PairToken
     ['on-accent', 'accent', TEXT],
     ['on-info', 'info', TEXT],
     ['on-success', 'success', TEXT],
+    ['text-blue', 'background-blue', TEXT],
+    ['text-green', 'background-green', TEXT],
     ['accent', 'background-surface', MARK],
     ['accent', 'background-body', MARK],
     ['icon-accent', 'background-surface', MARK],

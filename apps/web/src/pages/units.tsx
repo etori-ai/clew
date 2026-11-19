@@ -2,36 +2,40 @@ import { Fragment } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import type { EntityList, EntitySection, EntitySource, SessionUser } from '@clew/contracts';
 import {
+  BoardCard,
   Card,
   EmptyState,
-  HStack,
   Heading,
+  HStack,
   Link,
   MetadataList,
   MetadataListItem,
+  proportional,
+  registerTable,
+  SECTION_GAP,
   Skeleton,
+  StackItem,
   StatusDot,
   Table,
   type TableColumn,
   Text,
-  VStack,
-  proportional,
+  TONE_WORDS,
   useMediaQuery,
   useTableStickyColumns,
-  TONE_WORDS,
+  VStack,
 } from '@clew/ui';
 import { areasQuery, entityDetailQuery, entityListQuery, entitySectionQuery } from '../queries';
 import { usePageTitle } from '../page-title';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { useRail } from '../components/nav';
-import { AttentionSkeleton, UnitsSkeleton } from '../components/loading';
-import { Summary, measureOf, summaryOf, toneWeight } from '../components/unit-figures';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { useNav } from '../components/shell/nav';
+import { AttentionSkeleton, UnitsSkeleton } from '../components/shell/loading';
+import { Summary, measureOf, summaryOf, toneWeight } from '../components/people/unit-figures';
 import { sourceWayHref, unitPageHref } from '../person-address';
 import { errorMessage } from '../query-policy';
-import { fieldText } from '../components/view';
+import { fieldText } from '../components/views/view';
 import { DOT } from '../dot';
-import { PageFrame } from '../components/page-frame';
-import { pageSubject, sourceReads } from '../components/page-conversation';
+import { PageFrame } from '../components/shell/page-frame';
+import { pageSubject, sourceReads } from '../components/conversation/page-conversation';
 
 type Unit = EntityList['groups'][number]['entities'][number];
 type Answer = { data?: EntitySection; isPending: boolean; isError: boolean };
@@ -40,8 +44,8 @@ type UnitColumn = TableColumn<TableRow>;
 const UNITS = '/units';
 // Each column keeps the width its heading and a figure with its word need, so a narrow window scrolls the table sideways
 // within itself (1.4.10's exception for a data table) instead of clipping the headings.
-const UNIT_WIDTH = proportional(1.2, { minWidth: 200 }),
-  SOURCE_WIDTH = proportional(1, { minWidth: 190 });
+const UNIT_WIDTH = proportional(1.2, { minWidth: 180 }),
+  SOURCE_WIDTH = proportional(1, { minWidth: 176 });
 
 const silent = (a: Answer) => a.isError || (!!a.data && a.data.status !== 'ok');
 const rowIn = (a: Answer) => (a.data?.status === 'ok' ? a.data.row : undefined);
@@ -67,6 +71,8 @@ function SourceHeader({ source }: { source: EntitySource }) {
   const measure = measureOf(source);
   return (
     <VStack gap={0}>
+      {/* In ordinary letters, not the registers' small capitals: a measure's name can be one long word
+          ("Medarbetarengagemang"), which spaced capitals push out of its column. */}
       <Text weight="semibold">{source.title}</Text>
       <Text type="supporting" weight="normal">
         {measure === source.title ? '' : `${measure}${DOT}`}
@@ -82,12 +88,8 @@ function SourceHeader({ source }: { source: EntitySource }) {
  */
 function UnitTable({ rows, columns }: { rows: TableRow[]; columns: UnitColumn[] }) {
   const pinned = useTableStickyColumns<TableRow>({ startKeys: ['unit'] });
-  // In a card in Hem's column, as Hem puts its lists (the product owner, 2026-11-14).
-  return (
-    <Card padding={0}>
-      <Table<TableRow> data={rows} idKey="id" density="balanced" plugins={{ pinned }} columns={columns} />
-    </Card>
-  );
+  // The table stands in its group's card (D130), inside the card's inset, with the registers' rows.
+  return <Table<TableRow> data={rows} idKey="id" {...registerTable} plugins={{ pinned }} columns={columns} />;
 }
 
 /**
@@ -99,14 +101,14 @@ function UnitTable({ rows, columns }: { rows: TableRow[]; columns: UnitColumn[] 
  * for the group, each cell the source's row in short, its heading saying what the figure is and where it comes from; on
  * a phone a card per unit with the same figures one under the other. A unit's name opens its page with this one as the
  * way back. Each cell is its own read, so a source that does not answer says so in its own cells while the rest stand.
- * The frame's "Fråga assistenten" opens the assistant's pane beside the units (D130), about what the columns show: each
+ * The corner's "Fråga AI" opens the assistant's pane beside the units (D130, D133), about what the columns show: each
  * column's source through the overview the assistant may make of it, and the pane says which it may not. While it
  * stands there the table scrolls sideways inside itself, the names pinned, and the page never does (1.4.10).
  */
 export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
-  const nav = useRail({ current: { surface: 'units' }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'units' }, admin, manager: user.role === 'manager' });
   usePageTitle('Läget');
   const list = useQuery(entityListQuery('unit'));
   const groups = list.data?.groups.filter(g => g.entities.length) ?? [];
@@ -172,19 +174,17 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   const summaryLine = !settled ? (
     <AttentionSkeleton />
   ) : attention.length ? (
-    <Card padding={4}>
-      <VStack gap={2} as="section" aria-labelledby="units-attention">
-        <Heading level={2} id="units-attention">
-          Att ta upp
-        </Heading>
-        <VStack gap={1}>
-          {attention.map(a => (
-            <HStack key={`${a.source.capability}:${a.word}`} gap={2} vAlign="start" wrap="wrap">
-              {/* The dot names the level in Clew's words (D54), the line the source's own word: a screen reader hears each once. */}
-              <StatusDot
-                variant={a.tone === 'alert' ? 'error' : 'warning'}
-                label={a.tone === 'alert' ? TONE_WORDS.alert.word : TONE_WORDS.warn.word}
-              />
+    <BoardCard id="units-attention" title="Att ta upp">
+      <VStack gap={1}>
+        {attention.map(a => (
+          <HStack key={`${a.source.capability}:${a.word}`} gap={2} vAlign="start">
+            {/* The dot names the level in Clew's words (D54), the line the source's own word: a screen reader hears each once. */}
+            <StatusDot
+              variant={a.tone === 'alert' ? 'error' : 'warning'}
+              label={a.tone === 'alert' ? TONE_WORDS.alert.word : TONE_WORDS.warn.word}
+            />
+            {/* The words take the room beside the dot and wrap within it, so the dot never stands alone on a line. */}
+            <StackItem size="fill">
               <Text>
                 {a.source.title}
                 {DOT}
@@ -196,11 +196,11 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
                   </Fragment>
                 ))}
               </Text>
-            </HStack>
-          ))}
-        </VStack>
+            </StackItem>
+          </HStack>
+        ))}
       </VStack>
-    </Card>
+    </BoardCard>
   ) : (
     <Text type="supporting" role="status">
       Inget av nyckeltalen behöver åtgärd eller bevakas just nu.
@@ -248,34 +248,37 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
           .filter(
             ({ si }) => !settled || g.entities.some(u => !!rowIn(answerOf(u.key, si)) || silent(answerOf(u.key, si))),
           );
-        return (
+        const table = <UnitTable rows={ordered(g.entities).map(unit => ({ id: unit.key, unit }))} columns={columns} />;
+        // On a wide window the group is a card with its heading inside and its table under it (D130 item 20). On a
+        // phone a card per unit under the group's heading, the figures one under the other: a table would put them off
+        // the screen, and a card in a card would frame them twice.
+        return mobile ? (
           <VStack key={g.id} gap={3} as="section" aria-labelledby={`units-${g.id}`}>
             <Heading level={2} id={`units-${g.id}`}>
               {g.label}
             </Heading>
-            {mobile ? (
-              // On a phone a card per unit, the figures one under the other: a table would put them off the screen.
-              <VStack gap={3}>
-                {ordered(g.entities).map(unit => (
-                  <Card key={unit.key} padding={4}>
-                    <VStack gap={3}>
-                      {unitLink(unit)}
-                      <MetadataList label={{ position: 'top' }}>
-                        {shown.map(({ s, si }) => (
-                          // The measure and its source as the table's heading names them: a figure is never bare.
-                          <MetadataListItem key={s.capability} label={cardLabel(s)}>
-                            <Cell answer={answerOf(unit.key, si)} source={s} />
-                          </MetadataListItem>
-                        ))}
-                      </MetadataList>
-                    </VStack>
-                  </Card>
-                ))}
-              </VStack>
-            ) : (
-              <UnitTable rows={ordered(g.entities).map(unit => ({ id: unit.key, unit }))} columns={columns} />
-            )}
+            <VStack gap={3}>
+              {ordered(g.entities).map(unit => (
+                <Card key={unit.key} padding={4}>
+                  <VStack gap={3}>
+                    {unitLink(unit)}
+                    <MetadataList label={{ position: 'top' }}>
+                      {shown.map(({ s, si }) => (
+                        // The measure and its source as the table's heading names them: a figure is never bare.
+                        <MetadataListItem key={s.capability} label={cardLabel(s)}>
+                          <Cell answer={answerOf(unit.key, si)} source={s} />
+                        </MetadataListItem>
+                      ))}
+                    </MetadataList>
+                  </VStack>
+                </Card>
+              ))}
+            </VStack>
           </VStack>
+        ) : (
+          <BoardCard key={g.id} id={`units-${g.id}`} title={g.label} count={g.entities.length} countLabel="enheter">
+            {table}
+          </BoardCard>
         );
       })}
     </>
@@ -285,11 +288,12 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
         ask={{ subject }}
+        cards
         title="Läget"
         meta={units.length > 0 ? (units.length === 1 ? '1 enhet' : `${units.length} enheter`) : undefined}
         label="Enheter"
       >
-        <VStack gap={6}>{body}</VStack>
+        <VStack gap={SECTION_GAP}>{body}</VStack>
       </PageFrame>
     </Shell>
   );

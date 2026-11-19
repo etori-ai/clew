@@ -107,7 +107,7 @@ test.describe('appearance administration', () => {
       await expect(page.getByRole('heading', { level: 3, name: 'Ljust läge' })).toHaveCount(0);
       // The saved theme is every page's, and the next visit starts in it.
       await page
-        .getByRole('navigation', { name: 'Sidonavigering' })
+        .getByRole('navigation', { name: 'Mina sidor', exact: true })
         .getByRole('link', { name: 'Kalender', exact: true })
         .click();
       await expect(page).toHaveURL('/calendar');
@@ -207,17 +207,14 @@ test.describe('appearance administration', () => {
       await expect(page.getByRole('link', { name: 'Hämta nuvarande temafil' })).toBeVisible();
     });
 
-    test('a logo is saved with the name a screen reader reads, shown in the rail’s heading, and removed again', async ({
+    test('a logo is saved with the name a screen reader reads, shown in the band’s heading, and removed again', async ({
       page,
       api,
     }) => {
       api.admin = true;
       await open(page, '/admin/appearance');
-      // Without a header connector the logo stands in the rail's heading (D98, D112 item 1).
-      const header = page
-        .getByRole('navigation', { name: 'Sidonavigering' })
-        .locator('.astryx-side-nav-heading')
-        .first();
+      // Without a header connector the installation's own logo stands in the band's heading, the link home (D98, D130).
+      const header = page.getByRole('banner').getByRole('link', { name: /Startsidan/ });
       await expect(page.getByText('Ingen logotyp är vald.')).toBeVisible();
       await expect(header.getByRole('img')).toHaveCount(0);
       const save = page.getByRole('button', { name: 'Spara logotypen' });

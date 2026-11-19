@@ -10,6 +10,8 @@ import {
   openNav,
   reflowProblems,
   test,
+  toolRow,
+  toolsButton,
 } from './support';
 import { errandsOutput, errandsSpec } from './errands';
 import { errandCapabilities } from '../../apps/server/src/modules/errands/capabilities';
@@ -56,13 +58,14 @@ const seven: ErrandsResult = {
   ...errandsOutput,
   rows: [...errandsOutput.rows, permit(1), permit(2), permit(3), permit(4)],
 };
-const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
-const row = (page: Page) => rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link', { name: LABEL });
+const rail = (page: Page) => page.getByRole('navigation', { name: 'Mina sidor', exact: true });
+/** The tool in the menu at the end of the pages' row (D130), the menu opened first. */
+const row = (page: Page) => toolRow(page, LABEL);
 
 test.describe('Mina ärenden as a tool', () => {
   test.use({ viewport: desktop });
 
-  test('a row under Verktyg, not a block on Hem; its page lists the errands from every system, the missing system named, the row marked', async ({
+  test('a tool under Verktyg, not a block on Hem; its page lists the errands from every system, the missing system named, the menu named by it', async ({
     page,
     api,
   }) => {
@@ -72,8 +75,8 @@ test.describe('Mina ärenden as a tool', () => {
     );
     await open(page, '/');
     await expect(page.getByRole('region', { name: 'Mina ärenden' })).toHaveCount(0);
-    await expect(row(page)).toHaveAttribute('href', PAGE);
-    await row(page).click();
+    await expect(await row(page)).toHaveAttribute('href', PAGE);
+    await (await row(page)).click();
     await expect(page).toHaveURL(PAGE);
     await expect(heading(page, 1, 'Mina ärenden')).toBeVisible();
     const main = page.getByRole('main');
@@ -84,7 +87,8 @@ test.describe('Mina ärenden as a tool', () => {
     await expect(items.first()).toContainText('Dig');
     await expect(items.first()).toContainText('Ärendesystemet');
     await expect(main.getByText('Verksamhetssystemet svarade inte.')).toBeVisible();
-    await expect(row(page)).toHaveAttribute('aria-current', 'page');
+    // The menu's button is named by the tool that is open.
+    await expect(rail(page).getByRole('button', { name: LABEL, exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
     // A row's name leads to the errand's own page, read from the system it came from (D126 rule 1).
     const link = main.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' });
@@ -99,7 +103,7 @@ test.describe('Mina ärenden as a tool', () => {
   test('a person without a case system has no such tool', async ({ page, api: _ }) => {
     await open(page, '/');
     await expect(page.getByRole('heading', { name: 'Behöver dig' })).toBeVisible();
-    await expect(rail(page).getByRole('link', { name: LABEL })).toHaveCount(0);
+    await expect(toolsButton(page)).toHaveCount(0);
   });
 
   test('when no case system answers the list’s page says so and can be tried again, never "no errands"', async ({

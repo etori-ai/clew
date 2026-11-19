@@ -22,10 +22,10 @@ import { groupThreads } from '../stream';
 import { usePageTitle } from '../page-title';
 import { whenWord } from '../when-word';
 import { assistantHref } from '../conversation-about';
-import { Composer } from '../components/composer';
-import { titled, useConversation } from '../components/conversation-context';
-import { InstallationLogo } from '../components/shell';
-import { PageFrame, type EntryStyle } from '../components/page-frame';
+import { Composer } from '../components/conversation/composer';
+import { titled, useConversation } from '../components/conversation/conversation-context';
+import { InstallationLogo } from '../components/shell/shell';
+import { PageFrame, type EntryStyle } from '../components/shell/page-frame';
 
 /** How many conversations and assistants stand under the box (board NyFraga, variant b): the rest are a link away. */
 const SHOWN = 3;

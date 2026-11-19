@@ -14,8 +14,8 @@ import {
   recordThing,
   sourceReads,
   stableJson,
-} from '../src/components/page-conversation';
-import { turnInput } from '../src/components/turns';
+} from '../src/components/conversation/page-conversation';
+import { turnInput } from '../src/components/conversation/turns';
 
 type Message = Thread['messages'][number];
 const asked = (chips: Chip[], id = 'q'): Message => ({

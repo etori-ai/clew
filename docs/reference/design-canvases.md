@@ -1,9 +1,13 @@
 # Design canvases
 
-The design canvases are the reference for every screen: compare a screen with its artboard before calling it done.
-They are Claude Design artifacts outside the repository and are private until the product owner shares them. Each row
-names the decision that chose from a canvas and the review that describes it, so the reasoning can be read without the
-link.
+Use the startsidan prototype and [layout measures](layout-measures.md) for visual comparisons under
+[D130](../decisions/D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md).
+[Interface spaces](interface-spaces.md) records D126's current rules for destinations, panes, actions and focus.
+The canvases below illustrate the interactions each decision considered. For example, D126's queue and its reading
+pane remain current, and D130 places them under the shared header.
+
+The canvases are private Claude Design artifacts until the product owner shares them. Each row links the decision
+and review that explain what Clew adopted.
 
 Add a row here in the change that first refers to a new canvas.
 
@@ -31,5 +35,4 @@ Add a row here in the change that first refers to a new canvas.
 | Clew · the assistant beside every page | https://claude.ai/artifact/7SFVtSdGNb85Z3fma1PCEe | Option E of the review of where the assistant is asked, ten artboards rendered from the real Astryx components: a page at rest with the frame's one button, a phone, and a register, Läget, a work item's page with facts and Att göra with the assistant's pane open at 1366 px (Att göra at 1280 by 720) and at 1728 px. Chosen on 2026-11-18; nothing of it built | [D130](../decisions/D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) |
 | Clew · the pane beside a conversation, after Eneo | https://claude.ai/artifact/Lkd5XCmCvyL8eNsptuDQEa | The pane beside a conversation after the panel of Eneo's chat, four artboards rendered from the real Astryx components: the header with the area's mark and a menu over what the conversation has named, the row where an item was drawn in its answer, the pane dragged wider with another thing in it, and the header with a button to the thing's page, which was not chosen | None; an adjustment to one screen (D102), described under [interface spaces](interface-spaces.md) | None |
 
-The descriptions are taken from the decisions, reviews and session notes that cite each canvas, not from the canvases
-themselves. Where they disagree with the artboard, the artboard is right.
+The descriptions summarize the decisions, reviews and session notes that cite each canvas.

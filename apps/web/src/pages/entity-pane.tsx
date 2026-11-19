@@ -20,8 +20,8 @@ import { entityDetailQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { NEEDS_YOU, personPageHref, unitPageHref } from '../person-address';
 import { paneTabHref, type EntitySubjectKind } from '../conversation-about';
-import { ContentSkeleton } from '../components/loading';
-import { PageSection, ThingTabs } from '../components/entity-page';
+import { ContentSkeleton } from '../components/shell/loading';
+import { PageSection, ThingTabs } from '../components/people/entity-page';
 import {
   NeedsYouRows,
   PersonSourceBody,
@@ -29,7 +29,7 @@ import {
   UnitSourceBody,
   drawnSections,
   useSectionAnswers,
-} from '../components/entity-sections';
+} from '../components/people/entity-sections';
 import { OVERVIEW, OverviewSection, entityTabs, nameLine } from './person';
 
 /** A source's fuller read is never a table in the pane: its 440 px hold it as a list. */

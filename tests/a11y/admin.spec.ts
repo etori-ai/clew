@@ -111,21 +111,21 @@ test.describe('administration', () => {
       await expectNoAxeViolations(page);
     });
     test('the entry point shows only to an administrator', async ({ page, api }) => {
-      const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+      const rail = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
       await open(page, '/');
       await expect(rail.getByRole('link', { name: 'Administration', exact: true })).toHaveCount(0);
       api.admin = true;
       await open(page, '/');
       await expect(rail.getByRole('link', { name: 'Administration', exact: true })).toBeVisible();
     });
-    test('the rail’s one row opens the first section, and the administration’s own panel changes the page and keeps the rail (D126)', async ({
+    test('the one link among the pages opens the first section, and the administration’s own panel changes the page and keeps the pages’ row (D126, D130)', async ({
       page,
       api,
     }) => {
       api.admin = true;
       await open(page, '/');
-      const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
-      // The sections are no longer rows of the rail: the rail has one row, the administration lists them itself.
+      const rail = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
+      // The sections are not pages of the row: the row has one link, the administration lists them itself.
       await expect(rail.getByRole('link', { name: 'Modeller', exact: true })).toHaveCount(0);
       await rail.getByRole('link', { name: 'Administration', exact: true }).click();
       // `/admin` gives way to the first section, so Back does not return to a page that only moves on.
@@ -134,7 +134,7 @@ test.describe('administration', () => {
       const sections = page.getByRole('navigation', { name: 'Administration', exact: true });
       await expect(sections.getByRole('heading', { level: 2, name: 'Administration' })).toBeVisible();
       await expect(sectionRow(page, 'Anslutna system')).toHaveAttribute('aria-current', 'true');
-      await expect(rail.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
+      await expect(rail.getByRole('link', { name: 'Samtal', exact: true })).toBeVisible();
       await expect(rail.getByRole('link', { name: 'Kalender', exact: true })).toBeVisible();
       await expect(rail.getByRole('link', { name: 'Administration', exact: true })).toHaveAttribute(
         'aria-current',
@@ -143,7 +143,7 @@ test.describe('administration', () => {
       await sections.getByRole('link', { name: 'Modeller', exact: true }).click();
       await expect(page).toHaveURL('/admin/models');
       await expect(page.getByRole('heading', { level: 1, name: 'Modeller' })).toBeVisible();
-      await expect(rail.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
+      await expect(rail.getByRole('link', { name: 'Samtal', exact: true })).toBeVisible();
       await expect(sectionRow(page, 'Modeller')).toHaveAttribute('aria-current', 'true');
       await expectNoAxeViolations(page);
       // A thing in a section keeps the section marked and has the way back to it above its title.

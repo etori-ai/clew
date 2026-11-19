@@ -1,5 +1,5 @@
 import type { Area, MessageMeta, ViewRef } from '@clew/contracts';
-import { counted } from './components/panel-labels';
+import { counted } from './components/views/panel-labels';
 
 /**
  * The card under an answer in the transcript (D38), as the turn recorded it, decided without reading anything: the

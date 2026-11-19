@@ -1,7 +1,19 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import { NEXT_WEEK } from './data';
-import { composer, desktop, type MockApi, open, openNav, phone, test } from './support';
+import {
+  composer,
+  desktop,
+  type MockApi,
+  open,
+  openNav,
+  openTools,
+  personButton,
+  phone,
+  searchButton,
+  test,
+  toolsButton,
+} from './support';
 import { menuRows } from './phonebook';
 
 /**
@@ -377,13 +389,9 @@ test.describe('review', () => {
     async (page, api, size) => {
       full(api);
       await open(page, '/');
-      if (size === '375') await openNav(page);
-      await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
-      await page
-        .getByRole('menuitem', { name: 'Inställningar' })
-        .or(page.getByRole('button', { name: 'Inställningar', exact: true }))
-        .first()
-        .click();
+      // The person on the band opens their settings (D130), on a phone too.
+      void size;
+      await personButton(page).click();
       await page.getByRole('dialog').first().waitFor();
     },
     ['1280', '375'],
@@ -405,28 +413,25 @@ test.describe('review', () => {
     async (page, api) => {
       full(api);
       await open(page, '/');
-      await page.getByRole('button', { name: 'Öppna navigering' }).click();
+      await openNav(page);
     },
     ['375'],
   );
   shot(
-    '74-rail-open',
+    '74-tools-menu',
     async (page, api) => {
       full(api);
       await open(page, '/');
-      await page.getByRole('button', { name: 'Administration', exact: true }).click();
-      await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
+      // The tools' menu at the end of the pages' row (D130), where the installation has placed any.
+      if (await toolsButton(page).count()) await openTools(page);
     },
     ['1280', 'tall'],
   );
   shot(
-    '75-rail-search',
+    '75-search',
     async page => {
       await open(page, '/');
-      await page
-        .getByRole('navigation', { name: 'Sidonavigering' })
-        .getByRole('button', { name: 'Sök', exact: true })
-        .click();
+      await searchButton(page).click();
       await page.getByRole('combobox', { name: 'Sök i samtal och ärenden' }).fill('fak');
     },
     ['1280'],

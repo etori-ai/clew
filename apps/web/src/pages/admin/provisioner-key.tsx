@@ -27,7 +27,7 @@ import { api } from '../../api';
 import { keys } from '../../query-keys';
 import { useAdminAction } from '../../mutations';
 import { errorMessage } from '../../query-policy';
-import { DialogFrame } from '../../components/dialog-frame';
+import { DialogFrame } from '../../components/shell/dialog-frame';
 import { slug } from './add-model';
 import { instantText } from './labels';
 

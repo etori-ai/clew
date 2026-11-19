@@ -77,11 +77,11 @@ import { keys } from '../query-keys';
 import { errorMessage, refused } from '../query-policy';
 import { registerHref } from '../register-address';
 import { useHeldRelations } from '../capabilities';
-import { mobileQuery } from '../components/shell';
-import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { pageSubject } from '../components/page-conversation';
-import { DialogFrame } from '../components/dialog-frame';
-import { LevelField, RegisterHolding, levelLabel } from '../components/register-holding';
+import { mobileQuery } from '../components/shell/shell';
+import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
+import { pageSubject } from '../components/conversation/page-conversation';
+import { DialogFrame } from '../components/shell/dialog-frame';
+import { LevelField, RegisterHolding, levelLabel } from '../components/people/register-holding';
 import {
   COMPETENCE_PAGE_TITLES,
   CellMark,

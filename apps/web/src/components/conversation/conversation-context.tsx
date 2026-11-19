@@ -1,0 +1,714 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import type {
+  Chip,
+  ClewObject,
+  ConversationResponse,
+  HandoverAssistant,
+  OpenThing,
+  Verb,
+  Thread,
+} from '@clew/contracts';
+import { useLocation, useMatch, useNavigate } from 'react-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAnnounce, type ChatComposerInputHandle } from '@clew/ui';
+import { api } from '../../api';
+import { errorMessage } from '../../query-policy';
+import { assistantQuery, threadQuery, verbsQuery } from '../../queries';
+import { panelSearch } from '../../panel-address';
+import { applyThread } from '../../thread-cache';
+import {
+  conversationOf,
+  useTurns,
+  type ClewAction,
+  type Conversation,
+  type Done,
+  type Handed,
+  type PendingTurn,
+} from './turns';
+
+/** A chip as the page hands it to the composer (D12): the object's ref, kind and label, plus its card when it has one. */
+export interface ChipRef {
+  ref: string;
+  kind: Chip['kind'];
+  label: string;
+  threadId?: string;
+  /**
+   * The thing stands open in the pane beside the transcript now: the question says so (`ConversationInput.beside`), so
+   * the assistant reads "the open item" as it. Never set on what the person added to the box.
+   */
+  beside?: true;
+}
+export type { ClewAction, Conversation, Handed, PendingTurn } from './turns';
+/**
+ * Where a question was asked when it was not asked in a conversation (D50): what the page asks about as chips for the
+ * question, and the panel's part of the address the conversation opens at, so what the person was looking at is beside
+ * the transcript. Asking from it also marks the page as the one "Stäng samtalet" leads back to.
+ */
+export interface AskFrom {
+  chips: ChipRef[];
+  search: string;
+}
+/** The conversation's state and verbs, owned here (D31) and read by the row, the transcript, the page and every card. */
+export interface ConversationState {
+  /** The chips in the composer's drawer: what the person pointed at with "Lägg till i samtalet". */
+  chips: ChipRef[];
+  /** Every ref in the conversation right now, drawer chips and `@` tokens in the field, so a card can show "I samtalet". */
+  chipped: string[];
+  conversation: Conversation | null;
+  latest: ConversationResponse | null;
+  /** The question being answered right now, or null. */
+  pending: PendingTurn | null;
+  done: Done;
+  busy: boolean;
+  error: string | null;
+  /**
+   * The conversation takes the column: on its own page (`/conversations/<id>`, and `/conversations/new` before anything
+   * is asked, D126 rule 5), or on Hem from the moment a question is sent there.
+   */
+  open: boolean;
+  value: string;
+  verbs: Verb[];
+  input: RefObject<ChatComposerInputHandle | null>;
+  /**
+   * A conversation's own box is on the page (`/conversations/<id>`). "Lägg till i samtalet" is offered only then: no
+   * other page has a box (D126 rule 5).
+   */
+  hasBox: boolean;
+  /** The box says it is on the page while it is mounted; the returned function says it has gone. */
+  claimBox(): () => void;
+  setValue(value: string): void;
+  addChip(chip: ChipRef): void;
+  removeChip(ref: string): void;
+  /** An object picked through the `@` trigger: its token sits in the field, its label is kept for the request. */
+  rememberObject(object: ClewObject): void;
+  /**
+   * Sends a question. `about` is what the conversation's page is about by its address (the thing beside the
+   * transcript): it goes with every question there, as the chips in the drawer do, without being drawn in the drawer.
+   * `thing` is a person, a unit or a record beside it, told to the server as what stands open (D131 item 1).
+   */
+  submit(raw: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing): Promise<void>;
+  ask(text: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing): void;
+  /** Stoppa (D36): the turn is aborted, nothing is saved, and the question goes back in the box. */
+  stop(): void;
+  performActions(actions: ClewAction[]): Promise<void>;
+  cancelActions(): void;
+  /** "Lägg under Behöver dig" under a cited answer (D26): the sources become a card under Behöver dig; nothing is executed. */
+  makeCard(messageId: string): Promise<void>;
+  openConversation(threadId: string): Promise<void>;
+  /**
+   * A new conversation with Clew: nothing in it, nothing in the drawer. `from` is the page "Fråga assistenten" was pressed on,
+   * where Esc leads back to; `stay` keeps the address (the caller navigates to the new conversation's page itself).
+   */
+  newConversation(options?: { from?: string; stay?: boolean }): void;
+  close(): void;
+  focus(): void;
+  /** The page that shows cards hears of a thread the conversation changed before the cache is written, to hand the focus on (2.4.3). */
+  setThreadListener(listener: ((thread: Thread) => void) | null): void;
+  /**
+   * The question on its way in the panel beside the conversation, to another system's assistant; null when none is.
+   */
+  aside: AsideTurn | null;
+  asideError: string | null;
+  /**
+   * Asks that assistant in the panel: the words go there unchanged and alone, and the exchange is drawn in the panel.
+   * Resolves false when nothing was sent, so the panel's box keeps what was typed.
+   */
+  askAside(assistant: Handed, text: string, confirmed?: boolean): Promise<boolean>;
+  /** Lets go of a question the panel held or failed to send. */
+  dropAside(): void;
+  /**
+   * Puts a question from the panel to Clew, the person's own press: one the assistant answered or could not, or one
+   * Clew held on its way out.
+   */
+  askClew(text: string): void;
+  /** Yes to Clew's suggestion: the question on the page goes to the suggested assistant, as it was written. */
+  acceptOffer(): void;
+  /** No to it: Clew answers the question itself. */
+  declineOffer(): void;
+}
+/** A question asked in the panel while it is answered, or held before it left Clew (D125 item 13). */
+export interface AsideTurn {
+  assistant: string;
+  text: string;
+  at: string;
+  answer: string;
+  held?: 'person' | 'card';
+}
+const noop = () => undefined;
+const never = async () => undefined;
+const EMPTY_VERBS: Verb[] = [];
+/**
+ * The conversation that does nothing: what a component reads outside any provider, and what the conversation beside a
+ * page (`usePageConversation`, D130) starts from before it puts its own turns over it, so that everything route-bound
+ * (the drawer, the panel's assistant, a new conversation, closing) stays inert in the pane.
+ */
+export const INERT_CONVERSATION: ConversationState = {
+  chips: [],
+  chipped: [],
+  conversation: null,
+  latest: null,
+  pending: null,
+  done: null,
+  busy: false,
+  error: null,
+  open: false,
+  value: '',
+  verbs: [],
+  input: { current: null },
+  hasBox: false,
+  claimBox: () => noop,
+  setValue: noop,
+  addChip: noop,
+  removeChip: noop,
+  rememberObject: noop,
+  submit: never,
+  ask: noop,
+  stop: noop,
+  performActions: never,
+  cancelActions: noop,
+  makeCard: never,
+  openConversation: never,
+  newConversation: noop,
+  close: noop,
+  focus: noop,
+  setThreadListener: noop,
+  aside: null,
+  asideError: null,
+  askAside: async () => false,
+  dropAside: noop,
+  askClew: noop,
+  acceptOffer: noop,
+  declineOffer: noop,
+};
+export const ConversationContext = createContext<ConversationState>(INERT_CONVERSATION);
+export const useConversation = () => useContext(ConversationContext);
+/**
+ * Called by a conversation's own box: the page has that box for as long as one is mounted. A layout effect, so the
+ * controls that depend on it are drawn or left out before the browser paints. The box moving between the landing and a
+ * conversation's dock is one unmount and one mount in the same commit, so the count never reads none in between.
+ */
+export function useClaimBox(claims = true) {
+  const { claimBox } = useConversation();
+  useLayoutEffect(() => (claims ? claimBox() : undefined), [claimBox, claims]);
+}
+/** A conversation's title is the question as it was typed; as a title it starts with a capital. */
+export const titled = (question: string) => question.charAt(0).toLocaleUpperCase('sv-SE') + question.slice(1);
+/**
+ * Whether the assistant may be asked here (D8, D112 item 7): a model is configured. Without one no box is drawn beside a
+ * thing and no "Fråga assistenten" is offered; the thing is drawn alone, as before.
+ */
+export function useModelConfigured(): boolean {
+  return !!useQuery(assistantQuery).data?.configured;
+}
+
+const TOKEN = /@\[([a-z]+:[^\]]+)\]/g;
+export const refsIn = (value: string) => [...value.matchAll(TOKEN)].map(m => m[1]!);
+export const tokenValue = (ref: string) => `@[${ref}]`;
+const plainText = (raw: string) => raw.replace(TOKEN, '').replace(/\s+/g, ' ').trim();
+
+/** A question as the person asked it: kept whole so it can be sent again when Clew asks where it should go. */
+interface Question {
+  raw: string;
+  text: string;
+  chips: Chip[];
+  /** The one of the chips that stands open beside the transcript. */
+  beside?: string;
+  /** The person, the unit or the record beside the transcript (D131 item 1). */
+  thing?: OpenThing;
+  current: Conversation | null;
+  from?: AskFrom;
+}
+/** The address of a conversation not asked yet: "Fråga assistenten" lands here with the thing beside it (D126 rule 5). */
+const NEW = '/conversations/new';
+/**
+ * The conversation (D31, D50, D126): one state for the box and the transcript, held above the pages so a question asked
+ * on Hem is the same conversation when the transcript takes the column. The transcript is on the page at `/` once a
+ * question is sent there, and on the conversation's own page, `/conversations/:id`; `/conversations/new` is a
+ * conversation not asked yet, where "Fråga assistenten" lands with the thing beside it and nothing is sent until the person
+ * writes. The box keeps focus throughout and sending never moves it. Chips travel in the drawer and stay across turns;
+ * the text is cleared. Esc leads back to where the conversation was asked, and the conversation is kept under Samtal.
+ */
+export function ConversationProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const routeId = useMatch('/conversations/:conversationId')?.params.conversationId ?? null;
+  const conversationId = routeId && routeId !== 'new' ? routeId : null;
+  const onRoute = routeId !== null;
+  // The transcript belongs to the landing and to a conversation's own address; every other page keeps its column.
+  const here = location.pathname === '/' || onRoute;
+  const where = useRef({ onRoute: false, here: true });
+  where.current = { onRoute, here };
+  // Where Esc leads: the page the conversation was asked from, else the landing.
+  const origin = useRef<string | null>(null);
+  const onConversation = useCallback(
+    (id: string | null) => {
+      // A new conversation's page keeps what it is about (the thing beside it, `?card=`, `?open=`) at its own address.
+      const fresh = window.location.pathname === NEW;
+      if (id)
+        navigate(`/conversations/${id}${fresh ? window.location.search : panelSearch(window.location.search)}`, {
+          replace: fresh,
+        });
+      else if (where.current.onRoute) {
+        const back = origin.current ?? '/';
+        origin.current = null;
+        navigate(back);
+      }
+    },
+    [navigate],
+  );
+  const listener = useRef<((thread: Thread) => void) | null>(null);
+  const setThreadListener = useCallback((next: ((thread: Thread) => void) | null) => {
+    listener.current = next;
+  }, []);
+  const onThreadChange = useCallback((thread: Thread) => {
+    listener.current?.(thread);
+  }, []);
+  const turns = useTurns(onThreadChange);
+  const {
+    conversation,
+    setConversation,
+    latest,
+    setLatest,
+    pending,
+    done,
+    setDone,
+    busy,
+    error,
+    setError,
+    value,
+    setValue,
+    input,
+    abortTurn,
+    send,
+    performActions,
+    cancelActions,
+    makeCard,
+  } = turns;
+  // How many conversation boxes are mounted (`useClaimBox`): state, not the input's ref, so the controls that add to the
+  // box are drawn again when one comes or goes.
+  const [boxes, setBoxes] = useState(0);
+  const claimBox = useCallback(() => {
+    setBoxes(n => n + 1);
+    return () => setBoxes(n => n - 1);
+  }, []);
+  const hasBox = boxes > 0;
+  const known = useRef(new Map<string, ChipRef>());
+  const [chips, setChips] = useState<ChipRef[]>([]);
+  // A conversation opened again (a reload, a row in the rail) gets back the list its last question pointed at (the
+  // product owner, 2026-11-16): the drawer is the browser's, so "Att göra" was gone after a reload and a follow-up
+  // had no card. Once per conversation, and only into an empty drawer, so a chip the person removed stays removed.
+  const seeded = useRef<string | null>(null);
+  useEffect(() => {
+    if (!conversation || seeded.current === conversation.id) return;
+    seeded.current = conversation.id;
+    const last = conversation.messages.filter(m => m.role === 'user').at(-1);
+    const lists = (last?.meta?.chips ?? []).filter(c => c.kind === 'capability');
+    if (lists.length)
+      setChips(list => (list.length ? list : lists.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }))));
+  }, [conversation]);
+  const announce = useAnnounce();
+  const [shown, setShown] = useState(false);
+  const inline = useMemo(() => refsIn(value), [value]);
+  const chipped = useMemo(() => [...new Set([...chips.map(c => c.ref), ...inline])], [chips, inline]);
+  const plain = plainText(value);
+  // A conversation's page is the conversation, asked or not; on Hem the transcript takes the column from the moment a
+  // question is sent: the question and its pending answer are drawn at once (D36).
+  const open = onRoute || (shown && here && (!!conversation || !!pending));
+  const openRef = useRef(false);
+  openRef.current = open;
+  // One chip in the drawer and nothing typed: the verbs about it, from its actions and Clew's standard actions.
+  const chipThread = chips.length === 1 && !plain && chips[0]!.threadId ? chips[0]!.threadId : null;
+  const verbsQ = useQuery({ ...verbsQuery(chipThread ?? ''), enabled: !!chipThread });
+  const verbs = chipThread ? (verbsQ.data?.verbs ?? EMPTY_VERBS) : EMPTY_VERBS;
+
+  const focus = useCallback(() => {
+    input.current?.focus();
+  }, [input]);
+  // Esc reaches here after a dialog or a menu has already taken it; with nothing open there is nothing to close and focus stays where it is.
+  const shownRef = useRef(false);
+  shownRef.current = shown;
+  const close = useCallback(() => {
+    if (!shownRef.current && !where.current.onRoute) return;
+    abortTurn('stop');
+    setShown(false);
+    setError(null);
+    onConversation(null);
+    input.current?.focus();
+  }, [onConversation, abortTurn, setError, input]);
+  const rememberObject = useCallback((o: ClewObject) => {
+    known.current.set(o.ref, {
+      ref: o.ref,
+      kind: o.kind,
+      label: o.label,
+      ...(o.threadId ? { threadId: o.threadId } : {}),
+    });
+  }, []);
+  // The box takes the focus from the pressed button, which rests as "I samtalet" (2.4.3). The control is drawn only
+  // where a conversation's box is (`hasBox`), so adding never takes the person to another page.
+  const addChip = useCallback(
+    (chip: ChipRef) => {
+      known.current.set(chip.ref, chip);
+      setChips(list => (list.some(c => c.ref === chip.ref) ? list : [...list, chip]));
+      input.current?.focus();
+    },
+    [input],
+  );
+  // The removed chip's neighbour takes the focus, or the field when the drawer is empty (2.4.3).
+  const removeChip = useCallback(
+    (ref: string) => {
+      setChips(list => list.filter(c => c.ref !== ref));
+      requestAnimationFrame(() => {
+        const next = document.querySelector<HTMLElement>('[data-chip-remove]');
+        (next ?? input.current)?.focus();
+      });
+    },
+    [input],
+  );
+  const newConversation = useCallback(
+    (options?: { from?: string; stay?: boolean }) => {
+      abortTurn('leave');
+      // A new conversation has nothing in its drawer.
+      setConversation(null);
+      setLatest(null);
+      setDone(null);
+      setError(null);
+      setValue('');
+      setChips([]);
+      setShown(false);
+      origin.current = options?.from ?? null;
+      if (where.current.onRoute && !options?.stay) navigate('/');
+      input.current?.focus();
+    },
+    [navigate, abortTurn, setConversation, setLatest, setDone, setError, setValue, input],
+  );
+  const client = useQueryClient();
+  const openConversation = useCallback(
+    async (threadId: string) => {
+      abortTurn('leave');
+      try {
+        const t = await client.query(threadQuery(threadId));
+        setConversation(conversationOf(t));
+        setLatest(null);
+        setDone(null);
+        setShown(true);
+        input.current?.focus();
+      } catch (e) {
+        setError(errorMessage(e, 'Samtalet kunde inte öppnas.'));
+      }
+    },
+    [client, abortTurn, setConversation, setLatest, setDone, setError, input],
+  );
+  // The route names the conversation: arriving at /conversations/:id (a link, the back button, a reload) puts the
+  // transcript on the page. Arriving at /conversations/new is a conversation not asked yet: whatever conversation was
+  // held before is let go of, unless a question is on its way from Hem to this address.
+  const wasOnRoute = useRef(false);
+  useEffect(() => {
+    if (conversationId && conversationId !== conversation?.id) void openConversation(conversationId);
+    else if (onRoute && !shown) setShown(true);
+    if (routeId === 'new' && !pending && conversation) {
+      setConversation(null);
+      setLatest(null);
+      setDone(null);
+    }
+    // Leaving the conversation's page by the back button brings Hem back; the conversation stays under Samtal.
+    if (!onRoute && wasOnRoute.current && shown) setShown(false);
+    wasOnRoute.current = onRoute;
+  }, [routeId]);
+  // Another page takes the column: the turn on its way is stopped, as leaving the page always did, and nothing pulls the person back.
+  useEffect(() => {
+    if (!here && shownRef.current) {
+      abortTurn('leave');
+      setShown(false);
+    }
+  }, [here, abortTurn]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // ⌘K is "Nytt samtal" from anywhere (the canvas's H3 item 1): in a conversation it starts a new one, elsewhere it takes the focus to the box.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (shownRef.current) newConversation();
+        else focus();
+      }
+      // Esc inside a dialog, a menu or the `@` list is theirs (the D29 picker, the pile menu); only a bare Esc closes the
+      // conversation. A menu that closed on it has handed the focus back to its button by now, so its handled Esc is
+      // known by `defaultPrevented` (the "Till:" menu on Ny fråga, D126 item 14).
+      else if (
+        e.key === 'Escape' &&
+        !e.defaultPrevented &&
+        !document.activeElement?.closest('[role="dialog"], [role="menu"], [role="listbox"], dialog')
+      )
+        close();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [focus, close, newConversation]);
+
+  // The question Clew's assistant suggested another system's assistant for, kept so the person's answer sends it again.
+  const offered = useRef<{ question: Question; assistant: HandoverAssistant; held?: 'person' | 'card' } | null>(null);
+  /** One question on its way to whoever answers it: Clew, or another system's assistant with nothing attached. */
+  const dispatch = useCallback(
+    async (
+      question: Question,
+      how: { to?: Handed | null; suggested?: boolean; own?: boolean; confirmed?: boolean },
+    ) => {
+      const { raw, text, chips: used, current, from } = question;
+      offered.current = null;
+      await send({
+        raw,
+        text,
+        // To another system's assistant the person's words go alone: nothing of the conversation follows them.
+        chips: how.to ? [] : used,
+        beside: how.to ? undefined : question.beside,
+        thing: how.to ? undefined : question.thing,
+        current,
+        handed: how.to ?? undefined,
+        ...(how.suggested ? { suggested: true } : {}),
+        ...(how.own ? { own: true } : {}),
+        ...(how.confirmed ? { confirmed: true } : {}),
+        onOffer: (assistant, held) => {
+          offered.current = { question, assistant, ...(held ? { held } : {}) };
+        },
+        onStart: () => {
+          setShown(true);
+          // Asked on Hem (D50): the transcript takes the column in place, and the address it gets once answered keeps
+          // the card or view open beside it (`onConversation`). Asked elsewhere, the conversation takes the column at
+          // once, with what the page showed beside it, and "Stäng samtalet" leads back to the page as it stood.
+          if (!current && from) {
+            origin.current = window.location.pathname + window.location.search;
+            if (!where.current.here) navigate(`/conversations/new${from.search}`);
+          }
+        },
+        onAnswered: response => {
+          if (!current) onConversation(response.conversationId);
+          const to = response.thread.handover;
+          if (response.assistant === 'handover' && to) {
+            // The answer is that assistant's; the box stays Clew's, and the way on with the assistant is beside it.
+            announce(`${to.name} i ${to.source} har svarat. Rutan skriver fortfarande till assistenten.`);
+          }
+        },
+      });
+    },
+    [send, onConversation, navigate, announce],
+  );
+  const submit = useCallback(
+    async (raw: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing) => {
+      const text = plainText(raw);
+      const used = [
+        ...new Map(
+          [
+            ...(about ?? []),
+            ...chips,
+            ...(from?.chips ?? []),
+            ...refsIn(raw)
+              .map(r => known.current.get(r))
+              .filter((c): c is ChipRef => !!c),
+          ].map(c => [c.ref, c]),
+        ).values(),
+      ];
+      // A question asked where no transcript is on the page starts a conversation of its own (D50): the box on the
+      // landing is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is.
+      const current = openRef.current ? conversation : null;
+      const beside = about?.find(c => c.beside)?.ref;
+      await dispatch(
+        {
+          raw,
+          text,
+          chips: used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip),
+          ...(beside ? { beside } : {}),
+          ...(thing ? { thing } : {}),
+          current,
+          ...(from ? { from } : {}),
+        },
+        {},
+      );
+    },
+    [chips, conversation, dispatch],
+  );
+  const acceptOffer = useCallback(() => {
+    const o = offered.current;
+    // Yes to Clew's suggestion, or "send it anyway" for a question Clew held: it goes as it was written.
+    if (o)
+      void dispatch(o.question, {
+        to: { id: o.assistant.id, name: o.assistant.name, source: o.assistant.source },
+        ...(o.held ? { confirmed: true } : { suggested: true }),
+      });
+  }, [dispatch]);
+  const declineOffer = useCallback(() => {
+    const o = offered.current;
+    if (o) void dispatch(o.question, { own: true });
+  }, [dispatch]);
+  const ask = useCallback(
+    (text: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing) => void submit(text, from, about, thing),
+    [submit],
+  );
+  // The panel beside the conversation: one question at a time to another system's assistant, in the same conversation.
+  const [aside, setAside] = useState<AsideTurn | null>(null);
+  const [asideError, setAsideError] = useState<string | null>(null);
+  const asideBusy = useRef(false);
+  const dropAside = useCallback(() => {
+    if (!asideBusy.current) setAside(null);
+    setAsideError(null);
+  }, []);
+  const askAside = useCallback(
+    async (assistant: Handed, raw: string, confirmed?: boolean): Promise<boolean> => {
+      const text = raw.replace(/\s+/g, ' ').trim();
+      if (!text || asideBusy.current || busy) return false;
+      asideBusy.current = true;
+      setAsideError(null);
+      setAside({ assistant: assistant.id, text, at: new Date().toISOString(), answer: '' });
+      announce(`Frågar ${assistant.name} …`);
+      const current = openRef.current ? conversation : null;
+      try {
+        const response = await api.converseStream(
+          {
+            text,
+            ...(current ? { conversationId: current.id } : {}),
+            assistant: assistant.id,
+            side: true as const,
+            ...(confirmed ? { confirmed: true as const } : {}),
+          },
+          event => {
+            if (event.type === 'text')
+              setAside(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
+          },
+        );
+        if ('offer' in response) {
+          // Clew held the question before it left: the panel asks where it should go.
+          setAside(p => p && { ...p, answer: '', held: response.held ?? 'person' });
+          announce('Frågan är inte skickad. Välj i sidofältet.');
+          return true;
+        }
+        setConversation(conversationOf(response.thread));
+        setAside(null);
+        void applyThread(client, response.thread);
+        if (!current) onConversation(response.conversationId);
+        const answer = response.thread.messages.at(-1)?.meta?.handover;
+        announce(
+          answer?.failed
+            ? `${assistant.name} svarade inte. Skriv frågan till assistenten om du vill ha svar där.`
+            : `${assistant.name} har svarat i sidofältet.`,
+        );
+        return true;
+      } catch (e) {
+        setAside(null);
+        setAsideError(errorMessage(e, 'Frågan kunde inte ställas.'));
+        return false;
+      } finally {
+        asideBusy.current = false;
+      }
+    },
+    [announce, busy, client, conversation, onConversation, setConversation],
+  );
+  const askClew = useCallback(
+    (text: string) => {
+      setAside(null);
+      void dispatch({ raw: text, text, chips: [], current: openRef.current ? conversation : null }, { own: true });
+    },
+    [conversation, dispatch],
+  );
+  const stop = useCallback(() => abortTurn('stop'), [abortTurn]);
+
+  const state = useMemo<ConversationState>(
+    () => ({
+      chips,
+      chipped,
+      conversation,
+      latest,
+      pending,
+      done,
+      busy,
+      error,
+      open,
+      value,
+      verbs,
+      input,
+      hasBox,
+      claimBox,
+      setValue,
+      addChip,
+      removeChip,
+      rememberObject,
+      submit,
+      ask,
+      stop,
+      performActions,
+      cancelActions,
+      makeCard,
+      openConversation,
+      newConversation,
+      close,
+      focus,
+      setThreadListener,
+      aside,
+      asideError,
+      askAside,
+      dropAside,
+      askClew,
+      acceptOffer,
+      declineOffer,
+    }),
+    [
+      chips,
+      chipped,
+      conversation,
+      latest,
+      pending,
+      done,
+      busy,
+      error,
+      open,
+      value,
+      verbs,
+      input,
+      hasBox,
+      claimBox,
+      setValue,
+      addChip,
+      removeChip,
+      rememberObject,
+      submit,
+      ask,
+      stop,
+      performActions,
+      cancelActions,
+      makeCard,
+      openConversation,
+      newConversation,
+      close,
+      focus,
+      setThreadListener,
+      aside,
+      asideError,
+      askAside,
+      dropAside,
+      askClew,
+      acceptOffer,
+      declineOffer,
+    ],
+  );
+  return <ConversationContext.Provider value={state}>{children}</ConversationContext.Provider>;
+}
+
+/**
+ * What "Fråga assistenten" asks about (D126 rule 5): a key that names the thing (`thread:<id>`, a view and its input, a
+ * calendar entry, a person), the words for it, the chips that go with the question so the answer is about it, and the
+ * part of the conversation page's address that puts the thing beside the transcript (`?card=`, `?open=`, `?person=`;
+ * empty when nothing stands beside it, a list or a range of rows going as its chips alone).
+ */
+export interface ThingSubject {
+  key: string;
+  label: string;
+  chips: ChipRef[];
+  search: string;
+}

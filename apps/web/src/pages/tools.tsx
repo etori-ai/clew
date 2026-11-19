@@ -24,11 +24,11 @@ import { areasQuery, headerQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { narrowTools, toolboxPage, toolGroups, toolsOf, whatItIs } from '../tool-catalogue';
-import { Shell, shortQuery } from '../components/shell';
-import { toolHref, useRail } from '../components/nav';
-import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { PageFrame } from '../components/page-frame';
-import { pageSubject } from '../components/page-conversation';
+import { Shell, shortQuery } from '../components/shell/shell';
+import { toolHref, useNav } from '../components/shell/nav';
+import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
+import { PageFrame } from '../components/shell/page-frame';
+import { pageSubject } from '../components/conversation/page-conversation';
 
 /** The search field's words in the address (D43): the narrowed catalogue survives a reload and Back. */
 const FILTER = 'filter';
@@ -68,13 +68,13 @@ function ToolTile({ tool, from }: { tool: MenuEntry; from: string }) {
  * A tile leads to the tool's own page (D42) with this page as the way back, so Back returns to the tile. At the foot the
  * intranet's own page of tools, when the shared header names one (D88, D112 amended 2026-11-11). The tools are what the
  * rail reads (`toolsOf`): the views an administrator placed (D40) and Clew's own lists the person has; nothing else is
- * asked of the server. The frame's "Fråga assistenten" opens the assistant's pane beside the tiles (D130), about the
+ * asked of the server. The corner's "Fråga AI" opens the assistant's pane beside the tiles (D130, D133), about the
  * person's tools (`clew.tools`).
  */
 export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   // 1.4.10: with 480 px or less in height nothing is pinned; the whole page scrolls.
   const short = useMediaQuery(shortQuery);
-  const nav = useRail({ current: { surface: 'tools' }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'tools' }, admin, manager: user.role === 'manager' });
   usePageTitle('Alla verktyg');
   const navigate = useNavigate();
   const { pathname, search: address } = useLocation();
@@ -169,6 +169,7 @@ export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: 
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
         ask={{ subject }}
+        cards
         title="Alla verktyg"
         meta={
           read.data && all.length > 0

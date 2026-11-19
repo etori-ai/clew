@@ -24,7 +24,7 @@ const outcome: Record<ReceiptRow['outcome'], string> = {
 };
 /**
  * The card's state and the buttons it shows right now, by the rules of the card's action row
- * (`apps/web/src/components/card.tsx`, `ActionRow`). The model is told to name only these: a card already acted on shows
+ * (`apps/web/src/components/work/card.tsx`, `ActionRow`). The model is told to name only these: a card already acted on shows
  * Ångra allt while the window is open, and its own buttons (Godkänn, Avslå) come back only after Ångra allt.
  */
 function cardState(t: Thread, now: string): string {

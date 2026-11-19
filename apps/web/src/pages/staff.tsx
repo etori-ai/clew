@@ -2,18 +2,39 @@ import { useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import type { EntityList, SessionUser } from '@clew/contracts';
-import { Button, EmptyState, HStack, Text, TextInput, VStack, useAnimatedLayout, useMediaQuery } from '@clew/ui';
+import {
+  Button,
+  EmptyState,
+  FigureRow,
+  HStack,
+  KeyFigure,
+  SECTION_GAP,
+  Text,
+  TextInput,
+  useAnimatedLayout,
+  useMediaQuery,
+  VStack,
+} from '@clew/ui';
 import { areasQuery, entityListQuery, entityRowsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { mobileQuery } from '../components/shell';
-import { AsyncContent, ContentSkeleton } from '../components/loading';
-import { RegisterHolding } from '../components/register-holding';
-import { pageSubject, sourceReads } from '../components/page-conversation';
+import { mobileQuery } from '../components/shell/shell';
+import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
+import { RegisterHolding } from '../components/people/register-holding';
+import { pageSubject, sourceReads } from '../components/conversation/page-conversation';
 import { useEntityAction } from '../entity-actions';
 import { fromCardsBeside, fromPersonBeside, insideClew, overlayRedirect, sourceTab } from '../person-address';
 import { peopleReadHref } from '../view-address';
-import { answerOf, silentOf, sourcesRead, staffReads, valueCounts, type Answer } from './staff-model';
+import {
+  answerOf,
+  lensNeed,
+  peopleCount,
+  silentOf,
+  sourcesRead,
+  staffReads,
+  valueCounts,
+  type Answer,
+} from './staff-model';
 import {
   ALL_TAB,
   AllUnit,
@@ -24,6 +45,7 @@ import {
   SilentSources,
   type Context,
   type Openers,
+  lensHref,
   usePeopleReads,
 } from './staff-parts';
 
@@ -120,7 +142,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
   const narrow = mobile;
   const words = search.get(QUERY) ?? '';
   const groups = useMemo(() => (list ? matching(list, words) : []), [list, words]);
-  const found = groups.reduce((n, g) => n + g.entities.length, 0);
+  const found = groups.some(g => g.entities.length > 0);
+  const total = list ? peopleCount(list.groups) : 0;
   const action = useEntityAction();
   usePageTitle(lens ? `${lens.title} · Personal` : 'Personal');
 
@@ -196,9 +219,13 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
           views,
         })
       : null;
+  // One unit's register has its search inside its card (D130 item 16); several units share one in the page's header.
+  const inCard = !lens && single;
+  const searchRef = useRef<HTMLInputElement>(null);
   const searchField =
-    list && list.groups.some(g => g.entities.length > 0) ? (
+    total > 0 ? (
       <TextInput
+        ref={searchRef}
         type="search"
         label="Sök medarbetare"
         isLabelHidden
@@ -207,9 +234,58 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
         onChange={type}
         hasClear
         autoComplete="off"
-        width={mobile ? '100%' : 260}
+        size={inCard ? 'lg' : 'md'}
+        width={mobile ? '100%' : inCard ? 480 : 260}
       />
     ) : undefined;
+  const noMatches = (
+    <EmptyState
+      headingLevel={2}
+      title="Ingen medarbetare heter så"
+      description="Sök på en del av förnamnet eller efternamnet."
+      actions={
+        <Button
+          label="Visa alla"
+          onClick={() => {
+            type('');
+            searchRef.current?.focus();
+          }}
+        />
+      }
+    />
+  );
+  // The unit's key figures over the register (D130 item 16), as the reference opens Personal: how many people it
+  // lists, and for each lens how many of them need the reader, in that need's colour, leading to the lens.
+  const figures =
+    list && !lens && total > 0 ? (
+      <FigureRow>
+        <KeyFigure
+          label="Medarbetare"
+          value={String(total)}
+          name={`Medarbetare ${total}`}
+          // Where they are: the unit, or how many units. The page's line under its title says the rest.
+          foot={list.groups.length === 1 ? list.groups[0]!.label : `${list.groups.length} enheter`}
+        />
+        {list.lenses.map(l => {
+          const answer = answers.get(l.capability);
+          if (answer?.status !== 'ok') return null;
+          const need = lensNeed(l, answer);
+          const n = need?.count ?? 0;
+          return (
+            <KeyFigure
+              key={l.capability}
+              label={l.title}
+              value={String(n)}
+              tone={need ? (need.tone === 'alert' ? 'error' : 'warning') : undefined}
+              line={n ? 'behöver dig' : 'Ingen behöver dig'}
+              foot={l.own ? 'Clew' : l.source}
+              href={lensHref(l.capability)}
+              name={`${l.title}: ${n} medarbetare behöver dig`}
+            />
+          );
+        })}
+      </FigureRow>
+    ) : null;
 
   return (
     <PersonalFrame
@@ -217,11 +293,11 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
       admin={admin}
       tab={lens?.capability ?? ALL_TAB}
       subject={subject}
-      end={searchField}
+      end={inCard ? null : searchField}
       badges={badges}
       label={lens ? lens.title : 'Medarbetare'}
     >
-      <VStack gap={4} ref={root}>
+      <VStack gap={SECTION_GAP} ref={root}>
         {listQ.isError ? (
           <VStack gap={2}>
             <Text as="p" role="alert">
@@ -238,7 +314,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
             </HStack>
           </VStack>
         ) : (
-          <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={4}>
+          <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={SECTION_GAP}>
             {/* A source's refusal of an action from a row's menu, said aloud as it came (entity-actions.ts). */}
             {(action.error || silent.length > 0 || lensLine) && (
               <VStack gap={2}>
@@ -248,20 +324,16 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
               </VStack>
             )}
             {action.dialog}
-            {ctx && list && list.groups.every(g => g.entities.length === 0) ? (
+            {found && figures}
+            {ctx && total === 0 ? (
               <EmptyState
                 headingLevel={2}
                 title="Inga medarbetare att visa"
                 description="Här ser den som är chef för en enhet medarbetarna på den. Katalogen avgör vem som är chef; be systemförvaltaren om det inte stämmer."
                 actions={<Button label="Till startsidan" href="/" />}
               />
-            ) : ctx && found === 0 ? (
-              <EmptyState
-                headingLevel={2}
-                title="Ingen medarbetare heter så"
-                description="Sök på en del av förnamnet eller efternamnet."
-                actions={<Button label="Visa alla" onClick={() => type('')} />}
-              />
+            ) : ctx && !found && !inCard ? (
+              noMatches
             ) : ctx && lens ? (
               // A lens whose source did not answer has nothing to list: the sentence above takes the table's place.
               lensSilent ? null : (
@@ -286,6 +358,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
                   ctx={ctx}
                   narrow={narrow}
                   animatedLayout={animatedLayout}
+                  tools={inCard ? searchField : undefined}
+                  empty={found ? undefined : noMatches}
                 />
               ))
             ) : null}
