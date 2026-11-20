@@ -371,6 +371,39 @@ describe('the model path only reads, and falls back when the provider fails', ()
       objects: serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: card }], now),
     });
     expect(prompt).toContain('chef på Skönsmons skola');
+    // D135: a person with several assignments is named with each, the primary one first.
+    const several = systemPrompt({
+      name: 'Sara Nyström',
+      role: 'manager',
+      unitId: 'u-e',
+      unitLabel: 'Ekonomiavdelningen',
+      assignments: [
+        { unitId: 'u-a', unitLabel: 'Arkivet', role: 'employee' },
+        { unitId: 'u-e', unitLabel: 'Ekonomiavdelningen', role: 'manager' },
+        { unitId: 'u-h', unitLabel: 'HR-avdelningen', role: 'manager' },
+      ],
+      now: new Date(now),
+      week: 45,
+      objects: [],
+    });
+    expect(several).toContain(
+      'Sara Nyström, chef på Ekonomiavdelningen, medarbetare på Arkivet och chef på HR-avdelningen.',
+    );
+    // Two units of the same name and role are both said: the units are told apart by id, never by name.
+    const twins = systemPrompt({
+      name: 'Kim',
+      role: 'manager',
+      unitId: 'k-1',
+      unitLabel: 'Kansli',
+      assignments: [
+        { unitId: 'k-1', unitLabel: 'Kansli', role: 'manager' },
+        { unitId: 'k-2', unitLabel: 'Kansli', role: 'manager' },
+      ],
+      now: new Date(now),
+      week: 45,
+      objects: [],
+    });
+    expect(twins).toContain('Kim, chef på Kansli och chef på Kansli.');
     expect(prompt).toContain('vecka 45');
     expect(prompt).toContain('Du tittar på');
     expect(prompt).toContain('Ärende "Attestera 3 fakturor, 37 050 kr" (Ekonomisystemet');

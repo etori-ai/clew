@@ -107,7 +107,7 @@ A source system owns records. A connector exposes capabilities that read those r
 | Employment (*anställning*) | A current job on a unit. Its title, employment type, start date and percentage of full-time hours are optional and describe that job. The profile lists each employment the directory supplies, including several on one unit. |
 | Assignment (*placering*) | One person in one unit with one role, `manager` or `employee`; a person may hold several. |
 | Position (*befattning*) | What a person is employed as, such as undersköterska or maskinförare: a code and a label from the source, pushed as membership of a `position:<code>` group (D108 item 5). Tied to the person, not to an assignment; a person may hold several. By itself it decides no access; like any provisioned group, an administrator can map it to a capability (D85). Clew builds in no classification of positions. |
-| Grant | The one assignment a person acts as, with their capabilities: the derived projection every request and connector reads. |
+| Grant | The derived projection every request and connector reads: the primary assignment (manager before employee, then the lowest unit id), every assignment when the person holds more than one (D135), and their capabilities. |
 | Binding | The link from an identity provider's subject to a person, written at the first login by the configured claim. A later sign-in whose claim names another person is refused; only an operator moves a binding, with `scripts/identity-rebind.ts`. (Distinct from a follower binding in the integration vocabulary.) |
 
 ## Entity vocabulary

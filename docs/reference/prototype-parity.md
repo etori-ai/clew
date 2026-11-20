@@ -30,9 +30,9 @@ The prototype's feature list has 40 features. The architecture carries 38 of the
 
 | Verdict | Features |
 |---|---|
-| Built | 13 |
+| Built | 14 |
 | Ready | 14 |
-| Extension | 8 |
+| Extension | 7 |
 | New block | 3 |
 | Line decision | 2 |
 
@@ -92,7 +92,7 @@ The prototype's own ids are kept so a row can be found in `apps/projekt/src/app/
 | Snabbåtgärder och genvägar | `snabbatgarder` | Extension | Actions from the menu exist; a person's own shortcuts need B8 | [Actions about a person](status/people.md#actions-about-a-person) |
 | Min startsida, mina val | `mittval` | Line decision | B8, if the line moves | |
 | Mallar på en plats, med AI-stöd | `mallar` | Ready | A search source for templates; Word files are already previewed | [Document catalogue](status/views.md#document-and-semantic-catalogue) |
-| Startsidan efter roll | `roll` | Extension | Content follows role and unit. A person with several assignments cannot switch between them yet | [Users and identity](status/identity.md#users-and-identity) |
+| Startsidan efter roll | `roll` | Built | Content follows role and unit. A person with several assignments sees the work of all of them, each work item naming its unit ([D135](../decisions/D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md)); a source answers for every assignment only when it reads them | [Users and identity](status/identity.md#users-and-identity) |
 | Navigering och meny | `navigering-och-meny` | Built | | [Interface spaces](interface-spaces.md) |
 | Mitt konto och inställningar | `mitt-konto-och-installningar` | Extension | B8 | |
 | Intranätets meny i startsidan | `intranatets-meny-i-startsidan` | Ready | The connector to the intranet's content system | [Shared header](status/interface.md#shared-header) |
@@ -165,7 +165,7 @@ These are not held back by the architecture. They wait for the product owner; se
 | Data cards per unit: value, target, trend, tone, chart with an explanation, "last updated", missing shown as missing, the source's minimum group size (D-6 to D-20, DATA-5 to DATA-9, NIV-14 to NIV-16) | Ready | A connector to the data warehouse; thresholds and interpretation texts are the connector's |
 | Every manager opens on their own unit; refusal looks like "does not exist"; a change of assignment applies by the next day (NIV-1 to NIV-3, NIV-6 to NIV-9) | Built | Scope is checked in the server on every call |
 | A manager opens the units below and continues down, never above (NIV-4, NIV-13, NIV-17) | Extension | B1: one level down is built ([D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)); continuing down the branch is not |
-| A manager of several units chooses, and the choice is remembered (NIV-5) | Extension | B8 |
+| A manager of several units chooses, and the choice is remembered (NIV-5) | Extension | B8 for a filter; since [D135](../decisions/D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) a manager of several units sees all of them without choosing |
 | Dialogue questions per area, general and per unit (D-21, D-25 to D-27) | Ready | A text or list view from a connector |
 | Manual status with a comment and an append-only history (D-22 to D-24) | Built | [D118](../decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md), against made-up areas |
 | Activities per unit and area, seen by the manager and the managers above (D-28 to D-30, NIV-10) | Built | [D118](../decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md): seen by the unit's manager and the manager they report to; further up needs B1 |

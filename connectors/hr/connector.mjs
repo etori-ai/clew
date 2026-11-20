@@ -80,6 +80,19 @@ export function createConnector({
     return personId ? { person: personId } : {};
   };
   const staff = unitId => records().employees.filter(e => e.unitId === unitId);
+  // A person with several assignments (D135): Clew sends every one, each unit with the role the person has there, and
+  // `unitId` and `role` are the primary one. A manager's reads and writes answer for every unit they manage, and never
+  // for one where they are an employee. Without the list, the primary unit alone, as before.
+  const several = actor => Array.isArray(actor.assignments) && actor.assignments.length > 1;
+  const managedUnits = actor =>
+    several(actor)
+      ? actor.assignments
+          .filter(a => a.role === 'manager')
+          .map(a => ({ clew: a.unitId, unit: unitMap[a.unitId] ?? a.unitId }))
+      : actor.role === 'manager'
+        ? [{ clew: actor.unitId, unit: unitOf(actor) }]
+        : [];
+  const managedStaff = actor => managedUnits(actor).flatMap(u => staff(u.unit));
 
   const decided = () => state.get('leave-decisions', {});
   const booked = () => state.get('talks', {});
@@ -222,7 +235,7 @@ export function createConnector({
       return { date, onDuty, absent };
     },
     'hr.absenceOverview': actor => {
-      const rows = staff(unitOf(actor))
+      const rows = managedStaff(actor)
         .map(e => ({
           ref: e.ref,
           // The employee's user name (their `personId` here), the key Clew knows them by (D97 item 6).
@@ -234,7 +247,7 @@ export function createConnector({
       return { rows };
     },
     'hr.absencePattern': (actor, input) => {
-      const e = records().employees.find(e => e.ref === input.ref && e.unitId === unitOf(actor));
+      const e = managedStaff(actor).find(e => e.ref === input.ref);
       if (!e) throw new Invalid('Medarbetaren finns inte i din enhet.');
       return {
         name: e.name,
@@ -246,7 +259,7 @@ export function createConnector({
     },
     'hr.leaveRequests': actor => {
       const done = decided();
-      const unit = staff(unitOf(actor)).map(e => e.ref);
+      const unit = managedStaff(actor).map(e => e.ref);
       const open = records().leaveRequests.filter(r => !done[r.ref] && unit.includes(r.employee));
       return {
         rows: open.map(r => ({
@@ -281,7 +294,7 @@ export function createConnector({
       const keys = input.keys;
       if (!Array.isArray(keys) || keys.length > KEYS_MAX || keys.some(k => typeof k !== 'string' || !k))
         throw new Invalid('Ogiltig förfrågan.');
-      const unit = managerOf(actor, unitOf(actor)) ? staff(unitOf(actor)) : [];
+      const unit = managedStaff(actor);
       const answered = new Set();
       const rows = [];
       for (const key of keys) {
@@ -299,7 +312,7 @@ export function createConnector({
     // What hr.bookTalk will do with the same input (D112), checked as the write checks it and written nowhere: the talk
     // registered on the employee with its time and place, and the ten minutes the write can be undone.
     'hr.bookTalkEffect': (actor, input) => {
-      const unit = staff(unitOf(actor)).map(e => e.ref);
+      const unit = managedStaff(actor).map(e => e.ref);
       if (!input.refs.length || input.refs.some(ref => !unit.includes(ref)))
         throw new Invalid('Medarbetaren finns inte i din enhet.');
       const n = input.refs.length;
@@ -344,7 +357,7 @@ export function createConnector({
     // with this payload, run after the manager's decision. A day the employee is already away is refused.
     'hr.prepareAbsence': (actor, input) => {
       const key = input.person;
-      const unit = managerOf(actor, unitOf(actor)) ? staff(unitOf(actor)) : [];
+      const unit = managedStaff(actor);
       const employee = typeof key === 'string' && unit.find(e => e.personId.toLowerCase() === key.toLowerCase());
       if (!employee) throw new Invalid('Medarbetaren finns inte i din enhet.');
       const from = input.from ?? today();
@@ -394,7 +407,7 @@ export function createConnector({
     'hr.bookTalk': (actor, input) => {
       if (fault === 'conflict') return conflictRows(input.refs, 'Omtankesamtal');
       const talks = booked();
-      const unit = staff(unitOf(actor)).map(e => e.ref);
+      const unit = managedStaff(actor).map(e => e.ref);
       const rows = input.refs.map(ref => {
         if (!unit.includes(ref)) return { ref, label: 'Omtankesamtal', outcome: 'failed', detail: 'inte i din enhet' };
         // The time, the place and the message the manager gave (D112) are kept with the talk.
@@ -439,7 +452,7 @@ export function createConnector({
     'hr.decideLeave': (actor, input) => {
       if (fault === 'conflict') return conflictRows(input.refs, 'Ansökan');
       const done = decided();
-      const unit = staff(unitOf(actor)).map(e => e.ref);
+      const unit = managedStaff(actor).map(e => e.ref);
       const rows = input.refs.map(ref => {
         const request = records().leaveRequests.find(r => r.ref === ref && unit.includes(r.employee));
         if (!request) return { ref, label: 'Ansökan', outcome: 'failed', detail: 'finns inte i personalsystemet' };
@@ -481,7 +494,7 @@ export function createConnector({
       const all = reported();
       const key = operationId ?? `${input.person}:${input.from}`;
       if (all[key]) return absenceReceipt(all[key]);
-      if (!staff(unitOf(actor)).some(e => e.ref === input.person))
+      if (!managedStaff(actor).some(e => e.ref === input.person))
         throw new Invalid('Medarbetaren finns inte i din enhet.');
       const row = {
         ref: `hr:absence:${input.person.split(':').pop()}:${input.from}`,
@@ -553,16 +566,19 @@ export function createConnector({
   function scan(actor) {
     const drafts = [];
     const day = today();
-    const unitId = unitOf(actor);
-    if (managerOf(actor, unitId)) {
-      const talks = booked();
-      const done = decided();
+    const talks = booked();
+    const done = decided();
+    // Every unit the person manages (D135): with several assignments, each card says which of their units it is about,
+    // by Clew's unit id; with one, the cards are as they were.
+    for (const { clew, unit: unitId } of managedUnits(actor)) {
+      const about = several(actor) ? { subjects: [{ entity: 'unit', key: clew }] } : {};
       for (const c of rehabCandidates(unitId, day)) {
         if (talks[c.employee.ref]) continue;
         const dueBy = addDays(c.latest, 14);
         drafts.push({
           topic: `hr:rehab:${c.employee.ref}`,
           area: 'employees',
+          ...about,
           title: 'Boka ett omtankesamtal med en medarbetare',
           summary:
             'Tredje korta sjukfrånvaron på sex månader. Kommunens rehabrutin 4.2 säger samtal inom två veckor. Namnet visas i personalsystemet, inte här.',
@@ -609,6 +625,7 @@ export function createConnector({
         drafts.push({
           topic: `hr:leave:${r.ref}`,
           area: 'employees',
+          ...about,
           title: `Godkänn en ledighetsansökan, ${shortDate(r.from)} till ${shortDate(r.to)}`,
           summary: `${r.days} dagar ${r.type}. ${clash ? 'En kollega har sökt samma period.' : 'Ingen annan i arbetslaget är ledig då'} och saldot räcker.`,
           reason: `Ansökan kom ${arrivalTime(r.submittedAt)}`,

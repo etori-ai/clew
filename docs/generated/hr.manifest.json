@@ -5,6 +5,7 @@
   "source": "Personalsystemet",
   "uses": [],
   "scan": true,
+  "assignments": true,
   "facts": [
     {
       "kind": "hr:absence",

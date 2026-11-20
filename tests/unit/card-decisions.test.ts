@@ -50,6 +50,25 @@ test('a stored execute action always becomes an approval, even if the card label
     presentation: { threadId: w.t.id },
   });
 });
+test('a decision on a work item about one unit hands the approval that unit; none or two hand none (D135)', async () => {
+  const w = await world();
+  const unitOne = draft(persona.id, { id: 't-one', subjects: [{ entity: 'unit', key: 'u-a' }] });
+  const unitTwo = draft(persona.id, {
+    id: 't-two',
+    subjects: [
+      { entity: 'unit', key: 'u-a' },
+      { entity: 'unit', key: 'u-b' },
+    ],
+  });
+  await w.store.transaction(async tx => {
+    await tx.insertThread(unitOne);
+    await tx.insertThread(unitTwo);
+  });
+  await w.uc.act(persona, 't-one', 'approve');
+  await w.uc.act(persona, 't-two', 'approve');
+  await w.uc.act(persona, w.t.id, 'approve');
+  expect(w.approvals.map(a => (a as { unit?: string }).unit)).toEqual(['u-a', undefined, undefined]);
+});
 test('foreign actions, stale selections and another owner cannot approve effects', async () => {
   const w = await world();
   await expect(w.uc.act({ id: 'other' } as AuthenticatedContext, w.t.id, 'approve')).rejects.toThrow(

@@ -173,6 +173,68 @@ describe('the HR fixture connector', () => {
     expect(await registry.scan(stranger)).toEqual([]);
     expect(await registry.run<Rows>(stranger, 'hr.leaveRequests', {})).toEqual({ rows: [] });
   });
+  test('a manager of two units gets the cards of both, each naming its unit, and decides on either; a unit where they are an employee gives no manager rows (D135)', async () => {
+    const { registry } = stack();
+    const sara: Actor = {
+      id: 'sara.nystrom',
+      name: 'Sara Nyström',
+      unitId: 'unit-ekonomi',
+      unitLabel: 'Ekonomiavdelningen',
+      role: 'manager',
+      assignments: [
+        { unitId: 'unit-ekonomi', unitLabel: 'Ekonomiavdelningen', role: 'manager' },
+        { unitId: 'unit-hr', unitLabel: 'HR-avdelningen', role: 'manager' },
+      ],
+    };
+    const drafts = await registry.scan(sara);
+    expect(drafts.map(d => [d.topic, d.subjects, d.items?.[0]?.subject])).toEqual([
+      [
+        'hr:leave:hr:leave:8101',
+        [{ entity: 'unit', key: 'unit-ekonomi' }],
+        { entity: 'person', key: 'amir.pettersson' },
+      ],
+      ['hr:leave:hr:leave:8201', [{ entity: 'unit', key: 'unit-hr' }], { entity: 'person', key: 'hanna.eriksson' }],
+    ]);
+    expect((await registry.run<Rows<{ ref: string }>>(sara, 'hr.leaveRequests', {})).rows.map(r => r.ref)).toEqual([
+      'hr:leave:8101',
+      'hr:leave:8201',
+    ]);
+    const decided = await registry.run<Result>(
+      sara,
+      'hr.decideLeave',
+      { refs: ['hr:leave:8201'], decision: 'approve' },
+      { operationId: 'op-second-unit' },
+    );
+    expect(decided.rows.map(r => r.outcome)).toEqual(['done']);
+    // Told only the primary unit, the source answers for it alone, as before.
+    const primary: Actor = { ...sara };
+    delete primary.assignments;
+    expect((await registry.scan(primary)).map(d => d.topic)).toEqual(['hr:leave:hr:leave:8101']);
+    const refused = await registry.run<Result>(
+      primary,
+      'hr.decideLeave',
+      { refs: ['hr:leave:8101', 'hr:leave:8201'], decision: 'reject' },
+      { operationId: 'op-primary-only' },
+    );
+    expect(refused.rows.map(r => r.outcome)).toEqual(['done', 'failed']);
+    // A manager of the school who is an employee of the finance department sees the school's work and nothing of the
+    // department's: the source keeps the roles apart.
+    const mixed: Actor = {
+      ...hillevi,
+      assignments: [
+        { unitId: 'unit-ekonomi', unitLabel: 'Ekonomiavdelningen', role: 'employee' },
+        { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' },
+      ],
+    };
+    const school = await registry.scan(mixed);
+    expect(school.map(d => d.topic)).toEqual((await registry.scan(hillevi)).map(d => d.topic));
+    expect(
+      school.every(d => JSON.stringify(d.subjects) === JSON.stringify([{ entity: 'unit', key: 'unit-skola' }])),
+    ).toBe(true);
+    expect((await registry.run<Rows>(mixed, 'hr.person', { keys: ['amir.pettersson', 'anna'] })).rows).toHaveLength(1);
+    // One assignment: the cards are as they were, with no unit on them.
+    expect((await registry.scan(hillevi)).every(d => d.subjects === undefined)).toBe(true);
+  });
   test('the figures and the reads follow the role: names for the manager, "En kollega" for an employee', async () => {
     const { registry } = stack();
     const [employees] = await registry.areas(hillevi);

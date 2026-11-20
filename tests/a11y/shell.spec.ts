@@ -47,6 +47,36 @@ for (const viewport of [desktop, narrow])
     await expect(nav.getByRole('button', { name: /^Påminnelser/ })).toHaveCount(0);
   });
 
+test('a person with several units: the band names both of two, or the first and how many more, and the settings list every one (D135)', async ({
+  page,
+  api,
+}) => {
+  const school = { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' as const };
+  api.assignments = [school, { unitId: 'unit-haga', unitLabel: 'Hagaskolan', role: 'manager' }];
+  await page.setViewportSize(desktop);
+  await open(page, '/');
+  await expect(personButton(page)).toHaveAccessibleName(
+    'Testa Testsson, Skönsmons skola och Hagaskolan, inställningar',
+  );
+  api.assignments = [...api.assignments, { unitId: 'unit-forskola', unitLabel: 'Granlo förskola', role: 'employee' }];
+  await open(page, '/');
+  await expect(personButton(page)).toHaveAccessibleName(
+    'Testa Testsson, Skönsmons skola och 2 enheter till, inställningar',
+  );
+  // The dialog the band's person opens names every unit, where the band says how many more.
+  await personButton(page).click();
+  const dialog = page.getByRole('dialog', { name: 'Testa Testsson', exact: true });
+  await expect(dialog).toContainText('Skönsmons skola, Hagaskolan och Granlo förskola');
+  await expectNoAxeViolations(page);
+  await page.keyboard.press('Escape');
+  await expect(personButton(page)).toBeFocused();
+  // So does the settings dialog reached from the person's own page.
+  await open(page, '/?settings=1');
+  await expect(page.getByRole('dialog', { name: 'Testa Testsson', exact: true })).toContainText(
+    'Skönsmons skola, Hagaskolan och Granlo förskola',
+  );
+});
+
 for (const viewport of [desktop, narrow])
   test(`the person on the band is named by what it shows and opens the settings, where "Min sida" leads to their own page, at ${viewport.width}px`, async ({
     page,

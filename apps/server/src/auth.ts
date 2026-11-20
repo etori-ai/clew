@@ -1,8 +1,9 @@
 import * as oidc from 'openid-client';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { relationGrantsOf, type AuthenticatedContext } from '@clew/contracts';
+import type { AuthenticatedContext } from '@clew/contracts';
 import { database } from '@clew/db';
 import { logger } from './logging';
+import { personFields } from './person-context';
 import {
   ABSOLUTE_MS,
   IDLE_MS,
@@ -396,21 +397,7 @@ export async function authenticate(raw: string | undefined) {
   const version = authorizationVersion(access),
     groups = await readGroups(access.person.id);
   const context: AuthenticatedContext = {
-    id: access.person.id,
-    name: access.person.name,
-    unitId: access.grant.unitId,
-    unitLabel: access.grant.unitLabel,
-    role: access.grant.role,
-    ...(access.person.userName ? { userName: access.person.userName } : {}),
-    organisationId: access.person.organisationId,
-    principal: { id: 'person:' + access.person.id, kind: 'person' },
-    capabilities: access.grant.capabilities,
-    // D121: a relation to people held by grant, from the access record read on this request; never a capability.
-    ...(relationGrantsOf(access.grant.relations).length
-      ? { relationGrants: relationGrantsOf(access.grant.relations) }
-      : {}),
-    groups,
-    authorizationVersion: version,
+    ...personFields(access, groups, version),
     sessionBinding: digest,
     expiresAt: new Date(Math.min(row.idleExpiresAt.getTime(), row.expiresAt.getTime())).toISOString(),
     async authorize() {

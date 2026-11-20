@@ -29,9 +29,11 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
     ],
   };
   // The person's directory user name is signed with the rest of the actor when they have one (D44, D97): the key a
-  // connector knows them by; so are the units they follow up when the call has them (D117). Both optional, so a grant
-  // signed without them still verifies.
-  const sign = (audience: string, actor: Actor, claims: Record<string, unknown>) =>
+  // connector knows them by; so are the units they follow up when the call has them (D117), and, on a request's
+  // assertion, every assignment of a person who holds more than one (D135). All optional, so a grant signed without them
+  // still verifies. The callback grant never carries the assignments: Clew answers a callback from the person's current
+  // record, and what is signed twice is what makes a header too large (issue 64).
+  const sign = (audience: string, actor: Actor, claims: Record<string, unknown>, assignments = false) =>
     new SignJWT({
       actor: {
         id: actor.id,
@@ -41,6 +43,9 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
         unitLabel: actor.unitLabel,
         ...(actor.userName ? { userName: actor.userName } : {}),
         ...(actor.units?.length ? { units: actor.units } : {}),
+        ...(assignments && actor.assignments && actor.assignments.length > 1
+          ? { assignments: actor.assignments.map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })) }
+          : {}),
       },
       ...claims,
     })
@@ -70,11 +75,16 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
       const callback = uses.length
         ? await sign('clew:connector-callback', actor, { connectorId, uses, chain })
         : undefined;
-      return sign(connectorId, actor, {
-        ...(callback ? { callback } : {}),
-        ...(binding ? { body: bodyDigest(binding.body) } : {}),
-        ...(binding?.capability ? { capability: binding.capability } : {}),
-      });
+      return sign(
+        connectorId,
+        actor,
+        {
+          ...(callback ? { callback } : {}),
+          ...(binding ? { body: bodyDigest(binding.body) } : {}),
+          ...(binding?.capability ? { capability: binding.capability } : {}),
+        },
+        true,
+      );
     },
     /**
      * The installation's own assertion, for a read Clew makes with no person behind it (D119): subject

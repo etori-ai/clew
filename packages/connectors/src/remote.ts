@@ -322,9 +322,16 @@ function installationRead(
  * hands it the actor inside the process, which may carry the person's groups or a whole authenticated context; every
  * body posted here carries the published actor (`actorOf`) and nothing more, as the protocol's request schemas require.
  */
-export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTransport): Connector {
+export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransport): Connector {
   const source = manifest.source;
   const told = (clew: Clew) => (clew.about ? { about: clew.about } : {});
+  // D135: a person's assignments reach only a connector that says it takes them, so one built to refuse a property it
+  // does not know is never sent one. Left out of the body and the assertion alike.
+  const tell = (actor: Actor): Actor => (manifest.assignments ? actor : { ...actor, assignments: undefined });
+  const published = (actor: Actor) => actorOf(tell(actor));
+  const transport: RemoteTransport = manifest.assignments
+    ? given
+    : { ...given, assert: (actor, chain, binding) => given.assert(tell(actor), chain, binding) };
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name,
     kind: c.kind,
@@ -353,7 +360,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
         CAPABILITY_ROUTE + encodeURIComponent(c.name),
         actor,
         // How the actor stands to each key the input names (D117), bound with the input by the assertion.
-        { actor: actorOf(actor), input, ...told(clew) },
+        { actor: published(actor), input, ...told(clew) },
         await delegated(manifest, clew, source),
         clew.chain,
         clew.operationId,
@@ -375,7 +382,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
             request: import('@clew/contracts').DocumentRequest,
             clew: Clew,
           ): Promise<DocumentContent> => {
-            const text = JSON.stringify({ actor: actorOf(actor), request, ...told(clew) });
+            const text = JSON.stringify({ actor: published(actor), request, ...told(clew) });
             const response = await (transport.fetch ?? fetch)(transport.url + '/clew/documents', {
               redirect: 'error',
               method: 'POST',
@@ -444,7 +451,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
             list: manifest.assistants.list,
             ask: async function* (actor: Actor, ask: AssistantAsk, clew: Clew): AsyncGenerator<AssistantAskEvent> {
               // The body is serialised once: the assertion is bound to exactly these bytes (D117).
-              const text = JSON.stringify({ actor: actorOf(actor), ask });
+              const text = JSON.stringify({ actor: published(actor), ask });
               const signal = AbortSignal.any([
                 AbortSignal.timeout(transport.askTotalMs ?? ASK_TOTAL_MS),
                 ...(clew.signal ? [clew.signal] : []),
@@ -523,7 +530,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
                 source,
                 '/clew/figure',
                 actor,
-                { actor: actorOf(actor), area: a.id },
+                { actor: published(actor), area: a.id },
                 undefined,
                 clew.chain,
                 undefined,
@@ -545,7 +552,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
               source,
               '/clew/scan',
               actor,
-              { actor: actorOf(actor) },
+              { actor: published(actor) },
               await delegated(manifest, clew, source),
               clew.chain,
               undefined,

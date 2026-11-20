@@ -6,6 +6,7 @@ import {
   type Occurrence,
   type RefreshDeps,
   type RefreshRequest,
+  type RefreshTx,
 } from '../refresh-model';
 import { keyedDrafts } from './keys';
 
@@ -39,6 +40,21 @@ export function refreshUsecases({
   session,
   people,
 }: RefreshDeps) {
+  /**
+   * An open card the person can no longer see, because it was made under authority they no longer hold (D75), is closed
+   * when a scan under their current authority makes the card for the same work (D135), with its audit row.
+   */
+  async function supersede(tx: RefreshTx, threadId: string, connector: string, at: string) {
+    await tx.updateThread(threadId, { state: 'handled', handledAt: at, waitingOn: null, updatedAt: at });
+    await tx.cancelTimer(`snooze:${threadId}`, at);
+    await tx.writeAudit({
+      actor: 'system:refresh',
+      action: 'thread.superseded',
+      subject: `thread:${threadId}`,
+      at,
+      details: { connector },
+    });
+  }
   async function request(persona: AuthenticatedContext) {
     await persona.authorize();
     const at = clock().toISOString(),
@@ -173,6 +189,9 @@ export function refreshUsecases({
           // Changing authority must not create another approval for an unresolved or already-confirmed occurrence.
           if (thread.execution && ['pending', 'running', 'unknown'].includes(thread.execution.state)) continue;
           if ((thread.receipt || thread.state === 'dismissed') && !changed) continue;
+          // D135: an open card made under other authority is superseded by the one this scan makes for the same work, so
+          // a change of the person's assignments leaves no hidden open card behind. A receipt or a dismissal is history.
+          if (thread.state === 'open' && !thread.receipt) await supersede(tx, thread.id, job.connector, at);
           thread = undefined;
         }
         // An action accepted during this scan wins. A newer observation may try again on the next refresh.
@@ -212,6 +231,8 @@ export function refreshUsecases({
               week: null,
               actions: d.actions,
               items: d.items ?? [],
+              // D135: the units the source says the card is about (D97 item 6).
+              ...(d.subjects?.length ? { subjects: d.subjects } : {}),
               waitingOn: d.waitingOn ?? null,
               deadline: d.deadline ?? null,
               trigger: { reason: d.reason, source: system(job.connector), at },

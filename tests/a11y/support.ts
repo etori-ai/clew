@@ -7,6 +7,7 @@ import type {
   PanelViewSpec,
   Thread,
   SiteHeaderView,
+  UserAssignment,
   ViewEntry,
 } from '@clew/contracts';
 import {
@@ -345,6 +346,11 @@ export class MockApi {
    */
   employee = false;
   /**
+   * Every unit of a session person who holds more than one (D135), as `GET /api/auth/session` gives them; undefined for
+   * the ordinary person with one unit.
+   */
+  assignments: UserAssignment[] | undefined = undefined;
+  /**
    * Kompetens (D108): the catalogue a certificate is registered from. Null: the module is switched off for the person,
    * so its routes are refused and Personal offers no registration.
    */
@@ -595,7 +601,15 @@ export class MockApi {
       return this.signedIn
         ? json({
             ...session,
-            ...(this.employee ? { user: { ...user, role: 'employee' } } : {}),
+            ...(this.employee || this.assignments
+              ? {
+                  user: {
+                    ...user,
+                    ...(this.employee ? { role: 'employee' } : {}),
+                    ...(this.assignments ? { assignments: this.assignments } : {}),
+                  },
+                }
+              : {}),
             admin: this.admin && this.capabilities.length > 0,
             capabilities: this.admin ? this.capabilities : [],
             // D121: a relation to people by grant is never an admin flag; it only draws Kompetenssökning.

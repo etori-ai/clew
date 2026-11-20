@@ -1,3 +1,4 @@
+import { testPasswordKey } from './test-password-key';
 /**
  * Runs on the host against the published dev port: real Keycloak login as the manager, then a job across systems (D55)
  * end to end through the API on the fixture connectors. The bindings must exist first (`bun run dev:connectors`,
@@ -10,12 +11,12 @@ const base = process.env.PUBLIC_URL ?? 'http://localhost:3020';
 const envFile = process.env.AUTH_TEST_ENV ?? '.auth-test.env';
 const env = Object.fromEntries(
   (await Bun.file(envFile).text()).split('\n').flatMap(line => {
-    const m = /^([A-Z_]+)=(.*)$/.exec(line);
+    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line);
     return m ? [[m[1]!, m[2]!]] : [];
   }),
 );
 async function login(user: string) {
-  const password = env['TEST_' + user.toUpperCase() + '_PASSWORD'];
+  const password = env[testPasswordKey(user)];
   if (!password) throw new Error('Test password missing in ' + envFile + ' for ' + user);
   const jar = new Map<string, string>();
   const cookieHeader = () => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');

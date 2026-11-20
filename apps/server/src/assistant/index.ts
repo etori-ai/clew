@@ -549,6 +549,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       name: persona.name,
       role: persona.role,
       unitLabel: persona.unitLabel,
+      ...(persona.assignments ? { unitId: persona.unitId, assignments: persona.assignments } : {}),
       now,
       week: weekNumber(displayDate(now.toISOString())),
       // What stands open beside the transcript is said as that, apart from what the person added to the conversation.

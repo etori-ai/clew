@@ -32,10 +32,16 @@ export function SiteHeaderPerson({
   onSignOut,
   appearance,
   pageHref,
+  detail,
 }: {
   name: string;
-  /** Under the name in the dialog: the person's unit or role, as the host knows it. */
+  /** Under the name on the band and in the dialog: the person's unit or role, as the host knows it. */
   description?: string;
+  /**
+   * In the dialog in place of `description`, when the band's short form leaves something out: every unit of a person who
+   * holds several, where the band says the first and how many more (D135).
+   */
+  detail?: string;
   onSignOut?: () => void;
   appearance?: SiteHeaderAppearance;
   /**
@@ -99,7 +105,7 @@ export function SiteHeaderPerson({
       <Dialog isOpen={isOpen} onOpenChange={setIsOpen}>
         <DialogHeader title={name} onOpenChange={setIsOpen} />
         <VStack gap={4} padding={3}>
-          {description ? <Text type="supporting">{description}</Text> : null}
+          {(detail ?? description) ? <Text type="supporting">{detail ?? description}</Text> : null}
           {appearance ? (
             <RadioList
               label="Utseende"

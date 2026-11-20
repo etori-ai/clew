@@ -54,6 +54,12 @@ export {
   type Activity,
 } from './presentation';
 
+/** One of a person's assignments (D68): a unit they are placed on or manage, with its label and their role there. */
+export interface UserAssignment {
+  unitId: string;
+  unitLabel: string;
+  role: 'manager' | 'employee';
+}
 /** Identity as the browser may see it. Never carries tokens, bindings or grants. */
 export interface SessionUser {
   id: string;
@@ -61,6 +67,11 @@ export interface SessionUser {
   unitId: string;
   unitLabel: string;
   role: 'manager' | 'employee';
+  /**
+   * Every assignment the person holds, from their current grant, when there is more than one (D135); `unitId` and
+   * `role` are the primary one and it is among them. Absent for a person with one assignment.
+   */
+  assignments?: UserAssignment[];
 }
 /** In-process identity with a revalidation guard. Never serialised to the browser. */
 export interface AuthenticatedContext extends SessionUser {
@@ -92,12 +103,41 @@ export interface AuthenticatedContext extends SessionUser {
   /** A token the IdP issued for `audience` by token exchange from this session (D26). Absent when no session is behind the context; undefined under a session without IdP tokens. */
   delegate?: (audience: string) => Promise<string | undefined>;
 }
+/**
+ * The order of unit ids (D101 item 8): character by character, by UTF-16 code unit, as `<` and JavaScript's default sort
+ * compare. A unit id is an opaque key, so no locale orders it, and no upgrade of ICU or Node moves anyone's primary unit
+ * or the authority that covers their assignments. The one comparator for both.
+ */
+export const byUnitId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+/**
+ * A person's assignments as a stored grant holds them (D135), only those of a well-formed shape, in unit id order by
+ * UTF-16 code unit (D101 item 8); absent when there are fewer than two, as for a person with one assignment.
+ */
+export function assignmentsOf(values: unknown): UserAssignment[] | undefined {
+  if (!Array.isArray(values)) return undefined;
+  const held = values
+    .filter(
+      (v): v is UserAssignment =>
+        !!v &&
+        typeof v === 'object' &&
+        typeof (v as UserAssignment).unitId === 'string' &&
+        typeof (v as UserAssignment).unitLabel === 'string' &&
+        ((v as UserAssignment).role === 'manager' || (v as UserAssignment).role === 'employee'),
+    )
+    .map(v => ({ unitId: v.unitId, unitLabel: v.unitLabel, role: v.role }))
+    .sort((a, b) => byUnitId(a.unitId, b.unitId));
+  return held.length > 1 ? held : undefined;
+}
 export const sessionUser = (c: SessionUser): SessionUser => ({
   id: c.id,
   name: c.name,
   unitId: c.unitId,
   unitLabel: c.unitLabel,
   role: c.role,
+  // D135: every unit of a person who holds more than one; `units` (D117) is the server's and never leaves.
+  ...(c.assignments && c.assignments.length > 1
+    ? { assignments: c.assignments.map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })) }
+    : {}),
 });
 
 const object = <T extends Record<string, TSchema>>(properties: T, description?: string) =>

@@ -24,6 +24,7 @@ import type {
   ReceiptRow,
   SearchKind,
   SessionUser,
+  UserAssignment,
   SystemMark,
   PanelViewSpec,
   ThreadAction,
@@ -110,6 +111,8 @@ export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | '
   userName?: string;
   /** The units the person follows up (D117), when the call has them. */
   units?: Array<{ unitId: string; unitLabel: string }>;
+  /** Every assignment of a person who holds more than one (D135); `unitId` and `role` are the primary one. */
+  assignments?: UserAssignment[];
 };
 /** An actor with the provisioned groups the authenticated context carries (D68); a bare actor has none. */
 export type AudiencedActor = Actor & { groups?: readonly string[] };
@@ -125,6 +128,9 @@ export const actorOf = (persona: Actor): Actor => ({
   role: persona.role,
   ...(persona.userName ? { userName: persona.userName } : {}),
   ...(persona.units?.length ? { units: persona.units.map(u => ({ unitId: u.unitId, unitLabel: u.unitLabel })) } : {}),
+  ...(persona.assignments && persona.assignments.length > 1
+    ? { assignments: persona.assignments.map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })) }
+    : {}),
 });
 /**
  * The actor inside Clew's process: the published actor and the person's provisioned groups, which an audience's
@@ -437,6 +443,8 @@ export interface ThreadDraft {
   actions: ThreadAction[];
   waitingOn?: string | null;
   deadline?: string | null;
+  /** The units the card is about, by Clew's unit id (D135); a row names a person in its own `subject`. */
+  subjects?: Array<{ entity: 'unit'; key: string }>;
 }
 /** A fact kind a connector creates (D55). The kind's name is its contract (D37): a breaking change is a new kind. */
 export interface FactDeclaration {

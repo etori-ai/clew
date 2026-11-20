@@ -1,7 +1,8 @@
-import { relationGrantsOf, type AuthenticatedContext } from '@clew/contracts';
+import type { AuthenticatedContext } from '@clew/contracts';
 import { groupsStillMatch, readAccess, readGroups } from '@clew/db/auth';
 import { authorizationVersion } from './auth-crypto';
 import { ForbiddenError } from './context';
+import { personFields } from './person-context';
 
 /**
  * An identity built from the person's current grant instead of a session: the nightly scan, a connector's figure,
@@ -16,20 +17,7 @@ export async function systemContext(
   const version = authorizationVersion(access),
     groups = await readGroups(personId);
   return {
-    id: access.person.id,
-    name: access.person.name,
-    unitId: access.grant.unitId,
-    unitLabel: access.grant.unitLabel,
-    role: access.grant.role,
-    ...(access.person.userName ? { userName: access.person.userName } : {}),
-    organisationId: access.person.organisationId,
-    principal: { id: 'person:' + personId, kind: 'person' },
-    capabilities: access.grant.capabilities,
-    ...(relationGrantsOf(access.grant.relations).length
-      ? { relationGrants: relationGrantsOf(access.grant.relations) }
-      : {}),
-    groups,
-    authorizationVersion: version,
+    ...personFields(access, groups, version),
     sessionBinding: binding,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     async authorize() {

@@ -58,6 +58,11 @@ type ApproveInput = {
   asked?: Record<string, string>;
   /** The person a started action is about (D122): `payload[param]` is the user name they held when it was decided. */
   subject?: { param: string; personId: string };
+  /**
+   * The unit the decided work item is about (D135), as the card names it. The audit row says it only when it is one of
+   * the person's assignments: the card's unit is the source's word, not Clew's.
+   */
+  unit?: string;
 };
 /** Which of the person's kept sessions stood behind a call to a connector that acts as them (D26); what the audit records instead of a binding. */
 type Backing = 'approving' | 'checking';
@@ -140,6 +145,7 @@ export function executionUsecases({
     persona: AuthenticatedContext,
     execution: Execution,
     asked?: Record<string, string>,
+    unit?: string,
   ): Promise<Execution> {
     const saved = await tx.insert(execution);
     if (!retainsAuthority(persona, saved.execution)) throw new ExecutionError('Åtgärden finns inte.');
@@ -158,6 +164,7 @@ export function executionUsecases({
           compensates: execution.compensates,
           ...(execution.approvingSession ? { session: 'approving' } : {}),
           ...(asked && Object.keys(asked).length ? { asked } : {}),
+          ...(unit ? { unit } : {}),
         },
       });
       await tx.enqueue(executionStart('execution:' + execution.id, execution.id));
@@ -171,7 +178,9 @@ export function executionUsecases({
     if (input.asked && Object.entries(input.asked).some(([key, value]) => payload[key] !== value))
       throw new ExecutionError('Svaren och beslutet gäller olika innehåll.');
     const execution = await prepare(persona, input, clock().toISOString());
-    const saved = await store.transaction(tx => commit(tx, persona, execution, input.asked));
+    // D135: the work item's unit, when it is one of the units the person holds; the execution still acts as the primary.
+    const unit = input.unit && persona.assignments?.some(a => a.unitId === input.unit) ? input.unit : undefined;
+    const saved = await store.transaction(tx => commit(tx, persona, execution, input.asked, unit));
     const result = await read(persona, saved.id);
     if (!result) throw new ExecutionError('Åtgärden finns inte.');
     return result;

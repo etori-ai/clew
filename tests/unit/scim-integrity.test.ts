@@ -521,7 +521,7 @@ describe('what a group write costs and what it leaves in the audit', () => {
       BASE,
     );
     const before = store.state.audit.length;
-    // The grant does not move (a1 is still the unit they act as), and what they now see does.
+    // a1 is still the unit they act as; the grant carries both units now (D135), and its row says where they are.
     await scim.createGroup(
       a,
       { externalId: 'unit-manager:z9', displayName: 'Chefer Z9', members: [{ value: manager }] },
@@ -530,10 +530,14 @@ describe('what a group write costs and what it leaves in the audit', () => {
     expect(store.state.audit.slice(before).map(row => [row.action, row.subject, row.details])).toEqual([
       ['scim.group.created', expect.stringMatching(/^group:/), expect.objectContaining({ members: 1 })],
       [
-        'assignments.derived',
+        'grant.derived',
         'person:' + manager,
         {
-          assignments: [
+          unitId: 'a1',
+          role: 'manager',
+          capabilities: [],
+          assignments: 2,
+          placements: [
             { unitId: 'a1', role: 'manager' },
             { unitId: 'z9', role: 'manager' },
           ],
