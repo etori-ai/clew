@@ -507,7 +507,7 @@ api.post('/conversation/stream', async c => {
     }
   });
 });
-/** The conversation's page opened a conversation asked beside a page (D130 rule 6): marked once, answered with the thread. */
+/** The conversation's page opened a conversation asked beside a page (D135 rule 6): marked once, answered with the thread. */
 api.post('/conversations/:id/opened', async c => {
   const thread = await markOpened(c.get('session').context, c.req.param('id'));
   return thread ? c.json(thread) : c.json({ error: 'Samtalet finns inte.' }, 404);
@@ -528,7 +528,7 @@ api.get('/threads/:id/verbs', async c => {
 /** The assistants of other systems the person may hand a conversation to (the assistants profile); empty when no source has any for them. */
 api.get('/assistant/handover', async c => c.json({ assistants: await listAssistants(c.get('session').context) }));
 /**
- * What the assistant may fill in for what stands open on the page (D133 item 7): the same two fields a question carries
+ * What the assistant may fill in for what stands open on the page (D138 item 7): the same two fields a question carries
  * about it, answered with the actions' titles, empty for anything the person may not see. Reads no record, writes nothing.
  */
 api.post('/assistant/reach', async c =>

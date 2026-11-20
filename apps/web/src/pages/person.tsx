@@ -297,7 +297,7 @@ export function OverviewSection({ answer, href, level }: { answer: SectionAnswer
  * reached from a name on Personal or on any row that names them. The thing's page (`EntityPage`): the way back, their
  * avatar, name, title and unit, the actions under the name (the first as the primary, the second as a secondary, the
  * rest under "Fler åtgärder"; the corner's "Fråga AI" opens the assistant's pane about the person beside the page,
- * D131, D133), then the person's
+ * D136, D138), then the person's
  * sections as tabs, each a link with its own address (`?section=`, D126 rule 9): Översikt (Behöver dig and each
  * source's row in short with "Visa allt"), one tab per source that has something about them (its row and its fuller
  * read; the talk's tab is the talk itself, D126 rule 3), Ärenden (the reader's work items about them) and, on the
@@ -424,7 +424,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     const { name } = detail.entity;
     // The way back (board Person): the page in `from` when Clew can name it, else Personal for the reader's own people.
     const back = origin ?? (!from && detail.relation === 'managed' ? { label: 'Personal', href: '/staff' } : null);
-    // What the assistant beside the page is about (D131 items 1 to 4 and 7): the person, the same subject from every tab
+    // What the assistant beside the page is about (D136 items 1 to 4 and 7): the person, the same subject from every tab
     // (the product owner, 2026-11-14: one conversation per person, not one per tab), told to the server by Clew's id
     // with every question. The tab only says what the pane beside the conversation it opens as shows first, where that
     // pane has the tab (a source's or Ärenden; the reader's own Kompetens and Introduktion write, and stay on this

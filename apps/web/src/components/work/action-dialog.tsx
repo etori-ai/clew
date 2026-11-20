@@ -83,7 +83,7 @@ export type ActionTarget =
   /** An action on a work item: its effect is read and its decision sent on the item, with the rows chosen there. */
   | { kind: 'item'; thread: Thread; action: CardAction; refs?: string[] }
   /**
-   * An action about a person or a unit before any work item exists (D126 item 7), or about a record (D132): a propose,
+   * An action about a person or a unit before any work item exists (D126 item 7), or about a record (D137): a propose,
    * which drafts the item with the values, or an execute, which becomes its item with the decision made. Nothing exists
    * before the last button; `readEffect` reads an execute's "Det här händer" for the values on the step, before anything
    * is created. A record stands where an entity's key does: `kind` `record` and its read and input as one key.

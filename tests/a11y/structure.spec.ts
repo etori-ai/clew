@@ -344,7 +344,7 @@ test.describe('D26 questions answered from documents', () => {
       '_blank',
     );
     // A passage goes into a conversation only beside a conversation's own box (D112 item 7); the page's way to the
-    // assistant is the corner's "Fråga AI" (D133 item 1).
+    // assistant is the corner's "Fråga AI" (D138 item 1).
     await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Fråga AI', exact: true })).toBeVisible();

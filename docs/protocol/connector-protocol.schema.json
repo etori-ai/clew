@@ -1906,10 +1906,10 @@
                       }
                     },
                     "additionalProperties": false,
-                    "description": "About one record of a read (D132). Only on a `propose` or `execute`. Clew lists the action on the record's page for a person who may call it and who can make the record's read with that input, fills the mapped properties from it and asks the rest (`asks`). A `propose` becomes a work item; an `execute` runs after the person's decision, as every execute does. The assistant may fill it in for the record that stands open (`clew.draftAction`), never send it."
+                    "description": "About one record of a read (D137). Only on a `propose` or `execute`. Clew lists the action on the record's page for a person who may call it and who can make the record's read with that input, fills the mapped properties from it and asks the rest (`asks`). A `propose` becomes a work item; an `execute` runs after the person's decision, as every execute does. The assistant may fill it in for the record that stands open (`clew.draftAction`), never send it."
                   }
                 ],
-                "description": "What the capability concerns, in one of two forms. `{ entity, param? }` (D97): a person or a unit. `{ record, params }` (D132): on a `propose` or an `execute` only, one record of a read of this connector, the action's inputs filled from the record's. A source says what, never where: Clew places it from the declaration."
+                "description": "What the capability concerns, in one of two forms. `{ entity, param? }` (D97): a person or a unit. `{ record, params }` (D137): on a `propose` or an `execute` only, one record of a read of this connector, the action's inputs filled from the record's. A source says what, never where: Clew places it from the declaration."
               },
               "person": {
                 "type": "object",
@@ -2205,7 +2205,7 @@
                 },
                 "minItems": 1,
                 "maxItems": 6,
-                "description": "On a `propose` or `execute` (D112): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action's dialog, \"Fyll i\", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action's own `input` on a work item, the entity (`about.param`) or the record (`about.params`, D132). An answer for anything not asked is refused."
+                "description": "On a `propose` or `execute` (D112): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action's dialog, \"Fyll i\", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action's own `input` on a work item, the entity (`about.param`) or the record (`about.params`, D137). An answer for anything not asked is refused."
               },
               "effect": {
                 "type": "string",
@@ -5801,7 +5801,7 @@
               "const": "held"
             }
           ],
-          "description": "`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held."
+          "description": "`missing`: no talk is booked or held. `booked`: the system records when the talk is to take place. `held`: the manager has marked it held."
         },
         "at": {
           "anyOf": [
@@ -5816,7 +5816,59 @@
               "maxLength": 40
             }
           ],
-          "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked."
+          "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk the system does not say the time of."
+        },
+        "until": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40,
+          "description": "For a booked talk: when it ends."
+        },
+        "invited": {
+          "type": "boolean",
+          "description": "For a booked talk: true when an invitation the system sent carries the booking, false when a manager registered the time by hand."
+        },
+        "own": {
+          "type": "boolean",
+          "description": "For a booked talk: true when the booking is the reader's own, so theirs to settle."
+        },
+        "calendar": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "start",
+                "end"
+              ],
+              "properties": {
+                "start": {
+                  "type": "string",
+                  "format": "date-time",
+                  "maxLength": 40
+                },
+                "end": {
+                  "type": "string",
+                  "format": "date-time",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "gone"
+              ],
+              "properties": {
+                "gone": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "For a booked talk an invitation carries, when the calendar no longer holds what the booking says (D133): the time the event has now, or that it is gone. The booking stands until its manager settles it. Absent while they agree."
         },
         "openCommitments": {
           "type": "integer",
@@ -5924,7 +5976,7 @@
                     "const": "held"
                   }
                 ],
-                "description": "`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held."
+                "description": "`missing`: no talk is booked or held. `booked`: the system records when the talk is to take place. `held`: the manager has marked it held."
               },
               "at": {
                 "anyOf": [
@@ -5939,7 +5991,59 @@
                     "maxLength": 40
                   }
                 ],
-                "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked."
+                "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk the system does not say the time of."
+              },
+              "until": {
+                "type": "string",
+                "format": "date-time",
+                "maxLength": 40,
+                "description": "For a booked talk: when it ends."
+              },
+              "invited": {
+                "type": "boolean",
+                "description": "For a booked talk: true when an invitation the system sent carries the booking, false when a manager registered the time by hand."
+              },
+              "own": {
+                "type": "boolean",
+                "description": "For a booked talk: true when the booking is the reader's own, so theirs to settle."
+              },
+              "calendar": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "start",
+                      "end"
+                    ],
+                    "properties": {
+                      "start": {
+                        "type": "string",
+                        "format": "date-time",
+                        "maxLength": 40
+                      },
+                      "end": {
+                        "type": "string",
+                        "format": "date-time",
+                        "maxLength": 40
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "gone"
+                    ],
+                    "properties": {
+                      "gone": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ],
+                "description": "For a booked talk an invitation carries, when the calendar no longer holds what the booking says (D133): the time the event has now, or that it is gone. The booking stands until its manager settles it. Absent while they agree."
               },
               "openCommitments": {
                 "type": "integer",
@@ -5960,7 +6064,7 @@
         },
         "bookedUnknown": {
           "type": "boolean",
-          "description": "True when the system could not tell who is booked (the calendar did not answer), so a `missing` row may be booked."
+          "description": "True when the system could not tell who is booked, so a `missing` row may be booked."
         }
       },
       "additionalProperties": false,

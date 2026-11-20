@@ -146,7 +146,7 @@ export interface About {
   /** A person or a unit: said under the first question, and a person's first name in the empty box. */
   entity?: { kind: EntitySubjectKind; name: string | null };
   /**
-   * The person, the unit or the record the address puts beside the transcript, as the thing that stands open (D131
+   * The person, the unit or the record the address puts beside the transcript, as the thing that stands open (D136
    * item 1): it goes with every question here, as the same thing does from its page's pane. A work item goes as its chip.
    */
   thing?: OpenThing;
@@ -415,7 +415,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
 }
 
 /**
- * A conversation asked beside a page is opened as a conversation when its page shows it (D130 rule 6): the page says so
+ * A conversation asked beside a page is opened as a conversation when its page shows it (D135 rule 6): the page says so
  * once, and the answer goes into the cache (D33), so the rail lists it among the latest from then on. Only for one not
  * marked yet; a failure is left alone, and the next visit says it again.
  */
@@ -584,7 +584,7 @@ function useAbout({
       </VStack>
     );
     // One record (not a read whose rows are a page, which leads to its page) is the thing that stands open, with the
-    // input the address draws it with (D131 item 1).
+    // input the address draws it with (D136 item 1).
     const record = rows ? undefined : recordThing(open, addressInput(q.get('open-input')));
     return {
       subject: true,
@@ -606,7 +606,7 @@ function useAbout({
       href: page(entity.key, { ...(entity.tab ? { section: entity.tab } : {}), from: here }),
       chips: [],
       entity: { kind: entity.kind, name },
-      // The person or the unit by Clew's id, as their page's pane tells it (D131 item 1).
+      // The person or the unit by Clew's id, as their page's pane tells it (D136 item 1).
       thing: { kind: entity.kind, id: entity.key },
       pane: {
         label: name ?? (entity.kind === 'person' ? 'Personen' : 'Enheten'),

@@ -1427,13 +1427,30 @@ const person = (id: string) => {
     ? { personId: p.id, userName: p.userName ?? p.id, name: p.name }
     : { personId: user.id, userName: USER_NAME, name: user.name };
 };
-/** One row per person in the round, without the open count, which follows the action points. */
+/**
+ * One row per person in the round, without the open count, which follows the action points. Erik's talk is booked by an
+ * invitation Clew sent; Lena's is a time her manager set by hand (D132).
+ */
 export const talkRows = (): Array<Omit<TalkEntry, 'openCommitments'>> =>
   [
     { id: 'anna', state: 'held' as const, at: '2026-11-03' },
-    { id: 'erik', state: 'booked' as const, at: '2026-11-11T08:00:00.000Z' },
+    {
+      id: 'erik',
+      state: 'booked' as const,
+      at: '2026-11-11T08:00:00.000Z',
+      until: '2026-11-11T09:00:00.000Z',
+      invited: true,
+      own: true,
+    },
     { id: 'karin', state: 'missing' as const },
-    { id: 'lena', state: 'booked' as const, at: '2026-11-12T13:30:00.000Z' },
+    {
+      id: 'lena',
+      state: 'booked' as const,
+      at: '2026-11-12T13:30:00.000Z',
+      until: '2026-11-12T14:30:00.000Z',
+      invited: false,
+      own: true,
+    },
   ].map(({ id, ...row }) => ({ ...person(id), ref: `talk:talks:${id}`, ...row }));
 const commitment = (
   id: string,
@@ -1519,32 +1536,24 @@ export const allCommitments = (): CommitmentEntry[] => [
     doneAt: '2026-10-28T09:00:00.000Z',
   }),
 ];
-/**
- * `clew.talks` as the built-in module answers it: the round, one row per person with the open count from `commitments`.
- * `bookedUnknown` is the answer when the calendar did not answer: no row is booked, and a missing one may be.
- */
+/** `clew.talks` as the built-in module answers it: the round, one row per person with the open count from `commitments`. */
 export function talksResult({
   round = talkRound(),
   rows = talkRows(),
   commitments = allCommitments(),
-  bookedUnknown = false,
 }: {
   round?: TalkRound | null;
   rows?: Array<Omit<TalkEntry, 'openCommitments'>>;
   commitments?: CommitmentEntry[];
-  bookedUnknown?: boolean;
 } = {}): TalksResult {
   return {
     round,
     rows: round
-      ? rows.map(row => {
-          const open = commitments.filter(c => c.personId === row.personId && !c.done).length;
-          if (!bookedUnknown || row.state !== 'booked') return { ...row, openCommitments: open };
-          const { at: _at, ...rest } = row;
-          return { ...rest, state: 'missing' as const, openCommitments: open };
-        })
+      ? rows.map(row => ({
+          ...row,
+          openCommitments: commitments.filter(c => c.personId === row.personId && !c.done).length,
+        }))
       : [],
-    ...(bookedUnknown ? { bookedUnknown: true } : {}),
     writable: true,
     source: TALKS_SOURCE,
   };

@@ -259,7 +259,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(tx => tx.updateThread(handed.id, { summary: 'Svar', updatedAt: plus(T0, 2000) }));
       expect((await store.readThread(a, handed.id))!.handover).toEqual(continued);
     });
-    test('the page a conversation was asked beside is kept with it, patched to opened, and absent on every other thread (D130)', async () => {
+    test('the page a conversation was asked beside is kept with it, patched to opened, and absent on every other thread (D135)', async () => {
       const {
         store,
         people: [a],
@@ -285,7 +285,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(tx => tx.updateThread(beside.id, { summary: 'Svar', updatedAt: plus(T0, 2000) }));
       expect((await store.readThread(a, beside.id))!.askedBeside).toEqual(opened);
     });
-    test("an assistant's draft about a record is marked as sent once, on the person's own conversation only (D132)", async () => {
+    test("an assistant's draft about a record is marked as sent once, on the person's own conversation only (D137)", async () => {
       const {
         store,
         people: [a, b],
@@ -681,7 +681,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect((await store.threadsNaming(b, [other])).map(n => n.thread.id)).toEqual([theirs.id]);
       expect(await store.transaction(tx => tx.eraseSubject(gone))).toEqual({ cards: 0, rows: 0, cardSubjects: 0 });
     });
-    test('erasing a person deletes whole every conversation asked beside their page, whoever asked, and nothing else (D131 item 8)', async () => {
+    test('erasing a person deletes whole every conversation asked beside their page, whoever asked, and nothing else (D136 item 8)', async () => {
       const {
         store,
         people: [a, b],

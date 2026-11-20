@@ -13,7 +13,7 @@ export const shortQuery = '(max-height: 480px)';
  */
 export const besideQuery = '(min-width: 1340px)';
 /**
- * From this window width the assistant's pane stands as a card in the shell's column beside the page (D133 item 4); below
+ * From this window width the assistant's pane stands as a card in the shell's column beside the page (D138 item 4); below
  * it, or on a short screen (1.4.10), it is a drawer over the page. Not drawn on the canvas: the line where Hem's two
  * columns already stand one under the other (D130 item 7), where the page keeps 696 px beside the 400 px card and the
  * 20 px between them (1180 less the column's 64 px of gutter).

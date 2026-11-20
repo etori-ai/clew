@@ -88,6 +88,52 @@ export interface JobInput {
   payload?: Record<string, unknown>;
 }
 
+/** An invitation to a talk as the talks domain is told of it (D132 item 3): the proposal's id, who sent it and to whom. */
+export interface InvitationNotice {
+  /** Who the talks domain's audit row is written as: the execution that read the invitation back, or the reply check. */
+  actor: string;
+  invitationId: string;
+  managerId: string;
+  employeeId: string;
+  start: string;
+  end: string;
+  at: string;
+}
+/**
+ * What the domain that owns the talks is told of an invitation the calendar sent (D132 item 3, D133), inside the
+ * transaction that changes the proposal, so the talk and the invitation that carries its booking commit or roll back as
+ * one. The calendar module keeps the invitation; when a talk is booked is the talks domain's record, never the
+ * calendar's. Composition binds it to the talks module, which the calendar never imports; a store built without it tells
+ * nobody.
+ */
+export interface InvitationsTx {
+  /** The invitation was sent and read back from the calendar. */
+  established(invitation: InvitationNotice): Promise<void>;
+  /**
+   * What the calendar holds for the invitation's event now, read by the event's own id: its time, or null when it is
+   * gone. Told at every reading; whether that differs from the booking is the talks domain's to say and keep.
+   */
+  observed(seen: {
+    actor: string;
+    invitationId: string;
+    event: { start: string; end: string } | null;
+    at: string;
+  }): Promise<void>;
+  /** The invitation is at another time now: the proposal was moved with its event, by a decision in Clew. */
+  moved(move: { actor: string; invitationId: string; start: string; end: string; at: string }): Promise<void>;
+  /**
+   * The invitation no longer stands: the manager undid it or replaced it, the invitee said no, its event was
+   * cancelled, or its time passed without the talk taking place. With `keep`, the manager keeps the time as one set by
+   * hand, with no invitation.
+   */
+  ended(end: {
+    actor: string;
+    invitationId: string;
+    why: 'undone' | 'replaced' | 'declined' | 'cancelled' | 'missed';
+    at: string;
+    keep?: { managerId: string };
+  }): Promise<void>;
+}
 export interface ProposalTx {
   lockThread(personId: string, id: string): Promise<ProposalThread | undefined>;
   /** False when the person already has an open pushed thread on the topic. */
@@ -100,6 +146,7 @@ export interface ProposalTx {
   transition(threadId: string, from: ProposalStatus, patch: ProposalPatch): Promise<string[]>;
   writeAudit(entry: AuditEntry): Promise<void>;
   scheduleJob(job: JobInput): Promise<void>;
+  invitations: InvitationsTx;
 }
 export interface ProposalStore {
   readThread(personId: string, id: string): Promise<ProposalThread | undefined>;
@@ -135,13 +182,16 @@ export interface UnitMember {
 export type Team = (persona: AuthenticatedContext) => Promise<UnitMember[]>;
 /**
  * The round of development talks the planner works towards (D96 items 1-3): dates are `YYYY-MM-DD`, `held` the person
- * ids whose talk is recorded as held. The calendar's own small shape; composition maps whatever owns the round to it.
+ * ids whose talk is recorded as held and `booked` the ones whose talk the round records as booked (D132). Who has a
+ * talk is the round's to say, by person id: the planner never looks for one in a calendar. The calendar's own small
+ * shape; composition maps whatever owns the round to it.
  */
 export interface PlanningRound {
   label: string;
   opensOn: string;
   dueOn: string;
   held: readonly string[];
+  booked: readonly string[];
 }
 /**
  * The open round for this person's organisation, or null when none is open or no system answers for them: then nothing

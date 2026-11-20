@@ -361,7 +361,7 @@ function Plan({
       <ContentSkeleton />
     );
     // A state of a plan's page, a thing's (D126 rule 1): while it loads, and when the plan is missing, it has no subject
-    // yet and no button (D131).
+    // yet and no button (D136).
     body = frame === 'tab' ? state : <PageFrame ask={{ subject: null }}>{state}</PageFrame>;
   } else {
     const here = pageOnly(pathname, search);
@@ -593,7 +593,7 @@ function Plan({
         </VStack>
       ) : (
         <EntityPage
-          // What the assistant beside the plan is about (D131 item 6): the plan, a record of `boarding.plan` with its
+          // What the assistant beside the plan is about (D136 item 6): the plan, a record of `boarding.plan` with its
           // id as the input, one conversation per plan. A person with no plan yet, offered a start, has no subject.
           ask={{
             subject: detail

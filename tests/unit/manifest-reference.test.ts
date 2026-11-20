@@ -101,7 +101,7 @@ const aboutManifest = {
 };
 
 /**
- * An action about one record of a read (D132), from the handwritten example: a read that draws one request, and a
+ * An action about one record of a read (D137), from the handwritten example: a read that draws one request, and a
  * comment on it whose `ref` the record fills and whose text the person is asked.
  */
 const recordManifest = {
@@ -408,7 +408,7 @@ describe('the field list', () => {
       'named-input-is-a-string',
       'about-action-start',
     ]);
-    // The record form (D132): an action about a request, which the record fills and the person writes; the two forms
+    // The record form (D137): an action about a request, which the record fills and the person writes; the two forms
     // are told apart by the property each requires.
     expect(manifestProblems(recordManifest, 'servicedesk')).toEqual([]);
     expect(() =>
@@ -667,7 +667,7 @@ describe('the rules', () => {
       }),
       'hr',
     ],
-    // The record form of `about` (D132), on a manifest whose comment is about a request.
+    // The record form of `about` (D137), on a manifest whose comment is about a request.
     'about-record-on-an-action': [
       broken(recordManifest, m => {
         m.capabilities[0].about = { record: 'servicedesk.request', params: { ref: 'ref' } };

@@ -218,8 +218,7 @@
     "D122",
     "D123",
     "D124",
-    "D129",
-    "D130"
+    "D129"
   ],
   "decisions": [
     {
@@ -1154,7 +1153,7 @@
       "number": 96,
       "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
       "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
-      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) (2026-11-10): a person is due a talk with the manager they report to in the organisation tree; item 7 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional, rule 5): the talk lies over the page it was opened on; items 2 and 4 and As built item 4 amended 2026-11-12 in the fixes of the review of users and the organisation (Q12): a person has one talk a round however many current managers they have, a booking any of them made through Clew counts as booked for all of them, any of them marks, moves or undoes the held mark, and a manager ticks off only their own action points and a manager's point whose owner no longer manages the person; question 6 of the checklist amended the same day (M2): every current manager reads the record, and a former manager reads nothing about the person but the action points they own, which stay on their Hem until done; item 8 amended by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): rows stay keyed on the user name on the wire, a user name can be renamed and reused, and Clew keys its own records about a person by the person's id",
+      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) (2026-11-10): a person is due a talk with the manager they report to in the organisation tree; item 7 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional, rule 5): the talk lies over the page it was opened on; items 2 and 4 and As built item 4 amended 2026-11-12 in the fixes of the review of users and the organisation (Q12): a person has one talk a round however many current managers they have, a booking any of them made through Clew counts as booked for all of them, any of them marks, moves or undoes the held mark, and a manager ticks off only their own action points and a manager's point whose owner no longer manages the person; question 6 of the checklist amended the same day (M2): every current manager reads the record, and a former manager reads nothing about the person but the action points they own, which stay on their Hem until done; item 8 amended by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): rows stay keyed on the user name on the wire, a user name can be renamed and reused, and Clew keys its own records about a person by the person's id; item 2 amended by [D132](D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md) (2026-11-19, provisional): when a talk is booked is stored on the talk, an invitation Clew sent or a time a manager registers by hand, nothing is read from a calendar, and every current manager reads the booking with its time",
       "date": "2026-11-10",
       "area": "product, integrations"
     },
@@ -1532,7 +1531,7 @@
       "number": 126,
       "path": "docs/decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md",
       "title": "D126 · One page per thing, and one Astryx template per page type",
-      "status": "provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation; item 4 amended by [D129](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) on 2026-11-18: a page whose answer is drawn on the page itself may hold the assistant's box in its pane, Kalender first; and by [D130](D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) the same day: the assistant is asked beside every page, which replaces the item's last sentence when built)",
+      "status": "provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation; item 4 amended by [D129](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) on 2026-11-18: a page whose answer is drawn on the page itself may hold the assistant's box in its pane, Kalender first; and by [D135](D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) the same day: the assistant is asked beside every page, which replaces the item's last sentence when built)",
       "date": "2026-11-14",
       "area": "ui"
     },
@@ -1582,37 +1581,73 @@
       "area": "ui, product"
     },
     {
-      "key": "D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame",
-      "number": 130,
-      "path": "docs/decisions/D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
-      "title": "D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
-      "status": "provisional, amended by [D133](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) (2026-11-19, in the look of `main`: the corner's \"Fråga AI\" replaces rule 1's button at the end of the title's line, the pane is a card at the end of the shell's column instead of rules 2 and 11's end slot, the rail's latest of rule 6 are gone with the rail, and on Start rule 9's answer stands under the line; rules 3 to 8 and 10 and the conditions stand) (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas \"Clew",
+      "key": "D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root",
+      "number": 131,
+      "path": "docs/decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
+      "title": "D131 · Clew builds a server image and a web image from the repository root",
+      "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them)",
+      "date": "2026-11-17",
+      "area": "platform"
+    },
+    {
+      "key": "D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation",
+      "number": 132,
+      "path": "docs/decisions/D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md",
+      "title": "D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation",
+      "status": "provisional (accepted once a manager and an HR practitioner have booked a round with it; questions 6 and 11 of [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) still hold real data back); what happens when the meeting is changed afterwards is [D133](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) (2026-11-20, provisional)",
+      "date": "2026-11-19",
+      "area": "product, integrations"
+    },
+    {
+      "key": "D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it",
+      "number": 133,
+      "path": "docs/decisions/D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md",
+      "title": "D133 · A talk follows its meeting by the event's id, and only the manager changes it",
+      "status": "provisional (accepted once a manager has moved and cancelled a talk's meeting in a real calendar and settled it in Clew)",
+      "date": "2026-11-20",
+      "area": "product, integrations"
+    },
+    {
+      "key": "D134-a-booked-talk-reminds-its-manager-to-prepare-and-asks-afterwards-whether-it-was-held",
+      "number": 134,
+      "path": "docs/decisions/D134-a-booked-talk-reminds-its-manager-to-prepare-and-asks-afterwards-whether-it-was-held.md",
+      "title": "D134 · A booked talk reminds its manager to prepare, and asks afterwards whether it was held",
+      "status": "provisional (accepted once managers have had the cards through a real round and say whether five working days and one reminder is right)",
+      "date": "2026-11-20",
+      "area": "product"
+    },
+    {
+      "key": "D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame",
+      "number": 135,
+      "path": "docs/decisions/D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
+      "title": "D135 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
+      "status": "provisional, amended by [D138](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) (2026-11-19, in the look of `main`: the corner's \"Fråga AI\" replaces rule 1's button at the end of the title's line, the pane is a card at the end of the shell's column instead of rules 2 and 11's end slot, the rail's latest of rule 6 are gone with the rail, and on Start rule 9's answer stands under the line; rules 3 to 8 and 10 and the conditions stand) (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas \"Clew",
       "date": "2026-11-18",
       "area": "ui, product"
     },
     {
-      "key": "D131-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew",
-      "number": 131,
-      "path": "docs/decisions/D131-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md",
-      "title": "D131 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed",
-      "status": "provisional (the product owner chose its three open points on 2026-11-19: on a person's page the assistant is told who the person is; what another system shows about a person or a unit stays closed for now; a conversation asked beside a person's page is deleted when the person is erased. Built the same day: a work item, the review, a record, a person, a unit and a plan ask through the frame's button and pane, the browser names the thing and the server resolves it on every turn, and `subject-erase` deletes the conversations asked beside a person. Tried on the development stack with its local model: beside a report's page \"hon\" was read as that person, her competences were read with her user name and the open work about her was named by title; beside a plan's page the plan was read and its overdue items named; beside a service desk request, whose read the assistant may not make, the pane said so. Nothing outside the repository has tested it, and no manual screen-reader pass is made)",
+      "key": "D136-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew",
+      "number": 136,
+      "path": "docs/decisions/D136-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md",
+      "title": "D136 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed",
+      "status": "provisional (the product owner chose its three open points on 2026-11-19: on a person's page the assistant is told who the person is; what another system shows about a person or a unit stays closed for now; a conversation asked beside a person's page is deleted when the person is erased. Built the same day: a work item, the review, a record, a person, a unit and a plan ask through the frame's button and pane, the browser names the thing and the server resolves it on every turn, and `subject-erase` deletes the conversations asked beside a person. Tried on the development stack with its local model: beside a report's page \"hon\" was read as that person, her competences were read with her user name and the open work about her was named by title; beside a plan's page the plan was read and its overdue items named; beside a service desk request, whose read the assistant may not make, the pane said so. Nothing outside the repository has tested it, and no manual screen-reader pass is made. Numbered D131 until the merge of `main` on 2026-11-20, where `main` had taken the number)",
       "date": "2026-11-19",
       "area": "assistant, ui, identity"
     },
     {
-      "key": "D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open",
-      "number": 132,
-      "path": "docs/decisions/D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md",
-      "title": "D132 · An action says which record it is about, and the assistant fills in the actions of what stands open",
-      "status": "provisional (the product owner chose its open points on 2026-11-19: the action says what it is about, a record's actions are shown on the record's page only, and it is built first for one example of a connector and then for Kalender. The server half is built (2026-11-19): the declaration with its rules in the loader, the reference, the preview and the check; the registry's index; the routes that list a record's actions and start or decide one; the assistant's draft about a record; and one example in the service desk fixture. The web half is built (2026-11-20), in the look that landed on `main`: the record's page draws its actions, and the assistant's draft about a record is the filled-in row of [D133](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) item 8. Nothing outside the repository has tested it)",
+      "key": "D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open",
+      "number": 137,
+      "path": "docs/decisions/D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md",
+      "title": "D137 · An action says which record it is about, and the assistant fills in the actions of what stands open",
+      "status": "provisional (the product owner chose its open points on 2026-11-19: the action says what it is about, a record's actions are shown on the record's page only, and it is built first for one example of a connector and then for Kalender. The server half is built (2026-11-19): the declaration with its rules in the loader, the reference, the preview and the check; the registry's index; the routes that list a record's actions and start or decide one; the assistant's draft about a record; and one example in the service desk fixture. The web half is built (2026-11-20), in the look that landed on `main`: the record's page draws its actions, and the assistant's draft about a record is the filled-in row of [D138](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) item 8. Nothing outside the repository has tested it. Numbered D132 until the merge of `main` on 2026-11-20, where `main` had taken the number)",
       "date": "2026-11-19",
       "area": "integrations, assistant, ui"
     },
     {
-      "key": "D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column",
-      "number": 133,
-      "path": "docs/decisions/D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md",
-      "title": "D133 · The corner's \"Fråga AI\" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is",
+      "key": "D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column",
+      "number": 138,
+      "path": "docs/decisions/D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md",
+      "title": "D138 · The corner's \"Fråga AI\" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is",
       "status": "provisional (the product owner chose it on 2026-11-19 from the canvas \"Clew",
       "date": "2026-11-19",
       "area": "ui, product, assistant"
@@ -2061,6 +2096,20 @@
       ]
     },
     {
+      "path": "docs/architecture/talks.md",
+      "title": "Development talks: what is what",
+      "category": "architecture-guide",
+      "headings": [
+        "Three things, kept apart",
+        "How a talk comes to be booked",
+        "How the two modules talk",
+        "When the meeting changes",
+        "The cards",
+        "Where to look",
+        "What this does not do"
+      ]
+    },
+    {
       "path": "docs/architecture/testing.md",
       "title": "Testing",
       "category": "architecture-guide",
@@ -2429,26 +2478,50 @@
       "headings": []
     },
     {
-      "path": "docs/decisions/D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
-      "title": "D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
+      "path": "docs/decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
+      "title": "D131 · Clew builds a server image and a web image from the repository root",
       "category": "decision-history",
       "headings": []
     },
     {
-      "path": "docs/decisions/D131-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md",
-      "title": "D131 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed",
+      "path": "docs/decisions/D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md",
+      "title": "D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation",
       "category": "decision-history",
       "headings": []
     },
     {
-      "path": "docs/decisions/D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md",
-      "title": "D132 · An action says which record it is about, and the assistant fills in the actions of what stands open",
+      "path": "docs/decisions/D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md",
+      "title": "D133 · A talk follows its meeting by the event's id, and only the manager changes it",
       "category": "decision-history",
       "headings": []
     },
     {
-      "path": "docs/decisions/D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md",
-      "title": "D133 · The corner's \"Fråga AI\" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is",
+      "path": "docs/decisions/D134-a-booked-talk-reminds-its-manager-to-prepare-and-asks-afterwards-whether-it-was-held.md",
+      "title": "D134 · A booked talk reminds its manager to prepare, and asks afterwards whether it was held",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
+      "title": "D135 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D136-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md",
+      "title": "D136 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md",
+      "title": "D137 · An action says which record it is about, and the assistant fills in the actions of what stands open",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md",
+      "title": "D138 · The corner's \"Fråga AI\" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is",
       "category": "decision-history",
       "headings": []
     },
@@ -3575,6 +3648,7 @@
       "headings": [
         "Observability",
         "Operations",
+        "Container images",
         "Model configuration"
       ]
     },
@@ -4714,6 +4788,16 @@
       "title": "Follow-up review of the prototype shell and registers",
       "category": "review-history",
       "headings": []
+    },
+    {
+      "path": "docs/reviews/2026-11-20-the-talk-booking-stack.md",
+      "title": "The talk booking stack, reviewed before it lands",
+      "category": "review-history",
+      "headings": [
+        "Findings",
+        "Outcome",
+        "What this review does not establish"
+      ]
     },
     {
       "path": "docs/reviews/README.md",

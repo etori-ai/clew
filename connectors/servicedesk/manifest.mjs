@@ -1,5 +1,5 @@
 // The service-desk fixture's contract (D21, D38, D123): what the asking person ordered or reported and waits for, one
-// such request with its free text, a comment the person adds to one of their requests from its page (D132), an order
+// such request with its free text, a comment the person adds to one of their requests from its page (D137), an order
 // placed for a person from the desk's catalogue with what it will do, and the equipment the desk has registered to a
 // person. The system it stands for is a municipality's IT service desk; no
 // vendor is named (D52). connector.mjs holds the handlers, desk.mjs the source port and the one mapping to these rows.
@@ -56,7 +56,7 @@ const requestRow = {
 };
 const requiredRow = ['ref', 'label', 'state', 'status', 'since'];
 const text = maxLength => ({ type: 'string', minLength: 1, maxLength });
-/** The longest comment the person may add to a request (D132). */
+/** The longest comment the person may add to a request (D137). */
 export const COMMENT_MAX = 1000;
 
 // The shared state (`state`) is a code for Clew to order by: Clew's combined list says it in its own words (D123 item
@@ -111,7 +111,7 @@ const request = {
       title: text(200),
       description: text(4000),
       latest: text(1000),
-      // The person's own latest comment (D132), under a key every panel can name ("Text").
+      // The person's own latest comment (D137), under a key every panel can name ("Text").
       text: text(COMMENT_MAX),
     },
     [...requiredRow, 'group', 'title'],
@@ -226,7 +226,7 @@ const orderEffect = {
   output: effectOutput,
 };
 
-// An action about one record (D132): "Lägg till en kommentar" on the page of a request the person made, which Clew
+// An action about one record (D137): "Lägg till en kommentar" on the page of a request the person made, which Clew
 // opens with `servicedesk.request` and its `ref`. Clew fills `ref` from that page and asks for the text; the desk takes a
 // comment on the caller's own request only, and the request's read shows it afterwards.
 const comment = {

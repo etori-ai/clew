@@ -1,5 +1,5 @@
 import type { CommitmentsResult, StaffPerson, StaffUnit, TalkState, TalksResult } from '@clew/contracts';
-import { displayDate, shortDayLabel, timeLabel } from '@clew/calendar/dates';
+import { displayDate, localInstant, shiftEnd, shortDayLabel, timeLabel, timeRange } from '@clew/calendar/dates';
 
 /**
  * Utvecklingssamtal on Clew's own pages (D96 item 7): the join of the round with Personal, the words and tones of the
@@ -56,6 +56,90 @@ export const dayText = (day: string): string => shortDayLabel(displayDate(day));
 export function talkAtText(talk: Pick<TalkEntry, 'at'>): string | null {
   if (!talk.at) return null;
   return calendarDay.test(talk.at) ? dayText(talk.at) : `${dayText(talk.at)} kl. ${timeLabel(talk.at)}`;
+}
+/**
+ * When a booked talk takes place, with its end where the row says it ("ons 11 nov. kl. 09:00–10:00"); as `talkAtText`
+ * for a row without one.
+ */
+export function talkSpanText(talk: Pick<TalkEntry, 'at' | 'until'>): string | null {
+  if (!talk.at || !talk.until || calendarDay.test(talk.at)) return talkAtText(talk);
+  return `${dayText(talk.at)} kl. ${timeRange(talk.at, talk.until)}`;
+}
+/**
+ * How a booked talk came to be booked, as the page says it under the time (D132): an invitation Clew sent, which the
+ * time follows, or a time a manager set here. Null for a row that does not say.
+ */
+export const bookingNote = (talk: Pick<TalkEntry, 'state' | 'invited'>): string | null =>
+  talk.state !== 'booked' || talk.invited === undefined
+    ? null
+    : talk.invited
+      ? 'Bokat genom en inbjudan från Clew. Flytta eller ställ in mötet i kalendern för att ändra tiden.'
+      : 'Tiden är angiven här. Ingen inbjudan har skickats från Clew.';
+/**
+ * What the calendar holds against a booked talk when it is not what the talk says (D133), in the three words the page
+ * keeps apart: the talk in Clew (samtalet), which holds, and the meeting in the calendar (mötet), which is a copy.
+ * `moved`: the meeting is at another time. `gone`: the meeting is no longer in the calendar. Null while they agree.
+ */
+export function calendarDifference(
+  talk: Pick<TalkEntry, 'at' | 'until' | 'calendar'>,
+): { kind: 'moved' | 'gone'; text: string } | null {
+  if (!talk.calendar) return null;
+  const stands = talkSpanText(talk) ?? '';
+  if ('gone' in talk.calendar)
+    return { kind: 'gone', text: `Mötet finns inte längre i kalendern. Samtalet i Clew står kvar på ${stands}.` };
+  const to = talkSpanText({ at: talk.calendar.start, until: talk.calendar.end }) ?? '';
+  return { kind: 'moved', text: `Mötet i kalendern ligger nu på ${to}. Samtalet i Clew står kvar på ${stands}.` };
+}
+/**
+ * A booked talk whose time has passed (D134): it is its manager's to say whether it was held, or to take the time off
+ * so that it is booked again. `now` is the reader's clock, in milliseconds.
+ */
+export const timePassed = (talk: Pick<TalkEntry, 'state' | 'until'>, now: number): boolean =>
+  talk.state === 'booked' && !!talk.until && Date.parse(talk.until) < now;
+/** The day a talk whose time has passed is marked held on: the day it was booked for, in Swedish time. */
+export const bookedDay = (talk: Pick<TalkEntry, 'at'>): string | undefined =>
+  talk.at && !calendarDay.test(talk.at) ? displayDate(talk.at) : undefined;
+/**
+ * The span a manager picks for a talk, as the write takes it: the day and start as the field holds them
+ * (`YYYY-MM-DDTHH:MM`, Swedish time) and the end as a time the same day. `problem` names the first field that does not
+ * hold, with the sentence under it; a time the day does not have (the hour skipped in spring) is one.
+ */
+export function talkSpan(
+  start: string,
+  end: string,
+): { start: string; end: string } | { problem: 'start' | 'end'; message: string } {
+  const instant = (value: string) => {
+    try {
+      return localInstant(value);
+    } catch {
+      return null;
+    }
+  };
+  const startAt = start ? instant(start) : null;
+  if (!startAt) return { problem: 'start', message: 'Välj dag och starttid.' };
+  if (!end) return { problem: 'end', message: 'Välj en sluttid.' };
+  const endAt = instant(`${start.slice(0, 10)}T${end}`);
+  if (!endAt || Date.parse(endAt) <= Date.parse(startAt))
+    return { problem: 'end', message: 'Sluttiden måste vara efter starttiden.' };
+  return { start: startAt, end: endAt };
+}
+/** An hour after a start as the field holds it, as an end time the same day ("09:00" gives "10:00"); the day's last minute at most. */
+export function hourAfter(start: string): string {
+  const [h, m] = start.slice(11, 16).split(':').map(Number) as [number, number];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h >= 23 ? '23:59' : `${pad(h + 1)}:${pad(m)}`;
+}
+/**
+ * The end a newly picked start gives, as a time the same day: an hour after it while no span is picked, else as long
+ * after the new start as the end was after the old one, so a talk keeps its length when its start is changed. An end
+ * that does not follow its start is left as it is, and one that would pass midnight is the day's last minute.
+ */
+export function endFor(previousStart: string, previousEnd: string, nextStart: string): string {
+  if (!previousStart || !previousEnd) return hourAfter(nextStart);
+  const before = `${previousStart.slice(0, 10)}T${previousEnd}`;
+  const shifted = shiftEnd(previousStart, before, nextStart);
+  if (shifted === before) return previousEnd;
+  return shifted.slice(0, 10) === nextStart.slice(0, 10) ? shifted.slice(11, 16) : '23:59';
 }
 /** An action point's due day ("fre 20 nov."). */
 export const dueText = (row: Pick<CommitmentEntry, 'dueOn'>): string => dayText(row.dueOn);

@@ -157,7 +157,7 @@ const vouchedFor =
   };
 /** Nobody may be asked about by anyone: what the check signs without a person named to sign as. */
 const vouchesForNobody: RelationResolver = async () => [];
-/** Where a capability about an entity or a record would show (D97 item 2, D132 item 2), in the administrator's words. */
+/** Where a capability about an entity or a record would show (D97 item 2, D137 item 2), in the administrator's words. */
 const PLACE: Record<AboutPlace, (entity: EntityKind) => string> = {
   menu: e => `i menyn för en ${ENTITY[e].one}`,
   section: e => `som avsnitt när en ${ENTITY[e].one} öppnas`,
@@ -496,7 +496,7 @@ export async function checkConnector(
     }
   };
   /**
-   * An action about a record of one of the connector's reads (D132): the registry indexes it under that read, for the
+   * An action about a record of one of the connector's reads (D137): the registry indexes it under that read, for the
    * check's people as their scopes allow, and the record fills what `params` maps. Neither the action nor the read is
    * called: the check has no record of its own to name, and an execute runs only after a human decision.
    */
@@ -647,7 +647,7 @@ export async function checkConnector(
         .join(' '),
     );
   }
-  // The actions about a record of a read (D132): on that record's page, one sentence each.
+  // The actions about a record of a read (D137): on that record's page, one sentence each.
   const onRecords = manifest.capabilities.filter(c => aboutRecord(c.about));
   if (onRecords.length) {
     ok(`about a record: ${onRecords.map(c => `${c.name} (on ${aboutRecord(c.about)!.record})`).join('; ')}`);

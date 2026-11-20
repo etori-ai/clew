@@ -173,7 +173,7 @@ export function storedAbout(thread: Pick<Thread, 'messages'>): string[] {
 }
 
 /**
- * What a conversation is about, as Alla samtal says it under "Om": the page's words for what it was asked beside (D130
+ * What a conversation is about, as Alla samtal says it under "Om": the page's words for what it was asked beside (D135
  * rule 6, "Om Beställningar och felanmälningar" read as "Beställningar och felanmälningar"), else what its first
  * question went with ("Attestera 3 fakturor"); null when it keeps neither.
  */

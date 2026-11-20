@@ -185,7 +185,7 @@ const valueAt = (value: unknown, pointer: string, depth: number) =>
     );
 /**
  * The branch of a union a value means, when the union's branches are objects that each require a property no other
- * branch requires and the value carries exactly one of those (`about`: `entity` or `record`, D132). Its errors are then
+ * branch requires and the value carries exactly one of those (`about`: `entity` or `record`, D137). Its errors are then
  * the value's, worded as any others, and the other branches' are not. Undefined for any other union, whose value is one
  * that fits no branch.
  */
@@ -1039,7 +1039,7 @@ export const ViewEntrySchema = object({
    */
   admits: Type.Optional(Type.Array(Type.String())),
   /**
-   * The assistant may make this read for the person (D130 rule 4): it is among the tools the model is offered for
+   * The assistant may make this read for the person (D135 rule 4): it is among the tools the model is offered for
    * them, the read's own `model`, its connector's assistant switch and the read's switch all allowing it (D122 item
    * 4). Absent where it may not, so the pane beside a page that shows the read says so before anything is asked.
    */
@@ -1296,13 +1296,13 @@ export const RequestsResultSchema = object({
 });
 export type RequestsResult = Static<typeof RequestsResultSchema>;
 /**
- * Where one person stands in the round of development talks (D96 item 2): no talk yet, a talk in the calendar, or held.
+ * Where one person stands in the round of development talks (D96 item 2, D132): no talk yet, a talk booked, or held.
  * The order here is the order a list is drawn in.
  */
 export const TALK_STATES = ['missing', 'booked', 'held'] as const;
 export const TalkState = literals(TALK_STATES, {
   description:
-    '`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held.',
+    '`missing`: no talk is booked or held. `booked`: the system records when the talk is to take place. `held`: the manager has marked it held.',
 });
 export type TalkState = (typeof TALK_STATES)[number];
 /** The period in which every person on a unit is due a talk with the unit's manager (D96 item 1). */
@@ -1333,7 +1333,25 @@ export const TalkRowSchema = object(
     at: Type.Optional(
       Type.Union([calendarDay, instant], {
         description:
-          "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked.",
+          'When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk the system does not say the time of.',
+      }),
+    ),
+    until: Type.Optional({ ...instant, description: 'For a booked talk: when it ends.' }),
+    invited: Type.Optional(
+      Type.Boolean({
+        description:
+          'For a booked talk: true when an invitation the system sent carries the booking, false when a manager registered the time by hand.',
+      }),
+    ),
+    own: Type.Optional(
+      Type.Boolean({
+        description: "For a booked talk: true when the booking is the reader's own, so theirs to settle.",
+      }),
+    ),
+    calendar: Type.Optional(
+      Type.Union([object({ start: instant, end: instant }), object({ gone: Type.Literal(true) })], {
+        description:
+          'For a booked talk an invitation carries, when the calendar no longer holds what the booking says (D133): the time the event has now, or that it is gone. The booking stands until its manager settles it. Absent while they agree.',
       }),
     ),
     openCommitments: Type.Integer({
@@ -1355,8 +1373,7 @@ export const TalksOutputSchema = object(
     rows: Type.Array(TalkRowSchema, { maxItems: 500 }),
     bookedUnknown: Type.Optional(
       Type.Boolean({
-        description:
-          'True when the system could not tell who is booked (the calendar did not answer), so a `missing` row may be booked.',
+        description: 'True when the system could not tell who is booked, so a `missing` row may be booked.',
       }),
     ),
   },
@@ -1434,6 +1451,22 @@ export const CommitmentsResultSchema = object({
   source: Type.String(),
 });
 export type CommitmentsResult = Static<typeof CommitmentsResultSchema>;
+/**
+ * A manager registers when a talk is to take place (D132 item 4): a time agreed on that no invitation carries. Nothing is
+ * sent and nothing is written to a calendar.
+ */
+export const TalkBookingBodySchema = object({ start: instant, end: instant });
+export type TalkBookingBody = Static<typeof TalkBookingBodySchema>;
+/**
+ * What the manager whose booking it is decides about the meeting of an invitation (D133, D134). When the calendar no
+ * longer holds what the booking says: `adopt` takes the time the event has now, `remove` takes the time off a talk whose
+ * event is gone, and `keep` keeps the time of such a talk as one set by hand, with no invitation. When the meeting's
+ * time has passed without the talk taking place: `missed` ends the invitation and takes the time off the talk.
+ */
+export const TALK_CALENDAR_DECISIONS = ['adopt', 'remove', 'keep', 'missed'] as const;
+export type TalkCalendarDecision = (typeof TALK_CALENDAR_DECISIONS)[number];
+export const TalkCalendarBodySchema = object({ decision: literals(TALK_CALENDAR_DECISIONS) });
+export type TalkCalendarBody = Static<typeof TalkCalendarBodySchema>;
 /** Marking a talk held (D96 item 2): the day it was held, today in Swedish time when absent. */
 export const TalkHeldBodySchema = object({ heldOn: Type.Optional(calendarDay) });
 export type TalkHeldBody = Static<typeof TalkHeldBodySchema>;
@@ -1957,7 +1990,7 @@ export type EntityAbout = Static<typeof EntityAboutSchema>;
 /** An input property of a capability, as an ask names one: what `about.params` maps on both sides. */
 const inputProperty = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_]*$', maxLength: 80 });
 /**
- * An action about one record of a read of the same connector (D132 item 1): the read, and the action's input properties
+ * An action about one record of a read of the same connector (D137 item 1): the read, and the action's input properties
  * mapped to the read's own, the mirror of a view's `open.params`. A record is its read and that read's input, as the
  * page's address holds it; no key a source made up for the purpose.
  */
@@ -1976,16 +2009,16 @@ export const RecordAboutSchema = object(
         "At least one entry: an input property of this action, mapped to the input property of `record` it is filled from. Clew fills each from the input the record's page was read with; the person is never asked for one, and an answer for one is refused.",
     }),
   },
-  "About one record of a read (D132). Only on a `propose` or `execute`. Clew lists the action on the record's page for a person who may call it and who can make the record's read with that input, fills the mapped properties from it and asks the rest (`asks`). A `propose` becomes a work item; an `execute` runs after the person's decision, as every execute does. The assistant may fill it in for the record that stands open (`clew.draftAction`), never send it.",
+  "About one record of a read (D137). Only on a `propose` or `execute`. Clew lists the action on the record's page for a person who may call it and who can make the record's read with that input, fills the mapped properties from it and asks the rest (`asks`). A `propose` becomes a work item; an `execute` runs after the person's decision, as every execute does. The assistant may fill it in for the record that stands open (`clew.draftAction`), never send it.",
 );
 export type RecordAbout = Static<typeof RecordAboutSchema>;
 /**
- * What a capability is about (D97, D132): a person or a unit (`entity`), or, on a propose or an execute, one record of
+ * What a capability is about (D97, D137): a person or a unit (`entity`), or, on a propose or an execute, one record of
  * a read of the same connector (`record`). Two forms, told apart by which of `entity` and `record` they carry.
  */
 export const AboutSchema = Type.Union([EntityAboutSchema, RecordAboutSchema], {
   description:
-    "What the capability concerns, in one of two forms. `{ entity, param? }` (D97): a person or a unit. `{ record, params }` (D132): on a `propose` or an `execute` only, one record of a read of this connector, the action's inputs filled from the record's. A source says what, never where: Clew places it from the declaration.",
+    "What the capability concerns, in one of two forms. `{ entity, param? }` (D97): a person or a unit. `{ record, params }` (D137): on a `propose` or an `execute` only, one record of a read of this connector, the action's inputs filled from the record's. A source says what, never where: Clew places it from the declaration.",
 });
 export type About = EntityAbout | RecordAbout;
 /** The entity form of `about` (D97), or undefined for the record form and for nothing. */
@@ -1993,7 +2026,7 @@ export const aboutEntity = <A extends EntityAbout | RecordAbout>(
   about: A | undefined,
 ): Extract<A, { entity: unknown }> | undefined =>
   about && 'entity' in about ? (about as Extract<A, { entity: unknown }>) : undefined;
-/** The record form of `about` (D132), or undefined for the entity form and for nothing. */
+/** The record form of `about` (D137), or undefined for the entity form and for nothing. */
 export const aboutRecord = (about: EntityAbout | RecordAbout | undefined): RecordAbout | undefined =>
   about && 'record' in about ? about : undefined;
 /**
@@ -2423,7 +2456,7 @@ export type EntityEffectInput = Static<typeof EntityEffectInputSchema>;
 export const EntityActionStartedSchema = object({ threadId: id });
 export type EntityActionStarted = Static<typeof EntityActionStartedSchema>;
 /**
- * An action about a record (D132): it shows on the record's page, under its title, for a reader who may call it and who
+ * An action about a record (D137): it shows on the record's page, under its title, for a reader who may call it and who
  * can make the record's read, and runs as an action about a person does. `path` is what the person meets; the
  * properties the record fills (`about.params`) are never among its asks.
  */
@@ -2437,19 +2470,19 @@ export const RecordActionSchema = object({
   own,
 });
 export type RecordAction = Static<typeof RecordActionSchema>;
-/** `GET /api/records/:read/actions?input=`: the actions about the record that read draws with that input (D132). */
+/** `GET /api/records/:read/actions?input=`: the actions about the record that read draws with that input (D137). */
 export const RecordActionsSchema = object({ actions: Type.Array(RecordActionSchema) });
 export type RecordActions = Static<typeof RecordActionsSchema>;
-/** A record as a page's address holds it (D131, D132): its read's input; never longer than `OPEN_THING_INPUT_MAX` as JSON. */
+/** A record as a page's address holds it (D136, D137): its read's input; never longer than `OPEN_THING_INPUT_MAX` as JSON. */
 const recordInput = Type.Record(Type.String(), Type.Unknown());
 /**
- * The assistant's draft an action about a record was sent from (D132): the conversation's message that keeps it
+ * The assistant's draft an action about a record was sent from (D137): the conversation's message that keeps it
  * (`MessageMeta.recordDraft`). Ids only, never what the conversation says.
  */
 export const RecordDraftRefSchema = object({ conversationId: id, messageId: id });
 export type RecordDraftRef = Static<typeof RecordDraftRefSchema>;
 /**
- * `POST /api/records/:read/actions`, `/decide` and `/effect` (D132): the record by the input its read was made with, the
+ * `POST /api/records/:read/actions`, `/decide` and `/effect` (D137): the record by the input its read was made with, the
  * action as `RecordAction.capability`, and the person's answers to its asks. `values` answers a propose's asks when it
  * starts and an execute's when it is decided; never a property the record fills. `draft`, on a start or a decision
  * only, names the assistant's draft it was sent from: the server marks that draft as sent with the work item it became,
@@ -3427,7 +3460,7 @@ export const DraftSchema = object({
 });
 export type Draft = Static<typeof DraftSchema>;
 /**
- * An action about the record that stood open, filled in by the assistant (D132 item 4), beside the work item's draft
+ * An action about the record that stood open, filled in by the assistant (D137 item 4), beside the work item's draft
  * (`DraftSchema`): the action, the record by its read and the input the page drew it with, and the values for what the
  * action asks, checked against the asks as the decision checks them. Kept in the conversation only; the person opens it
  * in the action's own dialog on the record and sends it from there. Nothing is executed from it. `sent` is written by
@@ -3539,7 +3572,7 @@ export const MessageMetaSchema = object({
    */
   viewItems: Type.Optional(Type.Array(id, { maxItems: VIEW_ITEMS_MAX })),
   draft: Type.Optional(DraftSchema),
-  /** An action about the record that stood open, filled in by the assistant and not sent (D132, `RecordDraftSchema`). */
+  /** An action about the record that stood open, filled in by the assistant and not sent (D137, `RecordDraftSchema`). */
   recordDraft: Type.Optional(RecordDraftSchema),
   /** A decision of Clew's own, filled in by the assistant and not sent (`PreparedSchema`). */
   prepared: Type.Optional(PreparedSchema),
@@ -3782,10 +3815,10 @@ export const ExecutionSummarySchema = object({
   compensates: Type.Union([Type.String(), Type.Null()]),
 });
 export type ExecutionSummary = Static<typeof ExecutionSummarySchema>;
-/** The longest a record's input may be as JSON for it to be sent as the open thing (D131 item 1). */
+/** The longest a record's input may be as JSON for it to be sent as the open thing (D136 item 1). */
 export const OPEN_THING_INPUT_MAX = 2000;
 /**
- * The thing that stands open on the page a question is asked beside (D131 item 1): a person or a unit by Clew's id, a
+ * The thing that stands open on the page a question is asked beside (D136 item 1): a person or a unit by Clew's id, a
  * record by its read and the input that draws it. It says only which thing: the server resolves it again on every turn,
  * as the asker, and a thing it cannot resolve for them is told to the model as nothing. A work item and a calendar entry
  * are not sent this way: they go as the chip that stands open (`ConversationInput.beside`).
@@ -3802,7 +3835,7 @@ export const OpenThingSchema = Type.Union([
 ]);
 export type OpenThing = Static<typeof OpenThingSchema>;
 /**
- * A question conversation that was asked beside a page (D130 rule 6): the subject the page gave it, so the pane finds
+ * A question conversation that was asked beside a page (D135 rule 6): the subject the page gave it, so the pane finds
  * the person's latest conversation about that subject again on any device, the words that say what it is about (Alla
  * samtal), and when the person opened it as a conversation. Until then it is not among the rail's latest: a question
  * asked beside each of ten meetings would otherwise push every longer conversation out. Absent on every other thread.
@@ -3811,7 +3844,7 @@ export const AskedBesideSchema = object({
   subject: Type.String({ minLength: 1, maxLength: 1200 }),
   label: Type.String({ minLength: 1, maxLength: 200 }),
   openedAt: Type.Union([instant, Type.Null()]),
-  /** The thing the page showed (D131 item 1), kept so every later turn of the conversation is about it. */
+  /** The thing the page showed (D136 item 1), kept so every later turn of the conversation is about it. */
   thing: Type.Optional(OpenThingSchema),
 });
 export type AskedBeside = Static<typeof AskedBesideSchema>;
@@ -3839,7 +3872,7 @@ export const ThreadSchema = object({
   summary: Type.String(),
   /** The assistants of other systems a question conversation has an exchange with, the one asked last first. */
   handover: Type.Optional(HandoverSchema),
-  /** A question conversation asked beside a page (D130): what it is about, and when it was opened as a conversation. */
+  /** A question conversation asked beside a page (D135): what it is about, and when it was opened as a conversation. */
   askedBeside: Type.Optional(AskedBesideSchema),
   items: Type.Array(ThreadItemSchema),
   /**
@@ -4929,7 +4962,7 @@ export const ConversationInput = object({
    */
   beside: Type.Optional(ChipSchema.properties.ref),
   /**
-   * The question is asked in the assistant's pane beside a page (D130): the page's subject, by the key the page gives
+   * The question is asked in the assistant's pane beside a page (D135): the page's subject, by the key the page gives
    * it, and the words for what it is about. A conversation this question starts is kept as asked beside that subject
    * (`Thread.askedBeside`); on a conversation that exists it says nothing.
    */
@@ -4938,7 +4971,7 @@ export const ConversationInput = object({
   ),
   conversationId: Type.Optional(id),
   /**
-   * The thing that stands open where the question is asked (D131 item 1): on a thing's page beside the assistant's pane,
+   * The thing that stands open where the question is asked (D136 item 1): on a thing's page beside the assistant's pane,
    * or beside the transcript on the conversation's page. The server resolves it as the asker; with `page`, a
    * conversation this question starts keeps it (`AskedBeside.thing`).
    */
@@ -4965,7 +4998,7 @@ export const ConversationInput = object({
 });
 export type ConversationInput = Static<typeof ConversationInput>;
 /**
- * What the assistant may fill in for what stands open (D133 item 7, D132 item 4), asked with the two fields a question
+ * What the assistant may fill in for what stands open (D138 item 7, D137 item 4), asked with the two fields a question
  * carries about it: the chip that stands open (`beside`, a work item or a calendar entry) and the thing on the page
  * (`thing`, a record). The pane says it before anything is asked; it is never a reason to refuse.
  */
@@ -5004,7 +5037,7 @@ export const ConversationResponseSchema = object({
     }),
   ),
   /**
-   * An action about the record that stood open that the answer filled in (D132 item 4), with the action as the person
+   * An action about the record that stood open that the answer filled in (D137 item 4), with the action as the person
    * may take it now: the pane draws one row that opens the action's own dialog with the values in it.
    */
   recordDraft: Type.Optional(object({ ...RecordDraftSchema.properties, action: RecordActionSchema })),

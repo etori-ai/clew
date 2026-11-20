@@ -276,7 +276,7 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
       '/staff',
     );
 
-    // On the conversation's own page: a question on Hem's line is answered under the line (D133 item 9).
+    // On the conversation's own page: a question on Hem's line is answered under the line (D138 item 9).
     await open(page, '/conversations/new');
     await composer(page).fill('attestera en faktura');
     await composer(page).press('Enter');
@@ -500,7 +500,7 @@ test.describe('the review on a phone: the same page, stacked (D73 amended 2026-1
     await expect(img).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Underlag från ekonomisystemet' })).toBeFocused();
     // The decision is pinned at the window's foot, so the floating way to the assistant is not drawn over it (D130);
-    // the one "Fråga AI" is the first control of that footer, before the decision's own (D133 item 5,
+    // the one "Fråga AI" is the first control of that footer, before the decision's own (D138 item 5,
     // `ask-pane.spec.ts`).
     await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
     const door = page.getByRole('button', { name: 'Fråga AI', exact: true });

@@ -35,7 +35,7 @@ import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory
 import { threadAccess } from '../../apps/server/src/threads/access';
 
 /**
- * The reads D130 rule 4 opens or adds for the pages the assistant is asked beside, that are not a domain's own module
+ * The reads D135 rule 4 opens or adds for the pages the assistant is asked beside, that are not a domain's own module
  * test: Personal's list (`people.reports`), Alla verktyg (`clew.tools`) and Alla samtal (`clew.conversations`). Each is
  * read as the person through the registry on the memory adapters: answered for the person who may, refused or empty for
  * one who may not, offered to the model for them, and marked for the browser (`ViewEntry.assistant`). The domains'
@@ -149,7 +149,7 @@ const offered = (registry: Registry, actor: Actor, name: string) => {
   return tool;
 };
 
-describe('people.reports: Personal’s list as a read (D130 rule 4)', () => {
+describe('people.reports: Personal’s list as a read (D135 rule 4)', () => {
   function world() {
     const d = directory();
     const registry = new Registry();
@@ -255,7 +255,7 @@ const finance: Connector = {
   ],
 };
 
-describe('clew.tools: Alla verktyg as a read (D130 rule 4)', () => {
+describe('clew.tools: Alla verktyg as a read (D135 rule 4)', () => {
   function world(options: { errands?: boolean } = {}) {
     const registry = new Registry();
     const errands: Capability = {
@@ -336,7 +336,7 @@ describe('clew.tools: Alla verktyg as a read (D130 rule 4)', () => {
   });
 });
 
-describe('clew.conversations: Alla samtal as a read (D130 rule 4)', () => {
+describe('clew.conversations: Alla samtal as a read (D135 rule 4)', () => {
   const question = (id: string, personId: string, updatedAt: string, over: Partial<Thread> = {}) => ({
     id,
     personId,

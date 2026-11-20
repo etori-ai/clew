@@ -504,11 +504,11 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
 }
 
 /**
- * The opened person's, unit's or record's actions under its name (D126 rule 1, board Person; D132 item 2 for a
+ * The opened person's, unit's or record's actions under its name (D126 rule 1, board Person; D137 item 2 for a
  * record), every one of them: the first as the primary button, the second as a secondary one, what the page adds of its
  * own after them (`extra`: the reader's own Inställningar), and the rest under "Fler åtgärder", grouped by the system
  * they act in, as the row menu on Personal is (artboard A3). On a phone one button, "Åtgärder", the width of the
- * column, holds them all, with `extra` under it. None of them asks the assistant: the corner's "Fråga AI" does (D133
+ * column, holds them all, with `extra` under it. None of them asks the assistant: the corner's "Fråga AI" does (D138
  * item 1). Every one opens the action dialog, and nothing is created before its last button, after which its work item
  * opens (`entity-actions.ts`). A source's refusal is said aloud and stands under the buttons until the next action. They
  * hold what can be done about the thing, never a choice of where Clew shows it, and never a way into a source's page,

@@ -21,7 +21,7 @@ import { useThreadAction } from '../../mutations';
 /**
  * The turn machinery of a conversation (D31, D36), apart from where the conversation is drawn: the app's one
  * conversation (`ConversationProvider`, bound to the route) and the conversation beside a page (`usePageConversation`,
- * D130 rule 6) each hold one of these, so the box and the transcript are the same parts in both (D130, "One component").
+ * D135 rule 6) each hold one of these, so the box and the transcript are the same parts in both (D135, "One component").
  * Nothing here navigates.
  */
 export type ClewAction = ConversationResponse['clewActions'][number];
@@ -88,13 +88,13 @@ export interface Send {
   /** Clew held the question and the person chose to send it anyway. */
   confirmed?: boolean;
   /**
-   * The page the question was asked beside (D130 rules 4 and 6): what it shows, as the subject's key and its words. A
+   * The page the question was asked beside (D135 rules 4 and 6): what it shows, as the subject's key and its words. A
    * conversation the question starts is kept as asked beside that subject, so the pane finds it again on any device
    * and the rail leaves it out until it is opened as a conversation; on a conversation that exists it says nothing.
    */
   page?: { subject: string; label: string } | undefined;
   /**
-   * The thing that stands open where the question is asked (D131 item 1): a person, a unit or a record on its page
+   * The thing that stands open where the question is asked (D136 item 1): a person, a unit or a record on its page
    * beside the pane, or beside the transcript on the conversation's page. Only which thing: the server resolves it as
    * the asker. Never with a question to another system's assistant.
    */
@@ -110,7 +110,7 @@ export interface Send {
 }
 /**
  * The request one question goes as (`ConversationInput`): what stands open (`beside`), the page it was asked beside
- * (`page`) and the thing that stands open there (`thing`, D131 item 1) go with a question to Clew only; to another
+ * (`page`) and the thing that stands open there (`thing`, D136 item 1) go with a question to Clew only; to another
  * system's assistant the words go with the chips the person chose and nothing of the page.
  */
 export function turnInput({
@@ -158,7 +158,7 @@ export interface Turns {
   /**
    * Lets go of everything at once: the turn on its way is left (nothing goes back in the box) and the conversation, the
    * answer, what was done, the error and the words in the box are cleared. The conversation beside a page does this
-   * when the page shows another subject (D130 rule 6: one conversation per subject).
+   * when the page shows another subject (D135 rule 6: one conversation per subject).
    */
   reset(): void;
   send(request: Send): Promise<void>;

@@ -3,7 +3,7 @@ import { isSide } from './conversation-about';
 import { DOT } from './dot';
 
 /**
- * The answer under Hem's line (D133 item 9): what the card draws of a conversation asked there, decided without
+ * The answer under Hem's line (D138 item 9): what the card draws of a conversation asked there, decided without
  * reading anything. The card shows the newest exchange only; the earlier ones are in the conversation. This file
  * imports nothing of the page, so a unit test loads it on its own.
  */
@@ -73,7 +73,7 @@ export function answerEyebrow(
 }
 
 /**
- * The work items an answer names, as the card draws them, as the rows "Behöver dig" has (D133 item 9): the items it is
+ * The work items an answer names, as the card draws them, as the rows "Behöver dig" has (D138 item 9): the items it is
  * about (`MessageMeta.cards`), the work items among the rows of a read it names (`MessageMeta.viewItems`: the rows of
  * Att göra the model's answer is about), the item an action it filled in is on, and the item a proposal answer made
  * (the turn's `forslag`); each once, in that order.

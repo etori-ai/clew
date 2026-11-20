@@ -5,7 +5,7 @@
 // The desk knows a person by their user name (`actor.userName`, the directory's, D68), the same key Clew asks about a
 // person with (D97). Who may be asked about is Clew's (D117): an order, its effect, the summary and the equipment answer
 // only a key the verified request vouches for as the caller themself or a manager's direct report. What the person made
-// is theirs alone: the list, one request and a comment on one (D132) answer the caller's own and nobody else's, and a
+// is theirs alone: the list, one request and a comment on one (D137) answer the caller's own and nobody else's, and a
 // manager reading the summary about a report counts only what someone else ordered on the report's behalf. A caller
 // without a user name is refused, never answered as someone who has nothing.
 import { createHash } from 'node:crypto';
@@ -126,7 +126,7 @@ export function createConnector({
     };
   };
   /**
-   * Checks a comment as the desk takes it (D132): on a request the caller made, which anyone else is told does not
+   * Checks a comment as the desk takes it (D137): on a request the caller made, which anyone else is told does not
    * exist, with text within bounds. Answers the request's number and the text as the desk keeps it.
    */
   async function commentOf(actor, input) {
@@ -250,7 +250,7 @@ export function createConnector({
 
   // Each write is one filing in the desk. The fault `conflict` is the desk answering that it took nothing.
   const writes = {
-    // A comment on the caller's own request (D132), added once per operation id as an order is filed once.
+    // A comment on the caller's own request (D137), added once per operation id as an order is filed once.
     'servicedesk.comment': async (actor, input, _relations, operationId, digest) => {
       const { number, text } = await commentOf(actor, input);
       if (fault === 'conflict')

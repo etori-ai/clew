@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**138 in force**: 98 accepted and 40 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**142 in force**: 98 accepted and 44 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -22,7 +22,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D84 · A model's reasoning is its own setting, and the model test settles it](D84-a-models-reasoning-is-its-own-setting.md) | 2026-11-07, revised 2026-11-09 | accepted |  |
 | [D94 · A manager has a Personal section that lists the people on the units they manage](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) | 2026-11-09 | accepted | [D99](README.md) |
 | [D95 · Clew may own a domain by choice, decided per domain with the core-or-connector checklist](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md) | 2026-11-10 | accepted |  |
-| [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | 2026-11-10 | accepted | [D99](README.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D122](README.md) |
+| [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | 2026-11-10 | accepted | [D99](README.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D122](README.md), [D132](D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md) |
 | [D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) | 2026-11-10 | accepted | [D101](README.md) |
 | [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | 2026-11-10 | provisional |  |
 | [D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) | 2026-11-10 | provisional |  |
@@ -32,6 +32,9 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D120 · A manager's own notes in the follow-up dialogue are private posts, and their files go to the document system](D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md) | 2026-11-13 | provisional |  |
 | [D120 · A skill is a holding with a level, and the competence domain covers what a skills platform does for a public-sector organisation](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md) | 2026-11-12 | provisional |  |
 | [D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item](D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md) | 2026-11-13 | provisional |  |
+| [D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation](D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md) | 2026-11-19 | provisional | [D133](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) |
+| [D133 · A talk follows its meeting by the event's id, and only the manager changes it](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) | 2026-11-20 | provisional |  |
+| [D134 · A booked talk reminds its manager to prepare, and asks afterwards whether it was held](D134-a-booked-talk-reminds-its-manager-to-prepare-and-asks-afterwards-whether-it-was-held.md) | 2026-11-20 | provisional |  |
 
 ## Integrations
 
@@ -62,7 +65,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) | 2026-11-13 | provisional |  |
 | [D127 · A read can say its rows are a read about people, asked for everyone, and then has one place](D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md) | 2026-11-14 | provisional |  |
 | [D129 · The connector protocol is 1, and changes in place until the first release](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) | 2026-11-18 | accepted |  |
-| [D132 · An action says which record it is about, and the assistant fills in the actions of what stands open](D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md) | 2026-11-19 | provisional | [D133](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) |
+| [D137 · An action says which record it is about, and the assistant fills in the actions of what stands open](D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md) | 2026-11-19 | provisional | [D138](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) |
 
 ## Identity
 
@@ -110,6 +113,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D102 · A decision is provisional until something outside the repository has tested it, and small adjustments are not numbered](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) | 2026-11-10 | accepted |  |
 | [D105 · The repository explains itself without a handover file](D105-the-repository-explains-itself-without-a-handover-file.md) | 2026-11-11 | accepted |  |
 | [D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages](D106-the-documentation-site-is-vitepress-over-docs-as-it-is.md) | 2026-11-11 | provisional |  |
+| [D131 · Clew builds a server image and a web image from the repository root](D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md) | 2026-11-17 | provisional |  |
 
 ## Interface
 
@@ -161,12 +165,12 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D116 · A panel is a peek at one thing; a list is a page, and every view has an address](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) | 2026-11-12 | provisional | [D124](README.md), [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) |
 | [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
 | [D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) | 2026-11-13 | provisional |  |
-| [D126 · One page per thing, and one Astryx template per page type](D126-one-page-per-thing-one-astryx-template-per-page-type.md) | 2026-11-14 | provisional | [D129](README.md), [D130](README.md) |
+| [D126 · One page per thing, and one Astryx template per page type](D126-one-page-per-thing-one-astryx-template-per-page-type.md) | 2026-11-14 | provisional | [D129](README.md), [D135](D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) |
 | [D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) | 2026-11-16 | provisional |  |
 | [D129 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) | 2026-11-18 | provisional |  |
 | [D130 · Clew's look and layout are the startsidan prototype's, built with Astryx](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) | 2026-11-18 | provisional |  |
-| [D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides](D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | 2026-11-18 | provisional | [D133](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) |
-| [D133 · The corner's "Fråga AI" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) | 2026-11-19 | provisional |  |
+| [D135 · The assistant is asked beside every page, through one button and one pane that the page frame provides](D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | 2026-11-18 | provisional | [D138](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) |
+| [D138 · The corner's "Fråga AI" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) | 2026-11-19 | provisional |  |
 
 ## Assistant
 
@@ -174,7 +178,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 |---|---|---|---|
 | [D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it](D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md) | 2026-11-13 | provisional |  |
 | [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional | [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md), [D129](README.md) |
-| [D131 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed](D131-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md) | 2026-11-19 | provisional |  |
+| [D136 · The thing that stands open on its page is told to the assistant by Clew: a person as one the asker named, a record as its read, and a system's read about a person stays closed](D136-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md) | 2026-11-19 | provisional |  |
 
 ## Proposed, not decided
 

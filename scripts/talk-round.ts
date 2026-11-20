@@ -6,6 +6,8 @@
  *
  *   bun scripts/talk-round.ts --label "Utvecklingssamtal 2026" --opens 2026-09-01 --due 2026-11-28 [--organisation poc]
  *   bun scripts/talk-round.ts ... --if-none     open only when the organisation has no open round (the development seed)
+ *   bun scripts/talk-round.ts ... --prepare-days 3    remind a manager three working days before a booked talk (D134);
+ *                                                      5 when not said, 0 for no reminder
  *
  * `--organisation` defaults to `poc`, the development directory's organisation (`scripts/auth-setup.ts`).
  */
@@ -28,6 +30,8 @@ export interface RoundInput {
   label: string;
   opensOn: string;
   dueOn: string;
+  /** Working days before a booked talk that its manager is reminded to prepare (D134); the module's default when absent. */
+  prepareDays?: number;
 }
 /** The organisation's open round, read through the talks store's port (no use case reads it without a manager). */
 export const openRoundOf = (organisationId: string) => talkStore.transaction(tx => tx.currentRound(organisationId));
@@ -59,14 +63,15 @@ if (import.meta.main) {
     dueOn = option('due');
   if (!label || !opensOn || !dueOn) {
     console.error(
-      'Usage: bun scripts/talk-round.ts --label "<label>" --opens YYYY-MM-DD --due YYYY-MM-DD [--organisation <id>] [--if-none]',
+      'Usage: bun scripts/talk-round.ts --label "<label>" --opens YYYY-MM-DD --due YYYY-MM-DD [--organisation <id>] [--prepare-days <0-30>] [--if-none]',
     );
     process.exit(2);
   }
   const organisationId = option('organisation') ?? DEVELOPMENT_ORGANISATION;
+  const days = option('prepare-days');
   try {
     const result = await openTalkRound(
-      { organisationId, label, opensOn, dueOn },
+      { organisationId, label, opensOn, dueOn, ...(days === undefined ? {} : { prepareDays: Number(days) }) },
       { ifNone: args.includes('--if-none') },
     );
     if (result.kept) console.log(`Organisation "${organisationId}" already has an open round ${result.kept}; kept.`);

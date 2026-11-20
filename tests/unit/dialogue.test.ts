@@ -711,7 +711,7 @@ describe('the built-in connector', () => {
       tone('state', 'Bra'),
       tone('state', 'Inte bedömd'),
     ]).toEqual(['alert', 'warn', 'ok', 'none']);
-    // Läget's list and the reader's own activities are offered (D122 item 3, D130 rule 4), the read about a unit never.
+    // Läget's list and the reader's own activities are offered (D122 item 3, D135 rule 4), the read about a unit never.
     expect(
       registry()
         .tools(actor(ingrid))
@@ -728,7 +728,7 @@ describe('the built-in connector', () => {
     expect(views.find(v => v.capability === 'dialogue.unit')).not.toHaveProperty('assistant');
   });
 
-  test('dialogue.units answers every unit the reader follows up by name, in the words of dialogue.unit, and no other unit (D130 rule 4)', async () => {
+  test('dialogue.units answers every unit the reader follows up by name, in the words of dialogue.unit, and no other unit (D135 rule 4)', async () => {
     const r = registry();
     await dialogue.assess(ingrid, 'u-skola', { area: 'operations', dimension: 'mission', tone: 'alert' });
     await dialogue.assess(olle, 'u-other', { area: 'digital', tone: 'warn' });

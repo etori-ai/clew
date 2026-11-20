@@ -76,17 +76,17 @@ const FACTS_WIDTH = 340;
 const tightQuery = '(max-width: 359px)';
 
 /**
- * Whether and about what a page has the assistant's pane (D130 rule 1 on the branch, D133 item 3): every page says, so
+ * Whether and about what a page has the assistant's pane (D135 rule 1, D138 item 3): every page says, so
  * leaving it out is a type error and no page can forget the assistant. `subject` is what the page shows: its list (the
  * registers, Läget and Att göra's queue) or its thing (a work item, its review, a record, a person, a unit and a plan,
- * D131), null until the page knows it (while its data loads, on a thing's missing page) and while a pane of the page's
+ * D136), null until the page knows it (while its data loads, on a thing's missing page) and while a pane of the page's
  * own holds the end slot (Att göra's item). `none` is a page with no subject and why: Administration, where nothing is a
  * read the assistant may make; the assistant's own pages, Hem, Ny fråga and a conversation; a frame that is no page of
  * the person's work, the first load's or a missing calendar's. On those the corner's "Fråga AI" starts a new question
  * (`CornerDoor`).
  */
 export type PageAsk = AskAbout | { none: 'administration' | 'assistant' | 'no-page' };
-/** A page with the assistant's pane (D130 rules 2 to 4 on the branch, D133 items 3 and 4). */
+/** A page with the assistant's pane (D135 rules 2 to 4, D138 items 3 and 4). */
 export interface AskAbout {
   subject: PageSubject | null;
   /** Hears each finished turn in the pane: the page makes ready what an answer prepared (Kalender, D129). */
@@ -95,7 +95,7 @@ export interface AskAbout {
   prepared?: ((prepared: Prepared) => ReactNode) | undefined;
 }
 /**
- * The assistant's pane (D133 item 4): a card 400 px wide at the end of the shell's column. It is dragged, or moved with
+ * The assistant's pane (D138 item 4): a card 400 px wide at the end of the shell's column. It is dragged, or moved with
  * the arrow keys on its grip, between the limits below (the product owner asked on 2026-11-19 that it be resized as
  * Astryx's panels are), and its width is kept in the browser. It never takes more than half the column, so the page
  * keeps the larger part.
@@ -177,7 +177,7 @@ function Closing({ ruled }: { ruled: boolean }) {
 }
 
 interface PageFrameProps {
-  /** Whether and about what the page has the assistant's pane (D133 item 3). Required, so no page can leave it out. */
+  /** Whether and about what the page has the assistant's pane (D138 item 3). Required, so no page can leave it out. */
   ask: PageAsk;
   /** The way back, named; none where the page is a place of its own. */
   back?: WayBackTarget | null | undefined;
@@ -225,7 +225,7 @@ interface PageFrameProps {
   /**
    * A pane of the page's own in the end slot (a `LayoutPanel`), where the page has no facts' panel: Att göra's reading
    * pane, Kalender's entry, the thing beside a conversation. While it holds something the box stands at its foot, and
-   * the assistant's pane is not drawn (D130 rule 5 on the branch, D133 item 2).
+   * the assistant's pane is not drawn (D135 rule 5, D138 item 2).
    */
   end?: ReactNode;
   /** A panel before the column (a `LayoutPanel`): Administration's sections. */
@@ -269,22 +269,22 @@ interface PageFrameProps {
  * reading pane, the thing beside a conversation) and `start` a panel before the column (Administration's sections), all
  * inside the same frame. The header stays while the content scrolls; on a short screen nothing is pinned and the page
  * scrolls as one (1.4.10). Every page says what it is about (`ask`): the frame tells the shell's corner what its "Fråga
- * AI" does on the page (`useCornerDoor`, D133 items 3 and 5) and provides the assistant's pane, a card at the end of the
- * shell's column (`AskingFrame`, D133 item 4). No page draws a way to ask of its own.
+ * AI" does on the page (`useCornerDoor`, D138 items 3 and 5) and provides the assistant's pane, a card at the end of the
+ * shell's column (`AskingFrame`, D138 item 4). No page draws a way to ask of its own.
  */
 export function PageFrame(props: PageFrameProps) {
   const { ask, ...frame } = props;
   return 'subject' in ask ? <AskingFrame {...frame} about={ask} /> : <PageWithoutSubject {...frame} />;
 }
 
-/** A page with no subject (D130 rule 1 on the branch): the corner's "Fråga AI" starts a new question there (`CornerDoor`). */
+/** A page with no subject (D135 rule 1): the corner's "Fråga AI" starts a new question there (`CornerDoor`). */
 function PageWithoutSubject(frame: Omit<PageFrameProps, 'ask'>) {
   useCornerDoor('question');
   return <FrameBody {...frame} />;
 }
 
 /**
- * A page with a subject (D130 rules 2 to 11 on the branch, D133 items 3 to 5 and 11; canvas boards AttGora-tom and
+ * A page with a subject (D135 rules 2 to 11, D138 items 3 to 5 and 11; canvas boards AttGora-tom and
  * Arende-tom). The corner's "Fråga AI" opens the pane: the frame gives the shell the press (`useCornerDoor`), and the
  * corner is not drawn while the pane stands, while the page's own pane holds its box (`end`), or before the page knows
  * its subject. Without a model the pane is never drawn (D8) and the corner starts a new question, as on a page with no
@@ -295,8 +295,8 @@ function PageWithoutSubject(frame: Omit<PageFrameProps, 'ask'>) {
  * in words and where the assistant cannot read (`subject.closed`), then the conversation and the box (`PageTalk`). From
  * `paneBesideQuery` it is a card at the end of the shell's column (`FrameBody`'s `aside`), which the page's own pane wins
  * while it holds something (Kalender's entry, rule 5); the page then lays itself out in the width left
- * (`useColumnQuery`; a thing's facts above its read, `useFactsInColumn`, D131 item 9). Narrower or short it is Astryx's
- * drawer over the page; on a phone the corner leads to the conversation's page with the subject (D133 item 11).
+ * (`useColumnQuery`; a thing's facts above its read, `useFactsInColumn`, D136 item 9). Narrower or short it is Astryx's
+ * drawer over the page; on a phone the corner leads to the conversation's page with the subject (D138 item 11).
  *
  * Where the page pins controls at the window's foot (`footer`) the corner gives way to them (`useClearCorner`), and the
  * frame draws the same "Fråga AI" at the start of that footer, before the page's own controls, with the same press
@@ -334,7 +334,7 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
       navigate(withAsk(pathname, search));
     }
   };
-  // The corner's button (D133 item 5): drawn only where no box stands on the page.
+  // The corner's button (D138 item 5): drawn only where no box stands on the page.
   const door: CornerDoor = !model ? 'question' : open || frame.end || !subject ? 'hidden' : 'pane';
   useCornerDoor(door, press);
   // The same button at the start of a footer the page pins, where the corner gives way (`withDoor`).
@@ -447,7 +447,7 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
 }
 
 /**
- * The corner's "Fråga AI" where a page pins controls at the window's foot (D133 item 5; the product owner, 2026-11-19:
+ * The corner's "Fråga AI" where a page pins controls at the window's foot (D138 item 5; the product owner, 2026-11-19:
  * "Yes, in the footer"): the floating button is not drawn over them (`useClearCorner`), so the frame draws the same
  * button at the start of the page's footer, before its own controls. The page passes nothing new: its `LayoutFooter`
  * keeps its inset, rule and name, and its content stands beside the door in the same place in the tree whether the door
@@ -467,7 +467,7 @@ function withDoor(footer: ReactNode, door: ReactNode): ReactNode {
 }
 
 /**
- * The assistant's round mark (D130 item 14, D133 items 6 and 9): Hem's ask pill's, the theme's blue for the assistant
+ * The assistant's round mark (D130 item 14, D138 items 6 and 9): Hem's ask pill's, the theme's blue for the assistant
  * alone; over the pane's heading and the answer under Hem's line.
  */
 export function AssistantMark() {
@@ -479,7 +479,7 @@ export function AssistantMark() {
 }
 
 /**
- * The pane's inside, as a card in the column and in the drawer alike (D133 item 6; canvas boards AttGora-tom and
+ * The pane's inside, as a card in the column and in the drawer alike (D138 item 6; canvas boards AttGora-tom and
  * Arende-tom): the round mark and "Fråga AI", the words and the mark of the button that opened it; "Öppna som samtal"
  * and ✕ at the end of its line; what it is about under it, and where the assistant cannot read; then the conversation
  * over the box (`PageTalk`). It shows no thing.
@@ -540,7 +540,7 @@ function AskPane({
 
 /**
  * The frame's layout. `aside` is the assistant's pane, which `AskingFrame` gives while it stands beside the page: a card
- * at the end of the shell's column, beside the page's whole layout, from the top of the page to its foot (D133 item 4,
+ * at the end of the shell's column, beside the page's whole layout, from the top of the page to its foot (D138 item 4,
  * the canvas's `frame.tsx`). The page keeps its own shape in the width that is left: the parts inside it ask
  * `useColumnQuery` and `useFactsInColumn`, which read the pane's width from `PageFrameContext`, and a board keeps its
  * title and scrolls its column while the pane stands, as a page with panels does. Astryx's grip between the two resizes
@@ -578,7 +578,7 @@ function FrameBody({
   layoutRef,
   aside,
 }: Omit<PageFrameProps, 'ask'> & {
-  /** The assistant's pane, a card of its own at the end of the shell's column (D133 item 4). */
+  /** The assistant's pane, a card of its own at the end of the shell's column (D138 item 4). */
   aside?: ReactNode;
 }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -602,7 +602,7 @@ function FrameBody({
   const paneWidth = besidePane ? region.size + (board ? BOARD_PANE_GAP : PANE_GAP) : 0;
   // A board (Hem, a register of cards) scrolls as one page under the shell's header, as the startsidan prototype's
   // pages do (D130): nothing of it stays behind. A page with panels keeps its title while its column scrolls, so the
-  // panels stand beside what they are about, and so does a board while the assistant's pane stands beside it (D133
+  // panels stand beside what they are about, and so does a board while the assistant's pane stands beside it (D138
   // item 4); on a short screen nothing is pinned anywhere (1.4.10).
   const pin = pinned ?? (!short && (!board || besidePane));
   const gutter = tight ? 4 : 6;
@@ -705,7 +705,7 @@ function FrameBody({
     </LayoutHeader>
   ) : undefined;
   // The facts and the assistant's pane: while the pane stands beside the page the facts stand above the read, as where
-  // the window is narrow (D131 item 9, D133 item 4; `useFactsInColumn` says the same to a page that places them).
+  // the window is narrow (D136 item 9, D138 item 4; `useFactsInColumn` says the same to a page that places them).
   const factsInColumn = narrow || besidePane;
   const panelFacts = !!facts && !factsInColumn;
   const column =
@@ -819,7 +819,7 @@ function FrameBody({
   // rows and on their lines, with the ground showing at both sides as the startsidan prototype draws its pages. Hem
   // (`plain`) is a board: its greeting and its cards stand on the ground itself. A page with a pane of its own (Att
   // göra's reading pane, the thing beside a conversation) stays in the same column, so its title does not move when the
-  // pane opens, and so does a page with the assistant's pane beside it (D133 item 4).
+  // pane opens, and so does a page with the assistant's pane beside it (D138 item 4).
   if (mobile) return inColumn;
   return (
     <HStack justify="center" height={pin ? '100%' : undefined}>

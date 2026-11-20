@@ -18,9 +18,9 @@ import { People } from './person-data';
 import { SICK_UNIT, Units } from './unit-data';
 
 /**
- * The assistant beside every page (D130 on the branch, D133; canvas boards AttGora-tom and Arende-tom), on the first
+ * The assistant beside every page (D135, D138; canvas boards AttGora-tom and Arende-tom), on the first
  * page that has it, a register: the phone book's directory, a table, as a tool. The corner's floating "Fråga AI" is the
- * door (D133 items 1, 3 and 5): it opens the assistant's pane, a card at the end of the shell's column, in the address
+ * door (D138 items 1, 3 and 5): it opens the assistant's pane, a card at the end of the shell's column, in the address
  * (`ask=1`), with the focus in its box, and is not drawn while the pane stands. The pane says what it is about and what
  * the assistant can do here (item 7), sends every question with the list's chip, as what stands open and with the
  * page's subject, and finds the conversation again after a reload. Back, Esc and ✕ close it. "Öppna som samtal" leads
@@ -38,10 +38,10 @@ const ASKED = 'om-capability-phonebook-directory';
  * (the review's decision), where the corner gives way.
  */
 const door = (page: Page) => page.getByRole('button', { name: 'Fråga AI', exact: true });
-/** A way to ask drawn by the page itself: none stands after D133 (item 1). */
+/** A way to ask drawn by the page itself: none stands after D138 (item 1). */
 const ownButton = (page: Page) => page.getByRole('button', { name: /^Fråga (assistenten|Clew)/ });
 const pane = (page: Page) => page.getByRole('complementary', { name: 'Fråga AI', exact: true });
-/** The pane's three lists of what the assistant can do here before anything is asked (D133 item 7). */
+/** The pane's three lists of what the assistant can do here before anything is asked (D138 item 7). */
 const READS = 'Det här kan jag läsa här';
 const FILLS = 'Det här kan jag fylla i åt dig';
 const CANNOT = 'Det här kan jag inte läsa';
@@ -65,7 +65,7 @@ test.describe('the assistant’s pane beside a register', () => {
   }) => {
     await open(page, directory);
     const title = page.getByRole('heading', { level: 1, name: 'Telefonbok' });
-    // The door is the corner's (D133 item 1): the page draws no way to ask of its own.
+    // The door is the corner's (D138 item 1): the page draws no way to ask of its own.
     await expect(door(page)).toHaveCount(1);
     await expect(door(page)).toBeInViewport({ ratio: 1 });
     await expect(ownButton(page)).toHaveCount(0);
@@ -207,7 +207,7 @@ test.describe('the assistant’s pane beside a register', () => {
     await expect(page).toHaveURL(new RegExp(`/conversations/${ASKED}$`));
     await expect(page.getByRole('main').getByText('Vad väntar de på från mig?', { exact: true }).first()).toBeVisible();
     await expect.poll(() => api.opened).toEqual([ASKED]);
-    // A conversation is found under Samtal (D133 item 10): the shell lists no latest conversations.
+    // A conversation is found under Samtal (D138 item 10): the shell lists no latest conversations.
     await expect(pagesNav(page).getByRole('link', { name: 'Samtal', exact: true })).toHaveAttribute(
       'aria-current',
       'page',
@@ -328,11 +328,11 @@ test.describe('the assistant’s pane on smaller screens', () => {
 });
 
 /**
- * Stage 2 (D130 rules 1, 4 and 11 on the branch, D133): the registers, Läget and Att göra's queue say what they show,
+ * Stage 2 (D135 rules 1, 4 and 11, D138): the registers, Läget and Att göra's queue say what they show,
  * and the frame provides the pane that the corner's "Fråga AI" opens. On every one the pane opens beside the page with
  * what it is about in words and its box, the page stays and never scrolls sideways while its column is 400 px narrower
  * (a table scrolls inside itself or becomes its list), and nothing breaks axe. Where the assistant cannot read what a
- * page shows, the pane lists it by name before anything is asked ("Det här kan jag inte läsa", D133 item 7); where it
+ * page shows, the pane lists it by name before anything is asked ("Det här kan jag inte läsa", D138 item 7); where it
  * can, the question goes with the read's chip, as what stands open and with the page's subject.
  */
 const sideways = (page: Page) =>
@@ -426,7 +426,7 @@ const REGISTERS: Array<{
   { name: 'Att göra', path: '/todo', about: 'Om Att göra · Behöver dig', box: 'Fråga om ärendena' },
 ];
 
-test.describe('the assistant’s pane beside every register, Läget and Att göra (D130 stage 2)', () => {
+test.describe('the assistant’s pane beside every register, Läget and Att göra (D135 stage 2)', () => {
   test.use({ viewport: WIDE });
 
   for (const r of REGISTERS)
@@ -436,7 +436,7 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     }) => {
       await r.setup?.(api, page);
       await open(page, r.path);
-      // One way to ask on the page: the corner's (a page that draws its own is a defect against D133).
+      // One way to ask on the page: the corner's (a page that draws its own is a defect against D138).
       await expect(door(page)).toHaveCount(1);
       await expect(ownButton(page)).toHaveCount(0);
       await door(page).click();
@@ -594,7 +594,7 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await door(page).click();
     await expect(page).toHaveURL(/\/todo\?ask=1$/);
     await expect(pane(page).getByText('Om Att göra · Behöver dig', { exact: true })).toBeVisible();
-    // The queue holds beside the pane in the width that is left, as in a narrower window (D133 item 4): its rows are
+    // The queue holds beside the pane in the width that is left, as in a narrower window (D138 item 4): its rows are
     // links, and the table drops the column it already drops there.
     const table = page.getByRole('table', { name: 'Behöver dig' });
     await expect(table.getByRole('columnheader')).toHaveText(['Ärende', 'Status']);
@@ -608,7 +608,7 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
       beside: 'capability:clew.work',
       page: { subject: 'todo:needs-you', label: 'Om Att göra · Behöver dig' },
     });
-    // Beside the pane the queue is laid out as in a narrower window (D133 item 4): the reading pane has no room, so a
+    // Beside the pane the queue is laid out as in a narrower window (D138 item 4): the reading pane has no room, so a
     // row leads to the item's page, with the queue and its pane as the way back.
     const first = table.getByRole('row').nth(1).getByRole('link').first();
     await first.click();
@@ -628,7 +628,7 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await expect(reading).toBeVisible();
     await expect(page).toHaveURL(/\/todo\?item=[^&]+$/);
     await expect(pane(page)).toHaveCount(0);
-    // With an item picked the corner is not drawn (D133 item 5): the box is on the page already.
+    // With an item picked the corner is not drawn (D138 item 5): the box is on the page already.
     await expect(door(page)).toHaveCount(0);
     await expect(ownButton(page)).toHaveCount(0);
     await expect(reading.getByRole('textbox', { name: 'Fråga om ärendet' })).toBeVisible();
@@ -666,7 +666,7 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     // Under the field stand only the box's own row with Skicka and the pane's inset.
     expect(paneBox.y + paneBox.height - (fieldBox.y + fieldBox.height)).toBeLessThan(120);
     // Before anything is asked only the box stands under the item: no introduction, no lists, no way to the
-    // conversation's page and no grip (D133 item 2 as built).
+    // conversation's page and no grip (D138 item 2 as built).
     await expect(
       reading.getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
     ).toHaveCount(0);
@@ -770,10 +770,10 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
 });
 
 /**
- * Stage 3 (D131, D133): a thing's page asks through the frame too. A work item, its review, a record, a person, a unit
+ * Stage 3 (D136, D138): a thing's page asks through the frame too. A work item, its review, a record, a person, a unit
  * and a plan each say what stands open; the door is the corner's "Fråga AI", and on the review, which pins its decision
  * at the window's foot, the same button at the start of that footer; no thing has a "Fråga assistenten" among its
- * actions (D131 item 9, D133 item 1); the pane opens about the thing in its words, with the facts above the read (the
+ * actions (D136 item 9, D138 item 1); the pane opens about the thing in its words, with the facts above the read (the
  * review's "Hittills" after its step, as where the window is narrow), and the page never scrolls sideways. A question
  * carries the thing that stands open (`thing`: a person or a unit by Clew's id, a record by its read and input), and for
  * a work item its chip as what stands open, with no `thing`.
@@ -860,7 +860,7 @@ const ask3 = async (page: Page, box: string, question: string) => {
   await expect(pane(page).getByText(question, { exact: true })).toBeVisible();
 };
 
-test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D131)', () => {
+test.describe('the assistant’s pane beside a thing’s page (D135 stage 3, D136)', () => {
   test.use({ viewport: WIDE });
 
   for (const t of THINGS)
@@ -870,7 +870,7 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
     }) => {
       await t.setup?.(api, page);
       await open(page, t.path);
-      // One door, the corner's or the footer's, and no "Fråga assistenten" among the thing's actions (D131 item 9).
+      // One door, the corner's or the footer's, and no "Fråga assistenten" among the thing's actions (D136 item 9).
       await expect(door(page)).toHaveCount(1);
       await expect(ownButton(page)).toHaveCount(0);
       await door(page).click();
@@ -910,7 +910,7 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
     await expect(pane(page).getByRole('heading', { level: 3, name: 'Fråga om ärendet', exact: true })).toBeVisible();
     // What it may read here is the item that stands open, by its name.
     await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Ledighetsansökan från Johan Byström']);
-    // What it may fill in is what the server answered for what stands open (D133 item 7): asked with the item, never
+    // What it may fill in is what the server answered for what stands open (D138 item 7): asked with the item, never
     // written by the page.
     await expect(listed(page, FILLS).getByRole('listitem')).toHaveText(['Bevilja ledigheten', 'Avslå ledigheten']);
     await expect(pane(page).getByText('Du granskar och skickar alltid själv.', { exact: true })).toBeVisible();
@@ -946,8 +946,8 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
     await new People().route(page);
     await open(page, `/people/johan?section=${PRESENCE_LENS}&from=%2Fstaff`);
     await door(page).click();
-    // What Clew's own talks and the other systems show about him stays closed (D131 item 7), listed before anything is
-    // asked (D133 item 7).
+    // What Clew's own talks and the other systems show about him stays closed (D136 item 7), listed before anything is
+    // asked (D138 item 7).
     await expect(listed(page, CANNOT).getByRole('listitem').first()).toBeVisible();
     await expect(pane(page).getByText(/^Assistenten får inte veta vem sidan gäller/)).toHaveCount(0);
     await ask3(page, 'Fråga om Johan Byström', 'Hur går det för honom?');
@@ -1095,7 +1095,7 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
   });
 });
 
-test.describe('a thing’s page on a phone (D130 rule 11, D131 item 1)', () => {
+test.describe('a thing’s page on a phone (D135 rule 11, D136 item 1)', () => {
   test.use({ viewport: phone });
 
   test('the corner’s button leads to the conversation with the thing beside its address, and a question there carries the thing', async ({
@@ -1175,7 +1175,7 @@ test.describe('a thing’s page on a phone (D130 rule 11, D131 item 1)', () => {
 });
 
 /**
- * The door in a pinned footer (D133 item 5; the product owner, 2026-11-19): the review pins its decision at the window's
+ * The door in a pinned footer (D138 item 5; the product owner, 2026-11-19): the review pins its decision at the window's
  * foot, so the floating corner is not drawn over it and the frame draws the same "Fråga AI" at the start of that footer,
  * before the page's own controls.
  */

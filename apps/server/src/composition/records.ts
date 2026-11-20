@@ -7,7 +7,7 @@ import { withFollowedUnits } from './people';
 import { clock } from './ambient';
 
 /**
- * Actions about a record (D132), wired: the registry's index from a read to the actions about its records, after the
+ * Actions about a record (D137), wired: the registry's index from a read to the actions about its records, after the
  * governance is refreshed, so an administrator's switch shows from the next request on; the record's read made as the
  * person exactly as the record's page makes it (`GET /api/cap`: the units they follow up, their own session asking, the
  * session's delegated token, the person's live authority before and after); and the stream's started card, its human

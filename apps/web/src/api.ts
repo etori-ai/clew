@@ -10,6 +10,9 @@ import type {
   CommitmentsInput,
   CommitmentsResult,
   NewsResult,
+  TalkBookingBody,
+  TalkCalendarBody,
+  TalkCalendarDecision,
   TalkHeldBody,
   TalksResult,
   GroupCapabilityInputType,
@@ -302,7 +305,7 @@ export const api = {
       }),
   },
   /**
-   * Actions about a record (D132): the record is its read and the input its page made it with, as the page's address
+   * Actions about a record (D137): the record is its read and the input its page made it with, as the page's address
    * holds it. `actions` lists those the reader may take; `start` makes a propose's card with its answers (an execute's
    * card waits for the decision); `decide` makes an execute's card with the human decision in it, from the action
    * dialog's last button; `effect` reads "Det här händer" before anything exists. A read the reader may not call, a
@@ -359,6 +362,14 @@ export const api = {
       post<{ id: string; heldOn: string }>(`${talkPath(personId)}/held`, body),
     /** Undoes a held mark. */
     unmarkHeld: (personId: string) => del<void>(`${talkPath(personId)}/held`),
+    /** Registers when the person's talk takes place: a time agreed on by hand, with no invitation sent (D132). */
+    book: (personId: string, body: TalkBookingBody) =>
+      put<{ id: string; start: string; end: string }>(`${talkPath(personId)}/booking`, body),
+    /** Removes a time registered by hand. */
+    unbook: (personId: string) => del<void>(`${talkPath(personId)}/booking`),
+    /** Settles what the calendar holds against the reader's booking: take its time, or drop or keep a time whose meeting is gone (D133). */
+    settleCalendar: (personId: string, decision: TalkCalendarDecision) =>
+      post<void>(`${talkPath(personId)}/booking/calendar`, { decision } satisfies TalkCalendarBody),
     /** Adds an action point in the person's talk, for the employee or the manager. */
     addCommitment: (personId: string, body: CommitmentAddBody) =>
       post<{ id: string }>(`${talkPath(personId)}/commitments`, body),
@@ -547,7 +558,7 @@ export const api = {
   converse: (input: ConversationInput) => post<ConversationResponse>('/api/conversation', input),
   converseStream,
   /**
-   * The conversation's page shows a conversation asked beside a page (D130 rule 6): it is marked opened once, and from
+   * The conversation's page shows a conversation asked beside a page (D135 rule 6): it is marked opened once, and from
    * then on it is among Ny fråga's latest. Answers the conversation as it stands; another person's is a 404.
    */
   conversationOpened: (id: string) => post<Thread>(`/api/conversations/${encodeURIComponent(id)}/opened`),
@@ -560,7 +571,7 @@ export const api = {
   assistantStatus: () => call<AssistantStatus>('/api/assistant/status'),
   /** The assistants of other systems the person may hand a conversation to; empty when no source has any for them. */
   handoverAssistants: () => call<{ assistants: HandoverAssistant[] }>('/api/assistant/handover'),
-  /** What the assistant may fill in for what stands open (D133 item 7); a read, posted for the record's input. */
+  /** What the assistant may fill in for what stands open (D138 item 7); a read, posted for the record's input. */
   assistantReach: (input: AssistantReachInput) => post<AssistantReach>('/api/assistant/reach', input),
   /** The person's own model in the composer (D24); null goes back to the default. */
   chooseModel: (modelId: string | null) => patch<AssistantStatus>('/api/assistant/model', { modelId }),

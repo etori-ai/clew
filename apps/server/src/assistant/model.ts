@@ -83,12 +83,12 @@ export interface PromptContext {
   objects: string[];
   /**
    * What stands open beside the conversation as the question is asked: the thing of the page the assistant's pane
-   * stands beside (D131), then the chip that stands open in the pane beside the transcript, in the same lines as
+   * stands beside (D136), then the chip that stands open in the pane beside the transcript, in the same lines as
    * `objects`. The prompt says it is the thing the person means by "the page", "the open item", "the card" or "the pane".
    */
   beside?: string[];
   /**
-   * The work item's actions (`item`, D112 item 8) or the actions about the record that stands open (`record`, D132 item
+   * The work item's actions (`item`, D112 item 8) or the actions about the record that stands open (`record`, D137 item
    * 4) may be filled in as a draft: the prompt says how, what the model fills in, and that nothing is sent.
    */
   drafts?: 'item' | 'record';
@@ -151,7 +151,7 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Avsluta med en sista rad "Följdfrågor: fråga ett | fråga två | fråga tre": högst tre korta frågor personen kan ställa härnäst. Bara när sökverktyget användes.',
   ];
   if (ctx.people) {
-    // The person whose page stands open is told with what is open beside the conversation (D131 item 2).
+    // The person whose page stands open is told with what is open beside the conversation (D136 item 2).
     const where = ctx.people.open
       ? '"Medarbetare som personen nämnde" eller, för medarbetaren vars sida står öppen, under "Öppet bredvid samtalet"'
       : '"Medarbetare som personen nämnde"';

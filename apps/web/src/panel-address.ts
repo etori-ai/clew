@@ -26,7 +26,7 @@ export interface ReadRef {
 const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via'];
 const READ_KEYS = ['open-card', 'open-action'];
 /**
- * A page's own things beside it: Kalender's entry (D112 item 9), and the assistant's pane (`ask=1`, D130 rule 2), which
+ * A page's own things beside it: Kalender's entry (D112 item 9), and the assistant's pane (`ask=1`, D135 rule 2), which
  * the page frame draws on the person's press. They take each other's place, anything opened takes theirs, and they are
  * dropped wherever a page's own address is taken (a way back, the conversation's page).
  */
@@ -89,11 +89,11 @@ export function withEntry(pathname: string, search: URLSearchParams | string, id
   q.set(ENTRY_PARAM, id);
   return address(pathname, q);
 }
-/** Whether the address holds the assistant's pane open beside the page (D130 rule 2). */
+/** Whether the address holds the assistant's pane open beside the page (D135 rule 2). */
 export const asksBeside = (search: URLSearchParams | string): boolean =>
   new URLSearchParams(search).get(ASK_PARAM) === '1';
 /**
- * The same page with the assistant's pane open beside it (D130 rule 2), in the place of anything the page held there
+ * The same page with the assistant's pane open beside it (D135 rule 2), in the place of anything the page held there
  * (Kalender's entry): pushed by "Fråga assistenten", so Back closes it and a reload opens it again.
  */
 export function withAsk(pathname: string, search: URLSearchParams | string): string {

@@ -28,7 +28,7 @@ const TITLE = 'Nyheter';
  * (D40): Hem's "Alla nyheter" leads here for everyone with a news source, and a placed row marks itself current here.
  * Drawn as the tool's page draws a view (`tool.tsx`, D112 item 6): the one page header, the view by the one renderer
  * (D38), a piece of news as its own page (D126 rule 1: its name is the link, nothing opens beside the list), and the
- * assistant's pane beside the list, opened by the corner's "Fråga AI" (D130, D133), about the list's read. A person with no
+ * assistant's pane beside the list, opened by the corner's "Fråga AI" (D135, D138), about the list's read. A person with no
  * news source is told there is none, as a tool that is not theirs is.
  */
 export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -51,7 +51,7 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
   const main = useView(NEWS_CAPABILITY, inputJson, { title, address });
   const list = main.shown?.capability === NEWS_CAPABILITY ? main.shown : null;
   const missing = !!main.failed && refused(main.failed);
-  // The news is a list, a page of its own (D116): the pane beside it is about its read (D130 rule 4), under the key a
+  // The news is a list, a page of its own (D116): the pane beside it is about its read (D135 rule 4), under the key a
   // tool's list has, so a conversation asked about it before is found again.
   const subject = missing
     ? null

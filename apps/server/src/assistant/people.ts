@@ -176,7 +176,7 @@ export interface PeopleInTurn {
   /** The asker's open work about one of them: their cards under Behöver dig whose rows name them (D97 item 6). */
   work: (person: ManagedPerson) => Thread[];
   /**
-   * The person whose page stands open beside the question (D131 item 2), when they are one of the asker's people: a
+   * The person whose page stands open beside the question (D136 item 2), when they are one of the asker's people: a
    * person the conversation names, on every turn, whatever the question writes. Absent for anyone else.
    */
   open?: ManagedPerson;
@@ -186,8 +186,8 @@ const NOBODY: PeopleInTurn = { people: [], named: [], mentioned: [], guards: () 
 /**
  * The person part of one turn: the people the asker manages, the names in the question and the work about everyone
  * the conversation's own words could name, read once. `earlier` is what the asker wrote before in this conversation.
- * `open` is Clew's id of the person whose page stands open (D131 item 1): resolved here among the asker's people and
- * nobody else, so a page of anyone else names nobody (D115 item 1, D131 item 4).
+ * `open` is Clew's id of the person whose page stands open (D136 item 1): resolved here among the asker's people and
+ * nobody else, so a page of anyone else names nobody (D115 item 1, D136 item 4).
  */
 export async function peopleInTurn(
   deps: Pick<AssistantDeps, 'people' | 'store' | 'registry' | 'clock'>,
@@ -207,7 +207,7 @@ export async function peopleInTurn(
   const about = new Map(mentioned.map(p => [p.key, p]));
   for (const n of named)
     for (const p of n.found.match === 'one' ? [n.found.person] : n.found.people) about.set(p.key, p);
-  // The person whose page stands open is one the conversation names, from its first turn (D131 item 2, D115 item 4).
+  // The person whose page stands open is one the conversation names, from its first turn (D136 item 2, D115 item 4).
   const opened = open === undefined ? undefined : keyed.get(open);
   if (opened) about.set(opened.key, opened);
   const byKey = new Map<string, Thread[]>();
@@ -252,7 +252,7 @@ export async function peopleInTurn(
 
 /**
  * The one work item a turn is about when the question names one person with exactly one: the item the model may draft
- * on. A question that names nobody, asked beside the page of one of the asker's people, is about that person (D131
+ * on. A question that names nobody, asked beside the page of one of the asker's people, is about that person (D136
  * item 2).
  */
 export function personSubject(turn: PeopleInTurn): Thread | undefined {
@@ -308,7 +308,7 @@ export function peopleLines(turn: PeopleInTurn, now: string): string[] {
   });
 }
 /**
- * The prompt's line about the person whose page stands open (D131 item 2), when they are one of the asker's people:
+ * The prompt's line about the person whose page stands open (D136 item 2), when they are one of the asker's people:
  * who they are, with the user name a read about one person takes, said as `peopleLines` says it, and the asker's open
  * work about them. It stands with what is open beside the conversation, so "personen" and "sidan" are them.
  */

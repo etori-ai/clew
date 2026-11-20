@@ -5,7 +5,7 @@ import { systemContext } from '../../system-context';
 import type { ReportUsecases } from './usecases';
 
 /**
- * The reader's people as a read for the assistant (D130 rule 4): `people.reports` is Personal's list, the people
+ * The reader's people as a read for the assistant (D135 rule 4): `people.reports` is Personal's list, the people
  * `GET /api/entities/person` draws for a manager (`groupsOf`), so the assistant asked beside Personal reads the list
  * the page shows. It joins the `people` connector of D62 in the registry, which names connectors; the rule of who is on
  * the list stays the entities module's. Each person is their name, user name, title and the units that list them:

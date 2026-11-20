@@ -116,7 +116,7 @@ export function valueText(ask: Ask, value: string): string {
 /**
  * What is filled in, in the words "Det här händer" lists it: each ask that has an answer that would be sent, in the
  * declared order, by its label and its value as a person reads it. The action dialog and a filled-in action in the
- * transcript (D133 item 8) say the values the same way.
+ * transcript (D138 item 8) say the values the same way.
  */
 export function filledIn(
   asks: readonly Ask[],

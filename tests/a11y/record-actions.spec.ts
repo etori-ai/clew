@@ -4,11 +4,11 @@ import { expect, expectNoAxeViolations, narrow, open, reflowProblems, test, type
 import { deskRequestOutput, deskRequestRef, deskRequestTitle } from './requests';
 
 /**
- * An action about a record (D132), on the first record that has one: a request in the IT service desk, with "Lägg till
+ * An action about a record (D137), on the first record that has one: a request in the IT service desk, with "Lägg till
  * en kommentar". The record's page draws the actions the server lists for it where a person's page draws its own, at the
  * end of the title's line and as one "Åtgärder" menu on a phone, and each opens the action's own dialog: nothing is sent
  * before the dialog's last button. Asked for it in the pane beside the record, the assistant fills the action in and
- * sends nothing (D133 item 8): the answer holds the row "Ifyllt åt dig" with what was filled in and "Granska och
+ * sends nothing (D138 item 8): the answer holds the row "Ifyllt åt dig" with what was filled in and "Granska och
  * skicka", which opens the same dialog at its last step. Sent from there, the draft says so with the way to the work
  * item it became, after a reload too, and offers no button to send it a second time.
  */
@@ -51,7 +51,7 @@ const askForComment = async (page: Page) => {
   await expect(drafted(page)).toBeVisible();
 };
 
-test.describe('a record’s actions on its page (D132)', () => {
+test.describe('a record’s actions on its page (D137)', () => {
   test.use({ viewport: WIDE });
 
   test('the action stands at the end of the title’s line and opens its own dialog; Nästa reads what will happen and sends nothing, and the last button decides and opens the work item', async ({
@@ -142,7 +142,7 @@ test.describe('a record’s actions on its page (D132)', () => {
   });
 });
 
-test.describe('an action the assistant filled in beside a record: the row Ifyllt åt dig (D133 item 8, D132)', () => {
+test.describe('an action the assistant filled in beside a record: the row Ifyllt åt dig (D138 item 8, D137)', () => {
   test.use({ viewport: WIDE });
 
   test('the pane says it may fill the comment in; asked, the answer holds the row with what was filled in and one Granska och skicka, which opens the action’s dialog at its last step, and nothing is sent', async ({

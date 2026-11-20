@@ -77,7 +77,7 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
   let body;
   if (thread && !thread.proposals.length) body = <WorkItemPage thread={thread} back={back} onChange={onChange} />;
   // The calendar's proposals keep their own card (D27, D112 item 9), under the way back and the item's title; the
-  // assistant's pane is about the item, as on every work item's page (D131).
+  // assistant's pane is about the item, as on every work item's page (D136).
   else if (thread)
     body = (
       <PageFrame ask={{ subject: itemPageSubject(thread) }} back={back} title={thread.title}>

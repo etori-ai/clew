@@ -82,7 +82,7 @@ export function workItemLine(t: Thread, now: string): string {
   );
 }
 /**
- * What stands open on a thing's page as Clew resolved it for the asker this turn (D131), other than one of the asker's
+ * What stands open on a thing's page as Clew resolved it for the asker this turn (D136), other than one of the asker's
  * people, whose line is `openPersonLine`: the asker's own page (item 3), a unit they manage or follow up (item 5), a
  * record read for the model as a tool call would have read it (item 6), or a record the model cannot read. Whatever
  * resolves to nothing for the asker (a colleague's page, a unit they do not follow up) has no line at all.
@@ -156,7 +156,7 @@ export function serialiseContext(
           (whyNotChangeable(o.event) ?? OWN_MEETING)
         );
       case 'capability':
-        // A list or a view that stands open is named with the read that draws it (D130 rule 4): asked "vad väntar de
+        // A list or a view that stands open is named with the read that draws it (D135 rule 4): asked "vad väntar de
         // på?" beside a register, the model otherwise reads whichever list it knows best, not the one on the page.
         return (
           `Förmågan "${o.title}" (${o.source}), verktyget ${o.name}. ` +

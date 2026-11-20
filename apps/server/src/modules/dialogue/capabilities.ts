@@ -10,7 +10,7 @@ import type { DialogueUsecases, UnitStanding } from './usecases';
  * dialogue of a unit in short, which Clew places as a section on the unit's page (first, since the source sorts first
  * among Clew's own) and as a column on Läget; `dialogue.units`, the same rows for every unit the reader follows up,
  * with each unit's name, which is what the assistant reads beside Läget; and `dialogue.activities`, the reader's own
- * open activities, which the owner's card opens. The last two are offered to the model (D122 item 3, D130 rule 4), read
+ * open activities, which the owner's card opens. The last two are offered to the model (D122 item 3, D135 rule 4), read
  * as the person and nobody more; `dialogue.unit` is a read about an entity and stays closed, as the loader holds every
  * such read (D97 item 7). No view declares a `ref`, so no activity can be added to a conversation as a chip: its text
  * is free text about a unit's work. The module logs no read, so the assistant's reads are logged nowhere either (D122
@@ -113,7 +113,7 @@ export const unitDialogueView: View = {
   ],
 };
 /**
- * Every unit the reader follows up with its dialogue in short (Läget, D130 rule 4): the unit's name, then the same
+ * Every unit the reader follows up with its dialogue in short (Läget, D135 rule 4): the unit's name, then the same
  * words as `dialogue.unit`. A row names its unit (`subject`), and `dialogue.unit` answers the same rows asked by key
  * (D127).
  */
@@ -192,7 +192,7 @@ export function dialogueConnector(
       return { rows: rows.map(r => ({ key: r.key, ...unitWords(r) })) };
     },
   };
-  // Offered to the model (D122 item 3, D130 rule 4): what Läget shows of the dialogue, for the units the reader follows
+  // Offered to the model (D122 item 3, D135 rule 4): what Läget shows of the dialogue, for the units the reader follows
   // up and nobody else's. The model reads the rows here, since `dialogue.unit` takes keys and is never a tool.
   const units: Capability<Record<string, never>> = {
     name: DIALOGUE_CONNECTOR + '.units',

@@ -186,7 +186,7 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
     return erased;
   },
   async eraseConversationsBeside(personId) {
-    // The thing a conversation was asked beside is kept in `asked_beside` as written (D131 item 1): containment matches
+    // The thing a conversation was asked beside is kept in `asked_beside` as written (D136 item 1): containment matches
     // the kind and the id exactly. An operator's rare erasure reads the conversations without an index of its own.
     const beside = and(
       eq(threads.kind, 'question'),

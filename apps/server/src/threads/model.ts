@@ -42,7 +42,7 @@ export interface NewMessage {
   meta?: MessageMeta;
 }
 /**
- * An assistant's draft about a record (D132) that the person sent as a work item: the conversation's message that keeps
+ * An assistant's draft about a record (D137) that the person sent as a work item: the conversation's message that keeps
  * it, whose conversation it must be, the action and the record it must be a draft of, and the work item it became.
  */
 export interface RecordDraftSent {
@@ -140,7 +140,7 @@ export interface ThreadTx {
   updateThread(id: string, patch: ThreadPatch): Promise<void>;
   addMessage(threadId: string, message: NewMessage): Promise<void>;
   /**
-   * Mark an assistant's draft about a record as sent (D132): the message's `recordDraft` gets `sent: { threadId }` and
+   * Mark an assistant's draft about a record as sent (D137): the message's `recordDraft` gets `sent: { threadId }` and
    * nothing else moves, not even the conversation's `updatedAt`. Only when the conversation is a `question` of
    * `personId`'s, the message is in it, and its draft is of the same action about the same record (the read, and the
    * input as a JSON value, its keys in any order) and not marked yet; anything else writes nothing. True when it marked:
@@ -165,7 +165,7 @@ export interface ThreadTx {
    */
   eraseSubject(subject: Subject): Promise<SubjectErasure>;
   /**
-   * Delete whole every conversation asked beside this person's page (D131 item 8): each thread of kind `question` whose
+   * Delete whole every conversation asked beside this person's page (D136 item 8): each thread of kind `question` whose
    * `askedBeside.thing` is the person, by Clew's key, their id, compared exactly (D122), whoever asked it, with its
    * messages. A conversation beside a unit or a record is left, whatever its input names.
    */

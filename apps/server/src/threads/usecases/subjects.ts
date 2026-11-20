@@ -66,7 +66,7 @@ export interface SubjectErasureDeps {
 }
 /** The audit action of an erased subject. */
 export const SUBJECT_ERASED = 'thread.subject_erased';
-/** The audit action of the conversations asked beside an erased person's page (D131 item 8), as each domain names its own. */
+/** The audit action of the conversations asked beside an erased person's page (D136 item 8), as each domain names its own. */
 export const CONVERSATIONS_ERASED = 'conversation.person_erased';
 
 export function subjectErasure({ store, clock, people }: SubjectErasureDeps) {
@@ -79,7 +79,7 @@ export function subjectErasure({ store, clock, people }: SubjectErasureDeps) {
    * person who is still active erase nothing and write no audit row: only a person the source has deactivated is erased
    * (D123 item 3). A unit is erased by any id, since a removed unit may still be named. `actor` is the operator's.
    *
-   * A person's erasure also deletes whole every conversation asked beside their page (D131 item 8), whoever asked it:
+   * A person's erasure also deletes whole every conversation asked beside their page (D136 item 8), whoever asked it:
    * the one conversation Clew can tie to the person with certainty, and likely to quote what Clew knows about them. In
    * the same transaction, with an audit row of its own about the person (`conversation.person_erased`), counts only.
    */

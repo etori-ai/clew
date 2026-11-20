@@ -4,7 +4,7 @@ import type { MenuEntry, View } from '@clew/contracts';
 import { toolRows } from './domain';
 
 /**
- * Alla verktyg as part of Clew's core connector (D130 rule 4): `clew.tools` is the page's tiles as a read, so the
+ * Alla verktyg as part of Clew's core connector (D135 rule 4): `clew.tools` is the page's tiles as a read, so the
  * assistant asked beside the page, or anywhere, can answer "var attesterar jag en faktura?" with the tool's name and a
  * link to its page. As the errand list is (D89), the registry joins it with the composite search under the core
  * connector's id and hands it the person's menu (`menu`, D40) and Clew's own lists they have (`own`), so this module

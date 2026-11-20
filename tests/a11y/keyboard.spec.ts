@@ -264,7 +264,7 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('Esc closes the conversation and focus stays in the row', async ({ page, api: _ }) => {
-    // On the conversation's own page: a question on Hem's line is answered under the line (D133 item 9).
+    // On the conversation's own page: a question on Hem's line is answered under the line (D138 item 9).
     await open(page, '/conversations/new');
     const input = composer(page);
     await input.fill('Vem är på plats?');

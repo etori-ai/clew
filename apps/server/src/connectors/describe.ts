@@ -38,7 +38,7 @@ export function describeBundled(connector: Connector): ConnectorManifest {
         about ? { about: { entity: about.entity, ...(about.param !== undefined ? { param: about.param } : {}) } } : {})(
         aboutEntity(c.about),
       ),
-      // An action about a record (D132), as declared.
+      // An action about a record (D137), as declared.
       ...(record => (record ? { about: { record: record.record, params: { ...record.params } } } : {}))(
         aboutRecord(c.about),
       ),

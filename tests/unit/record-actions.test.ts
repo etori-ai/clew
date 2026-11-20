@@ -35,7 +35,7 @@ import { fixtureConnectors } from '../fixture-connectors';
 import { Registry } from '../registry';
 
 /**
- * An action about a record (D132): a connector's propose or execute that is about one record of one of its reads, here
+ * An action about a record (D137): a connector's propose or execute that is about one record of one of its reads, here
  * the service desk's "Lägg till en kommentar" on a request the person made, run over the protocol from the fixture of
  * the development stack. The loader holds the declaration to its rules; the registry indexes the read to the actions
  * about its records for one person; the records module lists and starts them only once the person has made the
@@ -77,7 +77,7 @@ const ASK = { kind: 'long-text' as const, property: 'text', label: 'Kommentar', 
 const DESCRIPTION =
   'Lägger till din kommentar på beställningen eller felanmälan i IT-servicedesken, där handläggarna ser den. Bara på det du själv har beställt eller felanmält.';
 
-describe('the loader holds the record form of about to its rules (D132)', () => {
+describe('the loader holds the record form of about to its rules (D137)', () => {
   test("the service desk's comment is about a request, filled from its ref, and loads", () => {
     expect(manifestProblems(deskManifest, 'servicedesk')).toEqual([]);
     expect(cap(deskManifest, COMMENT)).toMatchObject({
@@ -228,7 +228,7 @@ const notes = (scope?: Capability['scope']): Connector => ({
   capabilities: [noteRead(), appendNote(scope)],
 });
 
-describe("the registry's index from a read to the actions about its records (D132)", () => {
+describe("the registry's index from a read to the actions about its records (D137)", () => {
   const desk = () => {
     const registry = new Registry();
     registry.register(fixtureConnectors({ only: ['servicedesk'], clock: () => T0 }).connectors[0]!);
@@ -268,7 +268,7 @@ describe("the registry's index from a read to the actions about its records (D13
     const scoped = new Registry().register(notes({ roles: ['manager'] }));
     expect(scoped.recordActions(audiencedActorOf(anna), 'notes.note')).toEqual([]);
     expect(scoped.recordActions(audiencedActorOf(hillevi), 'notes.note').map(a => a.name)).toEqual(['notes.append']);
-    // Never a model tool, whatever it declares (D132 item 4): the model never names the record.
+    // Never a model tool, whatever it declares (D137 item 4): the model never names the record.
     const offered = new Registry().register({
       ...notes(),
       capabilities: [noteRead(), { ...appendNote(), model: true }],
@@ -370,7 +370,7 @@ function world() {
   return { registry, store, ledger, access, decisions, actions, request, reads, nothingWritten };
 }
 
-describe('an action about a record, listed and run from its page (D132)', () => {
+describe('an action about a record, listed and run from its page (D137)', () => {
   test("the request's owner gets the comment with what it asks, once the request is read as her", async () => {
     const w = world();
     expect(await w.actions.list(hillevi, READ, PRINTER)).toEqual({
@@ -664,12 +664,12 @@ const started = (store: Store, threadId: string) =>
   store.audit.find(r => r.action === 'thread.started' && r.subject === 'thread:' + threadId)!;
 
 /**
- * The assistant's draft of an action about a record, sent (D132): the start or the decision names the conversation's
+ * The assistant's draft of an action about a record, sent (D137): the start or the decision names the conversation's
  * message that keeps the draft, and the transaction that makes the work item marks that draft as sent with it, so the
  * conversation draws "Skickat" and no second "Granska och skicka", after a reload too. Only the person's own draft of
  * the same action about the same record, not marked yet, is marked; anything else is not, and never changes what runs.
  */
-describe("sent from the assistant's draft, the draft says it was sent (D132)", () => {
+describe("sent from the assistant's draft, the draft says it was sent (D137)", () => {
   test('decided from it: the work item is made as from the page, the draft is marked with it, and the audit row says so', async () => {
     const w = world();
     const c = await conversation(w.store, hillevi);
@@ -812,7 +812,7 @@ describe("sent from the assistant's draft, the draft says it was sent (D132)", (
   });
 });
 
-describe('the routes (D132)', () => {
+describe('the routes (D137)', () => {
   function stack(who = hillevi) {
     const w = world();
     const routes = recordRoutes({
@@ -926,13 +926,13 @@ describe('the routes (D132)', () => {
 });
 
 /**
- * The assistant fills in the actions of the record that stands open (D132 item 4): `clew.draftAction` is offered for
- * the actions about that record and that record only, as the question is asked beside its page (D131). The model picks
+ * The assistant fills in the actions of the record that stands open (D137 item 4): `clew.draftAction` is offered for
+ * the actions about that record and that record only, as the question is asked beside its page (D136). The model picks
  * the action and its values and never the record; the values are checked against the asks as the decision will check
  * them; nothing is written and no source is reached beyond the record's read the turn makes anyway. The draft comes back
  * on the answer with the action as the person may take it, and is kept on the stored message without it.
  */
-describe('the assistant fills in an action about the record that stands open (D132 item 4)', () => {
+describe('the assistant fills in an action about the record that stands open (D137 item 4)', () => {
   type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
   type Played = { tools: Record<string, unknown>; system: string };
   function assistantWorld(play: (turn: Played) => Promise<{ text: string; toolCalls: [] }>) {
@@ -1118,14 +1118,14 @@ describe('the assistant fills in an action about the record that stands open (D1
   });
 
   /**
-   * Before anything is asked the pane says which actions about the open record the assistant may fill in (D133 item
+   * Before anything is asked the pane says which actions about the open record the assistant may fill in (D138 item
    * 7): the server answers from the rules the turn offers its draft tool by, without making the record's read and
    * without writing anything.
    */
   const open = (capability: string, input: Record<string, unknown>) => ({
     thing: { kind: 'record' as const, capability, input },
   });
-  test('the pane is told the open record’s actions the turn would offer, by title; no read is made, nothing written (D133 item 7)', async () => {
+  test('the pane is told the open record’s actions the turn would offer, by title; no read is made, nothing written (D138 item 7)', async () => {
     answers = [];
     const w = assistantWorld(drafting());
     expect(await w.assistant.reach(hillevi, open(READ, PRINTER))).toEqual({

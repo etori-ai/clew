@@ -25,7 +25,7 @@ import { itemPageHref } from '../../work-items';
 import { useConversation } from './conversation-context';
 
 /**
- * An action the assistant filled in, drawn in the transcript (D112 item 8, D132 item 4, D133 item 8): a work item's
+ * An action the assistant filled in, drawn in the transcript (D112 item 8, D137 item 4, D138 item 8): a work item's
  * (`conversation.tsx`, `ActionDraftCard`) and a record's (`RecordDraftCard`). Beside a page it is the row of the board's
  * own kind that needs the person, its edge in the assistant's blue (`Drafted`); on the conversation's own page the card
  * a work item's draft has always had there (`DraftCard`). Its words are Clew's, never the model's: the action's own
@@ -56,7 +56,7 @@ function StateLine({ state }: { state: DraftState }) {
 }
 
 /**
- * Beside a page (D133 item 8; the reference's `Drafted`, artboard AttGoraArende): "Ifyllt åt dig", what the action is,
+ * Beside a page (D138 item 8; the reference's `Drafted`, artboard AttGoraArende): "Ifyllt åt dig", what the action is,
  * what was filled in, one line per ask with its label, and "Granska och skicka". Once the person has acted on it, what
  * became of it stands in the button's place, with the way to the work item it became where it has one of its own; a
  * draft a newer one replaced drops its values, which count in the newer.
@@ -74,7 +74,7 @@ export function Drafted({
   state?: DraftState | null;
   /** Under the state: what the source answered, or that the decision is on its way. */
   detail?: string | null;
-  /** Under the state: the work item the draft became, when the draft is not the work item's own (D132). */
+  /** Under the state: the work item the draft became, when the draft is not the work item's own (D137). */
   link?: DraftLink | null;
   onReview: () => void;
 }) {
@@ -134,7 +134,7 @@ export function DraftCard({
   filled: readonly Filled[];
   state?: DraftState | null;
   detail?: string | null;
-  /** In the buttons' place once acted on: the work item the draft became, when the draft is not the work item's own (D132). */
+  /** In the buttons' place once acted on: the work item the draft became, when the draft is not the work item's own (D137). */
   link?: DraftLink | null;
   /** The first button's words; "Granska och <the action's first word>" unless said. */
   reviewLabel?: string;
@@ -191,7 +191,7 @@ export function DraftCard({
 }
 
 /**
- * What a record is called (D132): its name as its page heads it, from the read the page already made of it (the
+ * What a record is called (D137): its name as its page heads it, from the read the page already made of it (the
  * record's page, or the record beside the conversation), never a read of its own; else the read's own title.
  */
 function useRecordName(record: RecordDraft['record']): string {
@@ -212,7 +212,7 @@ function useRecordName(record: RecordDraft['record']): string {
 }
 
 /**
- * The assistant's draft of an action about the record that stood open (D132 item 4). A stored draft carries no action:
+ * The assistant's draft of an action about the record that stood open (D137 item 4). A stored draft carries no action:
  * it is the record's own, as the server lists it for the person now (`recordActionsQuery`, the list the record's page
  * draws its buttons from), or, until that has come, the one the answer carried. One the record no longer offers draws
  * nothing. "Granska och skicka" (and on the conversation's page "Ändra") opens the dialog the record's page opens, with

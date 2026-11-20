@@ -41,7 +41,7 @@ function NamedItem({
 }
 
 /**
- * The answer under Hem's line (D133 items 2 and 9, board Start variant b): one card directly under the line, with the
+ * The answer under Hem's line (D138 items 2 and 9, board Start variant b): one card directly under the line, with the
  * board below it. The line is the box: a question asked there is answered here and nothing navigates
  * (`AskFrom.inPlace`). The card shows the conversation's newest exchange: what it read in the line over the question,
  * the question as its heading, the answer, the work items the answer names as the rows "Behöver dig" has (`row`, the

@@ -254,14 +254,16 @@ describe('the served protocol routes', () => {
     const page = await protocolRoutes.request('http://clew.local/');
     expect(page.status).toBe(200);
     const html = await page.text();
-    expect(html).toContain('<rapi-doc');
-    expect(html).toContain('spec-url="/api/protocol/openapi.json"');
-    expect(html).toContain('load-fonts="false"');
+    expect(html).toContain('src="/api/protocol/scalar.js"');
+    expect(html).toContain('Scalar.createApiReference');
+    expect(html).toContain("url: '/api/protocol/openapi.json'");
+    expect(html).toContain('withDefaultFonts: false');
+    expect(html).toContain('hideTestRequestButton: true');
     expect(html).not.toMatch(/https?:\/\//);
-    const script = await protocolRoutes.request('http://clew.local/viewer.js');
+    const script = await protocolRoutes.request('http://clew.local/scalar.js');
     expect(script.status).toBe(200);
     expect(script.headers.get('content-type')).toContain('javascript');
-    expect((await script.text()).length).toBeGreaterThan(100_000);
+    expect(await script.text()).toContain('@scalar/api-reference');
   });
 });
 
@@ -348,7 +350,7 @@ describe('a capability about an entity (D97)', () => {
     ],
   };
   /**
-   * The talks manifest with one talk as a record of its own (D132): a read that draws one talk by its id, and a note to
+   * The talks manifest with one talk as a record of its own (D137): a read that draws one talk by its id, and a note to
    * it, an execute about that record whose `talk` the record fills and whose text the person writes.
    */
   const withRecord = (change: (m: any) => void = () => {}) =>
@@ -384,7 +386,7 @@ describe('a capability about an entity (D97)', () => {
       );
       change(m);
     });
-  test('an action about a record loads, and the preview says it stands on the record’s page, filled from it (D132)', () => {
+  test('an action about a record loads, and the preview says it stands on the record’s page, filled from it (D137)', () => {
     const document = withRecord();
     expect(manifestProblems(document, 'appraisals')).toEqual([]);
     const preview = previewManifest(document, { id: 'appraisals' });
@@ -760,7 +762,7 @@ describe('a capability about an entity (D97)', () => {
         edited(talks, m => delete m.capabilities[3].about.param),
         { path: 'capabilities[3].about.param', anchor: 'rule-about-action-param' },
       ],
-      // The record form of `about` (D132).
+      // The record form of `about` (D137).
       [
         'a read about a record',
         withRecord(m => (m.capabilities[2].about = { record: 'appraisals.talk', params: { keys: 'id' } })),

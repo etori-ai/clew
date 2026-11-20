@@ -13,7 +13,7 @@ import type { ClewTool } from './model';
  * from there, through the human decision endpoint, which checks everything again. The tool is Clew's own and writes
  * nothing; an execute is never a tool and the decision endpoint is never reached from here.
  *
- * With a record standing open on the page (D131), the same tool fills in one of the actions about that record (D132
+ * With a record standing open on the page (D136), the same tool fills in one of the actions about that record (D137
  * item 4): the model picks the action and its values, never the record, which is the one that stands open; what the
  * record fills is not among the asks and cannot be given.
  */
@@ -28,7 +28,7 @@ export interface DraftableAction {
   asks: Ask[];
   /** The capability's input schema, whose property limits the values are held to. */
   input: unknown;
-  /** About a record (D132): the action as the person may take it now, for the answer's draft. */
+  /** About a record (D137): the action as the person may take it now, for the answer's draft. */
   record?: RecordAction;
 }
 /** What the model filled in: the action and the checked values. */
@@ -80,7 +80,7 @@ export function draftableActions(
 }
 
 /**
- * The actions about the records of `read` the person may take and that ask for something (D132 item 4), by the
+ * The actions about the records of `read` the person may take and that ask for something (D137 item 4), by the
  * registry's index (`recordActions`): scope, audience and the connector switched on, as for any action. Under the same
  * limits as a work item's: an action that asks nothing has nothing to fill in, and a reviewed execute keeps its review.
  * Whether the person can make the record's read is the caller's to have found out.
@@ -126,7 +126,7 @@ function hint(ask: Ask): string {
  * The tool the model drafts with. `now` decides whether a meeting time has passed, as the decision does; `drafted`
  * hears the one draft that passed (a later one in the same turn replaces it). A draft that does not pass is answered
  * with the Swedish reason, so the model can correct it; nothing is kept of it. `record` names the record that stands
- * open when the actions are about it (D132): the model is told it fills in the asks only, and the record is that one.
+ * open when the actions are about it (D137): the model is told it fills in the asks only, and the record is that one.
  */
 export function draftTool(
   actions: DraftableAction[],

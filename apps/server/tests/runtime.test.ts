@@ -138,7 +138,7 @@ test('Stockholm meetings keep their instant and reject skipped or repeated local
   assert.throws(() => localInstant('2026-10-25T02:30'));
 });
 
-test('the talks routes (D96): thin writes over the use cases, Swedish refusals, and a 403 on every write while the built-in module does not answer', async () => {
+test('the talks routes (D96, D132, D133): thin writes over the use cases, Swedish refusals, and a 403 on every write while the built-in module does not answer', async () => {
   const { memoryTalkStore } = await import('../src/modules/talks/adapters/memory');
   const { talkUsecases } = await import('../src/modules/talks/usecases');
   const { NOT_WRITABLE, talkRoutes } = await import('../src/routes/talks');
@@ -165,8 +165,7 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
     }),
     staff: async p =>
       p.id === 'boss' ? { units: [{ unitId: 'u1', unitLabel: 'Enheten', people: [anna] }] } : { units: [] },
-    manages: async (managerId, employeeId) => managerId === 'boss' && employeeId === 'anna',
-    bookings: async () => new Map(),
+    reports: async managerId => new Set(managerId === 'boss' ? ['anna'] : []),
     clock: () => new Date('2026-11-10T09:00:00.000Z'),
     ids: () => 'id-' + ++n,
   });
@@ -177,10 +176,15 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
     dueOn: '2026-11-28',
   });
   let writable = true;
+  // The calendar module's use case for what the calendar holds against a booking (D133): the route only hands it on.
+  const settled: string[][] = [];
   const app = new Hono().route(
     '/api/talks',
     talkRoutes({
       talks,
+      invitations: {
+        settle: async (persona, employeeId, decision) => void settled.push([persona.id, employeeId, decision]),
+      },
       writable: async () => writable,
       // The session guard's part: who is signed in. The real guard also checks the cookie and the CSRF token.
       guard: async (c, next) => {
@@ -208,6 +212,36 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   assert.equal(held.status, 200);
   assert.deepEqual(await held.json(), { id: 'id-4', heldOn: '2026-11-03' });
   assert.equal((await call('boss', 'DELETE', '/anna/held')).status, 204);
+  // The time of the talk, registered by hand (D132 item 4): on the talk the held mark made, so no new id.
+  const span = { start: '2026-11-20T09:00:00.000Z', end: '2026-11-20T10:00:00.000Z' };
+  const booked = await call('boss', 'PUT', '/anna/booking', span);
+  assert.equal(booked.status, 200);
+  assert.deepEqual(await booked.json(), { id: 'id-4', ...span });
+  const backwards = await call('boss', 'PUT', '/anna/booking', { start: span.end, end: span.start });
+  assert.equal(backwards.status, 400);
+  assert.deepEqual(await backwards.json(), {
+    error: 'Ange en giltig start- och sluttid, med högst ett dygn emellan.',
+  });
+  const noInstants = await call('boss', 'PUT', '/anna/booking', { start: 'i morgon', end: 'senare' });
+  assert.equal(noInstants.status, 400);
+  assert.deepEqual(await noInstants.json(), { error: 'Ogiltig förfrågan.' });
+  assert.equal((await call('anna', 'PUT', '/anna/booking', span)).status, 403);
+  assert.equal((await call('boss', 'DELETE', '/anna/booking')).status, 204);
+  // What the calendar holds against a booking is settled by one of three decisions, handed to the use case as given.
+  for (const decision of ['adopt', 'remove', 'keep', 'missed'])
+    assert.equal((await call('boss', 'POST', '/anna/booking/calendar', { decision })).status, 204);
+  assert.deepEqual(settled, [
+    ['boss', 'anna', 'adopt'],
+    ['boss', 'anna', 'remove'],
+    ['boss', 'anna', 'keep'],
+    ['boss', 'anna', 'missed'],
+  ]);
+  for (const bad of [{ decision: 'restore' }, {}, { decision: 'adopt', start: span.start }]) {
+    const response = await call('boss', 'POST', '/anna/booking/calendar', bad);
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: 'Ogiltig förfrågan.' });
+  }
+  assert.equal(settled.length, 4);
   assert.equal((await call('anna', 'POST', `/commitments/${id}/done`)).status, 204);
   // The employee's own point is hers: her manager may not open it again (Q12).
   const notTheirs = await call('boss', 'DELETE', `/commitments/${id}/done`);
@@ -242,6 +276,9 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   for (const [method, path, body] of [
     ['POST', '/anna/held', {}],
     ['DELETE', '/anna/held', undefined],
+    ['PUT', '/anna/booking', span],
+    ['DELETE', '/anna/booking', undefined],
+    ['POST', '/anna/booking/calendar', { decision: 'adopt' }],
     ['POST', '/anna/commitments', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' }],
     ['POST', `/commitments/${id}/done`, undefined],
     ['DELETE', `/commitments/${id}/done`, undefined],
@@ -251,6 +288,7 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
     assert.deepEqual(await response.json(), { error: NOT_WRITABLE, code: 'denied' });
   }
   assert.equal(n, 4, 'no write reached the use cases while the built-in module did not answer');
+  assert.equal(settled.length, 4, 'nor did a decision on the calendar');
 });
 
 test('the dialogue routes (D118, D120): one unit read and its writes over the use cases, Swedish refusals, and a 403 on all while the module is off', async () => {

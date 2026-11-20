@@ -2,7 +2,7 @@ import type { RecordAction, RecordDraft, Thread } from '@clew/contracts';
 import { executionStatus } from './execution-status';
 
 /**
- * Actions about a record (D132), the pure part: a record is its read and the input its page made it with, and the
+ * Actions about a record (D137), the pure part: a record is its read and the input its page made it with, and the
  * browser names it by both wherever it is kept, so the record's page and an assistant's draft about the same record
  * share one list of actions. No React, no I/O.
  */
@@ -52,7 +52,7 @@ export function draftedAction(
 }
 
 /**
- * The conversation's message that keeps the draft (D132): the transcript hands its card the draft as the message keeps
+ * The conversation's message that keeps the draft (D137): the transcript hands its card the draft as the message keeps
  * it (`MessageMeta.recordDraft`), so it is that very object. Undefined when no message holds it, and the send then names
  * no draft.
  */
@@ -62,7 +62,7 @@ export const draftMessage = <M extends { id: string; meta?: { recordDraft?: Reco
 ): M | undefined => messages.find(m => m.meta?.recordDraft === draft);
 
 /**
- * Where an assistant's draft about a record stands (D132). `sent`: the person sent it, as the work item it became, which
+ * Where an assistant's draft about a record stands (D137). `sent`: the person sent it, as the work item it became, which
  * the server wrote on the draft in that work item's own transaction; `seen` is the same message as the conversation is
  * read again after a send, which knows it before the transcript does. `replaced`: a later draft of the same action about
  * the same record stands under it. Else `fillable`: it offers "Granska och skicka". Sent comes first: a draft that was

@@ -93,7 +93,7 @@ const dayLine = (date: string, unit: string) => {
 
 /**
  * The start page (D34, D50, D112, D126). At `/` the column is Hem (D126, board Hem): the greeting and the day, one line
- * under them to ask Clew (`HemQuestion`, board HemFraga), whose answer stands under it as a card (`HemAnswer`, D133
+ * under them to ask Clew (`HemQuestion`, board HemFraga), whose answer stands under it as a card (`HemAnswer`, D138
  * item 9), and then the blocks, each a heading over its card that leads to its place: "Behöver dig", the most urgent
  * work items, beside "I dag", the day as the calendar family draws it (D32); for a manager "Läget på <enhet>", the
  * unit's figures as tiles; then "Nyheter". The item that asks for the person's read receipt stands above the blocks as
@@ -259,7 +259,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   /**
    * A work item as a row of "Behöver dig" (D130 item 13): an edge in its due day's colour, its name, the line that says
    * where it is from and why, the due day as its badge and "Öppna", the link to the item's page. The answer under the
-   * line draws the items it names with the same row (D133 item 9); only the board's own rows carry the id the focus is
+   * line draws the items it names with the same row (D138 item 9); only the board's own rows carry the id the focus is
    * sent to.
    */
   const needRow = (t: Thread, id?: string) => {
@@ -494,12 +494,12 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
 }
 
 /**
- * What Hem's line hands the conversation: nothing to ask about, and the answer under the line (D133 item 9): the
+ * What Hem's line hands the conversation: nothing to ask about, and the answer under the line (D138 item 9): the
  * column stays Hem's and nothing navigates.
  */
 const FROM_HEM: AskFrom = { chips: [], search: '', inPlace: true };
 /**
- * Hem's question (D126 items 4 and 9, D130 item 14, D133 items 2 and 9): one line under the greeting, the field and
+ * Hem's question (D126 items 4 and 9, D130 item 14, D138 items 2 and 9): one line under the greeting, the field and
  * "Fråga AI" in one pill. The line is the box: Enter or the button sends what is written (`submit`), and the answer
  * stands under the line as a card (`HemAnswer`) while the board stays below; the person stays on Hem. While the answer
  * stands, the next question continues its conversation; after "Stäng" a question starts a new one, as every first

@@ -225,7 +225,7 @@ describe('the boarding wiring (D124)', () => {
 
   test('it passes the registry’s validation, the read about a person is no model tool, and their views are drawable', async () => {
     const w = await switchedOn();
-    // The list of every report and one plan are offered (D122 item 3, D130 rule 4); the read about a person never is.
+    // The list of every report and one plan are offered (D122 item 3, D135 rule 4); the read about a person never is.
     expect(
       w.registry
         .tools(actorOf(hillevi))
@@ -287,7 +287,7 @@ describe('the boarding wiring (D124)', () => {
     );
   });
 
-  test('`boarding.plans` answers every report of the reader’s with a plan or a missing one, as `boarding.person` words them, and nobody else’s (D130 rule 4)', async () => {
+  test('`boarding.plans` answers every report of the reader’s with a plan or a missing one, as `boarding.person` words them, and nobody else’s (D135 rule 4)', async () => {
     const w = await switchedOn();
     const plans = async (p: AuthenticatedContext) =>
       (await w.registry.run(actorOf(p), 'boarding.plans', {})) as { rows: Array<Record<string, unknown>> };

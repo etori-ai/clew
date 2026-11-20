@@ -13,7 +13,7 @@ const TITLES: Record<string, string> = { 'clew.threads': 'Att göra', 'calendar.
 const titleOf = (capability: string) => TITLES[capability];
 const eneo = { assistant: 'eneo:hr', name: 'HR-assistenten', source: 'Eneo', session: 's1' };
 
-describe('the newest exchange under Hem’s line (D133 item 9)', () => {
+describe('the newest exchange under Hem’s line (D138 item 9)', () => {
   test('is the last question and the answer written to it; the earlier ones stay in the conversation', () => {
     const messages = [asked('q1', 'Första'), answered('a1', 'Ett'), asked('q2', 'Andra'), answered('a2', 'Två')];
     expect(newestExchange(messages)).toEqual({ question: messages[2]!, answer: messages[3]! });

@@ -8,7 +8,7 @@
  * actor `operator:cli`, about `person:<person id>` or `unit:<unit id>`. The erasure writes no user name, but it does not
  * reach the rest of the audit trail: every `scim.user.*` row about the person still holds the `userName` and
  * `externalId` it was written with, until `scripts/person-erase.ts` erases the person last (D123). A person's erasure
- * also deletes whole every conversation asked beside their page, whoever asked it (D131 item 8), in the same
+ * also deletes whole every conversation asked beside their page, whoever asked it (D136 item 8), in the same
  * transaction, audited as `conversation.person_erased` about `person:<person id>`, counts only; a conversation started
  * on the conversation's own page about them is not kept as asked beside it and is not found. It cannot be undone, so it
  * needs `--confirm`.
@@ -65,7 +65,7 @@ try {
     );
     process.exitCode = 1;
   } else {
-    // The conversations asked beside a person's page (D131 item 8) are said only when there were any.
+    // The conversations asked beside a person's page (D136 item 8) are said only when there were any.
     const conversations = erased.conversations
       ? ` Deleted ${erased.conversations} conversations asked beside the person's page, with ${erased.messages ?? 0} messages.`
       : '';

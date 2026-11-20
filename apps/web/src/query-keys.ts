@@ -12,7 +12,7 @@ export const keys = {
   attention: ['attention'] as const,
   assistant: ['assistant'] as const,
   handoverAssistants: ['assistant', 'handover'] as const,
-  /** What the assistant may fill in for what stands open (D133 item 7): the chip's ref and the thing as stable JSON. */
+  /** What the assistant may fill in for what stands open (D138 item 7): the chip's ref and the thing as stable JSON. */
   assistantReach: (beside: string | null, thing: string | null) => ['assistant', 'reach', beside, thing] as const,
   /** The prefix of every loaded week; invalidated when a thread with proposals changes. */
   calendarAll: ['calendar'] as const,
@@ -28,10 +28,10 @@ export const keys = {
   document: (request: unknown) => ['document', request] as const,
   previewAll: ['preview'] as const,
   view: (capability: string, input: string | null) => ['view', capability, input] as const,
-  /** Every input of one read: what an action about one of its records changes (D132). */
+  /** Every input of one read: what an action about one of its records changes (D137). */
   viewRead: (capability: string) => ['view', capability] as const,
   /**
-   * The actions about one record (D132): the record by its read and its input as `recordInputJson` writes it, so the
+   * The actions about one record (D137): the record by its read and its input as `recordInputJson` writes it, so the
    * record's page and an assistant's draft about it share the one answer.
    */
   records: {

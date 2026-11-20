@@ -60,7 +60,7 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
       kind: c.kind,
       title: c.title,
       roles,
-      // An action about a record is never a tool (D132 item 4): the model never names the record.
+      // An action about a record is never a tool (D137 item 4): the model never names the record.
       tool: c.model && c.kind !== 'execute' && !record,
       needsInput,
       view: c.view?.kind ?? null,
@@ -147,7 +147,7 @@ function pathPreviewOf(c: ManifestCapability, manifest: ConnectorManifest): Acti
       execute
         ? { place: 'fact', state: state(follower), declares: 'follows, on a propose of this manifest' }
         : { place: 'fact', state: state(!!c.follows?.length), declares: 'follows' },
-      // The record's page (D132), listed only for a write that declares it, so a manifest without one reads as before.
+      // The record's page (D137), listed only for a write that declares it, so a manifest without one reads as before.
       ...(record
         ? [{ place: 'record' as const, state: 'declared' as const, declares: 'about: { record, params }' }]
         : []),
@@ -199,7 +199,7 @@ const NOUNS = { person: 'person', unit: 'unit' } as const;
 const whoOf = (roles: Role[], anyone: string) =>
   roles.length > 1 ? anyone : roles[0] === 'manager' ? 'A manager' : 'An employee';
 /**
- * Who would see a capability about an entity or a record, place by place (D97, D132), from its scope and the declaration
+ * Who would see a capability about an entity or a record, place by place (D97, D137), from its scope and the declaration
  * alone. An action about a record is on the record's page, for whoever opens one the connector answers them. A lens and
  * a mark live on a list of that kind and wait for an administrator's choice; a list of people is a manager's (Personal,
  * D94), so a read about a person that leaves managers out reaches nobody there. A section is on the opened entity, for

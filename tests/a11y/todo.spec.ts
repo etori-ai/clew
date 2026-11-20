@@ -217,7 +217,7 @@ test.describe('asking from a page on a narrower screen', () => {
     page,
     api,
   }) => {
-    // The answer stands in a card under Hem's line (D133 item 9); Stäng takes it away and leaves the conversation.
+    // The answer stands in a card under Hem's line (D138 item 9); Stäng takes it away and leaves the conversation.
     const card = page.getByRole('main').getByRole('region', { name: 'Vem är på plats?', exact: true });
     await open(page, '/');
     await composer(page).fill('Vem är på plats?');

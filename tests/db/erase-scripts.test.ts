@@ -74,8 +74,10 @@ const overview: StaffOverview = {
 const talks = talkUsecases({
   store: talkStoreWithCards({ durable: testDurable, cancel: async () => {} }, { clock: () => at }),
   staff: async p => (p.id === manager ? overview : { units: [] }),
-  manages: async (managerId, employeeId) => managerId === manager && employeeId !== manager,
-  bookings: async () => new Map(),
+  reports: async managerId =>
+    new Set(
+      managerId === manager ? overview.units.flatMap(u => u.people.map(p => p.id)).filter(id => id !== manager) : [],
+    ),
   clock: () => at,
   ids,
 });
@@ -350,6 +352,8 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
     expect((await enqueuedWorkflows(dueTimerId(leaversCard!))).map(w => w.status)).toEqual(['ENQUEUED']);
     expect((await auditAbout(`person:${leaver}`)).map(a => [a.actor, a.action])).toEqual([
       ['operator:cli', 'thread.subject_erased'],
+      // What stood open about the person in a conversation goes with their cards (D136).
+      ['operator:cli', 'conversation.person_erased'],
       ['operator:cli', 'talks.person_erased'],
       ['operator:cli', 'competence.person_erased'],
       ['operator:cli', 'dialogue.person_erased'],

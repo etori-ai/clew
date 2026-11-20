@@ -28,6 +28,7 @@ import {
   talksView,
 } from '../../apps/server/src/modules/talks/capabilities';
 import {
+  bookingAsks,
   nextTalk,
   normaliseText,
   openWords,
@@ -35,13 +36,19 @@ import {
   overdueWords,
   swedishDayAndMonth,
   swedishShortDay,
+  workdaysBefore,
 } from '../../apps/server/src/modules/talks/domain';
-import { TalkError, talkUsecases, type TalkUsecases } from '../../apps/server/src/modules/talks/usecases';
+import {
+  TalkError,
+  talkInvitations,
+  talkUsecases,
+  type TalkUsecases,
+} from '../../apps/server/src/modules/talks/usecases';
 import { Registry } from '../registry';
 
 /**
- * The talks module's use cases (D96) on the memory adapter, with a clock, ids, a staff port and a calendar the test
- * owns: every mutation's audit row and that none carries an action point's text or a person's name; the card and the
+ * The talks module's use cases (D96, D132) on the memory adapter, with a clock, ids and a staff port the test owns:
+ * every mutation's audit row and that none carries an action point's text or a person's name; the card and the
  * action point roll back together; the reach of a manager is computed now, so a former manager reaches nothing; the
  * round carries open action points over; and the built-in connector answers through the registry.
  */
@@ -96,7 +103,6 @@ const asBo = personaOf('bo', 'employee', 'Bo Berg');
 let now: Date;
 let n: number;
 let staff: Map<string, StaffOverview>;
-let bookings: ReadonlyMap<string, { at?: string }> | undefined;
 let store: MemoryTalkStore;
 let talks: TalkUsecases;
 beforeEach(() => {
@@ -115,7 +121,6 @@ beforeEach(() => {
     ],
     ['other', { units: [{ unitId: 'u3', unitLabel: 'Enhet 3', people: [eve] }] }],
   ]);
-  bookings = new Map([['dan', { at: '2026-11-20T09:00:00.000Z' }]]);
   store = memoryTalkStore({
     persons: [...[anna, bo, cia, dan, eve], person('co', 'Lena Chef', 'lena.c')].map(p => ({
       id: p.id,
@@ -128,11 +133,13 @@ beforeEach(() => {
   talks = talkUsecases({
     store,
     staff: async persona => staff.get(persona.id) ?? { units: [] },
-    // As composition asks it: the employee is among the people on the units the manager manages now.
-    manages: async (managerId, employeeId) =>
-      managerId !== employeeId &&
-      (staff.get(managerId)?.units ?? []).some(u => u.people.some(p => p.id === employeeId && p.enabled !== false)),
-    bookings: async () => bookings,
+    // As composition answers it: the people on the units the manager manages now, without themselves.
+    reports: async managerId =>
+      new Set(
+        (staff.get(managerId)?.units ?? []).flatMap(u =>
+          u.people.filter(p => p.id !== managerId && p.enabled !== false).map(p => p.id),
+        ),
+      ),
     clock: () => now,
     ids: () => 'id-' + ++n,
   });
@@ -147,6 +154,20 @@ const open = () =>
     opensOn: '2026-10-01',
     dueOn: '2026-11-28',
   });
+const DAN = { start: '2026-11-20T09:00:00.000Z', end: '2026-11-20T10:00:00.000Z' };
+/** Dan's talk is booked: the manager registered the time the two agreed on (D132 item 4). */
+const bookDan = () => talks.book(boss, 'dan', DAN);
+/** The calendar module tells of an invitation, as composition binds it, in a transaction of the talks store. */
+const invitations = <T>(fn: (port: ReturnType<typeof talkInvitations>) => Promise<T>) =>
+  store.transaction(tx => fn(talkInvitations(tx, { ids: () => 'id-' + ++n })));
+const invitation = (invitationId: string, managerId: string, employeeId: string, span = DAN) => ({
+  actor: 'system:execution',
+  invitationId,
+  managerId,
+  employeeId,
+  ...span,
+  at: at(),
+});
 /** Every audit row's text, so a test can say no text and no name is in any of them. */
 const auditText = () => JSON.stringify(store.audit());
 
@@ -159,7 +180,14 @@ describe('the round', () => {
         action: 'talks.round_opened',
         subject: 'round:' + first,
         at: at(),
-        details: { organisationId: ORG, opensOn: '2026-10-01', dueOn: '2026-11-28', closed: null },
+        details: {
+          organisationId: ORG,
+          opensOn: '2026-10-01',
+          dueOn: '2026-11-28',
+          prepareDays: 5,
+          closed: null,
+          carried: 0,
+        },
       },
     ]);
     now = new Date('2027-03-01T08:00:00.000Z');
@@ -182,7 +210,14 @@ describe('the round', () => {
         action: 'talks.round_opened',
         subject: 'round:' + second,
         at: at(),
-        details: { organisationId: ORG, opensOn: '2027-03-01', dueOn: '2027-05-31', closed: first },
+        details: {
+          organisationId: ORG,
+          opensOn: '2027-03-01',
+          dueOn: '2027-05-31',
+          prepareDays: 5,
+          closed: first,
+          carried: 0,
+        },
       },
     ]);
     expect(store.state.rounds.get(first)?.closedAt).toBe(at());
@@ -194,7 +229,7 @@ describe('the round', () => {
   });
 
   test('a round needs a label and a period that ends after it starts', async () => {
-    const bad = (input: Partial<{ label: string; opensOn: string; dueOn: string }>) =>
+    const bad = (input: Partial<{ label: string; opensOn: string; dueOn: string; prepareDays: number }>) =>
       talks.openRound('operator:cli', {
         organisationId: ORG,
         label: 'Hösten',
@@ -205,15 +240,19 @@ describe('the round', () => {
     await expect(bad({ label: '   ' })).rejects.toBeInstanceOf(TalkError);
     await expect(bad({ dueOn: '2026-02-30' })).rejects.toBeInstanceOf(TalkError);
     await expect(bad({ dueOn: '2026-09-30' })).rejects.toBeInstanceOf(TalkError);
+    // The working days a manager is reminded before a booked talk (D134): a whole number from 0 to 30.
+    for (const prepareDays of [-1, 31, 2.5]) await expect(bad({ prepareDays })).rejects.toBeInstanceOf(TalkError);
     expect(store.audit()).toEqual([]);
   });
 
   test('the manager reads one row per person on the units they manage: each once, without themselves or the deactivated', async () => {
     await open();
     await talks.markHeld(boss, 'anna', { heldOn: '2026-11-03' });
+    await bookDan();
     const out = await talks.round(boss);
     expect(checkContract(TalksOutputSchema, out)).toBe(true);
     expect(out.round).toEqual({ label: 'Utvecklingssamtal hösten 2026', opensOn: '2026-10-01', dueOn: '2026-11-28' });
+    // Booked is the talk's own record: the read never says it could not tell.
     expect(out.bookedUnknown).toBeUndefined();
     // Missing, then booked, then held; by name within a state.
     expect(out.rows).toEqual([
@@ -224,6 +263,9 @@ describe('the round', () => {
         name: 'Dan Dahl',
         state: 'booked',
         at: '2026-11-20T09:00:00.000Z',
+        until: '2026-11-20T10:00:00.000Z',
+        invited: false,
+        own: true,
         openCommitments: 0,
       },
       {
@@ -237,30 +279,12 @@ describe('the round', () => {
     ]);
   });
 
-  test('when the calendar does not answer the read says so; without an open round there is nothing to read', async () => {
+  test('without an open round there is nothing to read; in one, a person nobody has booked is missing', async () => {
     expect(await talks.round(boss)).toEqual({ round: null, rows: [] });
     await open();
-    bookings = undefined;
     const out = await talks.round(boss);
-    expect(out.bookedUnknown).toBe(true);
     expect(out.rows.map(r => r.state)).toEqual(['missing', 'missing', 'missing']);
     expect(checkContract(TalksOutputSchema, out)).toBe(true);
-  });
-
-  test('a talk another of the person’s managers booked reads as booked, without its time (Q12)', async () => {
-    await open();
-    bookings = new Map([
-      ['bo', {}],
-      ['dan', { at: '2026-11-20T09:00:00.000Z' }],
-    ]);
-    const out = await talks.round(boss);
-    expect(checkContract(TalksOutputSchema, out)).toBe(true);
-    expect(out.rows.map(r => [r.userName, r.state, r.at])).toEqual([
-      ['anna.a', 'missing', undefined],
-      ['bo', 'booked', undefined],
-      ['dan.d', 'booked', '2026-11-20T09:00:00.000Z'],
-    ]);
-    expect(out.rows.find(r => r.userName === 'bo')).not.toHaveProperty('at');
   });
 
   test('an employee is refused the round; a manager of another unit sees only their own people', async () => {
@@ -351,6 +375,656 @@ describe('held', () => {
     await expect(talks.markHeld(asAnna, 'bo')).rejects.toBeInstanceOf(ForbiddenError);
     await expect(talks.unmarkHeld(other, 'anna')).rejects.toBeInstanceOf(ForbiddenError);
     expect(store.audit().filter(a => a.action.startsWith('talks.held'))).toEqual([]);
+  });
+});
+
+describe('the booking (D132)', () => {
+  const rowOf = async (manager: AuthenticatedContext, userName: string) =>
+    (await talks.round(manager)).rows.find(r => r.userName === userName)!;
+  const booked = () => store.audit().filter(a => a.action === 'talks.booked' || a.action === 'talks.booking_removed');
+  /** The manager as the people table holds them: an invitation is recorded only between people of one organisation. */
+  const known = (id: string, name: string) =>
+    store.addPerson({ id, organisationId: ORG, name, userName: id, enabled: true });
+
+  test('a manager registers the time of a talk by hand, changes it and removes it, each with its audit row', async () => {
+    await open();
+    const first = await talks.book(boss, 'dan', DAN);
+    expect(first).toEqual({ id: expect.any(String), ...DAN });
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({
+      state: 'booked',
+      at: DAN.start,
+      until: DAN.end,
+      invited: false,
+    });
+    expect(store.state.talks.get(first.id)!.booking).toEqual({
+      ...DAN,
+      bookedBy: 'boss',
+      bookedAt: at(),
+      invitationId: null,
+      calendar: null,
+    });
+    // The same time again changes nothing; another time replaces it on the same talk.
+    await talks.book(boss, 'dan', DAN);
+    const later = { start: '2026-11-24T12:00:00.000Z', end: '2026-11-24T13:00:00.000Z' };
+    now = new Date('2026-11-11T09:00:00.000Z');
+    expect((await talks.book(boss, 'dan', later)).id).toBe(first.id);
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', at: later.start, until: later.end });
+    await talks.unbook(boss, 'dan');
+    await talks.unbook(boss, 'dan');
+    expect(await rowOf(boss, 'dan.d')).toEqual({
+      ref: 'talk:talks:dan',
+      userName: 'dan.d',
+      name: 'Dan Dahl',
+      state: 'missing',
+      openCommitments: 0,
+    });
+    const roundId = expect.any(String);
+    expect(booked()).toEqual([
+      {
+        actor: 'person:boss',
+        action: 'talks.booked',
+        subject: 'talk:' + first.id,
+        at: '2026-11-10T09:00:00.000Z',
+        details: { roundId, employeeId: 'dan', ...DAN, by: 'manager', replaced: false },
+      },
+      {
+        actor: 'person:boss',
+        action: 'talks.booked',
+        subject: 'talk:' + first.id,
+        at: at(),
+        details: { roundId, employeeId: 'dan', ...later, by: 'manager', replaced: true },
+      },
+      {
+        actor: 'person:boss',
+        action: 'talks.booking_removed',
+        subject: 'talk:' + first.id,
+        at: at(),
+        details: { roundId, employeeId: 'dan', by: 'manager' },
+      },
+    ]);
+    // No name in any of them.
+    for (const name of NAMES) expect(auditText()).not.toContain(name);
+  });
+
+  test('a time is written as it is stored, and one that is no span of at most a day is refused', async () => {
+    await open();
+    await talks.book(boss, 'dan', { start: '2026-11-20T10:00:00+01:00', end: '2026-11-20T11:00:00+01:00' });
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ at: DAN.start, until: DAN.end });
+    const before = booked().length;
+    for (const span of [
+      { start: DAN.end, end: DAN.start },
+      { start: DAN.start, end: DAN.start },
+      { start: DAN.start, end: '2026-11-22T09:00:00.000Z' },
+      { start: 'i morgon', end: DAN.end },
+    ])
+      await expect(talks.book(boss, 'dan', span)).rejects.toBeInstanceOf(TalkError);
+    expect(booked()).toHaveLength(before);
+  });
+
+  test('only a manager of the person books; not without an open round, and not a talk marked held', async () => {
+    await expect(talks.book(boss, 'dan', DAN)).rejects.toThrow('Det finns ingen öppen omgång av utvecklingssamtal.');
+    await open();
+    await expect(talks.book(other, 'dan', DAN)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(talks.book(asAnna, 'dan', DAN)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(talks.unbook(other, 'dan')).rejects.toBeInstanceOf(ForbiddenError);
+    await talks.markHeld(boss, 'dan', { heldOn: '2026-11-03' });
+    await expect(talks.book(boss, 'dan', DAN)).rejects.toThrow('Samtalet är redan markerat som hållet.');
+    expect(booked()).toEqual([]);
+  });
+
+  test('marking a booked talk held keeps when it was booked; undoing the mark shows the booking again', async () => {
+    await open();
+    const { id } = await bookDan();
+    await talks.markHeld(boss, 'dan', { heldOn: '2026-11-09' });
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'held', at: '2026-11-09' });
+    expect(await rowOf(boss, 'dan.d')).not.toHaveProperty('until');
+    expect(store.state.talks.get(id)!.booking).toMatchObject(DAN);
+    await talks.unmarkHeld(boss, 'dan');
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', at: DAN.start });
+  });
+
+  test('one talk a person a round: every current manager reads the booking with its time, and either changes a time set by hand (Q12)', async () => {
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    await open();
+    const { id } = await talks.book(co, 'dan', DAN);
+    for (const manager of [boss, co])
+      expect(await rowOf(manager, 'dan.d')).toMatchObject({ state: 'booked', at: DAN.start, invited: false });
+    const moved = { start: '2026-11-23T08:00:00.000Z', end: '2026-11-23T09:00:00.000Z' };
+    expect((await talks.book(boss, 'dan', moved)).id).toBe(id);
+    expect(store.state.talks.get(id)!.booking).toMatchObject({ ...moved, bookedBy: 'boss' });
+    await talks.unbook(co, 'dan');
+    expect((await rowOf(boss, 'dan.d')).state).toBe('missing');
+  });
+
+  test('a booking counts while the manager whose booking it is manages the person; after that the talk lacks a time and is booked again', async () => {
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    await open();
+    const { id } = await talks.book(co, 'dan', DAN);
+    expect((await rowOf(boss, 'dan.d')).state).toBe('booked');
+    // Lena moves to another unit: nothing is written here, and her booking counts for nobody.
+    staff.set('co', { units: [{ unitId: 'u3', unitLabel: 'Enhet 3', people: [eve] }] });
+    expect(await rowOf(boss, 'dan.d')).toEqual({
+      ref: 'talk:talks:dan',
+      userName: 'dan.d',
+      name: 'Dan Dahl',
+      state: 'missing',
+      openCommitments: 0,
+    });
+    expect(store.state.talks.get(id)!.booking).toMatchObject({ bookedBy: 'co' });
+    // She comes back: it counts again. She leaves, and Dan's manager books the talk anew.
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    expect((await rowOf(boss, 'dan.d')).state).toBe('booked');
+    staff.set('co', { units: [] });
+    await talks.book(boss, 'dan', DAN);
+    expect(store.state.talks.get(id)!.booking).toMatchObject({ bookedBy: 'boss' });
+    expect(booked().at(-1)!.details).toMatchObject({ by: 'manager', replaced: true });
+  });
+
+  test('an invitation Clew sent books the talk; it is not changed by hand, and ends with the invitation', async () => {
+    known('boss', 'Karin Chef');
+    await open();
+    await invitations(port => port.established(invitation('p1', 'boss', 'dan')));
+    const talk = [...store.state.talks.values()].find(t => t.employeeId === 'dan')!;
+    expect(talk.booking).toEqual({ ...DAN, bookedBy: 'boss', bookedAt: at(), invitationId: 'p1', calendar: null });
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', at: DAN.start, until: DAN.end, invited: true });
+    // Told again of the same invitation: nothing more is written.
+    await invitations(port => port.established(invitation('p1', 'boss', 'dan')));
+    const sentence = 'Samtalet är bokat genom en inbjudan från Clew, så tiden kan inte ändras här.';
+    await expect(talks.book(boss, 'dan', DAN)).rejects.toThrow(sentence);
+    await expect(talks.unbook(boss, 'dan')).rejects.toThrow(sentence);
+    // An invitation that carries nothing ends nothing; this one's end takes the booking with it, once.
+    await invitations(port =>
+      port.ended({ actor: 'assistant:obligation', invitationId: 'p0', why: 'declined', at: at() }),
+    );
+    await invitations(port =>
+      port.ended({ actor: 'assistant:obligation', invitationId: 'p1', why: 'declined', at: at() }),
+    );
+    await invitations(port =>
+      port.ended({ actor: 'assistant:obligation', invitationId: 'p1', why: 'declined', at: at() }),
+    );
+    expect((await rowOf(boss, 'dan.d')).state).toBe('missing');
+    const roundId = expect.any(String);
+    expect(booked()).toEqual([
+      {
+        actor: 'system:execution',
+        action: 'talks.booked',
+        subject: 'talk:' + talk.id,
+        at: at(),
+        details: {
+          roundId,
+          employeeId: 'dan',
+          ...DAN,
+          by: 'invitation',
+          invitationId: 'p1',
+          bookedBy: 'boss',
+          replaced: false,
+        },
+      },
+      {
+        actor: 'assistant:obligation',
+        action: 'talks.booking_removed',
+        subject: 'talk:' + talk.id,
+        at: at(),
+        details: { roundId, employeeId: 'dan', by: 'invitation', invitationId: 'p1', why: 'declined' },
+      },
+    ]);
+    // Now a time can be set by hand again.
+    await expect(talks.book(boss, 'dan', DAN)).resolves.toMatchObject(DAN);
+  });
+
+  test('the invitation read back from the calendar replaces a time set by hand, and a later one the earlier', async () => {
+    known('boss', 'Karin Chef');
+    await open();
+    await bookDan();
+    const sent = { start: '2026-11-25T09:00:00.000Z', end: '2026-11-25T10:00:00.000Z' };
+    await invitations(port => port.established(invitation('p1', 'boss', 'dan', sent)));
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ at: sent.start, invited: true });
+    expect(booked().at(-1)!.details).toMatchObject({ by: 'invitation', replaced: true });
+    await invitations(port => port.established(invitation('p2', 'boss', 'dan', DAN)));
+    // The first invitation no longer carries the booking, so its end changes nothing.
+    await invitations(port => port.ended({ actor: 'system:execution', invitationId: 'p1', why: 'replaced', at: at() }));
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', at: DAN.start, invited: true });
+  });
+
+  test('an invitation books nothing without an open round, for a talk marked held, or for people the directory does not hold together', async () => {
+    known('boss', 'Karin Chef');
+    await invitations(port => port.established(invitation('p1', 'boss', 'dan')));
+    await open();
+    await talks.markHeld(boss, 'dan', { heldOn: '2026-11-03' });
+    await invitations(port => port.established(invitation('p2', 'boss', 'dan')));
+    await invitations(port => port.established(invitation('p3', 'nobody', 'bo')));
+    store.addPerson({ id: 'far', organisationId: 'org-2', name: 'Fia Fjärran', userName: 'far', enabled: true });
+    await invitations(port => port.established(invitation('p4', 'far', 'bo')));
+    await invitations(port => port.established(invitation('p5', 'boss', 'bo', { start: DAN.end, end: DAN.start })));
+    expect(booked()).toEqual([]);
+    expect([...store.state.talks.values()].filter(t => t.booking)).toEqual([]);
+  });
+
+  test('an invitation of a manager who has left the person counts for nobody, and the next manager sets a time over it', async () => {
+    known('co', 'Lena Chef');
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    await open();
+    await invitations(port => port.established(invitation('p1', 'co', 'dan')));
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', invited: true });
+    await expect(talks.book(boss, 'dan', DAN)).rejects.toBeInstanceOf(TalkError);
+    staff.set('co', { units: [] });
+    expect((await rowOf(boss, 'dan.d')).state).toBe('missing');
+    await talks.book(boss, 'dan', DAN);
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', invited: false });
+    // The old invitation's end no longer touches the talk.
+    await invitations(port => port.ended({ actor: 'system:execution', invitationId: 'p1', why: 'undone', at: at() }));
+    expect((await rowOf(boss, 'dan.d')).state).toBe('booked');
+  });
+
+  test('a new round takes over the talks that are booked for a time still to come: the booking, its invitation and its cards move with it', async () => {
+    known('boss', 'Karin Chef');
+    const first = await open();
+    // Dan's invitation is for the 20th; Anna's time was set by hand for the 5th, which has passed; Bo's talk was held.
+    await invitations(port => port.established(invitation('p1', 'boss', 'dan')));
+    now = new Date('2026-11-04T09:00:00.000Z');
+    await talks.book(boss, 'anna', { start: '2026-11-05T09:00:00.000Z', end: '2026-11-05T10:00:00.000Z' });
+    await talks.book(boss, 'bo', { start: '2026-11-25T09:00:00.000Z', end: '2026-11-25T10:00:00.000Z' });
+    await talks.markHeld(boss, 'bo', { heldOn: '2026-11-04' });
+    now = new Date('2026-11-10T09:00:00.000Z');
+    const second = await talks.openRound('operator:cli', {
+      organisationId: ORG,
+      label: 'Nästa omgång',
+      opensOn: '2026-11-10',
+      dueOn: '2026-12-18',
+    });
+    // Dan is booked in the round that is open, by the same invitation, with nothing copied.
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', at: DAN.start, invited: true, own: true });
+    const byRound = (roundId: string) =>
+      [...store.state.talks.values()].filter(t => t.roundId === roundId).map(t => [t.employeeId, t.booking?.start]);
+    expect(byRound(second)).toEqual([['dan', DAN.start]]);
+    expect(byRound(first).sort()).toEqual(
+      [
+        ['anna', '2026-11-05T09:00:00.000Z'],
+        ['bo', '2026-11-25T09:00:00.000Z'],
+        ['dan', undefined],
+      ].sort(),
+    );
+    // A talk whose time had passed, and one that was held, stay where they were: the new round starts them over.
+    expect((await rowOf(boss, 'anna.a')).state).toBe('missing');
+    expect((await rowOf(boss, 'bo')).state).toBe('missing');
+    expect(store.audit().at(-1)).toMatchObject({
+      action: 'talks.round_opened',
+      subject: 'round:' + second,
+      details: { closed: first, carried: 1 },
+    });
+    // The invitation still carries the booking: it is not changed by hand, and its end takes the booking off this round's talk.
+    await expect(talks.unbook(boss, 'dan')).rejects.toBeInstanceOf(TalkError);
+    await invitations(port => port.ended({ actor: 'person:boss', invitationId: 'p1', why: 'undone', at: at() }));
+    expect((await rowOf(boss, 'dan.d')).state).toBe('missing');
+    expect(byRound(second)).toEqual([['dan', undefined]]);
+  });
+
+  test('erasing the manager whose booking it is leaves the talk with the employee, booked by nobody', async () => {
+    await open();
+    const { id } = await bookDan();
+    store.addPerson({ id: 'boss', organisationId: ORG, name: 'Karin Chef', userName: 'boss', enabled: false });
+    expect(await talks.erasePerson('operator:cli', 'boss')).toMatchObject({ talks: 0, cleared: 1 });
+    expect(store.state.talks.get(id)!.booking).toMatchObject({ ...DAN, bookedBy: null });
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    expect((await rowOf(co, 'dan.d')).state).toBe('missing');
+  });
+});
+
+describe('what the calendar holds against a booking (D133)', () => {
+  const rowOf = async (manager: AuthenticatedContext, userName: string) =>
+    (await talks.round(manager)).rows.find(r => r.userName === userName)!;
+  const calendarAudit = () => store.audit().filter(a => a.action !== 'talks.round_opened');
+  const known = (id: string, name: string) =>
+    store.addPerson({ id, organisationId: ORG, name, userName: id, enabled: true });
+  const MOVED = { start: '2026-11-23T12:00:00.000Z', end: '2026-11-23T13:00:00.000Z' };
+  const seen = (invitationId: string, event: { start: string; end: string } | null) =>
+    invitations(port => port.observed({ actor: 'assistant:scan', invitationId, event, at: at() }));
+  /** Dan's talk is booked by an invitation the manager sent, read back from the calendar. */
+  async function invited() {
+    known('boss', 'Karin Chef');
+    await open();
+    await invitations(port => port.established(invitation('p1', 'boss', 'dan')));
+    return [...store.state.talks.values()].find(t => t.employeeId === 'dan')!.id;
+  }
+
+  test('a meeting moved in the calendar is recorded beside the booking, which stands; the same reading again writes nothing, and agreeing again clears it', async () => {
+    const id = await invited();
+    // The calendar holds what was booked: nothing to record.
+    await seen('p1', DAN);
+    expect(store.state.talks.get(id)!.booking!.calendar).toBeNull();
+    await seen('p1', { start: '2026-11-23T13:00:00+01:00', end: '2026-11-23T14:00:00+01:00' });
+    await seen('p1', MOVED);
+    expect(store.state.talks.get(id)!.booking).toMatchObject({ ...DAN, invitationId: 'p1', calendar: MOVED });
+    // The talk is still booked at its own time, and the row says what the calendar holds and whose it is to settle.
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({
+      state: 'booked',
+      at: DAN.start,
+      until: DAN.end,
+      invited: true,
+      own: true,
+      calendar: MOVED,
+    });
+    expect(checkContract(TalksOutputSchema, await talks.round(boss))).toBe(true);
+    await seen('p1', DAN);
+    expect(store.state.talks.get(id)!.booking!.calendar).toBeNull();
+    expect(await rowOf(boss, 'dan.d')).not.toHaveProperty('calendar');
+    const details = { roundId: expect.any(String), employeeId: 'dan', invitationId: 'p1' };
+    expect(calendarAudit().slice(1)).toEqual([
+      {
+        actor: 'assistant:scan',
+        action: 'talks.calendar_differs',
+        subject: 'talk:' + id,
+        at: at(),
+        details: { ...details, calendar: MOVED },
+      },
+      { actor: 'assistant:scan', action: 'talks.calendar_agrees', subject: 'talk:' + id, at: at(), details },
+    ]);
+    for (const name of NAMES) expect(auditText()).not.toContain(name);
+  });
+
+  test('a meeting gone from the calendar is recorded as gone; a span that cannot be read, an invitation that carries nothing and a held talk record nothing', async () => {
+    const id = await invited();
+    await seen('p1', { start: DAN.end, end: DAN.start });
+    await seen('p0', null);
+    expect(store.state.talks.get(id)!.booking!.calendar).toBeNull();
+    await seen('p1', null);
+    expect(store.state.talks.get(id)!.booking!.calendar).toBe('gone');
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', at: DAN.start, calendar: { gone: true } });
+    expect(checkContract(TalksOutputSchema, await talks.round(boss))).toBe(true);
+    expect(calendarAudit().at(-1)).toMatchObject({
+      action: 'talks.calendar_differs',
+      details: { calendar: { gone: true } },
+    });
+    // Marked held, the talk has nothing left to settle: the next reading clears what was recorded.
+    await talks.markHeld(boss, 'dan', { heldOn: '2026-11-09' });
+    expect(await rowOf(boss, 'dan.d')).not.toHaveProperty('calendar');
+    await seen('p1', null);
+    expect(store.state.talks.get(id)!.booking!.calendar).toBeNull();
+    await seen('p1', MOVED);
+    expect(store.state.talks.get(id)!.booking!.calendar).toBeNull();
+  });
+
+  test('a moved invitation moves the booking with it and settles the difference; told again, nothing more is written', async () => {
+    const id = await invited();
+    await seen('p1', MOVED);
+    const move = { actor: 'person:boss', invitationId: 'p1', ...MOVED, at: at() };
+    await invitations(port => port.moved(move));
+    await invitations(port => port.moved(move));
+    await invitations(port => port.moved({ ...move, invitationId: 'p0' }));
+    expect(store.state.talks.get(id)!.booking).toEqual({
+      ...MOVED,
+      bookedBy: 'boss',
+      bookedAt: at(),
+      invitationId: 'p1',
+      calendar: null,
+    });
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', at: MOVED.start, until: MOVED.end });
+    expect(await rowOf(boss, 'dan.d')).not.toHaveProperty('calendar');
+    expect(calendarAudit().slice(2)).toEqual([
+      {
+        actor: 'person:boss',
+        action: 'talks.booking_moved',
+        subject: 'talk:' + id,
+        at: at(),
+        details: { roundId: expect.any(String), employeeId: 'dan', invitationId: 'p1', from: DAN, ...MOVED },
+      },
+    ]);
+  });
+
+  test('an invitation whose meeting is gone ends with the time removed, or kept as a time the manager set by hand', async () => {
+    const id = await invited();
+    await seen('p1', null);
+    await invitations(port =>
+      port.ended({
+        actor: 'person:boss',
+        invitationId: 'p1',
+        why: 'cancelled',
+        at: at(),
+        keep: { managerId: 'boss' },
+      }),
+    );
+    expect(store.state.talks.get(id)!.booking).toEqual({
+      ...DAN,
+      bookedBy: 'boss',
+      bookedAt: at(),
+      invitationId: null,
+      calendar: null,
+    });
+    // It is a time set by hand now: no invitation carries it, and the manager changes it on the talk.
+    expect(await rowOf(boss, 'dan.d')).toMatchObject({ state: 'booked', invited: false, own: true });
+    expect(await rowOf(boss, 'dan.d')).not.toHaveProperty('calendar');
+    expect(calendarAudit().at(-1)).toEqual({
+      actor: 'person:boss',
+      action: 'talks.booking_kept',
+      subject: 'talk:' + id,
+      at: at(),
+      details: {
+        roundId: expect.any(String),
+        employeeId: 'dan',
+        by: 'invitation',
+        invitationId: 'p1',
+        why: 'cancelled',
+      },
+    });
+    await talks.unbook(boss, 'dan');
+    // Without `keep`, the talk lacks a time.
+    await invitations(port => port.established(invitation('p2', 'boss', 'dan')));
+    await invitations(port =>
+      port.ended({ actor: 'system:execution', invitationId: 'p2', why: 'cancelled', at: at() }),
+    );
+    expect((await rowOf(boss, 'dan.d')).state).toBe('missing');
+    expect(calendarAudit().at(-1)).toMatchObject({ action: 'talks.booking_removed', details: { why: 'cancelled' } });
+  });
+
+  test('another manager of the person reads the difference, and it is not theirs to settle', async () => {
+    await invited();
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    await seen('p1', MOVED);
+    expect(await rowOf(co, 'dan.d')).toMatchObject({ state: 'booked', at: DAN.start, own: false, calendar: MOVED });
+  });
+});
+
+describe('the cards before and after a booked talk (D134)', () => {
+  const personas = new Map([boss, other, co, asAnna].map(p => [p.id, p]));
+  const registry = () =>
+    new Registry().register(
+      talksConnector(talks, async a => {
+        const p = personas.get(a.id);
+        if (!p) throw new Error('unknown');
+        return p;
+      }),
+    );
+  const actor = (p: AuthenticatedContext): Actor => ({
+    id: p.id,
+    name: p.name,
+    unitId: p.unitId,
+    unitLabel: p.unitLabel,
+    role: p.role,
+  });
+  const cards = async (p: AuthenticatedContext) => (await registry().scanOne(actor(p), 'talks')).drafts;
+
+  test('working days are Monday to Friday, counted back from the day of the talk', () => {
+    // Friday 20 November 2026: five working days before is Friday the 13th, across one weekend.
+    expect(workdaysBefore('2026-11-20', 5)).toBe('2026-11-13');
+    expect(workdaysBefore('2026-11-20', 1)).toBe('2026-11-19');
+    expect(workdaysBefore('2026-11-16', 1)).toBe('2026-11-13');
+    expect(workdaysBefore('2026-11-16', 6)).toBe('2026-11-06');
+    expect(workdaysBefore('2026-11-20', 0)).toBe('2026-11-20');
+  });
+
+  test('a booking asks for preparation in the working days before it, for nothing while it goes on, and whether it was held from the day after', () => {
+    const asks = (now: string, prepareDays = 5) => bookingAsks(DAN, prepareDays, now);
+    expect(asks('2026-11-12T16:00:00.000Z')).toBeUndefined();
+    expect(asks('2026-11-13T05:00:00.000Z')).toBe('prepare');
+    expect(asks('2026-11-20T08:59:00.000Z')).toBe('prepare');
+    // From its start to the end of that day: neither.
+    expect(asks('2026-11-20T09:00:00.000Z')).toBeUndefined();
+    expect(asks('2026-11-20T22:59:00.000Z')).toBeUndefined();
+    // 23:00 UTC is the next day in Stockholm.
+    expect(asks('2026-11-20T23:00:00.000Z')).toBe('held');
+    expect(asks('2026-12-20T09:00:00.000Z')).toBe('held');
+    // The reminder switched off: nothing before, the question after.
+    expect(asks('2026-11-19T09:00:00.000Z', 0)).toBeUndefined();
+    expect(asks('2026-11-21T09:00:00.000Z', 0)).toBe('held');
+  });
+
+  test('the manager whose booking it is gets one card to prepare, then one that asks whether the talk was held; neither names anyone', async () => {
+    const roundId = await open();
+    await bookDan();
+    // Tuesday 10 November: ten days before the talk, nothing is asked.
+    expect(await cards(boss)).toEqual([]);
+    now = new Date('2026-11-13T05:00:00.000Z');
+    const revision = `${DAN.start}/${DAN.end}`;
+    const row = {
+      ref: 'talk:talks:dan',
+      label: 'Medarbetare',
+      detail: 'fre 20 nov kl. 10:00–11:00',
+      selectable: false,
+      selected: false,
+      subject: { entity: 'person' as const, key: 'dan.d' },
+    };
+    const open_ = {
+      id: 'open',
+      label: 'Visa samtalet',
+      capability: 'talks.person',
+      kind: 'read' as const,
+      role: 'primary' as const,
+      target: 'panel' as const,
+      input: { keys: ['dan.d'] },
+    };
+    expect(await cards(boss)).toEqual([
+      {
+        topic: `talks:prepare:dan:${roundId}`,
+        area: 'talks',
+        title: 'Förbered utvecklingssamtalet',
+        summary:
+          'Ett utvecklingssamtal är bokat fre 20 nov kl. 10:00–11:00. Öppna samtalet för att se åtgärdspunkterna från förra gången.',
+        reason: 'Bokat samtal',
+        deadline: '2026-11-20',
+        items: [row],
+        actions: [open_],
+        occurrences: [{ key: 'talks:prepare:dan', revision, period: roundId }],
+      },
+    ]);
+    // While the talk goes on and for the rest of that day nothing is asked: the card to prepare is resolved.
+    now = new Date('2026-11-20T09:30:00.000Z');
+    expect(await cards(boss)).toEqual([]);
+    now = new Date('2026-11-21T05:00:00.000Z');
+    const after = await cards(boss);
+    expect(after).toEqual([
+      {
+        topic: `talks:held:dan:${roundId}`,
+        area: 'talks',
+        title: 'Hölls utvecklingssamtalet?',
+        summary:
+          'Tiden för samtalet var fre 20 nov kl. 10:00–11:00. Markera det som hållet, eller ta bort tiden om det inte blev av.',
+        reason: 'Tiden har passerat',
+        items: [row],
+        actions: [open_],
+        occurrences: [{ key: 'talks:held:dan', revision, period: roundId }],
+      },
+    ]);
+    for (const name of NAMES) expect(JSON.stringify(after)).not.toContain(name);
+    // Answered either way, nothing is asked any more.
+    await talks.markHeld(boss, 'dan', { heldOn: '2026-11-20' });
+    expect(await cards(boss)).toEqual([]);
+    await talks.unmarkHeld(boss, 'dan');
+    expect((await cards(boss)).map(c => c.title)).toEqual(['Hölls utvecklingssamtalet?']);
+    await talks.unbook(boss, 'dan');
+    expect(await cards(boss)).toEqual([]);
+  });
+
+  test('a talk moved to another time is a card that comes back; a round that reminds no days before asks only afterwards', async () => {
+    await open();
+    await bookDan();
+    now = new Date('2026-11-16T08:00:00.000Z');
+    const [first] = await cards(boss);
+    const later = { start: '2026-11-25T09:00:00.000Z', end: '2026-11-25T10:00:00.000Z' };
+    await talks.book(boss, 'dan', later);
+    // Wednesday the 25th: five working days before is the 18th, so on the 16th nothing is asked yet.
+    expect(await cards(boss)).toEqual([]);
+    now = new Date('2026-11-18T08:00:00.000Z');
+    const [again] = await cards(boss);
+    expect(again!.topic).toBe(first!.topic);
+    expect(again!.occurrences![0]!.revision).not.toBe(first!.occurrences![0]!.revision);
+    expect(again).toMatchObject({ deadline: '2026-11-25', items: [{ detail: 'ons 25 nov kl. 10:00–11:00' }] });
+    // The next round reminds nobody beforehand.
+    now = new Date('2026-11-18T09:00:00.000Z');
+    await talks.openRound('operator:cli', {
+      organisationId: ORG,
+      label: 'Utan påminnelse',
+      opensOn: '2026-11-18',
+      dueOn: '2026-12-18',
+      prepareDays: 0,
+    });
+    await talks.book(boss, 'dan', later);
+    now = new Date('2026-11-24T09:00:00.000Z');
+    expect(await cards(boss)).toEqual([]);
+    now = new Date('2026-11-26T09:00:00.000Z');
+    expect((await cards(boss)).map(c => c.title)).toEqual(['Hölls utvecklingssamtalet?']);
+  });
+
+  test('only the manager whose booking it is gets the cards, and only while they manage the person', async () => {
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    await open();
+    await talks.book(co, 'dan', DAN);
+    now = new Date('2026-11-21T05:00:00.000Z');
+    expect((await cards(co)).map(c => c.title)).toEqual(['Hölls utvecklingssamtalet?']);
+    expect(await cards(boss)).toEqual([]);
+    expect(await cards(other)).toEqual([]);
+    expect(await cards(asAnna)).toEqual([]);
+    // Lena leaves Dan: her booking counts for nobody, and nobody is asked about it.
+    staff.set('co', { units: [] });
+    expect(await cards(co)).toEqual([]);
+    expect(await cards(boss)).toEqual([]);
+  });
+
+  test('a card about a person without a user name has no subject to link, and opens the round where the talk is found by its time', async () => {
+    await open();
+    await talks.book(boss, 'bo', DAN);
+    now = new Date('2026-11-16T08:00:00.000Z');
+    const [card] = await cards(boss);
+    expect(card!.items).toEqual([
+      {
+        ref: 'talk:talks:bo',
+        label: 'Medarbetare',
+        detail: 'fre 20 nov kl. 10:00–11:00',
+        selectable: false,
+        selected: false,
+      },
+    ]);
+    expect(card!.actions).toEqual([
+      {
+        id: 'open',
+        label: 'Visa omgången',
+        capability: 'talks.talks',
+        kind: 'read',
+        role: 'primary',
+        target: 'panel',
+      },
+    ]);
+    // The read it opens answers without input, and lists the talk with its time.
+    const round = await registry().run<{ rows: Array<{ name: string; at?: string }> }>(actor(boss), 'talks.talks', {});
+    expect(round.rows.find(r => r.at === DAN.start)?.name).toBe('Bo Berg');
+  });
+
+  test('a meeting that was moved in the calendar and a talk that is coming are two cards about one person', async () => {
+    store.addPerson({ id: 'boss', organisationId: ORG, name: 'Karin Chef', userName: 'boss', enabled: true });
+    await open();
+    await invitations(port => port.established(invitation('p1', 'boss', 'dan')));
+    await invitations(port =>
+      port.observed({
+        actor: 'assistant:scan',
+        invitationId: 'p1',
+        event: { start: '2026-11-23T12:00:00.000Z', end: '2026-11-23T13:00:00.000Z' },
+        at: at(),
+      }),
+    );
+    now = new Date('2026-11-16T08:00:00.000Z');
+    expect((await cards(boss)).map(c => c.title)).toEqual([
+      'Mötet för ett utvecklingssamtal har flyttats i kalendern',
+      'Förbered utvecklingssamtalet',
+    ]);
   });
 });
 
@@ -961,7 +1635,7 @@ describe('the built-in connector', () => {
     expect(() => registry()).not.toThrow();
     expect(connector).toMatchObject({ id: 'talks', kind: 'core', source: 'Utvecklingssamtal' });
     const reads = connector.capabilities;
-    // The round is opened to the model (D122 item 3, D130 rule 4); the action points never (D96 item 6), nor the reads
+    // The round is opened to the model (D122 item 3, D135 rule 4); the action points never (D96 item 6), nor the reads
     // about an entity (D97 item 7).
     expect(reads.map(c => [c.name, c.kind, c.model])).toEqual([
       ['talks.talks', 'read', true],
@@ -1038,6 +1712,7 @@ describe('the built-in connector', () => {
     await talks.addCommitment(boss, 'anna', { owner: 'manager', text: 'Boka kursen', dueOn: '2026-12-15' });
     const done = await talks.addCommitment(boss, 'anna', { owner: 'manager', text: 'Ringa', dueOn: '2026-11-01' });
     await talks.completeCommitment(boss, done);
+    await bookDan();
     const output = await r.run(actor(boss), 'talks.person', {
       // A key in other case, a booked person, a person without a user name (keyed on nothing), another manager's
       // person, an unknown key, and the first person again in its own case.
@@ -1077,34 +1752,27 @@ describe('the built-in connector', () => {
     ).rejects.toThrow('Ogiltig förfrågan');
   });
 
-  test('a talk another of the person’s managers booked is Bokat without a time, and counts as booked for the unit (Q12)', async () => {
+  test('a talk another of the person’s managers booked is Bokat with its time, and counts as booked for the unit (Q12, D132)', async () => {
     const r = registry();
     await open();
-    bookings = new Map([['dan', {}]]);
+    // Lena manages Dan too, and it is she who registered the time.
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    await talks.book(co, 'dan', DAN);
     const person = await r.run(actor(boss), 'talks.person', { keys: ['dan.d'] });
     expect(checkContract(PersonTalksOutputSchema, person)).toBe(true);
-    expect(person).toMatchObject({ rows: [{ key: 'dan.d', state: 'Bokat', next: 'Bokat', open: 'Inga' }] });
-    expect((person as { rows: Array<Record<string, string>> }).rows[0]).not.toHaveProperty('at');
+    expect(person).toMatchObject({
+      rows: [{ key: 'dan.d', state: 'Bokat', at: DAN.start, next: 'fre 20 nov', open: 'Inga' }],
+    });
     expect(await r.run(actor(boss), 'talks.unit', { keys: ['u2'] })).toMatchObject({
       rows: [{ key: 'u2', held: '0 av 2 hållna', booked: '1 bokat', missing: '1 saknas' }],
     });
-  });
-
-  test('when the calendar does not answer, the note says so and a booked talk reads as missing', async () => {
-    const r = registry();
-    await open();
-    bookings = undefined;
-    const output = await r.run<{ note?: string; rows: Array<Record<string, string>> }>(actor(boss), 'talks.person', {
-      keys: ['dan.d'],
-    });
-    expect(output.note).toBe('Senast lör 28 nov · kalendern svarade inte, så bokade samtal kan saknas');
-    expect(output.rows).toEqual([{ key: 'dan.d', state: 'Saknas', next: 'Inte bokat', open: 'Inga' }]);
   });
 
   test('talks.unit counts held, booked and missing per unit the manager manages; another unit is no row', async () => {
     const r = registry();
     await open();
     await talks.markHeld(boss, 'anna', { heldOn: '2026-11-03' });
+    await bookDan();
     const output = await r.run(actor(boss), 'talks.unit', { keys: ['u1', 'u2', 'u3', 'nope'] });
     expect(checkContract(UnitTalksOutputSchema, output)).toBe(true);
     // u1: Anna held, Bo missing (Cia is deactivated, the manager is not due one); u2: Anna held, Dan booked.
@@ -1154,7 +1822,7 @@ describe('the built-in connector', () => {
     await expect(r.run(actor(asAnna), 'talks.talks', {})).rejects.toThrow('Du saknar behörighet för åtgärden.');
   });
 
-  test('the round is the assistant’s to read for a manager (D122 item 3, D130 rule 4): where each report stands, never what an action point says', async () => {
+  test('the round is the assistant’s to read for a manager (D122 item 3, D135 rule 4): where each report stands, never what an action point says', async () => {
     const r = registry();
     await open();
     await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' });
@@ -1172,5 +1840,80 @@ describe('the built-in connector', () => {
     await expect(r.run(actor(asAnna), 'talks.talks', {})).rejects.toThrow('Du saknar behörighet för åtgärden.');
     expect(r.views(actor(boss)).find(v => v.capability === 'talks.talks')?.assistant).toBe(true);
     expect(r.views(actor(asAnna)).some(v => v.assistant)).toBe(false);
+  });
+
+  test('the scan asks for a card when a meeting was moved or is gone, for the manager whose booking it is; it names nobody and goes when the difference is settled (D133)', async () => {
+    const r = registry();
+    const scan = async (p: AuthenticatedContext) => r.scanOne(actor(p), 'talks');
+    // No round, then nothing that differs: a complete observation of no cards.
+    expect(await scan(boss)).toMatchObject({ drafts: [], observation: { completeness: 'complete', exhausted: true } });
+    store.addPerson({ id: 'boss', organisationId: ORG, name: 'Karin Chef', userName: 'boss', enabled: true });
+    const roundId = await open();
+    await invitations(port => port.established(invitation('p1', 'boss', 'dan')));
+    expect((await scan(boss)).drafts).toEqual([]);
+    const moved = { start: '2026-11-23T12:00:00.000Z', end: '2026-11-23T13:00:00.000Z' };
+    const seen = (event: { start: string; end: string } | null) =>
+      invitations(port => port.observed({ actor: 'assistant:scan', invitationId: 'p1', event, at: at() }));
+    await seen(moved);
+    const { drafts, observation } = await scan(boss);
+    expect(observation).toMatchObject({ scope: 'u1:manager', completeness: 'complete', exhausted: true });
+    expect(drafts).toEqual([
+      {
+        topic: `talks:calendar:dan:${roundId}`,
+        area: 'talks',
+        title: 'Mötet för ett utvecklingssamtal har flyttats i kalendern',
+        summary:
+          'Mötet ligger nu mån 23 nov kl. 13:00–14:00. Samtalet i Clew står kvar på fre 20 nov kl. 10:00–11:00. Öppna samtalet och välj vilken tid som gäller.',
+        reason: 'Flyttat i kalendern',
+        items: [
+          {
+            ref: 'talk:talks:dan',
+            label: 'Medarbetare',
+            detail: 'fre 20 nov kl. 10:00–11:00',
+            selectable: false,
+            selected: false,
+            subject: { entity: 'person', key: 'dan.d' },
+          },
+        ],
+        actions: [
+          {
+            id: 'open',
+            label: 'Visa samtalet',
+            capability: 'talks.person',
+            kind: 'read',
+            role: 'primary',
+            target: 'panel',
+            input: { keys: ['dan.d'] },
+          },
+        ],
+        occurrences: [{ key: 'talks:calendar:dan', revision: `${moved.start}/${moved.end}`, period: roundId }],
+      },
+    ]);
+    // Nobody is named on the card: the person is the row's subject.
+    for (const name of NAMES) expect(JSON.stringify(drafts)).not.toContain(name);
+    // The read the card opens answers with that key.
+    expect(await r.run(actor(boss), 'talks.person', { keys: ['dan.d'] })).toMatchObject({ rows: [{ key: 'dan.d' }] });
+    // Gone is another card text and another revision of the same occurrence, so a handled card comes back.
+    await seen(null);
+    const [gone] = (await scan(boss)).drafts;
+    expect(gone).toMatchObject({
+      topic: `talks:calendar:dan:${roundId}`,
+      title: 'Mötet för ett utvecklingssamtal finns inte längre i kalendern',
+      summary:
+        'Samtalet i Clew står kvar på fre 20 nov kl. 10:00–11:00. Öppna samtalet och välj om tiden ska stå kvar.',
+      reason: 'Borttaget i kalendern',
+      occurrences: [{ key: 'talks:calendar:dan', revision: 'gone', period: roundId }],
+    });
+    // Another manager of the person, and a manager of other people, get no card; an employee has none.
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    personas.set('co', co);
+    expect((await scan(co)).drafts).toEqual([]);
+    expect((await scan(other)).drafts).toEqual([]);
+    expect((await scan(asAnna)).drafts).toEqual([]);
+    // Settled: the cause is gone, so the next scan asks for no card and the platform resolves the open one.
+    await invitations(port =>
+      port.ended({ actor: 'person:boss', invitationId: 'p1', why: 'cancelled', at: at(), keep: { managerId: 'boss' } }),
+    );
+    expect((await scan(boss)).drafts).toEqual([]);
   });
 });

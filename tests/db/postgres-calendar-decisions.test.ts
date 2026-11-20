@@ -13,6 +13,8 @@ import {
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import { bookedElsewhere } from '../../apps/server/src/modules/calendar/usecases/booked';
+import { FOLLOW_MS, invitationUsecases } from '../../apps/server/src/modules/calendar/usecases/invitations';
+import { talkInvitationsOn } from '../../apps/server/src/composition/talk-invitations';
 import type { PlanningRound, UnitMember } from '../../apps/server/src/modules/calendar/model';
 import { projectExecution } from '../../apps/server/src/composition/execution-projection';
 import { forgetTestWorkflows, testDurable } from './durable';
@@ -358,7 +360,13 @@ async function sharedPair() {
     b = await world();
   const key = 'shared-' + randomUUID();
   const shared: UnitMember = { personId: key, ref: key, email: key + '@example.test', name: 'Delad Medarbetare' };
-  const round: PlanningRound = { label: 'Synthetic round', opensOn: '2098-11-01', dueOn: '2098-11-30', held: [] };
+  const round: PlanningRound = {
+    label: 'Synthetic round',
+    opensOn: '2098-11-01',
+    dueOn: '2098-11-30',
+    held: [],
+    booked: [],
+  };
   for (const w of [a, b]) {
     w.members.push(shared);
     w.setting.round = round;
@@ -418,6 +426,303 @@ test('two managers of one person confirm at once: one invitation is approved and
   );
   expect(await executionsOf(loser.id)).toEqual([]);
   expect(loser.provider.events).toEqual([]);
+});
+/**
+ * A manager and an employee of one organisation with an open round of talks, and a card with one drawn time for the
+ * employee on 11 November: what an invitation to a talk needs for the talks module to record it (D132).
+ */
+async function talkWorld() {
+  const w = await world();
+  const org = 'calendar-talks-' + randomUUID(),
+    employeeId = 'calendar-test-' + randomUUID(),
+    roundId = 'calendar-round-' + randomUUID();
+  people.push(employeeId);
+  await database().update(schema.people).set({ organisationId: org }).where(eq(schema.people.id, w.id));
+  await database().insert(schema.people).values({ id: employeeId, name: 'Synthetic employee', organisationId: org });
+  await database().insert(schema.talkRounds).values({
+    id: roundId,
+    organisationId: org,
+    kind: 'development',
+    label: 'Synthetic round',
+    opensOn: '2098-11-01',
+    dueOn: '2098-11-30',
+    createdBy: 'operator:test',
+  });
+  const member: UnitMember = {
+    personId: employeeId,
+    ref: employeeId,
+    email: employeeId + '@example.test',
+    name: 'Synthetic employee',
+  };
+  w.members.push(member);
+  w.setting.round = { label: 'Synthetic round', opensOn: '2098-11-01', dueOn: '2098-11-30', held: [], booked: [] };
+  const card = await cardFor(w, member, '2098-11-11T09:00:00.000Z');
+  const talk = async () =>
+    (await database().select().from(schema.talks).where(eq(schema.talks.employeeId, employeeId)))[0];
+  const audited = async () => {
+    const row = await talk();
+    return row
+      ? database()
+          .select()
+          .from(schema.audit)
+          .where(eq(schema.audit.subject, 'talk:' + row.id))
+          .orderBy(schema.audit.id)
+      : [];
+  };
+  /** The invitation is confirmed, sent and read back: the talk is booked by it. */
+  const send = async () => {
+    const confirmed = await w.decisions.confirm(w.actor, card, [card + ':shared']);
+    await w.uc.progress(confirmed.execution!.id);
+    return confirmed;
+  };
+  const cleanup = async () => {
+    const rows = await database().select().from(schema.talks).where(eq(schema.talks.roundId, roundId));
+    for (const row of rows)
+      await database()
+        .delete(schema.audit)
+        .where(eq(schema.audit.subject, 'talk:' + row.id));
+    await database().delete(schema.talks).where(eq(schema.talks.roundId, roundId));
+    await database().delete(schema.talkRounds).where(eq(schema.talkRounds.id, roundId));
+  };
+  return { w, employeeId, roundId, card, talk, audited, send, cleanup };
+}
+test('an invitation read back from the calendar books the talk in the open round in the same commit, and undoing it takes the booking with it (D132)', async () => {
+  const { w, employeeId, roundId, card, talk, audited, cleanup } = await talkWorld();
+  try {
+    const confirmed = await w.decisions.confirm(w.actor, card, [card + ':shared']);
+    // Approved, not yet sent: nothing is booked.
+    expect(await talk()).toBeUndefined();
+    await w.uc.progress(confirmed.execution!.id);
+    expect((await w.proposals.readThread(w.id, card))!.proposals.map(p => p.status)).toEqual(['confirmed']);
+    const booked = (await talk())!;
+    expect(booked).toMatchObject({ roundId, bookedBy: w.id, invitationId: card + ':shared', heldOn: null });
+    expect([booked.bookedStart?.toISOString(), booked.bookedEnd?.toISOString()]).toEqual([
+      '2098-11-11T09:00:00.000Z',
+      '2098-11-11T10:00:00.000Z',
+    ]);
+    expect((await audited()).map(a => [a.actor, a.action, a.details])).toEqual([
+      [
+        'system:execution',
+        'talks.booked',
+        {
+          roundId,
+          employeeId,
+          start: '2098-11-11T09:00:00.000Z',
+          end: '2098-11-11T10:00:00.000Z',
+          by: 'invitation',
+          invitationId: card + ':shared',
+          bookedBy: w.id,
+          replaced: false,
+        },
+      ],
+    ]);
+    // A check of the same execution reads the invitation back again and books nothing twice.
+    await w.uc.progress(confirmed.execution!.id);
+    expect(await audited()).toHaveLength(1);
+    // Undone inside the window: the invitation leaves the calendar and the talk lacks a time again.
+    const undone = await w.decisions.undo(w.actor, card);
+    await w.uc.progress(undone.execution!.id);
+    expect(w.provider.events).toHaveLength(0);
+    expect((await w.proposals.readThread(w.id, card))!.proposals.map(p => p.status)).toEqual(['undone']);
+    expect(await talk()).toMatchObject({
+      id: booked.id,
+      bookedStart: null,
+      bookedEnd: null,
+      bookedBy: null,
+      bookedAt: null,
+      invitationId: null,
+    });
+    expect((await audited()).map(a => [a.action, (a.details as { why?: string }).why])).toEqual([
+      ['talks.booked', undefined],
+      ['talks.booking_removed', 'undone'],
+    ]);
+  } finally {
+    await cleanup();
+  }
+});
+test('a meeting moved or cancelled on the calendar page is found by its event’s ref: the invitation and the talk follow in the same commit (D133)', async () => {
+  const { w, card, talk, audited, send, cleanup } = await talkWorld();
+  try {
+    await send();
+    const event = w.provider.events[0]!;
+    // The person moves the meeting on Clew's calendar page: a decision of its own, through the ledger.
+    const moved = await w.decisions.rescheduleEvent(w.actor, {
+      decisionId: randomUUID(),
+      ref: event.ref,
+      revision: event.revision,
+      start: '2098-11-13T12:00:00.000Z',
+      end: '2098-11-13T13:00:00.000Z',
+    });
+    // Approved, not yet carried out: the talk is where it was.
+    expect((await talk())!.bookedStart?.toISOString()).toBe('2098-11-11T09:00:00.000Z');
+    await w.uc.progress(moved.execution!.id);
+    expect(w.provider.events[0]).toMatchObject({ start: '2098-11-13T12:00:00.000Z', end: '2098-11-13T13:00:00.000Z' });
+    const proposal = async () => (await w.proposals.readThread(w.id, card))!.proposals[0]!;
+    expect(await proposal()).toMatchObject({
+      status: 'confirmed',
+      start: '2098-11-13T12:00:00.000Z',
+      end: '2098-11-13T13:00:00.000Z',
+      eventRevision: w.provider.events[0]!.revision,
+    });
+    const after = (await talk())!;
+    expect([after.bookedStart?.toISOString(), after.bookedEnd?.toISOString(), after.invitationId]).toEqual([
+      '2098-11-13T12:00:00.000Z',
+      '2098-11-13T13:00:00.000Z',
+      card + ':shared',
+    ]);
+    // A check of the same execution reads the result again and moves nothing twice.
+    await w.uc.progress(moved.execution!.id);
+    expect((await audited()).map(a => a.action)).toEqual(['talks.booked', 'talks.booking_moved']);
+    expect((await audited())[1]).toMatchObject({
+      actor: 'system:execution',
+      details: {
+        invitationId: card + ':shared',
+        from: { start: '2098-11-11T09:00:00.000Z', end: '2098-11-11T10:00:00.000Z' },
+        start: '2098-11-13T12:00:00.000Z',
+        end: '2098-11-13T13:00:00.000Z',
+      },
+    });
+    const planning = await database()
+      .select()
+      .from(schema.audit)
+      .where(eq(schema.audit.subject, 'thread:' + card))
+      .orderBy(schema.audit.id);
+    expect(planning.filter(a => a.action === 'proposals.moved').map(a => a.details)).toEqual([
+      {
+        proposal: card + ':shared',
+        start: '2098-11-13T12:00:00.000Z',
+        end: '2098-11-13T13:00:00.000Z',
+        by: 'decision',
+        executionId: moved.execution!.id,
+      },
+    ]);
+    // Undoing the move is a move back, and takes the same path.
+    const back = await w.decisions.undo(w.actor, moved.id);
+    await w.uc.progress(back.execution!.id);
+    expect((await talk())!.bookedStart?.toISOString()).toBe('2098-11-11T09:00:00.000Z');
+    expect((await proposal()).start).toBe('2098-11-11T09:00:00.000Z');
+    // Cancelling the meeting ends the invitation, and the talk lacks a time again.
+    const current = w.provider.events[0]!;
+    const cancelled = await w.decisions.cancelEvent(w.actor, {
+      decisionId: randomUUID(),
+      ref: current.ref,
+      revision: current.revision,
+    });
+    await w.uc.progress(cancelled.execution!.id);
+    expect(w.provider.events).toHaveLength(0);
+    expect((await proposal()).status).toBe('undone');
+    expect(await talk()).toMatchObject({ bookedStart: null, bookedEnd: null, invitationId: null });
+    expect((await audited()).map(a => [a.action, (a.details as { why?: string }).why])).toEqual([
+      ['talks.booked', undefined],
+      ['talks.booking_moved', undefined],
+      ['talks.booking_moved', undefined],
+      ['talks.booking_removed', 'cancelled'],
+    ]);
+  } finally {
+    await cleanup();
+  }
+});
+test('a meeting changed in the calendar is read back by its id and settled by the manager, the invitation and the talk in one commit each (D133, D134)', async () => {
+  const { w, employeeId, card, talk, audited, send, cleanup } = await talkWorld();
+  // The calendar module's use cases over the proposal store as composition builds it: its invitations port is the talks
+  // module's, on the store's own transaction.
+  const invitations = invitationUsecases({
+    store: postgresProposalStore(testDurable, { invitations: talkInvitationsOn }),
+    bind: () => ({ provider: w.provider }),
+    team: async () => w.members,
+    clock: () => new Date(w.setting.now),
+  });
+  const later = (ms: number) => {
+    w.setting.now = new Date(Date.parse(w.setting.now) + ms).toISOString();
+  };
+  const proposal = async () => (await w.proposals.readThread(w.id, card))!.proposals[0]!;
+  try {
+    await send();
+    expect(await invitations.follow(w.actor)).toBe(1);
+    expect(await talk()).toMatchObject({ calendarStart: null, calendarEnd: null, calendarGone: false });
+    // Someone moves the meeting in the calendar itself.
+    const event = w.provider.events[0]!;
+    await w.provider.reschedule(event.ref, event.revision, '2098-11-13T12:00:00.000Z', '2098-11-13T13:00:00.000Z');
+    later(FOLLOW_MS);
+    expect(await invitations.follow(w.actor)).toBe(1);
+    const differs = (await talk())!;
+    // The difference is recorded beside the booking, which stands; the invitation is as it was sent.
+    expect([differs.bookedStart, differs.calendarStart, differs.calendarEnd].map(d => d?.toISOString())).toEqual([
+      '2098-11-11T09:00:00.000Z',
+      '2098-11-13T12:00:00.000Z',
+      '2098-11-13T13:00:00.000Z',
+    ]);
+    expect((await proposal()).start).toBe('2098-11-11T09:00:00.000Z');
+    // The manager takes the meeting's time: the proposal and the talk move, and nothing differs.
+    await invitations.settle(w.actor, employeeId, 'adopt');
+    expect(await proposal()).toMatchObject({
+      status: 'confirmed',
+      start: '2098-11-13T12:00:00.000Z',
+      end: '2098-11-13T13:00:00.000Z',
+    });
+    const adopted = (await talk())!;
+    expect([adopted.bookedStart, adopted.bookedEnd].map(d => d?.toISOString())).toEqual([
+      '2098-11-13T12:00:00.000Z',
+      '2098-11-13T13:00:00.000Z',
+    ]);
+    expect(adopted).toMatchObject({ calendarStart: null, calendarEnd: null, calendarGone: false });
+    // The meeting is then removed from the calendar: recorded as gone, and the manager keeps the time without it.
+    const moved = w.provider.events[0]!;
+    await w.provider.cancel(moved.ref, moved.revision);
+    later(FOLLOW_MS);
+    await invitations.follow(w.actor);
+    expect(await talk()).toMatchObject({ calendarGone: true, invitationId: card + ':shared' });
+    await invitations.settle(w.actor, employeeId, 'keep');
+    expect((await proposal()).status).toBe('undone');
+    const kept = (await talk())!;
+    expect(kept).toMatchObject({ invitationId: null, bookedBy: w.id, calendarGone: false });
+    expect(kept.bookedStart?.toISOString()).toBe('2098-11-13T12:00:00.000Z');
+    expect((await audited()).map(a => [a.actor, a.action])).toEqual([
+      ['system:execution', 'talks.booked'],
+      ['assistant:scan', 'talks.calendar_differs'],
+      ['person:' + w.id, 'talks.booking_moved'],
+      ['assistant:scan', 'talks.calendar_differs'],
+      ['person:' + w.id, 'talks.booking_kept'],
+    ]);
+    const planning = await database()
+      .select()
+      .from(schema.audit)
+      .where(eq(schema.audit.subject, 'thread:' + card))
+      .orderBy(schema.audit.id);
+    expect(planning.map(a => a.action).filter(a => a.startsWith('proposals.'))).toEqual([
+      'proposals.moved',
+      'proposals.cancelled',
+    ]);
+  } finally {
+    await cleanup();
+  }
+});
+test('an invitation whose time passed without a talk is ended by its manager, and the talk lacks a time, in one commit (D134)', async () => {
+  const { w, employeeId, card, talk, audited, send, cleanup } = await talkWorld();
+  const invitations = invitationUsecases({
+    store: postgresProposalStore(testDurable, { invitations: talkInvitationsOn }),
+    bind: () => ({ provider: w.provider }),
+    team: async () => w.members,
+    clock: () => new Date(w.setting.now),
+  });
+  try {
+    await send();
+    await expect(invitations.settle(w.actor, employeeId, 'missed')).rejects.toThrow(
+      'Tiden för samtalet har inte passerat än.',
+    );
+    w.setting.now = '2098-11-12T07:00:00.000Z';
+    await invitations.settle(w.actor, employeeId, 'missed');
+    expect((await w.proposals.readThread(w.id, card))!.proposals[0]!.status).toBe('undone');
+    expect(await talk()).toMatchObject({ bookedStart: null, bookedEnd: null, invitationId: null });
+    expect((await audited()).map(a => [a.action, (a.details as { why?: string }).why])).toEqual([
+      ['talks.booked', undefined],
+      ['talks.booking_removed', 'missed'],
+    ]);
+    // The meeting stays in the calendar as what was once planned.
+    expect(w.provider.events).toHaveLength(1);
+  } finally {
+    await cleanup();
+  }
 });
 test('an invitation the dispatch refused because the time is no longer free was never sent: it holds nobody, the other manager sends one, and the first card can be decided again (M1)', async () => {
   const pair = await sharedPair(),
@@ -514,7 +819,7 @@ test('an invitation whose result is unknown holds the person for its approval’
   await expect(moved.confirmB()).rejects.toThrow(refusal);
   // A different round has its own reservation.
   const later = await uncertain();
-  later.b.setting.round = { label: 'Next round', opensOn: '2098-12-01', dueOn: '2098-12-31', held: [] };
+  later.b.setting.round = { label: 'Next round', opensOn: '2098-12-01', dueOn: '2098-12-31', held: [], booked: [] };
   const next = await cardFor(later.b, later.shared, '2098-12-10T09:00:00.000Z');
   expect((await later.b.decisions.confirm(later.b.actor, next, [next + ':shared'])).execution?.state).toBe('pending');
 });

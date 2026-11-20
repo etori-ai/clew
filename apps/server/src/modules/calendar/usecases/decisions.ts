@@ -11,6 +11,7 @@ import { InputError } from '../../../context';
 import type { CalendarBinder, People, ProposalStore, RoundReader, Team, UnitMember } from '../model';
 import { SAMTAL_TITLE } from './reads';
 import {
+  alreadyBookedSentence,
   bookedElsewhere,
   bookedSentence,
   heldSentence,
@@ -236,6 +237,9 @@ export function calendarDecisions({
       );
       const taken = selected.filter(x => elsewhere.has(x.participant.personId));
       if (taken.length) throw new InputError(bookedSentence(taken.map(x => x.participant.name)));
+      // The round's own record (D132): a time registered by hand, whoever of the person's managers registered it.
+      const booked = selected.filter(x => open.booked.includes(x.participant.personId));
+      if (booked.length) throw new InputError(alreadyBookedSentence(booked.map(x => x.participant.name)));
     }
     const items: CalendarItem[] = selected.map(x => ({
       id: x.id,

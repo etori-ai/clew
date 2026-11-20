@@ -295,7 +295,7 @@ export interface Capability<I = unknown, O = unknown> {
    * What its rows concern (D97): a read asked with a batch of keys, or a propose or execute that takes one in `param`.
    * Only Clew's own connectors may add `page`, the owned domain's page where the person writes (D95, D96); a manifest
    * cannot carry it, so a remote connector never claims a page inside Clew. Or, on a propose or an execute, one record
-   * of a read of the same connector, its input filled from the read's by `params` (D132).
+   * of a read of the same connector, its input filled from the read's by `params` (D137).
    */
   about?: CapabilityAbout;
   /**
@@ -323,7 +323,7 @@ export interface Capability<I = unknown, O = unknown> {
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
 /**
- * What `Capability.about` holds (D97, D132): the entity form with the page only Clew's own connectors may name, or the
+ * What `Capability.about` holds (D97, D137): the entity form with the page only Clew's own connectors may name, or the
  * record form. Each carries the other's fields as `never`, so a reader may ask any of them of either.
  */
 export type CapabilityAbout =
@@ -363,7 +363,7 @@ export const BOARDING_CONNECTOR = 'boarding';
 const TALK_COMPOSITE = SEARCH_CONNECTOR + '.talks';
 const COMMITMENT_COMPOSITE = SEARCH_CONNECTOR + '.commitments';
 /**
- * The one source of the talks profile the model may be offered (D122 item 3, D130 rule 4): the built-in module's own
+ * The one source of the talks profile the model may be offered (D122 item 3, D135 rule 4): the built-in module's own
  * round, `talks.talks`, which says where each report stands and holds no text of a talk or an action point. Never
  * another system's round, which may say more than Clew's does.
  */
@@ -431,7 +431,7 @@ export interface AboutAction {
   admits: readonly Relation[];
 }
 /**
- * A propose or execute about a record of a read (D132) as `Registry.recordActions` names it for one person: what the
+ * A propose or execute about a record of a read (D137) as `Registry.recordActions` names it for one person: what the
  * record's page needs to offer it and to start it, the record's input filling `params`.
  */
 export interface RecordAboutAction {
@@ -731,7 +731,7 @@ export class Registry implements HoldingsReader {
   private governed = new Map<string, Governance>();
   /** The inputs of each capability that name an entity (D117), drawn from the declarations at installation. */
   private named = new Map<string, NamedInputs>();
-  /** The index from a read to the actions about its records (D132), by name, drawn from the declarations at installation. */
+  /** The index from a read to the actions about its records (D137), by name, drawn from the declarations at installation. */
   private records = new Map<string, string[]>();
   /** What `validate` resolved, by the opaque handle it gave out (D117): redeemed once by `run`, for the same call only. */
   private resolutions = new WeakMap<
@@ -853,7 +853,7 @@ export class Registry implements HoldingsReader {
     for (const c of found.capabilities) {
       this.capabilities.delete(c.name);
       this.named.delete(c.name);
-      // An action is about a record of its own connector's read (D132): the read's entry goes with the connector.
+      // An action is about a record of its own connector's read (D137): the read's entry goes with the connector.
       this.records.delete(c.name);
     }
     for (const r of found.installation ?? []) this.installationReads.delete(r.name);
@@ -1494,7 +1494,7 @@ export class Registry implements HoldingsReader {
     });
   }
   /**
-   * The proposes and executes about the records of one read that a person may call (D132), by name: the index from the
+   * The proposes and executes about the records of one read that a person may call (D137), by name: the index from the
    * read to the actions about its records, each kept only where the person may call it (its connector switched on and
    * visible to them, the capability not switched off, its scope) and only while they may call the read itself. Whether
    * they can make the read with a given record's input is the caller's to find out; this answers the same for every
@@ -1920,7 +1920,7 @@ export class Registry implements HoldingsReader {
    * view it declares (D38) and the input property it takes one person's key in, when it takes one, with the relations
    * to that person it admits (D117). Each has a page of its own; the browser opens one that answers with rows there and
    * anything else beside the page it was opened from. A read the person may not call is missing, as one that does not
-   * exist is. A read the assistant may make for them is marked `assistant` (D130 rule 4): it is among `tools`, so the
+   * exist is. A read the assistant may make for them is marked `assistant` (D135 rule 4): it is among `tools`, so the
    * same governance decides both, and the pane beside a page that shows an unmarked read says so before anything is
    * asked.
    */
@@ -1952,12 +1952,12 @@ export class Registry implements HoldingsReader {
    * per-connector request lists while `clew.requests` is (D123), and the per-connector news lists while `clew.news` is
    * (D112, amended 2026-11-11).
    * The talks profile is opened as D122 item 3 decides and no further: the built-in module's round (`talks.talks`, where
-   * each report stands, no text of a talk or an action point) is governed as any read (D130 rule 4); every system's
+   * each report stands, no text of a talk or an action point) is governed as any read (D135 rule 4); every system's
    * action points, another system's round and the composites `clew.talks` and `clew.commitments` are never tools,
    * registered or not (D96 item 6), since an action point is free text about a person and another system's round is
    * not Clew's to open.
    * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
-   * whatever a registration says. Nor is an action about a record (D132 item 4): the model never names the record, and
+   * whatever a registration says. Nor is an action about a record (D137 item 4): the model never names the record, and
    * fills such an action in only for the record that stands open, through `clew.draftAction`. Clew's own connectors are governed here as any other (D122 item 4): the connector's
    * assistant switch and each read's. What the model reads of a tool's output is `modelReading` of its view.
    */

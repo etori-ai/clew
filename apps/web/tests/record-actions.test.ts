@@ -13,7 +13,7 @@ import {
 } from '../src/record-actions';
 
 /**
- * Actions about a record (D132) as the browser names them: a record is its read and the input its page made it with,
+ * Actions about a record (D137) as the browser names them: a record is its read and the input its page made it with,
  * whoever holds it, so the record's page and an assistant's draft about it share one list of actions, and a stored
  * draft, which carries no action, finds its own in that list or draws nothing.
  */
@@ -88,7 +88,7 @@ describe('the action a draft about a record fills in', () => {
 });
 
 /**
- * Where a draft about a record stands (D132): sent once the person sent it, which the server wrote on the draft with the
+ * Where a draft about a record stands (D137): sent once the person sent it, which the server wrote on the draft with the
  * work item it became, else replaced by a later draft of the same action about the same record, else to fill in and
  * send. A sent draft says so in the words a work item's sent draft uses, and offers no second send.
  */

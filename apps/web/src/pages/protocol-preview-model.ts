@@ -103,7 +103,7 @@ const PLACE_WORDS: Record<PreviewPlace | 'tool', string> = {
   mark: 'row mark',
   section: 'section',
   menu: 'menu',
-  // An action about a record (D132): on the page of the record it is about.
+  // An action about a record (D137): on the page of the record it is about.
   record: "record's page",
   tool: 'model tool',
 };
@@ -189,7 +189,7 @@ export const START_WORDS: Record<PathStart, { where: string; draws: string }> = 
     where: 'On a person or a unit',
     draws: "A button in your section of their page, and the row's menu on Personal",
   },
-  // An action about a record of one of the connector's own reads (D132): on that record's page, and nowhere else.
+  // An action about a record of one of the connector's own reads (D137): on that record's page, and nowhere else.
   record: {
     where: 'On a record of one of your reads',
     draws: "A button under the record's title on its page, and the dialog when it asks",

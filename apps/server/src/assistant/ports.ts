@@ -218,7 +218,7 @@ export interface AssistantDeps {
    */
   people?: (persona: AuthenticatedContext) => Promise<ManagedPerson[]>;
   /**
-   * The units the asker manages or follows up (D117), read when a unit's page stands open beside the question (D131
+   * The units the asker manages or follows up (D117), read when a unit's page stands open beside the question (D136
    * item 5): only such a unit is told to the model, by its name and id. Absent, and no unit is told.
    */
   units?: (persona: AuthenticatedContext) => Promise<FollowedUnit[]>;

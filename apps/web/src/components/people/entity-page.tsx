@@ -127,7 +127,7 @@ export function EntityPage({
   headingRef,
   meta,
 }: {
-  /** What the assistant's pane, opened by the corner's "Fråga AI", is about: the person, the unit or the plan (D131). */
+  /** What the assistant's pane, opened by the corner's "Fråga AI", is about: the person, the unit or the plan (D136). */
   ask: PageAsk;
   /** The way back, named; none for an address that names no page Clew can name. */
   back: { label: string; href: string } | null;
@@ -140,7 +140,7 @@ export function EntityPage({
   title: string;
   /** The line under the name: a person's title and unit, "Enhet" for a unit. */
   subtitle?: ReactNode;
-  /** The actions about the entity; none of them asks the assistant (D133 item 1). */
+  /** The actions about the entity; none of them asks the assistant (D138 item 1). */
   actions?: ReactNode;
   /** The thing's tabs (`TabList`), under its name, at the foot of the header. */
   tabs?: ReactNode;

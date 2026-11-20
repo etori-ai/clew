@@ -3,7 +3,7 @@ import { refreshUsecases } from '../threads/usecases/refresh';
 import { postgresRefreshStore } from '../threads/adapters/refresh-postgres';
 import { registry } from '../connectors/registry';
 import { systemContext } from '../system-context';
-import { calendar } from './calendar';
+import { calendar, invitations } from './calendar';
 import { clock } from './ambient';
 import { ledger } from './durable';
 import { cancelDurable } from '../dbos/start';
@@ -12,6 +12,20 @@ import { standingSession } from '../auth';
 import { openSecret, sealSecret } from '../auth-crypto';
 import { personKeys } from './person-keys';
 
+/**
+ * The calendar's part of a person's scan: the planner's card is kept in step, and the invitations the person sent are
+ * read back by their events' ids (D133). The reading back asks the calendar once per invitation, so it is started and
+ * not waited for: it never counts against the source's deadline, never holds the planner up, and a failure is logged.
+ * What it finds reaches the talk's tab when it has run and the card at the next scan.
+ */
+type Scanned = Parameters<typeof calendar.ensureProposalThread>[0];
+async function calendarScan(p: Scanned) {
+  const planned = await calendar.ensureProposalThread(p);
+  void invitations
+    .follow(p)
+    .catch(error => logger.error({ scope: 'calendar', error }, 'invitations could not be read back'));
+  return planned;
+}
 export const refresh = refreshUsecases({
   store: postgresRefreshStore({
     durable: ledger,
@@ -39,7 +53,7 @@ export const refresh = refreshUsecases({
     try {
       return await Promise.race([
         id === 'calendar'
-          ? calendar.ensureProposalThread(p).then(() => ({ drafts: [] }))
+          ? calendarScan(p).then(() => ({ drafts: [] }))
           : registry.scanOne(p, id, p.delegate ? { delegate: p.delegate } : {}),
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => reject(new Error('Source deadline exceeded')), 10_000);

@@ -24,7 +24,7 @@ import { ContentArrival, ContentSkeleton } from '../components/shell/loading';
 
 /**
  * The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the
- * same rows as a list. The view moves the line by the assistant's pane while it stands beside the page (D130 rule 11).
+ * same rows as a list. The view moves the line by the assistant's pane while it stands beside the page (D135 rule 11).
  */
 const tableQuery = '(min-width: 1280px)';
 /** The kinds of read that are one thing (D126 rule 1): drawn as a thing's page, not as a register. */
@@ -50,7 +50,7 @@ function nounOf(spec: { kind: string; noun?: { other: string } } | undefined): s
 }
 
 /**
- * A record's actions under its title (D132 items 2 and 3): those the server lists for the reader about this record, by
+ * A record's actions under its title (D137 items 2 and 3): those the server lists for the reader about this record, by
  * the page's read and input, drawn as a person's page draws a person's (`EntityActions`), each opening the action's own
  * dialog. None listed, a read with no actions, or a record the reader may not act on draws nothing; nor does the page
  * while the list is on its way, so a record without actions never shows a placeholder for them.
@@ -89,12 +89,12 @@ function placeOf(from: string | null): NavCurrent {
  * stands when the view is no tool of its own. A read the person may not open, and one that does not exist, both say
  * "Verktyget finns inte" and nothing else, and are not asked for.
  * A list or a table is a register (D126 rule 8, board Personal, the `table-page` template): the name as the heading
- * with the system's badge on its line (the corner's "Fråga AI" opens the assistant's pane beside the list, D130),
+ * with the system's badge on its line (the corner's "Fråga AI" opens the assistant's pane beside the list, D135),
  * the view's own search field and choice and the count under it, then the rows. The name in a row is the link to the
  * row's own read, its page (rule 4); a row never opens a panel.
  * One thing (a record, a contact card, a text, a document) is a thing's page (rule 1, the `work-item-detail`
- * template): the way back and the title (D131: the assistant's pane, opened by the corner's "Fråga AI", is about this
- * record, `recordSubject`), the actions about the record at the end of the title's line (D132, `RecordActions`), the
+ * template): the way back and the title (D136: the assistant's pane, opened by the corner's "Fråga AI", is about this
+ * record, `recordSubject`), the actions about the record at the end of the title's line (D137, `RecordActions`), the
  * read in the column and a record's facts in the end panel, above the read
  * where the window is narrow and while the pane stands beside the page. The view is drawn by the one renderer (D38).
  */
@@ -210,7 +210,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
         ? (thing.output as Record<string, unknown>)[spec.title]
         : undefined;
     const name = typeof own === 'string' && own.trim() ? own : title;
-    // What the assistant beside the record is about (D131 items 1 and 6): this record, its read and its input, one
+    // What the assistant beside the record is about (D136 items 1 and 6): this record, its read and its input, one
     // conversation per record; the read's chip where the assistant may make it, and the line where it may not. It stands
     // beside the conversation the pane opens as (`?open=`).
     const subject =
@@ -257,8 +257,8 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
           }
           title={name}
           titleId={TITLE_ID}
-          // The actions about this record the reader may take (D132 item 2); the assistant is asked from the corner
-          // (D133 item 1), never from here.
+          // The actions about this record the reader may take (D137 item 2); the assistant is asked from the corner
+          // (D138 item 1), never from here.
           actions={<RecordActions read={capability} input={thing.input} name={name} />}
           below={banner || undefined}
           label={title || 'Vyn'}
@@ -281,13 +281,13 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   }
   // A register (D126 rule 8): the view draws its own title line with its controls and its count (D74), so the way back
   // and the title stand in the frame's column, on the lines every page's title stands on. Its list is what the
-  // assistant beside it is about (D130 rule 4), opened by the corner's "Fråga AI".
+  // assistant beside it is about (D135 rule 4), opened by the corner's "Fråga AI".
   return (
     <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
         ask={{
           // The list's own read: a chip when the assistant may make it for the person, and otherwise the pane says under
-          // its heading that it cannot read what the system shows here (D130 rule 4, `ViewEntry.assistant`).
+          // its heading that it cannot read what the system shows here (D135 rule 4, `ViewEntry.assistant`).
           subject:
             read &&
             pageSubject({

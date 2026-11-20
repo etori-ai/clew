@@ -330,7 +330,7 @@ export const threads = pgTable(
     subjects: jsonb('subjects').$type<Subject[]>().notNull().default([]),
     // The source's assistant a question conversation was handed to, with the source's own key for it: null for every other thread.
     handover: jsonb('handover').$type<Handover>(),
-    // A question conversation asked beside a page (D130): its subject, what it is about and when it was opened as a
+    // A question conversation asked beside a page (D135): its subject, what it is about and when it was opened as a
     // conversation. Null for every other thread.
     askedBeside: jsonb('asked_beside').$type<AskedBeside>(),
     actions: jsonb('actions').$type<ThreadAction[]>().notNull().default([]),
@@ -934,6 +934,8 @@ export const talkRounds = pgTable(
     label: text('label').notNull(),
     opensOn: date('opens_on', { mode: 'string' }).notNull(),
     dueOn: date('due_on', { mode: 'string' }).notNull(),
+    // How many working days before a booked talk its manager is reminded to prepare (D134); 0 is no reminder.
+    prepareDays: integer('prepare_days').notNull().default(5),
     // An actor string (`operator:cli`, the seed's), not a person: an operator opens a round.
     createdBy: text('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -942,12 +944,17 @@ export const talkRounds = pgTable(
   t => [
     check('talk_round_kind', sql`${t.kind} IN ('development')`),
     check('talk_round_period', sql`${t.dueOn} >= ${t.opensOn}`),
+    check('talk_round_prepare_days', sql`${t.prepareDays} BETWEEN 0 AND 30`),
     uniqueIndex('talk_round_open')
       .on(t.organisationId, t.kind)
       .where(sql`${t.closedAt} IS NULL`),
   ],
 );
-/** One employee's talk in a round: held is Clew's own record, marked by the manager and undone by clearing it. */
+/**
+ * One employee's talk in a round. Held is Clew's own record, marked by the manager and undone by clearing it. So is the
+ * booking (D132): when the talk is to take place, who booked it and when, and the invitation that carries it. Nothing
+ * about a talk is read from a calendar: the calendar holds a copy of the invitation Clew sent.
+ */
 export const talks = pgTable(
   'talk',
   {
@@ -960,10 +967,35 @@ export const talks = pgTable(
       .references(() => people.id, { onDelete: 'cascade' }),
     heldOn: date('held_on', { mode: 'string' }),
     heldBy: text('held_by').references(() => people.id, { onDelete: 'set null' }),
+    bookedStart: timestamp('booked_start', { withTimezone: true }),
+    bookedEnd: timestamp('booked_end', { withTimezone: true }),
+    // The manager whose booking it is; erasing them nulls it, and the booking then counts for nobody.
+    bookedBy: text('booked_by').references(() => people.id, { onDelete: 'set null' }),
+    bookedAt: timestamp('booked_at', { withTimezone: true }),
+    // The invitation Clew sent that carries the booking, by the calendar module's id for it; null when a manager
+    // registered an agreed time by hand. No foreign key: the invitation is another module's record, and the booking
+    // outlives the card it was sent from.
+    invitationId: text('invitation_id'),
+    // What the calendar holds for the invitation when it is not what the booking says (D133): the event's other time,
+    // or that the event is gone. All empty while they agree. The booking stands until the manager settles it.
+    calendarStart: timestamp('calendar_start', { withTimezone: true }),
+    calendarEnd: timestamp('calendar_end', { withTimezone: true }),
+    calendarGone: boolean('calendar_gone').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  t => [uniqueIndex('talk_round_employee').on(t.roundId, t.employeeId)],
+  t => [
+    uniqueIndex('talk_round_employee').on(t.roundId, t.employeeId),
+    check(
+      'talk_calendar',
+      sql`(${t.calendarStart} IS NULL) = (${t.calendarEnd} IS NULL) AND NOT (${t.calendarGone} AND ${t.calendarStart} IS NOT NULL) AND ((${t.calendarStart} IS NULL AND NOT ${t.calendarGone}) OR ${t.invitationId} IS NOT NULL)`,
+    ),
+    check(
+      'talk_booking',
+      sql`(${t.bookedStart} IS NULL AND ${t.bookedEnd} IS NULL AND ${t.bookedAt} IS NULL AND ${t.bookedBy} IS NULL AND ${t.invitationId} IS NULL) OR (${t.bookedStart} IS NOT NULL AND ${t.bookedEnd} IS NOT NULL AND ${t.bookedAt} IS NOT NULL AND ${t.bookedEnd} > ${t.bookedStart})`,
+    ),
+    index('talk_invitation').on(t.invitationId),
+  ],
 );
 /**
  * An action point (åtgärdspunkt, D96 items 4-6): a line about the employee, an owner who is the employee or the

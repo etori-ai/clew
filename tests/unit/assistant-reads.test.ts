@@ -304,7 +304,7 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
           return userName ? [{ key: p.id, userName, name: p.name, unit: unit.unitLabel }] : [];
         }),
       ),
-    // Composition's binding (D131 item 5): the units the asker manages or follows up below, never one they are only on.
+    // Composition's binding (D136 item 5): the units the asker manages or follows up below, never one they are only on.
     units: async persona => {
       const reach = await d.staff.reach(persona);
       return followedUnits(reach)
@@ -1106,12 +1106,12 @@ describe('what the model reads of a read, for every connector', () => {
 });
 
 /**
- * What stands open on a unit's page or a record's (D131 items 5 and 6), resolved on the server as the asker on every
+ * What stands open on a unit's page or a record's (D136 items 5 and 6), resolved on the server as the asker on every
  * turn: a unit they manage or follow up by its name and id, any other unit as nothing; a record read for the model as
  * the assistant's read for the asker, handed as the model would have been handed it had it called the read; a read it
  * may not make, or one that is refused, told as one it cannot read. Never the input the page drew a record with.
  */
-describe('what stands open on a unit’s or a record’s page (D131)', () => {
+describe('what stands open on a unit’s or a record’s page (D136)', () => {
   const OPEN = 'Öppet bredvid samtalet just nu';
   const unit = (id: string) => ({ thing: { kind: 'unit' as const, id } });
   const record = (capability: string, input: Record<string, unknown>) => ({

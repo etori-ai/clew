@@ -105,7 +105,7 @@ const TITLE_ID = 'matris-rubrik';
 /** The table's name: what it holds, as the view's heading says it. */
 const TABLE_NAME = 'Medarbetarnas kompetens';
 /**
- * What the matrix shows, as the reads the assistant could make for it (D130 rule 4): what is required and not met,
+ * What the matrix shows, as the reads the assistant could make for it (D135 rule 4): what is required and not met,
  * what the reports hold, and how the units are covered.
  */
 const MATRIX_READS = [
@@ -757,7 +757,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   usePageTitle('Kompetens · Personal');
   const mobile = useMediaQuery(mobileQuery);
   const views = useQuery(areasQuery).data?.views;
-  // The assistant beside the matrix (D130 rule 4) reads it through the competence reads it may make for the reader.
+  // The assistant beside the matrix (D135 rule 4) reads it through the competence reads it may make for the reader.
   const subject = pageSubject({ key: 'competence:matrix', title: TABLE_NAME, reads: MATRIX_READS, views });
   const [search] = useSearchParams();
   const navigate = useNavigate();

@@ -1,12 +1,12 @@
-# D133 · The corner's "Fråga AI" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is
+# D138 · The corner's "Fråga AI" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is
 
-**Status:** provisional (the product owner chose it on 2026-11-19 from the canvas "Clew · the assistant inside the prototype's look", thirteen artboards rendered from the real components of `main`, with "Yes, as drawn", and on 2026-11-20 added the door in a pinned footer with "Yes, in the footer". Built on the branch `assistant-beside-every-page` on 2026-11-19 and 2026-11-20; see "As built". The number is this draft's: it is taken from the generated index when the change lands on `main`, and the record lands with the change that brings the branch and `main` together, since it amends a record of each) · **Date:** 2026-11-19 · **Area:** ui, product, assistant
+**Status:** provisional (the product owner chose it on 2026-11-19 from the canvas "Clew · the assistant inside the prototype's look", thirteen artboards rendered from the real components of `main`, with "Yes, as drawn", and on 2026-11-20 added the door in a pinned footer with "Yes, in the footer". Built on the branch `assistant-beside-every-page` on 2026-11-19 and 2026-11-20; see "As built". Numbered D133 until the merge of `main` on 2026-11-20, where `main` had taken D131 to D134: this record and the branch's three before it became D135 to D138, and the numbers are taken again from the generated index when the change lands on `main`. It amends a record of each side) · **Date:** 2026-11-19 · **Area:** ui, product, assistant
 
-**Context.** Two records numbered D130 met on 2026-11-19.
+**Context.** Two records numbered D130 met on 2026-11-19 (the branch's is D135 since 2026-11-20).
 [Clew's look and layout are the startsidan prototype's](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md),
 on `main`, took the rail away, bounded every page to a centred column of at most 1280 px and put a floating "Fråga AI"
-in the lower corner, which leaves the page for a new conversation. `D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md`,
-on the branch `assistant-beside-every-page` with its D131 and D132, put one button at the end of every title's line and
+in the lower corner, which leaves the page for a new conversation. `D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md`,
+on the branch `assistant-beside-every-page` with its D136 and D137, put one button at the end of every title's line and
 one pane in the page's end slot, and listed a conversation among the rail's latest. The product owner decided the same
 day that the look on `main` is the one to work against: the organisation is testing the prototype and it meets their
 expectations. The prototype shows nothing of what the branch can do, and the people testing it are not used to
@@ -61,10 +61,10 @@ assistants. The aim is that they meet the new parts through what they already kn
   defect, not a wording question.
 
 **Replaces.** Item 10 of the D130 on `main` for what the floating button does on a page; its three rules for keeping
-it out of the way stand. Of the D130 on the branch: rule 1 (the button at the end of the title's line), the placement
+it out of the way stand. Of the D135: rule 1 (the button at the end of the title's line), the placement
 in rules 2 and 11 (the page's end slot becomes the column's end), the last clause of rule 6 (the rail's latest), and
 rule 9 for Start, where the answer now stands under the line. Its rules 3 to 8 and 10 and its conditions stand, as
-do the branch's D131 and D132.
+do the branch's D136 and D137.
 
 **As built (2026-11-20), and what is still open.**
 
@@ -72,7 +72,7 @@ do the branch's D131 and D132.
   the introduction's lists, the fill-in list from the server read `POST /api/assistant/reach`, which answers what a
   turn asked now would be offered by the turn's own rules (item 7); the filled-in action as a `row-info` card, for a
   work item's action and for a record's (item 8, with
-  [D132](D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md)); Start's answer card,
+  [D137](D137-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md)); Start's answer card,
   drawn with the transcript's own parts (item 9); the footer's door (item 5).
 - **Chosen in the build where nothing was drawn:** below 1180 px of window the pane is a drawer over the page; the
   pane's width is the person's, 400 px until they drag Astryx's grip (360 px to half the column, at most 720 px); a

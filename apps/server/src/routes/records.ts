@@ -12,7 +12,7 @@ import { failure, InputError, privateHeaders, protectedRoute, type Env } from '.
 import type { RecordActionUsecases } from '../modules/records/actions';
 
 /**
- * Actions about a record (D132): what a record's page offers under its title, and starting or deciding one. The record
+ * Actions about a record (D137): what a record's page offers under its title, and starting or deciding one. The record
  * is the read in the address and the input that read was made with, as the page's address holds it: in `input` as JSON
  * on the read, in the body on a write. Each route parses, validates, calls one use case and answers what it returns. A
  * read the reader may not call, a record they cannot read and an action the record does not offer them all answer the
@@ -32,7 +32,7 @@ function capabilityOf(value: unknown) {
   if (typeof value !== 'string' || !CAPABILITY.test(value)) throw new InputError('Ogiltig förfrågan.');
   return value;
 }
-/** The record's input, an object no longer as JSON than an address holds (D131), or a refusal. */
+/** The record's input, an object no longer as JSON than an address holds (D136), or a refusal. */
 function inputOf(value: unknown): Record<string, unknown> {
   if (!isObject(value) || JSON.stringify(value).length > OPEN_THING_INPUT_MAX)
     throw new InputError('Ogiltig förfrågan.');

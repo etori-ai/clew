@@ -68,7 +68,7 @@ function ToolTile({ tool, from }: { tool: MenuEntry; from: string }) {
  * A tile leads to the tool's own page (D42) with this page as the way back, so Back returns to the tile. At the foot the
  * intranet's own page of tools, when the shared header names one (D88, D112 amended 2026-11-11). The tools are what the
  * rail reads (`toolsOf`): the views an administrator placed (D40) and Clew's own lists the person has; nothing else is
- * asked of the server. The corner's "Fråga AI" opens the assistant's pane beside the tiles (D130, D133), about the
+ * asked of the server. The corner's "Fråga AI" opens the assistant's pane beside the tiles (D135, D138), about the
  * person's tools (`clew.tools`).
  */
 export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -110,7 +110,7 @@ export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: 
     field.current?.focus();
   };
   const failed = read.isError && !read.data;
-  // What the pane beside the page is about (D130 rule 4): the person's tools, as the assistant reads them.
+  // What the pane beside the page is about (D135 rule 4): the person's tools, as the assistant reads them.
   const subject = pageSubject({
     key: 'tools',
     title: 'Alla verktyg',

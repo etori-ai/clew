@@ -150,7 +150,7 @@ test.describe('a tool as a page', () => {
   }) => {
     api.menu = menuRows;
     await open(page, directory);
-    // The corner's button (D133 items 1 and 3): the door to the assistant's pane beside the page, which stays
+    // The corner's button (D138 items 1 and 3): the door to the assistant's pane beside the page, which stays
     // (`ask-pane.spec.ts`). The page draws no way to ask of its own.
     const ask = page.getByRole('button', { name: 'Fråga AI', exact: true });
     await expect(ask).toBeVisible();

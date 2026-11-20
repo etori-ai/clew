@@ -108,6 +108,8 @@ import type {
   EntitySection,
   ModelSummary,
   ProviderSummary,
+  TalkBookingBody,
+  TalkCalendarBody,
   TalkHeldBody,
   TalkRound,
   RelationGrant,
@@ -186,7 +188,7 @@ const talkTime = (instant: string) =>
   }).format(new Date(instant));
 
 /** The API as the browser sees it, held in memory per test. `/api/**` never leaves the page. */
-/** One action about a record as it reached the mock (`RecordActionInput`, D132), with the read it was posted to. */
+/** One action about a record as it reached the mock (`RecordActionInput`, D137), with the read it was posted to. */
 export interface RecordActed {
   read: string;
   input: Record<string, unknown>;
@@ -217,12 +219,12 @@ export class MockApi {
     suggested?: boolean;
     own?: boolean;
     confirmed?: boolean;
-    /** The page the question was asked beside (`ConversationInput.page`, D130): its subject and its words. */
+    /** The page the question was asked beside (`ConversationInput.page`, D135): its subject and its words. */
     page?: { subject: string; label: string };
-    /** The thing that stands open where the question was asked (`ConversationInput.thing`, D131 item 1). */
+    /** The thing that stands open where the question was asked (`ConversationInput.thing`, D136 item 1). */
     thing?: { kind: string; id?: string; capability?: string; input?: Record<string, unknown> };
   }[] = [];
-  /** The conversations the conversation's page marked as opened (`POST /conversations/:id/opened`, D130 rule 6). */
+  /** The conversations the conversation's page marked as opened (`POST /conversations/:id/opened`, D135 rule 6). */
   opened: string[] = [];
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
@@ -460,8 +462,6 @@ export class MockApi {
   talksWritable = true;
   /** The open round; null for none (the round then lists nobody). */
   talksRound: TalkRound | null = talkRound();
-  /** The calendar did not answer: booked rows read as missing and the answer says `bookedUnknown`. */
-  talksBookedUnknown = false;
   /** The next talk write answers 400 with `TALKS_FAIL_ERROR`; it resets itself after that one. */
   talksFail = false;
   /** The round's rows and every action point, as the writes leave them. A test may replace either. */
@@ -516,14 +516,14 @@ export class MockApi {
   /** Händelser cannot be read. */
   itemEventsFail = false;
   unmocked: string[] = [];
-  /** What the assistant may fill in for what stands open (`POST /api/assistant/reach`, D133 item 7): none by default. */
+  /** What the assistant may fill in for what stands open (`POST /api/assistant/reach`, D138 item 7): none by default. */
   reach: AssistantReach = { prepares: [] };
   /** Every body sent to `POST /api/assistant/reach`. */
   reachAsked: unknown[] = [];
-  /** A record's actions by its read (`GET /api/records/:read/actions`, D132): none by default; `null` answers 404. */
+  /** A record's actions by its read (`GET /api/records/:read/actions`, D137): none by default; `null` answers 404. */
   recordActions: Record<string, RecordAction[] | null> = {};
   /**
-   * Every action about a record that reached the mock (D132), by its route: `effect` (what an execute would write),
+   * Every action about a record that reached the mock (D137), by its route: `effect` (what an execute would write),
    * `decide` (the human decision) and `actions` (a propose's start), each with the read, the record's input, the
    * person's answers and the assistant's draft it was sent from.
    */
@@ -1760,7 +1760,7 @@ export class MockApi {
             this.threads,
             body.text,
             // Asked in place, a new conversation is one per thing, as the server makes a new one per question asked: by
-            // the thing that stands open where there is one (D131: a person, a unit, one record of a read), else by
+            // the thing that stands open where there is one (D136: a person, a unit, one record of a read), else by
             // what stands open beside it.
             body.conversationId ??
               (body.own && (body.thing || body.beside)
@@ -1775,7 +1775,7 @@ export class MockApi {
             body.beside,
           );
       // Asked for a comment beside a record that offers one, the assistant fills the action in and sends nothing
-      // (D132 item 4): the draft is kept on the answer, and the turn's response carries it with its action.
+      // (D137 item 4): the draft is kept on the answer, and the turn's response carries it with its action.
       const offered = body.thing?.kind === 'record' ? this.recordActions[body.thing.capability ?? '']?.[0] : undefined;
       if (!handed && offered && /kommentar/i.test(body.text)) {
         const drafted = {
@@ -1798,7 +1798,7 @@ export class MockApi {
       const earlier = this.threads.find(t => t.id === response.conversationId);
       const before = earlier?.handover;
       if (!handed && before) response.thread.handover = before;
-      // A conversation started beside a page is kept as asked beside its subject (D130 rule 6); one that exists keeps
+      // A conversation started beside a page is kept as asked beside its subject (D135 rule 6); one that exists keeps
       // what it had.
       if (earlier?.askedBeside) response.thread.askedBeside = earlier.askedBeside;
       else if (!handed && !body.conversationId && body.page)
@@ -1829,7 +1829,7 @@ export class MockApi {
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
       return;
     }
-    // The conversation's page marks a conversation asked beside a page as opened, once (D130 rule 6).
+    // The conversation's page marks a conversation asked beside a page as opened, once (D135 rule 6).
     const opening = post ? /^\/conversations\/([^/]+)\/opened$/.exec(path) : null;
     if (opening) {
       const at = decodeURIComponent(opening[1]!);
@@ -2081,7 +2081,7 @@ export class MockApi {
    * An action the entity does not offer, or the wrong route for its kind, is the server's 404.
    */
   /**
-   * An action about a record (D132) from its dialog, answered as the records module does: `effect` reads what an
+   * An action about a record (D137) from its dialog, answered as the records module does: `effect` reads what an
    * execute would write and writes nothing; `decide` makes the work item with the human decision in it, read back at
    * once as the source would answer it; `actions` starts a propose's work item. A decision or a start that names the
    * assistant's draft it was sent from marks that draft as sent with the work item it became, once. An action the
@@ -2308,7 +2308,7 @@ export class MockApi {
   }
   /**
    * Utvecklingssamtal (D96), answered as the server would: the reads through the capability route (refused for a person
-   * without a talks system, read-only when another system answers), and the five writes over the mock's own state, so a
+   * without a talks system, read-only when another system answers), and the seven writes over the mock's own state, so a
    * spec sees the lists change on the next read.
    */
   private handleTalks(route: Route, path: string, url: URL) {
@@ -2324,7 +2324,6 @@ export class MockApi {
         round: this.talksRound,
         rows: this.employee ? [] : this.talkRows,
         commitments: this.commitments,
-        bookedUnknown: this.talksBookedUnknown,
       });
       return json({ output: this.talksWritable ? result : readOnlyTalks(result), source: result.source });
     }
@@ -2340,7 +2339,7 @@ export class MockApi {
           : commitmentsFor(about && (!this.employee || about === user.id) ? about : '', this.commitments);
       return json({ output: this.talksWritable ? result : readOnlyCommitments(result), source: result.source });
     }
-    const body = method === 'POST' ? (request.postDataJSON() ?? {}) : null;
+    const body = method === 'POST' || method === 'PUT' ? (request.postDataJSON() ?? {}) : null;
     this.talkWrites.push({ method, path, body });
     if (!this.talksWritable) return fail(403, 'Du saknar behörighet för åtgärden.');
     const done = /^\/talks\/commitments\/([^/]+)\/done$/.exec(path);
@@ -2379,6 +2378,57 @@ export class MockApi {
       const before = this.heldBefore.get(personId) ?? { ...missing, state: 'missing' as const };
       this.heldBefore.delete(personId);
       this.talkRows = this.talkRows.map(r => (r.personId === personId ? before : r));
+      return empty();
+    }
+    if (what === 'booking' && path.endsWith('/booking/calendar')) {
+      // What the calendar holds against the reader's booking, settled as the calendar module settles it (D133).
+      const { decision } = body as TalkCalendarBody;
+      // The meeting's time passed without a talk (D134): the invitation is over and the talk lacks a time.
+      if (decision === 'missed') {
+        if (row?.own !== true || row.invited !== true)
+          return fail(400, 'Samtalet har ingen inbjudan från dig att ändra. Läs om sidan.');
+        if (!row.until || Date.parse(row.until) > Date.parse(NOW))
+          return fail(400, 'Tiden för samtalet har inte passerat än.');
+        const { at: _a, until: _u, invited: _i, own: _o, calendar: _c, ...gone } = row;
+        this.talkRows = this.talkRows.map(r => (r.personId === personId ? { ...gone, state: 'missing' } : r));
+        return empty();
+      }
+      if (!row?.calendar || row.own !== true)
+        return fail(400, 'Samtalet har ingen inbjudan från dig att ändra. Läs om sidan.');
+      const { calendar, ...settled } = row;
+      const gone = 'gone' in calendar;
+      if ((decision === 'adopt') === gone)
+        return fail(
+          400,
+          gone ? 'Mötet finns inte längre i kalendern. Läs om sidan.' : 'Mötet finns kvar i kalendern. Läs om sidan.',
+        );
+      const { at: _at, until: _until, invited: _invited, own: _own, ...bare } = settled;
+      const next: typeof row =
+        'gone' in calendar
+          ? decision === 'keep'
+            ? { ...settled, invited: false }
+            : { ...bare, state: 'missing' }
+          : { ...settled, at: calendar.start, until: calendar.end };
+      this.talkRows = this.talkRows.map(r => (r.personId === personId ? next : r));
+      return empty();
+    }
+    if (what === 'booking') {
+      if (!row) return fail(400, 'Personen finns inte i samtalsomgången.');
+      // As the talks module refuses it (D132 item 4): never a talk marked held, nor a booking an invitation carries.
+      if (row.state === 'held') return fail(400, 'Samtalet är redan markerat som hållet.');
+      if (row.state === 'booked' && row.invited !== false)
+        return fail(400, 'Samtalet är bokat genom en inbjudan från Clew, så tiden kan inte ändras här.');
+      const { at: _at, until: _until, invited: _invited, own: _own, ...bare } = row;
+      if (method === 'PUT') {
+        const { start, end } = body as TalkBookingBody;
+        if (!(Date.parse(end) > Date.parse(start)))
+          return fail(400, 'Ange en giltig start- och sluttid, med högst ett dygn emellan.');
+        this.talkRows = this.talkRows.map(r =>
+          r.personId === personId ? { ...bare, state: 'booked', at: start, until: end, invited: false, own: true } : r,
+        );
+        return json({ id: `talk-${personId}`, start, end });
+      }
+      this.talkRows = this.talkRows.map(r => (r.personId === personId ? { ...bare, state: 'missing' } : r));
       return empty();
     }
     if (what === 'commitments' && method === 'POST') {

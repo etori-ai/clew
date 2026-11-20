@@ -64,7 +64,7 @@ test.describe('the answer on its way', () => {
     api,
   }) => {
     // On the conversation's own page: a question asked on Hem's line is answered under the line, where "Stäng" stops
-    // it (D133 item 9, `hem.spec.ts`).
+    // it (D138 item 9, `hem.spec.ts`).
     await open(page, '/conversations/new');
     api.answerDelay = 2_000;
     const input = composer(page);
@@ -83,7 +83,7 @@ test.describe('the answer on its way', () => {
 
   // D92: the conversation takes Hem's place with Astryx's fade and Hem comes back with one; under reduced motion both are
   // there at once. (Hem's own first entrance is D76's, tested in loading.spec.ts.)
-  // STALE BY D133, not a product fault: Hem's line no longer hands the column to a conversation (the answer is a card
+  // STALE BY D138, not a product fault: Hem's line no longer hands the column to a conversation (the answer is a card
   // under the line), so nothing fades in over Hem from here; whether D92's fade has a place left is the owner's call.
   for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     test.fixme(`the conversation fades in over Hem, Hem fades back, and ${reducedMotion} motion is respected`, async ({
@@ -238,7 +238,7 @@ test.describe('the cards in a conversation', () => {
 
 /**
  * A conversation about a thing (D126 rules 2 and 5, board Samtal): "Öppna som samtal" in the assistant's pane on a thing's
- * page (D131 item 9) lands on a new conversation's page, `/conversations/new` with the thing in its address, before
+ * page (D136 item 9) lands on a new conversation's page, `/conversations/new` with the thing in its address, before
  * anything is asked in the pane. The header names the thing, the thing stands
  * beside the transcript drawn with the queue's pane's parts, the box has the focus and nothing is sent until the person
  * writes; the question then goes with the thing. ✕ lets go of the thing and keeps the conversation. Narrower, the thing
@@ -246,7 +246,7 @@ test.describe('the cards in a conversation', () => {
  */
 test.describe('a conversation about a thing', () => {
   const TITLE = 'Attestera 3 fakturor, 48 200 kr';
-  /** The thing's page asks through the frame's pane (D131 item 9, D133 item 3), which leads to the conversation's page. */
+  /** The thing's page asks through the frame's pane (D136 item 9, D138 item 3), which leads to the conversation's page. */
   const asConversation = async (page: Page) => {
     await page.getByRole('button', { name: 'Fråga AI', exact: true }).click();
     // Beside the page from 1180 px, a drawer over it below: the same pane either way.

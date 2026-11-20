@@ -94,7 +94,7 @@ function walk(schema: Schema, path: string, required: boolean, depth: number, ou
 }
 /**
  * The variants of a union of objects that no constant tells apart, each named by the property only it requires (`about`:
- * `entity` or `record`, D132); undefined when they are not objects or one has no such property.
+ * `entity` or `record`, D137); undefined when they are not objects or one has no such property.
  */
 function variantNames(variants: Schema[]): string[] | undefined {
   if (!variants.every(v => v.type === 'object' && v.properties)) return undefined;
@@ -490,7 +490,7 @@ export const RULES: Rule[] = [
     title: 'Only a propose or an execute is about a record',
     fields: ['capabilities[].about.record', 'capabilities[].kind'],
     enforced: 'loader',
-    decision: 'D132',
+    decision: 'D137',
     text: "The record form of `about`, `{ record, params }`, belongs to a `propose` or an `execute`. A read is about an entity or about nothing: a record's own page draws it.",
   },
   {
@@ -498,7 +498,7 @@ export const RULES: Rule[] = [
     title: 'An action is about one record of a read of this manifest',
     fields: ['capabilities[].about.record', 'capabilities[].view'],
     enforced: 'loader',
-    decision: 'D132',
+    decision: 'D137',
     text: "`about.record` names a `read` of this manifest whose view draws one record: `record`, `detail`, `text` or `document`. A read that answers rows (`table`, `list`), or one without a view, cannot be the record an action is about; a row's name opens the record, and the action stands on that page.",
   },
   {
@@ -506,7 +506,7 @@ export const RULES: Rule[] = [
     title: "params maps the action's input to the record's",
     fields: ['capabilities[].about.params', 'capabilities[].input'],
     enforced: 'loader',
-    decision: 'D132',
+    decision: 'D137',
     text: "`about.params` maps at least one property of this action's input schema to a property of the input schema of the read `about.record` names, the mirror of a view's `open.params`. Clew fills each from the input the record's page was read with; the person is never asked for one, so no ask names one.",
   },
   {
@@ -514,7 +514,7 @@ export const RULES: Rule[] = [
     title: 'An action about a record starts with the record and what it asks',
     fields: ['capabilities[].about.params', 'capabilities[].input', 'capabilities[].asks'],
     enforced: 'loader',
-    decision: 'D132',
+    decision: 'D137',
     text: "On a `propose` or `execute` about a record, every property the input requires is one `about.params` fills or one the capability asks for (`asks`, D112). Anything else is optional, with a default the source chooses, so the record's page can start the action with the record's input and the person's answers, without the model (D8).",
   },
   {
@@ -572,7 +572,7 @@ export const RULES: Rule[] = [
     fields: ['capabilities[].asks[].property', 'capabilities[].input'],
     enforced: 'loader',
     decision: 'D112',
-    text: "Each ask names, once, a property the input schema declares under `properties`, and never the one `about.param` fills with the entity's key or one `about.params` fills from the record (D132).",
+    text: "Each ask names, once, a property the input schema declares under `properties`, and never the one `about.param` fills with the entity's key or one `about.params` fills from the record (D137).",
   },
   {
     id: 'ask-fits-input',
@@ -737,7 +737,7 @@ export const RULES: Rule[] = [
     title: "An action about a record stands on the record's page and runs as every action does",
     fields: ['capabilities[].about.record', 'capabilities[].about.params', 'capabilities[].kind'],
     enforced: 'call',
-    decision: 'D132',
+    decision: 'D137',
     text: "Clew shows the action under the title of the record's page, for a person who may call it and who can make the record's read with the page's input; Clew makes that read as the person before it lists the action and again before it starts it, so a record the source does not answer them has no actions. A list's rows get no menu. Clew fills the properties `about.params` maps from the page's input, asks the rest, and sends nothing before the dialog's last button: a `propose` is run as the person and its `ThreadDraft` becomes their work item; an `execute` becomes a work item whose button is the human decision, decided at once when it is sent from the dialog, and runs only after it, through the execution ledger with its write safety and its audit row. It is never offered to the model as a tool, whatever `model` says: the assistant may fill in what the action asks for the record that stands open beside it (`clew.draftAction`), never the record itself and never sending it. Check on your side that the person may act on the record the input names, as on any call.",
   },
   {

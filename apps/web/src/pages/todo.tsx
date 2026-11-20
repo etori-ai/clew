@@ -115,7 +115,7 @@ const PANE_MIN = 440;
 const LIST_MIN = 300;
 const PANE_SHARE = 0.55;
 /**
- * The conversation with the assistant under an item in the reading pane (D130 rule 5; the product owner, 2026-11-19: two
+ * The conversation with the assistant under an item in the reading pane (D135 rule 5; the product owner, 2026-11-19: two
  * parts, as Kalender's pane has them): a part of its own at the pane's foot, its height the person's to drag with
  * Astryx's grip, never more than this share of the pane's height, so the head and the read keep the larger part, and
  * never lower than its box and a line or two over it need.
@@ -180,7 +180,7 @@ function aboutOf(thread: Thread): string | null {
  * (`WorkItem`): the source line, its title as the link to its page and the buttons under it that never scroll away, then
  * the facts, "Varför ser jag detta?" and "Händelser". Where the pane does not fit beside the list (the template measures
  * the page's own box) there is no pane: a row leads to the item's page. With no item open, the corner's "Fråga AI"
- * opens the assistant's pane beside the queue (D130, D133), about the pile; an item opened takes the end slot
+ * opens the assistant's pane beside the queue (D135, D138), about the pile; an item opened takes the end slot
  * and the address lets go of the assistant's pane (`todoHref`), so closing the item leaves the queue as it was.
  */
 export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -297,7 +297,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   useLayoutEffect(() => {
     if (known && single && itemId) navigate(itemPageHref(itemId, href({ item: null })), { replace: true });
   }, [known, single, itemId]);
-  // An item in the reading pane has the end slot (D130 rule 5). An address that also holds the assistant's pane (typed,
+  // An item in the reading pane has the end slot (D135 rule 5). An address that also holds the assistant's pane (typed,
   // or kept from before) shows the item, and lets go of the pane in its place, so closing the item does not open it.
   const reading = !single && !!itemId;
   const asking = asksBeside(search);
@@ -430,11 +430,11 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     </HStack>
   );
 
-  // The assistant's pane about the pile (D130 rule 4): a list is no thing beside the conversation, so it goes
+  // The assistant's pane about the pile (D135 rule 4): a list is no thing beside the conversation, so it goes
   // as one chip, the read of Att göra (`clew.work`). A reference, not a copy of the rows: Clew reads the pile as it is
   // when it answers, however many items it holds (a chip per card took the first eight and dropped the rest). While an
   // item stands in the reading pane the page's own pane has the end slot (rule 5) and there is no subject: the box stands
-  // under the item, and the corner's "Fråga AI" is not drawn (D133 item 5).
+  // under the item, and the corner's "Fråga AI" is not drawn (D138 item 5).
   const queueSubject = reading
     ? null
     : pageSubject({
@@ -671,7 +671,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     e.stopPropagation();
     close();
   };
-  // The conversation about the item in the pane (D130 rules 5 and 6), held here so it stays while the item is read:
+  // The conversation about the item in the pane (D135 rules 5 and 6), held here so it stays while the item is read:
   // the person's latest conversation about the item is found again, and the next question continues it. Only where the
   // pane holds a work item and there is a model to ask; a calendar proposal keeps its own card (D27).
   const model = useModelConfigured();
@@ -690,7 +690,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   });
   /**
    * The conversation and its box, the pane's second part (board AskAttGora's box at the pane's foot). Before anything
-   * is asked it is the box alone, as low as the box, under a rule (D133 item 2): there is nothing in it to make room
+   * is asked it is the box alone, as low as the box, under a rule (D138 item 2): there is nothing in it to make room
    * for. With the conversation comes its height, the person's to drag with Astryx's grip, which draws the line between
    * the read and it and takes the arrow keys. On a short screen the pane is one flow (1.4.10), so the conversation keeps
    * its least height under the read and has no grip. The box keeps its place in the tree from one state to the other.

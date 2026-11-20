@@ -1,6 +1,6 @@
 import { TALKS_CONNECTOR } from '@clew/connectors';
 import { stockholmDate, TALK_STATES, type CommitmentRow, type TalkRow, type TalkState } from '@clew/contracts';
-import type { CommitmentRecord, PersonRef, TalkRecord } from './model';
+import type { CalendarDifference, CommitmentRecord, PersonRef, TalkBooking, TalkRecord } from './model';
 
 /**
  * The rules of the talks domain (D96) as pure functions: where a person stands in a round, which action points are
@@ -58,9 +58,9 @@ export const sameUserName = (userName: string | null | undefined, key: string) =
 /** How a list about people (D97) says where a person stands in the round: the words Personal uses. */
 export const TALK_STATE_WORDS: Record<TalkState, string> = { missing: 'Saknas', booked: 'Bokat', held: 'Hållet' };
 /**
- * The next talk in a column (D97, artboard A2): the day it is booked ("mån 16 nov"), "Bokat" for a talk another of the
- * person's managers booked, whose time the reader does not see (Q12), the day it was held ("Hållet 4 nov"), or "Inte
- * bokat". `at` is the booked instant or the held calendar day.
+ * The next talk in a column (D97, artboard A2): the day it is booked ("mån 16 nov"), "Bokat" for a talk a source says is
+ * booked without saying when, the day it was held ("Hållet 4 nov"), or "Inte bokat". `at` is the booked instant or the
+ * held calendar day.
  */
 export function nextTalk(state: TalkState, at: string | undefined): string {
   if (state === 'booked') return at ? swedishShortDay(stockholmDate(at)) : TALK_STATE_WORDS.booked;
@@ -104,17 +104,109 @@ export function normaliseLabel(label: string): string | undefined {
 }
 
 /**
- * Where one person stands in the round (D96 item 2): held when a manager marked the talk held, else booked when a talk is
- * booked, else missing. `at` is the day it was held or the instant it is booked; a talk another of the person's managers
- * booked is booked without one (Q12).
+ * The booking of a talk that counts now (D132): the one on the record, while the manager whose booking it is still
+ * manages the employee. `manages` answers that for `bookedBy`; a booking whose manager was erased, or has left the
+ * person, counts for nobody, so the person's managers now see a talk that lacks a time and book it again. One talk a
+ * person a round (Q12): whichever of their current managers booked it, it is booked for every one of them, with its time.
+ */
+export function standingBooking(
+  talk: Pick<TalkRecord, 'booking'> | undefined,
+  manages: (managerId: string) => boolean,
+): TalkBooking | undefined {
+  const booking = talk?.booking;
+  return booking && booking.bookedBy !== null && manages(booking.bookedBy) ? booking : undefined;
+}
+/**
+ * Where one person stands in the round (D96 item 2, D132): held when a manager marked the talk held, else booked when
+ * its booking stands, else missing. `at` is the day it was held or the instant it is booked.
  */
 export function talkState(
   talk: Pick<TalkRecord, 'heldOn'> | undefined,
-  booking: { at?: string } | undefined,
+  booking: Pick<TalkBooking, 'start'> | undefined,
 ): { state: TalkState; at?: string } {
   if (talk?.heldOn) return { state: 'held', at: talk.heldOn };
-  if (booking) return booking.at ? { state: 'booked', at: booking.at } : { state: 'booked' };
+  if (booking) return { state: 'booked', at: booking.start };
   return { state: 'missing' };
+}
+/**
+ * What the calendar holds against a booking (D133): null when the event is at the booking's time, the event's span when
+ * it is at another, `gone` when there is no event. Undefined when the event's span cannot be read as one, which says
+ * nothing either way.
+ */
+export function differenceOf(
+  booking: Pick<TalkBooking, 'start' | 'end'>,
+  event: { start: string; end: string } | null,
+): CalendarDifference | null | undefined {
+  if (event === null) return 'gone';
+  const span = normaliseSpan(event.start, event.end);
+  if (!span) return undefined;
+  return span.start === booking.start && span.end === booking.end ? null : span;
+}
+/** Whether two readings of what the calendar holds say the same. */
+export const sameDifference = (a: CalendarDifference | null, b: CalendarDifference | null) =>
+  a === b || (!!a && !!b && a !== 'gone' && b !== 'gone' && a.start === b.start && a.end === b.end);
+/** The difference as an audit row carries it: instants or that the event is gone, never a name. */
+export const differenceDetails = (d: CalendarDifference) => (d === 'gone' ? { gone: true } : d);
+const clockTime = new Intl.DateTimeFormat('sv-SE', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Europe/Stockholm',
+});
+/** A span as a sentence reads it, in Swedish time: "tors 20 nov kl. 13:00–14:00". */
+export const swedishSpan = (span: { start: string; end: string }) =>
+  `${swedishShortDay(stockholmDate(span.start))} kl. ${clockTime.format(new Date(span.start))}–${clockTime.format(new Date(span.end))}`;
+/** The working days a round reminds before a booked talk when nothing else is said, and the most it may. */
+export const PREPARE_DAYS_DEFAULT = 5;
+export const PREPARE_DAYS_MAX = 30;
+/** The calendar day `n` working days before `day` (both `YYYY-MM-DD`); a working day is Monday to Friday. */
+export function workdaysBefore(day: string, n: number): string {
+  const d = new Date(day + 'T12:00:00Z');
+  for (let left = n; left > 0;) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    const weekday = d.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) left--;
+  }
+  return d.toISOString().slice(0, 10);
+}
+/**
+ * What a booked talk that is not held asks of its manager now (D134), from the booking and the clock alone: `prepare`
+ * from the round's number of working days before the talk until it starts, `held` from the day after it ended, and
+ * nothing in between or with the reminder switched off. `now` is an instant; days are Swedish calendar days.
+ */
+export function bookingAsks(
+  booking: Pick<TalkBooking, 'start' | 'end'>,
+  prepareDays: number,
+  now: string,
+): 'prepare' | 'held' | undefined {
+  const today = stockholmDate(now);
+  if (today > stockholmDate(booking.end)) return 'held';
+  if (prepareDays > 0 && now < booking.start && today >= workdaysBefore(stockholmDate(booking.start), prepareDays))
+    return 'prepare';
+  return undefined;
+}
+/**
+ * A card the scan asks for about one person's talk (D133, D134): what it is about, and its identity (D47). One card per
+ * person and round for each kind; `revision` is what the card says, so a card the manager handled comes back when that
+ * changes, and a cause that is gone resolves the card at the next scan.
+ */
+export type TalkNoticeKind = 'calendar' | 'prepare' | 'held';
+export const noticeCard = (kind: TalkNoticeKind, personId: string, roundId: string, revision: string) => ({
+  topic: `talks:${kind}:${personId}:${roundId}`,
+  key: `talks:${kind}:${personId}`,
+  revision,
+  period: roundId,
+});
+/** The longest a talk may be booked for: a day, as a meeting in the calendar. */
+const BOOKING_MAX_MS = 86_400_000;
+/**
+ * A time a manager registers for a talk, as stored: two instants, the end after the start and at most a day later, each
+ * written back in its canonical form. Undefined when either is no instant or the span does not hold.
+ */
+export function normaliseSpan(start: string, end: string): { start: string; end: string } | undefined {
+  const a = Date.parse(start),
+    b = Date.parse(end);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a || b - a > BOOKING_MAX_MS) return undefined;
+  return { start: new Date(a).toISOString(), end: new Date(b).toISOString() };
 }
 /** An action point is carried over when it is open and was added in another round than the current one (D96 item 4). */
 export const isCarried = (c: Pick<CommitmentRecord, 'doneAt' | 'roundId'>, currentRoundId: string | null) =>
@@ -145,16 +237,22 @@ export function orderCommitmentRows<T extends Pick<CommitmentRow, 'carried' | 'd
 export function talkRow(
   person: Pick<PersonRef, 'id' | 'name' | 'userName'>,
   talk: Pick<TalkRecord, 'heldOn'> | undefined,
-  booking: { at?: string } | undefined,
+  booking: Pick<TalkBooking, 'start' | 'end' | 'invitationId' | 'bookedBy' | 'calendar'> | undefined,
   openCommitments: number,
+  readerId: string,
 ): TalkRow {
   const { state, at } = talkState(talk, booking);
+  const differs = state === 'booked' ? (booking?.calendar ?? null) : null;
   return {
     ref: talkRef(person.id),
     userName: personKey(person),
     name: person.name,
     state,
     ...(at ? { at } : {}),
+    ...(state === 'booked' && booking
+      ? { until: booking.end, invited: booking.invitationId !== null, own: booking.bookedBy === readerId }
+      : {}),
+    ...(differs ? { calendar: differs === 'gone' ? { gone: true as const } : differs } : {}),
     openCommitments,
   };
 }

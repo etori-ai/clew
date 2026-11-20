@@ -1571,7 +1571,7 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
         };
       }),
     /**
-     * The titles of these people of the reader's organisation (`people.reports`, D130 rule 4), by id: the titles their
+     * The titles of these people of the reader's organisation (`people.reports`, D135 rule 4), by id: the titles their
      * employments carry, each once, or the core title where none does (as the person's page shows them). Someone
      * without a title, deactivated or of another organisation is absent. Nothing else of an employment is read out: no
      * type, date or percentage. Read on every call, never cached.

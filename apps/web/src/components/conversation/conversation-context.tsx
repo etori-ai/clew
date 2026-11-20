@@ -59,7 +59,7 @@ export interface AskFrom {
   chips: ChipRef[];
   search: string;
   /**
-   * Answered where it is asked (D133 items 2 and 9): Hem's line, under which the answer stands as a card. The column
+   * Answered where it is asked (D138 items 2 and 9): Hem's line, under which the answer stands as a card. The column
    * stays Hem's and nothing navigates; while the card stands, the line's next question continues its conversation.
    * Clew answers it itself (`own`), as beside a page: the card has no room for another system's assistant.
    */
@@ -84,7 +84,7 @@ export interface ConversationState {
    */
   open: boolean;
   /**
-   * The conversation is answered under the line it was asked on (`AskFrom.inPlace`, D133 item 9): its newest exchange,
+   * The conversation is answered under the line it was asked on (`AskFrom.inPlace`, D138 item 9): its newest exchange,
    * or the turn on its way, stands there as a card until it is closed (`closeInPlace`) or another conversation is opened
    * or started. The conversation itself is kept under Samtal as any other.
    */
@@ -107,7 +107,7 @@ export interface ConversationState {
   /**
    * Sends a question. `about` is what the conversation's page is about by its address (the thing beside the
    * transcript): it goes with every question there, as the chips in the drawer do, without being drawn in the drawer.
-   * `thing` is a person, a unit or a record beside it, told to the server as what stands open (D131 item 1).
+   * `thing` is a person, a unit or a record beside it, told to the server as what stands open (D136 item 1).
    */
   submit(raw: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing): Promise<void>;
   ask(text: string, from?: AskFrom, about?: ChipRef[], thing?: OpenThing): void;
@@ -125,7 +125,7 @@ export interface ConversationState {
   newConversation(options?: { from?: string; stay?: boolean }): void;
   close(): void;
   /**
-   * "Stäng" on the answer under the line (D133 item 9): the card goes and the conversation stays where it is. A turn on
+   * "Stäng" on the answer under the line (D138 item 9): the card goes and the conversation stays where it is. A turn on
    * its way is stopped and its question goes back in the line, as closing a conversation does; the caller moves the focus.
    */
   closeInPlace(): void;
@@ -167,7 +167,7 @@ const never = async () => undefined;
 const EMPTY_VERBS: Verb[] = [];
 /**
  * The conversation that does nothing: what a component reads outside any provider, and what the conversation beside a
- * page (`usePageConversation`, D130) starts from before it puts its own turns over it, so that everything route-bound
+ * page (`usePageConversation`, D135) starts from before it puts its own turns over it, so that everything route-bound
  * (the drawer, the panel's assistant, a new conversation, closing) stays inert in the pane.
  */
 export const INERT_CONVERSATION: ConversationState = {
@@ -243,7 +243,7 @@ interface Question {
   chips: Chip[];
   /** The one of the chips that stands open beside the transcript. */
   beside?: string;
-  /** The person, the unit or the record beside the transcript (D131 item 1). */
+  /** The person, the unit or the record beside the transcript (D136 item 1). */
   thing?: OpenThing;
   current: Conversation | null;
   from?: AskFrom;
@@ -251,9 +251,9 @@ interface Question {
 /** The address of a conversation not asked yet: "Fråga assistenten" lands here with the thing beside it (D126 rule 5). */
 const NEW = '/conversations/new';
 /**
- * The conversation (D31, D50, D126, D133): one state for the box and the transcript, held above the pages so a question
+ * The conversation (D31, D50, D126, D138): one state for the box and the transcript, held above the pages so a question
  * asked on Hem is the same conversation when it is opened as a conversation. On Hem the answer stands under the line
- * (`inPlace`, D133 item 9), and the transcript is on the conversation's own page, `/conversations/:id`; the card under
+ * (`inPlace`, D138 item 9), and the transcript is on the conversation's own page, `/conversations/:id`; the card under
  * the line is still there when the person comes back to Hem. `/conversations/new` is a conversation not asked yet,
  * where "Fråga assistenten" lands with the thing beside it and nothing is sent until the person writes. The box keeps
  * focus throughout and sending never moves it. Chips travel in the drawer and stay across turns; the text is cleared.
@@ -339,7 +339,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   }, [conversation]);
   const announce = useAnnounce();
   const [shown, setShown] = useState(false);
-  // The conversation answered under Hem's line (D133 item 9): the line continues it while its card stands.
+  // The conversation answered under Hem's line (D138 item 9): the line continues it while its card stands.
   const [inPlace, setInPlace] = useState(false);
   const inPlaceRef = useRef(false);
   inPlaceRef.current = inPlace;
@@ -347,7 +347,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const chipped = useMemo(() => [...new Set([...chips.map(c => c.ref), ...inline])], [chips, inline]);
   const plain = plainText(value);
   // A conversation's page is the conversation, asked or not. A conversation answered on the page it was asked on keeps
-  // the column only where `shown` says so; Hem's line answers under itself and never sets it (D133 item 9).
+  // the column only where `shown` says so; Hem's line answers under itself and never sets it (D138 item 9).
   const open = onRoute || (shown && here && (!!conversation || !!pending));
   const openRef = useRef(false);
   openRef.current = open;
@@ -498,7 +498,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       how: { to?: Handed | null; suggested?: boolean; own?: boolean; confirmed?: boolean },
     ) => {
       const { raw, text, chips: used, current, from } = question;
-      // Answered under Hem's line (D133 item 9): decided when the question leaves, so closing the card while the answer
+      // Answered under Hem's line (D138 item 9): decided when the question leaves, so closing the card while the answer
       // is on its way never turns it into a question that takes the person to the conversation's page.
       const inPlace = !!from?.inPlace;
       offered.current = null;
@@ -524,7 +524,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
             }
           : {}),
         onStart: () => {
-          // Asked on Hem's line (D133 item 9): the answer stands under the line, the column stays Hem's and the address
+          // Asked on Hem's line (D138 item 9): the answer stands under the line, the column stays Hem's and the address
           // stays; the person never leaves what they asked about.
           if (inPlace) {
             setInPlace(true);
@@ -573,7 +573,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       ];
       // A question asked where no transcript is on the page starts a conversation of its own (D50): the box on the
       // landing is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is,
-      // and from Hem's line while its answer stands under it (D133 item 9).
+      // and from Hem's line while its answer stands under it (D138 item 9).
       const current = openRef.current || (from?.inPlace && inPlaceRef.current) ? conversation : null;
       const beside = about?.find(c => c.beside)?.ref;
       await dispatch(

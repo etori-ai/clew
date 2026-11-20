@@ -450,7 +450,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     );
   else {
     const { name } = detail.entity;
-    // What the assistant beside the page is about (D131 items 1, 5 and 7): the unit, the same subject from every tab,
+    // What the assistant beside the page is about (D136 items 1, 5 and 7): the unit, the same subject from every tab,
     // told to the server by Clew's id with every question; the tab is only what the pane beside the conversation it
     // opens as shows first. A source's read about a unit is never the assistant's (D97 item 7): no chip, and the pane
     // names a section's system it cannot read.

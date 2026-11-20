@@ -26,7 +26,7 @@ const reads = (m: Manifest): ViewEntry[] =>
  * fixture connectors from their own manifests, and Clew's own reads with the kinds they declare. It decides whether a
  * view opened on a page leads to the view's own page (a table, a list) or lies beside the page; a test that takes a
  * read away from the person removes it here. `assistant` marks the reads of Clew's own that the assistant may make for
- * the person (D130 rule 4): the pane beside a page that shows any other read says so; a test offers one with it.
+ * the person (D135 rule 4): the pane beside a page that shows any other read says so; a test offers one with it.
  */
 export const fixtureViews = (): ViewEntry[] => [
   ...[hr, communication, incidents, finance, phonebook, qlik, supportmanagement()].flatMap(m =>

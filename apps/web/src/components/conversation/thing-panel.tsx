@@ -32,8 +32,8 @@ export function useAskAbout(): (subject: ThingSubject, options?: { replace?: boo
 
 /**
  * "Fråga assistenten" among a thing's actions (D126 rule 5): a ghost with the sparkles, leading to a new conversation with
- * that thing beside it (`useAskAbout`). A page asks through the corner's "Fråga AI" and the frame's pane (D130, D131,
- * D133); this one is left where a pane of the page's own holds the thing and no box stands under it (a calendar entry
+ * that thing beside it (`useAskAbout`). A page asks through the corner's "Fråga AI" and the frame's pane (D135, D136,
+ * D138); this one is left where a pane of the page's own holds the thing and no box stands under it (a calendar entry
  * on a phone).
  * Nothing is asked until the person writes. Until the page knows its thing, and without a model to ask (D8), the button
  * is not drawn. `onAsk` replaces the whole verb, for a page that asks otherwise.

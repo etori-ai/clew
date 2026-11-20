@@ -18,7 +18,7 @@ import { filledBy, recordActionOf, recordItem, recordLabel } from './domain';
 import type { RecordActionDeps, RecordRead } from './model';
 
 /**
- * Actions about a record (D132): a connector's propose or execute that says it is about one record of one of its reads,
+ * Actions about a record (D137): a connector's propose or execute that says it is about one record of one of its reads,
  * listed on that record's page and run without the model, as an action about a person is (D97, D8). A record is its
  * read and the input the page made it with. The person must be able to make that read now, with that input, before an
  * action about it is listed or started: Clew makes it as the person, as the page does, and a record the source does
@@ -63,7 +63,7 @@ export function recordActionUsecases(deps: RecordActionDeps) {
   /**
    * What the card carries beside its input: the person's choice as its reason, the record as its one row, named as the
    * record's page heads it, and for the audit row which read the record is of. The record's input is on the card's
-   * action, as the action's own; the audit row names the read only, as a turn's names the kind of thing (D131).
+   * action, as the action's own; the audit row names the read only, as a turn's names the kind of thing (D136).
    */
   function context(read: string, record: RecordRead, action: RecordAboutAction, output: unknown) {
     const label = recordLabel(record.view, output);
@@ -74,7 +74,7 @@ export function recordActionUsecases(deps: RecordActionDeps) {
     };
   }
   /**
-   * The assistant's draft a start or a decision was sent from (D132), with the record as this request names it: the
+   * The assistant's draft a start or a decision was sent from (D137), with the record as this request names it: the
    * card's transaction marks the draft only when it is a draft of this action about this record, so a draft of another
    * record or action, someone else's or one already sent marks nothing and changes nothing of what is started.
    */

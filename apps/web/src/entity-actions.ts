@@ -24,12 +24,12 @@ import { recordSubjectKey } from './record-actions';
 type MenuOption = ComponentProps<typeof MoreMenu>['items'][number];
 /**
  * What an action is about, with the name a person reads: an entity by its kind (a person unless said) and its key on
- * the wire, or a record (D132) by its read and the input its page made it with.
+ * the wire, or a record (D137) by its read and the input its page made it with.
  */
 export type ActionSubject =
   | { kind?: EntityKind; key: string; name: string }
   | { kind: 'record'; read: string; input: Record<string, unknown>; name: string };
-/** An action about an entity (D97) or about a record (D132): both run the one way, through the action dialog. */
+/** An action about an entity (D97) or about a record (D137): both run the one way, through the action dialog. */
 export type SubjectAction = EntityAction | RecordAction;
 /** The subject as caches and the dialog key it: an entity's kind and key, or `record` and the record's read and input. */
 export const subjectKey = (subject: ActionSubject): { kind: EntityKind | 'record'; key: string } =>
@@ -85,9 +85,9 @@ export const withPreset = (
 export interface EntityActionStart {
   /**
    * Open the action dialog of `action` about `subject`. `values` are answers it starts from (a plan's item tied to the
-   * action with them, D124; an assistant's filled-in action, D133 item 8): prefilled and still the person's to change,
+   * action with them, D124; an assistant's filled-in action, D138 item 8): prefilled and still the person's to change,
    * never sent before the dialog's last button. `startAt` is the step it opens at ("Granska och skicka": `effect`).
-   * `from`: the assistant's draft about a record the dialog is opened from (D132), named to the server with what the
+   * `from`: the assistant's draft about a record the dialog is opened from (D137), named to the server with what the
    * last button sends, so that the draft is marked as sent with the work item it becomes.
    */
   start: (
@@ -139,7 +139,7 @@ const entityDecide = (kind: EntityKind, key: string, capability: string, values:
   entityRoute<EntityActionStarted>('decide', kind, key, capability, values);
 /**
  * The three routes an action's dialog reaches for its subject: "Det här händer", an execute's decision and a propose's
- * start. For a record (D132) they name it by its read and input, where an entity's are named by its kind and key, and a
+ * start. For a record (D137) they name it by its read and input, where an entity's are named by its kind and key, and a
  * decision or a start names the assistant's draft it was sent from (`from`).
  */
 function routesOf(subject: ActionSubject, capability: string, from?: RecordDraftRef) {
@@ -168,7 +168,7 @@ function routesOf(subject: ActionSubject, capability: string, from?: RecordDraft
 export const lastButton = (action: Pick<SubjectAction, 'kind'>): 'drafts' | 'decided' =>
   action.kind === 'execute' ? 'decided' : 'drafts';
 /**
- * Starting an action about an entity (D97, D8) or a record (D132): every one opens the action dialog first, and nothing
+ * Starting an action about an entity (D97, D8) or a record (D137): every one opens the action dialog first, and nothing
  * is created before its last button (D126 item 7, the critique of 2026-11-14), so cancelling it leaves no trace. The
  * dialog asks what the action asks and says what will happen: an execute's own effect read, else the capability's
  * description. The last button sends it without the model: a propose drafts the work item the person then decides on,

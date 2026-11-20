@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { CommitmentOwner, StaffPerson, TalksResult } from '@clew/contracts';
 import {
@@ -6,6 +6,7 @@ import {
   Banner,
   Button,
   DateInput,
+  DateTimeInput,
   EmptyState,
   FormLayout,
   Heading,
@@ -16,22 +17,30 @@ import {
   RadioListItem,
   Text,
   TextInput,
+  TimeInput,
   VStack,
 } from '@clew/ui';
-import { today } from '@clew/calendar/dates';
+import { localClock, today } from '@clew/calendar/dates';
 import { api } from '../../api';
 import { commitmentsQuery, staffQuery, talksQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { useTalkAction } from '../../mutations';
 import {
+  bookedDay,
+  bookingNote,
+  calendarDifference,
   dueText,
+  endFor,
   groupCommitments,
   isOverdue,
   personKey,
-  talkAtText,
   talkFor,
+  talkSpan,
+  talkSpanText,
   talkStatus,
+  timePassed,
   type CommitmentEntry,
+  type TalkEntry,
 } from '../../talks';
 import { AsyncContent, ContentSkeleton } from '../shell/loading';
 import { DOT } from '../../dot';
@@ -50,8 +59,11 @@ const responsible = (row: Pick<CommitmentEntry, 'owner' | 'mine' | 'id'>) =>
  * One person's utvecklingssamtal (D96 item 7) as the talk's tab on the person's page (D126 rule 3: the drawer that lay
  * over the page is gone; the talk is where the person is). The address is the person's page with the talk's source as
  * `section` (`person-address.ts`); an address that laid the drawer over a page (`?talk=<personId>`) leads here. Its
- * state with Markera som hållet and Ångra, the person's action points carried over first, then this round's, then the
- * done ones, and a form to add one while a round is open; the round's name under the tab's heading. Opened only for
+ * state with Markera som hållet and Ångra, when it is booked and, for a time no invitation carries, Ange tid, Ändra tid
+ * and Ta bort tiden (D132 item 4), what the calendar holds when the meeting was moved or is gone and the manager's
+ * choice between them (D133), that the booked time has passed and whether the talk took place (D134), the person's
+ * action points carried over first, then this round's, then the done ones, and
+ * a form to add one while a round is open; the round's name under the tab's heading. Opened only for
  * Clew's own module (`writable`): when another system answers, the tab is that system's row, as any other source's.
  * Nothing is read until the tab is shown.
  */
@@ -110,8 +122,9 @@ export function TalkTab({
 
 /**
  * The talk itself. Writes go through `useTalkAction`, which waits for the fresh reads before it lets go, so the control
- * that replaces the one pressed (Klar becomes Öppna igen in the done group, Markera som hållet becomes Ångra) is in the
- * page when the focus is handed to it.
+ * that replaces the one pressed (Klar becomes Öppna igen in the done group, Markera som hållet becomes Ångra, Ange tid
+ * becomes Ändra tid) is in the page when the focus is handed to it. The time's form takes the place of the time's
+ * buttons while it is open, and the button comes back with the focus when it closes.
  */
 function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
   const ids = useId();
@@ -120,7 +133,9 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
   const canWrite = talks.writable && !!round && !!row;
   const pointsQ = useQuery(commitmentsQuery(personKey(person)));
   const held = useTalkAction();
+  const time = useTalkAction();
   const points = useTalkAction();
+  const [settingTime, setSettingTime] = useState(false);
   // The control that should hold the focus once it is drawn: the one that took the pressed control's place.
   const want = useRef<string | null>(null);
   const claim = (key: string) => (el: HTMLElement | null) => {
@@ -133,7 +148,17 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
     want.current = key;
     if (!(await action.run(fn, done))) want.current = null;
   };
-  const when = row ? talkAtText(row) : null;
+  const when = row ? talkSpanText(row) : null;
+  const note = row ? bookingNote(row) : null;
+  // The meeting in the calendar is not where the talk says: the talk stands, and the manager whose booking it is chooses.
+  const differs = row ? calendarDifference(row) : null;
+  const settles = canWrite && !!differs && row.own === true;
+  // The booked time has passed and the talk is not marked held: the manager says whether it took place (D134). A time
+  // set by hand is taken off with Ta bort tiden, as at any time; an invitation is ended here, by its own manager.
+  const passed = canWrite && !differs && timePassed(row, Date.now());
+  const missable = passed && row.invited === true && row.own === true;
+  // A time is set and changed here while no invitation carries the booking, and never for a talk that is held.
+  const timeByHand = canWrite && row.state !== 'held' && !(row.state === 'booked' && row.invited !== false);
   const day = today();
   const list = pointsQ.data?.rows ?? [];
   const groups = groupCommitments(list);
@@ -204,8 +229,93 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
             {when && <Text>{when}</Text>}
           </HStack>
         )}
-        {row?.state === 'missing' && talks.bookedUnknown && (
-          <Text type="supporting">Kalendern svarade inte, så ett bokat samtal kan visas som saknat.</Text>
+        {note && <Text type="supporting">{note}</Text>}
+        {differs && (
+          <Banner
+            status="warning"
+            title={differs.kind === 'gone' ? 'Mötet är borta ur kalendern' : 'Mötet har flyttats i kalendern'}
+            description={
+              settles
+                ? differs.kind === 'gone'
+                  ? `${differs.text} Välj om tiden ska stå kvar utan inbjudan.`
+                  : `${differs.text} Stämmer inte den nya tiden flyttar du tillbaka mötet i kalendern.`
+                : `${differs.text} Chefen som bokade samtalet avgör vad som gäller.`
+            }
+            endContent={
+              settles ? (
+                <HStack gap={2} wrap="wrap">
+                  {differs.kind === 'moved' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      label="Flytta samtalet till den nya tiden"
+                      clickAction={() =>
+                        write(
+                          'mark-held',
+                          () => api.talks.settleCalendar(person.id, 'adopt'),
+                          'Samtalet har flyttats till den nya tiden.',
+                          time,
+                        )
+                      }
+                    />
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        label="Behåll tiden"
+                        clickAction={() =>
+                          write(
+                            'set-time',
+                            () => api.talks.settleCalendar(person.id, 'keep'),
+                            'Tiden står kvar, utan inbjudan.',
+                            time,
+                          )
+                        }
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        label="Ta bort tiden"
+                        clickAction={() =>
+                          write(
+                            'set-time',
+                            () => api.talks.settleCalendar(person.id, 'remove'),
+                            'Tiden för samtalet är borttagen.',
+                            time,
+                          )
+                        }
+                      />
+                    </>
+                  )}
+                </HStack>
+              ) : undefined
+            }
+          />
+        )}
+        {passed && (
+          <Banner
+            status="info"
+            title="Tiden för samtalet har passerat"
+            description="Markera samtalet som hållet om det blev av. Annars tar du bort tiden, så kan samtalet bokas igen."
+            endContent={
+              missable ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  label="Samtalet blev inte av"
+                  clickAction={() =>
+                    write(
+                      'set-time',
+                      () => api.talks.settleCalendar(person.id, 'missed'),
+                      'Tiden för samtalet är borttagen.',
+                      time,
+                    )
+                  }
+                />
+              ) : undefined
+            }
+          />
         )}
         {!round ? (
           <Text as="p">
@@ -214,7 +324,7 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
         ) : (
           !row && <Text as="p">{person.name} är inte med i samtalsomgången.</Text>
         )}
-        {canWrite && (
+        {canWrite && !settingTime && (
           <HStack gap={2} wrap="wrap">
             {row.state === 'held' ? (
               <Button
@@ -236,15 +346,52 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
                 variant="primary"
                 label="Markera som hållet"
                 clickAction={() =>
-                  write('undo-held', () => api.talks.markHeld(person.id), 'Samtalet är markerat som hållet.', held)
+                  write(
+                    'undo-held',
+                    // A talk whose booked time has passed was held the day it was booked for, not the day this is pressed.
+                    () => api.talks.markHeld(person.id, passed ? { heldOn: bookedDay(row) } : {}),
+                    'Samtalet är markerat som hållet.',
+                    held,
+                  )
+                }
+              />
+            )}
+            {timeByHand && (
+              <Button
+                ref={claim('set-time')}
+                variant="secondary"
+                label={row.state === 'booked' ? 'Ändra tid' : 'Ange tid'}
+                onClick={() => {
+                  time.reset();
+                  setSettingTime(true);
+                }}
+              />
+            )}
+            {timeByHand && row.state === 'booked' && (
+              <Button
+                variant="ghost"
+                label="Ta bort tiden"
+                clickAction={() =>
+                  write('set-time', () => api.talks.unbook(person.id), 'Tiden för samtalet är borttagen.', time)
                 }
               />
             )}
           </HStack>
         )}
-        {held.error && (
+        {timeByHand && settingTime && (
+          <TalkTime
+            person={person}
+            row={row}
+            onClose={() => {
+              // The button the form took the place of comes back, and takes the focus.
+              want.current = 'set-time';
+              setSettingTime(false);
+            }}
+          />
+        )}
+        {(held.error ?? time.error) && (
           <Text as="p" role="alert" color="accent">
-            {held.error}
+            {held.error ?? time.error}
           </Text>
         )}
       </VStack>
@@ -289,6 +436,97 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
         </AsyncContent>
       </VStack>
       {canWrite && <AddCommitment person={person} />}
+    </VStack>
+  );
+}
+
+/**
+ * When the talk takes place (D132 item 4), for a time the manager and the employee agreed on and no invitation from
+ * Clew carries: the day and the start in one field and the end the same day, as a booking is picked in the calendar
+ * (Astryx's date-time and time fields, Monday first, a sheet under a finger). An hour is suggested for the end when the
+ * start is picked, and the end keeps the talk's length when the start is changed. What is missing is said on the field when Spara is pressed, and the focus goes to that field; the
+ * server's sentence is an alert under the fields and what was picked stays. The focus is in the first field when the
+ * form opens, and goes back to the button that opened it when it closes.
+ */
+function TalkTime({ person, row, onClose }: { person: StaffPerson; row: TalkEntry; onClose: () => void }) {
+  const ids = useId();
+  const save = useTalkAction();
+  const booked = row.state === 'booked' && row.at && row.until ? { start: row.at, end: row.until } : null;
+  const [start, setStart] = useState(booked ? localClock(booked.start) : '');
+  const [end, setEnd] = useState(booked ? localClock(booked.end).slice(11, 16) : '');
+  const [tried, setTried] = useState(false);
+  const startField = useRef<HTMLInputElement>(null);
+  const endField = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    startField.current?.focus();
+  }, []);
+  const span = talkSpan(start, end);
+  const problem = 'problem' in span ? span : null;
+  const submit = async () => {
+    if (save.busy) return;
+    if ('problem' in span) {
+      setTried(true);
+      (span.problem === 'start' ? startField : endField).current?.focus();
+      return;
+    }
+    if (await save.run(() => api.talks.book(person.id, span), 'Tiden för samtalet är sparad.')) onClose();
+  };
+  const status = (field: 'start' | 'end') =>
+    tried && problem?.problem === field ? { status: { type: 'error' as const, message: problem.message } } : {};
+  return (
+    <VStack
+      gap={3}
+      as="form"
+      aria-labelledby={`${ids}-time`}
+      onSubmit={e => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <VStack gap={1}>
+        <Heading level={4} id={`${ids}-time`}>
+          Tid för samtalet
+        </Heading>
+        <Text type="supporting">
+          Ange den tid ni har kommit överens om. Tiden sparas i Clew och ingen inbjudan skickas.
+        </Text>
+      </VStack>
+      <FormLayout defaultOptionality="required">
+        <DateTimeInput
+          ref={startField}
+          label="Börjar"
+          value={start as never}
+          onChange={value => {
+            setStart(value ?? '');
+            // The end follows the start: an hour after it, or the length the talk had.
+            if (value) setEnd(endFor(start, end, value));
+          }}
+          weekStartsOn="mon"
+          timeIncrement={15}
+          placeholder="Välj en dag"
+          timePlaceholder="Välj en tid"
+          presentation="adaptive-bottom-sheet"
+          {...status('start')}
+        />
+        <TimeInput
+          ref={endField}
+          label="Slutar"
+          value={end as never}
+          onChange={value => setEnd(value ?? '')}
+          increment={15}
+          placeholder="Välj en tid"
+          {...status('end')}
+        />
+      </FormLayout>
+      {save.error && (
+        <Text as="p" role="alert" color="accent">
+          {save.error}
+        </Text>
+      )}
+      <HStack gap={2}>
+        <Button type="submit" variant="primary" label="Spara" isLoading={save.busy} />
+        <Button variant="ghost" label="Avbryt" onClick={onClose} />
+      </HStack>
     </VStack>
   );
 }

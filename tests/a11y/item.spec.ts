@@ -89,7 +89,7 @@ test.describe('the work item as a page', () => {
     await page.keyboard.press('Escape');
     await expectNoAxeViolations(page);
     // From the title the keyboard reaches the decision: the buttons stand directly under the title, and no button to
-    // ask the assistant stands on the title's line (D133 item 1).
+    // ask the assistant stands on the title's line (D138 item 1).
     await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     await title.focus();
     await page.keyboard.press('Tab');

@@ -101,7 +101,13 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     store: proposals,
     bind: () => ({ provider: cal }),
     team: async p => (p.role === 'manager' ? members : []),
-    round: async () => ({ label: 'Utvecklingssamtal 2026', opensOn: '2026-09-01', dueOn: '2026-11-28', held: [] }),
+    round: async () => ({
+      label: 'Utvecklingssamtal 2026',
+      opensOn: '2026-09-01',
+      dueOn: '2026-11-28',
+      held: [],
+      booked: [],
+    }),
     clock,
     ids,
     people: { personaFor: async () => undefined },
@@ -1056,10 +1062,10 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
     expect(heard).toEqual([{ actionId: 'book', values: { when: '2026-11-16T08:00:00Z' } }]);
   });
   /**
-   * Before anything is asked the pane says what the assistant may fill in for what stands open (D133 item 7): the
+   * Before anything is asked the pane says what the assistant may fill in for what stands open (D138 item 7): the
    * server answers from the rules the turn offers its draft tool by, so the two never disagree, and it writes nothing.
    */
-  test('the pane is told the open item’s actions the turn would offer to fill in, and nothing else (D133 item 7)', async () => {
+  test('the pane is told the open item’s actions the turn would offer to fill in, and nothing else (D138 item 7)', async () => {
     const offered: unknown[] = [];
     const generate: ModelGenerate = async ({ tools }) => {
       const draft = tools['clew__draftAction'] as { inputSchema: { jsonSchema: any } } | undefined;
@@ -1402,7 +1408,7 @@ describe('the assistant prepares a move or a cancellation of the open meeting, t
     expect(cancelled).toEqual([{ kind: 'calendar.cancel', event: { id: 'apt', title: 'APT', ...APT } }]);
   });
 
-  test('the pane is told the two decisions for an open meeting the person may change, by the rule the turn uses (D133 item 7)', async () => {
+  test('the pane is told the two decisions for an open meeting the person may change, by the rule the turn uses (D138 item 7)', async () => {
     const model = scripted([]);
     const w = world({ generate: model.generate });
     seeded(w);
@@ -2119,7 +2125,7 @@ describe('the assistant starts a work item from a propose, the person sends it',
     expect(JSON.stringify(heard)).toContain('anmälare');
   });
 });
-describe('a question asked beside a page (D130 rule 6)', () => {
+describe('a question asked beside a page (D135 rule 6)', () => {
   const page = { subject: 'tool:finance.invoices', label: 'Fakturor att attestera' };
   test('a first question with the page starts a conversation kept as asked beside it, and its audit row says so and no more', async () => {
     const w = world();
@@ -2215,12 +2221,12 @@ describe('a question asked beside a page (D130 rule 6)', () => {
 });
 
 /**
- * What stands open on a person's page is told to the model by Clew (D131 items 1 to 4): one of the asker's people as a
+ * What stands open on a person's page is told to the model by Clew (D136 items 1 to 4): one of the asker's people as a
  * person the conversation names, the asker's own page as theirs, anyone else's as nothing. The page names the person by
  * Clew's id alone; the server resolves it as the asker on every turn, and a conversation asked beside the page keeps it,
  * so a later turn is about the person wherever it is continued. Erasing the person deletes those conversations (item 8).
  */
-describe('a person whose page stands open (D131)', () => {
+describe('a person whose page stands open (D136)', () => {
   const OPEN = 'Öppet bredvid samtalet just nu';
   const ANNA =
     'Sidan om medarbetaren Anna Lindqvist på Skönsmons skola, användarnamn anna, som personen är chef för. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Avfärda).';

@@ -101,7 +101,7 @@ function UnitTable({ rows, columns }: { rows: TableRow[]; columns: UnitColumn[] 
  * for the group, each cell the source's row in short, its heading saying what the figure is and where it comes from; on
  * a phone a card per unit with the same figures one under the other. A unit's name opens its page with this one as the
  * way back. Each cell is its own read, so a source that does not answer says so in its own cells while the rest stand.
- * The corner's "Fråga AI" opens the assistant's pane beside the units (D130, D133), about what the columns show: each
+ * The corner's "Fråga AI" opens the assistant's pane beside the units (D135, D138), about what the columns show: each
  * column's source through the overview the assistant may make of it, and the pane says which it may not. While it
  * stands there the table scrolls sideways inside itself, the names pinned, and the page never does (1.4.10).
  */
@@ -223,7 +223,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     })),
   ];
 
-  // What the pane beside the page is about (D130 rule 4): what the columns show, once the sources are known.
+  // What the pane beside the page is about (D135 rule 4): what the columns show, once the sources are known.
   const views = useQuery(areasQuery).data?.views;
   const subject =
     list.isPending || (first && detail.isPending)

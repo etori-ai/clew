@@ -454,8 +454,7 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
   const talks = talkUsecases({
     store: talkStoreWithCards(options, { clock }),
     staff: async () => ({ units: [] }),
-    manages: async () => false,
-    bookings: async () => new Map(),
+    reports: async () => new Set(),
     clock,
     ids,
   });
@@ -469,6 +468,8 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     cards: 0,
     rows: 0,
     cardSubjects: 0,
+    conversations: 0,
+    messages: 0,
   });
   expect(await talks.erasePerson(OPERATOR, asa)).toEqual({ talks: 0, commitments: 0, cleared: 0, cards: 0 });
   expect(await competence.erasePerson(OPERATOR, asa)).toEqual({

@@ -1,5 +1,5 @@
 {
-  "id": "30b7e89f-6253-492e-9e85-90dc93ff8ba0",
+  "id": "35343274-c3b1-462f-ade2-033a73768b20",
   "prevId": "242f3420-3958-4974-ad05-413203ac2204",
   "version": "7",
   "dialect": "postgresql",
@@ -6165,6 +6165,36 @@
           "primaryKey": false,
           "notNull": false
         },
+        "booked_start": {
+          "name": "booked_start",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "booked_end": {
+          "name": "booked_end",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "booked_by": {
+          "name": "booked_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "booked_at": {
+          "name": "booked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invitation_id": {
+          "name": "invitation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -6198,6 +6228,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "talk_invitation": {
+          "name": "talk_invitation",
+          "columns": [
+            {
+              "expression": "invitation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6242,12 +6287,30 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "talk_booked_by_auth_person_id_fk": {
+          "name": "talk_booked_by_auth_person_id_fk",
+          "tableFrom": "talk",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "booked_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "talk_booking": {
+          "name": "talk_booking",
+          "value": "(\"talk\".\"booked_start\" IS NULL AND \"talk\".\"booked_end\" IS NULL AND \"talk\".\"booked_at\" IS NULL AND \"talk\".\"booked_by\" IS NULL AND \"talk\".\"invitation_id\" IS NULL) OR (\"talk\".\"booked_start\" IS NOT NULL AND \"talk\".\"booked_end\" IS NOT NULL AND \"talk\".\"booked_at\" IS NOT NULL AND \"talk\".\"booked_end\" > \"talk\".\"booked_start\")"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.thread_message": {
@@ -6564,12 +6627,6 @@
         },
         "handover": {
           "name": "handover",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "asked_beside": {
-          "name": "asked_beside",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

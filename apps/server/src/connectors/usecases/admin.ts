@@ -249,7 +249,7 @@ export function connectorUsecases(deps: AdminDeps) {
           row.capabilities[c.name]?.model !== false &&
           row.capabilities[c.name]?.enabled !== false,
         menu: (r => (r ? { ...r, on: row.capabilities[c.name]?.menu === true } : null))(menuRow(row, c.name, m)),
-        // The entity it is about (D97); an action about a record (D132) is placed on the record's page, not here.
+        // The entity it is about (D97); an action about a record (D137) is placed on the record's page, not here.
         ...(aboutEntity(c.about) ? { about: aboutEntity(c.about)!.entity } : {}),
         ...(about =>
           about

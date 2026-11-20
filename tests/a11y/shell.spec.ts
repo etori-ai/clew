@@ -478,7 +478,7 @@ test.describe('the pages under the band', () => {
 });
 
 /**
- * The floating way to the assistant (D130 item 14, D133 items 1, 3 and 5): "Fråga AI" in the lower corner of every page
+ * The floating way to the assistant (D130 item 14, D138 items 1, 3 and 5): "Fråga AI" in the lower corner of every page
  * but a conversation's, which has its own box. On Hem it leads to Hem's line; on a page with a subject it opens the
  * assistant's pane about it (`ask-pane.spec.ts`); on a page with none it starts a new question with that page as the way
  * back. It stands over the page, so it moves to the other corner while the keyboard is on a control it would hide
@@ -493,7 +493,7 @@ test.describe('the floating way to the assistant', () => {
     page
       .getByRole('link', { name: 'Fråga AI', exact: true })
       .or(page.getByRole('button', { name: 'Fråga AI: gå till frågefältet', exact: true }));
-  /** The corner's control on a page with a subject (D133 item 3): a button that opens the assistant's pane. */
+  /** The corner's control on a page with a subject (D138 item 3): a button that opens the assistant's pane. */
   const paneDoor = (page: Page) => page.getByRole('button', { name: 'Fråga AI', exact: true });
   /** Tabs through the page and names every stop that lies entirely under the corner's control (2.4.11). */
   async function stopsUnderTheCorner(page: Page, limit = 150) {
@@ -559,7 +559,7 @@ test.describe('the floating way to the assistant', () => {
     }) => {
       await page.setViewportSize(viewport);
       await open(page, '/todo');
-      // A button, not a link: the page stays and the pane opens beside it (D133 item 3).
+      // A button, not a link: the page stays and the pane opens beside it (D138 item 3).
       const button = paneDoor(page);
       await expect(button).toBeInViewport({ ratio: 1 });
       await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
@@ -612,7 +612,7 @@ test.describe('the floating way to the assistant', () => {
     const release = api.holdAnswer();
     await line.fill('Vem är på plats?');
     await line.press('Enter');
-    // The answer stands under the line (D133 item 9): the address is Hem's and the corner still leads to the line.
+    // The answer stands under the line (D138 item 9): the address is Hem's and the corner still leads to the line.
     await expect(page.getByRole('heading', { level: 2, name: 'Vem är på plats?' })).toBeVisible();
     await expect(page).toHaveURL('/');
     await expect(corner(page)).toHaveCount(1);

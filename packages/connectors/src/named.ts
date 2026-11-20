@@ -33,7 +33,7 @@ export interface NamingCapability {
   kind: string;
   input?: unknown;
   view?: unknown;
-  /** Either form (D97, D132); only the entity form names a person or a unit. */
+  /** Either form (D97, D137); only the entity form names a person or a unit. */
   about?: { entity?: string; param?: string; record?: string };
   person?: { param?: string; admits?: readonly string[]; ids?: boolean };
   unit?: { admits?: readonly string[] };

@@ -1,0 +1,42 @@
+# The web app's server. ${CLEW_SERVER_URL} is filled in when the container starts; every other $name is nginx's own.
+server {
+    listen 8080;
+    server_tokens off;
+    root /usr/share/nginx/html;
+
+    # Clew's server answers /api/ and /scim/. An answer and /api/changes are streamed, so nothing is buffered, and a
+    # model's turn may be silent for longer than nginx waits by default.
+    location /api/ {
+        proxy_pass ${CLEW_SERVER_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+
+    # The largest request is a unit group with all its members: Clew refuses a body over 4 MB itself.
+    location /scim/ {
+        proxy_pass ${CLEW_SERVER_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        client_max_body_size 4m;
+        proxy_read_timeout 60s;
+    }
+
+    # Built files carry a hash in their name and never change.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # Every other path is the web app's: a file when there is one, else index.html, read again at each visit so a
+    # new release is picked up at once.
+    location / {
+        add_header Cache-Control "no-cache";
+        try_files $uri /index.html;
+    }
+}

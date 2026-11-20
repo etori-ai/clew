@@ -223,7 +223,7 @@ test.describe('Samtal among the pages and the register', () => {
     await expect(all).toHaveAttribute('aria-current', 'page');
   });
 
-  test('a conversation asked beside a page and never opened as a conversation is no page of the row, and Samtal lists it with what it is about (D130 rule 6, D133 item 10)', async ({
+  test('a conversation asked beside a page and never opened as a conversation is no page of the row, and Samtal lists it with what it is about (D135 rule 6, D138 item 10)', async ({
     page,
     api,
   }) => {
@@ -239,7 +239,7 @@ test.describe('Samtal among the pages and the register', () => {
     };
     api.threads = [...api.threads.filter(t => t.kind !== 'question'), beside, first!, second!, third!, fourth!];
     await open(page, '/');
-    // The shell lists no latest conversations (D133 item 10): every one is found under Samtal.
+    // The shell lists no latest conversations (D138 item 10): every one is found under Samtal.
     const nav = pagesNav(page);
     await expect(nav.getByRole('group', { name: 'Fråga assistenten' })).toHaveCount(0);
     await expect(nav.locator('a[href^="/conversations/"]')).toHaveCount(0);

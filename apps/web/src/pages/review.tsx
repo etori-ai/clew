@@ -125,7 +125,7 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
   const reviewing = !!live && !!action && step !== null;
   // The review names the tab itself while it is drawn (`Review`); the page's other states name it here.
   usePageTitle(reviewing ? null : missing ? 'Ärendet finns inte' : live && action ? 'Steget finns inte' : null);
-  // The review is about its work item (D131 item 6): the item's own subject, so it is the same conversation as on the
+  // The review is about its work item (D136 item 6): the item's own subject, so it is the same conversation as on the
   // item's page; until the item is read there is none.
   const message = (content: ReactNode) => (
     <PageFrame ask={{ subject: live ? itemPageSubject(live) : null }}>{content}</PageFrame>
@@ -851,7 +851,7 @@ function Review({
   // steps under them, the step in the column, "Hittills" in the end panel and the decision in the footer. On a phone
   // the header scrolls with the step, so the document is not left a strip under it; on a short screen the page scrolls
   // as one (1.4.10).
-  // "Hittills" follows the step where the window is narrow and while the assistant's pane has the end slot (D131 item
+  // "Hittills" follows the step where the window is narrow and while the assistant's pane has the end slot (D136 item
   // 9), read inside the frame.
   const column = (
     <VStack gap={6}>
@@ -862,7 +862,7 @@ function Review({
       )}
     </VStack>
   );
-  // About the work item, as on its page (D131 item 6).
+  // About the work item, as on its page (D136 item 6).
   const ask = { subject: itemPageSubject(thread) };
   return mobile ? (
     <PageFrame ask={ask} label="Granskningen" scrollTabStop footer={footer}>

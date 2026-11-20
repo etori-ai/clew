@@ -23,7 +23,7 @@ interface Descriptor {
       follows?: string[];
       creates?: string;
       kinds?: unknown[];
-      /** Either form (D97, D132): `{ entity, param?, page? }` or `{ record, params }`; flat here so the rules can say which is wrong. */
+      /** Either form (D97, D137): `{ entity, param?, page? }` or `{ record, params }`; flat here so the rules can say which is wrong. */
       about?: { entity?: string; param?: string; page?: unknown; record?: string; params?: Record<string, string> };
       person?: { param?: string; admits?: readonly string[]; ids?: boolean };
       unit?: { admits?: readonly string[] };
@@ -55,10 +55,10 @@ const requires = (schema: Schema | undefined, name: string) =>
 /** The names whose shape a profile of the protocol fixes (D26, D35, D89, D96, D112, D123): none of them is about an entity. */
 const PROFILES = ['search', 'fetch', 'errands', 'requests', 'talks', 'commitments', 'news'];
 
-/** The view kinds that draw one record (D132 item 1): what an action may be about, never rows. */
+/** The view kinds that draw one record (D137 item 1): what an action may be about, never rows. */
 const ONE_RECORD = ['record', 'detail', 'text', 'document'];
 /**
- * Why a capability's record form of `about` (D132) may not be used, or undefined when it may. It belongs to a propose or
+ * Why a capability's record form of `about` (D137) may not be used, or undefined when it may. It belongs to a propose or
  * an execute; `record` names a read of this connector whose view draws one record; `params` maps at least one input
  * property of the action to an input property of that read; and the action requires nothing but what the record fills
  * and what it asks, so the record's page can start it with its own input and the person's answers.
@@ -66,28 +66,28 @@ const ONE_RECORD = ['record', 'detail', 'text', 'document'];
 function recordAboutProblem(c: Descriptor['capabilities'][number], connector: Descriptor): string | undefined {
   const about = c.about!;
   if (about.entity !== undefined || about.param !== undefined || about.page !== undefined)
-    return `Capability ${c.name}: about is either { entity, param } or { record, params }, never both (D97, D132).`;
+    return `Capability ${c.name}: about is either { entity, param } or { record, params }, never both (D97, D137).`;
   if (c.kind === 'read')
-    return `Capability ${c.name}: a read is never about a record; about.record belongs to a propose or an execute (D132).`;
+    return `Capability ${c.name}: a read is never about a record; about.record belongs to a propose or an execute (D137).`;
   const read = connector.capabilities.find(r => r.name === about.record);
   if (!read || read.kind !== 'read')
-    return `Capability ${c.name}: about.record names ${about.record}, which is not a read of this connector (D132).`;
+    return `Capability ${c.name}: about.record names ${about.record}, which is not a read of this connector (D137).`;
   if (!ONE_RECORD.includes(read.view?.kind ?? ''))
-    return `Capability ${c.name}: about.record names ${about.record}, which ${read.view ? `answers ${read.view.kind === 'table' || read.view.kind === 'list' ? 'rows' : 'a ' + read.view.kind}` : 'declares no view'}; an action is about one record, a read whose view is record, detail, text or document (D132).`;
+    return `Capability ${c.name}: about.record names ${about.record}, which ${read.view ? `answers ${read.view.kind === 'table' || read.view.kind === 'list' ? 'rows' : 'a ' + read.view.kind}` : 'declares no view'}; an action is about one record, a read whose view is record, detail, text or document (D137).`;
   const params = Object.entries(about.params ?? {});
   if (!params.length)
-    return `Capability ${c.name}: about.params maps nothing; name the input properties the record fills, at least one (D132).`;
+    return `Capability ${c.name}: about.params maps nothing; name the input properties the record fills, at least one (D137).`;
   const input = asSchema(c.input);
   const own = params.find(([property]) => !input?.properties?.[property]);
-  if (own) return `Capability ${c.name}: about.params maps ${own[0]}, which is not a property of its input (D132).`;
+  if (own) return `Capability ${c.name}: about.params maps ${own[0]}, which is not a property of its input (D137).`;
   const theirs = params.find(([, from]) => !asSchema(read.input)?.properties?.[from]);
   if (theirs)
-    return `Capability ${c.name}: about.params fills ${theirs[0]} from ${theirs[1]}, which is not a property of the input of ${about.record} (D132).`;
+    return `Capability ${c.name}: about.params fills ${theirs[0]} from ${theirs[1]}, which is not a property of the input of ${about.record} (D137).`;
   const required = Array.isArray(input?.required) ? (input.required as unknown[]) : [];
   const filled = new Set([...params.map(([property]) => property), ...(c.asks ?? []).map(a => a.property)]);
   const missing = required.find(r => !filled.has(r as string));
   if (missing !== undefined)
-    return `Capability ${c.name}: an action about a record requires only what about.params fills and what it asks, so the record's page can start it; ${String(missing)} is neither (D132, D112).`;
+    return `Capability ${c.name}: an action about a record requires only what about.params fills and what it asks, so the record's page can start it; ${String(missing)} is neither (D137, D112).`;
   return undefined;
 }
 /**
@@ -228,7 +228,7 @@ function asksProblems(c: Descriptor['capabilities'][number]): string[] {
     else if (c.about?.param === name)
       problems.push(`Capability ${c.name}: ask "${name}" names the input that takes the entity's key (D112).`);
     else if (c.about?.params && Object.prototype.hasOwnProperty.call(c.about.params, name))
-      problems.push(`Capability ${c.name}: ask "${name}" names an input the record fills (D112, D132).`);
+      problems.push(`Capability ${c.name}: ask "${name}" names an input the record fills (D112, D137).`);
     else {
       const fit = fitProblem(ask, property);
       if (fit) problems.push(`Capability ${c.name}: ask "${name}" ${fit} (D112).`);

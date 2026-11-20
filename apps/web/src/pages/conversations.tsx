@@ -54,13 +54,13 @@ function lastChanged(at: string, day: string) {
 
 /**
  * Alla samtal (D126 rule 7, the `table-page` composition of board Personal): every conversation the person has had,
- * the newest first, including those asked beside a page and never opened as a conversation (D130 rule 6, D133
+ * the newest first, including those asked beside a page and never opened as a conversation (D135 rule 6, D138
  * item 10). The title is the row's link to the conversation (rule 4), then
  * whom it is with where that is another system's assistant (D125: its name and its system, as the conversation's own
  * header says it), when it last changed and, only where the data says something about it, its state (the answer being
  * written, a draft that waits for the person), as the rail's dot says it. On a phone the rows are a list, each one
  * link. Nothing is stored here: the list is the session's conversations from the same cache as the rail (D33). The
- * corner's "Fråga AI" opens the assistant's pane beside the list (D130, D133), about the person's conversations
+ * corner's "Fråga AI" opens the assistant's pane beside the list (D135, D138), about the person's conversations
  * (`clew.conversations`); while it stands there the table scrolls sideways inside its card where its columns do not fit
  * the narrower column (Astryx's scroll region), and the page never does (1.4.10).
  */
@@ -72,7 +72,7 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
   const talk = useConversation();
   const read = useQuery(threadsQuery);
   const views = useQuery(areasQuery).data?.views;
-  // What the pane beside the page is about (D130 rule 4): the person's conversations, as the assistant reads them.
+  // What the pane beside the page is about (D135 rule 4): the person's conversations, as the assistant reads them.
   const subject = pageSubject({
     key: 'conversations',
     title: 'Alla samtal',
@@ -108,7 +108,7 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
       ),
     },
     // What a conversation is about (the product owner, 2026-11-14), drawn only while some conversation keeps it: the page
-    // it was asked beside (D130 rule 6), else the work item or the view its first question went with. A person or a
+    // it was asked beside (D135 rule 6), else the work item or the view its first question went with. A person or a
     // unit is kept by nothing in the conversation.
     {
       key: 'about',

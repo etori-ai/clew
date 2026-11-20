@@ -646,7 +646,7 @@ export function WorkItem({
   tools?: ReactNode;
   /**
    * In a reading pane: a part of its own under the read, at the pane's foot (Att göra's conversation with the assistant
-   * and its box, D130 rule 5). The read scrolls above it; on a short screen it follows the read in the one flow.
+   * and its box, D135 rule 5). The read scrolls above it; on a short screen it follows the read in the one flow.
    */
   under?: ReactNode;
 }) {
@@ -758,8 +758,8 @@ export function WorkItem({
  * the source beside it, the title as the page's heading with when it is due while it is the person's to decide, and the
  * buttons or the status notice directly under it; the read in the column; the facts under "Uppgifter" in the end panel,
  * 340 px beside the column, and as the read's first section at 1024 px and below and while the assistant's pane stands
- * beside the page (`FactsInColumn`, D131 item 9, board AskArende). The corner's "Fråga AI" opens the assistant's pane
- * about the item (`itemPageSubject`, D133); the item's own buttons have no way to ask here. On a short screen nothing is
+ * beside the page (`FactsInColumn`, D136 item 9, board AskArende). The corner's "Fråga AI" opens the assistant's pane
+ * about the item (`itemPageSubject`, D138); the item's own buttons have no way to ask here. On a short screen nothing is
  * pinned and the page scrolls as one (1.4.10).
  */
 export function WorkItemPage({

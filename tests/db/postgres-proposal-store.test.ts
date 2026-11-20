@@ -1,8 +1,9 @@
 import { afterAll } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
-import { closeDatabase, database, schema } from '../../packages/db/src/index';
+import { closeDatabase, database, schema, type Transaction } from '../../packages/db/src/index';
 import { readAudit } from '../../packages/db/src/threads';
 import { postgresProposalStore } from '../../apps/server/src/modules/calendar/adapters/postgres';
+import type { InvitationsTx } from '../../apps/server/src/modules/calendar/model';
 import { proposalStoreContract } from '../proposal-store-contract';
 import { forgetTestWorkflows, testDurable } from './durable';
 
@@ -10,7 +11,39 @@ import { forgetTestWorkflows, testDurable } from './durable';
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
 const created: string[] = [];
+/**
+ * The invitations port as the contract binds it: each call is one audit row written on the transaction the store hands
+ * over, so it is kept or taken back with that transaction, as the talks module's writes are in composition.
+ */
+const invited = new Set<string>();
+const recorded = (tx: Transaction): InvitationsTx => {
+  const record = (op: string) => async (call: { invitationId: string; actor: string; at: string }) => {
+    invited.add(call.invitationId);
+    await tx.insert(schema.audit).values({
+      actor: call.actor,
+      action: op,
+      subject: 'invitation:' + call.invitationId,
+      createdAt: new Date(call.at),
+      details: {},
+    });
+  };
+  return {
+    established: record('established'),
+    observed: record('observed'),
+    moved: record('moved'),
+    ended: record('ended'),
+  };
+};
 afterAll(async () => {
+  if (invited.size)
+    await database()
+      .delete(schema.audit)
+      .where(
+        inArray(
+          schema.audit.subject,
+          [...invited].map(id => 'invitation:' + id),
+        ),
+      );
   if (created.length) {
     const owned = await database()
       .select({ id: schema.threads.id })
@@ -49,7 +82,7 @@ proposalStoreContract('postgres', async () => {
     .values(people.map(id => ({ id, organisationId: 'test', name: id })));
   created.push(...people);
   return {
-    store: postgresProposalStore(testDurable),
+    store: postgresProposalStore(testDurable, { invitations: recorded }),
     people,
     auditFor: async subject =>
       (await readAudit(subject)).map(r => ({
@@ -61,5 +94,6 @@ proposalStoreContract('postgres', async () => {
       })),
     hasJob: async id =>
       (await database().select({ id: schema.jobs.id }).from(schema.jobs).where(eq(schema.jobs.id, id))).length > 0,
+    told: async id => (await readAudit('invitation:' + id)).map(r => r.action),
   };
 });

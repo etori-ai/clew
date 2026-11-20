@@ -2,7 +2,7 @@ import type { Actor, RecordAboutAction } from '@clew/connectors';
 import type { AskValues, AuthenticatedContext, EffectPreview, RecordDraftRef, ThreadItem, View } from '@clew/contracts';
 
 /**
- * The ports of the records module (D132, D25): an action a connector declares about one record of one of its reads,
+ * The ports of the records module (D137, D25): an action a connector declares about one record of one of its reads,
  * listed on that record's page and run as an action about a person is. Nothing is stored here: the read, its actions and
  * the record itself are asked on every call, so a revoked grant, a connector switched off or a record the source no
  * longer answers the person shows from the next request on.

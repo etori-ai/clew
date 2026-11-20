@@ -78,7 +78,7 @@ export const entitySectionQuery = (kind: EntityKind, key: string, capability: st
     retry: false,
   });
 /**
- * The actions about one record that the reader may take (D132): on the record's page under its title, and for an
+ * The actions about one record that the reader may take (D137): on the record's page under its title, and for an
  * assistant's draft about it. Not retried: a read the reader may not make, or a record they cannot read, answers 404,
  * and then there are no actions to draw.
  */
@@ -133,7 +133,7 @@ export const assistantQuery = queryOptions({
   retry: false,
 });
 /**
- * What the assistant may fill in for what stands open (D133 item 7), said in the pane before anything is asked: an extra
+ * What the assistant may fill in for what stands open (D138 item 7), said in the pane before anything is asked: an extra
  * of the pane, never retried and never its error. `thing` is the thing as stable JSON, its part of the key.
  */
 export const assistantReachQuery = (input: AssistantReachInput, thing: string | null) =>

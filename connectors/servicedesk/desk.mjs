@@ -80,7 +80,7 @@ export function requestRow(serviceCase) {
 }
 /**
  * One case with its free text, for the person who made it: the row, the group handling it, the subject, what the person
- * wrote, what the desk wrote last and the person's own latest comment (D132).
+ * wrote, what the desk wrote last and the person's own latest comment (D137).
  */
 export function requestDetail(serviceCase) {
   const data = serviceCase.Data;

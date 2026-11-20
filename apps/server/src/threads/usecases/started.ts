@@ -16,7 +16,7 @@ import { keyedDrafts } from './keys';
  * decided in its dialog (D126 item 7) is made here with the answers checked and is decided on the next step. The
  * person's choice is the card's reason, whatever the source wrote. While the card is open the same request, under the
  * same authority, gives the same card. The card, its first message, the mark on the assistant's draft it was sent from
- * (D132) and the audit row commit together.
+ * (D137) and the audit row commit together.
  */
 export interface StartedDeps {
   store: ThreadStore;
@@ -60,7 +60,7 @@ export interface StartContext {
    */
   same?: 'topic';
   /**
-   * The assistant's draft about a record this was sent from (D132): its conversation's message, and the record as the
+   * The assistant's draft about a record this was sent from (D137): its conversation's message, and the record as the
    * request names it. The transaction that makes the card marks the draft as sent, as this card, when it is the person's
    * own draft of this action about this record and not marked yet (`ThreadTx.markRecordDraftSent`), and the audit row
    * then says `fromDraft`. Anything else marks nothing, and the card is made exactly as without it: a draft never decides

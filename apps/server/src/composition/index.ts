@@ -210,9 +210,8 @@ export async function fireTimer(id: string, generation: number) {
   return reminders.fire(id, generation);
 }
 /**
- * The round (`talksRound`, D96 items 1-3), read as the person through the registry. The built-in round asks the
- * calendar who is booked (`samtalBookings`), which takes the period as input and never reads the round, so the two do
- * not call each other.
+ * The round (`talksRound`, D96 items 1-3), read as the person through the registry. The built-in round answers from its
+ * own record, the booking included (D132), and never asks the calendar, so the two do not call each other.
  */
 planningRound.read = talksRound({
   answers: persona => !!registry.allowed(audiencedActorOf(persona), TALKS_CAPABILITY),
@@ -367,7 +366,7 @@ export const assistant = assistantUsecases({
         return userName ? [{ key: p.id, userName, name: p.name, unit: unit.unitLabel }] : [];
       }),
     ),
-  // The units the asker manages or follows up (D117, D131 item 5): the units of the entity list a manager leads or
+  // The units the asker manages or follows up (D117, D136 item 5): the units of the entity list a manager leads or
   // follows up below, by the rule the unit's page and the registry ask (`unitRelation`); never one they are only on.
   units: async persona => {
     const reach = await staff.reach(persona);

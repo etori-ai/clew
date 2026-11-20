@@ -427,7 +427,7 @@ function PaneFrame({
 }
 /**
  * The pane's width. It stands beside the grid from `besideQuery`, the rail, the week's least column and the pane,
- * 260 + 640 + 440 px, the line the shared panel kept before D126 and every page's pane keeps now (D130 rule 11).
+ * 260 + 640 + 440 px, the line the shared panel kept before D126 and every page's pane keeps now (D135 rule 11).
  * Narrower, short (1.4.10) or on a phone it is a drawer.
  */
 const PANE = 440;
@@ -462,7 +462,7 @@ const TITLE_ID = 'calendar-title';
  * forms are the dialogs they were. Nothing else opens beside the calendar (D126 rule 3). The assistant is asked in place
  * here, since its answer is drawn on the page itself (the product owner, 2026-11-18, boards KalFraga, KalFragaFlytt and
  * KalFragaVecka): under an entry's facts stands the person's conversation about it, found again when the entry is
- * opened again, over a box at the pane's foot. The corner's "Fråga AI" (D130, D133) opens the assistant's pane about
+ * opened again, over a box at the pane's foot. The corner's "Fråga AI" (D135, D138) opens the assistant's pane about
  * the range on screen, the week, the day or the month, at the end of the shell's column: it lets go of an entry or a
  * move standing in the page's own pane, a booking being made waits under it, and an entry or a form opened takes the
  * place back.
@@ -507,7 +507,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const move = useMove();
   const announce = useAnnounce();
   const model = useModelConfigured();
-  // The assistant's pane beside the page (D130): the frame's, in the address. While it is open the page's own pane holds
+  // The assistant's pane beside the page (D135): the frame's, in the address. While it is open the page's own pane holds
   // nothing; a booking being made waits under it and comes back when it closes.
   const asking = asksBeside(search);
   const title =
@@ -623,7 +623,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const act = (item: AgendaItem, mode: Exclude<Mode, 'view'>) =>
     mode === 'move' && !mobile ? move.start(item) : setActing({ item, mode });
   /**
-   * What the assistant's pane is about (D130 rule 4, board Calendar's `week` state): the range on screen, the
+   * What the assistant's pane is about (D135 rule 4, board Calendar's `week` state): the range on screen, the
    * week, the day or the month, with the calendar's own read of that range as its chip (the product owner, 2026-11-18).
    */
   const rangeRead =
@@ -647,12 +647,12 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const paneItem = (movingId ? move.item : null) ?? entryItem;
   /**
    * What the conversation and the box in the page's own pane are about (the product owner, 2026-11-18: they stand under
-   * every entry from the start, no button opens them, D130 rule 5): the entry in the pane, or its move. A booking made
+   * every entry from the start, no button opens them, D135 rule 5): the entry in the pane, or its move. A booking made
    * by hand has none. Without a model there is no box (D8), and on a phone no pane.
    */
   const thingAsked = mobile || !model ? null : paneItem ? entrySubject(paneItem) : null;
   /**
-   * The same, with the words the pane says it in (D130 rules 4 and 10): the box's words are those of boards KalFraga and
+   * The same, with the words the pane says it in (D135 rules 4 and 10): the box's words are those of boards KalFraga and
    * KalFragaFlytt, the move form's asking for another time.
    */
   const askSubject: PageSubject | null = thingAsked && {
@@ -701,7 +701,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     if (mobile) return false;
     move.start(item);
     move.setSpan({ start: prepared.start, end: prepared.end });
-    // The form takes the page's pane: the assistant's pane closes (D130 rule 5), and its conversation is found again
+    // The form takes the page's pane: the assistant's pane closes (D135 rule 5), and its conversation is found again
     // with the button.
     if (asking) navigate(withoutOwn(pathname, search, [ASK_PARAM]));
     announce(
@@ -810,9 +810,9 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   /**
    * The conversation about what the pane holds, and the box (the product owner, 2026-11-18; boards KalFraga,
    * KalFragaFlytt and the head and box of KalFragaVecka): the entry's facts or the form's fields at the top of the body,
-   * a rule, then the whole conversation over the box, drawn by the conversation's own parts (`PageTalk`, D130 "One
+   * a rule, then the whole conversation over the box, drawn by the conversation's own parts (`PageTalk`, D135 "One
    * component"); a form's buttons stay at the foot, under the box. Before anything is asked the box is alone and as low
-   * as the box, at the foot of the body (D133 item 2): the facts or the fields have the rest, and scroll there when they
+   * as the box, at the foot of the body (D138 item 2): the facts or the fields have the rest, and scroll there when they
    * need more. The box keeps its place in the tree from the entry to its move form and back, and from the first state to
    * the conversation, so the focus and the words in it stay. Esc and ✕ are the pane's as they were: Esc in the move form
    * goes back to the entry, with the conversation. Under an earlier answer that prepared a decision stands the page's
@@ -843,7 +843,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   };
   /**
    * What the pane holds: the move being made, else the entry in the address, else the booking being made, which waits
-   * while the frame's pane is open (D130: the assistant's pane and the page's own take each other's place).
+   * while the frame's pane is open (D135: the assistant's pane and the page's own take each other's place).
    */
   const shown: Shown | null = withAsk(
     movingId && move.item
@@ -905,7 +905,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     if (move.moving) move.close();
     if (!booking.draft) booking.start(at ?? nextWholeHour(new Date()));
     else if (at) booking.setSpan(at);
-    // An entry standing in the pane, and the assistant's pane, give the form their place (D130 rule 5).
+    // An entry standing in the pane, and the assistant's pane, give the form their place (D135 rule 5).
     const q = new URLSearchParams(search);
     if (q.has(ENTRY_PARAM) || asksBeside(q)) navigate(withoutOwn(pathname, search, [ENTRY_PARAM, ASK_PARAM]));
   };
@@ -936,7 +936,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     if (besideId === null) {
       const back = opener.current;
       opener.current = null;
-      // The frame's pane taking the place gives the focus to its own box (D130 rule 2): nothing is given back here.
+      // The frame's pane taking the place gives the focus to its own box (D135 rule 2): nothing is given back here.
       if (was !== null && !asking) (back?.isConnected ? back : document.getElementById(TITLE_ID))?.focus();
       return;
     }
@@ -1055,7 +1055,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   );
   const bookButton = <Button variant="primary" size="sm" label="Ny bokning" onClick={() => startBooking(null)} />;
   // The one page header (D74): the title first, what can be done at the end of its line; the assistant is asked from the
-  // corner's "Fråga AI" (D133 item 1). A phone has two rows: the title with what can be done, and under it where in time
+  // corner's "Fråga AI" (D138 item 1). A phone has two rows: the title with what can be done, and under it where in time
   // with how it is shown, 44 px controls under a finger. The controls are Astryx's `sm`, as the toolbar that held them
   // made them (28 px, under the heading's 32 px line). An entry opened on a phone still has "Fråga assistenten" among
   // its buttons in the drawer, which has no box of its own.

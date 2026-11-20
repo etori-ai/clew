@@ -374,7 +374,7 @@ describe('every read a person may open is a view with a page of its own (D116)',
     const r = registry();
     r.govern('phonebook', on());
     expect(r.views(audiencedActorOf(hassan))).toEqual([
-      // A read the assistant may make for the person says so (D130 rule 4): it is among the model's tools for them.
+      // A read the assistant may make for the person says so (D135 rule 4): it is among the model's tools for them.
       { capability: 'phonebook.directory', title: 'Sök i telefonboken', kind: 'table', assistant: true },
       { capability: 'phonebook.team', title: 'Mitt teams kontaktlista', kind: 'list', assistant: true },
       { capability: 'phonebook.person', title: 'Kontaktkort', kind: 'detail' },
@@ -383,7 +383,7 @@ describe('every read a person may open is a view with a page of its own (D116)',
       { capability: 'phonebook.fetch', title: 'Hämta person' },
     ]);
   });
-  test('a read is marked for the assistant exactly when it is among the model’s tools for the person (D130 rule 4)', () => {
+  test('a read is marked for the assistant exactly when it is among the model’s tools for the person (D135 rule 4)', () => {
     const r = registry();
     const marked = () =>
       r

@@ -40,7 +40,7 @@ const callout = (page: Page) => page.getByRole('main').locator('section[aria-lab
 const toasts = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
 /** Hem's line's own button, beside the field. */
 const askButton = (page: Page) => page.getByRole('main').getByRole('button', { name: 'Fråga AI', exact: true });
-/** The answer under Hem's line (D133 item 9): a region named by the question, its heading. */
+/** The answer under Hem's line (D138 item 9): a region named by the question, its heading. */
 const answerCard = (page: Page, question: string) =>
   page.getByRole('main').getByRole('region', { name: question, exact: true });
 /** The suite's clock stands at 09:00 in Stockholm on Wednesday 4 November (`NOW`). */
@@ -328,7 +328,7 @@ test.describe('Hem', () => {
 /**
  * Hem's line (D126 items 4 and 9, board HemFraga variant a): one field, labelled "Fråga assistenten", filling the row under the
  * greeting, and the button "Fråga AI" (D130). Enter or the button asks the question, and the answer stands in a card
- * under the line while Hem stays (D133 items 2 and 9); with nothing written the button opens Ny fråga and Enter does
+ * under the line while Hem stays (D138 items 2 and 9); with nothing written the button opens Ny fråga and Enter does
  * nothing. Whom to ask, the model and `@` are the conversation page's box's.
  */
 test.describe('Hem’s line', () => {
@@ -364,7 +364,7 @@ test.describe('Hem’s line', () => {
     await line.evaluate(el => {
       for (let i = 0; i < 2; i++) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
-    // The answer's card stands under the line with the question as its heading (D133 item 9): Hem stays, with its
+    // The answer's card stands under the line with the question as its heading (D138 item 9): Hem stays, with its
     // greeting over the line and its board under the card, and the focus stays in the line.
     const card = answerCard(page, 'Vem är på plats?');
     await expect(card.getByRole('heading', { level: 2, name: 'Vem är på plats?', exact: true })).toBeVisible();
@@ -461,7 +461,7 @@ test.describe('Hem’s line', () => {
 });
 
 /**
- * The answer under Hem's line (D133 items 2 and 9): one card directly under the line with the board below it. It shows
+ * The answer under Hem's line (D138 items 2 and 9): one card directly under the line with the board below it. It shows
  * the conversation's newest exchange, with the question as its heading, the work items the answer names as the rows
  * "Behöver dig" has, "Öppna som samtal" and "Stäng". The line is the box: the next question goes on in the same
  * conversation while the card stands, and the corner's "Fråga AI" still leads to the line.
@@ -511,7 +511,7 @@ test.describe('the answer under Hem’s line', () => {
       'Du har 18 semesterdagar kvar i år.',
     );
     expect(api.asked[1]!.conversationId).toBeUndefined();
-    // The conversation stays where conversations are found (D133 item 10).
+    // The conversation stays where conversations are found (D138 item 10).
     await rail(page).getByRole('link', { name: 'Samtal', exact: true }).click();
     await expect(page.getByRole('main').locator('a[href^="/conversations/konversation"]').first()).toBeVisible();
   });

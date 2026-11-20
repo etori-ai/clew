@@ -66,7 +66,7 @@ function useYieldToFocus(corner: { current: HTMLDivElement | null }): boolean {
 }
 
 /**
- * What the button does on the page that stands in the shell, as the page's frame says it (D133 items 3 and 5):
+ * What the button does on the page that stands in the shell, as the page's frame says it (D138 items 3 and 5):
  *
  * - `pane`: the page has a subject, so the button opens the assistant's pane about it and the page stays (on a phone it
  *   leads to the conversation's page with the subject beside it, item 11). The frame's `open` does either.
@@ -78,15 +78,15 @@ function useYieldToFocus(corner: { current: HTMLDivElement | null }): boolean {
  */
 export type CornerDoor = 'pane' | 'question' | 'hidden';
 
-/** What a page's frame and the shell's corner say to each other. A context, not the DOM (D133). */
+/** What a page's frame and the shell's corner say to each other. A context, not the DOM (D138). */
 interface CornerChannel {
   /** A page's claim on the window's lower edge; what it returns gives the claim up. */
   claim(): () => void;
   /** The page says what the button does, with the press for `pane`; what it returns takes it back. */
   door(kind: CornerDoor, open: () => void): () => void;
   /**
-   * The assistant's pane has closed: the focus goes back to the button that opened it (D130 rule 2 on the branch,
-   * D133 item 3), once the button is drawn again.
+   * The assistant's pane has closed: the focus goes back to the button that opened it (D135 rule 2,
+   * D138 item 3), once the button is drawn again.
    */
   returnFocus(): void;
 }
@@ -94,7 +94,7 @@ const noop = () => undefined;
 const Corner = createContext<CornerChannel>({ claim: () => noop, door: () => noop, returnFocus: noop });
 
 /**
- * The way to the assistant from anywhere on a page (D130 item 14, D133 items 1, 3 and 5): a floating "Fråga AI" in the
+ * The way to the assistant from anywhere on a page (D130 item 14, D138 items 1, 3 and 5): a floating "Fråga AI" in the
  * lower corner, as the startsidan prototype has it. On Hem it leads to Hem's own line, as the reference's does: the line
  * takes the focus and is scrolled into view. On a page with a subject it opens the assistant's pane about it beside the
  * page (`door` `pane`, the page's frame does the opening); on a page with none it starts a new question about the page
@@ -120,7 +120,7 @@ function AssistantCorner({
   const { pathname, search } = useLocation();
   const corner = useRef<HTMLDivElement>(null);
   const yields = useYieldToFocus(corner);
-  // Drawn again after the pane closed: the focus comes back to it (D133 item 3).
+  // Drawn again after the pane closed: the focus comes back to it (D138 item 3).
   useLayoutEffect(() => {
     if (!focusPending.current) return;
     focusPending.current = false;
@@ -180,7 +180,7 @@ export function useClearCorner(clear: boolean) {
 }
 
 /**
- * The page's frame says what the corner's button does on it (D133 items 3 and 5, `CornerDoor`). A layout effect, so the
+ * The page's frame says what the corner's button does on it (D138 items 3 and 5, `CornerDoor`). A layout effect, so the
  * button is drawn or left out before the browser paints: it is never seen over a pane that has just opened. `open` is
  * read when the button is pressed, so a frame may pass a new function on every render.
  */
@@ -191,11 +191,11 @@ export function useCornerDoor(kind: CornerDoor, open: () => void = noop) {
   useLayoutEffect(() => door(kind, () => press.current()), [door, kind]);
 }
 
-/** The pane has closed: the focus goes back to the corner's button once it is drawn (D133 item 3). */
+/** The pane has closed: the focus goes back to the corner's button once it is drawn (D138 item 3). */
 export const useReturnFocusToCorner = () => useContext(Corner).returnFocus;
 
 /**
- * The shell's content with the floating way to the assistant over it (D130 item 14, D133 item 5): on every page but a
+ * The shell's content with the floating way to the assistant over it (D130 item 14, D138 item 5): on every page but a
  * conversation's, which has its own box, a page that keeps the lower edge for its own controls (`useClearCorner`), and a
  * page whose frame says a box already stands on it (`useCornerDoor`).
  */

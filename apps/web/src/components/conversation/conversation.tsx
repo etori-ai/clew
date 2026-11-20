@@ -84,7 +84,7 @@ const isActionDraft = (draft: Draft | undefined): draft is ActionDraftRef =>
  * The assistant's draft of a work item's action (D112 item 8, boards Assistant and Calendar). On the conversation's
  * page: the action's name, an "Utkast" badge, the filled-in values as a short list, and two buttons; "Granska och
  * <verb>" opens the action's own dialog at its last step with these values, "Ändra" at its first (`DraftCard`). Beside
- * a page (`compact`, D133 item 8): the row "Ifyllt åt dig" with "Granska och skicka", which opens it at its last step
+ * a page (`compact`, D138 item 8): the row "Ifyllt åt dig" with "Granska och skicka", which opens it at its last step
  * (`Drafted`). Either way it is the dialog the action's button opens (D112 item 10), on the work item, which sends
  * through the human decision. Nothing is sent from here. The draft reads the work item from the same cache as every
  * screen (D33), so once the person has sent it the draft says what came back, and a newer draft of the same action
@@ -556,7 +556,7 @@ export function PreparedRow({
   );
 }
 /**
- * Where an answer beside a page needs more room than the pane has (D130 rules 7 and 10; canvas board AskArende-more):
+ * Where an answer beside a page needs more room than the pane has (D135 rules 7 and 10; canvas board AskArende-more):
  * a view, a proposals' week and the sources an answer cites are drawn on the conversation's page, and the pane draws one
  * row that says what it is and leads there. It is also where a person meets what the conversation's page is for.
  */
@@ -845,7 +845,7 @@ function HeldAnswer() {
 }
 
 /**
- * What an assistant's turn draws in its message (D36, D126 item 5, D130 rule 7, D133 items 8 and 9): the transcript's
+ * What an assistant's turn draws in its message (D36, D126 item 5, D135 rule 7, D138 items 8 and 9): the transcript's
  * turns and the answer under Hem's line draw it alike, so an answer reads the same wherever it stands. The message
  * itself, with its name, is the place's.
  *
@@ -892,7 +892,7 @@ export function AssistantTurn({
   latest?: boolean;
   /** A newer draft of the same action on the same item stands further down (D112 item 8). */
   replaced?: boolean;
-  /** A newer draft of the same action about the same record stands further down (D132). */
+  /** A newer draft of the same action about the same record stands further down (D137). */
   recordReplaced?: boolean;
   /** The work items the answer names, drawn by the place in the stead of the turn's own (`MessageMeta.cards`). */
   items?: ReactNode;
@@ -959,7 +959,7 @@ export function AssistantTurn({
       footer={answerFooter(m.meta)}
     />
   );
-  // An action the assistant filled in (D133 item 8): beside a page a row under the answer's words, in the answer's
+  // An action the assistant filled in (D138 item 8): beside a page a row under the answer's words, in the answer's
   // bubble as the other rows there; on the conversation's page the card under the answer it has always been.
   const actionDraft = isActionDraft(m.meta?.draft) ? (
     <ActionDraftCard draft={m.meta!.draft as ActionDraftRef} at={m.createdAt} replaced={replaced} compact={pane} />
@@ -972,7 +972,7 @@ export function AssistantTurn({
       compact={pane}
     />
   ) : null;
-  // Beside a page, what needs room is said in one row that leads to the conversation's page (D130 rule 7).
+  // Beside a page, what needs room is said in one row that leads to the conversation's page (D135 rule 7).
   const roomy = pane
     ? [...(card && card.kind !== 'button' ? [viewWords(card)] : []), ...(sources.length ? [sourceWords(sources)] : [])]
     : [];
@@ -1062,7 +1062,7 @@ export function AssistantTurn({
 }
 
 /**
- * What stands after the turns (D32, D130 rule 7): the week a proposal answer drew its times in, Clew's own actions to
+ * What stands after the turns (D32, D135 rule 7): the week a proposal answer drew its times in, Clew's own actions to
  * confirm, and what was done, with Ångra while it can be undone. On the conversation's page the week is drawn whole;
  * beside a page it needs room, and one row leads to the conversation's page (`wholeHref`). Nothing of it while a turn is
  * on its way. `bare` draws them without their bubbles, as `AssistantTurn` does.
@@ -1168,7 +1168,7 @@ export function AfterTheTurns({
  * message with Ångra. The answer is the card (H1): a turn about an open card draws that card in the turn, under its
  * sentence, with the card's own rows and buttons; it is drawn once per conversation and stays live.
  *
- * Beside a page (`room="pane"`, D130 "One component" and rule 7) the same transcript is drawn compact, and an answer is
+ * Beside a page (`room="pane"`, D135 "One component" and rule 7) the same transcript is drawn compact, and an answer is
  * text, a few named rows as links, or one row for an action the assistant filled in: the steps while it reads, the
  * answer's words, a draft and Clew's own confirmations stay; work items become their rows; a view, a proposals' week and
  * the sources become one row each that leads to the conversation's page, where there is room for them.
@@ -1215,7 +1215,7 @@ export function Transcript({
   /** The address that puts a work item beside the transcript: where a row of several items leads. */
   cardHref?: ((threadId: string) => string) | undefined;
   /**
-   * Where the transcript is drawn: the conversation's own page, the pane beside another page (D130), or the panel of
+   * Where the transcript is drawn: the conversation's own page, the pane beside another page (D135), or the panel of
    * another system's assistant beside a conversation, which holds that assistant's own exchange (D128).
    */
   room?: 'page' | 'pane' | 'aside';
@@ -1224,7 +1224,7 @@ export function Transcript({
    * made on (Kalender's "Använd tiden", D129); else the row that leads there.
    */
   prepared?: ((prepared: Prepared) => ReactNode) | undefined;
-  /** The conversation's own page, where an answer that needs room is drawn (the pane only; D130 rules 6 and 7). */
+  /** The conversation's own page, where an answer that needs room is drawn (the pane only; D135 rules 6 and 7). */
   conversationHref?: string | undefined;
 }) {
   const talk = useConversation();
@@ -1291,7 +1291,7 @@ export function Transcript({
           m.meta!.draft!.threadId === draft.threadId &&
           m.meta!.draft!.actionId === draft.actionId,
       );
-  // So is a draft of the same action about the same record (D132).
+  // So is a draft of the same action about the same record (D137).
   const recordReplaced = (i: number, draft: RecordDraft) =>
     messages.slice(i + 1).some(m => !!m.meta?.recordDraft && sameDraft(m.meta.recordDraft, draft));
   const chipRow = (chips: { ref: string; label: string }[] | undefined) =>

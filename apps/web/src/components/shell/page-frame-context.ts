@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from 'react';
 import { useMediaQuery } from '@clew/ui';
 
 /**
- * What the page frame hands to the parts drawn inside it (D130 rule 11 on the branch, D133 item 4). Its own file, so the
+ * What the page frame hands to the parts drawn inside it (D135 rule 11, D138 item 4). Its own file, so the
  * parts that read it (a view's breakpoint in `view.tsx`, a work item's facts) need not import the frame.
  */
 export interface PageFrameContext {
@@ -36,7 +36,7 @@ export const shiftQuery = (query: string, by: number, cap = Infinity): string =>
       });
 
 /**
- * A breakpoint of the page's column rather than the window's (D130 rule 11 on the branch, D133 item 4): while the
+ * A breakpoint of the page's column rather than the window's (D135 rule 11, D138 item 4): while the
  * assistant's pane stands beside the page, the page is that much narrower, so a query about it is the window's query
  * moved by the pane's width, and a table becomes its list while the pane takes its room. The page stands in the shell's
  * column, so past the column's width the window no longer widens it (`shiftQuery`'s `cap`). Astryx has no
@@ -50,7 +50,7 @@ export function useColumnQuery(query: string): boolean {
 
 /**
  * `useColumnQuery` for a page whose own component draws its frame, and so stands outside it: the part inside the frame
- * that follows the column is drawn by `children`, told whether the query holds there (D130 rule 11). It draws nothing of
+ * that follows the column is drawn by `children`, told whether the query holds there (D135 rule 11). It draws nothing of
  * its own.
  */
 export function InColumn({ query, children }: { query: string; children: (matches: boolean) => ReactNode }): ReactNode {
@@ -58,7 +58,7 @@ export function InColumn({ query, children }: { query: string; children: (matche
 }
 
 /**
- * Whether a thing's facts stand in its column rather than in the end panel beside it (D131 item 9, D133 item 4): where
+ * Whether a thing's facts stand in its column rather than in the end panel beside it (D136 item 9, D138 item 4): where
  * the window is narrow (`query`, the page's narrow line), and whenever the assistant's pane stands beside the page, as
  * the page then lays itself out as it would in a narrower window. The frame places its `facts` by it, and a page that
  * places its facts in its column itself (a work item's read, the review's "Hittills") asks the same, so the two never

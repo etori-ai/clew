@@ -213,7 +213,7 @@ const canonical = (value: unknown): unknown =>
         )
       : value;
 /**
- * Whether a message's draft about a record (D132) is the one a sent work item came from and is still unmarked: the same
+ * Whether a message's draft about a record (D137) is the one a sent work item came from and is still unmarked: the same
  * action about the same record, its read and its input as a JSON value with the keys in any order. The values are not
  * compared: the person may have changed them in the dialog before sending. What the memory store marks by; the Postgres
  * store asks the same of `jsonb`.

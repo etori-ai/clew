@@ -1,7 +1,7 @@
 import type { MenuEntry } from '@clew/contracts';
 
 /**
- * Alla verktyg as a read (D130 rule 4), the pure part: the tools a person has, as the page lists them
+ * Alla verktyg as a read (D135 rule 4), the pure part: the tools a person has, as the page lists them
  * (`apps/web/src/tool-catalogue.ts`, `toolsOf`): the views an administrator placed in the menu that the person may
  * call (D40), then Clew's own lists the person has and that are not placed, in Swedish alphabetical order by name.
  */
