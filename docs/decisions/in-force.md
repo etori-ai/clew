@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**134 in force**: 98 accepted and 36 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**135 in force**: 98 accepted and 37 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -22,7 +22,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D84 · A model's reasoning is its own setting, and the model test settles it](D84-a-models-reasoning-is-its-own-setting.md) | 2026-11-07, revised 2026-11-09 | accepted |  |
 | [D94 · A manager has a Personal section that lists the people on the units they manage](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) | 2026-11-09 | accepted | [D99](README.md) |
 | [D95 · Clew may own a domain by choice, decided per domain with the core-or-connector checklist](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md) | 2026-11-10 | accepted |  |
-| [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | 2026-11-10 | accepted | [D99](README.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D122](README.md) |
+| [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | 2026-11-10 | accepted | [D99](README.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D122](README.md), [D132](D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md) |
 | [D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) | 2026-11-10 | accepted | [D101](README.md) |
 | [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | 2026-11-10 | provisional |  |
 | [D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) | 2026-11-10 | provisional |  |
@@ -32,6 +32,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D120 · A manager's own notes in the follow-up dialogue are private posts, and their files go to the document system](D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md) | 2026-11-13 | provisional |  |
 | [D120 · A skill is a holding with a level, and the competence domain covers what a skills platform does for a public-sector organisation](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md) | 2026-11-12 | provisional |  |
 | [D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item](D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md) | 2026-11-13 | provisional |  |
+| [D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation](D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md) | 2026-11-19 | provisional |  |
 
 ## Integrations
 

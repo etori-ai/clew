@@ -454,8 +454,7 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
   const talks = talkUsecases({
     store: talkStoreWithCards(options, { clock }),
     staff: async () => ({ units: [] }),
-    manages: async () => false,
-    bookings: async () => new Map(),
+    reports: async () => new Set(),
     clock,
     ids,
   });

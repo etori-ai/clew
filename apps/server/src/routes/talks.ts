@@ -3,23 +3,28 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import {
   CommitmentAddBodySchema,
+  TalkBookingBodySchema,
   TalkHeldBodySchema,
   type AuthenticatedContext,
   type CommitmentAddBody,
+  type TalkBookingBody,
   type TalkHeldBody,
 } from '@clew/contracts';
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { TalkUsecases } from '../modules/talks/usecases';
 
 /**
- * The talks module's writes (D96 items 2 and 4): mark a talk held or undo it, add an action point, mark one done or
- * open again. Reads have no route here: Clew's pages read `clew.talks` and `clew.commitments` through the capability
+ * The talks module's writes (D96 items 2 and 4, D132 item 4): mark a talk held or undo it, register the time of a talk
+ * or remove it, add an action point, mark one done or open again. Reads have no route here: Clew's pages read `clew.talks` and `clew.commitments` through the capability
  * route, whichever system answers. Each route parses, validates, calls one use case and maps its errors; the use cases
  * own who may do what. Every route first refuses unless Clew's own module answers the talks profile for this person,
  * so Clew never writes its own records while an administrator has switched it off or another system holds them.
  */
 export interface TalkRouteDeps {
-  talks: Pick<TalkUsecases, 'markHeld' | 'unmarkHeld' | 'addCommitment' | 'completeCommitment' | 'reopenCommitment'>;
+  talks: Pick<
+    TalkUsecases,
+    'markHeld' | 'unmarkHeld' | 'book' | 'unbook' | 'addCommitment' | 'completeCommitment' | 'reopenCommitment'
+  >;
   /** Whether the built-in module answers the talks profile for this person now (composition: `talksWritable`). */
   writable: (persona: AuthenticatedContext) => Promise<boolean>;
   /** The session guard; a test passes its own. */
@@ -29,6 +34,7 @@ export const NOT_WRITABLE = 'Utvecklingssamtalen hålls i ett annat system, så 
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const validators = {
   held: ajv.compile<TalkHeldBody>(TalkHeldBodySchema),
+  booking: ajv.compile<TalkBookingBody>(TalkBookingBodySchema),
   commitment: ajv.compile<CommitmentAddBody>(CommitmentAddBodySchema),
 };
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 2000): Promise<T> {
@@ -73,6 +79,15 @@ export function talkRoutes(deps: TalkRouteDeps) {
   });
   routes.delete('/:personId/held', async c => {
     await talks.unmarkHeld(c.get('session').context, param(c.req.param('personId')));
+    return c.body(null, 204);
+  });
+  routes.put('/:personId/booking', async c => {
+    const personId = param(c.req.param('personId')),
+      input = await body(c.req.raw, validators.booking);
+    return c.json(await talks.book(c.get('session').context, personId, input));
+  });
+  routes.delete('/:personId/booking', async c => {
+    await talks.unbook(c.get('session').context, param(c.req.param('personId')));
     return c.body(null, 204);
   });
   routes.post('/:personId/commitments', async c => {

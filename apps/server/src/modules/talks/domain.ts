@@ -1,6 +1,6 @@
 import { TALKS_CONNECTOR } from '@clew/connectors';
 import { stockholmDate, TALK_STATES, type CommitmentRow, type TalkRow, type TalkState } from '@clew/contracts';
-import type { CommitmentRecord, PersonRef, TalkRecord } from './model';
+import type { CommitmentRecord, PersonRef, TalkBooking, TalkRecord } from './model';
 
 /**
  * The rules of the talks domain (D96) as pure functions: where a person stands in a round, which action points are
@@ -58,9 +58,9 @@ export const sameUserName = (userName: string | null | undefined, key: string) =
 /** How a list about people (D97) says where a person stands in the round: the words Personal uses. */
 export const TALK_STATE_WORDS: Record<TalkState, string> = { missing: 'Saknas', booked: 'Bokat', held: 'Hållet' };
 /**
- * The next talk in a column (D97, artboard A2): the day it is booked ("mån 16 nov"), "Bokat" for a talk another of the
- * person's managers booked, whose time the reader does not see (Q12), the day it was held ("Hållet 4 nov"), or "Inte
- * bokat". `at` is the booked instant or the held calendar day.
+ * The next talk in a column (D97, artboard A2): the day it is booked ("mån 16 nov"), "Bokat" for a talk a source says is
+ * booked without saying when, the day it was held ("Hållet 4 nov"), or "Inte bokat". `at` is the booked instant or the
+ * held calendar day.
  */
 export function nextTalk(state: TalkState, at: string | undefined): string {
   if (state === 'booked') return at ? swedishShortDay(stockholmDate(at)) : TALK_STATE_WORDS.booked;
@@ -104,17 +104,41 @@ export function normaliseLabel(label: string): string | undefined {
 }
 
 /**
- * Where one person stands in the round (D96 item 2): held when a manager marked the talk held, else booked when a talk is
- * booked, else missing. `at` is the day it was held or the instant it is booked; a talk another of the person's managers
- * booked is booked without one (Q12).
+ * The booking of a talk that counts now (D132): the one on the record, while the manager whose booking it is still
+ * manages the employee. `manages` answers that for `bookedBy`; a booking whose manager was erased, or has left the
+ * person, counts for nobody, so the person's managers now see a talk that lacks a time and book it again. One talk a
+ * person a round (Q12): whichever of their current managers booked it, it is booked for every one of them, with its time.
+ */
+export function standingBooking(
+  talk: Pick<TalkRecord, 'booking'> | undefined,
+  manages: (managerId: string) => boolean,
+): TalkBooking | undefined {
+  const booking = talk?.booking;
+  return booking && booking.bookedBy !== null && manages(booking.bookedBy) ? booking : undefined;
+}
+/**
+ * Where one person stands in the round (D96 item 2, D132): held when a manager marked the talk held, else booked when
+ * its booking stands, else missing. `at` is the day it was held or the instant it is booked.
  */
 export function talkState(
   talk: Pick<TalkRecord, 'heldOn'> | undefined,
-  booking: { at?: string } | undefined,
+  booking: Pick<TalkBooking, 'start'> | undefined,
 ): { state: TalkState; at?: string } {
   if (talk?.heldOn) return { state: 'held', at: talk.heldOn };
-  if (booking) return booking.at ? { state: 'booked', at: booking.at } : { state: 'booked' };
+  if (booking) return { state: 'booked', at: booking.start };
   return { state: 'missing' };
+}
+/** The longest a talk may be booked for: a day, as a meeting in the calendar. */
+const BOOKING_MAX_MS = 86_400_000;
+/**
+ * A time a manager registers for a talk, as stored: two instants, the end after the start and at most a day later, each
+ * written back in its canonical form. Undefined when either is no instant or the span does not hold.
+ */
+export function normaliseSpan(start: string, end: string): { start: string; end: string } | undefined {
+  const a = Date.parse(start),
+    b = Date.parse(end);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a || b - a > BOOKING_MAX_MS) return undefined;
+  return { start: new Date(a).toISOString(), end: new Date(b).toISOString() };
 }
 /** An action point is carried over when it is open and was added in another round than the current one (D96 item 4). */
 export const isCarried = (c: Pick<CommitmentRecord, 'doneAt' | 'roundId'>, currentRoundId: string | null) =>
@@ -145,7 +169,7 @@ export function orderCommitmentRows<T extends Pick<CommitmentRow, 'carried' | 'd
 export function talkRow(
   person: Pick<PersonRef, 'id' | 'name' | 'userName'>,
   talk: Pick<TalkRecord, 'heldOn'> | undefined,
-  booking: { at?: string } | undefined,
+  booking: Pick<TalkBooking, 'start' | 'end' | 'invitationId'> | undefined,
   openCommitments: number,
 ): TalkRow {
   const { state, at } = talkState(talk, booking);
@@ -155,6 +179,7 @@ export function talkRow(
     name: person.name,
     state,
     ...(at ? { at } : {}),
+    ...(state === 'booked' && booking ? { until: booking.end, invited: booking.invitationId !== null } : {}),
     openCommitments,
   };
 }

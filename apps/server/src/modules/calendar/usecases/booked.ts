@@ -3,10 +3,12 @@ import type { People, ProposalStore, Team } from '../model';
 
 /**
  * One talk a round (D96 talks items 1 and 2, Q12 of the 2026-11-12 review). A person with two managers has one talk a
- * round, whichever of them books it: a booking one current manager made through Clew counts as booked for every one of
- * them, without its time, since a manager may not read another manager's calendar. The planner, the nightly count, the
- * open card, the confirmation and the dispatch of the approved invitation all ask the same rule here, so that no planner
- * proposes, and no confirmation sends, a second talk.
+ * round, whichever of them books it. Who has a talk booked is the round's record (D132), which the planner reads as
+ * `PlanningRound.booked`. This file adds what the calendar module knows itself, from its own proposals and never from
+ * a calendar: the invitations Clew has sent, which hold a person while a system other than Clew's own talks module
+ * answers the round and so records none of them. The planner, the nightly count, the open card, the confirmation and
+ * the dispatch of the approved invitation all ask the same rule here, so that no planner proposes, and no confirmation
+ * sends, a second talk.
  */
 
 /** The statuses in which a proposal books its invitee: sent, final, or accepted by them. */
@@ -67,12 +69,14 @@ export const mayStillBeSent = (invitation: InvitationOnItsWay, at: string, perio
   (!period || within(invitation.start, period));
 /** Why a drawn time left an open card (D30's judgement calls): a row's reason, never the other manager or the time. */
 export const BOOKED_ELSEWHERE = 'bokad av en annan chef';
+/** The round records a time for the person that no invitation of another manager's carries: one registered by hand. */
+export const BOOKED_ALREADY = 'har redan en tid bokad';
 export const ALREADY_HELD = 'har redan haft sitt samtal';
 /** A row's reason for someone of the team the card has no time for: a talk settled elsewhere is gone, or they are new. */
 export const NEEDS_TIME = 'behöver en tid';
 /**
- * A row's reason for someone of the team the count leaves out because of the manager's own calendar: a talk with them
- * is in it (booked by hand, or an invitation of the manager's own that was sent).
+ * A row's reason for someone of the team the count leaves out because of an invitation of the manager's own that was
+ * sent: Clew put a talk with them in the manager's calendar.
  */
 export const OWN_CALENDAR = 'har ett samtal i din kalender';
 const names = (list: readonly string[]) =>
@@ -83,6 +87,9 @@ export const uncertainSentence = (people: readonly string[]) =>
 /** What a manager reads when someone they would invite is booked by another of their managers: who, never when. */
 export const bookedSentence = (people: readonly string[]) =>
   `${names(people)} har redan ett utvecklingssamtal bokat med en annan chef.`;
+/** What a manager reads when the round already records a time for someone they would invite. */
+export const alreadyBookedSentence = (people: readonly string[]) =>
+  `${names(people)} har redan ett utvecklingssamtal bokat.`;
 /** What a manager reads when another of the person's managers has an approved invitation to them on its way. */
 export const invitingSentence = (people: readonly string[]) =>
   `${names(people)} bjuds redan in till ett utvecklingssamtal av en annan chef.`;

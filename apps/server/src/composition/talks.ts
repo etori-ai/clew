@@ -2,7 +2,7 @@ import type { StaffOverview } from '@clew/contracts';
 import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
 import { talkTx } from '../modules/talks/adapters/postgres';
 import { talkUsecases } from '../modules/talks/usecases';
-import type { Manages, Sealer, Staff, TalkDeps, TalkStore } from '../modules/talks/model';
+import type { Reports, Sealer, Staff, TalkDeps, TalkStore } from '../modules/talks/model';
 import type { Directory, DirectoryPerson, Holders, Takeovers } from '../modules/talk-seam/model';
 import { openSecret, sealSecret } from '../auth-crypto';
 import { ForbiddenError } from '../context';
@@ -10,15 +10,14 @@ import { cancelDurable } from '../dbos/start';
 import { systemContext } from '../system-context';
 import { talkWorkItems } from './talk-work-items';
 import { staff as staffUsecases, userReads } from './people';
-import { calendar } from './calendar';
 import { clock, ids } from './ambient';
 import { ledger } from './durable';
 
 /**
  * The talks module's live wiring (D96, D25). Its own file because the registry registers the built-in talks connector
  * and the talks seam over what is built here, and `composition/index.ts` builds the stream over the registry: this file
- * imports neither. The calendar comes first (`calendar.ts`), since the round asks it who is booked; the calendar never
- * reads the round back through here (its `samtalBookings` takes the period as input), so there is no loop.
+ * imports neither. Nor does it import the calendar: when a talk is booked is the talks module's own record (D132), and
+ * the calendar tells it of an invitation through `talk-invitations.ts`.
  */
 /** An action point's text is sealed at rest under the master key, as approved execution input is (D96 item 6). */
 const sealer: Sealer = { seal: sealSecret, open: openSecret };
@@ -47,25 +46,21 @@ const staff: Staff = async persona => {
   }
 };
 /**
- * Whether the owner of a manager's action point still manages the employee (Q12), as the talks module counts the people
- * a manager has: from the owner's own assignments now, read through a context built from their current grant. Someone
- * without an active grant, deactivated or erased, manages nobody, and nobody manages themselves or a deactivated
- * person. Exported for the Postgres test that runs it over real assignments and grants.
+ * The people a manager manages now, as the talks module counts them (Q12, D132): from the manager's own assignments,
+ * read through a context built from their current grant. Asked for the owner of a manager's action point and for the
+ * manager whose booking a talk's is. Someone without an active grant, deactivated or erased, manages nobody, and nobody
+ * manages themselves or a deactivated person. Exported for the Postgres test that runs it over real assignments and
+ * grants.
  */
-export const talkManages: Manages = async (managerId, employeeId) => {
-  if (managerId === employeeId) return false;
+export const talkReports: Reports = async managerId => {
   const persona = await systemContext(managerId, 'system:talks');
-  if (!persona) return false;
+  if (!persona) return new Set();
   const overview = await staff(persona);
-  return overview.units.some(unit => unit.people.some(p => p.id === employeeId && p.enabled !== false));
+  return new Set(
+    overview.units.flatMap(unit => unit.people.filter(p => p.id !== managerId && p.enabled !== false).map(p => p.id)),
+  );
 };
-const talkDeps: Omit<TalkDeps, 'store'> = {
-  staff,
-  manages: talkManages,
-  bookings: (persona, round) => calendar.samtalBookings(persona, round),
-  clock,
-  ids,
-};
+const talkDeps: Omit<TalkDeps, 'store'> = { staff, reports: talkReports, clock, ids };
 export const talks = talkUsecases({ store: talkStore, ...talkDeps });
 /**
  * The talks module as the operator's erasure runs it (`scripts/talks-erase.ts`): the same use cases and tables over a

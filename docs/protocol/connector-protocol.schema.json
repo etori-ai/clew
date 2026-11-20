@@ -5766,7 +5766,7 @@
               "const": "held"
             }
           ],
-          "description": "`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held."
+          "description": "`missing`: no talk is booked or held. `booked`: the system records when the talk is to take place. `held`: the manager has marked it held."
         },
         "at": {
           "anyOf": [
@@ -5781,7 +5781,17 @@
               "maxLength": 40
             }
           ],
-          "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked."
+          "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk the system does not say the time of."
+        },
+        "until": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40,
+          "description": "For a booked talk: when it ends."
+        },
+        "invited": {
+          "type": "boolean",
+          "description": "For a booked talk: true when an invitation the system sent carries the booking, false when a manager registered the time by hand."
         },
         "openCommitments": {
           "type": "integer",
@@ -5889,7 +5899,7 @@
                     "const": "held"
                   }
                 ],
-                "description": "`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held."
+                "description": "`missing`: no talk is booked or held. `booked`: the system records when the talk is to take place. `held`: the manager has marked it held."
               },
               "at": {
                 "anyOf": [
@@ -5904,7 +5914,17 @@
                     "maxLength": 40
                   }
                 ],
-                "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked."
+                "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk the system does not say the time of."
+              },
+              "until": {
+                "type": "string",
+                "format": "date-time",
+                "maxLength": 40,
+                "description": "For a booked talk: when it ends."
+              },
+              "invited": {
+                "type": "boolean",
+                "description": "For a booked talk: true when an invitation the system sent carries the booking, false when a manager registered the time by hand."
               },
               "openCommitments": {
                 "type": "integer",
@@ -5925,7 +5945,7 @@
         },
         "bookedUnknown": {
           "type": "boolean",
-          "description": "True when the system could not tell who is booked (the calendar did not answer), so a `missing` row may be booked."
+          "description": "True when the system could not tell who is booked, so a `missing` row may be booked."
         }
       },
       "additionalProperties": false,

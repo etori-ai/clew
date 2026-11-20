@@ -943,7 +943,11 @@ export const talkRounds = pgTable(
       .where(sql`${t.closedAt} IS NULL`),
   ],
 );
-/** One employee's talk in a round: held is Clew's own record, marked by the manager and undone by clearing it. */
+/**
+ * One employee's talk in a round. Held is Clew's own record, marked by the manager and undone by clearing it. So is the
+ * booking (D132): when the talk is to take place, who booked it and when, and the invitation that carries it. Nothing
+ * about a talk is read from a calendar: the calendar holds a copy of the invitation Clew sent.
+ */
 export const talks = pgTable(
   'talk',
   {
@@ -956,10 +960,26 @@ export const talks = pgTable(
       .references(() => people.id, { onDelete: 'cascade' }),
     heldOn: date('held_on', { mode: 'string' }),
     heldBy: text('held_by').references(() => people.id, { onDelete: 'set null' }),
+    bookedStart: timestamp('booked_start', { withTimezone: true }),
+    bookedEnd: timestamp('booked_end', { withTimezone: true }),
+    // The manager whose booking it is; erasing them nulls it, and the booking then counts for nobody.
+    bookedBy: text('booked_by').references(() => people.id, { onDelete: 'set null' }),
+    bookedAt: timestamp('booked_at', { withTimezone: true }),
+    // The invitation Clew sent that carries the booking, by the calendar module's id for it; null when a manager
+    // registered an agreed time by hand. No foreign key: the invitation is another module's record, and the booking
+    // outlives the card it was sent from.
+    invitationId: text('invitation_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  t => [uniqueIndex('talk_round_employee').on(t.roundId, t.employeeId)],
+  t => [
+    uniqueIndex('talk_round_employee').on(t.roundId, t.employeeId),
+    check(
+      'talk_booking',
+      sql`(${t.bookedStart} IS NULL AND ${t.bookedEnd} IS NULL AND ${t.bookedAt} IS NULL AND ${t.bookedBy} IS NULL AND ${t.invitationId} IS NULL) OR (${t.bookedStart} IS NOT NULL AND ${t.bookedEnd} IS NOT NULL AND ${t.bookedAt} IS NOT NULL AND ${t.bookedEnd} > ${t.bookedStart})`,
+    ),
+    index('talk_invitation').on(t.invitationId),
+  ],
 );
 /**
  * An action point (åtgärdspunkt, D96 items 4-6): a line about the employee, an owner who is the employee or the

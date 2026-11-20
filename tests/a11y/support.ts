@@ -107,6 +107,7 @@ import type {
   EntitySection,
   ModelSummary,
   ProviderSummary,
+  TalkBookingBody,
   TalkHeldBody,
   TalkRound,
   RelationGrant,
@@ -442,8 +443,6 @@ export class MockApi {
   talksWritable = true;
   /** The open round; null for none (the round then lists nobody). */
   talksRound: TalkRound | null = talkRound();
-  /** The calendar did not answer: booked rows read as missing and the answer says `bookedUnknown`. */
-  talksBookedUnknown = false;
   /** The next talk write answers 400 with `TALKS_FAIL_ERROR`; it resets itself after that one. */
   talksFail = false;
   /** The round's rows and every action point, as the writes leave them. A test may replace either. */
@@ -2132,7 +2131,7 @@ export class MockApi {
   }
   /**
    * Utvecklingssamtal (D96), answered as the server would: the reads through the capability route (refused for a person
-   * without a talks system, read-only when another system answers), and the five writes over the mock's own state, so a
+   * without a talks system, read-only when another system answers), and the seven writes over the mock's own state, so a
    * spec sees the lists change on the next read.
    */
   private handleTalks(route: Route, path: string, url: URL) {
@@ -2148,7 +2147,6 @@ export class MockApi {
         round: this.talksRound,
         rows: this.employee ? [] : this.talkRows,
         commitments: this.commitments,
-        bookedUnknown: this.talksBookedUnknown,
       });
       return json({ output: this.talksWritable ? result : readOnlyTalks(result), source: result.source });
     }
@@ -2164,7 +2162,7 @@ export class MockApi {
           : commitmentsFor(about && (!this.employee || about === user.id) ? about : '', this.commitments);
       return json({ output: this.talksWritable ? result : readOnlyCommitments(result), source: result.source });
     }
-    const body = method === 'POST' ? (request.postDataJSON() ?? {}) : null;
+    const body = method === 'POST' || method === 'PUT' ? (request.postDataJSON() ?? {}) : null;
     this.talkWrites.push({ method, path, body });
     if (!this.talksWritable) return fail(403, 'Du saknar behörighet för åtgärden.');
     const done = /^\/talks\/commitments\/([^/]+)\/done$/.exec(path);
@@ -2203,6 +2201,25 @@ export class MockApi {
       const before = this.heldBefore.get(personId) ?? { ...missing, state: 'missing' as const };
       this.heldBefore.delete(personId);
       this.talkRows = this.talkRows.map(r => (r.personId === personId ? before : r));
+      return empty();
+    }
+    if (what === 'booking') {
+      if (!row) return fail(400, 'Personen finns inte i samtalsomgången.');
+      // As the talks module refuses it (D132 item 4): never a talk marked held, nor a booking an invitation carries.
+      if (row.state === 'held') return fail(400, 'Samtalet är redan markerat som hållet.');
+      if (row.state === 'booked' && row.invited !== false)
+        return fail(400, 'Samtalet är bokat genom en inbjudan från Clew, så tiden kan inte ändras här.');
+      const { at: _at, until: _until, invited: _invited, ...bare } = row;
+      if (method === 'PUT') {
+        const { start, end } = body as TalkBookingBody;
+        if (!(Date.parse(end) > Date.parse(start)))
+          return fail(400, 'Ange en giltig start- och sluttid, med högst ett dygn emellan.');
+        this.talkRows = this.talkRows.map(r =>
+          r.personId === personId ? { ...bare, state: 'booked', at: start, until: end, invited: false } : r,
+        );
+        return json({ id: `talk-${personId}`, start, end });
+      }
+      this.talkRows = this.talkRows.map(r => (r.personId === personId ? { ...bare, state: 'missing' } : r));
       return empty();
     }
     if (what === 'commitments' && method === 'POST') {

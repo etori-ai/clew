@@ -5,7 +5,9 @@ import { jobStart } from '@clew/db/jobs';
 import { receipt } from '@clew/connectors';
 import { ExecutionError, type Execution } from '../modules/executions/model';
 import type { CalendarCommand } from '../modules/calendar/usecases/decisions';
+import type { InvitationsTx } from '../modules/calendar/model';
 import { invitingSentence, mayStillBeSent } from '../modules/calendar/usecases/booked';
+import { talkInvitationsOn } from './talk-invitations';
 import { timerTx } from '../threads/adapters/timer-postgres';
 import { reminderStart } from '../threads/domain';
 import { nextCheck } from '../modules/calendar/usecases/obligation';
@@ -15,11 +17,17 @@ type Stage = 'approval' | 'update';
  * The execution, visible card and audit commit through this same physical transaction. Never source I/O here, and no
  * read through another connection. The obligation timer and the receipt jobs it writes start their workflows in the
  * same transaction (D86), in the engine's application and queue named by `durable`; the composition root binds it, a
- * Postgres test binds its own.
+ * Postgres test binds its own. An invitation that the calendar read back, or that was undone or replaced, reaches the
+ * talk whose booking it carries here too (D132 item 3): `invitations` builds the talks module's port on this transaction.
  */
-export const projectExecution = (durable: DurableQueue) => (tx: Transaction, e: Execution, stage: Stage) =>
-  project(tx, e, stage, durable);
-async function project(tx: Transaction, e: Execution, stage: Stage, durable: DurableQueue) {
+type Invitations = (tx: Transaction) => InvitationsTx;
+/** Who the talks domain's audit row is written as when an execution's result settles an invitation. */
+const EXECUTION_ACTOR = 'system:execution';
+export const projectExecution =
+  (durable: DurableQueue, invitations: Invitations = talkInvitationsOn) =>
+  (tx: Transaction, e: Execution, stage: Stage) =>
+    project(tx, e, stage, durable, invitations);
+async function project(tx: Transaction, e: Execution, stage: Stage, durable: DurableQueue, invitations: Invitations) {
   if (!e.presentation) return;
   if (stage === 'approval' && e.presentation.newTitle && e.connector === 'calendar' && !e.compensates) {
     await tx.insert(schema.threads).values({
@@ -154,7 +162,7 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
           .from(schema.proposals)
           .where(and(eq(schema.proposals.id, item.proposalId), eq(schema.proposals.personId, e.personId)))
           .for('update');
-        if (p && p.status === 'proposed')
+        if (p && p.status === 'proposed') {
           await tx
             .update(schema.proposals)
             .set({
@@ -166,11 +174,33 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
               undoUntil: projectedReceipt?.undoUntil ? new Date(projectedReceipt.undoUntil) : null,
             })
             .where(eq(schema.proposals.id, p.id));
-      } else if (item.action === 'cancel')
-        await tx
+          // The calendar holds the invitation, so the talk is booked: the talks domain's own record (D132 item 3).
+          await invitations(tx).established({
+            actor: EXECUTION_ACTOR,
+            invitationId: p.id,
+            managerId: p.personId,
+            employeeId: p.participantId,
+            start: p.start.toISOString(),
+            end: p.end.toISOString(),
+            at: e.updatedAt,
+          });
+        }
+      } else if (item.action === 'cancel') {
+        const replaced = item.id.startsWith('replace:');
+        const ended = await tx
           .update(schema.proposals)
-          .set({ status: item.id.startsWith('replace:') ? 'superseded' : 'undone', undoUntil: null })
-          .where(and(eq(schema.proposals.id, item.proposalId), eq(schema.proposals.personId, e.personId)));
+          .set({ status: replaced ? 'superseded' : 'undone', undoUntil: null })
+          .where(and(eq(schema.proposals.id, item.proposalId), eq(schema.proposals.personId, e.personId)))
+          .returning({ id: schema.proposals.id });
+        // The invitation is gone from the calendar, so the talk it booked lacks a time again.
+        for (const { id } of ended)
+          await invitations(tx).ended({
+            actor: EXECUTION_ACTOR,
+            invitationId: id,
+            why: replaced ? 'replaced' : 'undone',
+            at: e.updatedAt,
+          });
+      }
     }
   }
   await tx

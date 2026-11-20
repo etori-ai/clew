@@ -3,15 +3,20 @@ import type { CommitmentsResult, StaffUnit, TalksResult } from '@clew/contracts'
 import { ApiError } from '../src/api-error';
 import { refused, unlessRefused } from '../src/query-policy';
 import {
+  bookingNote,
   commitmentCounts,
   dueText,
+  endFor,
   groupCommitments,
+  hourAfter,
   isOverdue,
   personKey,
   splitMine,
   talkAtText,
   talkCounts,
   talkFor,
+  talkSpan,
+  talkSpanText,
   talkStateTone,
   talkStateWord,
   talkStatus,
@@ -96,6 +101,62 @@ describe('the words of a talk (D96 item 2)', () => {
     expect(talkAtText({ at: '2026-11-03' })).toBe('tis 3 nov.');
     expect(talkAtText({})).toBeNull();
     expect(dueText({ dueOn: '2026-11-20' })).toBe('fre 20 nov.');
+  });
+  test('a booked talk reads with its end where the row says it, and how it came to be booked (D132)', () => {
+    const at = '2026-11-11T08:00:00.000Z',
+      until = '2026-11-11T09:00:00.000Z';
+    expect(talkSpanText({ at, until })).toBe('ons 11 nov. kl. 09:00–10:00');
+    // A row without an end, and a held day, read as before.
+    expect(talkSpanText({ at })).toBe('ons 11 nov. kl. 09:00');
+    expect(talkSpanText({ at: '2026-11-03', until })).toBe('tis 3 nov.');
+    expect(talkSpanText({})).toBeNull();
+    expect(bookingNote({ state: 'booked', invited: true })).toBe(
+      'Bokat genom en inbjudan från Clew. Tiden följer inbjudan och ändras inte här.',
+    );
+    expect(bookingNote({ state: 'booked', invited: false })).toBe(
+      'Tiden är angiven här. Ingen inbjudan har skickats från Clew.',
+    );
+    // A system that does not say, and a talk that is not booked, say nothing.
+    expect(bookingNote({ state: 'booked' })).toBeNull();
+    expect(bookingNote({ state: 'missing', invited: false })).toBeNull();
+    expect(bookingNote({ state: 'held', invited: true })).toBeNull();
+  });
+  test('the span a manager picks is two instants in Swedish time, and what does not hold names its field', () => {
+    expect(talkSpan('2026-11-20T13:00', '14:00')).toEqual({
+      start: '2026-11-20T12:00:00Z',
+      end: '2026-11-20T13:00:00Z',
+    });
+    // Summer time: two hours ahead of UTC.
+    expect(talkSpan('2026-06-15T09:30', '10:15')).toEqual({
+      start: '2026-06-15T07:30:00Z',
+      end: '2026-06-15T08:15:00Z',
+    });
+    expect(talkSpan('', '14:00')).toEqual({ problem: 'start', message: 'Välj dag och starttid.' });
+    expect(talkSpan('2026-11-20T13:00', '')).toEqual({ problem: 'end', message: 'Välj en sluttid.' });
+    const endFirst = { problem: 'end' as const, message: 'Sluttiden måste vara efter starttiden.' };
+    expect(talkSpan('2026-11-20T13:00', '13:00')).toEqual(endFirst);
+    expect(talkSpan('2026-11-20T13:00', '09:00')).toEqual(endFirst);
+    // The hour the clocks skip in spring does not exist that day: never silently moved.
+    expect(talkSpan('2026-03-29T02:30', '03:30')).toEqual({ problem: 'start', message: 'Välj dag och starttid.' });
+    expect(talkSpan('not a time', '14:00')).toMatchObject({ problem: 'start' });
+  });
+  test('an hour after the start is suggested for the end, within the day', () => {
+    expect(hourAfter('2026-11-20T09:00')).toBe('10:00');
+    expect(hourAfter('2026-11-20T13:45')).toBe('14:45');
+    expect(hourAfter('2026-11-20T22:30')).toBe('23:30');
+    expect(hourAfter('2026-11-20T23:15')).toBe('23:59');
+  });
+  test('the end follows a start that changes: an hour at first, then the length the talk had', () => {
+    // Nothing picked yet: an hour.
+    expect(endFor('', '', '2026-11-20T09:00')).toBe('10:00');
+    expect(endFor('2026-11-20T09:00', '', '2026-11-20T13:00')).toBe('14:00');
+    // The day's field gives a time before the person has picked theirs: the hour moves with the start.
+    expect(endFor('2026-11-20T09:00', '10:00', '2026-11-20T13:00')).toBe('14:00');
+    // A talk of an hour and a half keeps its length, also to another day.
+    expect(endFor('2026-11-20T13:00', '14:30', '2026-11-24T08:15')).toBe('09:45');
+    // An end that does not follow its start is left for the person to correct; one past midnight is the last minute.
+    expect(endFor('2026-11-20T13:00', '12:00', '2026-11-20T15:00')).toBe('12:00');
+    expect(endFor('2026-11-20T13:00', '15:00', '2026-11-20T22:30')).toBe('23:59');
   });
   test('the counts a header may show: per state, the people listed and the open action points', () => {
     expect(talkCounts(round)).toEqual({ missing: 1, booked: 1, held: 1, total: 3, openCommitments: 3 });

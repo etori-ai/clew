@@ -149,16 +149,9 @@ export const unitTalksView: View = {
     { key: 'booked', label: 'Bokade' },
   ],
 };
-/** "Utvecklingssamtal 2026" over the list, "Senast lör 28 nov" under it; that the calendar did not answer is said there too. */
+/** "Utvecklingssamtal 2026" over the list, "Senast lör 28 nov" under it. */
 const headingOf = (round: RoundHeading | null) =>
-  round
-    ? {
-        heading: round.label,
-        note:
-          `Senast ${swedishShortDay(round.dueOn)}` +
-          (round.bookedUnknown ? ' · kalendern svarade inte, så bokade samtal kan saknas' : ''),
-      }
-    : {};
+  round ? { heading: round.label, note: `Senast ${swedishShortDay(round.dueOn)}` } : {};
 
 /** The persona a use case takes, built from the person's current grant as the calendar's connector does. */
 async function systemPersona(actor: Actor): Promise<AuthenticatedContext> {

@@ -74,8 +74,10 @@ const overview: StaffOverview = {
 const talks = talkUsecases({
   store: talkStoreWithCards({ durable: testDurable, cancel: async () => {} }, { clock: () => at }),
   staff: async p => (p.id === manager ? overview : { units: [] }),
-  manages: async (managerId, employeeId) => managerId === manager && employeeId !== manager,
-  bookings: async () => new Map(),
+  reports: async managerId =>
+    new Set(
+      managerId === manager ? overview.units.flatMap(u => u.people.map(p => p.id)).filter(id => id !== manager) : [],
+    ),
   clock: () => at,
   ids,
 });

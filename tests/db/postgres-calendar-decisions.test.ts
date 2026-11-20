@@ -358,7 +358,13 @@ async function sharedPair() {
     b = await world();
   const key = 'shared-' + randomUUID();
   const shared: UnitMember = { personId: key, ref: key, email: key + '@example.test', name: 'Delad Medarbetare' };
-  const round: PlanningRound = { label: 'Synthetic round', opensOn: '2098-11-01', dueOn: '2098-11-30', held: [] };
+  const round: PlanningRound = {
+    label: 'Synthetic round',
+    opensOn: '2098-11-01',
+    dueOn: '2098-11-30',
+    held: [],
+    booked: [],
+  };
   for (const w of [a, b]) {
     w.members.push(shared);
     w.setting.round = round;
@@ -418,6 +424,100 @@ test('two managers of one person confirm at once: one invitation is approved and
   );
   expect(await executionsOf(loser.id)).toEqual([]);
   expect(loser.provider.events).toEqual([]);
+});
+test('an invitation read back from the calendar books the talk in the open round in the same commit, and undoing it takes the booking with it (D132)', async () => {
+  const w = await world();
+  const org = 'calendar-talks-' + randomUUID(),
+    employeeId = 'calendar-test-' + randomUUID(),
+    roundId = 'calendar-round-' + randomUUID();
+  people.push(employeeId);
+  // The manager and the employee are people of one organisation, which has an open round of talks.
+  await database().update(schema.people).set({ organisationId: org }).where(eq(schema.people.id, w.id));
+  await database().insert(schema.people).values({ id: employeeId, name: 'Synthetic employee', organisationId: org });
+  await database().insert(schema.talkRounds).values({
+    id: roundId,
+    organisationId: org,
+    kind: 'development',
+    label: 'Synthetic round',
+    opensOn: '2098-11-01',
+    dueOn: '2098-11-30',
+    createdBy: 'operator:test',
+  });
+  const talk = async () =>
+    (await database().select().from(schema.talks).where(eq(schema.talks.employeeId, employeeId)))[0];
+  const audited = (talkId: string) =>
+    database()
+      .select()
+      .from(schema.audit)
+      .where(eq(schema.audit.subject, 'talk:' + talkId))
+      .orderBy(schema.audit.id);
+  let talkId: string | undefined;
+  try {
+    const member: UnitMember = {
+      personId: employeeId,
+      ref: employeeId,
+      email: employeeId + '@example.test',
+      name: 'Synthetic employee',
+    };
+    w.members.push(member);
+    w.setting.round = { label: 'Synthetic round', opensOn: '2098-11-01', dueOn: '2098-11-30', held: [], booked: [] };
+    const card = await cardFor(w, member, '2098-11-11T09:00:00.000Z');
+    const confirmed = await w.decisions.confirm(w.actor, card, [card + ':shared']);
+    // Approved, not yet sent: nothing is booked.
+    expect(await talk()).toBeUndefined();
+    await w.uc.progress(confirmed.execution!.id);
+    expect((await w.proposals.readThread(w.id, card))!.proposals.map(p => p.status)).toEqual(['confirmed']);
+    const booked = (await talk())!;
+    talkId = booked.id;
+    expect(booked).toMatchObject({ roundId, bookedBy: w.id, invitationId: card + ':shared', heldOn: null });
+    expect([booked.bookedStart?.toISOString(), booked.bookedEnd?.toISOString()]).toEqual([
+      '2098-11-11T09:00:00.000Z',
+      '2098-11-11T10:00:00.000Z',
+    ]);
+    expect((await audited(booked.id)).map(a => [a.actor, a.action, a.details])).toEqual([
+      [
+        'system:execution',
+        'talks.booked',
+        {
+          roundId,
+          employeeId,
+          start: '2098-11-11T09:00:00.000Z',
+          end: '2098-11-11T10:00:00.000Z',
+          by: 'invitation',
+          invitationId: card + ':shared',
+          bookedBy: w.id,
+          replaced: false,
+        },
+      ],
+    ]);
+    // A check of the same execution reads the invitation back again and books nothing twice.
+    await w.uc.progress(confirmed.execution!.id);
+    expect(await audited(booked.id)).toHaveLength(1);
+    // Undone inside the window: the invitation leaves the calendar and the talk lacks a time again.
+    const undone = await w.decisions.undo(w.actor, card);
+    await w.uc.progress(undone.execution!.id);
+    expect(w.provider.events).toHaveLength(0);
+    expect((await w.proposals.readThread(w.id, card))!.proposals.map(p => p.status)).toEqual(['undone']);
+    expect(await talk()).toMatchObject({
+      id: booked.id,
+      bookedStart: null,
+      bookedEnd: null,
+      bookedBy: null,
+      bookedAt: null,
+      invitationId: null,
+    });
+    expect((await audited(booked.id)).map(a => [a.action, (a.details as { why?: string }).why])).toEqual([
+      ['talks.booked', undefined],
+      ['talks.booking_removed', 'undone'],
+    ]);
+  } finally {
+    if (talkId)
+      await database()
+        .delete(schema.audit)
+        .where(eq(schema.audit.subject, 'talk:' + talkId));
+    await database().delete(schema.talks).where(eq(schema.talks.roundId, roundId));
+    await database().delete(schema.talkRounds).where(eq(schema.talkRounds.id, roundId));
+  }
 });
 test('an invitation the dispatch refused because the time is no longer free was never sent: it holds nobody, the other manager sends one, and the first card can be decided again (M1)', async () => {
   const pair = await sharedPair(),
@@ -514,7 +614,7 @@ test('an invitation whose result is unknown holds the person for its approval’
   await expect(moved.confirmB()).rejects.toThrow(refusal);
   // A different round has its own reservation.
   const later = await uncertain();
-  later.b.setting.round = { label: 'Next round', opensOn: '2098-12-01', dueOn: '2098-12-31', held: [] };
+  later.b.setting.round = { label: 'Next round', opensOn: '2098-12-01', dueOn: '2098-12-31', held: [], booked: [] };
   const next = await cardFor(later.b, later.shared, '2098-12-10T09:00:00.000Z');
   expect((await later.b.decisions.confirm(later.b.actor, next, [next + ':shared'])).execution?.state).toBe('pending');
 });

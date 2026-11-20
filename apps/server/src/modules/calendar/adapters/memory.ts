@@ -1,6 +1,8 @@
 import type { Proposal, Thread } from '@clew/contracts';
 import type {
   AuditEntry,
+  InvitationNotice,
+  InvitationsTx,
   JobInput,
   ObligationTimers,
   ProposalRecord,
@@ -13,7 +15,11 @@ import type {
 export interface MemoryProposalStore extends ProposalStore {
   audit: AuditEntry[];
   jobs: JobInput[];
+  /** What the talks domain was told of invitations (D132 item 3), in order; a rollback takes it back with the rest. */
+  invitations: InvitationCall[];
 }
+export type InvitationCall =
+  ({ op: 'established' } & InvitationNotice) | ({ op: 'ended' } & Parameters<InvitationsTx['ended']>[0]);
 interface Row {
   personId: string;
   thread: Omit<Thread, 'proposals'>;
@@ -31,10 +37,15 @@ const toProposal = (p: ProposalRecord): Proposal => ({
   reminders: p.reminders,
   remindedAt: p.remindedAt,
 });
-export function memoryProposalStore(): MemoryProposalStore {
+/**
+ * `invitations` is the port the store tells, as `postgresProposalStore`'s option is: a test that runs the talks module
+ * beside the calendar passes the talks module's. Every call is recorded in `invitations` either way.
+ */
+export function memoryProposalStore(options: { invitations?: InvitationsTx } = {}): MemoryProposalStore {
   let rows = new Map<string, Row>();
   let audit: AuditEntry[] = [];
   let jobs: JobInput[] = [];
+  let invitations: InvitationCall[] = [];
   let sequence = 0;
   let transactions = Promise.resolve();
   const copy = <T>(value: T): T => structuredClone(value);
@@ -128,10 +139,23 @@ export function memoryProposalStore(): MemoryProposalStore {
     async scheduleJob(job) {
       if (!jobs.some(j => j.id === job.id)) jobs.push(copy(job));
     },
+    invitations: {
+      async established(invitation) {
+        invitations.push({ op: 'established', ...copy(invitation) });
+        await options.invitations?.established(invitation);
+      },
+      async ended(end) {
+        invitations.push({ op: 'ended', ...copy(end) });
+        await options.invitations?.ended(end);
+      },
+    },
   };
   return {
     get audit() {
       return audit;
+    },
+    get invitations() {
+      return invitations;
     },
     get jobs() {
       return jobs;
@@ -180,13 +204,14 @@ export function memoryProposalStore(): MemoryProposalStore {
         release = resolve;
       });
       await previous;
-      const snapshot = { rows: copy(rows), audit: copy(audit), jobs: copy(jobs) };
+      const snapshot = { rows: copy(rows), audit: copy(audit), jobs: copy(jobs), invitations: copy(invitations) };
       try {
         return await fn(tx);
       } catch (error) {
         rows = snapshot.rows;
         audit = snapshot.audit;
         jobs = snapshot.jobs;
+        invitations = snapshot.invitations;
         throw error;
       } finally {
         release();

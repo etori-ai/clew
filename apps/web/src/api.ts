@@ -10,6 +10,7 @@ import type {
   CommitmentsInput,
   CommitmentsResult,
   NewsResult,
+  TalkBookingBody,
   TalkHeldBody,
   TalksResult,
   GroupCapabilityInputType,
@@ -313,6 +314,11 @@ export const api = {
       post<{ id: string; heldOn: string }>(`${talkPath(personId)}/held`, body),
     /** Undoes a held mark. */
     unmarkHeld: (personId: string) => del<void>(`${talkPath(personId)}/held`),
+    /** Registers when the person's talk takes place: a time agreed on by hand, with no invitation sent (D132). */
+    book: (personId: string, body: TalkBookingBody) =>
+      put<{ id: string; start: string; end: string }>(`${talkPath(personId)}/booking`, body),
+    /** Removes a time registered by hand. */
+    unbook: (personId: string) => del<void>(`${talkPath(personId)}/booking`),
     /** Adds an action point in the person's talk, for the employee or the manager. */
     addCommitment: (personId: string, body: CommitmentAddBody) =>
       post<{ id: string }>(`${talkPath(personId)}/commitments`, body),
