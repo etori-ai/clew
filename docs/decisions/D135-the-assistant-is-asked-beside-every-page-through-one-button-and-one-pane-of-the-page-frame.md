@@ -5,13 +5,13 @@
 **Context.** Where the assistant is asked has been decided four times and reversed three: beside the page was
 rejected in [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md), chosen in
 [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), removed in
-[D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) and chosen again for Kalender in D129. The review
+[D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) and chosen again for Kalender in D140. The review
 found three causes. Two needs were treated as one choice: asking about what is on the screen without losing it, and a
 conversation as a place to work. The end slot was asked to hold a thing and the assistant at once. And each decision
 was made on the page it was drawn for and reversed on another. It also found the assistant's presence uneven: of 24
 page types and tabs outside Administration, 11 can ask about what they show (in five different ways), 3 are the
-assistant's own and 10 have nothing, because each page decides for itself whether to draw the button. On the day D129
-was made the owner met the same need on two registers, a record, Läget and Introduktion och avslut, all outside D129's
+assistant's own and 10 have nothing, because each page decides for itself whether to draw the button. On the day D140
+was made the owner met the same need on two registers, a record, Läget and Introduktion och avslut, all outside D140's
 test.
 
 **Decision.**
@@ -33,7 +33,7 @@ test.
    item 3). Where a read of another system stays closed to it, the pane says so under its heading before anything is
    asked.
 5. **Where a page's own pane holds a picked thing, the box stands at that pane's foot from the start and the
-   conversation about the thing stands over it.** Kalender's entry is the reference (D129). Att göra's item follows
+   conversation about the thing stands over it.** Kalender's entry is the reference (D140). Att göra's item follows
    (the product owner, 2026-11-18), accepting that a long item in a low window leaves the conversation under the fold.
    Amended on 2026-11-19, when it was built: the item's pane is two parts, as Kalender's is. The read scrolls in the
    upper part, the conversation and the box are a part of their own at the pane's foot, and Astryx's grip between them
@@ -80,7 +80,7 @@ test.
   rule; it does not reopen where the assistant is asked.
 
 **Replaces.** The last sentence of D126 item 4 ("No other page has a composer") and "Fråga Clew" as a way out of the
-page; D129 item 1's test ("only where its answer is drawn on the page itself") and its item 2 for pages without a pane
+page; D140 item 1's test ("only where its answer is drawn on the page itself") and its item 2 for pages without a pane
 of their own; rule 4 of [interface spaces](../reference/interface-spaces.md) when it is built. It keeps D126 rules 1
 and 3 (one page per thing, nothing opens over a page to show a thing), D116 (a list is a page) and D128 (another
 system's assistant has its own panel beside a conversation).

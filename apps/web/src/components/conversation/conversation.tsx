@@ -1223,7 +1223,7 @@ export function Transcript({
   room?: 'page' | 'pane' | 'aside';
   /**
    * What stands under an answer that prepared a decision (`MessageMeta.prepared`), drawn by the page the decision is
-   * made on (Kalender's "Använd tiden", D129); else the row that leads there.
+   * made on (Kalender's "Använd tiden", D140); else the row that leads there.
    */
   prepared?: ((prepared: Prepared) => ReactNode) | undefined;
   /** The conversation's own page, where an answer that needs room is drawn (the pane only; D135 rules 6 and 7). */

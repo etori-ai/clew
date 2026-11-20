@@ -217,8 +217,7 @@
     "D121",
     "D122",
     "D123",
-    "D124",
-    "D129"
+    "D124"
   ],
   "decisions": [
     {
@@ -1531,7 +1530,7 @@
       "number": 126,
       "path": "docs/decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md",
       "title": "D126 · One page per thing, and one Astryx template per page type",
-      "status": "provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation; item 4 amended by [D129](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) on 2026-11-18: a page whose answer is drawn on the page itself may hold the assistant's box in its pane, Kalender first; and by [D135](D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) the same day: the assistant is asked beside every page, which replaces the item's last sentence when built)",
+      "status": "provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation; item 4 amended by [D140](D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) on 2026-11-18: a page whose answer is drawn on the page itself may hold the assistant's box in its pane, Kalender first; and by [D135](D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) the same day: the assistant is asked beside every page, which replaces the item's last sentence when built)",
       "date": "2026-11-14",
       "area": "ui"
     },
@@ -1551,15 +1550,6 @@
       "title": "D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew",
       "status": "provisional (the product owner chose it on 2026-11-16 from the canvas \"Clew",
       "date": "2026-11-16",
-      "area": "ui, product"
-    },
-    {
-      "key": "D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page",
-      "number": 129,
-      "path": "docs/decisions/D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md",
-      "title": "D129 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in",
-      "status": "provisional (the product owner chose it on 2026-11-18 from the third row of the canvas \"Clew",
-      "date": "2026-11-18",
       "area": "ui, product"
     },
     {
@@ -1660,6 +1650,15 @@
       "status": "provisional (the product owner chose it on 2026-11-20 from the canvas \"Clew",
       "date": "2026-11-20",
       "area": "ui, product, integrations"
+    },
+    {
+      "key": "D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page",
+      "number": 140,
+      "path": "docs/decisions/D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md",
+      "title": "D140 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in",
+      "status": "provisional (the product owner chose it on 2026-11-18 from the third row of the canvas \"Clew",
+      "date": "2026-11-18",
+      "area": "ui, product"
     }
   ],
   "documents": [
@@ -2463,12 +2462,6 @@
       "headings": []
     },
     {
-      "path": "docs/decisions/D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md",
-      "title": "D129 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in",
-      "category": "decision-history",
-      "headings": []
-    },
-    {
       "path": "docs/decisions/D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md",
       "title": "D129 · The connector protocol is 1, and changes in place until the first release",
       "category": "decision-history",
@@ -2543,6 +2536,12 @@
     {
       "path": "docs/decisions/D14-clew-stands-alone-eneo-enhances.md",
       "title": "D14 · Clew stands alone; Eneo enhances it through an optional module",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md",
+      "title": "D140 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in",
       "category": "decision-history",
       "headings": []
     },

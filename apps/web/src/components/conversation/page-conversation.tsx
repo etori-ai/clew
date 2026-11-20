@@ -430,7 +430,7 @@ const noop = () => undefined;
  * 1) and as Clew's own turn (`own`): it is never offered to another system's assistant. The person's newest
  * conversation about the subject is shown and continued (`conversationFor`); with none, the first question makes one,
  * listed under Alla samtal like any other. Another subject stops a turn still running and lets go of the words in the
- * box. `onAnswer` hears each finished turn, so the page can make ready what the answer prepared (Kalender, D129).
+ * box. `onAnswer` hears each finished turn, so the page can make ready what the answer prepared (Kalender, D140).
  */
 export function usePageConversation(
   subject: PageSubject | null,
@@ -480,7 +480,7 @@ export function usePageConversation(
         own: true,
         onAnswered: response => answered.current?.(response),
         // The box keeps the focus it has; it takes it back only from nowhere (Stoppa gone), never from a form or a
-        // dialog the answer opened on the page (D129: "Flytta …", "Ställ in mötet?").
+        // dialog the answer opened on the page (D140: "Flytta …", "Ställ in mötet?").
         refocus: () => !document.activeElement || document.activeElement === document.body,
       });
     },
@@ -617,7 +617,7 @@ function Explains({ about, reach }: { about: string; reach: PaneReach }) {
  * the part is as low as the box until something is asked, and "Öppna som samtal" (`useOpenAsConversation`) stands at
  * the head of the region once there is a conversation to open. The box keeps its place in the tree from the first state
  * to the conversation, so the focus and the words in it stay. `prepared` draws what the page puts under an answer that
- * prepared one of its decisions (Kalender's "Använd tiden", D129). The region fills what its parent leaves it.
+ * prepared one of its decisions (Kalender's "Använd tiden", D140). The region fills what its parent leaves it.
  */
 export function PageTalk({
   talk,

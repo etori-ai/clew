@@ -35,8 +35,8 @@ It keeps being reopened for three reasons, and the first is the one the main ses
    panel doing three jobs (peek, work surface, conversation). D126 removed the panel to fix the first two jobs, and the
    third went with it, although nothing in the critique said that asking beside a page was wrong.
 3. **Each decision was made on the page it was drawn for and reversed on another.** D50 was drawn on Hem and a tool's
-   page, D112 on a work item, D126 on a work item and a person, D129 on Kalender. None was walked through a register,
-   Läget or a record before it was accepted. D129 item 1 is the first record with a test for an unseen page ("only where
+   page, D112 on a work item, D126 on a work item and a person, D140 on Kalender. None was walked through a register,
+   Läget or a record before it was accepted. D140 item 1 is the first record with a test for an unseen page ("only where
    its answer is drawn on the page itself"), and the owner's examples of the same afternoon (two registers, a record,
    Läget, Introduktion och avslut) already fall outside it.
 
@@ -57,9 +57,9 @@ again), and **capacity** (what an answer may draw at that width). The options be
 | [D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md) | 11-11 | "Opening is not asking." A card goes into the box only with "Lägg till i samtalet", offered only where the page has a box. The panel on every page. "No control chooses a surface." | Its rule 7 the same day by D112 ("Öppna som sida" came back); seen live, "multiple different sidebars", which became one panel, one width, one thing. |
 | [D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 7 | 11-11 | One panel in the end slot of every page, always about a thing: the thing on top, the conversation about it under it, the box at the bottom. "Fråga Clew" in a page's header makes the page itself the thing. A long exchange continues on the conversation's page. This is drawing A of D50, with the thing added on top. | D126, three days later: the critique counted "nine ways of showing a thing and four homes for the assistant" and found that "the side panel does three jobs (peek, work surface, conversation) and reflows the page under it". |
 | [D116](../decisions/D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) | 11-12 | A panel is a peek at one thing; a list is a page. The panel could still hold "the page itself with 'Fråga Clew'". | D126 removed the peek panel; the list rule stands. |
-| [D126](../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md) item 4, rule 2 | 11-14, amended 11-16 | "The assistant has two homes": a one-line way in on Hem and the conversation's page. "'Fråga Clew' on a page starts a conversation with that thing beside it. No other page has a composer." A pane exists in two places only. The record names what it rejected: "an assistant dock in the shell (rejected: a conversation needs the column, and the thing beside it is the context)". | D129, four days later, on Kalender: "clicking fråga assistenten on a opened meeting takes me to a new chat window, that is not expected. I would expect to be able to ask about the meeting inline". |
+| [D126](../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md) item 4, rule 2 | 11-14, amended 11-16 | "The assistant has two homes": a one-line way in on Hem and the conversation's page. "'Fråga Clew' on a page starts a conversation with that thing beside it. No other page has a composer." A pane exists in two places only. The record names what it rejected: "an assistant dock in the shell (rejected: a conversation needs the column, and the thing beside it is the context)". | D140, four days later, on Kalender: "clicking fråga assistenten on a opened meeting takes me to a new chat window, that is not expected. I would expect to be able to ask about the meeting inline". |
 | [D128](../decisions/D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) | 11-16 | Another system's assistant has a panel beside the conversation with a box of its own. "Nothing in the transcript moves by itself." The first box in a pane after D126. | Stands. Its lesson is used below: "A recipient that sticks is a mode, and a mode is read from one small control and noticed after sending." |
-| [D129](../decisions/D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) | 11-18 | Asked in place "only where its answer is drawn on the page itself"; on Kalender the box stands at the pane's foot wherever an entry does, the pane draws the whole conversation and finds it again, and an answer can carry a prepared decision. | The same afternoon the owner saw the pattern on two registers ("This is something that probably all list pages should support"), on a record ("I am also starting to think its the pattern a user expects even in this case"), and found pages with nothing ("This one doesnt even have a ask assistant"; "There are multiple pages without an ai assistant action as well"). |
+| [D140](../decisions/D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) | 11-18 | Asked in place "only where its answer is drawn on the page itself"; on Kalender the box stands at the pane's foot wherever an entry does, the pane draws the whole conversation and finds it again, and an answer can carry a prepared decision. | The same afternoon the owner saw the pattern on two registers ("This is something that probably all list pages should support"), on a record ("I am also starting to think its the pattern a user expects even in this case"), and found pages with nothing ("This one doesnt even have a ask assistant"; "There are multiple pages without an ai assistant action as well"). |
 
 Two records bear on the question without placing the assistant.
 [D104](../decisions/D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md)
@@ -69,7 +69,7 @@ assistant may fill in: an action of a work item, and since D97 an action about a
 their page. Section 6 takes that up.
 
 Counted plainly: the assistant beside a page has been rejected (D50, 11-05), chosen for every page (D112, 11-11),
-rejected (D126, 11-14) and chosen for one page (D129, 11-18). Each reversal came within four days of the owner using the
+rejected (D126, 11-14) and chosen for one page (D140, 11-18). Each reversal came within four days of the owner using the
 result on a page it had not been drawn for.
 
 ### The failure modes actually observed
@@ -78,11 +78,11 @@ result on a page it had not been drawn for.
 |---|---|---|
 | 1 | A thing shown in two places: the same work item in a panel from Hem, a pane in Att göra and a page elsewhere. | Review of 2026-11-14, finding 1; D126 "Why". |
 | 2 | One panel with three jobs, and a page that is laid out again when it opens. | Review of 2026-11-14, finding 2. |
-| 3 | A box at the foot of every page and panel. | D50 item 5 built it; D129's context says D126 item 4 "was made to stop a box from growing at the foot of every page and pane". |
+| 3 | A box at the foot of every page and panel. | D50 item 5 built it; D140's context says D126 item 4 "was made to stop a box from growing at the foot of every page and pane". |
 | 4 | A list squeezed into a panel. | The owner, 2026-11-12: "This can get extremely crammed … The sidebar needs to be for peeking or some kind of instant actions, otherwise a full route is needed." D116 found nine places doing it. |
 | 5 | Being taken away from the page. | D50's amendment of 11-05; D111 (seven kinds of control ended on Hem); the owner on Kalender, 11-18. |
 | 6 | A pane that forgets. | The owner, 11-18: "The chat should be persisted I think, or at least have a link to retrieve latest chat session. Also it only shows last question and answer, why?" |
-| 7 | One control with two behaviours. | "Visa bredvid", removed within the hour on 11-11 (D111). Today "Fråga assistenten" leaves the page everywhere, except that Kalender's header button opens the pane (`calendar.tsx:1023`) and the same button on a phone leaves; D129 item 1 makes that a rule by page type. |
+| 7 | One control with two behaviours. | "Visa bredvid", removed within the hour on 11-11 (D111). Today "Fråga assistenten" leaves the page everywhere, except that Kalender's header button opens the pane (`calendar.tsx:1023`) and the same button on a phone leaves; D140 item 1 makes that a rule by page type. |
 | 8 | Opening treated as asking. | D111 rule 6: a card opened on Hem was put in the box as "Om kortet". |
 | 9 | A box that sends somewhere the person did not mean. | D128's context: a sticky recipient sent a question about the person's team to another system twice. |
 | 10 | Several different side panels. | The owner, 11-11, at 1900 px: "multiple different sidebars" (D111, amended). |
@@ -307,7 +307,7 @@ surface.
   use. As a drawer below the breakpoint it is modal, and the focus is held in it until it is closed.
 - **Focus.** Pressing the button moves the focus to the box, since the person pressed it to ask (as "Fråga om veckan"
   does). Where the box stands under a picked thing, opening the thing gives the focus to the thing's name, never to the
-  box (D129 item 2). ✕ or Esc in the pane closes it and returns the focus to the button (rule 7 of interface spaces).
+  box (D140 item 2). ✕ or Esc in the pane closes it and returns the focus to the button (rule 7 of interface spaces).
   Opening asks nothing (rule 9).
 - **Status.** The transcript is a log that says an answer once (D36, as `AskTalk` keeps it); a failure is the box's own
   status. That the pane opened is said by the focus moving into a named region.
@@ -325,9 +325,9 @@ surface.
 
 | Option | Sentences of `docs/reference/interface-spaces.md` that change |
 |---|---|
-| A, E | Rule 2's first sentence ("A pane beside something exists in two places only") gains a third: the assistant's pane beside a page. Rule 4 is replaced whole. "The spaces" gains a row for the assistant's pane; "Widths" a line for it. In "Addresses", the row for `?ask=1` ("Dropped") names the pane again, and the rows for `/calendar?entry=` and `/conversations/new` are reworded. In "From origin to close", "Ask about a thing" and "Ask about a calendar entry or the range" become one row. D126 item 4's "No other page has a composer" and D129 item 1's test are replaced. Rule 3 ("Nothing opens over a page to show a thing") stands, because the pane shows no thing. |
+| A, E | Rule 2's first sentence ("A pane beside something exists in two places only") gains a third: the assistant's pane beside a page. Rule 4 is replaced whole. "The spaces" gains a row for the assistant's pane; "Widths" a line for it. In "Addresses", the row for `?ask=1` ("Dropped") names the pane again, and the rows for `/calendar?entry=` and `/conversations/new` are reworded. In "From origin to close", "Ask about a thing" and "Ask about a calendar entry or the range" become one row. D126 item 4's "No other page has a composer" and D140 item 1's test are replaced. Rule 3 ("Nothing opens over a page to show a thing") stands, because the pane shows no thing. |
 | B | Rule 4 keeps both behaviours and says which page type has which. Rule 2 gains the pane beside a collection. |
-| C | Rule 4 returns to its wording before 11-18; the sentences about Kalender's box, and D129 items 1 to 3, are withdrawn. |
+| C | Rule 4 returns to its wording before 11-18; the sentences about Kalender's box, and D140 items 1 to 3, are withdrawn. |
 | D | Rule 4 is replaced; "The spaces" gains a row for a panel of the shell; rule 8 ("The address is the state") gains an exception or the panel's state goes into every address; the row for the pane beside a conversation has to say what the shell's panel does on the conversation's own page. |
 
 ## 6. The options weighed
@@ -366,7 +366,7 @@ surface.
   and the block stands dashed on the grid; Spara. With one conversation per entry, each meeting asked about is a row in
   the rail unless a rule keeps it out (E states one).
 - C: the conversation's page with the meeting beside it; the answer draws one row with "Visa i kalendern", which opens
-  Kalender with the form filled in (D129 item 5 as built). Two navigations, and the week is not on screen while the
+  Kalender with the form filled in (D140 item 5 as built). Two navigations, and the week is not on screen while the
   person asks. This is what the owner objected to.
 - D: beside Kalender's own pane the grid is 328 px at 1440 px. If the shell's panel takes the pane's place, the form the
   answer fills in has nowhere to stand. If the person opens another meeting, the transcript above the box is about the
@@ -498,7 +498,7 @@ That survives if the declaration and the execution are kept apart.
    (`rescheduleEvent`, `cancelEvent` in `modules/calendar/usecases/decisions.ts`), which stay out of the capability list
    and out of the model's tools.
 2. **One tool fills in.** `clew.draftAction` is offered for the actions about whatever stands open (the work item, the
-   person, the record, the event), and only for that: the model never names the object, as D129 item 7 has it. It checks
+   person, the record, the event), and only for that: the model never names the object, as D140 item 7 has it. It checks
    the values against the asks as the decision will, and returns a draft. Nothing is written.
 3. **One envelope.** `DraftSchema` is keyed on a work item today. It becomes a draft about an object: a work item, a
    person or a unit, a record, an event. `Prepared` and its two kinds go, and so do `clew.prepareMove` and
@@ -585,7 +585,7 @@ pane (2), is there any thing in the pane (3), what does the server receive (4), 
 
 ### Conditions to write into the decision, so that it is not reopened
 
-- **It replaces a named list**: D126 item 4's last sentence, D129 item 1's test, and rule 4 of interface spaces. It
+- **It replaces a named list**: D126 item 4's last sentence, D140 item 1's test, and rule 4 of interface spaces. It
   keeps D126 rules 1 and 3: one page per thing, nothing over a page to show a thing.
 - **How it differs from D112 item 7, in one sentence**, because it will be read as the same thing: D112's panel showed
   a thing on every page and was the way to open one; this pane shows no thing, opens nothing, and exists only on the

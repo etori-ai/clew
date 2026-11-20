@@ -7,7 +7,7 @@ export const mobileQuery = '(max-width: 767px)';
 /** 1.4.10: with 480 px or less in height nothing is pinned; the page scrolls as one. */
 export const shortQuery = '(max-height: 480px)';
 /**
- * From this window width Kalender's own pane stands beside its grid (D129): the rail, the week's least column and the
+ * From this window width Kalender's own pane stands beside its grid (D140): the rail, the week's least column and the
  * pane, 260 + 640 + 440 px, measured before the rail was taken away (D130). Narrower, or on a short screen (1.4.10), it is
  * a drawer over the page.
  */

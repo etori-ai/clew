@@ -8,7 +8,7 @@ or a unit (`about` on a propose or an execute,
 person to send ([D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item
 8). A record of a view has none: a request in a service desk, an invoice or a booking can be read and nothing can be
 done with it, by the person or through the assistant. When the assistant was first asked in place, on Kalender
-([D129](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md)), moving and cancelling a
+([D140](D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md)), moving and cancelling a
 meeting were therefore built as two kinds of Clew's own with two tools named in the assistant, and the product owner
 said the same day that this belongs in the protocol and not in the calendar.
 [D135](D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) rule 8
@@ -45,7 +45,7 @@ section 7 weighed three ways to declare it.
    item 7): filling in is not running.
 5. **Clew's own decisions are declared the same way.** A decision that is no capability (the calendar's move and
    cancel, reached by routes and never a tool) declares what it is about and what it asks in the same shape, and the
-   one tool fills it in. `Prepared`, its two kinds and the two prepare tools of D129 then go. The page still draws
+   one tool fills it in. `Prepared`, its two kinds and the two prepare tools of D140 then go. The page still draws
    the draft in the decision's own form: Kalender fills in "Flytta …" with the block on the grid, and opens its own
    question for a cancellation.
 6. **The protocol changes in place.** It is one more form of `about` in the protocol as it stands, with its rule in
@@ -53,7 +53,7 @@ section 7 weighed three ways to declare it.
 
 **Order** (the product owner, 2026-11-19). First the declaration, the record's page and the assistant's draft, on
 one example in a fixture connector of the development stack, shown. Then Kalender's move and cancel onto item 5.
-Then the booking for several people that D129 left as its stage 2, which is an action about nothing that exists yet
+Then the booking for several people that D140 left as its stage 2, which is an action about nothing that exists yet
 and is decided when it is reached.
 
 **Why.** It adds one case to a concept the protocol already has (a capability says what it is about) and reuses

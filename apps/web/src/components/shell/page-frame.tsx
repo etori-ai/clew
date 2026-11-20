@@ -79,7 +79,7 @@ export type PageAsk = AskAbout | { none: 'administration' | 'assistant' | 'no-pa
 /** A page with the assistant's pane (D135 rules 2 to 4, D138 items 3 and 4). */
 export interface AskAbout {
   subject: PageSubject | null;
-  /** Hears each finished turn in the pane: the page makes ready what an answer prepared (Kalender, D129). */
+  /** Hears each finished turn in the pane: the page makes ready what an answer prepared (Kalender, D140). */
   onAnswer?: ((response: ConversationResponse) => void) | undefined;
   /** What the page draws under an answer that prepared one of its decisions (Kalender's "Använd tiden"). */
   prepared?: ((prepared: Prepared) => ReactNode) | undefined;
