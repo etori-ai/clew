@@ -73,8 +73,23 @@ export const bookingNote = (talk: Pick<TalkEntry, 'state' | 'invited'>): string 
   talk.state !== 'booked' || talk.invited === undefined
     ? null
     : talk.invited
-      ? 'Bokat genom en inbjudan från Clew. Tiden följer inbjudan och ändras inte här.'
+      ? 'Bokat genom en inbjudan från Clew. Flytta eller ställ in mötet i kalendern för att ändra tiden.'
       : 'Tiden är angiven här. Ingen inbjudan har skickats från Clew.';
+/**
+ * What the calendar holds against a booked talk when it is not what the talk says (D133), in the three words the page
+ * keeps apart: the talk in Clew (samtalet), which holds, and the meeting in the calendar (mötet), which is a copy.
+ * `moved`: the meeting is at another time. `gone`: the meeting is no longer in the calendar. Null while they agree.
+ */
+export function calendarDifference(
+  talk: Pick<TalkEntry, 'at' | 'until' | 'calendar'>,
+): { kind: 'moved' | 'gone'; text: string } | null {
+  if (!talk.calendar) return null;
+  const stands = talkSpanText(talk) ?? '';
+  if ('gone' in talk.calendar)
+    return { kind: 'gone', text: `Mötet finns inte längre i kalendern. Samtalet i Clew står kvar på ${stands}.` };
+  const to = talkSpanText({ at: talk.calendar.start, until: talk.calendar.end }) ?? '';
+  return { kind: 'moved', text: `Mötet i kalendern ligger nu på ${to}. Samtalet i Clew står kvar på ${stands}.` };
+}
 /**
  * The span a manager picks for a talk, as the write takes it: the day and start as the field holds them
  * (`YYYY-MM-DDTHH:MM`, Swedish time) and the end as a time the same day. `problem` names the first field that does not

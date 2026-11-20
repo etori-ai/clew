@@ -46,7 +46,12 @@ async function read(personId: string | undefined, id: string): Promise<ProposalT
   return found ? { thread: found.thread, proposals: found.proposalRows.map(toRecord) } : undefined;
 }
 /** Told of invitations when the store is built without the port (a test of the store alone): nobody. */
-const nobody: InvitationsTx = { established: async () => {}, ended: async () => {} };
+const nobody: InvitationsTx = {
+  established: async () => {},
+  observed: async () => {},
+  moved: async () => {},
+  ended: async () => {},
+};
 const txOf = (tx: Transaction, durable: DurableQueue, invitations: InvitationsTx): ProposalTx => ({
   async lockThread(personId, id) {
     const [r] = await tx

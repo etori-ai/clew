@@ -1,9 +1,10 @@
 import { Type, type Static } from 'typebox';
-import { TALKS_CONNECTOR, type Actor, type Capability, type Connector } from '@clew/connectors';
+import { TALKS_CONNECTOR, type Actor, type Capability, type Connector, type ThreadDraft } from '@clew/connectors';
 import {
   CommitmentsInputSchema,
   CommitmentsOutputSchema,
   ENTITY_KEYS_MAX,
+  ENTITY_KEY_MAX,
   TALK_STATES,
   TalksInputSchema,
   TalksOutputSchema,
@@ -24,8 +25,10 @@ import {
   overdueWords,
   swedishDayAndMonth,
   swedishShortDay,
+  swedishSpan,
+  talkRef,
 } from './domain';
-import type { RoundHeading, TalkUsecases } from './usecases';
+import type { RoundHeading, TalkNotice, TalkUsecases } from './usecases';
 
 /**
  * The talks module as Clew's built-in connector (D96 items 7 to 9): it answers the talks profile, `talks.talks` and
@@ -33,7 +36,8 @@ import type { RoundHeading, TalkUsecases } from './usecases';
  * talks held. No read is a model tool, and neither view declares a `ref`, so no row can be added to a conversation as
  * a chip (item 6): the text of an action point is free text about a person. Writes are use cases behind Clew's own
  * routes, never capabilities, so nothing here is an action in a person's menu. Two reads say what their rows are about
- * (D97): `talks.person` and `talks.unit`. The use cases come built from composition (D25).
+ * (D97): `talks.person` and `talks.unit`. The connector's scan asks for the cards that hang on a talk's booking (D133).
+ * The use cases come built from composition (D25).
  */
 export const TALKS_SOURCE = 'Utvecklingssamtal';
 /** The manager's round, one row per person: the figure opens it. */
@@ -152,6 +156,54 @@ export const unitTalksView: View = {
 /** "Utvecklingssamtal 2026" over the list, "Senast lör 28 nov" under it. */
 const headingOf = (round: RoundHeading | null) =>
   round ? { heading: round.label, note: `Senast ${swedishShortDay(round.dueOn)}` } : {};
+
+/** The row of a card about a person's talk: never their name (vision principle 7); the person is the row's subject. */
+const NOTICE_LABEL = 'Medarbetare';
+/**
+ * A card the scan asks for (D133), as the manager reads it. It names nobody in its title, summary, reason or row: the
+ * person is the row's subject, by user name, and the input of the read the card opens, the person's place in the round,
+ * from which the talk opens.
+ */
+function noticeDraft(notice: TalkNotice, open: string): ThreadDraft {
+  const key = notice.userName && [...notice.userName].length <= ENTITY_KEY_MAX ? notice.userName : undefined;
+  const stands = swedishSpan(notice.booking);
+  const gone = notice.calendar === 'gone';
+  return {
+    topic: notice.card.topic,
+    area: 'talks',
+    title: gone
+      ? 'Mötet för ett utvecklingssamtal finns inte längre i kalendern'
+      : 'Mötet för ett utvecklingssamtal har flyttats i kalendern',
+    summary: gone
+      ? `Samtalet i Clew står kvar på ${stands}. Öppna samtalet och välj om tiden ska stå kvar.`
+      : `Mötet ligger nu ${swedishSpan(notice.calendar as { start: string; end: string })}. Samtalet i Clew står kvar på ${stands}. Öppna samtalet och välj vilken tid som gäller.`,
+    reason: gone ? 'Borttaget i kalendern' : 'Flyttat i kalendern',
+    items: [
+      {
+        ref: talkRef(notice.personId),
+        label: NOTICE_LABEL,
+        detail: stands,
+        selectable: false,
+        selected: false,
+        ...(key ? { subject: { entity: 'person' as const, key } } : {}),
+      },
+    ],
+    actions: key
+      ? [
+          {
+            id: 'open',
+            label: 'Visa samtalet',
+            capability: open,
+            kind: 'read' as const,
+            role: 'primary' as const,
+            target: 'panel' as const,
+            input: { keys: [key] },
+          },
+        ]
+      : [],
+    occurrences: [{ key: notice.card.key, revision: notice.card.revision, period: notice.card.period }],
+  };
+}
 
 /** The persona a use case takes, built from the person's current grant as the calendar's connector does. */
 async function systemPersona(actor: Actor): Promise<AuthenticatedContext> {
@@ -286,5 +338,26 @@ export function talksConnector(
       },
     ],
     capabilities: [round as Capability, commitments as Capability, aboutPerson as Capability, aboutUnit as Capability],
+    /**
+     * The cards that hang on a talk's booking (D133), derived from the talk's own record each time and never stored: a
+     * meeting moved in the calendar or gone from it, for the manager whose booking it is. Every card is one occurrence
+     * per person and round, so a card whose cause is gone (the manager settled it, or the calendar agrees again) is
+     * resolved at the next scan, and one whose difference changed comes back. The observation is complete: the whole of
+     * the reader's people, read now, and a read that fails throws, so the scan is never a complete observation of
+     * nothing.
+     */
+    scan: async actor => {
+      const { observedAt, notices } = await talks.scanOf(await persona(actor));
+      return {
+        drafts: notices.map(n => noticeDraft(n, aboutPerson.name)),
+        observation: {
+          scope: actor.unitId + ':' + actor.role,
+          observedAt,
+          version: observedAt,
+          completeness: 'complete' as const,
+          exhausted: true,
+        },
+      };
+    },
   };
 }

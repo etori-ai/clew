@@ -13,7 +13,10 @@ import type {
 import { ForbiddenError, InputError } from '../../context';
 import {
   commitmentRow,
+  differenceDetails,
+  differenceOf,
   isCalendarDay,
+  noticeCard,
   normaliseLabel,
   normaliseSpan,
   normaliseText,
@@ -21,13 +24,23 @@ import {
   orderTalkRows,
   overdueCounts,
   personKey,
+  sameDifference,
   sameUserName,
   standingBooking,
   swedishDay,
   talkRow,
   talkState,
 } from './domain';
-import type { CommitmentRecord, RoundRecord, TalkBooking, TalkDeps, TalkExport, TalkRecord, TalkTx } from './model';
+import type {
+  CalendarDifference,
+  CommitmentRecord,
+  RoundRecord,
+  TalkBooking,
+  TalkDeps,
+  TalkExport,
+  TalkRecord,
+  TalkTx,
+} from './model';
 
 /** A request the talks module turns down for what it asks, not who asks (D96); a 400 with this message. */
 export class TalkError extends InputError {
@@ -78,6 +91,20 @@ export interface UnitStanding {
   held: number;
   booked: number;
   missing: number;
+}
+/**
+ * A card the scan asks for about one person's talk (D133): for the manager whose booking it is, when the calendar no
+ * longer holds what the booking says. Derived from the talk's record each time and never stored: the platform opens the
+ * card, resolves it when its cause is gone and brings a handled one back when what it says changes (D47).
+ */
+export interface TalkNotice {
+  kind: 'calendar';
+  personId: string;
+  /** The person's user name, by which a card's row names them; null for a person provisioned without one. */
+  userName: string | null;
+  booking: { start: string; end: string };
+  calendar: CalendarDifference;
+  card: ReturnType<typeof noticeCard>;
 }
 /**
  * What erasing one person from the domain did, counts only (D96 item 10), or why it erased nothing: an id the people
@@ -321,7 +348,7 @@ export function talkUsecases(deps: TalkDeps) {
       if (!read) return { round: null, rows: [] };
       const { round } = read;
       const rows = [...read.people.values()].map(p =>
-        talkRow(p, read.talks.get(p.id), read.bookingOf(p.id), read.open.get(p.id) ?? 0),
+        talkRow(p, read.talks.get(p.id), read.bookingOf(p.id), read.open.get(p.id) ?? 0, persona.id),
       );
       return {
         round: { label: round.label, opensOn: round.opensOn, dueOn: round.dueOn },
@@ -541,7 +568,13 @@ export function talkUsecases(deps: TalkDeps) {
           current.start === span.start &&
           current.end === span.end;
         if (existing && same) return { id: existing.id, ...span };
-        const booking: TalkBooking = { ...span, bookedBy: persona.id, bookedAt: at, invitationId: null };
+        const booking: TalkBooking = {
+          ...span,
+          bookedBy: persona.id,
+          bookedAt: at,
+          invitationId: null,
+          calendar: null,
+        };
         const talk = talkWith(existing, round.id, employeeId, at, { booking });
         await tx.saveTalk(talk);
         await tx.audit({
@@ -582,6 +615,35 @@ export function talkUsecases(deps: TalkDeps) {
           details: { roundId: round.id, employeeId, by: 'manager' },
         });
       });
+    },
+
+    /**
+     * What the scan asks cards for (D133): for each person whose talk the persona booked through an invitation, and
+     * which is not held, what the calendar holds when it differs from the booking. Only the manager whose booking it is
+     * gets the card; a co-manager reads the difference on the talk. Nothing for someone who manages nobody or without an
+     * open round. A complete reading of the persona's people, so a read that fails throws.
+     */
+    async scanOf(persona: AuthenticatedContext): Promise<{ observedAt: string; notices: TalkNotice[] }> {
+      const observedAt = now().toISOString();
+      const { manages, people } = await managed(persona);
+      if (!manages) return { observedAt, notices: [] };
+      const read = await standing(persona, people);
+      if (!read) return { observedAt, notices: [] };
+      const notices: TalkNotice[] = [];
+      for (const p of read.people.values()) {
+        const booking = read.stateOf(p.id).state === 'booked' ? read.bookingOf(p.id) : undefined;
+        if (!booking?.calendar || booking.bookedBy !== persona.id) continue;
+        const says = booking.calendar === 'gone' ? 'gone' : `${booking.calendar.start}/${booking.calendar.end}`;
+        notices.push({
+          kind: 'calendar',
+          personId: p.id,
+          userName: p.userName,
+          booking: { start: booking.start, end: booking.end },
+          calendar: booking.calendar,
+          card: noticeCard('calendar', p.id, read.round.id, says),
+        });
+      }
+      return { observedAt, notices: notices.sort((a, b) => a.card.topic.localeCompare(b.card.topic)) };
     },
 
     /**
@@ -745,12 +807,15 @@ export interface TalkInvitation {
   end: string;
   at: string;
 }
-/** Why an invitation no longer carries a booking: the manager undid it, replaced it, or the employee said no. */
-export type InvitationEnd = 'undone' | 'replaced' | 'declined';
 /**
- * What an invitation Clew sent means to the talks module (D132 item 3), told by the calendar module in the transaction
- * that changes the invitation (bound in composition, the way the people module tells of a leaver), so the talk and the
- * invitation that carries it commit or roll back as one and never say different things.
+ * Why an invitation no longer carries a booking: the manager undid it, replaced it, the employee said no, or its event
+ * was cancelled, in Clew or in the calendar.
+ */
+export type InvitationEnd = 'undone' | 'replaced' | 'declined' | 'cancelled';
+/**
+ * What an invitation Clew sent means to the talks module (D132 item 3, D133), told by the calendar module in the
+ * transaction that changes the invitation (bound in composition, the way the people module tells of a leaver), so the
+ * talk and the invitation that carries its booking commit or roll back as one and never say different things.
  *
  * `established`: the invitation was sent and read back from the calendar, so the employee's talk in the open round of
  * the manager's organisation is booked at that time by that manager. It replaces a booking already on the record (a
@@ -758,8 +823,16 @@ export type InvitationEnd = 'undone' | 'replaced' | 'declined';
  * their calendar). Nothing is written without an open round (another system holds the talks, or none is open), for a
  * talk already marked held, or for people the directory does not hold in one organisation.
  *
- * `ended`: the invitation was undone, replaced or declined, so the talk whose booking it carried lacks a time again. An
- * invitation that carries no booking (any more) changes nothing.
+ * `observed`: what the calendar holds for the invitation's event now, read by the event's own id. When it is not what
+ * the booking says, the difference is recorded beside the booking and nothing else changes: the manager settles it.
+ * When it is, a difference recorded before is cleared. A held talk has nothing to settle.
+ *
+ * `moved`: the invitation itself is at another time now, because the manager moved the meeting through Clew or took
+ * the time the calendar holds, so the booking is at that time and no difference stands.
+ *
+ * `ended`: the invitation was undone, replaced, declined or cancelled, so the talk whose booking it carried lacks a
+ * time again; with `keep`, the time stays as one that manager set by hand, with no invitation. An invitation that
+ * carries no booking (any more) changes nothing.
  */
 export function talkInvitations(
   tx: Pick<TalkTx, 'currentRound' | 'talk' | 'talkByInvitation' | 'saveTalk' | 'persons' | 'audit'>,
@@ -784,7 +857,7 @@ export function talkInvitations(
         employeeId: i.employeeId,
         heldOn: null,
         heldBy: null,
-        booking: { ...span, bookedBy: i.managerId, bookedAt: i.at, invitationId: i.invitationId },
+        booking: { ...span, bookedBy: i.managerId, bookedAt: i.at, invitationId: i.invitationId, calendar: null },
         createdAt: existing?.createdAt ?? i.at,
         updatedAt: i.at,
       };
@@ -805,13 +878,77 @@ export function talkInvitations(
         },
       });
     },
-    async ended(e: { actor: string; invitationId: string; why: InvitationEnd; at: string }): Promise<void> {
+    async observed(o: {
+      actor: string;
+      invitationId: string;
+      event: { start: string; end: string } | null;
+      at: string;
+    }): Promise<void> {
+      const talk = await tx.talkByInvitation(o.invitationId);
+      if (!talk?.booking) return;
+      const seen = talk.heldOn ? null : differenceOf(talk.booking, o.event);
+      if (seen === undefined || sameDifference(talk.booking.calendar, seen)) return;
+      await tx.saveTalk({ ...talk, booking: { ...talk.booking, calendar: seen }, updatedAt: o.at });
+      await tx.audit({
+        actor: o.actor,
+        action: seen ? 'talks.calendar_differs' : 'talks.calendar_agrees',
+        subject: 'talk:' + talk.id,
+        at: o.at,
+        details: {
+          roundId: talk.roundId,
+          employeeId: talk.employeeId,
+          invitationId: o.invitationId,
+          ...(seen ? { calendar: differenceDetails(seen) } : {}),
+        },
+      });
+    },
+    async moved(m: { actor: string; invitationId: string; start: string; end: string; at: string }): Promise<void> {
+      const span = normaliseSpan(m.start, m.end);
+      const talk = await tx.talkByInvitation(m.invitationId);
+      if (!span || !talk?.booking) return;
+      const { booking } = talk;
+      if (booking.start === span.start && booking.end === span.end && booking.calendar === null) return;
+      const from = { start: booking.start, end: booking.end };
+      await tx.saveTalk({ ...talk, booking: { ...booking, ...span, calendar: null }, updatedAt: m.at });
+      await tx.audit({
+        actor: m.actor,
+        action: 'talks.booking_moved',
+        subject: 'talk:' + talk.id,
+        at: m.at,
+        details: {
+          roundId: talk.roundId,
+          employeeId: talk.employeeId,
+          invitationId: m.invitationId,
+          from,
+          ...span,
+        },
+      });
+    },
+    async ended(e: {
+      actor: string;
+      invitationId: string;
+      why: InvitationEnd;
+      at: string;
+      /** The time stays, as one this manager set by hand: the meeting is gone from the calendar and the talk is not. */
+      keep?: { managerId: string };
+    }): Promise<void> {
       const talk = await tx.talkByInvitation(e.invitationId);
-      if (!talk) return;
-      await tx.saveTalk({ ...talk, booking: null, updatedAt: e.at });
+      if (!talk?.booking) return;
+      const { booking } = talk;
+      const kept: TalkBooking | null = e.keep
+        ? {
+            start: booking.start,
+            end: booking.end,
+            bookedBy: e.keep.managerId,
+            bookedAt: e.at,
+            invitationId: null,
+            calendar: null,
+          }
+        : null;
+      await tx.saveTalk({ ...talk, booking: kept, updatedAt: e.at });
       await tx.audit({
         actor: e.actor,
-        action: 'talks.booking_removed',
+        action: kept ? 'talks.booking_kept' : 'talks.booking_removed',
         subject: 'talk:' + talk.id,
         at: e.at,
         details: {

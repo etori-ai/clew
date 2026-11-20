@@ -203,6 +203,8 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
       }
     }
   }
+  if (command && !command.threadId && result && e.state !== 'running')
+    await followOwnEvents(tx, e, command, result.rows, invitations);
   await tx
     .update(schema.threads)
     .set({
@@ -240,6 +242,71 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
       subject: 'thread:' + thread.id,
       createdAt: new Date(e.updatedAt),
       details: { executionId: e.id, operation: e.operation, compensates: e.compensates },
+    });
+  }
+}
+/**
+ * A meeting the person moved or cancelled on the calendar page may be the event of an invitation to a talk (D133). It
+ * is found by the event's ref, which the proposal stored when the invitation was read back, never by its title. The
+ * move or the cancellation is a decision made in Clew, so the invitation follows it here, in the transaction that
+ * records the calendar's answer: the proposal takes the new time, or is undone, and the talks module is told, so the
+ * talk's booking never waits for a reading back to say what the person just decided. An undo of a move is a move back
+ * and takes the same path.
+ */
+async function followOwnEvents(
+  tx: Transaction,
+  e: Execution,
+  command: CalendarCommand,
+  rows: ReadonlyArray<{ ref: string; outcome: string; source?: { ref: string; revision: string } }>,
+  invitations: Invitations,
+) {
+  for (const item of command.items) {
+    if (item.action === 'create' || item.proposalId) continue;
+    const row = rows.find(r => r.ref === item.id && r.outcome === 'done');
+    if (!row) continue;
+    const [p] = await tx
+      .select()
+      .from(schema.proposals)
+      .where(
+        and(
+          eq(schema.proposals.personId, e.personId),
+          eq(schema.proposals.eventRef, item.ref),
+          inArray(schema.proposals.status, ['confirmed', 'final', 'accepted']),
+        ),
+      )
+      .for('update');
+    if (!p) continue;
+    // A check of the same execution reads the result again: what is already as decided is left as it is.
+    if (item.action === 'move' && p.start.toISOString() === item.start && p.end.toISOString() === item.end) continue;
+    if (item.action === 'move') {
+      await tx
+        .update(schema.proposals)
+        .set({
+          start: new Date(item.start),
+          end: new Date(item.end),
+          ...(row.source ? { eventRef: row.source.ref, eventRevision: row.source.revision } : {}),
+        })
+        .where(eq(schema.proposals.id, p.id));
+      await invitations(tx).moved({
+        actor: EXECUTION_ACTOR,
+        invitationId: p.id,
+        start: item.start,
+        end: item.end,
+        at: e.updatedAt,
+      });
+    } else {
+      await tx.update(schema.proposals).set({ status: 'undone', undoUntil: null }).where(eq(schema.proposals.id, p.id));
+      await invitations(tx).ended({ actor: EXECUTION_ACTOR, invitationId: p.id, why: 'cancelled', at: e.updatedAt });
+    }
+    await tx.insert(schema.audit).values({
+      actor: EXECUTION_ACTOR,
+      action: item.action === 'move' ? 'proposals.moved' : 'proposals.cancelled',
+      subject: 'thread:' + p.threadId,
+      createdAt: new Date(e.updatedAt),
+      details:
+        item.action === 'move'
+          ? { proposal: p.id, start: item.start, end: item.end, by: 'decision', executionId: e.id }
+          : { proposal: p.id, kept: false, by: 'decision', executionId: e.id },
     });
   }
 }

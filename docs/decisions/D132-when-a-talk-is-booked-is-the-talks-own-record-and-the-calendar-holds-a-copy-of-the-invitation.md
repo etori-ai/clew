@@ -1,6 +1,6 @@
 # D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation
 
-**Status:** provisional (accepted once a manager and an HR practitioner have booked a round with it; questions 6 and 11 of [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) still hold real data back) · **Date:** 2026-11-19 · **Area:** product, integrations
+**Status:** provisional (accepted once a manager and an HR practitioner have booked a round with it; questions 6 and 11 of [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) still hold real data back); what happens when the meeting is changed afterwards is [D133](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) (2026-11-20, provisional) · **Date:** 2026-11-19 · **Area:** product, integrations
 
 **Decision.** A development talk is booked in Clew, and the booking results in a calendar event. What holds is
 what Clew's talks module records, never what a calendar happens to contain.
@@ -83,11 +83,10 @@ and the invitation that was sent replaces a time set by hand in between.
 
 **Not established.**
 
-- A change made to the event after it was sent does not reach the talk. Undo, a replacement and the invitee's no
-  do; moving or cancelling the meeting on Clew's calendar page or in the calendar itself does not, as it did not
-  reach the proposal before this decision. Reading the event back by its id and putting a card before the manager
-  when it differs is the next step, and until then a time an invitation carries cannot be changed from the talk
-  once its undo window has passed.
+- A change made to the event after it was sent did not reach the talk. Settled 2026-11-20 by
+  [D133](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md): the event is read
+  back by its id, a difference is recorded beside the booking and settled by the manager, and a move or a
+  cancellation made on Clew's calendar page moves or ends the invitation and the talk with it.
 - An invitation read back while no round is open books nothing, also when a round opens later.
 - No card reminds the manager to prepare before a booked talk, and none asks afterwards whether it was held.
 - A talk booked by hand in a calendar no longer counts until its manager registers the time. Whether managers do

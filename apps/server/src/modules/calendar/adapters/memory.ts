@@ -19,7 +19,10 @@ export interface MemoryProposalStore extends ProposalStore {
   invitations: InvitationCall[];
 }
 export type InvitationCall =
-  ({ op: 'established' } & InvitationNotice) | ({ op: 'ended' } & Parameters<InvitationsTx['ended']>[0]);
+  | ({ op: 'established' } & InvitationNotice)
+  | ({ op: 'observed' } & Parameters<InvitationsTx['observed']>[0])
+  | ({ op: 'moved' } & Parameters<InvitationsTx['moved']>[0])
+  | ({ op: 'ended' } & Parameters<InvitationsTx['ended']>[0]);
 interface Row {
   personId: string;
   thread: Omit<Thread, 'proposals'>;
@@ -143,6 +146,14 @@ export function memoryProposalStore(options: { invitations?: InvitationsTx } = {
       async established(invitation) {
         invitations.push({ op: 'established', ...copy(invitation) });
         await options.invitations?.established(invitation);
+      },
+      async observed(seen) {
+        invitations.push({ op: 'observed', ...copy(seen) });
+        await options.invitations?.observed(seen);
+      },
+      async moved(move) {
+        invitations.push({ op: 'moved', ...copy(move) });
+        await options.invitations?.moved(move);
       },
       async ended(end) {
         invitations.push({ op: 'ended', ...copy(end) });

@@ -121,6 +121,8 @@ function world() {
   const proposals = memoryProposalStore({
     invitations: {
       established: i => store.transaction(tx => talkInvitations(tx, { ids }).established(i)),
+      observed: o => store.transaction(tx => talkInvitations(tx, { ids }).observed(o)),
+      moved: m => store.transaction(tx => talkInvitations(tx, { ids }).moved(m)),
       ended: e => store.transaction(tx => talkInvitations(tx, { ids }).ended(e)),
     },
   });

@@ -969,11 +969,20 @@ export const talks = pgTable(
     // registered an agreed time by hand. No foreign key: the invitation is another module's record, and the booking
     // outlives the card it was sent from.
     invitationId: text('invitation_id'),
+    // What the calendar holds for the invitation when it is not what the booking says (D133): the event's other time,
+    // or that the event is gone. All empty while they agree. The booking stands until the manager settles it.
+    calendarStart: timestamp('calendar_start', { withTimezone: true }),
+    calendarEnd: timestamp('calendar_end', { withTimezone: true }),
+    calendarGone: boolean('calendar_gone').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   t => [
     uniqueIndex('talk_round_employee').on(t.roundId, t.employeeId),
+    check(
+      'talk_calendar',
+      sql`(${t.calendarStart} IS NULL) = (${t.calendarEnd} IS NULL) AND NOT (${t.calendarGone} AND ${t.calendarStart} IS NOT NULL) AND ((${t.calendarStart} IS NULL AND NOT ${t.calendarGone}) OR ${t.invitationId} IS NOT NULL)`,
+    ),
     check(
       'talk_booking',
       sql`(${t.bookedStart} IS NULL AND ${t.bookedEnd} IS NULL AND ${t.bookedAt} IS NULL AND ${t.bookedBy} IS NULL AND ${t.invitationId} IS NULL) OR (${t.bookedStart} IS NOT NULL AND ${t.bookedEnd} IS NOT NULL AND ${t.bookedAt} IS NOT NULL AND ${t.bookedEnd} > ${t.bookedStart})`,

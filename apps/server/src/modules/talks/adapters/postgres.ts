@@ -39,19 +39,33 @@ const talkOf = (r: TalkRow): TalkRecord => ({
           bookedBy: r.bookedBy,
           bookedAt: r.bookedAt.toISOString(),
           invitationId: r.invitationId,
+          calendar: r.calendarGone
+            ? 'gone'
+            : r.calendarStart && r.calendarEnd
+              ? { start: r.calendarStart.toISOString(), end: r.calendarEnd.toISOString() }
+              : null,
         }
       : null,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
-/** The booking as the row's five columns: all null when there is none (the table's `talk_booking` check). */
-const bookingColumns = (b: TalkBooking | null) => ({
-  bookedStart: b ? new Date(b.start) : null,
-  bookedEnd: b ? new Date(b.end) : null,
-  bookedBy: b ? b.bookedBy : null,
-  bookedAt: b ? new Date(b.bookedAt) : null,
-  invitationId: b ? b.invitationId : null,
-});
+/**
+ * The booking as the row's columns: all empty when there is none (the table's `talk_booking` check), and the calendar's
+ * difference empty unless there is one (`talk_calendar`).
+ */
+const bookingColumns = (b: TalkBooking | null) => {
+  const differs = b?.calendar ?? null;
+  return {
+    bookedStart: b ? new Date(b.start) : null,
+    bookedEnd: b ? new Date(b.end) : null,
+    bookedBy: b ? b.bookedBy : null,
+    bookedAt: b ? new Date(b.bookedAt) : null,
+    invitationId: b ? b.invitationId : null,
+    calendarStart: differs && differs !== 'gone' ? new Date(differs.start) : null,
+    calendarEnd: differs && differs !== 'gone' ? new Date(differs.end) : null,
+    calendarGone: differs === 'gone',
+  };
+};
 
 /**
  * The part of the talks tables a caller needs to keep a talk's booking (D132): the open round, one talk, the people and

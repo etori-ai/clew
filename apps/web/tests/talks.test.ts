@@ -4,6 +4,7 @@ import { ApiError } from '../src/api-error';
 import { refused, unlessRefused } from '../src/query-policy';
 import {
   bookingNote,
+  calendarDifference,
   commitmentCounts,
   dueText,
   endFor,
@@ -111,7 +112,7 @@ describe('the words of a talk (D96 item 2)', () => {
     expect(talkSpanText({ at: '2026-11-03', until })).toBe('tis 3 nov.');
     expect(talkSpanText({})).toBeNull();
     expect(bookingNote({ state: 'booked', invited: true })).toBe(
-      'Bokat genom en inbjudan från Clew. Tiden följer inbjudan och ändras inte här.',
+      'Bokat genom en inbjudan från Clew. Flytta eller ställ in mötet i kalendern för att ändra tiden.',
     );
     expect(bookingNote({ state: 'booked', invited: false })).toBe(
       'Tiden är angiven här. Ingen inbjudan har skickats från Clew.',
@@ -120,6 +121,23 @@ describe('the words of a talk (D96 item 2)', () => {
     expect(bookingNote({ state: 'booked' })).toBeNull();
     expect(bookingNote({ state: 'missing', invited: false })).toBeNull();
     expect(bookingNote({ state: 'held', invited: true })).toBeNull();
+  });
+  test('what the calendar holds against a booked talk is said in two words kept apart: the meeting and the talk (D133)', () => {
+    const talk = { at: '2026-11-11T08:00:00.000Z', until: '2026-11-11T09:00:00.000Z' };
+    expect(calendarDifference(talk)).toBeNull();
+    expect(
+      calendarDifference({
+        ...talk,
+        calendar: { start: '2026-11-13T12:00:00.000Z', end: '2026-11-13T13:00:00.000Z' },
+      }),
+    ).toEqual({
+      kind: 'moved',
+      text: 'Mötet i kalendern ligger nu på fre 13 nov. kl. 13:00–14:00. Samtalet i Clew står kvar på ons 11 nov. kl. 09:00–10:00.',
+    });
+    expect(calendarDifference({ ...talk, calendar: { gone: true } })).toEqual({
+      kind: 'gone',
+      text: 'Mötet finns inte längre i kalendern. Samtalet i Clew står kvar på ons 11 nov. kl. 09:00–10:00.',
+    });
   });
   test('the span a manager picks is two instants in Swedish time, and what does not hold names its field', () => {
     expect(talkSpan('2026-11-20T13:00', '14:00')).toEqual({

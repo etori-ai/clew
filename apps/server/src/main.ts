@@ -43,6 +43,7 @@ import { entities, entityActions } from './composition/entities';
 import { scim } from './composition/people';
 import { talkRoutes } from './routes/talks';
 import { talks } from './composition/talks';
+import { invitations } from './composition/calendar';
 import { dialogueRoutes } from './routes/dialogue';
 import { dialogue } from './composition/dialogue';
 import { competenceRoutes } from './routes/competence';
@@ -123,7 +124,7 @@ app.route('/api/staff', staffRoutes);
 // and an action from its menu, which becomes a card (D8).
 app.route('/api/entities', entityRoutes({ entities, actions: entityActions }));
 // The talks module's writes (D96), only while Clew's own module answers the talks profile for the person.
-app.route('/api/talks', talkRoutes({ talks, writable: talksWritable }));
+app.route('/api/talks', talkRoutes({ talks, invitations, writable: talksWritable }));
 // The follow-up dialogue (D118), only while Clew's own module is switched on and visible to the person.
 app.route('/api/dialogue', dialogueRoutes({ dialogue, writable: dialogueWritable }));
 // The competence module's catalogue and registrations (D108), only while the built-in module is switched on for the person.

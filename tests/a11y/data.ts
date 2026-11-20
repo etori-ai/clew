@@ -1391,6 +1391,7 @@ export const talkRows = (): Array<Omit<TalkEntry, 'openCommitments'>> =>
       at: '2026-11-11T08:00:00.000Z',
       until: '2026-11-11T09:00:00.000Z',
       invited: true,
+      own: true,
     },
     { id: 'karin', state: 'missing' as const },
     {
@@ -1399,6 +1400,7 @@ export const talkRows = (): Array<Omit<TalkEntry, 'openCommitments'>> =>
       at: '2026-11-12T13:30:00.000Z',
       until: '2026-11-12T14:30:00.000Z',
       invited: false,
+      own: true,
     },
   ].map(({ id, ...row }) => ({ ...person(id), ref: `talk:talks:${id}`, ...row }));
 const commitment = (
