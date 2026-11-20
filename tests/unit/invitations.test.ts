@@ -389,6 +389,15 @@ describe('the manager settles what the calendar holds (D133)', () => {
     });
     // The meeting stays in the calendar as what was once planned.
     expect(w.calendar.events).toHaveLength(1);
+    // An older invitation whose talk was held is never the one that was missed: with a newer one still to come there
+    // is nothing to call missed, and the old one is left as it is.
+    const old = await w.invite(anna, { start: '2026-11-12T09:00:00.000Z', end: '2026-11-12T10:00:00.000Z' });
+    const next = await w.invite(anna, { start: '2026-11-27T09:00:00.000Z', end: '2026-11-27T10:00:00.000Z' });
+    await expect(w.invitations.settle(boss, 'anna', 'missed')).rejects.toThrow(
+      'Tiden för samtalet har inte passerat än.',
+    );
+    expect((await w.proposal(old.id, old.threadId)).status).toBe('confirmed');
+    expect((await w.proposal(next.id, next.threadId)).status).toBe('confirmed');
     // Settled once: there is no invitation left to answer for.
     await expect(w.invitations.settle(boss, 'dan', 'missed')).rejects.toThrow(
       'Samtalet har ingen inbjudan från dig att ändra. Läs om sidan.',

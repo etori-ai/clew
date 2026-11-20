@@ -4692,6 +4692,16 @@
       "headings": []
     },
     {
+      "path": "docs/reviews/2026-11-20-the-talk-booking-stack.md",
+      "title": "The talk booking stack, reviewed before it lands",
+      "category": "review-history",
+      "headings": [
+        "Findings",
+        "Outcome",
+        "What this review does not establish"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",

@@ -200,6 +200,12 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
         heldOn: '2026-11-20',
         booking,
       });
+      // The booked talks of a round are what a new round takes over; a talk without a booking is not among them.
+      await w.store.transaction(tx => tx.saveTalk(talkRow(w.p + '-t-bo', w.round, w.bo, { heldOn: '2026-11-06' })));
+      expect((await w.store.transaction(tx => tx.bookedTalks(w.round))).map(t => [t.id, t.booking])).toEqual([
+        [w.p + '-t1', booking],
+      ]);
+      expect(await w.store.transaction(tx => tx.bookedTalks(w.p + '-no-round'))).toEqual([]);
       // What the calendar holds against the booking is kept beside it (D133): another time, or that the event is gone.
       const moved = { ...booking, calendar: { start: '2026-11-23T09:00:00.000Z', end: '2026-11-23T10:00:00.000Z' } };
       await w.store.transaction(tx => tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking: moved })));

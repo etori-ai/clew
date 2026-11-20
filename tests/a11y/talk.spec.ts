@@ -363,10 +363,12 @@ for (const [layout, viewport] of [
         path: '/talks/erik/booking/calendar',
         body: { decision: 'missed' },
       });
-      // A time set by hand is taken off as any such time is.
+      // A time set by hand is taken off as any such time is: one button for it, not two.
       await open(page, '/staff?talk=lena');
       const lena = talk(page, 'Lena Berg');
-      await lena.getByRole('button', { name: 'Samtalet blev inte av', exact: true }).focus();
+      await expect(lena.getByText('Tiden för samtalet har passerat', { exact: true })).toBeVisible();
+      await expect(lena.getByRole('button', { name: 'Samtalet blev inte av' })).toHaveCount(0);
+      await lena.getByRole('button', { name: 'Ta bort tiden', exact: true }).focus();
       await page.keyboard.press('Enter');
       await expect(lena.getByRole('button', { name: 'Ange tid', exact: true })).toBeFocused();
       expect(api.talkWrites.at(-1)).toMatchObject({ method: 'DELETE', path: '/talks/lena/booking' });

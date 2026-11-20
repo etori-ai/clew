@@ -72,7 +72,13 @@ and the invitation that was sent replaces a time set by hand in between.
 
 - A booking belongs to the round that is open when it is recorded, whatever its day: a talk booked for after the
   due date reads as booked with its date. The check on other managers' proposals is still bounded by the round's
-  period.
+  period. When a new round is opened, a talk of the closed round that is booked for a time still to come, and not
+  held, becomes the new round's talk: its booking moves with it, invitation included, in the transaction that opens
+  the round (`carried` in the audit row `talks.round_opened`). Without that the person read as missing in the new
+  round while the planner still left them out for the invitation it had sent (the review of 2026-11-20).
+- The planner's open card is kept in step at every scan. The hourly reading of D96's amendment existed to spare a
+  read of the manager's calendar, which is no longer made: the round, the team and the invitations are Clew's own
+  records, so who joined or left the team reaches the card at the next scan and not within the hour.
 - A time is stored as the two instants in their canonical form (`normaliseSpan`): at most a day apart, the end
   after the start.
 - The audit rows are `talks.booked` and `talks.booking_removed`, with `by: 'manager' | 'invitation'`, the round, the

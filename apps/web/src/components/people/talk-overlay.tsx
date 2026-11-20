@@ -154,9 +154,9 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
   const differs = row ? calendarDifference(row) : null;
   const settles = canWrite && !!differs && row.own === true;
   // The booked time has passed and the talk is not marked held: the manager says whether it took place (D134). A time
-  // set by hand is any manager's to take off; an invitation's is its own manager's.
+  // set by hand is taken off with Ta bort tiden, as at any time; an invitation is ended here, by its own manager.
   const passed = canWrite && !differs && timePassed(row, Date.now());
-  const missable = passed && (row.invited === false || row.own === true);
+  const missable = passed && row.invited === true && row.own === true;
   // A time is set and changed here while no invitation carries the booking, and never for a talk that is held.
   const timeByHand = canWrite && row.state !== 'held' && !(row.state === 'booked' && row.invited !== false);
   const day = today();
@@ -307,10 +307,7 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
                   clickAction={() =>
                     write(
                       'set-time',
-                      () =>
-                        row.invited === false
-                          ? api.talks.unbook(person.id)
-                          : api.talks.settleCalendar(person.id, 'missed'),
+                      () => api.talks.settleCalendar(person.id, 'missed'),
                       'Tiden för samtalet är borttagen.',
                       time,
                     )

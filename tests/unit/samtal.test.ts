@@ -803,11 +803,8 @@ describe('a person with two managers (M1, Q12)', () => {
     expect(rowsOf(his)).toEqual([]);
     expect(his.trigger.reason).toBe('1 samtal saknar tid före 28 november');
     await w.store.transaction(tx => tx.updateProposals([herAnna.id], { status: 'undone' }));
-    // She is on the card in no way, so nothing but a reading of his calendar says she lacks a time: the next one, at
-    // the latest an hour after the card last changed, adds her.
+    // She is on the card in no way: the next scan reads the whole team and adds her.
     w.clock.advance(MINUTE);
-    expect(rowsOf((await w.ensureProposalThread(gunnar))!)).toEqual([]);
-    w.clock.advance(60 * MINUTE);
     const again = (await w.ensureProposalThread(gunnar))!;
     expect(again.items.at(-1)).toEqual({
       ref: 'unplaced:anna',
@@ -827,7 +824,7 @@ describe('a person with two managers (M1, Q12)', () => {
     ).toEqual(['Anna Lindqvist', 'Sara Ek']);
     expect(rowsOf(redrawn)).toEqual([]);
   });
-  test('a row follows a time the round records as the count does, at once; a meeting in the calendar changes nothing, and who joined or left the team reaches the card at the hourly reading (D132)', async () => {
+  test('a row follows a time the round records as the count does; a meeting in the calendar changes nothing, and who joined or left the team reaches the card at the next scan (D132)', async () => {
     const w = twoManagers();
     const own = w.setting.calendars.get('gunnar')!;
     const erik = members.find(m => m.personId === 'erik')!;
@@ -850,8 +847,8 @@ describe('a person with two managers (M1, Q12)', () => {
       ),
     );
     w.setting.teams.set('gunnar', [anna, sara, erik]);
-    // The meeting says nothing about Anna's talk; the team's change reaches the card at the next hourly reading.
-    w.clock.advance(61 * MINUTE);
+    // The meeting says nothing about Anna's talk; the team's change reaches the card at the next scan.
+    w.clock.advance(MINUTE);
     const read = (await w.ensureProposalThread(gunnar))!;
     expect(rowsOf(read)).toEqual([
       ['unplaced:anna', 'upptagen hela veckan'],
@@ -863,7 +860,7 @@ describe('a person with two managers (M1, Q12)', () => {
       actor: 'assistant:scan',
       action: 'proposals.settled_elsewhere',
       subject: 'thread:' + his.id,
-      at: new Date(Date.parse(T0) + 61 * MINUTE).toISOString(),
+      at: new Date(Date.parse(T0) + MINUTE).toISOString(),
       details: { proposals: [], people: ['erik'], owner: 'gunnar' },
     });
     // He registers the time in the round, by hand: the row and the count follow at the next scan, a minute later.
@@ -900,34 +897,32 @@ describe('a person with two managers (M1, Q12)', () => {
     };
     return counted;
   };
-  test('the scan reads the team for an open card when an invitation or the round changes it, else an hour after the card last changed at the earliest; it never reads the calendar', async () => {
+  test('the scan of an open card reads Clew’s own records and never the calendar: an unchanged card is left as it is, and what changed reaches it at the next scan', async () => {
     const w = twoManagers();
     const own = w.setting.calendars.get('gunnar')!;
     const his = (await w.ensureProposalThread(gunnar))!;
     own.list = async () => {
       throw new Error('The scan of an open card reads no calendar.');
     };
+    own.lookup = async () => {
+      throw new Error('The scan of an open card reads no calendar.');
+    };
     const team = teamReads(w);
-    // The refresh comes back every minute: an unchanged card reads nothing and writes nothing.
-    w.clock.advance(MINUTE);
-    expect(await w.ensureProposalThread(gunnar)).toEqual(his);
-    expect(team.reads).toBe(0);
-    // An hour after the card last changed the team is read once, and an unchanged card is left as it is; the next
-    // hour reads nothing more.
-    w.clock.advance(60 * MINUTE);
-    expect(await w.ensureProposalThread(gunnar)).toEqual(his);
-    expect(team.reads).toBe(1);
-    w.clock.advance(30 * MINUTE);
-    expect(await w.ensureProposalThread(gunnar)).toEqual(his);
-    expect(team.reads).toBe(1);
-    // Hillevi books Anna: the next scan settles the card at once, reading the team once with it.
+    const audited = w.store.audit.length;
+    // The refresh comes back every minute: the team is read, and an unchanged card is written nothing.
+    for (let i = 0; i < 3; i++) {
+      w.clock.advance(MINUTE);
+      expect(await w.ensureProposalThread(gunnar)).toEqual(his);
+    }
+    expect(team.reads).toBe(3);
+    expect(w.store.audit).toHaveLength(audited);
+    // Hillevi books Anna: the next scan settles the card.
     const hers = (await w.ensureProposalThread(hillevi))!;
     await seedConfirmed(w, hers.id, [hers.proposals.find(p => p.participant.name === anna.name)!.id]);
     w.clock.advance(MINUTE);
     const settled = (await w.ensureProposalThread(gunnar))!;
     expect(rowsOf(settled)).toEqual([['unplaced:anna', 'bokad av en annan chef']]);
     expect(settled.trigger.reason).toBe('1 samtal saknar tid före 28 november');
-    expect(team.reads).toBe(2);
     // And the round recording Sara's talk as held does too.
     w.setting.round = { ...ROUND, held: ['sara'] };
     w.clock.advance(MINUTE);
@@ -935,25 +930,19 @@ describe('a person with two managers (M1, Q12)', () => {
       ['unplaced:anna', 'bokad av en annan chef'],
       ['unplaced:sara', 'har redan haft sitt samtal'],
     ]);
-    expect(team.reads).toBe(3);
   });
-  test('a team that cannot be read leaves the card as it is, and is asked again an hour later, not at every scan', async () => {
+  test('a team that cannot be read leaves the card as it is, and the next scan takes what it missed', async () => {
     const w = twoManagers();
     const his = (await w.ensureProposalThread(gunnar))!;
     const team = teamReads(w);
     w.setting.teams.set('gunnar', [anna, sara, members.find(m => m.personId === 'erik')!]);
     team.failing = true;
-    w.clock.advance(61 * MINUTE);
-    expect(await w.ensureProposalThread(gunnar)).toEqual(his);
-    expect(team.reads).toBe(1);
     w.clock.advance(MINUTE);
     expect(await w.ensureProposalThread(gunnar)).toEqual(his);
     expect(team.reads).toBe(1);
-    // An hour after the failed reading the team answers again, and the card takes what it missed.
     team.failing = false;
-    w.clock.advance(60 * MINUTE);
+    w.clock.advance(MINUTE);
     expect(rowsOf((await w.ensureProposalThread(gunnar))!)).toEqual([['unplaced:erik', 'behöver en tid']]);
-    expect(team.reads).toBe(2);
   });
   /** The round as the server reads it (`composition/index.ts`), over a talks read that fails or times out. */
   const unreadable = (logged: string[] = []) =>
@@ -1025,7 +1014,7 @@ describe('a person with two managers (M1, Q12)', () => {
     // Clew's own talks module answers the round: the invitation that was read back is the talk's booking.
     w.setting.round = { ...ROUND, booked: ['anna'] };
     expect(await w.samtalStatus(hillevi)).toEqual({ held: 0, booked: 1, members: 4, deadline: '28 november' });
-    w.clock.advance(61 * MINUTE);
+    w.clock.advance(MINUTE);
     expect(await w.ensureProposalThread(hillevi)).toEqual(sent);
   });
 });

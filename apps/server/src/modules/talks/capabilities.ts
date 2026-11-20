@@ -194,9 +194,9 @@ function noticeWords(notice: TalkNotice): Pick<ThreadDraft, 'title' | 'summary' 
 /**
  * A card the scan asks for (D133, D134). It names nobody in its title, summary, reason or row: the person is the row's
  * subject, by user name, and the input of the read the card opens, the person's place in the round, from which the
- * talk opens. A reminder to prepare is due the day of the talk.
+ * talk opens. A reminder to prepare is due the day of the talk. `open` names the two reads a card may open.
  */
-function noticeDraft(notice: TalkNotice, open: string): ThreadDraft {
+function noticeDraft(notice: TalkNotice, open: { person: string; round: string }): ThreadDraft {
   const key = notice.userName && [...notice.userName].length <= ENTITY_KEY_MAX ? notice.userName : undefined;
   return {
     topic: notice.card.topic,
@@ -213,19 +213,28 @@ function noticeDraft(notice: TalkNotice, open: string): ThreadDraft {
         ...(key ? { subject: { entity: 'person' as const, key } } : {}),
       },
     ],
-    actions: key
-      ? [
-          {
+    // A person provisioned without a user name cannot be a row's subject or be asked about (D97): their card opens the
+    // round, where the manager finds the talk by its time.
+    actions: [
+      key
+        ? {
             id: 'open',
             label: 'Visa samtalet',
-            capability: open,
+            capability: open.person,
             kind: 'read' as const,
             role: 'primary' as const,
             target: 'panel' as const,
             input: { keys: [key] },
+          }
+        : {
+            id: 'open',
+            label: 'Visa omgången',
+            capability: open.round,
+            kind: 'read' as const,
+            role: 'primary' as const,
+            target: 'panel' as const,
           },
-        ]
-      : [],
+    ],
     occurrences: [{ key: notice.card.key, revision: notice.card.revision, period: notice.card.period }],
   };
 }
@@ -375,7 +384,7 @@ export function talksConnector(
     scan: async actor => {
       const { observedAt, notices } = await talks.scanOf(await persona(actor));
       return {
-        drafts: notices.map(n => noticeDraft(n, aboutPerson.name)),
+        drafts: notices.map(n => noticeDraft(n, { person: aboutPerson.name, round: round.name })),
         observation: {
           scope: actor.unitId + ':' + actor.role,
           observedAt,

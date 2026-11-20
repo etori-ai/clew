@@ -12,6 +12,11 @@ export interface ProposalStoreHarness {
   people: [string, string];
   auditFor(subject: string): Promise<AuditEntry[]>;
   hasJob(id: string): Promise<boolean>;
+  /**
+   * What the store's invitations port was told about this invitation and kept (D132 item 3), oldest first: the harness
+   * binds a port that records each call in the transaction it is given, as composition binds the talks module's.
+   */
+  told(invitationId: string): Promise<string[]>;
 }
 const T0 = '2026-11-04T06:00:00.000Z';
 const plus = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).toISOString();
@@ -309,6 +314,54 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
       expect(after.proposals[0]!.status).toBe('confirmed');
       expect((await auditFor('thread:' + t.id)).map(e => e.action)).toEqual(['proposals.confirmed']);
       expect(await hasJob('lost:' + t.id)).toBe(false);
+    });
+
+    test('what the store is told of an invitation reaches the port inside the transaction: it is kept with the commit and taken back with a rollback (D132, D133)', async () => {
+      const {
+        store,
+        people: [a],
+        told,
+      } = await make();
+      const id = `inv-${unique()}`;
+      await store.transaction(async tx => {
+        await tx.invitations.established({
+          actor: 'system:execution',
+          invitationId: id,
+          managerId: a,
+          employeeId: 'invitee-anna',
+          start: T0,
+          end: plus(T0, 3_600_000),
+          at: T0,
+        });
+        await tx.invitations.observed({ actor: 'assistant:scan', invitationId: id, event: null, at: T0 });
+        await tx.invitations.moved({
+          actor: 'person:' + a,
+          invitationId: id,
+          start: plus(T0, 86_400_000),
+          end: plus(T0, 90_000_000),
+          at: T0,
+        });
+      });
+      expect(await told(id)).toEqual(['established', 'observed', 'moved']);
+      // The port's own writes belong to the transaction: one that fails afterwards leaves nothing of them.
+      await expect(
+        store.transaction(async tx => {
+          await tx.invitations.ended({ actor: 'person:' + a, invitationId: id, why: 'cancelled', at: T0 });
+          throw new Error('after the port was told');
+        }),
+      ).rejects.toThrow('after the port was told');
+      expect(await told(id)).toEqual(['established', 'observed', 'moved']);
+      await store.transaction(tx =>
+        tx.invitations.ended({
+          actor: 'person:' + a,
+          invitationId: id,
+          why: 'cancelled',
+          at: T0,
+          keep: { managerId: a },
+        }),
+      );
+      expect(await told(id)).toEqual(['established', 'observed', 'moved', 'ended']);
+      expect(await told(`inv-${unique()}`)).toEqual([]);
     });
   });
 }

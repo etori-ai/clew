@@ -197,6 +197,18 @@ export function talkUsecases(deps: TalkDeps) {
     return booking.bookedBy === readerId || (await deps.reports(booking.bookedBy)).has(employeeId);
   }
   /**
+   * The booking on the person's talk in the open round as it reads now, and whether an invitation carries it. Whether a
+   * booking still counts is the people module's to say, so this is read before a write to it; the write's transaction
+   * refuses when the booking is no longer the one that was read (`sameBooking`).
+   */
+  async function bookingBefore(persona: AuthenticatedContext, employeeId: string) {
+    const before = await deps.store.transaction(async tx => {
+      const round = await tx.currentRound(persona.organisationId);
+      return round ? (await tx.talk(round.id, employeeId))?.booking : undefined;
+    });
+    return { before, invited: await invitationStands(persona.id, employeeId, before) };
+  }
+  /**
    * Where these people stand in the open round (D96 item 2, D132): the round and its talks, and for each the booking
    * that counts now. Undefined when no round is open.
    */
@@ -288,7 +300,10 @@ export function talkUsecases(deps: TalkDeps) {
   return {
     /**
      * An operator opens a round for the organisation (D96 item 1): the open one, if any, is closed in the same
-     * transaction. `actor` is the operator's, such as `operator:cli`. Returns the new round's id.
+     * transaction. A talk of the closed round that is booked for a time still to come, and not held, is the new round's
+     * talk from then on: its booking moves with it, invitation and all, so the person reads as booked in the round that
+     * is open and the cards that hang on the booking are still asked for (D132). `actor` is the operator's, such as
+     * `operator:cli`. Returns the new round's id.
      */
     async openRound(
       actor: string,
@@ -328,6 +343,22 @@ export function talkUsecases(deps: TalkDeps) {
           createdAt: at,
           closedAt: null,
         });
+        let carried = 0;
+        for (const talk of current ? await tx.bookedTalks(current.id) : []) {
+          if (talk.heldOn || !talk.booking || talk.booking.end <= at) continue;
+          await tx.saveTalk({ ...talk, booking: null, updatedAt: at });
+          await tx.saveTalk({
+            id: deps.ids(),
+            roundId: id,
+            employeeId: talk.employeeId,
+            heldOn: null,
+            heldBy: null,
+            booking: talk.booking,
+            createdAt: at,
+            updatedAt: at,
+          });
+          carried++;
+        }
         await tx.audit({
           actor,
           action: 'talks.round_opened',
@@ -339,6 +370,7 @@ export function talkUsecases(deps: TalkDeps) {
             dueOn: input.dueOn,
             prepareDays,
             closed: current?.id ?? null,
+            carried,
           },
         });
         return id;
@@ -554,13 +586,7 @@ export function talkUsecases(deps: TalkDeps) {
       const span = normaliseSpan(body.start, body.end);
       if (!span) throw new TalkError(BAD_SPAN);
       const at = now().toISOString();
-      // Whether the booking on the record still counts is the people module's to say, so it is read before the write;
-      // the transaction refuses when the record changed in between.
-      const before = await deps.store.transaction(async tx => {
-        const round = await tx.currentRound(persona.organisationId);
-        return round ? (await tx.talk(round.id, employeeId))?.booking : undefined;
-      });
-      const invited = await invitationStands(persona.id, employeeId, before);
+      const { before, invited } = await bookingBefore(persona, employeeId);
       return deps.store.transaction(async tx => {
         const round = await openRoundOf(tx, persona.organisationId);
         const existing = await tx.talk(round.id, employeeId);
@@ -603,11 +629,7 @@ export function talkUsecases(deps: TalkDeps) {
     async unbook(persona: AuthenticatedContext, employeeId: string): Promise<void> {
       await employeeOf(persona, employeeId);
       const at = now().toISOString();
-      const before = await deps.store.transaction(async tx => {
-        const round = await tx.currentRound(persona.organisationId);
-        return round ? (await tx.talk(round.id, employeeId))?.booking : undefined;
-      });
-      const invited = await invitationStands(persona.id, employeeId, before);
+      const { before, invited } = await bookingBefore(persona, employeeId);
       await deps.store.transaction(async tx => {
         const round = await openRoundOf(tx, persona.organisationId);
         const existing = await tx.talk(round.id, employeeId);

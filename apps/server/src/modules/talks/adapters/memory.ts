@@ -154,6 +154,11 @@ export function memoryTalkStore(seed: { persons?: PersonRef[] } = {}) {
       const t = [...state.talks.values()].find(t => t.roundId === roundId && t.employeeId === employeeId);
       return t && structuredClone(t);
     },
+    async bookedTalks(roundId) {
+      return byCreated([...state.talks.values()].filter(t => t.roundId === roundId && t.booking !== null)).map(t =>
+        structuredClone(t),
+      );
+    },
     async talkByInvitation(invitationId) {
       const t = [...state.talks.values()].find(t => t.booking?.invitationId === invitationId);
       return t && structuredClone(t);

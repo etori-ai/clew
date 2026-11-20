@@ -13,15 +13,18 @@ import { openSecret, sealSecret } from '../auth-crypto';
 import { personKeys } from './person-keys';
 
 /**
- * The calendar's part of a person's scan: the invitations they sent are read back by their events' ids (D133), then the
- * planner's card is kept in step. A reading back that fails is logged and never stops the planner.
+ * The calendar's part of a person's scan: the planner's card is kept in step, and the invitations the person sent are
+ * read back by their events' ids (D133). The reading back asks the calendar once per invitation, so it is started and
+ * not waited for: it never counts against the source's deadline, never holds the planner up, and a failure is logged.
+ * What it finds reaches the talk's tab when it has run and the card at the next scan.
  */
 type Scanned = Parameters<typeof calendar.ensureProposalThread>[0];
 async function calendarScan(p: Scanned) {
-  await invitations
+  const planned = await calendar.ensureProposalThread(p);
+  void invitations
     .follow(p)
     .catch(error => logger.error({ scope: 'calendar', error }, 'invitations could not be read back'));
-  return calendar.ensureProposalThread(p);
+  return planned;
 }
 export const refresh = refreshUsecases({
   store: postgresRefreshStore({

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import type {
   CommitmentRecord,
@@ -172,6 +172,15 @@ export function talkTx(tx: Transaction, options: { sealer: Sealer; workItems: Wo
     roundId === null ? isNull(commitments.doneAt) : or(isNull(commitments.doneAt), eq(commitments.roundId, roundId));
   return {
     ...talkRecordsTx(tx),
+    async bookedTalks(roundId) {
+      const rows = await tx
+        .select()
+        .from(talks)
+        .where(and(eq(talks.roundId, roundId), isNotNull(talks.bookedStart)))
+        .orderBy(asc(talks.createdAt), asc(talks.id))
+        .for('update');
+      return rows.map(talkOf);
+    },
     async insertRound(round) {
       await tx
         .insert(rounds)
