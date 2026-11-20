@@ -226,6 +226,8 @@ export class MockApi {
   }[] = [];
   /** The conversations the conversation's page marked as opened (`POST /conversations/:id/opened`, D135 rule 6). */
   opened: string[] = [];
+  /** The work items the next answers name (`MessageMeta.cards`); none unless a test sets them. */
+  answerCards: string[] | undefined;
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   /** How long the areas take, so a test can see Läget's tiles in their shape (D54). */
@@ -1788,6 +1790,11 @@ export class MockApi {
         written.meta = { ...written.meta, recordDraft: drafted };
         response.answer = { ...response.answer, body: written.body };
         response.recordDraft = { ...drafted, action: offered };
+      }
+      // The work items the answer names (`MessageMeta.cards`), when a test says which.
+      if (!handed && this.answerCards) {
+        const written = response.thread.messages.at(-1)!;
+        written.meta = { ...written.meta, cards: this.answerCards };
       }
       // The server keeps the chips a question went with on it (`MessageMeta.chips`): how a page finds the
       // conversation about its thing again. Kept here for a question asked in place.

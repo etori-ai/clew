@@ -1,14 +1,4 @@
-import {
-  cloneElement,
-  isValidElement,
-  useCallback,
-  useContext,
-  useLayoutEffect,
-  useRef,
-  type ReactNode,
-  type Ref,
-  useEffect,
-} from 'react';
+import { useCallback, useContext, useLayoutEffect, useRef, type ReactNode, type Ref, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import type { ConversationResponse, Prepared } from '@clew/contracts';
 import {
@@ -47,7 +37,7 @@ import { asksBeside, withAsk, withoutAsk } from '../../panel-address';
 import { SHELL_WIDTH, SiteName } from './shell';
 import { useClearCorner, useCornerDoor, useReturnFocusToCorner, type CornerDoor } from './assistant-corner';
 import { PageFrameContext } from './page-frame-context';
-import { useModelConfigured } from '../conversation/conversation-context';
+import { useConversation, useModelConfigured } from '../conversation/conversation-context';
 import {
   PageTalk,
   useOpenAsConversation,
@@ -268,27 +258,46 @@ interface PageFrameProps {
  * the `work-item-detail` template (above the column at `narrowPageQuery`), `end` a pane of the page's own (Att göra's
  * reading pane, the thing beside a conversation) and `start` a panel before the column (Administration's sections), all
  * inside the same frame. The header stays while the content scrolls; on a short screen nothing is pinned and the page
- * scrolls as one (1.4.10). Every page says what it is about (`ask`): the frame tells the shell's corner what its "Fråga
- * AI" does on the page (`useCornerDoor`, D138 items 3 and 5) and provides the assistant's pane, a card at the end of the
- * shell's column (`AskingFrame`, D138 item 4). No page draws a way to ask of its own.
+ * scrolls as one (1.4.10). Every page says what it is about (`ask`): the frame draws "Fråga AI" at the end of the title's
+ * line (the product owner, 2026-11-20, in place of the corner's floating button of D138 items 1 and 5) and provides the
+ * assistant's pane, a card at the end of the shell's column (`AskingFrame`, D138 item 4). No page draws a way to ask of
+ * its own. Hem alone keeps the corner's button, which leads to its line.
  */
 export function PageFrame(props: PageFrameProps) {
   const { ask, ...frame } = props;
   return 'subject' in ask ? <AskingFrame {...frame} about={ask} /> : <PageWithoutSubject {...frame} />;
 }
 
-/** A page with no subject (D135 rule 1): the corner's "Fråga AI" starts a new question there (`CornerDoor`). */
+/** A page with no subject (D135 rule 1): "Fråga AI" on its title's line starts a new question there. */
 function PageWithoutSubject(frame: Omit<PageFrameProps, 'ask'>) {
-  useCornerDoor('question');
-  return <FrameBody {...frame} />;
+  // Hem (`plain`) has its own line to ask and keeps the corner's button, which leads to it.
+  useCornerDoor(frame.plain ? 'question' : 'hidden');
+  return <FrameBody {...frame} {...(frame.plain ? {} : { door: <NewQuestionDoor /> })} />;
+}
+
+/** "Fråga AI" on a page with nothing to ask about, or with no pane to ask in: it starts a new question, with the page as the way back. */
+function NewQuestionDoor() {
+  const talk = useConversation();
+  const { pathname, search } = useLocation();
+  // A conversation's own page has its box: nothing more to ask through.
+  if (talk.open) return null;
+  return (
+    <Button
+      variant="ai"
+      label="Fråga AI"
+      icon={<Icon icon={SparklesIcon} color="inherit" />}
+      href="/conversations/new"
+      onClick={() => talk.newConversation({ from: pathname + search, stay: true })}
+    />
+  );
 }
 
 /**
  * A page with a subject (D135 rules 2 to 11, D138 items 3 to 5 and 11; canvas boards AttGora-tom and
- * Arende-tom). The corner's "Fråga AI" opens the pane: the frame gives the shell the press (`useCornerDoor`), and the
- * corner is not drawn while the pane stands, while the page's own pane holds its box (`end`), or before the page knows
- * its subject. Without a model the pane is never drawn (D8) and the corner starts a new question, as on a page with no
- * subject.
+ * Arende-tom). "Fråga AI" at the end of the title's line opens the pane (the product owner, 2026-11-20: "On title
+ * line", in place of the corner's floating button). It is not drawn while the pane stands, while the page's own pane
+ * holds its box (`end`), or before the page knows its subject. Without a model the pane is never drawn (D8) and the
+ * button starts a new question, as on a page with no subject. Hem (`plain`) has its own line and keeps the corner's.
  *
  * The pane is in the address (`ask=1`): the press pushes it, so Back closes it and a reload opens it again; ✕ and Esc in
  * the pane take it away. It holds the assistant's round mark and "Fråga AI", "Öppna som samtal" and ✕, what it is about
@@ -296,14 +305,10 @@ function PageWithoutSubject(frame: Omit<PageFrameProps, 'ask'>) {
  * `paneBesideQuery` it is a card at the end of the shell's column (`FrameBody`'s `aside`), which the page's own pane wins
  * while it holds something (Kalender's entry, rule 5); the page then lays itself out in the width left
  * (`useColumnQuery`; a thing's facts above its read, `useFactsInColumn`, D136 item 9). Narrower or short it is Astryx's
- * drawer over the page; on a phone the corner leads to the conversation's page with the subject (D138 item 11).
- *
- * Where the page pins controls at the window's foot (`footer`) the corner gives way to them (`useClearCorner`), and the
- * frame draws the same "Fråga AI" at the start of that footer, before the page's own controls, with the same press
- * (`withDoor`; the product owner, 2026-11-19): it is drawn when the corner would be.
+ * drawer over the page; on a phone the button leads to the conversation's page with the subject (D138 item 11).
  *
  * The press gives the focus to the box; arriving by the address moves nothing; closing gives it back to the button that
- * opened the pane, the footer's or the corner's, as does losing the pane with the focus in it. Opening says nothing
+ * opened the pane, as does losing the pane with the focus in it. Opening says nothing
  * aloud: the turns announce their answers. The conversation is held here (`usePageConversation`), so it stays while the
  * pane becomes the drawer and back.
  */
@@ -334,28 +339,27 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
       navigate(withAsk(pathname, search));
     }
   };
-  // The corner's button (D138 item 5): drawn only where no box stands on the page.
+  // "Fråga AI" at the end of the title's line (the product owner, 2026-11-20): drawn only where no box stands on the
+  // page. The shell's corner draws none on a page with a frame; Hem (`plain`) has its own line and keeps the corner's.
   const door: CornerDoor = !model ? 'question' : open || frame.end || !subject ? 'hidden' : 'pane';
-  useCornerDoor(door, press);
-  // The same button at the start of a footer the page pins, where the corner gives way (`withDoor`).
-  const footDoor = useRef<HTMLButtonElement>(null);
-  const footer = withDoor(
-    frame.footer,
-    door === 'pane' ? (
-      <Button
-        ref={footDoor}
-        variant="ai"
-        label="Fråga AI"
-        icon={<Icon icon={SparklesIcon} color="inherit" />}
-        onClick={press}
-      />
-    ) : null,
-  );
-  // The focus goes back to the button that opened the pane: the footer's where the page has one, else the corner's.
+  useCornerDoor(frame.plain ? door : 'hidden', press);
+  const lineDoor = useRef<HTMLButtonElement>(null);
+  const onLine = frame.plain ? undefined : door === 'pane' ? (
+    <Button
+      ref={lineDoor}
+      variant="ai"
+      label="Fråga AI"
+      icon={<Icon icon={SparklesIcon} color="inherit" />}
+      onClick={press}
+    />
+  ) : door === 'question' ? (
+    <NewQuestionDoor />
+  ) : undefined;
+  // The focus goes back to the button that opened the pane: the title line's, else the corner's (Hem).
   const giveBack = useCallback(() => {
-    if (footDoor.current?.isConnected) footDoor.current.focus();
-    else returnFocus();
-  }, [returnFocus]);
+    if (lineDoor.current?.isConnected) lineDoor.current.focus();
+    else if (frame.plain) returnFocus();
+  }, [returnFocus, frame.plain]);
   const wasOpen = useRef(open);
   const settling = useRef(0);
   const { input } = talk.state;
@@ -405,7 +409,7 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
     <>
       <FrameBody
         {...frame}
-        footer={footer}
+        {...(onLine ? { door: onLine } : {})}
         {...(open && beside
           ? {
               aside: (
@@ -443,26 +447,6 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
         </Drawer>
       )}
     </>
-  );
-}
-
-/**
- * The corner's "Fråga AI" where a page pins controls at the window's foot (D138 item 5; the product owner, 2026-11-19:
- * "Yes, in the footer"): the floating button is not drawn over them (`useClearCorner`), so the frame draws the same
- * button at the start of the page's footer, before its own controls. The page passes nothing new: its `LayoutFooter`
- * keeps its inset, rule and name, and its content stands beside the door in the same place in the tree whether the door
- * is drawn or not, so nothing in it is drawn anew when the pane opens or closes. Where the line has no room for both
- * (a phone) the page's controls go under the door and wrap as they did, in the footer's whole width.
- */
-function withDoor(footer: ReactNode, door: ReactNode): ReactNode {
-  if (!isValidElement<{ children?: ReactNode }>(footer) || footer.type !== LayoutFooter) return footer;
-  return cloneElement(
-    footer,
-    undefined,
-    <HStack gap={3} vAlign="end" wrap="wrap">
-      {door}
-      <StackItem size="fill">{footer.props.children}</StackItem>
-    </HStack>,
   );
 }
 
@@ -557,6 +541,7 @@ function FrameBody({
   meta,
   actions,
   actionsOnLine = false,
+  door,
   below,
   tabs,
   plain = false,
@@ -580,6 +565,8 @@ function FrameBody({
 }: Omit<PageFrameProps, 'ask'> & {
   /** The assistant's pane, a card of its own at the end of the shell's column (D138 item 4). */
   aside?: ReactNode;
+  /** The frame's "Fråga AI", at the end of the title's line after the page's own actions; under the title where the line has no room. */
+  door?: ReactNode;
 }) {
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
@@ -649,7 +636,7 @@ function FrameBody({
       crumbs
     );
   const titleLine =
-    heading || icon || actions ? (
+    heading || icon || actions || door ? (
       <HStack gap={4} vAlign="center" wrap="wrap">
         {icon}
         <StackItem size="fill">
@@ -667,6 +654,7 @@ function FrameBody({
           </VStack>
         </StackItem>
         {(!mobile || actionsOnLine) && actions}
+        {door}
       </HStack>
     ) : (
       metaLine

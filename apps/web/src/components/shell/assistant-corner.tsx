@@ -94,8 +94,10 @@ const noop = () => undefined;
 const Corner = createContext<CornerChannel>({ claim: () => noop, door: () => noop, returnFocus: noop });
 
 /**
- * The way to the assistant from anywhere on a page (D130 item 14, D138 items 1, 3 and 5): a floating "Fråga AI" in the
- * lower corner, as the startsidan prototype has it. On Hem it leads to Hem's own line, as the reference's does: the line
+ * The floating way to the assistant (D130 item 14, D138 items 1, 3 and 5): "Fråga AI" in the lower corner, as the
+ * startsidan prototype has it. Since 2026-11-20 a page with a frame draws its own "Fråga AI" at the end of its title's
+ * line and tells this one to stay away (`useCornerDoor('hidden')`, D138 as amended), so the floating button stands on Hem
+ * and on a page with no frame. On Hem it leads to Hem's own line, as the reference's does: the line
  * takes the focus and is scrolled into view. On a page with a subject it opens the assistant's pane about it beside the
  * page (`door` `pane`, the page's frame does the opening); on a page with none it starts a new question about the page
  * the person is on, as the rail's "Ny fråga" did (`question`): the conversation's own page opens, with this page as the

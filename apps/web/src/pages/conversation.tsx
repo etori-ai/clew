@@ -243,6 +243,13 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
   const cardInPane = beside && !aside && !!about.pane;
   // A person or a unit is said under the first question, so the transcript reads alone later.
   const firstLine = about.entity?.name ? aboutWords(about.entity.name) : undefined;
+  // An item opens beside the transcript, in the place of an assistant's exchange if one stands there: one panel holds
+  // one thing.
+  const besideHref = (id: string) => {
+    const q = new URLSearchParams(search);
+    q.delete(ASSISTANT_PARAM);
+    return withCard(pathname, q, id);
+  };
   const transcript = (
     <Transcript
       about={about.chips}
@@ -252,7 +259,27 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       // was drawn, a row says so and brings it back.
       renderCard={t =>
         besideCard !== t.id ? (
-          cardBody(t, { place: 'answer', level: 2, compact: mobile, onChange })
+          cardBody(t, {
+            place: 'answer',
+            level: 2,
+            compact: mobile,
+            onChange,
+            // The mirror of "Visa här" (the product owner, 2026-11-20): where the pane fits, the item drawn in an
+            // answer says how it is put beside the transcript.
+            ...(beside
+              ? {
+                  tools: (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      label="Visa bredvid"
+                      aria-label={`Visa bredvid: ${t.title}`}
+                      href={besideHref(t.id)}
+                    />
+                  ),
+                }
+              : {}),
+          })
         ) : cardInPane ? (
           <ShownBeside onShowHere={() => showHere(t.id)} />
         ) : null
@@ -260,13 +287,8 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
       viewHref={viewHref}
       asideHref={id => assistantHref(pathname, search, id)}
       asideOpen={asideId}
-      // A row of several items opens its item beside the transcript, in the place of an assistant's exchange if one
-      // stands there: one panel holds one thing.
-      cardHref={id => {
-        const q = new URLSearchParams(search);
-        q.delete(ASSISTANT_PARAM);
-        return withCard(pathname, q, id);
-      }}
+      // A row of several items opens its item beside the transcript.
+      cardHref={besideHref}
     />
   );
   // Opened from its address, a conversation is read before it is drawn: its shape meanwhile, never an empty page. On

@@ -68,6 +68,17 @@ do the branch's D136 and D137.
 
 **As built (2026-11-20), and what is still open.**
 
+- **Amended on seeing it built (the product owner, 2026-11-20).** Asked whether the closed pane's button in the lower
+  corner was decided, the owner said: "I think its weird. Expected location is somewhere at the top right of the
+  content. Or opened by default", and, shown both placements drawn from the real components (the end of the title's
+  line, the end of the row of pages), chose "On title line. closed by default to start with". So on every page with
+  a frame "Fråga AI" is an ordinary button at the end of the title's line, after the page's own actions and under
+  them where the line has no room, and the floating button is not drawn there. This replaces item 1's floating door
+  and item 5's corner for those pages, and the review's footer door ("Yes, in the footer", 2026-11-20), which answered
+  a corner that the pinned footer hid and would now be a second button on the page. What the button does is
+  unchanged (items 3, 5 and 11), and the focus comes back to it when the pane closes. Start keeps the floating
+  button, which leads to its line, as the prototype has it; the owner has not said whether it stays there. The pane
+  starts closed; "to start with" leaves open by default for later.
 - **Built on the branch:** the pane as a card in the frame's `aside` slot with the corner as its door (items 1 to 6);
   the introduction's lists, the fill-in list from the server read `POST /api/assistant/reach`, which answers what a
   turn asked now would be offered by the turn's own rules (item 7); the filled-in action as a `row-info` card, for a

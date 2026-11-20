@@ -324,6 +324,37 @@ test.describe('a conversation about a thing', () => {
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/items\/fakturor\?ask=1$/);
   });
+  test('an item drawn in an answer says how it is put beside the transcript: Visa bredvid, named with the item', async ({
+    page,
+    api,
+  }) => {
+    const OTHER = 'Ledighetsansökan från Johan Byström';
+    api.threads.push({
+      ...api.threads.find(t => t.id === 'fraga')!,
+      id: 'tva-saker',
+      title: 'Vad väntar på mig?',
+      messages: [
+        { id: 'm1', role: 'user', body: 'Vad väntar på mig?', createdAt: NOW },
+        { id: 'm2', role: 'assistant', body: 'Tre fakturor.', createdAt: NOW, meta: { cards: ['fakturor'] } },
+        { id: 'm3', role: 'user', body: 'Något mer?', createdAt: NOW },
+        { id: 'm4', role: 'assistant', body: 'En ledighetsansökan.', createdAt: NOW, meta: { cards: ['ledighet'] } },
+      ],
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, '/conversations/tva-saker');
+    const log = page.getByRole('log');
+    // The mirror of "Visa här" (the product owner, 2026-11-20): one on each item, told apart by the item's name.
+    await expect(log.getByRole('link', { name: /^Visa bredvid: / })).toHaveCount(2);
+    await expectNoAxeViolations(page);
+    await log.getByRole('link', { name: `Visa bredvid: ${OTHER}`, exact: true }).click();
+    await expect(page).toHaveURL(/\/conversations\/tva-saker\?card=ledighet$/);
+    await expect(page.getByRole('complementary', { name: OTHER })).toBeVisible();
+    await expect(log.getByText('Visas bredvid samtalet', { exact: true })).toHaveCount(1);
+    // The conversation's own page has its box: no "Fråga AI" by its title.
+    await expect(page.getByRole('main').getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga AI', exact: true })).toHaveCount(0);
+  });
+
   test('the pane has a menu over what the conversation has named, a row where the item was drawn, and a width of its own', async ({
     page,
     api,
@@ -354,8 +385,8 @@ test.describe('a conversation about a thing', () => {
     await expect(pane.getByRole('link', { name: TITLE })).toBeVisible();
     // One item, one place: where the item beside the transcript was drawn, a row says where it is. The other is drawn.
     await expect(log.getByText('Visas bredvid samtalet', { exact: true })).toHaveCount(1);
-    await expect(log.getByRole('link', { name: TITLE })).toHaveCount(0);
-    await expect(log.getByRole('link', { name: OTHER })).toBeVisible();
+    await expect(log.getByRole('link', { name: TITLE, exact: true })).toHaveCount(0);
+    await expect(log.getByRole('link', { name: OTHER, exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
 
     // The menu: by kind and with how many, each row a link, the thing beside the transcript now said as such.
@@ -382,8 +413,8 @@ test.describe('a conversation about a thing', () => {
     await expect(pane.getByRole('link', { name: OTHER })).toBeVisible();
     await expect(pane.getByRole('button', { name: 'Annat i samtalet' })).toBeFocused();
     await expect(log.getByText('Visas bredvid samtalet', { exact: true })).toHaveCount(1);
-    await expect(log.getByRole('link', { name: TITLE })).toBeVisible();
-    await expect(log.getByRole('link', { name: OTHER })).toHaveCount(0);
+    await expect(log.getByRole('link', { name: TITLE, exact: true })).toBeVisible();
+    await expect(log.getByRole('link', { name: OTHER, exact: true })).toHaveCount(0);
 
     // "Visa här" lets the pane go of the item: the answer draws it again, and its title there has the focus.
     await log.getByRole('button', { name: 'Visa här' }).click();
@@ -391,7 +422,6 @@ test.describe('a conversation about a thing', () => {
     await expect(page.getByRole('complementary')).toHaveCount(0);
     await expect(log.getByRole('heading', { name: OTHER })).toBeFocused();
     await expect(log.getByText('Visas bredvid samtalet', { exact: true })).toHaveCount(0);
-
     // The pane's width is the person's own: the grip takes the arrow keys, and the width is kept over a reload.
     await open(page, '/conversations/tva-saker?card=fakturor');
     const grip = page.getByRole('separator', { name: 'Ändra rutans bredd' });

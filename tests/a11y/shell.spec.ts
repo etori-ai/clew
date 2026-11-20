@@ -478,13 +478,14 @@ test.describe('the pages under the band', () => {
 });
 
 /**
- * The floating way to the assistant (D130 item 14, D138 items 1, 3 and 5): "Fråga AI" in the lower corner of every page
- * but a conversation's, which has its own box. On Hem it leads to Hem's line; on a page with a subject it opens the
+ * The way to the assistant (D130 item 14, D138 as amended 2026-11-20): "Fråga AI" at the end of the title's line on
+ * every page with a frame but a conversation's, which has its own box. On a page with a subject it opens the
  * assistant's pane about it (`ask-pane.spec.ts`); on a page with none it starts a new question with that page as the way
- * back. It stands over the page, so it moves to the other corner while the keyboard is on a control it would hide
- * (2.4.11), and it comes after the page's content in the keyboard's order.
+ * back. Hem alone keeps the floating button in the lower corner, which leads to Hem's line: it stands over the page, so
+ * it moves to the other corner while the keyboard is on a control it would hide (2.4.11), and it comes after the page's
+ * content in the keyboard's order.
  */
-test.describe('the floating way to the assistant', () => {
+test.describe('the way to the assistant', () => {
   /**
    * The corner's control: a link elsewhere, and on Hem a button named by what it does there ("Fråga AI: gå till
    * frågefältet"), since Hem's line has a "Fråga AI" of its own.
@@ -563,6 +564,16 @@ test.describe('the floating way to the assistant', () => {
       const button = paneDoor(page);
       await expect(button).toBeInViewport({ ratio: 1 });
       await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
+      // On the page, by its title, and not floating over it: above the page's content, in the header.
+      expect(await button.evaluate(el => getComputedStyle(el.parentElement!).position)).not.toBe('fixed');
+      const [title, at] = await Promise.all([
+        page.getByRole('heading', { level: 1, name: 'Att göra' }).boundingBox(),
+        button.boundingBox(),
+      ]);
+      if (viewport === desktop) {
+        expect(at!.x).toBeGreaterThan(title!.x + title!.width);
+        expect(at!.y).toBeLessThan(title!.y + title!.height);
+      } else expect(at!.y).toBeGreaterThanOrEqual(title!.y);
       await expectNoAxeViolations(page);
       await button.focus();
       await page.keyboard.press('Enter');
@@ -570,14 +581,14 @@ test.describe('the floating way to the assistant', () => {
         await expect(page).toHaveURL('/todo?ask=1');
         const pane = page.getByRole('complementary', { name: 'Fråga AI', exact: true });
         await expect(pane.getByRole('textbox', { name: 'Fråga om ärendena' })).toBeFocused();
-        // The box is on the page now, so the corner is not drawn (item 5); closing the pane gives it the focus back.
+        // The box is on the page now, so the button is not drawn (item 5); closing the pane gives it the focus back.
         await expect(paneDoor(page)).toHaveCount(0);
         await page.keyboard.press('Escape');
         await expect(pane).toHaveCount(0);
         await expect(paneDoor(page)).toBeFocused();
         return;
       }
-      // A phone has no pane (item 11): the conversation's page, which has its own box, so no corner there.
+      // A phone has no pane (item 11): the conversation's page, which has its own box, so no button there.
       await expect(page).toHaveURL(/\/conversations\/new/);
       await expect(page.getByRole('combobox', { name: 'Vad vill du göra' })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
@@ -601,7 +612,7 @@ test.describe('the floating way to the assistant', () => {
     await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
   });
 
-  test('the conversation register offers the corner as the door to its pane, and a question asked on Hem’s line keeps the corner, since Hem stays', async ({
+  test('the conversation register offers Fråga AI as the door to its pane, and a question asked on Hem’s line keeps the corner, since Hem stays', async ({
     page,
     api,
   }) => {
@@ -657,11 +668,6 @@ test.describe('the floating way to the assistant', () => {
   for (const [path, viewport] of [
     ['/', desktop],
     ['/', narrow],
-    ['/todo', desktop],
-    ['/todo', narrow],
-    ['/staff', desktop],
-    ['/staff', narrow],
-    ['/units', narrow],
   ] as const)
     test(`no focus stop of ${path} lies entirely under it at ${viewport.width}px (2.4.11)`, async ({
       page,
@@ -672,8 +678,8 @@ test.describe('the floating way to the assistant', () => {
       expect(await stopsUnderTheCorner(page)).toEqual([]);
     });
 
-  test('it is the last stop of the page, after the content it stands over', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+  test('on Hem it is the last stop of the page, after the content it stands over', async ({ page, api: _ }) => {
+    await open(page, '/');
     const last = await page.evaluate(() => {
       const stops = [...document.querySelectorAll<HTMLElement>('[role="main"] a[href], [role="main"] button')].filter(
         el => el.checkVisibility(),

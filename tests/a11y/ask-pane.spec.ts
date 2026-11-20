@@ -927,6 +927,20 @@ test.describe('the assistant’s pane beside a thing’s page (D135 stage 3, D13
     await expect(listed(page, FILLS)).toHaveCount(0);
   });
 
+  test('an answer beside a work item draws no row for that item, which would lead to the page the person is on; another item it names is a row', async ({
+    page,
+    api,
+  }) => {
+    api.answerCards = ['ledighet', 'fakturor'];
+    await open(page, '/items/ledighet');
+    await door(page).click();
+    await ask3(page, 'Fråga om ärendet', 'Vad är detta?');
+    const log = pane(page).getByRole('log');
+    await expect(log.locator('a[href^="/items/fakturor"]')).toHaveCount(1);
+    await expect(log.locator('a[href^="/items/ledighet"]')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
   test('with nothing for the assistant to fill in, the pane draws no such list and no line about sending', async ({
     page,
     api,
@@ -1144,7 +1158,7 @@ test.describe('a thing’s page on a phone (D135 rule 11, D136 item 1)', () => {
   });
 
   for (const viewport of [phone, narrow])
-    test(`the review on a phone has Fråga AI in its pinned footer, above the decision’s buttons, which keep their order; nothing scrolls sideways at ${viewport.width} px and it leads to the conversation`, async ({
+    test(`the review on a phone has Fråga AI on its title’s line and not in the pinned footer, whose buttons keep their order; nothing scrolls sideways at ${viewport.width} px and it leads to the conversation`, async ({
       page,
       api,
     }) => {
@@ -1154,13 +1168,11 @@ test.describe('a thing’s page on a phone (D135 rule 11, D136 item 1)', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Granska 3 rader' })).toBeVisible();
       const footer = decision(page);
       await expect(door(page)).toHaveCount(1);
-      await expect(footer.getByRole('button', { name: 'Fråga AI', exact: true })).toBeVisible();
+      await expect(footer.getByRole('button', { name: 'Fråga AI', exact: true })).toHaveCount(0);
       await expect(ownButton(page)).toHaveCount(0);
-      // The door first, then the page's own controls in the order they had.
+      // The footer holds the page's own controls alone, in the order they had; the door stands above, by the title.
       const names = await footer.getByRole('button').evaluateAll(all => all.map(b => b.textContent?.trim() ?? ''));
-      expect(names[0]).toBe('Fråga AI');
       expect(names.indexOf('Hoppa över')).toBeLessThan(names.indexOf('Lämna kvar'));
-      expect(names.indexOf('Lämna kvar')).toBeLessThan(names.length - 1);
       const [d, skip] = await Promise.all([
         door(page).boundingBox(),
         footer.getByRole('button', { name: 'Hoppa över' }).boundingBox(),
@@ -1175,27 +1187,35 @@ test.describe('a thing’s page on a phone (D135 rule 11, D136 item 1)', () => {
 });
 
 /**
- * The door in a pinned footer (D138 item 5; the product owner, 2026-11-19): the review pins its decision at the window's
- * foot, so the floating corner is not drawn over it and the frame draws the same "Fråga AI" at the start of that footer,
- * before the page's own controls.
+ * A page that pins its controls at the window's foot (the review's decision) has the same one door as every page:
+ * "Fråga AI" at the end of the title's line (the product owner, 2026-11-20, in place of the footer's door of
+ * 2026-11-19). Nothing floats over the footer and nothing of the assistant's stands in it.
  */
-test.describe('the review’s footer holds the door to the pane', () => {
+test.describe('the review has its door on the title’s line, not in its footer', () => {
   test.use({ viewport: WIDE });
 
-  test('Fråga AI is the first control of the decision’s footer and no corner floats over it; it opens the pane with the focus in its box, and ✕ and Esc give the focus back to it', async ({
+  test('Fråga AI stands on the title’s line and neither in the decision’s footer nor over it; it opens the pane with the focus in its box, and ✕ and Esc give the focus back to it', async ({
     page,
     api,
   }) => {
     reviewed(api);
     await open(page, REVIEW);
     const footer = decision(page);
-    const inFooter = footer.getByRole('button', { name: 'Fråga AI', exact: true });
+    const inFooter = door(page);
     await expect(inFooter).toBeVisible();
-    // The only one: the floating corner gives way to what the page pins.
+    // The only one, above the page's content: on the line of the title, at its end.
     await expect(door(page)).toHaveCount(1);
+    await expect(footer.getByRole('button', { name: 'Fråga AI', exact: true })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
+    const [title, at] = await Promise.all([
+      page.getByRole('heading', { level: 1, name: 'Granska 3 rader' }).boundingBox(),
+      inFooter.boundingBox(),
+    ]);
+    expect(at!.x).toBeGreaterThan(title!.x + title!.width);
+    expect(at!.y).toBeLessThan(title!.y + title!.height);
+    expect(at!.y + at!.height).toBeGreaterThan(title!.y);
     const names = await footer.getByRole('button').evaluateAll(all => all.map(b => b.textContent?.trim() ?? ''));
-    expect(names[0]).toBe('Fråga AI');
+    expect(names).not.toContain('Fråga AI');
     expect(names).toContain('Hoppa över');
     expect(names).toContain('Lämna kvar');
     await expectNoAxeViolations(page);
@@ -1218,12 +1238,15 @@ test.describe('the review’s footer holds the door to the pane', () => {
     await expect(inFooter).toBeFocused();
   });
 
-  test('without a model the footer has no door', async ({ page, api }) => {
+  test('without a model the title’s line starts a new question, and the footer has no door', async ({ page, api }) => {
     api.modelChoices = 0;
     reviewed(api);
     await open(page, REVIEW);
     await expect(decision(page).getByRole('button', { name: 'Lämna kvar' })).toBeVisible();
     await expect(door(page)).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveAttribute(
+      'href',
+      '/conversations/new',
+    );
   });
 });

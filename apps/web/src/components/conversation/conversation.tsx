@@ -72,7 +72,7 @@ import { executionStatus } from '../../execution-status';
 import { answerCard, figureBelongs, rowsSummary, type AnswerCard, type ViewRows } from '../../answer-card';
 import { isSide, sentWords, sideCount, suggestedWords } from '../../conversation-about';
 import { DOT } from '../../dot';
-import { itemPageHref, rowFacts, rowLine } from '../../work-items';
+import { itemPageHref, openItemId, rowFacts, rowLine } from '../../work-items';
 import { withEntry } from '../../panel-address';
 
 /** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
@@ -951,7 +951,9 @@ export function AssistantTurn({
   // The item a turn's draft belongs to is not drawn whole above the draft (the product owner, 2026-11-16): the draft
   // names it and opens the action's dialog itself.
   const drafted = isActionDraft(m.meta?.draft) ? m.meta!.draft!.threadId : null;
-  const cards = (m.meta?.cards ?? []).filter(id => id !== drafted);
+  // Beside a work item, the item itself is no row of the answer: the row would lead to the page the person is on.
+  const here = pane ? openItemId(window.location.pathname, window.location.search) : null;
+  const cards = (m.meta?.cards ?? []).filter(id => id !== drafted && id !== here);
   const sources = m.meta?.sources ?? [];
   const time = (
     <ChatMessageMetadata

@@ -499,22 +499,14 @@ test.describe('the review on a phone: the same page, stacked (D73 amended 2026-1
     const img = page.getByRole('img', { name: /Energibolaget AB/ });
     await expect(img).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Underlag från ekonomisystemet' })).toBeFocused();
-    // The decision is pinned at the window's foot, so the floating way to the assistant is not drawn over it (D130);
-    // the one "Fråga AI" is the first control of that footer, before the decision's own (D138 item 5,
-    // `ask-pane.spec.ts`).
+    // The decision is pinned at the window's foot and nothing of the assistant's stands in it or over it: the one
+    // "Fråga AI" is by the title (D138 as amended 2026-11-20, `ask-pane.spec.ts`).
     await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
     const door = page.getByRole('button', { name: 'Fråga AI', exact: true });
     await expect(door).toHaveCount(1);
-    expect(
-      await door.evaluate(
-        el =>
-          !!(
-            el.compareDocumentPosition(document.querySelector('[aria-label="Granskningens beslut"]')!) &
-            Node.DOCUMENT_POSITION_CONTAINS
-          ),
-      ),
-    ).toBe(true);
-    expect((await door.boundingBox())!.y).toBeLessThan((await verb(page).boundingBox())!.y);
+    await expect(
+      page.getByLabel('Granskningens beslut').getByRole('button', { name: 'Fråga AI', exact: true }),
+    ).toHaveCount(0);
     const [paper, button] = [await img.boundingBox(), await verb(page).boundingBox()];
     expect(paper!.y).toBeLessThan(button!.y);
     await expect(verb(page)).toBeInViewport();

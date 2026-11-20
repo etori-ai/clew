@@ -72,6 +72,17 @@ export function itemPageHref(threadId: string, from?: string | null): string {
 }
 
 /**
+ * The work item that stands open at an address: its own page (`/items/<id>`) or Att göra with it picked
+ * (`/todo?item=<id>`), else null. An answer beside it draws no row that leads to it: the person is already there (the
+ * product owner, 2026-11-20).
+ */
+export function openItemId(pathname: string, search: string): string | null {
+  const page = /^\/items\/([^/]+)\/?$/.exec(pathname);
+  if (page) return decodeURIComponent(page[1]!);
+  return pathname === '/todo' ? new URLSearchParams(search).get('item') : null;
+}
+
+/**
  * Where an address of Hem from before D112 leads, or null when it is Hem's own: Hem's tabs (`tab`) and area (`area`)
  * are Att göra's, and a card that came with them is the work item there. A work item alone in Hem's address (`card`)
  * is Hem's own: it is open in the panel beside Hem (D112, amended 2026-11-12). What lies over the card (its review, a

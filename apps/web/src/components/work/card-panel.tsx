@@ -45,7 +45,13 @@ export const cardBody = (thread: Thread, place: CardPlace) =>
   ) : place.place === 'answer' ? (
     // In an answer the item is one discrete thing among the turn's words (Astryx: a Card is a discrete item).
     <Card key={thread.id} padding={4}>
-      <WorkItem thread={thread} place="answer" headingLevel={place.level} onChange={place.onChange} />
+      <WorkItem
+        thread={thread}
+        place="answer"
+        headingLevel={place.level}
+        onChange={place.onChange}
+        {...(place.tools ? { tools: place.tools } : {})}
+      />
     </Card>
   ) : (
     <WorkItem
