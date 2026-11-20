@@ -165,7 +165,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D128 · Another system's assistant is talked to beside the conversation, and the box only ever goes to Clew](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md) | 2026-11-16 | provisional |  |
 | [D129 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) | 2026-11-18 | provisional |  |
 | [D130 · Clew's look and layout are the startsidan prototype's, built with Astryx](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) | 2026-11-18 | provisional |  |
-| [D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides](D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | 2026-11-18 | provisional |  |
+| [D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides](D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | 2026-11-18 | provisional | [D133](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) |
 | [D133 · The corner's "Fråga AI" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) | 2026-11-19 | provisional |  |
 
 ## Assistant

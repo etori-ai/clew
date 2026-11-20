@@ -1586,7 +1586,7 @@
       "number": 130,
       "path": "docs/decisions/D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md",
       "title": "D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
-      "status": "provisional (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas \"Clew",
+      "status": "provisional, amended by [D133](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) (2026-11-19, in the look of `main`: the corner's \"Fråga AI\" replaces rule 1's button at the end of the title's line, the pane is a card at the end of the shell's column instead of rules 2 and 11's end slot, the rail's latest of rule 6 are gone with the rail, and on Start rule 9's answer stands under the line; rules 3 to 8 and 10 and the conditions stand) (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas \"Clew",
       "date": "2026-11-18",
       "area": "ui, product"
     },
