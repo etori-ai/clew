@@ -154,6 +154,9 @@ export function EventCalendar({
       <Calendar
         ref={ref}
         plugins={plugins}
+        // The page's calendar scrolls in the page frame's column, the embeds in a pane or a dialog of their own: only the
+        // page's day headers are stuck against the column's inset (calendar-theme.css). FullCalendar adds the class to the theme's.
+        {...(compact ? {} : { className: 'clew-cal-page' })}
         initialView={view}
         initialDate={date}
         locale={sv}

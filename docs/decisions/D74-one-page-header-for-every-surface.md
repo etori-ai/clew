@@ -1,7 +1,8 @@
 # D74 · One page header for every surface
 
 **Status:** accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages, then Hem and a
-conversation the same day) · **Date:** 2026-11-07 · **Area:** ui
+conversation the same day); item 5's calendar amended 2026-11-20 by Oliver Borgström (the steps and the view switch
+are a row of their own under the title, see the amendment) · **Date:** 2026-11-07 · **Area:** ui
 
 **Decision.** Every surface in the shell opens with the same header, drawn by one composition,
 `PageHeader` in `apps/web/src/components/page-header.tsx`. The product owner asked for it on 2026-11-07 ("All views
@@ -113,3 +114,21 @@ skeleton, the content stack 32 px down (`paddingBlockStart={8}`). `apps/web/src/
 the `LayoutHeader` in place of the `Toolbar` and its wrapper, the `DatePicker` given `size="sm"` (it took `sm` from the
 toolbar before). `apps/web/src/pages/admin/shell.tsx`: `PageLead` removed, `Layout` padding 32;
 `connectors.tsx`, `connector.tsx`, `models.tsx`, `model.tsx` and `provider.tsx` draw `PageHeader`.
+
+## Amendment, 2026-11-20: the calendar's steps are a row of their own
+
+Asked for by Oliver Borgström on 2026-11-20, after a long title pushed the date picker onto the next line. Item 5 put
+the calendar's week steps and view switch at the end of the title's line, in the same wrapping row as a title whose
+length changes as the person steps ("Vecka 47 · 16–20 november 2026", "Onsdag 4 november", "November 2026"). A long
+title made the row wrap and the steps move to the line under it, and stepping could move "Nästa vecka" from under the
+pointer that had just pressed it.
+
+On a desktop the title's line now holds the title and what the person can do there (Fråga om veckan, Förslag, Ny
+bokning). Where in time and how it is shown stand on a row of their own under it, in `PageFrame`'s `below`: the steps
+with I dag and the date picker, the view switch, and in the week view the week's dates in secondary text. The controls
+come first and the dates, whose length varies, last, so neither a step nor a change of view moves a control. The week's
+title is "Vecka 47" on a desktop as it already was on a phone. The phone's header is unchanged: it already had the steps
+and the view menu as its second line.
+
+Built in `apps/web/src/pages/calendar.tsx`. `tests/a11y/calendar.spec.ts` checks that the steps stand still while the
+title changes, and scrolls the month's day into view before clicking it, since the grid now starts one row lower.

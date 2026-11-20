@@ -60,6 +60,40 @@ test.describe('the three views', () => {
     await expect(page).toHaveTitle('November 2026 · Kalender · Startsidan');
     await expect(heading(page, 1, 'November 2026')).toBeVisible();
   });
+  test('the steps stand still while the title changes length (D74, amended 2026-11-20)', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const next = () => page.getByRole('group', { name: /^Byt / }).getByRole('button', { name: /^Nästa / });
+    const at = async () => (await next().boundingBox())!;
+    const before = await at();
+    // The week's dates, their length changing from week to week, stand after the controls, never before them.
+    await next().click();
+    await expect(heading(page, 1, 'Vecka 46')).toBeVisible();
+    expect(await at()).toEqual(before);
+    // The day's title is longer than the week's and the month's shorter: neither moves the steps.
+    for (const view of ['Dag', 'Månad']) {
+      await page.getByRole('radiogroup', { name: 'Vy' }).getByRole('radio', { name: view }).click();
+      expect((await at()).y).toBe(before.y);
+    }
+  });
+  for (const viewport of [desktop, narrow])
+    test(`at ${viewport.width} px the day headers close against the column's top as the grid scrolls`, async ({
+      page,
+      api: _,
+    }) => {
+      await page.setViewportSize(viewport);
+      await open(page, '/calendar?view=day');
+      // The column's inset is padding of the scroller; a header stuck under it let the meetings show through above it.
+      const gap = await page.evaluate(() => {
+        const header = document.querySelector('.clew-cal-table-header') as HTMLElement;
+        let scroller: HTMLElement | null = header.parentElement;
+        while (scroller && !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY))
+          scroller = scroller.parentElement;
+        scroller!.scrollTop = 300;
+        return header.getBoundingClientRect().top - scroller!.getBoundingClientRect().top;
+      });
+      expect(Math.round(gap)).toBe(0);
+    });
   test('the phone week is a list with a heading per day, and the day view fits one column', async ({
     page,
     api: _,
@@ -254,7 +288,10 @@ test.describe('a booking started on the grid (D58)', () => {
   test('a click on a day in the month starts at nine that day', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
     await open(page, '/calendar?view=month');
-    const cell = await page.locator('.clew-cal-day-cell[data-date="2026-11-18"]').boundingBox();
+    // The week's row under the header may stand below the fold of the grid's scroller.
+    const day = page.locator('.clew-cal-day-cell[data-date="2026-11-18"]');
+    await day.scrollIntoViewIfNeeded();
+    const cell = await day.boundingBox();
     await page.mouse.click(cell!.x + cell!.width / 2, cell!.y + cell!.height - 6);
     await booking(page, '18 november 2026', '09:00', '10:00');
   });

@@ -697,10 +697,23 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
             {silentHead}
           </VStack>
         ),
+        below: null,
       }
     : {
-        title: capital(title),
+        title: shortTitle,
         actions: (
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            {askWeek}
+            {proposalsMenu}
+            {bookButton}
+          </HStack>
+        ),
+        meta: silentHead,
+        // Where in time and how it is shown are a row of their own under the title (D74, amended 2026-11-20): on the
+        // title's line they shared a wrapping row with a title whose length changes as the person steps, so a long
+        // title pushed them onto the next line and the arrow moved under the pointer. The controls come first and the
+        // week's dates, whose length varies, last, so stepping never moves a control.
+        below: (
           <HStack gap={3} vAlign="center" wrap="wrap">
             {steps}
             <SegmentedControl label="Vy" size="sm" value={view} onChange={v => go({ view: v as View })}>
@@ -708,14 +721,9 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
               <SegmentedControlItem value="week" label="Vecka" />
               <SegmentedControlItem value="month" label="Månad" />
             </SegmentedControl>
-            <HStack gap={2} vAlign="center" wrap="wrap">
-              {askWeek}
-              {proposalsMenu}
-              {bookButton}
-            </HStack>
+            {view === 'week' && <Text color="secondary">{rangeLabel(anchor, 5)}</Text>}
           </HStack>
         ),
-        meta: silentHead,
       };
   // A person with no calendar (D116, amended 2026-11-12): the page says so and who connects one, and draws no grid or
   // controls that would only fail.
@@ -738,7 +746,15 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     );
   return (
     <Shell user={user} nav={nav}>
-      <PageFrame title={head.title} titleId={TITLE_ID} meta={head.meta} actions={head.actions} actionsOnLine end={pane}>
+      <PageFrame
+        title={head.title}
+        titleId={TITLE_ID}
+        meta={head.meta}
+        actions={head.actions}
+        actionsOnLine
+        below={head.below}
+        end={pane}
+      >
         <VStack gap={4}>
           {error && (
             <Text as="p" role="alert" color="accent">
