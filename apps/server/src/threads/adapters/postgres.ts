@@ -217,6 +217,29 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
       .set({ updatedAt: new Date(message.at) })
       .where(eq(threads.id, threadId));
   },
+  async markRecordDraftSent(mark) {
+    // One statement: the row is taken only while every condition holds, so of two marks of one draft the second finds it
+    // marked once the first commits. `jsonb` compares the input as a value, its keys in any order (`marksRecordDraft`).
+    const draft = sql`${threadMessages.meta} -> 'recordDraft'`;
+    const marked = await tx
+      .update(threadMessages)
+      .set({
+        meta: sql`jsonb_set(${threadMessages.meta}, '{recordDraft,sent}', ${JSON.stringify({ threadId: mark.threadId })}::jsonb)`,
+      })
+      .where(
+        and(
+          eq(threadMessages.id, mark.messageId),
+          eq(threadMessages.threadId, mark.conversationId),
+          sql`exists (select 1 from ${threads} where ${threads.id} = ${mark.conversationId} and ${threads.personId} = ${mark.personId} and ${threads.kind} = 'question')`,
+          sql`${draft} ->> 'capability' = ${mark.capability}`,
+          sql`${draft} -> 'record' ->> 'capability' = ${mark.record.capability}`,
+          sql`${draft} -> 'record' -> 'input' = ${JSON.stringify(mark.record.input)}::jsonb`,
+          sql`${draft} -> 'sent' is null`,
+        ),
+      )
+      .returning({ id: threadMessages.id });
+    return marked.length > 0;
+  },
   async writeAudit(entry) {
     await tx.insert(audit).values({
       actor: entry.actor,

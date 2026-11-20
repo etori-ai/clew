@@ -4,6 +4,7 @@ import type {
   EffectPreview,
   EntityActionStarted,
   RecordActions,
+  RecordDraftRef,
 } from '@clew/contracts';
 import {
   answersOf,
@@ -26,7 +27,8 @@ import type { RecordActionDeps, RecordRead } from './model';
  * what the action asks. A propose runs as the person and its draft becomes the card; an execute becomes a card whose
  * button is the human decision, which puts the approved intent in the execution ledger before any source is reached
  * (D45), and one sent from its dialog is decided at once (D126 item 7). Nothing is written to a source here, and
- * nothing is kept about the record beyond the card.
+ * nothing is kept about the record beyond the card. One sent from the assistant's draft of it marks that draft as sent,
+ * in the card's own transaction, so the conversation offers no second send.
  */
 export function recordActionUsecases(deps: RecordActionDeps) {
   /**
@@ -71,6 +73,13 @@ export function recordActionUsecases(deps: RecordActionDeps) {
       about: { record: read },
     };
   }
+  /**
+   * The assistant's draft a start or a decision was sent from (D132), with the record as this request names it: the
+   * card's transaction marks the draft only when it is a draft of this action about this record, so a draft of another
+   * record or action, someone else's or one already sent marks nothing and changes nothing of what is started.
+   */
+  const sentFrom = (read: string, input: Record<string, unknown>, draft: RecordDraftRef | undefined) =>
+    draft ? { recordDraft: { ...draft, record: { capability: read, input } } } : {};
 
   /**
    * The actions about the record `read` draws with `input` that the person may take, each with what it asks; undefined
@@ -90,7 +99,8 @@ export function recordActionUsecases(deps: RecordActionDeps) {
   }
   /**
    * Start `capability` about the record: a propose with the person's answers to its asks becomes its draft's card; an
-   * execute becomes a card for a decision on it, its asks answered then. Undefined when the person may not.
+   * execute becomes a card for a decision on it, its asks answered then. Undefined when the person may not. `draft`: the
+   * assistant's draft it was sent from, marked as sent with the card (`sentFrom`).
    */
   async function start(
     persona: AuthenticatedContext,
@@ -98,6 +108,7 @@ export function recordActionUsecases(deps: RecordActionDeps) {
     input: Record<string, unknown>,
     capability: string,
     values?: AskValues,
+    draft?: RecordDraftRef,
   ): Promise<EntityActionStarted | undefined> {
     const found = await offered(persona, read, input, capability);
     if (!found) return undefined;
@@ -111,14 +122,19 @@ export function recordActionUsecases(deps: RecordActionDeps) {
       persona,
       action.name,
       { ...asked, ...filled },
-      { ...context(read, record, action, output), ...(Object.keys(asked).length ? { asked } : {}) },
+      {
+        ...context(read, record, action, output),
+        ...(Object.keys(asked).length ? { asked } : {}),
+        ...sentFrom(read, input, draft),
+      },
     );
   }
   /**
    * An execute about the record, sent from its dialog's last button (D126 item 7): its card is made now, with the
    * answers checked against the asks and the input against the capability, and decided at once with those answers
    * through the human decision, which puts the approved intent in the execution ledger before any source is reached
-   * (D45). Undefined when the person may not; a refused answer is refused before anything is made.
+   * (D45). Undefined when the person may not; a refused answer is refused before anything is made. `draft`: the
+   * assistant's draft it was sent from, marked as sent with the card (`sentFrom`).
    */
   async function decide(
     persona: AuthenticatedContext,
@@ -126,6 +142,7 @@ export function recordActionUsecases(deps: RecordActionDeps) {
     input: Record<string, unknown>,
     capability: string,
     values?: AskValues,
+    draft?: RecordDraftRef,
   ): Promise<EntityActionStarted | undefined> {
     const found = await offered(persona, read, input, capability);
     if (!found) return undefined;
@@ -135,6 +152,7 @@ export function recordActionUsecases(deps: RecordActionDeps) {
     const started = await deps.start(persona, action.name, filled, {
       ...context(read, record, action, output),
       ...(Object.keys(answers).length ? { answers } : {}),
+      ...sentFrom(read, input, draft),
     });
     await deps.decide(persona, started.threadId, answers);
     return started;

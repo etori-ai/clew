@@ -58,6 +58,12 @@ export type { ClewAction, Conversation, Handed, PendingTurn } from './turns';
 export interface AskFrom {
   chips: ChipRef[];
   search: string;
+  /**
+   * Answered where it is asked (D133 items 2 and 9): Hem's line, under which the answer stands as a card. The column
+   * stays Hem's and nothing navigates; while the card stands, the line's next question continues its conversation.
+   * Clew answers it itself (`own`), as beside a page: the card has no room for another system's assistant.
+   */
+  inPlace?: true;
 }
 /** The conversation's state and verbs, owned here (D31) and read by the row, the transcript, the page and every card. */
 export interface ConversationState {
@@ -74,9 +80,15 @@ export interface ConversationState {
   error: string | null;
   /**
    * The conversation takes the column: on its own page (`/conversations/<id>`, and `/conversations/new` before anything
-   * is asked, D126 rule 5), or on Hem from the moment a question is sent there.
+   * is asked, D126 rule 5). A question asked on Hem's line is answered under it (`inPlace`) and never takes the column.
    */
   open: boolean;
+  /**
+   * The conversation is answered under the line it was asked on (`AskFrom.inPlace`, D133 item 9): its newest exchange,
+   * or the turn on its way, stands there as a card until it is closed (`closeInPlace`) or another conversation is opened
+   * or started. The conversation itself is kept under Samtal as any other.
+   */
+  inPlace: boolean;
   value: string;
   verbs: Verb[];
   input: RefObject<ChatComposerInputHandle | null>;
@@ -112,6 +124,11 @@ export interface ConversationState {
    */
   newConversation(options?: { from?: string; stay?: boolean }): void;
   close(): void;
+  /**
+   * "Stäng" on the answer under the line (D133 item 9): the card goes and the conversation stays where it is. A turn on
+   * its way is stopped and its question goes back in the line, as closing a conversation does; the caller moves the focus.
+   */
+  closeInPlace(): void;
   focus(): void;
   /** The page that shows cards hears of a thread the conversation changed before the cache is written, to hand the focus on (2.4.3). */
   setThreadListener(listener: ((thread: Thread) => void) | null): void;
@@ -163,6 +180,7 @@ export const INERT_CONVERSATION: ConversationState = {
   busy: false,
   error: null,
   open: false,
+  inPlace: false,
   value: '',
   verbs: [],
   input: { current: null },
@@ -181,6 +199,7 @@ export const INERT_CONVERSATION: ConversationState = {
   openConversation: never,
   newConversation: noop,
   close: noop,
+  closeInPlace: noop,
   focus: noop,
   setThreadListener: noop,
   aside: null,
@@ -232,12 +251,13 @@ interface Question {
 /** The address of a conversation not asked yet: "Fråga assistenten" lands here with the thing beside it (D126 rule 5). */
 const NEW = '/conversations/new';
 /**
- * The conversation (D31, D50, D126): one state for the box and the transcript, held above the pages so a question asked
- * on Hem is the same conversation when the transcript takes the column. The transcript is on the page at `/` once a
- * question is sent there, and on the conversation's own page, `/conversations/:id`; `/conversations/new` is a
- * conversation not asked yet, where "Fråga assistenten" lands with the thing beside it and nothing is sent until the person
- * writes. The box keeps focus throughout and sending never moves it. Chips travel in the drawer and stay across turns;
- * the text is cleared. Esc leads back to where the conversation was asked, and the conversation is kept under Samtal.
+ * The conversation (D31, D50, D126, D133): one state for the box and the transcript, held above the pages so a question
+ * asked on Hem is the same conversation when it is opened as a conversation. On Hem the answer stands under the line
+ * (`inPlace`, D133 item 9), and the transcript is on the conversation's own page, `/conversations/:id`; the card under
+ * the line is still there when the person comes back to Hem. `/conversations/new` is a conversation not asked yet,
+ * where "Fråga assistenten" lands with the thing beside it and nothing is sent until the person writes. The box keeps
+ * focus throughout and sending never moves it. Chips travel in the drawer and stay across turns; the text is cleared.
+ * Esc leads back to where the conversation was asked, and the conversation is kept under Samtal.
  */
 export function ConversationProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
@@ -319,11 +339,15 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   }, [conversation]);
   const announce = useAnnounce();
   const [shown, setShown] = useState(false);
+  // The conversation answered under Hem's line (D133 item 9): the line continues it while its card stands.
+  const [inPlace, setInPlace] = useState(false);
+  const inPlaceRef = useRef(false);
+  inPlaceRef.current = inPlace;
   const inline = useMemo(() => refsIn(value), [value]);
   const chipped = useMemo(() => [...new Set([...chips.map(c => c.ref), ...inline])], [chips, inline]);
   const plain = plainText(value);
-  // A conversation's page is the conversation, asked or not; on Hem the transcript takes the column from the moment a
-  // question is sent: the question and its pending answer are drawn at once (D36).
+  // A conversation's page is the conversation, asked or not. A conversation answered on the page it was asked on keeps
+  // the column only where `shown` says so; Hem's line answers under itself and never sets it (D133 item 9).
   const open = onRoute || (shown && here && (!!conversation || !!pending));
   const openRef = useRef(false);
   openRef.current = open;
@@ -346,6 +370,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     onConversation(null);
     input.current?.focus();
   }, [onConversation, abortTurn, setError, input]);
+  const closeInPlace = useCallback(() => {
+    abortTurn('stop');
+    setInPlace(false);
+    setError(null);
+  }, [abortTurn, setError]);
   const rememberObject = useCallback((o: ClewObject) => {
     known.current.set(o.ref, {
       ref: o.ref,
@@ -386,6 +415,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       setValue('');
       setChips([]);
       setShown(false);
+      setInPlace(false);
       origin.current = options?.from ?? null;
       if (where.current.onRoute && !options?.stay) navigate('/');
       input.current?.focus();
@@ -402,6 +432,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         setLatest(null);
         setDone(null);
         setShown(true);
+        // Another conversation in the provider: the card under Hem's line was the one before, and is not drawn again.
+        setInPlace(false);
         input.current?.focus();
       } catch (e) {
         setError(errorMessage(e, 'Samtalet kunde inte öppnas.'));
@@ -463,6 +495,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       how: { to?: Handed | null; suggested?: boolean; own?: boolean; confirmed?: boolean },
     ) => {
       const { raw, text, chips: used, current, from } = question;
+      // Answered under Hem's line (D133 item 9): decided when the question leaves, so closing the card while the answer
+      // is on its way never turns it into a question that takes the person to the conversation's page.
+      const inPlace = !!from?.inPlace;
       offered.current = null;
       await send({
         raw,
@@ -479,18 +514,35 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         onOffer: (assistant, held) => {
           offered.current = { question, assistant, ...(held ? { held } : {}) };
         },
+        ...(inPlace
+          ? {
+              // The line keeps the focus it has: nothing here moves it, and the provider's box is not on the page.
+              refocus: () => false,
+            }
+          : {}),
         onStart: () => {
+          // Asked on Hem's line (D133 item 9): the answer stands under the line, the column stays Hem's and the address
+          // stays; the person never leaves what they asked about.
+          if (inPlace) {
+            setInPlace(true);
+            // "Öppna som samtal" leads from here: closing that conversation leads back to Hem, not to wherever an
+            // earlier conversation was asked from.
+            origin.current = window.location.pathname + window.location.search;
+            return;
+          }
+          // Any other new conversation is not the one under the line.
+          if (!current) setInPlace(false);
           setShown(true);
-          // Asked on Hem (D50): the transcript takes the column in place, and the address it gets once answered keeps
-          // the card or view open beside it (`onConversation`). Asked elsewhere, the conversation takes the column at
-          // once, with what the page showed beside it, and "Stäng samtalet" leads back to the page as it stood.
+          // Asked on Ny fråga, or anywhere else outside a conversation (D50): the conversation takes the column at once,
+          // with what the page showed beside it, and the address it gets once answered keeps that beside it
+          // (`onConversation`); "Stäng samtalet" leads back to the page as it stood.
           if (!current && from) {
             origin.current = window.location.pathname + window.location.search;
             if (!where.current.here) navigate(`/conversations/new${from.search}`);
           }
         },
         onAnswered: response => {
-          if (!current) onConversation(response.conversationId);
+          if (!current && !inPlace) onConversation(response.conversationId);
           const to = response.thread.handover;
           if (response.assistant === 'handover' && to) {
             // The answer is that assistant's; the box stays Clew's, and the way on with the assistant is beside it.
@@ -517,8 +569,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         ).values(),
       ];
       // A question asked where no transcript is on the page starts a conversation of its own (D50): the box on the
-      // landing is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is.
-      const current = openRef.current ? conversation : null;
+      // landing is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is,
+      // and from Hem's line while its answer stands under it (D133 item 9).
+      const current = openRef.current || (from?.inPlace && inPlaceRef.current) ? conversation : null;
       const beside = about?.find(c => c.beside)?.ref;
       await dispatch(
         {
@@ -530,7 +583,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           current,
           ...(from ? { from } : {}),
         },
-        {},
+        // Clew answers under the line itself, as beside a page: the card has no room for another system's assistant.
+        from?.inPlace ? { own: true } : {},
       );
     },
     [chips, conversation, dispatch],
@@ -630,6 +684,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       busy,
       error,
       open,
+      inPlace,
       value,
       verbs,
       input,
@@ -648,6 +703,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       openConversation,
       newConversation,
       close,
+      closeInPlace,
       focus,
       setThreadListener,
       aside,
@@ -668,6 +724,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       busy,
       error,
       open,
+      inPlace,
       value,
       verbs,
       input,
@@ -686,6 +743,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       openConversation,
       newConversation,
       close,
+      closeInPlace,
       focus,
       setThreadListener,
       aside,

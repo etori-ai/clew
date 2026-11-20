@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**137 in force**: 98 accepted and 39 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**138 in force**: 98 accepted and 40 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -62,7 +62,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) | 2026-11-13 | provisional |  |
 | [D127 · A read can say its rows are a read about people, asked for everyone, and then has one place](D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md) | 2026-11-14 | provisional |  |
 | [D129 · The connector protocol is 1, and changes in place until the first release](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) | 2026-11-18 | accepted |  |
-| [D132 · An action says which record it is about, and the assistant fills in the actions of what stands open](D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md) | 2026-11-19 | provisional |  |
+| [D132 · An action says which record it is about, and the assistant fills in the actions of what stands open](D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md) | 2026-11-19 | provisional | [D133](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) |
 
 ## Identity
 
@@ -166,6 +166,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D129 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in](D129-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) | 2026-11-18 | provisional |  |
 | [D130 · Clew's look and layout are the startsidan prototype's, built with Astryx](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) | 2026-11-18 | provisional |  |
 | [D130 · The assistant is asked beside every page, through one button and one pane that the page frame provides](D130-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | 2026-11-18 | provisional |  |
+| [D133 · The corner's "Fråga AI" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) | 2026-11-19 | provisional |  |
 
 ## Assistant
 

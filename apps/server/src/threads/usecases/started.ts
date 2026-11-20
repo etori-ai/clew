@@ -4,7 +4,7 @@ import { audiencedActorOf, CapabilityError, pendingAsks, type Registry, type Thr
 import { ThreadDraftSchema } from '@clew/connectors/protocol';
 import { InputError } from '../../context';
 import { STARTED_ACTION, startedTopic, takesStarted } from '../domain';
-import type { PersonKeys, ThreadStore } from '../model';
+import type { PersonKeys, RecordDraftSent, ThreadStore } from '../model';
 import { keyedDrafts } from './keys';
 
 /**
@@ -15,7 +15,8 @@ import { keyedDrafts } from './keys';
  * so it runs only through the human decision (`decisions.ts`), with the approved intent in the ledger first (D45); one
  * decided in its dialog (D126 item 7) is made here with the answers checked and is decided on the next step. The
  * person's choice is the card's reason, whatever the source wrote. While the card is open the same request, under the
- * same authority, gives the same card. The card, its first message and the audit row commit together.
+ * same authority, gives the same card. The card, its first message, the mark on the assistant's draft it was sent from
+ * (D132) and the audit row commit together.
  */
 export interface StartedDeps {
   store: ThreadStore;
@@ -58,6 +59,14 @@ export interface StartContext {
    * request with other input is the same card. Without it the input is part of what makes two requests the same card.
    */
   same?: 'topic';
+  /**
+   * The assistant's draft about a record this was sent from (D132): its conversation's message, and the record as the
+   * request names it. The transaction that makes the card marks the draft as sent, as this card, when it is the person's
+   * own draft of this action about this record and not marked yet (`ThreadTx.markRecordDraftSent`), and the audit row
+   * then says `fromDraft`. Anything else marks nothing, and the card is made exactly as without it: a draft never decides
+   * whether or what is started. A request that finds its card already open makes nothing and marks nothing.
+   */
+  recordDraft?: Omit<RecordDraftSent, 'personId' | 'capability' | 'threadId'>;
 }
 
 export function startedCards({ store, registry, run, digest, clock, ids, people }: StartedDeps) {
@@ -167,6 +176,9 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
       });
       if (!ok) return false;
       await tx.addMessage(id, { role: 'assistant', body: draft.summary, at });
+      const fromDraft = context.recordDraft
+        ? await tx.markRecordDraftSent({ ...context.recordDraft, personId: persona.id, capability, threadId: id })
+        : false;
       await tx.writeAudit({
         actor: persona.principal.id,
         action: 'thread.started',
@@ -180,6 +192,8 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
           owner: persona.id,
           ...(context.about ? { about: context.about } : {}),
           ...(context.asked && Object.keys(context.asked).length ? { asked: context.asked } : {}),
+          // That it came from the assistant's draft, never which conversation or what it said.
+          ...(fromDraft ? { fromDraft: true } : {}),
         },
       });
       return true;

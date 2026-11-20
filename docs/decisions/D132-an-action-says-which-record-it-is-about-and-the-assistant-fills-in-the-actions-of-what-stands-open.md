@@ -1,6 +1,6 @@
 # D132 · An action says which record it is about, and the assistant fills in the actions of what stands open
 
-**Status:** provisional (the product owner chose its open points on 2026-11-19: the action says what it is about, a record's actions are shown on the record's page only, and it is built first for one example of a connector and then for Kalender. The server half is built (2026-11-19): the declaration with its rules in the loader, the reference, the preview and the check; the registry's index; the routes that list a record's actions and start or decide one; the assistant's draft about a record; and one example in the service desk fixture. The web half waits for the look and layout that landed on `main` the same day to be reconciled with D130, so no page shows a record's actions yet. Nothing outside the repository has tested it) · **Date:** 2026-11-19 · **Area:** integrations, assistant, ui
+**Status:** provisional (the product owner chose its open points on 2026-11-19: the action says what it is about, a record's actions are shown on the record's page only, and it is built first for one example of a connector and then for Kalender. The server half is built (2026-11-19): the declaration with its rules in the loader, the reference, the preview and the check; the registry's index; the routes that list a record's actions and start or decide one; the assistant's draft about a record; and one example in the service desk fixture. The web half is built (2026-11-20), in the look that landed on `main`: the record's page draws its actions, and the assistant's draft about a record is the filled-in row of [D133](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) item 8. Nothing outside the repository has tested it) · **Date:** 2026-11-19 · **Area:** integrations, assistant, ui
 
 **Context.** A connector can declare an action a person takes on a work item (the item's `actions`) and on a person
 or a unit (`about` on a propose or an execute,
@@ -89,6 +89,13 @@ a list: more reach, but dense tables get a control per row and the record's page
 - The draft is a field of its own beside the work item's (`recordDraft` on the answer and on the stored message):
   the action, the record by its read and input, and the values. The turn's audit row says that a draft was made,
   for which read and action and which asks, never the values.
+- A record's page draws its actions where a person's page draws a person's: at the end of the title's line, the
+  first as the primary button, and under the title in one "Åtgärder" menu on a phone. A list's rows get none.
+- A draft sent from its card is marked `sent: { threadId }` on the stored message in the work item's own transaction,
+  and the start's audit row says `fromDraft`, with no conversation id, message id or text. Only the server writes the
+  mark. The card then says what the work item says of itself: "Skickat" with the receipt's headline, "Skickat, väntar
+  på källan", or "Väntar på dig" where the item was made and nothing was decided in it, each with "Visa ärendet". The
+  values are not compared, since the person may change them in the dialog.
 - The example is `servicedesk.comment`, "Lägg till en kommentar", an execute about `servicedesk.request` with one
   ask and an effect read; the request shows the comment afterwards.
 
@@ -101,7 +108,9 @@ a list: more reach, but dense tables get a control per row and the record's page
 - The loader does not require the read's mapped input property to be a required one. A page that opens the record
   without it leaves the action refused by its own input at the start.
 - A record's page whose read has actions makes that read twice: once to draw it, once before the actions are listed.
+- A draft is not marked when the person already has the same action open with the same answers, started from the
+  record's page: the send finds that work item and makes nothing, so the card keeps offering "Granska och skicka".
+- The record's page can show the record as it was: the decision answers before the source is written, so a person who
+  goes back at once reads the old record until it is read again.
 
-**Not built.** The web half: the record's page drawing the actions, the action's dialog started from there, and the
-pane drawing a draft about a record as one row. Item 5, Clew's own decisions and Kalender. The booking for several
-people.
+**Not built.** Item 5, Clew's own decisions and Kalender. The booking for several people.

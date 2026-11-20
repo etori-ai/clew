@@ -516,7 +516,8 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         subtitle={nameLine(detail)}
         actions={
           <EntityActions
-            detail={detail}
+            subject={detail.entity}
+            actions={detail.actions}
             mobile={mobile}
             extra={
               own ? (

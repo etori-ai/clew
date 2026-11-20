@@ -1604,9 +1604,18 @@
       "number": 132,
       "path": "docs/decisions/D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md",
       "title": "D132 · An action says which record it is about, and the assistant fills in the actions of what stands open",
-      "status": "provisional (the product owner chose its open points on 2026-11-19: the action says what it is about, a record's actions are shown on the record's page only, and it is built first for one example of a connector and then for Kalender. The server half is built (2026-11-19): the declaration with its rules in the loader, the reference, the preview and the check; the registry's index; the routes that list a record's actions and start or decide one; the assistant's draft about a record; and one example in the service desk fixture. The web half waits for the look and layout that landed on `main` the same day to be reconciled with D130, so no page shows a record's actions yet. Nothing outside the repository has tested it)",
+      "status": "provisional (the product owner chose its open points on 2026-11-19: the action says what it is about, a record's actions are shown on the record's page only, and it is built first for one example of a connector and then for Kalender. The server half is built (2026-11-19): the declaration with its rules in the loader, the reference, the preview and the check; the registry's index; the routes that list a record's actions and start or decide one; the assistant's draft about a record; and one example in the service desk fixture. The web half is built (2026-11-20), in the look that landed on `main`: the record's page draws its actions, and the assistant's draft about a record is the filled-in row of [D133](D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) item 8. Nothing outside the repository has tested it)",
       "date": "2026-11-19",
       "area": "integrations, assistant, ui"
+    },
+    {
+      "key": "D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column",
+      "number": 133,
+      "path": "docs/decisions/D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md",
+      "title": "D133 · The corner's \"Fråga AI\" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is",
+      "status": "provisional (the product owner chose it on 2026-11-19 from the canvas \"Clew",
+      "date": "2026-11-19",
+      "area": "ui, product, assistant"
     }
   ],
   "documents": [
@@ -2434,6 +2443,12 @@
     {
       "path": "docs/decisions/D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md",
       "title": "D132 · An action says which record it is about, and the assistant fills in the actions of what stands open",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D133-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md",
+      "title": "D133 · The corner's \"Fråga AI\" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is",
       "category": "decision-history",
       "headings": []
     },

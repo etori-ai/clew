@@ -610,6 +610,208 @@ describe('an action about a record, listed and run from its page (D132)', () => 
   });
 });
 
+const TEXT = { text: 'Felkoden är E07.' };
+type Store = ReturnType<typeof memoryThreadStore>;
+/**
+ * A conversation of `who`'s whose answer keeps the assistant's draft, as a turn keeps it (`MessageMeta.recordDraft`):
+ * the comment on Hillevi's printer report unless said otherwise. Its question's message and its answer's.
+ */
+async function conversation(
+  store: Store,
+  who: AuthenticatedContext,
+  recordDraft: Record<string, unknown> = { capability: COMMENT, record: { capability: READ, input: PRINTER } },
+) {
+  const at = T0.toISOString();
+  const id = `conversation-${who.userName}-${store.dump().length + 1}`;
+  await store.transaction(async tx => {
+    await tx.insertThread({
+      id,
+      personId: who.id,
+      kind: 'question',
+      topic: 'question',
+      title: 'Skriv att felkoden är E07',
+      state: 'open',
+      week: null,
+      connector: 'clew',
+      area: 'fragor',
+      summary: '',
+      items: [],
+      actions: [],
+      waitingOn: null,
+      deadline: null,
+      trigger: { reason: 'Du frågade', source: 'Clew', at },
+      createdAt: at,
+      updatedAt: at,
+    });
+    await tx.addMessage(id, { role: 'user', body: 'Skriv att felkoden är E07', at });
+    await tx.addMessage(id, {
+      role: 'assistant',
+      body: 'Jag har fyllt i kommentaren. Inget är skickat.',
+      at,
+      meta: { recordDraft: { values: TEXT, ...recordDraft } as never },
+    });
+  });
+  const [question, answer] = (await store.readThread(who.id, id))!.messages;
+  return {
+    draft: { conversationId: id, messageId: answer!.id },
+    question: { conversationId: id, messageId: question!.id },
+    /** The draft as the conversation keeps it now: what the person's transcript draws. */
+    kept: async () => (await store.readThread(who.id, id))!.messages[1]!.meta!.recordDraft,
+  };
+}
+/** The audit row of the work item's start. */
+const started = (store: Store, threadId: string) =>
+  store.audit.find(r => r.action === 'thread.started' && r.subject === 'thread:' + threadId)!;
+
+/**
+ * The assistant's draft of an action about a record, sent (D132): the start or the decision names the conversation's
+ * message that keeps the draft, and the transaction that makes the work item marks that draft as sent with it, so the
+ * conversation draws "Skickat" and no second "Granska och skicka", after a reload too. Only the person's own draft of
+ * the same action about the same record, not marked yet, is marked; anything else is not, and never changes what runs.
+ */
+describe("sent from the assistant's draft, the draft says it was sent (D132)", () => {
+  test('decided from it: the work item is made as from the page, the draft is marked with it, and the audit row says so', async () => {
+    const w = world();
+    const c = await conversation(w.store, hillevi);
+    const { threadId } = (await w.actions.decide(hillevi, READ, PRINTER, COMMENT, TEXT, c.draft))!;
+    // What Hillevi's conversation says now, after a reload too: sent, as this work item.
+    expect(await c.kept()).toEqual({
+      capability: COMMENT,
+      record: { capability: READ, input: PRINTER },
+      values: TEXT,
+      sent: { threadId },
+    });
+    // The work item and the decision are those of a send from the record's page.
+    expect((await w.access.read(hillevi, threadId))!).toMatchObject({
+      title: 'Lägg till en kommentar',
+      actions: [{ id: STARTED_ACTION, capability: COMMENT, kind: 'execute', input: PRINTER }],
+    });
+    expect((await w.ledger.read('execution-1'))!.payload).toEqual({ ...PRINTER, ...TEXT });
+    // The start's audit row says it came from a draft: a flag, never the conversation, its message or what it said.
+    const row = started(w.store, threadId);
+    expect(row.details).toMatchObject({
+      capability: COMMENT,
+      kind: 'execute',
+      about: { record: READ },
+      fromDraft: true,
+    });
+    for (const content of [c.draft.conversationId, c.draft.messageId, 'E07'])
+      expect(JSON.stringify(row)).not.toContain(content);
+  });
+
+  test('a second send naming the same draft runs, and marks nothing new: the draft still names the first work item', async () => {
+    const w = world();
+    const c = await conversation(w.store, hillevi);
+    const first = (await w.actions.decide(hillevi, READ, PRINTER, COMMENT, TEXT, c.draft))!.threadId;
+    // The person changed the words in the dialog and sent again from a page that still drew the button.
+    const again = { text: 'Kan ni ringa mig?' };
+    const second = (await w.actions.decide(hillevi, READ, PRINTER, COMMENT, again, c.draft))!.threadId;
+    expect(second).not.toBe(first);
+    expect((await w.ledger.read('execution-2'))!.payload).toEqual({ ...PRINTER, ...again });
+    // Hillevi's transcript still says "Skickat" with the first work item as its link.
+    expect((await c.kept())!.sent).toEqual({ threadId: first });
+    expect(started(w.store, first).details).toMatchObject({ fromDraft: true });
+    expect(started(w.store, second).details).not.toHaveProperty('fromDraft');
+  });
+
+  test("someone else's draft, a message with no draft, a draft of another record or action, or none: the action runs, nothing is marked", async () => {
+    const w = world();
+    // Anna's own draft of the same comment on the same request (she cannot send it; it is only kept).
+    const annas = await conversation(w.store, anna);
+    const mine = await conversation(w.store, hillevi);
+    const otherRecord = await conversation(w.store, hillevi, {
+      capability: COMMENT,
+      record: { capability: READ, input: ANNAS },
+    });
+    const otherAction = await conversation(w.store, hillevi, {
+      capability: 'servicedesk.close',
+      record: { capability: READ, input: PRINTER },
+    });
+    const named: Array<[string, { conversationId: string; messageId: string }]> = [
+      ["Anna's conversation", annas.draft],
+      ['the question, which keeps no draft', mine.question],
+      ['a draft about another request', otherRecord.draft],
+      ['a draft of another action', otherAction.draft],
+      ['a conversation that does not exist', { conversationId: 'nowhere', messageId: 'nothing' }],
+    ];
+    for (const [i, [what, draft]] of named.entries()) {
+      const sent = await w.actions.decide(hillevi, READ, PRINTER, COMMENT, { text: `Kommentar ${i}` }, draft);
+      expect([what, !!sent?.threadId]).toEqual([what, true]);
+      expect([what, started(w.store, sent!.threadId).details]).toEqual([
+        what,
+        expect.not.objectContaining({ fromDraft: true }),
+      ]);
+    }
+    // Without naming a draft, a draft of the same comment on the same request is left as it is.
+    const plain = (await w.actions.decide(hillevi, READ, PRINTER, COMMENT, { text: 'Utan utkast' }))!.threadId;
+    expect(started(w.store, plain).details).not.toHaveProperty('fromDraft');
+    for (const c of [annas, mine, otherRecord, otherAction]) expect(await c.kept()).not.toHaveProperty('sent');
+    // Every one ran: six decisions in the ledger.
+    expect(w.ledger.audit().filter(r => r.action === 'execution.approved')).toHaveLength(6);
+  });
+
+  test('a refused send marks nothing: a request she may not read, or an answer that names what the record fills', async () => {
+    const w = world();
+    const c = await conversation(w.store, hillevi);
+    expect(await w.actions.decide(hillevi, READ, ANNAS, COMMENT, TEXT, c.draft)).toBeUndefined();
+    await expect(
+      w.actions.decide(hillevi, READ, PRINTER, COMMENT, { ...TEXT, ref: ANNAS.ref }, c.draft),
+    ).rejects.toThrow('Åtgärden frågar inte efter det värdet.');
+    expect(await c.kept()).not.toHaveProperty('sent');
+    expect(w.store.audit).toEqual([]);
+  });
+
+  test('a propose started from its draft marks the draft with the card it became', async () => {
+    const registry = new Registry().register({
+      id: 'notes',
+      kind: 'passthrough',
+      source: 'Anteckningar',
+      areas: [{ id: 'notes', title: 'Anteckningar', roles: ['manager', 'employee'], standing: [], schedules: [] }],
+      capabilities: [
+        noteRead(),
+        {
+          ...appendNote(),
+          run: async () => ({
+            topic: 'notes:append:n1',
+            area: 'notes',
+            title: 'Tillägg till Planeringen',
+            summary: 'Ett tillägg att skicka.',
+            reason: 'x',
+            actions: [],
+          }),
+        },
+      ],
+    });
+    const store = memoryThreadStore();
+    const cards = startedCards({
+      store,
+      registry,
+      run: (p, name, input) => registry.run(audiencedActorOf(p), name, input),
+      digest: value => JSON.stringify(value),
+      clock: () => T0,
+      ids: () => 'card-1',
+    });
+    const uc = recordActionUsecases({
+      records: async (actor, read) => ({ title: 'Anteckningen', actions: registry.recordActions(actor, read) }),
+      read: (p, read, input) => registry.run(audiencedActorOf(p), read, input),
+      start: cards.startCard,
+      effect: async () => {
+        throw new Error('not here');
+      },
+      clock: () => T0,
+    });
+    const c = await conversation(store, anna, {
+      capability: 'notes.append',
+      record: { capability: 'notes.note', input: { id: 'n1' } },
+    });
+    expect(await uc.start(anna, 'notes.note', { id: 'n1' }, 'notes.append', { text: 'Och mer.' }, c.draft)).toEqual({
+      threadId: 'card-1',
+    });
+    expect((await c.kept())!.sent).toEqual({ threadId: 'card-1' });
+    expect(started(store, 'card-1').details).toMatchObject({ kind: 'propose', fromDraft: true });
+  });
+});
+
 describe('the routes (D132)', () => {
   function stack(who = hillevi) {
     const w = world();
@@ -662,6 +864,25 @@ describe('the routes (D132)', () => {
     }
     expect(w.store.dump()).toHaveLength(1);
   });
+  test('a start or a decision that names the draft it was sent from takes it to the use case; an unknown one still runs', async () => {
+    const w = stack();
+    const c = await conversation(w.store, hillevi);
+    const decided = await w.post(
+      `/${READ}/decide`,
+      JSON.stringify({ input: PRINTER, capability: COMMENT, values: TEXT, draft: c.draft }),
+    );
+    expect(decided.status).toBe(200);
+    const { threadId } = (await decided.json()) as { threadId: string };
+    expect((await c.kept())!.sent).toEqual({ threadId });
+    const unknown = { conversationId: 'nowhere', messageId: 'nothing' };
+    const begun = await w.post(
+      `/${READ}/actions`,
+      JSON.stringify({ input: PRINTER, capability: COMMENT, draft: unknown }),
+    );
+    expect(begun.status).toBe(200);
+    const other = ((await begun.json()) as { threadId: string }).threadId;
+    expect(started(w.store, other).details).not.toHaveProperty('fromDraft');
+  });
   test('a body or an input out of shape is refused, and a refused answer is said in Swedish', async () => {
     const w = stack();
     for (const body of [
@@ -678,6 +899,22 @@ describe('the routes (D132)', () => {
       expect(await answer.json()).toEqual({ error: 'Ogiltig förfrågan.' });
     }
     expect((await w.get(`/${READ}/actions?input=nope`)).status).toBe(400);
+    // A start or a decision may name the draft it was sent from, by two ids and nothing else; "Det här händer" never.
+    for (const [path, body] of [
+      [
+        `/${READ}/decide`,
+        { input: PRINTER, capability: COMMENT, values: { text: 'x' }, draft: { conversationId: 'c' } },
+      ],
+      [`/${READ}/actions`, { input: PRINTER, capability: COMMENT, draft: { conversationId: 'c', messageId: 3 } }],
+      [
+        `/${READ}/decide`,
+        { input: PRINTER, capability: COMMENT, draft: { conversationId: 'c', messageId: 'm', x: 1 } },
+      ],
+      [`/${READ}/effect`, { input: PRINTER, capability: COMMENT, draft: { conversationId: 'c', messageId: 'm' } }],
+    ] as const) {
+      const answer = await w.post(path, JSON.stringify(body));
+      expect([path, answer.status]).toEqual([path, 400]);
+    }
     const named = await w.post(
       `/${READ}/decide`,
       JSON.stringify({ input: PRINTER, capability: COMMENT, values: { text: 'x', ref: ANNAS.ref } }),
@@ -764,7 +1001,7 @@ describe('the assistant fills in an action about the record that stands open (D1
     });
     const ask = (text: string, thing?: { capability: string; input: Record<string, unknown> }, who = hillevi) =>
       assistant.converse(who, { text, ...(thing ? { thing: { kind: 'record' as const, ...thing } } : {}) });
-    return { registry, store, turns, sent, ask };
+    return { registry, store, turns, sent, ask, assistant };
   }
   const drafting =
     (...calls: Array<Record<string, unknown>>) =>
@@ -878,5 +1115,53 @@ describe('the assistant fills in an action about the record that stands open (D1
     expect(answers[1]).toBe('no tool');
     expect(refused).not.toHaveProperty('recordDraft');
     expect(w.store.dump().every(r => r.thread.kind === 'question')).toBe(true);
+  });
+
+  /**
+   * Before anything is asked the pane says which actions about the open record the assistant may fill in (D133 item
+   * 7): the server answers from the rules the turn offers its draft tool by, without making the record's read and
+   * without writing anything.
+   */
+  const open = (capability: string, input: Record<string, unknown>) => ({
+    thing: { kind: 'record' as const, capability, input },
+  });
+  test('the pane is told the open record’s actions the turn would offer, by title; no read is made, nothing written (D133 item 7)', async () => {
+    answers = [];
+    const w = assistantWorld(drafting());
+    expect(await w.assistant.reach(hillevi, open(READ, PRINTER))).toEqual({
+      prepares: [{ title: 'Lägg till en kommentar' }],
+    });
+    // A note's read is the assistant's to make: the reach does not make it, where the turn reads it for the model.
+    expect(await w.assistant.reach(hillevi, open('notes.note', { id: 'n1' }))).toEqual({
+      prepares: [{ title: 'Skriv till' }],
+    });
+    expect(w.sent).toEqual([]);
+    expect(w.store.dump()).toEqual([]);
+    expect(w.store.audit).toEqual([]);
+    // A read with no actions about its records, a read nobody declared, and an input the read refuses: nothing.
+    for (const thing of [
+      open('servicedesk.equipment', { person: 'hillevi' }),
+      open('servicedesk.nothing', {}),
+      open(READ, { ref: 'nonsense' }),
+    ])
+      expect(await w.assistant.reach(hillevi, thing)).toEqual({ prepares: [] });
+    // The turn asked with the same record open offers the same action.
+    await w.ask('Skriv en kommentar', { capability: READ, input: PRINTER });
+    const tool = w.turns[0]!.tools['clew__draftAction'] as { inputSchema: { jsonSchema: any } };
+    expect(tool.inputSchema.jsonSchema.properties.action.enum).toEqual([COMMENT]);
+  });
+  test('a person the action is not for is told nothing about the record, and is refused nothing', async () => {
+    const w = assistantWorld(drafting());
+    // The service desk is for managers only: Anna is told nothing, as the turn offers her nothing; Hillevi still is.
+    w.registry.govern('servicedesk', { ...openGovernance(), audience: { mode: 'selected', roles: ['manager'] } });
+    expect(await w.assistant.reach(anna, open(READ, ANNAS))).toEqual({ prepares: [] });
+    expect(await w.assistant.reach(hillevi, open(READ, PRINTER))).toEqual({
+      prepares: [{ title: 'Lägg till en kommentar' }],
+    });
+    await w.ask('Skriv en kommentar', { capability: READ, input: ANNAS }, anna);
+    expect('clew__draftAction' in w.turns.at(-1)!.tools).toBe(false);
+    // Switched off, the action is offered to nobody.
+    w.registry.govern('servicedesk', { ...openGovernance(), capabilities: { [COMMENT]: { enabled: false } } });
+    expect(await w.assistant.reach(hillevi, open(READ, PRINTER))).toEqual({ prepares: [] });
   });
 });

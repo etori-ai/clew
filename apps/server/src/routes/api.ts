@@ -7,6 +7,7 @@ import {
   ActInput,
   DocumentRequestSchema,
   AskInput,
+  AssistantReachInput,
   AvailabilityInput,
   CancelEventInput,
   ConfirmInput,
@@ -28,7 +29,11 @@ import type {
   MoveProposalInput as MoveProposalInputType,
   RescheduleEventInput as RescheduleEventInputType,
 } from '@clew/contracts';
-import type { ConversationEvent, ConversationInput as ConversationInputType } from '@clew/contracts';
+import type {
+  AssistantReachInput as AssistantReachInputType,
+  ConversationEvent,
+  ConversationInput as ConversationInputType,
+} from '@clew/contracts';
 import { CalendarError } from '@clew/calendar/model';
 import { HandoverHeld, HandoverOffered, TurnStopped } from '../assistant';
 import type { ActInput as ActInputType, EffectInput as EffectInputType } from '@clew/contracts';
@@ -77,7 +82,7 @@ const {
 } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
-const { ask, converse, listAssistants, listObjects, markOpened, reply } = assistant;
+const { ask, converse, listAssistants, listObjects, markOpened, reach, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const approval = ajv.compile(
   Type.Object(
@@ -160,6 +165,7 @@ const validators = {
   act: ajv.compile(ActInput),
   effect: ajv.compile(EffectInput),
   conversation: ajv.compile(ConversationInput),
+  reach: ajv.compile(AssistantReachInput),
   modelChoice: ajv.compile(ModelChoiceInput),
   createEvent: ajv.compile(CreateEventInput),
   rescheduleEvent: ajv.compile(RescheduleEventInput),
@@ -521,6 +527,18 @@ api.get('/threads/:id/verbs', async c => {
 });
 /** The assistants of other systems the person may hand a conversation to (the assistants profile); empty when no source has any for them. */
 api.get('/assistant/handover', async c => c.json({ assistants: await listAssistants(c.get('session').context) }));
+/**
+ * What the assistant may fill in for what stands open on the page (D133 item 7): the same two fields a question carries
+ * about it, answered with the actions' titles, empty for anything the person may not see. Reads no record, writes nothing.
+ */
+api.post('/assistant/reach', async c =>
+  c.json(
+    await reach(
+      c.get('session').context,
+      await body(c.req.raw, validators.reach as unknown as (value: unknown) => value is AssistantReachInputType),
+    ),
+  ),
+);
 /** The person's models (D24): the ones they may pick, the one in use and whether it answers; choosing one is their own preference. */
 api.get('/assistant/status', async c => c.json(await models.statusFor(c.get('session').context)));
 api.patch('/assistant/model', async c =>

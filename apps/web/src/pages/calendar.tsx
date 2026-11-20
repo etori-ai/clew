@@ -810,11 +810,14 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
    * The conversation about what the pane holds, and the box (the product owner, 2026-11-18; boards KalFraga,
    * KalFragaFlytt and the head and box of KalFragaVecka): the entry's facts or the form's fields at the top of the body,
    * a rule, then the whole conversation over the box, drawn by the conversation's own parts (`PageTalk`, D130 "One
-   * component"); a form's buttons stay at the foot, under the box. The box keeps its place in the tree from the entry to
-   * its move form and back, so the focus and the words in it stay. Esc and ✕ are the pane's as they were: Esc in the
-   * move form goes back to the entry, with the conversation. Under an earlier answer that prepared a decision stands the
-   * page's own button for it (`preparedAction`).
+   * component"); a form's buttons stay at the foot, under the box. Before anything is asked the box is alone and as low
+   * as the box, at the foot of the body (D133 item 2): the facts or the fields have the rest, and scroll there when they
+   * need more. The box keeps its place in the tree from the entry to its move form and back, and from the first state to
+   * the conversation, so the focus and the words in it stay. Esc and ✕ are the pane's as they were: Esc in the move form
+   * goes back to the entry, with the conversation. Under an earlier answer that prepared a decision stands the page's
+   * own button for it (`preparedAction`).
    */
+  const asked = !!(talk.state.conversation || talk.state.pending);
   const withAsk = (s: Shown | null): Shown | null => {
     if (!s || !talk.subject || s.id === 'booking') return s;
     const prepared = (p: Prepared) => <PreparedRow prepared={p} action={preparedAction(p, askSubject)} />;
@@ -823,13 +826,11 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       talk: true,
       body: (
         <VStack gap={6} height="100%">
-          {s.body && (
-            <>
-              {s.body}
-              <Divider />
-            </>
-          )}
-          <StackItem size="fill">
+          <StackItem size={asked ? 'static' : 'fill'} isScrollable aria-label={s.form ? s.title : 'Uppgifter'}>
+            {s.body}
+          </StackItem>
+          {s.body && <Divider />}
+          <StackItem size={asked ? 'fill' : 'static'}>
             <PageTalk talk={talk} prepared={prepared} />
           </StackItem>
         </VStack>

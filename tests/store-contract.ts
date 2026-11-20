@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { OpenThing, Subject, Thread } from '../packages/contracts/src/index';
-import type { AuditEntry, NewThread, ThreadStore, WorkflowStart } from '../apps/server/src/threads/model';
+import type {
+  AuditEntry,
+  NewThread,
+  RecordDraftSent,
+  ThreadStore,
+  WorkflowStart,
+} from '../apps/server/src/threads/model';
 import { reminderStart, reminderWorkflowId } from '../apps/server/src/threads/domain';
 
 /**
@@ -278,6 +284,77 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect((await store.readThread(a, beside.id))!.updatedAt).toBe(T0);
       await store.transaction(tx => tx.updateThread(beside.id, { summary: 'Svar', updatedAt: plus(T0, 2000) }));
       expect((await store.readThread(a, beside.id))!.askedBeside).toEqual(opened);
+    });
+    test("an assistant's draft about a record is marked as sent once, on the person's own conversation only (D132)", async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const record = { capability: 'servicedesk.request', input: { ref: 'request:servicedesk:SD-1', desk: 'it' } };
+      const recordDraft = { capability: 'servicedesk.comment', record, values: { text: 'Felkoden är E07.' } };
+      const meta = { refs: ['request:servicedesk:SD-1'], recordDraft };
+      const conversation = draft(a, { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor' });
+      const work = draft(a);
+      await store.transaction(async tx => {
+        await tx.insertThread(conversation);
+        await tx.insertThread(work);
+        await tx.addMessage(conversation.id, { role: 'user', body: 'Skriv att felkoden är E07', at: plus(T0, 1000) });
+        await tx.addMessage(conversation.id, { role: 'assistant', body: 'Ifyllt.', at: plus(T0, 1000), meta });
+        await tx.addMessage(work.id, { role: 'assistant', body: 'Ifyllt.', at: plus(T0, 1000), meta });
+      });
+      const [question, answer] = (await store.readThread(a, conversation.id))!.messages;
+      const [onWork] = (await store.readThread(a, work.id))!.messages;
+      // The record as the request names it: the same input, its keys in another order.
+      const mark: RecordDraftSent = {
+        personId: a,
+        conversationId: conversation.id,
+        messageId: answer!.id,
+        capability: 'servicedesk.comment',
+        record: { capability: 'servicedesk.request', input: { desk: 'it', ref: 'request:servicedesk:SD-1' } },
+        threadId: 'work-1',
+      };
+      const wrong: Array<[string, RecordDraftSent]> = [
+        ["another person's conversation", { ...mark, personId: b }],
+        ['a message without a draft', { ...mark, messageId: question!.id }],
+        ['another action', { ...mark, capability: 'servicedesk.close' }],
+        ['another read', { ...mark, record: { ...mark.record, capability: 'servicedesk.requests' } }],
+        [
+          'another record',
+          { ...mark, record: { ...mark.record, input: { desk: 'it', ref: 'request:servicedesk:SD-2' } } },
+        ],
+        ['less of the input', { ...mark, record: { ...mark.record, input: { ref: 'request:servicedesk:SD-1' } } }],
+        ['the message named under another thread', { ...mark, conversationId: work.id }],
+        [
+          "a work item's message, which is no conversation",
+          { ...mark, conversationId: work.id, messageId: onWork!.id },
+        ],
+      ];
+      for (const [what, other] of wrong)
+        expect([what, await store.transaction(tx => tx.markRecordDraftSent(other))]).toEqual([what, false]);
+      const before = (await store.readThread(a, conversation.id))!;
+      expect(before.messages[1]!.meta).toEqual(meta);
+      // A mark rolls back with its transaction.
+      await expect(
+        store.transaction(async tx => {
+          expect(await tx.markRecordDraftSent(mark)).toBe(true);
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect((await store.readThread(a, conversation.id))!.messages[1]!.meta).toEqual(meta);
+      // Marked with the work item it became; nothing else of the message or the conversation moves.
+      expect(await store.transaction(tx => tx.markRecordDraftSent(mark))).toBe(true);
+      const after = (await store.readThread(a, conversation.id))!;
+      const sent = { ...meta, recordDraft: { ...recordDraft, sent: { threadId: 'work-1' } } };
+      expect(after.messages.map(m => [m.id, m.role, m.body, m.meta])).toEqual([
+        [question!.id, 'user', 'Skriv att felkoden är E07', undefined],
+        [answer!.id, 'assistant', 'Ifyllt.', sent],
+      ]);
+      expect(after.updatedAt).toBe(before.updatedAt);
+      // Once: a second mark, for another work item, writes nothing, and the first stays.
+      expect(await store.transaction(tx => tx.markRecordDraftSent({ ...mark, threadId: 'work-2' }))).toBe(false);
+      expect((await store.readThread(a, conversation.id))!.messages[1]!.meta).toEqual(sent);
+      // The work item's own message, which carried the same draft, was never touched.
+      expect((await store.readThread(a, work.id))!.messages[0]!.meta).toEqual(meta);
     });
     test("an action's read-receipt mark is kept with the action and read back as stored (D112)", async () => {
       const {

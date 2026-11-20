@@ -1,6 +1,13 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { Value } from 'typebox/value';
-import { AskValuesSchema, OPEN_THING_INPUT_MAX, type AskValues, type RecordActionInput } from '@clew/contracts';
+import {
+  AskValuesSchema,
+  OPEN_THING_INPUT_MAX,
+  RecordDraftRefSchema,
+  type AskValues,
+  type RecordActionInput,
+  type RecordDraftRef,
+} from '@clew/contracts';
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { RecordActionUsecases } from '../modules/records/actions';
 
@@ -31,8 +38,11 @@ function inputOf(value: unknown): Record<string, unknown> {
     throw new InputError('Ogiltig förfrågan.');
   return value;
 }
-/** The body of a start, a decision or an effect: `{ input, capability }` and the person's answers in `values`, nothing else. */
-async function actionInput(request: Request): Promise<RecordActionInput> {
+/**
+ * The body of a start, a decision or an effect: `{ input, capability }`, the person's answers in `values` and, on a start
+ * or a decision (`sends`), the assistant's draft it was sent from in `draft`; nothing else.
+ */
+async function actionInput(request: Request, sends = false): Promise<RecordActionInput> {
   const text = await request.text();
   let value: unknown;
   try {
@@ -40,14 +50,17 @@ async function actionInput(request: Request): Promise<RecordActionInput> {
   } catch {
     value = undefined;
   }
-  if (!isObject(value) || Object.keys(value).some(k => k !== 'input' && k !== 'capability' && k !== 'values'))
+  const allowed = sends ? ['input', 'capability', 'values', 'draft'] : ['input', 'capability', 'values'];
+  if (!isObject(value) || Object.keys(value).some(k => !allowed.includes(k)))
     throw new InputError('Ogiltig förfrågan.');
-  const { input, capability, values } = value;
+  const { input, capability, values, draft } = value;
   if (values !== undefined && !Value.Check(AskValuesSchema, values)) throw new InputError('Ogiltig förfrågan.');
+  if (draft !== undefined && !Value.Check(RecordDraftRefSchema, draft)) throw new InputError('Ogiltig förfrågan.');
   return {
     input: inputOf(input),
     capability: capabilityOf(capability),
     ...(values !== undefined ? { values: values as AskValues } : {}),
+    ...(draft !== undefined ? { draft: draft as RecordDraftRef } : {}),
   };
 }
 
@@ -78,8 +91,8 @@ export function recordRoutes(deps: RecordRouteDeps) {
   routes.post('/:read/actions', async c => {
     const read = readOf(c);
     if (!read) return notFound(c);
-    const { input, capability, values } = await actionInput(c.req.raw);
-    return answer(c, await actions.start(c.get('session').context, read, input, capability, values));
+    const { input, capability, values, draft } = await actionInput(c.req.raw, true);
+    return answer(c, await actions.start(c.get('session').context, read, input, capability, values, draft));
   });
   /**
    * An execute sent from the action dialog's last button (D126 item 7): its card and its human decision with the
@@ -90,8 +103,8 @@ export function recordRoutes(deps: RecordRouteDeps) {
     routes.post('/:read/decide', async c => {
       const read = readOf(c);
       if (!read) return notFound(c);
-      const { input, capability, values } = await actionInput(c.req.raw);
-      return answer(c, await decide(c.get('session').context, read, input, capability, values));
+      const { input, capability, values, draft } = await actionInput(c.req.raw, true);
+      return answer(c, await decide(c.get('session').context, read, input, capability, values, draft));
     });
   }
   /** "Det här händer" before the card exists (D112): what the action would write (`EffectPreview`); nothing is written. */

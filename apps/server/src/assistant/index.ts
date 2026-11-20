@@ -1,7 +1,10 @@
 import type {
   AskedBeside,
   AskValues,
+  AssistantReach,
+  AssistantReachInput,
   AuthenticatedContext,
+  CalendarEvent,
   Chip,
   ClewAction,
   HandoverAssistant,
@@ -50,7 +53,14 @@ import {
   type ActionDraft,
   type DraftableAction,
 } from './drafts';
-import { ownOverlaps, prepareCancelTool, prepareMoveTool, PREPARE_TOOLS, whyNotChangeable } from './prepared';
+import {
+  ownOverlaps,
+  prepareCancelTool,
+  prepareMoveTool,
+  PREPARE_TOOLS,
+  PREPARED_TITLES,
+  whyNotChangeable,
+} from './prepared';
 import { listObjects } from './objects';
 import { openedPath } from './opened';
 import {
@@ -179,6 +189,11 @@ function pageThing(thing: OpenThing | undefined): OpenThing | undefined {
     throw new InputError('Det som står öppet på sidan är för stort för att skickas med frågan.');
   return { kind: 'record', capability: thing.capability, input: thing.input ?? {} };
 }
+/**
+ * The chips a page can say stand open beside a question, by their ref's prefix (`thread:`, `event:`, `proposal:`): a
+ * work item, a calendar entry and a calendar proposal. A read's chip (`capability:`) is a list, with nothing to fill in.
+ */
+const BESIDE_KINDS = ['thread', 'event', 'proposal'] as const;
 /** A record that stands open, read for the model this turn (D131 item 6): what the read answered, kept for the turn alone. */
 interface StandingRecord {
   capability: string;
@@ -368,6 +383,81 @@ export function assistantUsecases(deps: AssistantDeps) {
     } catch {
       return [];
     }
+  }
+  /**
+   * What the assistant may fill in for what stands open as a question is asked, and nothing else: the actions about the
+   * record that stands open on the page (D132 item 4), which come first; else those of the one work item the question
+   * is about (D112 item 8: chipped, or about the one person it names, D115); and the meeting that stands open beside
+   * the conversation, as a prepared move or cancellation, when the person may change it from Clew (`prepared.ts`).
+   * Nothing without a model that uses tools. The turn offers its tools from this, and the pane says what it may fill
+   * in from the same (`reach`), so the two cannot disagree. Nothing is written and no source is reached here.
+   */
+  async function fillable(
+    persona: AuthenticatedContext,
+    open: {
+      subject: Thread | undefined;
+      thing: OpenThing | undefined;
+      standing: StandingOpen;
+      /** The object that stands open beside the conversation (`ConversationInput.beside`), resolved. */
+      beside: ResolvedObject | undefined;
+      tools: boolean;
+    },
+  ): Promise<{ draftable: DraftableAction[]; recordActions: DraftableAction[]; meeting?: CalendarEvent }> {
+    if (!open.tools) return { draftable: [], recordActions: [] };
+    const record = open.thing?.kind === 'record' ? open.thing : undefined;
+    const recordActions = record ? await openRecordActions(persona, record, open.standing) : [];
+    const draftable = recordActions.length
+      ? recordActions
+      : open.subject
+        ? draftableActions(registry, persona, open.subject)
+        : [];
+    // A meeting the person merely added to the conversation is not the one they are looking at, and is not offered.
+    const meeting =
+      open.beside?.kind === 'event' && !whyNotChangeable(open.beside.event) ? open.beside.event : undefined;
+    return { draftable, recordActions, ...(meeting ? { meeting } : {}) };
+  }
+  /**
+   * What the assistant would be offered to fill in if a question were asked now with `beside` and `thing` standing open
+   * (D133 item 7): the turn's own resolution of the chip (`resolveChips`) and of the thing (`pageThing`), then the
+   * turn's own rules (`fillable`), with the person's model resolved as a turn resolves it. It makes no read of a record:
+   * the record's read is checked against the registry only (the person's scope and the input), as the turn checks a
+   * read that is not the assistant's, so a record whose read its source would refuse now is still listed, where the
+   * turn would then offer nothing. Resolving a calendar entry reads the person's own calendar, as the turn does. A chip
+   * the person cannot resolve, an unknown ref, a person or a unit, and no model that uses tools all answer an empty
+   * list, never an error.
+   */
+  async function reach(persona: AuthenticatedContext, input: AssistantReachInput): Promise<AssistantReach> {
+    const none: AssistantReach = { prepares: [] };
+    const model = await models.resolve(persona);
+    if (!model?.tools || !models.health.available(model.providerId)) return none;
+    const kind = BESIDE_KINDS.find(k => input.beside?.startsWith(k + ':'));
+    let thing: ReturnType<typeof pageThing>;
+    let chips: ResolvedChips;
+    try {
+      thing = pageThing(input.thing);
+      chips = await resolveChips(
+        deps,
+        persona,
+        kind && input.beside ? [{ ref: input.beside, kind, label: '' }] : [],
+        input.beside,
+      );
+    } catch (e) {
+      if (e instanceof InputError) return none;
+      throw e;
+    }
+    const { draftable, meeting } = await fillable(persona, {
+      subject: chips.primaryThread,
+      thing,
+      standing: {},
+      beside: chips.beside ? chips.objects.find(o => o.ref === chips.beside) : undefined,
+      tools: true,
+    });
+    return {
+      prepares: [
+        ...draftable.map(a => ({ title: a.label })),
+        ...(meeting ? PREPARED_TITLES.map(title => ({ title })) : []),
+      ],
+    };
   }
   /**
    * The draft a started work item is shown with. What the assistant gave the propose is the person's to review: where
@@ -652,19 +742,18 @@ export function assistantUsecases(deps: AssistantDeps) {
     // (D132 item 4): when it has actions to fill in, they are the turn's, and no work item's beside them.
     const subject = chips.primaryThread ?? personSubject(people);
     const openRecord = thing?.kind === 'record' ? thing : undefined;
-    const recordActions = model.tools && openRecord ? await openRecordActions(persona, openRecord, standing) : [];
-    const draftable = recordActions.length
-      ? recordActions
-      : model.tools && subject
-        ? draftableActions(registry, persona, subject)
-        : [];
-    const drafts: { last?: ActionDraft } = {};
     // The meeting that stands open beside the conversation may be moved or cancelled as a prepared decision, only one
     // the person may change from Clew and only with a model that uses tools; nothing is saved or sent (`prepared.ts`).
-    // A meeting the person merely added to the conversation is not the one they are looking at, and is not offered.
-    // Both tools report to one callback: the turn's last prepared decision is its answer's, whichever kind.
-    const open = chips.beside ? chips.objects.find(o => o.ref === chips.beside) : undefined;
-    const meeting = model.tools && open?.kind === 'event' && !whyNotChangeable(open.event) ? open.event : undefined;
+    // What may be filled in is `fillable`'s, which the pane's `reach` asks too.
+    const { draftable, recordActions, meeting } = await fillable(persona, {
+      subject,
+      thing,
+      standing,
+      beside: chips.beside ? chips.objects.find(o => o.ref === chips.beside) : undefined,
+      tools: model.tools,
+    });
+    const drafts: { last?: ActionDraft } = {};
+    // Both prepare tools report to one callback: the turn's last prepared decision is its answer's, whichever kind.
     const prepared: { last?: Prepared } = {};
     const hear = (p: Prepared) => {
       prepared.last = p;
@@ -1274,6 +1363,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     converse,
     ask,
     reply,
+    /** What the assistant may fill in for what stands open, said in the pane before anything is asked (D133 item 7). */
+    reach,
     /** The conversation's page marks a conversation asked beside a page as opened (D130 rule 6); idempotent. */
     markOpened: openedPath(deps),
     listObjects: (persona: AuthenticatedContext, q: string, near: string[] = []) => listObjects(deps, persona, q, near),

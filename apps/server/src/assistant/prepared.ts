@@ -19,6 +19,11 @@ export const PREPARE_MOVE_TOOL = 'clew.prepareMove';
 export const PREPARE_CANCEL_TOOL = 'clew.prepareCancel';
 /** Every prepare tool: none of their calls is a read of the turn's. */
 export const PREPARE_TOOLS: readonly string[] = [PREPARE_MOVE_TOOL, PREPARE_CANCEL_TOOL];
+/**
+ * The two decisions as the pane says what the assistant may fill in (D133 item 7): one meeting offers both or neither
+ * (`whyNotChangeable`).
+ */
+export const PREPARED_TITLES: readonly string[] = ['Flytta mötet', 'Ställ in mötet'];
 
 /**
  * Why the person cannot move or cancel this meeting from Clew, in Swedish for the model, or undefined when they can:

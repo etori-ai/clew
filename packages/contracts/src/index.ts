@@ -2443,14 +2443,24 @@ export type RecordActions = Static<typeof RecordActionsSchema>;
 /** A record as a page's address holds it (D131, D132): its read's input; never longer than `OPEN_THING_INPUT_MAX` as JSON. */
 const recordInput = Type.Record(Type.String(), Type.Unknown());
 /**
+ * The assistant's draft an action about a record was sent from (D132): the conversation's message that keeps it
+ * (`MessageMeta.recordDraft`). Ids only, never what the conversation says.
+ */
+export const RecordDraftRefSchema = object({ conversationId: id, messageId: id });
+export type RecordDraftRef = Static<typeof RecordDraftRefSchema>;
+/**
  * `POST /api/records/:read/actions`, `/decide` and `/effect` (D132): the record by the input its read was made with, the
  * action as `RecordAction.capability`, and the person's answers to its asks. `values` answers a propose's asks when it
- * starts and an execute's when it is decided; never a property the record fills.
+ * starts and an execute's when it is decided; never a property the record fills. `draft`, on a start or a decision
+ * only, names the assistant's draft it was sent from: the server marks that draft as sent with the work item it became,
+ * when it is the person's own draft of this action about this record and not yet marked; else the action runs as
+ * without it.
  */
 export const RecordActionInputSchema = object({
   input: recordInput,
   capability: Type.String({ minLength: 3, maxLength: 120 }),
   values: Type.Optional(AskValuesSchema),
+  draft: Type.Optional(RecordDraftRefSchema),
 });
 export type RecordActionInput = Static<typeof RecordActionInputSchema>;
 /**
@@ -3420,12 +3430,15 @@ export type Draft = Static<typeof DraftSchema>;
  * An action about the record that stood open, filled in by the assistant (D132 item 4), beside the work item's draft
  * (`DraftSchema`): the action, the record by its read and the input the page drew it with, and the values for what the
  * action asks, checked against the asks as the decision checks them. Kept in the conversation only; the person opens it
- * in the action's own dialog on the record and sends it from there. Nothing is executed from it.
+ * in the action's own dialog on the record and sends it from there. Nothing is executed from it. `sent` is written by
+ * the server alone, in the transaction that makes the work item the person sent it as (`RecordActionInput.draft`), so
+ * the draft says it was sent and offers no second send, after a reload too.
  */
 export const RecordDraftSchema = object({
   capability: Type.String({ minLength: 3, maxLength: 120 }),
   record: object({ capability: Type.String({ minLength: 1, maxLength: 120 }), input: recordInput }),
   values: AskValuesSchema,
+  sent: Type.Optional(object({ threadId: id })),
 });
 export type RecordDraft = Static<typeof RecordDraftSchema>;
 /**
@@ -4951,6 +4964,25 @@ export const ConversationInput = object({
   side: Type.Optional(Type.Literal(true)),
 });
 export type ConversationInput = Static<typeof ConversationInput>;
+/**
+ * What the assistant may fill in for what stands open (D133 item 7, D132 item 4), asked with the two fields a question
+ * carries about it: the chip that stands open (`beside`, a work item or a calendar entry) and the thing on the page
+ * (`thing`, a record). The pane says it before anything is asked; it is never a reason to refuse.
+ */
+export const AssistantReachInput = object({
+  beside: Type.Optional(ChipSchema.properties.ref),
+  thing: Type.Optional(OpenThingSchema),
+});
+export type AssistantReachInput = Static<typeof AssistantReachInput>;
+/**
+ * The actions the assistant would be offered to fill in if a question were asked now with that open, by the rules the
+ * turn offers them by, each by its title as the person meets it ("Lägg till en kommentar", "Flytta mötet"). Empty for
+ * anything else, for what the person may not see, and without a model that can fill anything in.
+ */
+export const AssistantReachSchema = object({
+  prepares: Type.Array(object({ title: Type.String() })),
+});
+export type AssistantReach = Static<typeof AssistantReachSchema>;
 /** One turn's answer: its shape, where it came from, and what it produced for the page. */
 export const ConversationResponseSchema = object({
   conversationId: id,

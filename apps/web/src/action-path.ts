@@ -113,6 +113,20 @@ export function valueText(ask: Ask, value: string): string {
       return value.trim();
   }
 }
+/**
+ * What is filled in, in the words "Det här händer" lists it: each ask that has an answer that would be sent, in the
+ * declared order, by its label and its value as a person reads it. The action dialog and a filled-in action in the
+ * transcript (D133 item 8) say the values the same way.
+ */
+export function filledIn(
+  asks: readonly Ask[],
+  values: AskValues,
+): Array<{ property: string; label: string; text: string }> {
+  const sent = sentValues(asks, values);
+  return asks
+    .filter(a => sent[a.property])
+    .map(a => ({ property: a.property, label: a.label, text: valueText(a, sent[a.property]!) }));
+}
 /** A suggested free time (board ActBook): its day and start, and that the person's own calendar has it free. */
 export const slotText = (slot: { start: string; end: string }) => ({
   label: instantText(slot.start),

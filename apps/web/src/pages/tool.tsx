@@ -4,7 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import type { SessionUser, ViewRef } from '@clew/contracts';
 import type { PanelViewSpec } from '@clew/contracts';
 import { Button, EmptyState, Heading, HStack, Skeleton, StatusNotice, Text, VStack, useMediaQuery } from '@clew/ui';
-import { areasQuery, entityDetailQuery } from '../queries';
+import { areasQuery, entityDetailQuery, recordActionsQuery } from '../queries';
+import { mobileQuery } from '../media';
+import { EntityActions } from '../components/people/entity-sections';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
@@ -48,6 +50,20 @@ function nounOf(spec: { kind: string; noun?: { other: string } } | undefined): s
 }
 
 /**
+ * A record's actions under its title (D132 items 2 and 3): those the server lists for the reader about this record, by
+ * the page's read and input, drawn as a person's page draws a person's (`EntityActions`), each opening the action's own
+ * dialog. None listed, a read with no actions, or a record the reader may not act on draws nothing; nor does the page
+ * while the list is on its way, so a record without actions never shows a placeholder for them.
+ */
+function RecordActions({ read, input, name }: { read: string; input: Record<string, unknown>; name: string }) {
+  const mobile = useMediaQuery(mobileQuery);
+  const listed = useQuery(recordActionsQuery(read, input));
+  const actions = listed.data?.actions ?? [];
+  if (!actions.length) return null;
+  return <EntityActions subject={{ kind: 'record', read, input, name }} actions={actions} mobile={mobile} />;
+}
+
+/**
  * Where the rail stands on a view's page that is neither a tool of its own nor a read of a connector with a place in
  * the rail (`placeOfRead`): on the place the view was opened from, as a work item's page does (`item.tsx`); with no
  * such place, on nothing.
@@ -78,7 +94,8 @@ function placeOf(from: string | null): NavCurrent {
  * row's own read, its page (rule 4); a row never opens a panel.
  * One thing (a record, a contact card, a text, a document) is a thing's page (rule 1, the `work-item-detail`
  * template): the way back and the title (D131: the assistant's pane, opened by the corner's "Fråga AI", is about this
- * record, `recordSubject`), the read in the column and a record's facts in the end panel, above the read
+ * record, `recordSubject`), the actions about the record at the end of the title's line (D132, `RecordActions`), the
+ * read in the column and a record's facts in the end panel, above the read
  * where the window is narrow and while the pane stands beside the page. The view is drawn by the one renderer (D38).
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -240,7 +257,9 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
           }
           title={name}
           titleId={TITLE_ID}
-          // A read has no actions of its own here, and the assistant is asked from the corner (D133 item 1).
+          // The actions about this record the reader may take (D132 item 2); the assistant is asked from the corner
+          // (D133 item 1), never from here.
+          actions={<RecordActions read={capability} input={thing.input} name={name} />}
           below={banner || undefined}
           label={title || 'Vyn'}
           scrollTabStop

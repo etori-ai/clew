@@ -1,6 +1,15 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Ask, AskValues, CardAction, EffectPreview, EntityAction, EntityKind, Thread } from '@clew/contracts';
+import type {
+  Ask,
+  AskValues,
+  CardAction,
+  EffectPreview,
+  EntityAction,
+  EntityKind,
+  RecordAction,
+  Thread,
+} from '@clew/contracts';
 import {
   Banner,
   Button,
@@ -41,6 +50,7 @@ import {
   clashes,
   dayWords,
   fillInLabel,
+  filledIn,
   firstStep,
   isInstant,
   meetingEnd,
@@ -50,7 +60,6 @@ import {
   sentValues,
   slotText,
   stepsOf,
-  valueText,
   type ActionStep,
 } from '../../action-path';
 import { confirmParts } from '../../confirm-parts';
@@ -74,14 +83,15 @@ export type ActionTarget =
   /** An action on a work item: its effect is read and its decision sent on the item, with the rows chosen there. */
   | { kind: 'item'; thread: Thread; action: CardAction; refs?: string[] }
   /**
-   * An action about a person or a unit before any work item exists (D126 item 7): a propose, which drafts the item with
-   * the values, or an execute, which becomes its item with the decision made. Nothing exists before the last button;
-   * `readEffect` reads an execute's "Det här händer" for the values on the step, before anything is created.
+   * An action about a person or a unit before any work item exists (D126 item 7), or about a record (D132): a propose,
+   * which drafts the item with the values, or an execute, which becomes its item with the decision made. Nothing exists
+   * before the last button; `readEffect` reads an execute's "Det här händer" for the values on the step, before anything
+   * is created. A record stands where an entity's key does: `kind` `record` and its read and input as one key.
    */
   | {
       kind: 'entity';
-      entity: { kind: EntityKind; key: string; name: string };
-      action: EntityAction;
+      entity: { kind: EntityKind | 'record'; key: string; name: string };
+      action: EntityAction | RecordAction;
       readEffect?: (values: AskValues) => Promise<EffectPreview>;
     };
 export interface ActionDialogProps {
@@ -199,6 +209,7 @@ export function ActionDialog({
   const shown = (property: string) =>
     (attempted || refusal?.property === property) && problems.has(property) ? problems.get(property) : undefined;
   const sent = sentValues(path.asks, values);
+  const filled = filledIn(path.asks, values);
 
   const item = target.kind === 'item' ? target : null;
   const about = target.kind === 'entity' ? target : null;
@@ -393,15 +404,13 @@ export function ActionDialog({
             </>
           ) : (
             <VStack gap={4}>
-              {path.asks.some(a => sent[a.property]) && (
+              {filled.length > 0 && (
                 <MetadataList columns="single">
-                  {path.asks
-                    .filter(a => sent[a.property])
-                    .map(a => (
-                      <MetadataListItem key={a.property} label={a.label}>
-                        <Text>{valueText(a, sent[a.property]!)}</Text>
-                      </MetadataListItem>
-                    ))}
+                  {filled.map(f => (
+                    <MetadataListItem key={f.property} label={f.label}>
+                      <Text>{f.text}</Text>
+                    </MetadataListItem>
+                  ))}
                 </MetadataList>
               )}
               <VStack as="section" gap={3} aria-labelledby={effectId}>

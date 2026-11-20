@@ -4,7 +4,6 @@ import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query
 import {
   openRef,
   viewRows,
-  type EntityAction,
   type EntityCard,
   type EntityDetail,
   type EntityKind,
@@ -34,7 +33,7 @@ import {
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { entitySectionQuery, threadsQuery, viewQuery } from '../../queries';
-import { actionMenuItems, useEntityAction } from '../../entity-actions';
+import { actionMenuItems, useEntityAction, type ActionSubject, type SubjectAction } from '../../entity-actions';
 import { useMarks } from '../../marks';
 import { pageOnly } from '../../panel-address';
 import { sourceWayHref, wayBack } from '../../person-address';
@@ -505,21 +504,30 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
 }
 
 /**
- * The opened person's or unit's actions under its name (D126 rule 1, board Person), every one of them: the first as the
- * primary button, the second as a secondary one, what the page adds of its own after them (`extra`: the reader's own
- * Inställningar), and the rest under "Fler åtgärder", grouped by the system they act in, as the row menu on Personal is
- * (artboard A3). On a phone one button, "Åtgärder", the width of the column, holds them all, with `extra` under it. None
- * of them asks the assistant: the corner's "Fråga AI" does (D133 item 1). A propose opens the action dialog,
- * and nothing is created before its last button; an execute opens its work item with the decision over it
- * (`entity-actions.ts`). A source's refusal is said aloud and stands under the buttons until the next action. They hold
- * what can be done about the entity, never a choice of where Clew shows it, and never a way into a source's page, which
- * is a link in its section.
+ * The opened person's, unit's or record's actions under its name (D126 rule 1, board Person; D132 item 2 for a
+ * record), every one of them: the first as the primary button, the second as a secondary one, what the page adds of its
+ * own after them (`extra`: the reader's own Inställningar), and the rest under "Fler åtgärder", grouped by the system
+ * they act in, as the row menu on Personal is (artboard A3). On a phone one button, "Åtgärder", the width of the
+ * column, holds them all, with `extra` under it. None of them asks the assistant: the corner's "Fråga AI" does (D133
+ * item 1). Every one opens the action dialog, and nothing is created before its last button, after which its work item
+ * opens (`entity-actions.ts`). A source's refusal is said aloud and stands under the buttons until the next action. They
+ * hold what can be done about the thing, never a choice of where Clew shows it, and never a way into a source's page,
+ * which is a link in its section.
  */
-export function EntityActions({ detail, mobile, extra }: { detail: EntityDetail; mobile: boolean; extra?: ReactNode }) {
+export function EntityActions({
+  subject,
+  actions,
+  mobile,
+  extra,
+}: {
+  subject: ActionSubject;
+  actions: readonly SubjectAction[];
+  mobile: boolean;
+  extra?: ReactNode;
+}) {
   const { start, error, dialog } = useEntityAction();
-  const { kind, key, name } = detail.entity;
-  const actions = detail.actions;
-  const run = (a: EntityAction) => start(a, { kind, key, name });
+  const { name } = subject;
+  const run = (a: SubjectAction) => start(a, subject);
   const refusal = error ? <Text as="p">{error}</Text> : null;
   // Nothing to act on: no empty group under the name.
   if (!actions.length && !extra && !refusal) return dialog;

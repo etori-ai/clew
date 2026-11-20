@@ -1,5 +1,5 @@
 import type { Actor, RecordAboutAction } from '@clew/connectors';
-import type { AskValues, AuthenticatedContext, EffectPreview, ThreadItem, View } from '@clew/contracts';
+import type { AskValues, AuthenticatedContext, EffectPreview, RecordDraftRef, ThreadItem, View } from '@clew/contracts';
 
 /**
  * The ports of the records module (D132, D25): an action a connector declares about one record of one of its reads,
@@ -36,6 +36,12 @@ export interface RecordStartContext {
   about: Record<string, unknown>;
   asked?: Record<string, string>;
   answers?: Record<string, string>;
+  /**
+   * The assistant's draft it was sent from, and the record as the request names it: the transaction that makes the card
+   * marks that draft as sent when it is the person's own draft of this action about this record and not marked yet;
+   * else nothing is marked and the card is made as without it.
+   */
+  recordDraft?: RecordDraftRef & { record: { capability: string; input: Record<string, unknown> } };
 }
 export interface RecordActionDeps {
   records: Records;

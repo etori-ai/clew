@@ -41,9 +41,10 @@ import { NewQuestionPage } from './new-question';
 import { ASSISTANT_PARAM, asksAbout } from '../conversation-about';
 
 /**
- * The column fades in when it changes hands (D92): the conversation taking Hem's place when a question is sent, and Hem
- * coming back when the conversation closes. Keyed by whose turn it is, so each hand-over mounts anew and gets Astryx's
- * entry motion; what is on the page from the first paint does not animate, and reduced motion shows it at once.
+ * The column fades in when it changes hands (D92): a conversation taking Hem's place when it is opened as a
+ * conversation, and Hem coming back when the conversation closes. Keyed by whose turn it is, so each hand-over mounts
+ * anew and gets Astryx's entry motion; what is on the page from the first paint does not animate, and reduced motion
+ * shows it at once.
  */
 function Entering({ children }: { children: (entry: EntryStyle) => ReactNode }) {
   const entry = useEntryAnimation('fadeIn');
@@ -59,6 +60,7 @@ import { silentLine, staleWhy, useSaySilent, useSilentSources } from '../compone
 import { Lage } from '../components/hem/lage';
 import { NewsBlock } from '../components/hem/news';
 import { FocusNews, focusOf } from '../components/hem/focus-news';
+import { HemAnswer } from '../components/hem/answer';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
 import { PageFrame, type EntryStyle } from '../components/shell/page-frame';
@@ -91,15 +93,15 @@ const dayLine = (date: string, unit: string) => {
 
 /**
  * The start page (D34, D50, D112, D126). At `/` the column is Hem (D126, board Hem): the greeting and the day, one line
- * under them to ask Clew (`HemQuestion`, board HemFraga), and then the blocks, each a heading over its card that leads
- * to its place: "Behöver dig", the most urgent work items, beside "I dag", the day as the calendar family draws it
- * (D32); for a manager "Läget på <enhet>", the unit's figures as tiles; then "Nyheter". The item that asks for the
- * person's read receipt stands above the blocks as one callout (Fokusnyhet). Under them the person's own action points
- * (D96 item 7), drawn as a block, until they are rows in Att göra. No digest sentences, no suggestion chips and no tool
- * tiles (D126 rule 8): the tools are in the rail and on Alla verktyg, and Mina ärenden (D90) and what the person
- * ordered or reported (D123) are two of them. Every row and tile leads to the page of what it names (D126 rule 1), with
- * Hem as the way back; nothing opens over Hem, and an address that opened something beside it before leads to that
- * thing's page (the shell's `panelRedirect`, rule 3).
+ * under them to ask Clew (`HemQuestion`, board HemFraga), whose answer stands under it as a card (`HemAnswer`, D133
+ * item 9), and then the blocks, each a heading over its card that leads to its place: "Behöver dig", the most urgent
+ * work items, beside "I dag", the day as the calendar family draws it (D32); for a manager "Läget på <enhet>", the
+ * unit's figures as tiles; then "Nyheter". The item that asks for the person's read receipt stands above the blocks as
+ * one callout (Fokusnyhet). Under them the person's own action points (D96 item 7), drawn as a block, until they are
+ * rows in Att göra. No digest sentences, no suggestion chips and no tool tiles (D126 rule 8): the tools are in the rail
+ * and on Alla verktyg, and Mina ärenden (D90) and what the person ordered or reported (D123) are two of them. Every row
+ * and tile leads to the page of what it names (D126 rule 1), with Hem as the way back; nothing opens over Hem, and an
+ * address that opened something beside it before leads to that thing's page (the shell's `panelRedirect`, rule 3).
  *
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel beside it (rule 2):
  * the view an answer names, the card or view that was open when it was asked, or the page it was asked on. The address
@@ -255,10 +257,28 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     return [own ? null : mark.source, state, stale ? staleWhy(facts.why) : facts.why].filter(Boolean).join(DOT);
   };
   /**
+   * A work item as a row of "Behöver dig" (D130 item 13): an edge in its due day's colour, its name, the line that says
+   * where it is from and why, the due day as its badge and "Öppna", the link to the item's page. The answer under the
+   * line draws the items it names with the same row (D133 item 9); only the board's own rows carry the id the focus is
+   * sent to.
+   */
+  const needRow = (t: Thread, id?: string) => {
+    const due = rowFacts(t, now, todayDate).due;
+    return (
+      <StatusRow
+        {...(id ? { id } : {})}
+        status={due?.variant === 'error' ? 'error' : due?.variant === 'warning' ? 'warning' : 'neutral'}
+        title={t.title}
+        meta={lineOf(t)}
+        href={itemHref(t.id)}
+        end={due ? <Badge variant={due.variant} label={due.label} /> : undefined}
+      />
+    );
+  };
+  /**
    * "Behöver dig" (D112 item 2; D130 item 13): the most urgent work items as rows in a board card, the count after the
-   * heading and the way to all of them in Att göra. A row has an edge in its due day's colour, the due day as its badge
-   * and "Öppna", the link to the item's page. While the cards load the card keeps its shape; with nothing to draw it
-   * says so in the card.
+   * heading and the way to all of them in Att göra. While the cards load the card keeps its shape; with nothing to draw
+   * it says so in the card.
    */
   const needsBlock = (
     <BoardCard
@@ -296,21 +316,11 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       )}
       {first.length > 0 && (
         <VStack gap={2} role="list" aria-label="Behöver dig">
-          {first.map(t => {
-            const due = rowFacts(t, now, todayDate).due;
-            return (
-              <VStack key={t.id} role="listitem">
-                <StatusRow
-                  id={`work-${t.id}`}
-                  status={due?.variant === 'error' ? 'error' : due?.variant === 'warning' ? 'warning' : 'neutral'}
-                  title={t.title}
-                  meta={lineOf(t)}
-                  href={itemHref(t.id)}
-                  end={due ? <Badge variant={due.variant} label={due.label} /> : undefined}
-                />
-              </VStack>
-            );
-          })}
+          {first.map(t => (
+            <VStack key={t.id} role="listitem">
+              {needRow(t, `work-${t.id}`)}
+            </VStack>
+          ))}
         </VStack>
       )}
     </BoardCard>
@@ -354,9 +364,14 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       />
     </BoardCard>
   );
-  /** Hem's blocks, in the reference's order (D130): the callout, Läget, and the board's two columns. */
+  /**
+   * Hem's blocks, in the reference's order (D130): the answer to what was asked on the line (D133 item 9), the callout,
+   * Läget, and the board's two columns.
+   */
   const blocks = (
     <VStack gap={CARD_GAP}>
+      {/* The answer stands directly under the line, where the box is, and the board stays below it. */}
+      <HemAnswer field={line} threads={threads} row={needRow} />
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}
@@ -478,16 +493,21 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
 }
 
-/** What Hem's line hands the conversation: nothing to ask about, and Hem as the place Esc leads back to. */
-const FROM_HEM: AskFrom = { chips: [], search: '' };
 /**
- * Hem's question (D126 items 4 and 9, board HemFraga variant a): one line under the greeting, the field and "Fråga
- * Clew". Nothing is answered on Hem: Enter or the button sends what is written as every first question is sent
- * (`submit`), and the conversation takes the column with the question asked; with nothing written the button opens Ny
- * fråga, as the rail's row does, and Enter does nothing. While the question leaves, the button shows it, and a second
- * Enter is refused by the turn's own guard. The field holds the conversation's draft, so a question half written is
- * still there after a visit elsewhere. Whom to ask, the model, `@` and dictation are the conversation page's box's. On a
- * phone (`stacked`) the button stands under the field at its full width, so its words are never cut (1.4.10).
+ * What Hem's line hands the conversation: nothing to ask about, and the answer under the line (D133 item 9): the
+ * column stays Hem's and nothing navigates.
+ */
+const FROM_HEM: AskFrom = { chips: [], search: '', inPlace: true };
+/**
+ * Hem's question (D126 items 4 and 9, D130 item 14, D133 items 2 and 9): one line under the greeting, the field and
+ * "Fråga AI" in one pill. The line is the box: Enter or the button sends what is written (`submit`), and the answer
+ * stands under the line as a card (`HemAnswer`) while the board stays below; the person stays on Hem. While the answer
+ * stands, the next question continues its conversation; after "Stäng" a question starts a new one, as every first
+ * question does. With nothing written the button opens Ny fråga and Enter does nothing. While an answer is on its way
+ * the button shows it, keeping the focus, and a second Enter is refused by the turn's own guard. The field holds the
+ * conversation's draft, so a question half written is still there after a visit elsewhere. Whom to ask, the model, `@`
+ * and dictation are the conversation page's box's. On a phone (`stacked`) the button is its arrow alone, so its words
+ * are never cut (1.4.10).
  */
 function HemQuestion({ field, stacked }: { field: RefObject<HTMLInputElement | null>; stacked: boolean }) {
   const talk = useConversation();

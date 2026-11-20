@@ -41,6 +41,20 @@ export interface NewMessage {
   at: string;
   meta?: MessageMeta;
 }
+/**
+ * An assistant's draft about a record (D132) that the person sent as a work item: the conversation's message that keeps
+ * it, whose conversation it must be, the action and the record it must be a draft of, and the work item it became.
+ */
+export interface RecordDraftSent {
+  personId: string;
+  conversationId: string;
+  messageId: string;
+  /** The action, as `RecordDraft.capability`. */
+  capability: string;
+  /** The record by its read and the input it was made with, as `RecordDraft.record`. */
+  record: { capability: string; input: Record<string, unknown> };
+  threadId: string;
+}
 export interface AuditEntry {
   actor: string;
   action: string;
@@ -125,6 +139,14 @@ export interface ThreadTx {
   insertThread(thread: NewThread): Promise<boolean>;
   updateThread(id: string, patch: ThreadPatch): Promise<void>;
   addMessage(threadId: string, message: NewMessage): Promise<void>;
+  /**
+   * Mark an assistant's draft about a record as sent (D132): the message's `recordDraft` gets `sent: { threadId }` and
+   * nothing else moves, not even the conversation's `updatedAt`. Only when the conversation is a `question` of
+   * `personId`'s, the message is in it, and its draft is of the same action about the same record (the read, and the
+   * input as a JSON value, its keys in any order) and not marked yet; anything else writes nothing. True when it marked:
+   * of two marks of one draft, one does.
+   */
+  markRecordDraftSent(mark: RecordDraftSent): Promise<boolean>;
   writeAudit(entry: AuditEntry): Promise<void>;
   /** Idempotent by job id. */
   scheduleJob(job: JobInput): Promise<void>;

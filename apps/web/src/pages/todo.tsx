@@ -14,6 +14,7 @@ import { isSnoozed, sameSubject, streamGroup, type Area, type SessionUser, type 
 import {
   Badge,
   BoardCard,
+  Divider,
   DropdownMenu,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -688,24 +689,31 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     autoSaveId: 'clew:todo-talk',
   });
   /**
-   * The conversation and its box, the pane's second part (board AskAttGora's box at the pane's foot): Astryx's grip
-   * draws the line between the read and it and takes the arrow keys. On a short screen the pane is one flow (1.4.10),
-   * so the part keeps its least height under the read and has no grip.
+   * The conversation and its box, the pane's second part (board AskAttGora's box at the pane's foot). Before anything
+   * is asked it is the box alone, as low as the box, under a rule (D133 item 2): there is nothing in it to make room
+   * for. With the conversation comes its height, the person's to drag with Astryx's grip, which draws the line between
+   * the read and it and takes the arrow keys. On a short screen the pane is one flow (1.4.10), so the conversation keeps
+   * its least height under the read and has no grip. The box keeps its place in the tree from one state to the other.
    */
+  const asked = !!(talk.state.conversation || talk.state.pending);
   const talkPart = !talkAbout ? undefined : short ? (
-    <VStack height={TALK_MIN} paddingBlockStart={6}>
+    <VStack height={asked ? TALK_MIN : undefined} paddingBlockStart={6}>
       <PageTalk talk={talk} />
     </VStack>
   ) : (
     <>
-      <ResizeHandle
-        direction="vertical"
-        isReversed
-        hasDivider
-        resizable={talkRegion.props}
-        label="Ändra samtalets höjd"
-      />
-      <VStack height={talkRegion.size} padding={6} paddingBlockStart={4}>
+      {asked ? (
+        <ResizeHandle
+          direction="vertical"
+          isReversed
+          hasDivider
+          resizable={talkRegion.props}
+          label="Ändra samtalets höjd"
+        />
+      ) : (
+        <Divider />
+      )}
+      <VStack height={asked ? talkRegion.size : undefined} padding={6} paddingBlockStart={asked ? 4 : 0}>
         <PageTalk talk={talk} />
       </VStack>
     </>

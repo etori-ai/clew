@@ -7,6 +7,7 @@ import {
   clashes,
   dayWords,
   fillInLabel,
+  filledIn,
   firstStep,
   instantText,
   meetingEnd,
@@ -156,6 +157,19 @@ describe('the words the dialog says', () => {
       'Du har Planeringstid 09:00–11:00 och APT 15:00–16:30. Den valda tiden 15:00–15:45 krockar med APT.',
     );
     expect(dayWords([])).toBe('Du har inget inbokat.');
+  });
+  test('what is filled in, as Det här händer lists it and an assistant’s filled-in action repeats it', () => {
+    // In the declared order, by the ask's label and the value in words; a text trimmed, an empty or blank answer and a
+    // property the action does not ask left out, as nothing of them would be sent.
+    expect(filledIn([when, place, message], { message: ' Hej! ', when: SLOT, place: '   ', other: 'x' })).toEqual([
+      { property: 'when', label: 'När', text: 'Torsdag 5 november 13:15' },
+      { property: 'message', label: 'Meddelande till medarbetaren', text: 'Hej!' },
+    ]);
+    expect(filledIn([from, kind], { from: '2026-11-05', kind: 'vab' })).toEqual([
+      { property: 'from', label: 'Första frånvarodagen', text: 'Torsdag 5 november' },
+      { property: 'kind', label: 'Typ', text: 'Vård av barn' },
+    ]);
+    expect(filledIn(approve.asks, {})).toEqual([]);
   });
   test('the way back to the fill-in says what it adds until something is filled in', () => {
     expect(fillInLabel(approve.asks, {})).toBe('Lägg till kommentar till medarbetaren');

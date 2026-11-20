@@ -1,4 +1,13 @@
-import { useCallback, useContext, useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import type { ConversationResponse, Prepared } from '@clew/contracts';
 import {
@@ -233,7 +242,10 @@ interface PageFrameProps {
    * scrollable-region-focusable).
    */
   scrollTabStop?: boolean;
-  /** What stays under the column (a `LayoutFooter`): the review's decision. */
+  /**
+   * What stays under the column (a `LayoutFooter`): the review's decision. On a page with a subject the frame draws the
+   * corner's "Fråga AI" at its start (`withDoor`), since the corner gives way to it.
+   */
   footer?: ReactNode;
   /** Astryx's entry motion, when the column changes hands (Hem and the conversation, D92). */
   entry?: EntryStyle;
@@ -281,9 +293,14 @@ function PageWithoutSubject(frame: Omit<PageFrameProps, 'ask'>) {
  * (`useColumnQuery`; a thing's facts above its read, `useFactsInColumn`, D131 item 9). Narrower or short it is Astryx's
  * drawer over the page; on a phone the corner leads to the conversation's page with the subject (D133 item 11).
  *
- * The press gives the focus to the box; arriving by the address moves nothing; closing gives it back to the corner's
- * button, as does losing the pane with the focus in it. Opening says nothing aloud: the turns announce their answers.
- * The conversation is held here (`usePageConversation`), so it stays while the pane becomes the drawer and back.
+ * Where the page pins controls at the window's foot (`footer`) the corner gives way to them (`useClearCorner`), and the
+ * frame draws the same "Fråga AI" at the start of that footer, before the page's own controls, with the same press
+ * (`withDoor`; the product owner, 2026-11-19): it is drawn when the corner would be.
+ *
+ * The press gives the focus to the box; arriving by the address moves nothing; closing gives it back to the button that
+ * opened the pane, the footer's or the corner's, as does losing the pane with the focus in it. Opening says nothing
+ * aloud: the turns announce their answers. The conversation is held here (`usePageConversation`), so it stays while the
+ * pane becomes the drawer and back.
  */
 function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about: AskAbout }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -315,6 +332,25 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
   // The corner's button (D133 item 5): drawn only where no box stands on the page.
   const door: CornerDoor = !model ? 'question' : open || frame.end || !subject ? 'hidden' : 'pane';
   useCornerDoor(door, press);
+  // The same button at the start of a footer the page pins, where the corner gives way (`withDoor`).
+  const footDoor = useRef<HTMLButtonElement>(null);
+  const footer = withDoor(
+    frame.footer,
+    door === 'pane' ? (
+      <Button
+        ref={footDoor}
+        variant="ai"
+        label="Fråga AI"
+        icon={<Icon icon={SparklesIcon} color="inherit" />}
+        onClick={press}
+      />
+    ) : null,
+  );
+  // The focus goes back to the button that opened the pane: the footer's where the page has one, else the corner's.
+  const giveBack = useCallback(() => {
+    if (footDoor.current?.isConnected) footDoor.current.focus();
+    else returnFocus();
+  }, [returnFocus]);
   const wasOpen = useRef(open);
   const { input } = talk.state;
   // The box takes the focus once it is drawn: the first time a page draws a box its editor may still be loading, so the
@@ -339,8 +375,8 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
       return;
     }
     const active = document.activeElement;
-    if (how === 'close' || !active || active === document.body) returnFocus();
-  }, [open, focus, returnFocus]);
+    if (how === 'close' || !active || active === document.body) giveBack();
+  }, [open, focus, giveBack]);
   // The drawer keeps its content once it has been opened, so it is never empty while it slides away; before that it
   // holds nothing, and no box waits hidden in it.
   const drawerHeld = useRef(false);
@@ -350,6 +386,7 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
     <>
       <FrameBody
         {...frame}
+        footer={footer}
         {...(open && beside
           ? {
               aside: (
@@ -390,8 +427,31 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
   );
 }
 
-/** The assistant's round mark (D130 item 14, D133 item 6): Hem's ask pill's, the theme's blue for the assistant alone. */
-function AssistantMark() {
+/**
+ * The corner's "Fråga AI" where a page pins controls at the window's foot (D133 item 5; the product owner, 2026-11-19:
+ * "Yes, in the footer"): the floating button is not drawn over them (`useClearCorner`), so the frame draws the same
+ * button at the start of the page's footer, before its own controls. The page passes nothing new: its `LayoutFooter`
+ * keeps its inset, rule and name, and its content stands beside the door in the same place in the tree whether the door
+ * is drawn or not, so nothing in it is drawn anew when the pane opens or closes. Where the line has no room for both
+ * (a phone) the page's controls go under the door and wrap as they did, in the footer's whole width.
+ */
+function withDoor(footer: ReactNode, door: ReactNode): ReactNode {
+  if (!isValidElement<{ children?: ReactNode }>(footer) || footer.type !== LayoutFooter) return footer;
+  return cloneElement(
+    footer,
+    undefined,
+    <HStack gap={3} vAlign="end" wrap="wrap">
+      {door}
+      <StackItem size="fill">{footer.props.children}</StackItem>
+    </HStack>,
+  );
+}
+
+/**
+ * The assistant's round mark (D130 item 14, D133 items 6 and 9): Hem's ask pill's, the theme's blue for the assistant
+ * alone; over the pane's heading and the answer under Hem's line.
+ */
+export function AssistantMark() {
   return (
     <Card variant="ai-mark" padding={1.5}>
       <Icon icon={SparklesIcon} color="inherit" size="sm" />

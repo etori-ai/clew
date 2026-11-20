@@ -14,8 +14,22 @@ import {
   type ViewEntry,
   type ViewRef,
 } from '@clew/contracts';
-import { ChatLayout, HStack, Link, StackItem, Text, VStack } from '@clew/ui';
-import { areasQuery, threadsQuery } from '../../queries';
+import {
+  ChatLayout,
+  EyeIcon,
+  Heading,
+  HStack,
+  Icon,
+  Link,
+  List,
+  ListItem,
+  LockClosedIcon,
+  PencilSquareIcon,
+  StackItem,
+  Text,
+  VStack,
+} from '@clew/ui';
+import { areasQuery, assistantReachQuery, threadsQuery } from '../../queries';
 import { declaredPage, viewPageHref } from '../../view-address';
 import { entitySubject, type EntitySubjectKind } from '../../conversation-about';
 import { Composer } from './composer';
@@ -40,8 +54,17 @@ export interface PageSubject extends ThingSubject {
   about: string;
   /** What the empty box says, and its name. */
   placeholder: string;
-  /** Where the assistant cannot read what the page shows: the line that says so before anything is asked (D130 rule 4). */
+  /**
+   * What the pane says under its heading that the list of what the assistant cannot read (`cannotRead`) does not
+   * (D130 rule 4, D131 item 4): why a page is never read (the competence search), that the assistant is not told who a
+   * person is, or that not all of the page can be read where a closed read has no name to be listed by.
+   */
   closed?: string | undefined;
+  /**
+   * What the page shows that the assistant cannot read, by name (D133 item 7): the systems whose reads are closed to it
+   * and Clew's own closed reads by their labels, as written. The pane lists them before anything is asked.
+   */
+  cannotRead?: readonly string[] | undefined;
   /**
    * The thing that stands open on the page (D131 item 1): a person, a unit or a record, sent with every question so the
    * server can resolve it as the asker. A work item and a calendar entry have none: they go as their chip (`beside`).
@@ -136,7 +159,6 @@ export function sourceReads(source: {
 const JOINED = 'clew.';
 /** Where the assistant may make no read on a page at all, said once (D122 item 5: the competence search). */
 export type NeverRead = 'search';
-const conjunction = new Intl.ListFormat('sv-SE', { type: 'conjunction' });
 /** Said under the pane's heading wherever nothing on the page can be read: the pane still answers. */
 const STILL = 'Du kan ändå fråga om annat som du har tillgång till.';
 const NEVER: Record<NeverRead, string> = {
@@ -147,13 +169,15 @@ const NEVER: Record<NeverRead, string> = {
  * A page's subject (D130 rules 1 and 4), from its key, its title, the reads it shows and the person's reads (`views`
  * of `/api/areas`): a read the assistant may make for the person (`ViewEntry.assistant`) goes with every question as a
  * capability chip, so the server can tell the model which tool reads the open list; any other read, one the person may
- * not call (absent from `views`) among them, is closed, and the pane says so under its heading before anything is
- * asked. A source about a person or a unit with no overview the assistant may make is closed only when the assistant may
- * make no read of that system at all (`PageRead.about`). A closed read of another system is named by its system ("Assistenten kan inte läsa det som Qlik visar här."),
- * one of Clew's own by its name; where nothing on the page can be read, the line says so in general and that the
- * assistant still answers about the rest (`STILL`). `never` is a page whose content is never the assistant's to read,
- * with the reason in words. The words of the pane are `listSubject`'s, from the title, or `named` where the box asks
- * about something other than the title says ("Fråga om ärendena" on Att göra). Null until the person's reads are known.
+ * not call (absent from `views`) among them, is closed, and the pane lists it before anything is asked (`cannotRead`,
+ * D133 item 7). A source about a person or a unit with no overview the assistant may make is closed only when the
+ * assistant may make no read of that system at all (`PageRead.about`). A closed read of another system is listed by its
+ * system ("Qlik"), one of Clew's own by its name as written. Where a closed read of Clew's own has no name to be listed
+ * by, the line under the pane's heading says that not all of the page can be read (`closed`), or, where nothing on it
+ * can, that and that the assistant still answers about the rest (`STILL`). `never` is a page whose content is never the
+ * assistant's to read, with the reason in words. The words of the pane are `listSubject`'s, from the title, or `named`
+ * where the box asks about something other than the title says ("Fråga om ärendena" on Att göra). Null until the
+ * person's reads are known.
  */
 export function pageSubject(page: {
   key: string;
@@ -189,34 +213,50 @@ export function pageSubject(page: {
   const words = named ?? subject.label;
   const unique = (names: (string | undefined)[]) => [...new Set(names.filter((n): n is string => !!n))];
   const systems = unique(closed.filter(r => !r.own && r.source).map(r => r.source));
+  const own = closed
+    .filter(r => r.own || !r.source)
+    .map(r => r.label ?? views.find(v => v.capability === r.capability)?.title);
+  // What is closed, by name: Clew's own by their labels as written, then the other systems.
+  const cannotRead = unique([...own, ...systems]);
   // Nothing the page shows can be read; a page that shows no read (an empty register) has nothing to say about it.
   const nothing = chips.length === 0 && closed.length > 0;
   let line: string | undefined;
   if (never) line = `${NEVER[never]} ${STILL}`;
-  else if (nothing)
-    line =
-      // Only other systems are closed: they are named. Anything of Clew's own among them: what is shown, in general.
-      systems.length && closed.every(r => !r.own && r.source)
-        ? `Assistenten kan inte läsa det som ${conjunction.format(systems)} visar här. ${STILL}`
-        : `Assistenten kan inte läsa det som visas här. ${STILL}`;
-  else if (closed.length) {
-    const nameOf = (r: PageRead) => r.label ?? views.find(v => v.capability === r.capability)?.title;
-    const own = closed.filter(r => r.own || !r.source).map(nameOf);
-    const parts = [
-      ...unique(own.map(n => n && lowered(n))),
-      ...(systems.length ? [`det som ${conjunction.format(systems)} visar`] : []),
-    ];
-    // A read of Clew's own with no name to say it by: the line still says that not all of the page can be read.
-    line =
-      parts.length && own.every(Boolean)
-        ? `Assistenten kan inte läsa ${conjunction.format(parts)} här.`
-        : 'Assistenten kan inte läsa allt som visas här.';
-  }
+  // A read of Clew's own with no name to be listed by: the line says that not all of the page can be read.
+  else if (!own.every(Boolean))
+    line = nothing
+      ? `Assistenten kan inte läsa det som visas här. ${STILL}`
+      : 'Assistenten kan inte läsa allt som visas här.';
   return {
     ...subject,
     label: words,
     placeholder: `Fråga om ${words}`,
     ...(line ? { closed: line } : {}),
+    ...(cannotRead.length ? { cannotRead } : {}),
+  };
+}
+
+/**
+ * What the pane says it can do here before anything is asked (D133 item 7), every line from what the assistant is
+ * allowed: the reads it may make on the page (the subject's chips, which go with every question: a read with
+ * `ViewEntry.assistant`, or the work item the page shows), by their words; the actions of what stands open it may fill
+ * in, as the server says them (`prepares`; none while the server has not answered); and what the page shows that it
+ * cannot read (`cannotRead`). An empty list is not drawn.
+ */
+export interface PaneReach {
+  reads: string[];
+  prepares: string[];
+  cannotRead: string[];
+}
+export function paneReach(
+  subject: Pick<PageSubject, 'chips' | 'cannotRead'>,
+  prepares?: readonly { title: string }[] | undefined,
+): PaneReach {
+  const unique = (names: readonly string[]) => [...new Set(names.filter(Boolean))];
+  return {
+    reads: unique(subject.chips.map(c => c.label)),
+    prepares: unique((prepares ?? []).map(p => p.title)),
+    cannotRead: unique(subject.cannotRead ?? []),
   };
 }
 
@@ -518,15 +558,66 @@ export function useOpenAsConversation(
   };
 }
 
+/** One of the pane's lists of what it can do here (D133 item 7), under its eyebrow, each row with its mark. */
+function ReachList({ title, mark, rows }: { title: string; mark: typeof EyeIcon; rows: readonly string[] }) {
+  return (
+    <VStack gap={1}>
+      <Text type="eyebrow">{title}</Text>
+      <List density="compact" aria-label={title}>
+        {rows.map(row => (
+          <ListItem key={row} startContent={<Icon icon={mark} size="sm" color="secondary" />} label={row} />
+        ))}
+      </List>
+    </VStack>
+  );
+}
+
+/**
+ * What the pane says before anything is asked (D133 item 7, D130 rule 10; canvas board AttGora-tom, `Explains`): what
+ * asking here does, then what the assistant may do here, every line built from what it is allowed and none of them free
+ * text or a suggested question: the reads it may make on the page, the actions of what stands open it may fill in, with
+ * the person always sending them, and what it cannot read. A list with nothing in it is not drawn. Last, what opening
+ * the question as a conversation adds.
+ */
+function Explains({ about, reach }: { about: string; reach: PaneReach }) {
+  return (
+    <VStack gap={5}>
+      <VStack gap={2}>
+        <Heading level={3}>{`Fråga om ${about}`}</Heading>
+        <Text as="p">Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.</Text>
+      </VStack>
+      {reach.reads.length > 0 && <ReachList title="Det här kan jag läsa här" mark={EyeIcon} rows={reach.reads} />}
+      {reach.prepares.length > 0 && (
+        <VStack gap={1}>
+          <ReachList title="Det här kan jag fylla i åt dig" mark={PencilSquareIcon} rows={reach.prepares} />
+          <Text as="p" type="supporting" color="secondary">
+            Du granskar och skickar alltid själv.
+          </Text>
+        </VStack>
+      )}
+      {reach.cannotRead.length > 0 && (
+        <ReachList title="Det här kan jag inte läsa" mark={LockClosedIcon} rows={reach.cannotRead} />
+      )}
+      <Text as="p" type="supporting" color="secondary">
+        Behöver frågan mer plats? Öppna som samtal: där får den hela sidan, med tabeller och dokument, och finns sedan
+        under Samtal.
+      </Text>
+    </VStack>
+  );
+}
+
 /**
  * The conversation beside a page (D130, "One component"; canvas boards AskArende-empty and AskArende-more): the same
  * transcript and box as the conversation's page, in Astryx's `ChatLayout` with the box docked under the conversation,
  * read from a second provider of the one conversation context that wraps only what is drawn here, so the page's own
- * cards keep reading the app's conversation. Before anything is asked it says in plain words what asking here does and
- * what opening it as a conversation adds (rule 10). "Öppna som samtal" (`useOpenAsConversation`) stands once at the head
- * of the region, unless the host draws it in a header of its own (`headed`: the page frame's pane, whose header also
- * says what the pane is about and where the assistant cannot read). `prepared` draws what the page puts under an answer
- * that prepared one of its decisions (Kalender's "Använd tiden", D129). The region fills what its parent leaves it.
+ * cards keep reading the app's conversation. `headed` is the page frame's pane, whose header says what the pane is about
+ * and leads to the conversation: before anything is asked it says what the assistant can do here (`Explains`, D133 item
+ * 7), with what it may fill in for what stands open as the server answers it (`assistantReachQuery`, the turn's own
+ * rules). In a page's own pane under a picked thing (Att göra's item, Kalender's entry) there is nothing before the box:
+ * the part is as low as the box until something is asked, and "Öppna som samtal" (`useOpenAsConversation`) stands at
+ * the head of the region once there is a conversation to open. The box keeps its place in the tree from the first state
+ * to the conversation, so the focus and the words in it stay. `prepared` draws what the page puts under an answer that
+ * prepared one of its decisions (Kalender's "Använd tiden", D129). The region fills what its parent leaves it.
  */
 export function PageTalk({
   talk,
@@ -543,36 +634,40 @@ export function PageTalk({
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
   const views = useQuery(areasQuery).data?.views;
-  if (!subject) return null;
   const { conversation, pending } = state;
+  const asked = !!(conversation || pending);
+  // What the assistant may fill in for what stands open, asked only while the pane says it (`Explains`).
+  const standing = subject ? pageTurn(subject) : null;
+  const reachInput = {
+    ...(standing?.beside ? { beside: standing.beside } : {}),
+    ...(standing?.thing ? { thing: standing.thing } : {}),
+  };
+  const fills = useQuery({
+    ...assistantReachQuery(reachInput, standing?.thing ? stableJson(standing.thing) : null),
+    enabled: !!subject && headed && !asked && (!!reachInput.beside || !!reachInput.thing),
+  }).data;
+  if (!subject) return null;
   const whole = conversation ? `/conversations/${conversation.id}${subject.search}` : null;
   // A view an answer names is a link to its own page, with this page as the way back (D126 rule 1, D130 rule 7).
   const viewHref = (v: ViewRef) => declaredPage(views, v.capability, v.input) ?? viewPageHref(v, pathname + search);
   const opener =
-    open && !headed ? (
+    open && !headed && conversation ? (
       <Link href={open.href} type="supporting" color="secondary" {...(open.onClick ? { onClick: open.onClick } : {})}>
         Öppna som samtal
       </Link>
     ) : null;
-  const intro = (
-    <VStack gap={3}>
-      <Text weight="semibold">{`Fråga om ${subject.label}`}</Text>
-      {subject.closed && !headed && <Text type="supporting">{subject.closed}</Text>}
-      <Text as="p">Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.</Text>
-      <Text as="p" type="supporting" color="secondary">
-        Öppnar du frågan som ett samtal får den hela sidan. Där kan du ta med flera ärenden, se tabeller och dokument
-        och resonera längre. Samtalet finns sedan under Alla samtal.
-      </Text>
-    </VStack>
-  );
   return (
     <ConversationContext.Provider value={state}>
       <VStack gap={2} height="100%">
         {opener && <HStack hAlign="end">{opener}</HStack>}
         <StackItem size="fill">
           <VStack height="100%">
-            <ChatLayout composer={<Composer place="pane" placeholder={subject.placeholder} />}>
-              {conversation || pending ? (
+            {/* Before anything is asked there is nothing to scroll to: no room is kept over the box for the button. */}
+            <ChatLayout
+              composer={<Composer place="pane" placeholder={subject.placeholder} />}
+              {...(asked ? {} : { scrollButton: null })}
+            >
+              {asked ? (
                 <Transcript
                   room="pane"
                   about={subject.chips}
@@ -582,9 +677,9 @@ export function PageTalk({
                   prepared={prepared}
                   conversationHref={whole ?? undefined}
                 />
-              ) : (
-                intro
-              )}
+              ) : headed ? (
+                <Explains about={subject.label} reach={paneReach(subject, fills)} />
+              ) : null}
             </ChatLayout>
           </VStack>
         </StackItem>

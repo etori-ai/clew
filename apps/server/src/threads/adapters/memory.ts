@@ -1,7 +1,7 @@
 import { unresolvedExecution, type Thread } from '@clew/contracts';
 import type { AuditEntry, JobInput, ThreadStore, ThreadTx, TimerIntent, WorkflowStart } from '../model';
 import { admitAttention, type AttentionDay } from '../attention-domain';
-import { namedAmong, namedSubjects, reminderWorkflowId, withoutSubject } from '../domain';
+import { marksRecordDraft, namedAmong, namedSubjects, reminderWorkflowId, withoutSubject } from '../domain';
 
 /**
  * The store in memory: the unit tests' adapter (D25). Same contract as Postgres, held to it by `tests/store-contract.ts`.
@@ -147,6 +147,15 @@ export function memoryThreadStore(): MemoryThreadStore {
         ...(message.meta ? { meta: message.meta } : {}),
       });
       row.thread.updatedAt = message.at;
+    },
+    async markRecordDraftSent(mark) {
+      const row = threads.get(mark.conversationId);
+      if (!row || row.personId !== mark.personId || row.thread.kind !== 'question') return false;
+      const message = row.thread.messages.find(m => m.id === mark.messageId);
+      const drafted = message?.meta?.recordDraft;
+      if (!message?.meta || !drafted || !marksRecordDraft(drafted, mark)) return false;
+      message.meta = { ...message.meta, recordDraft: { ...drafted, sent: { threadId: mark.threadId } } };
+      return true;
     },
     async writeAudit(entry) {
       audit.push(copy(entry));

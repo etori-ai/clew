@@ -1055,6 +1055,57 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
     });
     expect(heard).toEqual([{ actionId: 'book', values: { when: '2026-11-16T08:00:00Z' } }]);
   });
+  /**
+   * Before anything is asked the pane says what the assistant may fill in for what stands open (D133 item 7): the
+   * server answers from the rules the turn offers its draft tool by, so the two never disagree, and it writes nothing.
+   */
+  test('the pane is told the open item’s actions the turn would offer to fill in, and nothing else (D133 item 7)', async () => {
+    const offered: unknown[] = [];
+    const generate: ModelGenerate = async ({ tools }) => {
+      const draft = tools['clew__draftAction'] as { inputSchema: { jsonSchema: any } } | undefined;
+      offered.push(draft?.inputSchema.jsonSchema.properties.action.enum ?? null);
+      return { text: 'Inget att fylla i.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    const card = await rehab(w);
+    const beside = 'thread:' + card.id;
+    const written = w.store.audit.length;
+    expect(await w.assistant.reach(hillevi, { beside })).toEqual({ prepares: [{ title: 'Boka samtalet' }] });
+    expect(w.store.audit).toHaveLength(written);
+    expect((await w.threads.listThreadsFor(hillevi)).some(t => t.kind === 'question')).toBe(false);
+    // The turn asked with the same item open offers the same action, by its id.
+    await w.assistant.converse(hillevi, {
+      text: 'Boka samtalet på torsdag eftermiddag',
+      chips: [{ ref: beside, kind: 'thread', label: card.title }],
+      beside,
+    });
+    expect(offered).toEqual([['book']]);
+    // Nothing for a list, a person or a unit, nor for a work item that is not there.
+    for (const input of [
+      {},
+      { beside: 'capability:hr.staff' },
+      { thing: { kind: 'person' as const, id: 'anna' } },
+      { thing: { kind: 'unit' as const, id: 'unit-skola' } },
+      { beside: 'thread:gone' },
+    ])
+      expect(await w.assistant.reach(hillevi, input)).toEqual({ prepares: [] });
+  });
+  test('a person who may not see the item, a model that does not answer and no model at all are told nothing, never refused', async () => {
+    const w = world({ generate: async () => ({ text: 'Svar.', toolCalls: [] }) });
+    const card = await rehab(w);
+    const beside = 'thread:' + card.id;
+    // Hillevi's item is not Hassan's: the same as an item that is not there.
+    expect(await w.assistant.reach(hassan, { beside })).toEqual({ prepares: [] });
+    // A model marked down is not asked, and the turn would offer nothing.
+    w.health.mark('llm', false, T0);
+    expect(await w.assistant.reach(hillevi, { beside })).toEqual({ prepares: [] });
+    w.health.mark('llm', true, T0);
+    expect(await w.assistant.reach(hillevi, { beside })).toEqual({ prepares: [{ title: 'Boka samtalet' }] });
+    // Without a model the router answers, which fills nothing in.
+    const none = world();
+    const theirs = await rehab(none);
+    expect(await none.assistant.reach(hillevi, { beside: 'thread:' + theirs.id })).toEqual({ prepares: [] });
+  });
 });
 
 /**
@@ -1349,6 +1400,35 @@ describe('the assistant prepares a move or a cancellation of the open meeting, t
       note: ASKED,
     });
     expect(cancelled).toEqual([{ kind: 'calendar.cancel', event: { id: 'apt', title: 'APT', ...APT } }]);
+  });
+
+  test('the pane is told the two decisions for an open meeting the person may change, by the rule the turn uses (D133 item 7)', async () => {
+    const model = scripted([]);
+    const w = world({ generate: model.generate });
+    seeded(w);
+    expect(await w.assistant.reach(hillevi, { beside: 'event:apt' })).toEqual({
+      prepares: [{ title: 'Flytta mötet' }, { title: 'Ställ in mötet' }],
+    });
+    // Someone else's meeting, one that cannot be changed from Clew, a recurring one, a whole day, and one not in her
+    // calendar: nothing, and no error.
+    for (const uid of ['theirs', 'locked', 'weekly', 'day', 'someone-elses'])
+      expect({ uid, reach: await w.assistant.reach(hillevi, { beside: 'event:' + uid }) }).toEqual({
+        uid,
+        reach: { prepares: [] },
+      });
+    // The turn with the same meeting open offers the two tools for the one and neither for the other.
+    for (const uid of ['apt', 'theirs'])
+      await w.assistant.converse(hillevi, {
+        text: 'Flytta mötet till fredag',
+        chips: [chip(uid, uid)],
+        beside: 'event:' + uid,
+      });
+    expect(model.offered[0]).toEqual(expect.arrayContaining([TOOL, CANCEL]));
+    expect(model.offered[1]).not.toContain(TOOL);
+    expect(model.offered[1]).not.toContain(CANCEL);
+    // The reach changed nothing in the calendar and kept nothing of its own.
+    expect(w.cal.cancelled).toEqual([]);
+    expect(w.store.audit.map(e => e.action)).toEqual(['conversation.asked', 'conversation.asked']);
   });
 });
 

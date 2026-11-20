@@ -541,7 +541,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
         crumbs={unitTrail(detail, units.data)}
         title={name}
         subtitle="Enhet"
-        actions={<EntityActions detail={detail} mobile={mobile} />}
+        actions={<EntityActions subject={detail.entity} actions={detail.actions} mobile={mobile} />}
         tabs={
           <ThingTabs
             label={`Om ${name}`}
