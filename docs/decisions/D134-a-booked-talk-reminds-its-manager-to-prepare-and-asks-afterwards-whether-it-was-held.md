@@ -19,10 +19,11 @@ Nothing is stored for them and no timer runs.
 3. **After.** From the day after the booked time, while the talk is not marked held, the same manager gets the card
    "Hölls utvecklingssamtalet?". The talk's tab says the time has passed and offers the two answers. *Markera som
    hållet* marks it held on the day it was booked for, not the day the button is pressed. *Samtalet blev inte av*
-   takes the time off, so the talk lacks a time and is booked again: a time set by hand is removed as any such time
-   is, and for an invitation the manager whose it is ends it with the decision `missed` on
-   `POST /api/talks/:personId/booking/calendar`, which reads no calendar and leaves the meeting there as what was
-   once planned.
+   takes the time off, so the talk lacks a time and is booked again. It is offered for an invitation, which the
+   manager whose it is ends with the decision `missed` on `POST /api/talks/:personId/booking/calendar`: that reads
+   no calendar, leaves the meeting there as what was once planned, and ends the person's latest invitation, never
+   an older one whose talk was held. A time set by hand is taken off with Ta bort tiden, as at any time, so there is
+   one button for it and not two.
 4. **Only the manager whose booking it is gets the cards**, and only while they manage the person. Another manager
    of the person reads the same on the talk's tab and may mark it held.
 5. **The cards name nobody** (vision principle 7): the person is the row's subject, and the card opens the person's

@@ -1,3 +1,4 @@
+import type { ProposalStatus } from '@clew/contracts';
 import { displayDate } from '@clew/calendar/dates';
 import type { People, ProposalStore, Team } from '../model';
 
@@ -12,7 +13,7 @@ import type { People, ProposalStore, Team } from '../model';
  */
 
 /** The statuses in which a proposal books its invitee: sent, final, or accepted by them. */
-export const BOOKED: readonly string[] = ['confirmed', 'final', 'accepted'];
+export const BOOKED: readonly ProposalStatus[] = ['confirmed', 'final', 'accepted'];
 /** The days a round covers, `YYYY-MM-DD`, both included. */
 export interface Period {
   opensOn: string;

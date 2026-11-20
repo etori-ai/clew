@@ -2,6 +2,7 @@ import type { AuthenticatedContext, TalkCalendarDecision } from '@clew/contracts
 import type { EventOccurrence } from '@clew/calendar/model';
 import { ForbiddenError, InputError } from '../../../context';
 import type { CalendarBinder, ProposalRecord, ProposalStore, ProposalTx, Team } from '../model';
+import { chunks } from '../domain';
 import { BOOKED } from './booked';
 
 /**
@@ -20,6 +21,8 @@ export interface InvitationDeps {
 }
 /** How long a manager's invitations are left without reading their events again, per server process. */
 export const FOLLOW_MS = 60 * 60_000;
+/** How many events are looked up at the same time when a manager's invitations are read back. */
+const FOLLOW_AT_ONCE = 4;
 /** An invitation is followed from when it is sent until this long after its time, the follow-up policy's own span. */
 const FOLLOWED_AFTER_MS = 30 * 86_400_000;
 const NOT_YOURS = 'Personen finns inte bland dem du är chef för.';
@@ -63,14 +66,23 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
       const last = followed.get(persona.id);
       if (last !== undefined && now.getTime() - last < FOLLOW_MS) return 0;
       followed.set(persona.id, now.getTime());
+      // A few at a time: a manager's twenty invitations are not twenty requests in a row, nor twenty at once.
       const seen: Array<{ p: ProposalRecord; event: EventOccurrence | null }> = [];
-      for (const p of await standing(persona)) {
-        try {
-          seen.push({ p, event: await eventOf(persona, p) });
-        } catch {
-          /* a calendar that cannot answer now is asked again at the next reading */
-        }
-      }
+      for (const part of chunks(await standing(persona), FOLLOW_AT_ONCE))
+        seen.push(
+          ...(
+            await Promise.all(
+              part.map(async p => {
+                try {
+                  return [{ p, event: await eventOf(persona, p) }];
+                } catch {
+                  // A calendar that cannot answer now is asked again at the next reading.
+                  return [];
+                }
+              }),
+            )
+          ).flat(),
+        );
       if (!seen.length) return 0;
       const at = now.toISOString();
       await persona.authorize();
@@ -137,9 +149,11 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
           });
         });
       if (decision === 'missed') {
-        const past = candidates.find(p => Date.parse(p.end) <= Date.parse(at));
-        if (!past) throw new InputError(NOT_YET);
-        return end(past, 'missed', false);
+        // The person's latest invitation is the one that carries the talk's booking: an older one whose talk was held
+        // is never the one that was missed.
+        const latest = candidates[0]!;
+        if (Date.parse(latest.end) > Date.parse(at)) throw new InputError(NOT_YET);
+        return end(latest, 'missed', false);
       }
       const read: Array<{ p: ProposalRecord; event: EventOccurrence | null }> = [];
       for (const p of candidates) {

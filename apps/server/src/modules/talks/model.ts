@@ -199,6 +199,8 @@ export interface TalkTx {
   saveTalk(talk: TalkRecord): Promise<void>;
   /** The talk whose booking this invitation carries, locked; undefined when none does (any more). */
   talkByInvitation(invitationId: string): Promise<TalkRecord | undefined>;
+  /** The talks of this round that have a booking, locked: what a new round takes over when it opens. */
+  bookedTalks(roundId: string): Promise<TalkRecord[]>;
   // Action points.
   /**
    * The action points about these employees that the round shows: every one added in `roundId`, and every open one from

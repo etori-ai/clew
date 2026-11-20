@@ -13,6 +13,8 @@ import {
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import { bookedElsewhere } from '../../apps/server/src/modules/calendar/usecases/booked';
+import { FOLLOW_MS, invitationUsecases } from '../../apps/server/src/modules/calendar/usecases/invitations';
+import { talkInvitationsOn } from '../../apps/server/src/composition/talk-invitations';
 import type { PlanningRound, UnitMember } from '../../apps/server/src/modules/calendar/model';
 import { projectExecution } from '../../apps/server/src/composition/execution-projection';
 import { forgetTestWorkflows, testDurable } from './durable';
@@ -616,6 +618,108 @@ test('a meeting moved or cancelled on the calendar page is found by its event’
       ['talks.booking_moved', undefined],
       ['talks.booking_removed', 'cancelled'],
     ]);
+  } finally {
+    await cleanup();
+  }
+});
+test('a meeting changed in the calendar is read back by its id and settled by the manager, the invitation and the talk in one commit each (D133, D134)', async () => {
+  const { w, employeeId, card, talk, audited, send, cleanup } = await talkWorld();
+  // The calendar module's use cases over the proposal store as composition builds it: its invitations port is the talks
+  // module's, on the store's own transaction.
+  const invitations = invitationUsecases({
+    store: postgresProposalStore(testDurable, { invitations: talkInvitationsOn }),
+    bind: () => ({ provider: w.provider }),
+    team: async () => w.members,
+    clock: () => new Date(w.setting.now),
+  });
+  const later = (ms: number) => {
+    w.setting.now = new Date(Date.parse(w.setting.now) + ms).toISOString();
+  };
+  const proposal = async () => (await w.proposals.readThread(w.id, card))!.proposals[0]!;
+  try {
+    await send();
+    expect(await invitations.follow(w.actor)).toBe(1);
+    expect(await talk()).toMatchObject({ calendarStart: null, calendarEnd: null, calendarGone: false });
+    // Someone moves the meeting in the calendar itself.
+    const event = w.provider.events[0]!;
+    await w.provider.reschedule(event.ref, event.revision, '2098-11-13T12:00:00.000Z', '2098-11-13T13:00:00.000Z');
+    later(FOLLOW_MS);
+    expect(await invitations.follow(w.actor)).toBe(1);
+    const differs = (await talk())!;
+    // The difference is recorded beside the booking, which stands; the invitation is as it was sent.
+    expect([differs.bookedStart, differs.calendarStart, differs.calendarEnd].map(d => d?.toISOString())).toEqual([
+      '2098-11-11T09:00:00.000Z',
+      '2098-11-13T12:00:00.000Z',
+      '2098-11-13T13:00:00.000Z',
+    ]);
+    expect((await proposal()).start).toBe('2098-11-11T09:00:00.000Z');
+    // The manager takes the meeting's time: the proposal and the talk move, and nothing differs.
+    await invitations.settle(w.actor, employeeId, 'adopt');
+    expect(await proposal()).toMatchObject({
+      status: 'confirmed',
+      start: '2098-11-13T12:00:00.000Z',
+      end: '2098-11-13T13:00:00.000Z',
+    });
+    const adopted = (await talk())!;
+    expect([adopted.bookedStart, adopted.bookedEnd].map(d => d?.toISOString())).toEqual([
+      '2098-11-13T12:00:00.000Z',
+      '2098-11-13T13:00:00.000Z',
+    ]);
+    expect(adopted).toMatchObject({ calendarStart: null, calendarEnd: null, calendarGone: false });
+    // The meeting is then removed from the calendar: recorded as gone, and the manager keeps the time without it.
+    const moved = w.provider.events[0]!;
+    await w.provider.cancel(moved.ref, moved.revision);
+    later(FOLLOW_MS);
+    await invitations.follow(w.actor);
+    expect(await talk()).toMatchObject({ calendarGone: true, invitationId: card + ':shared' });
+    await invitations.settle(w.actor, employeeId, 'keep');
+    expect((await proposal()).status).toBe('undone');
+    const kept = (await talk())!;
+    expect(kept).toMatchObject({ invitationId: null, bookedBy: w.id, calendarGone: false });
+    expect(kept.bookedStart?.toISOString()).toBe('2098-11-13T12:00:00.000Z');
+    expect((await audited()).map(a => [a.actor, a.action])).toEqual([
+      ['system:execution', 'talks.booked'],
+      ['assistant:scan', 'talks.calendar_differs'],
+      ['person:' + w.id, 'talks.booking_moved'],
+      ['assistant:scan', 'talks.calendar_differs'],
+      ['person:' + w.id, 'talks.booking_kept'],
+    ]);
+    const planning = await database()
+      .select()
+      .from(schema.audit)
+      .where(eq(schema.audit.subject, 'thread:' + card))
+      .orderBy(schema.audit.id);
+    expect(planning.map(a => a.action).filter(a => a.startsWith('proposals.'))).toEqual([
+      'proposals.moved',
+      'proposals.cancelled',
+    ]);
+  } finally {
+    await cleanup();
+  }
+});
+test('an invitation whose time passed without a talk is ended by its manager, and the talk lacks a time, in one commit (D134)', async () => {
+  const { w, employeeId, card, talk, audited, send, cleanup } = await talkWorld();
+  const invitations = invitationUsecases({
+    store: postgresProposalStore(testDurable, { invitations: talkInvitationsOn }),
+    bind: () => ({ provider: w.provider }),
+    team: async () => w.members,
+    clock: () => new Date(w.setting.now),
+  });
+  try {
+    await send();
+    await expect(invitations.settle(w.actor, employeeId, 'missed')).rejects.toThrow(
+      'Tiden för samtalet har inte passerat än.',
+    );
+    w.setting.now = '2098-11-12T07:00:00.000Z';
+    await invitations.settle(w.actor, employeeId, 'missed');
+    expect((await w.proposals.readThread(w.id, card))!.proposals[0]!.status).toBe('undone');
+    expect(await talk()).toMatchObject({ bookedStart: null, bookedEnd: null, invitationId: null });
+    expect((await audited()).map(a => [a.action, (a.details as { why?: string }).why])).toEqual([
+      ['talks.booked', undefined],
+      ['talks.booking_removed', 'missed'],
+    ]);
+    // The meeting stays in the calendar as what was once planned.
+    expect(w.provider.events).toHaveLength(1);
   } finally {
     await cleanup();
   }

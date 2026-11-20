@@ -69,13 +69,17 @@ to be kept in step.
 - An invitation is followed from when it is sent until thirty days after its time, the follow-up policy's own span,
   so a meeting moved close to its time is still found.
 - A calendar that cannot be read tells nothing and is asked again at the next reading, an hour later. The reading
-  back never stops the planner: a failure is logged.
+  back is started by the scan and not waited for, and looks events up four at a time: it never counts against the
+  calendar source's scan deadline and never holds the planner up, and a failure is logged.
+- A card about a person provisioned without a user name has no subject to link and cannot open the person's place
+  in the round, since such a person cannot be asked about (D97): it opens the round, where the talk is found by its
+  time.
 - The audit rows are `talks.calendar_differs`, `talks.calendar_agrees`, `talks.booking_moved` and
   `talks.booking_kept` beside D132's, and `proposals.moved` and `proposals.cancelled` on the planning card's thread,
   with `by: 'calendar'` for the manager's settlement and `by: 'decision'` for a move or cancellation made in Clew.
   Instants and ids only.
 - An invitation whose meeting is gone and that the manager settles is marked `undone`, as one the manager undid.
-- The card in Att göra can lag the page by one scan: the talk's tab is right at once.
+- The card in Att göra can lag the page by one scan: the talk's tab is right as soon as the reading back has run.
 
 **Not established.**
 

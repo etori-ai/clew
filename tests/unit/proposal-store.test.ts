@@ -8,5 +8,6 @@ proposalStoreContract('memory', async () => {
     people: ['hillevi', 'hassan'],
     auditFor: async subject => store.audit.filter(e => e.subject === subject),
     hasJob: async id => store.jobs.some(j => j.id === id),
+    told: async id => store.invitations.filter(i => i.invitationId === id).map(i => i.op),
   };
 });

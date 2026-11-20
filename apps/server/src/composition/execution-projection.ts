@@ -6,7 +6,7 @@ import { receipt } from '@clew/connectors';
 import { ExecutionError, type Execution } from '../modules/executions/model';
 import type { CalendarCommand } from '../modules/calendar/usecases/decisions';
 import type { InvitationsTx } from '../modules/calendar/model';
-import { invitingSentence, mayStillBeSent } from '../modules/calendar/usecases/booked';
+import { BOOKED, invitingSentence, mayStillBeSent } from '../modules/calendar/usecases/booked';
 import { talkInvitationsOn } from './talk-invitations';
 import { timerTx } from '../threads/adapters/timer-postgres';
 import { reminderStart } from '../threads/domain';
@@ -271,7 +271,7 @@ async function followOwnEvents(
         and(
           eq(schema.proposals.personId, e.personId),
           eq(schema.proposals.eventRef, item.ref),
-          inArray(schema.proposals.status, ['confirmed', 'final', 'accepted']),
+          inArray(schema.proposals.status, [...BOOKED]),
         ),
       )
       .for('update');
