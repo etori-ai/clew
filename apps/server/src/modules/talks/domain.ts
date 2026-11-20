@@ -155,12 +155,41 @@ const clockTime = new Intl.DateTimeFormat('sv-SE', {
 /** A span as a sentence reads it, in Swedish time: "tors 20 nov kl. 13:00–14:00". */
 export const swedishSpan = (span: { start: string; end: string }) =>
   `${swedishShortDay(stockholmDate(span.start))} kl. ${clockTime.format(new Date(span.start))}–${clockTime.format(new Date(span.end))}`;
+/** The working days a round reminds before a booked talk when nothing else is said, and the most it may. */
+export const PREPARE_DAYS_DEFAULT = 5;
+export const PREPARE_DAYS_MAX = 30;
+/** The calendar day `n` working days before `day` (both `YYYY-MM-DD`); a working day is Monday to Friday. */
+export function workdaysBefore(day: string, n: number): string {
+  const d = new Date(day + 'T12:00:00Z');
+  for (let left = n; left > 0;) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    const weekday = d.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) left--;
+  }
+  return d.toISOString().slice(0, 10);
+}
 /**
- * A card the scan asks for about one person's talk (D133): what it is about, and its identity (D47). One card per
+ * What a booked talk that is not held asks of its manager now (D134), from the booking and the clock alone: `prepare`
+ * from the round's number of working days before the talk until it starts, `held` from the day after it ended, and
+ * nothing in between or with the reminder switched off. `now` is an instant; days are Swedish calendar days.
+ */
+export function bookingAsks(
+  booking: Pick<TalkBooking, 'start' | 'end'>,
+  prepareDays: number,
+  now: string,
+): 'prepare' | 'held' | undefined {
+  const today = stockholmDate(now);
+  if (today > stockholmDate(booking.end)) return 'held';
+  if (prepareDays > 0 && now < booking.start && today >= workdaysBefore(stockholmDate(booking.start), prepareDays))
+    return 'prepare';
+  return undefined;
+}
+/**
+ * A card the scan asks for about one person's talk (D133, D134): what it is about, and its identity (D47). One card per
  * person and round for each kind; `revision` is what the card says, so a card the manager handled comes back when that
  * changes, and a cause that is gone resolves the card at the next scan.
  */
-export type TalkNoticeKind = 'calendar';
+export type TalkNoticeKind = 'calendar' | 'prepare' | 'held';
 export const noticeCard = (kind: TalkNoticeKind, personId: string, roundId: string, revision: string) => ({
   topic: `talks:${kind}:${personId}:${roundId}`,
   key: `talks:${kind}:${personId}`,

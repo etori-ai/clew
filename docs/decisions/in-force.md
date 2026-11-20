@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**136 in force**: 98 accepted and 38 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**137 in force**: 98 accepted and 39 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -34,6 +34,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item](D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md) | 2026-11-13 | provisional |  |
 | [D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation](D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md) | 2026-11-19 | provisional | [D133](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) |
 | [D133 · A talk follows its meeting by the event's id, and only the manager changes it](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) | 2026-11-20 | provisional |  |
+| [D134 · A booked talk reminds its manager to prepare, and asks afterwards whether it was held](D134-a-booked-talk-reminds-its-manager-to-prepare-and-asks-afterwards-whether-it-was-held.md) | 2026-11-20 | provisional |  |
 
 ## Integrations
 

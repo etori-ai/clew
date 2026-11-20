@@ -25,6 +25,11 @@ export interface RoundRecord {
   label: string;
   opensOn: string;
   dueOn: string;
+  /**
+   * How many working days before a booked talk the manager whose booking it is is reminded to prepare (D134), the same
+   * for everyone in the organisation; 0 is no reminder.
+   */
+  prepareDays: number;
   /** The actor that opened it, such as `operator:cli`; not a person id. */
   createdBy: string;
   createdAt: string;

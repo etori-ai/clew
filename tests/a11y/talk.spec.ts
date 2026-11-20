@@ -312,6 +312,83 @@ for (const [layout, viewport] of [
       await expectNoAxeViolations(page);
     });
 
+    test('a booked talk whose time has passed asks whether it took place: held on the day it was booked for, or the time taken off (D134)', async ({
+      page,
+      api,
+    }) => {
+      // The mock's clock is 4 November: Erik's invitation was for the 3rd, and so was the time Lena's manager set by hand.
+      const past = { at: '2026-11-03T08:00:00.000Z', until: '2026-11-03T09:00:00.000Z' };
+      const set = () =>
+        (api.talkRows = api.talkRows.map(row =>
+          row.personId === 'erik'
+            ? { ...row, ...past, state: 'booked' as const, invited: true, own: true }
+            : row.personId === 'lena'
+              ? { ...row, ...past, state: 'booked' as const, invited: false, own: true }
+              : row,
+        ));
+      set();
+      await open(page, '/staff?talk=erik');
+      const erik = talk(page, 'Erik Sandström');
+      await expect(erik.getByText('Tiden för samtalet har passerat', { exact: true })).toBeVisible();
+      await expect(
+        erik.getByText(
+          'Markera samtalet som hållet om det blev av. Annars tar du bort tiden, så kan samtalet bokas igen.',
+        ),
+      ).toBeVisible();
+      await expectNoAxeViolations(page);
+      const { unmarked, hidden } = await hiddenFocusStops(page);
+      expect(unmarked).toEqual([]);
+      expect(hidden).toEqual([]);
+      // It took place: held on the day it was booked for, not the day this is pressed.
+      await erik.getByRole('button', { name: 'Markera som hållet' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(erik.getByRole('button', { name: 'Ångra', exact: true })).toBeFocused();
+      await expect(erik.getByText('tis 3 nov.', { exact: true })).toBeVisible();
+      await expect(erik.getByText('Tiden för samtalet har passerat', { exact: true })).toHaveCount(0);
+      expect(api.talkWrites.at(-1)).toEqual({
+        method: 'POST',
+        path: '/talks/erik/held',
+        body: { heldOn: '2026-11-03' },
+      });
+      // It did not: the invitation is over and the talk lacks a time, with Ange tid focused.
+      set();
+      await page.reload();
+      await erik.getByRole('button', { name: 'Samtalet blev inte av', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(notices(page).getByText('Tiden för samtalet är borttagen.')).toBeAttached();
+      await expect(erik.getByRole('button', { name: 'Ange tid', exact: true })).toBeFocused();
+      await expect(erik.getByText('Saknas', { exact: true })).toBeVisible();
+      expect(api.talkWrites.at(-1)).toEqual({
+        method: 'POST',
+        path: '/talks/erik/booking/calendar',
+        body: { decision: 'missed' },
+      });
+      // A time set by hand is taken off as any such time is.
+      await open(page, '/staff?talk=lena');
+      const lena = talk(page, 'Lena Berg');
+      await lena.getByRole('button', { name: 'Samtalet blev inte av', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(lena.getByRole('button', { name: 'Ange tid', exact: true })).toBeFocused();
+      expect(api.talkWrites.at(-1)).toMatchObject({ method: 'DELETE', path: '/talks/lena/booking' });
+    });
+
+    test('another manager’s invitation whose time has passed is theirs to answer for: held can be marked, the time is not taken off here (D134)', async ({
+      page,
+      api,
+    }) => {
+      api.talkRows = api.talkRows.map(row =>
+        row.personId === 'erik'
+          ? { ...row, at: '2026-11-03T08:00:00.000Z', until: '2026-11-03T09:00:00.000Z', own: false }
+          : row,
+      );
+      await open(page, '/staff?talk=erik');
+      const erik = talk(page, 'Erik Sandström');
+      await expect(erik.getByText('Tiden för samtalet har passerat', { exact: true })).toBeVisible();
+      await expect(erik.getByRole('button', { name: 'Markera som hållet' })).toBeVisible();
+      await expect(erik.getByRole('button', { name: 'Samtalet blev inte av' })).toHaveCount(0);
+      await expectNoAxeViolations(page);
+    });
+
     test('the points are grouped: carried over first, then this round, then done, each with who answers and when', async ({
       page,
       api,
@@ -612,6 +689,15 @@ test.describe('1.4.10 reflow', () => {
     await page.setViewportSize(narrow);
     await open(page, '/staff?talk=erik');
     await expect(talk(page, 'Erik Sandström').getByText('Mötet har flyttats i kalendern')).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+  });
+  test('a talk whose time has passed reflows at 320 px', async ({ page, api }) => {
+    api.talkRows = api.talkRows.map(row =>
+      row.personId === 'erik' ? { ...row, at: '2026-11-03T08:00:00.000Z', until: '2026-11-03T09:00:00.000Z' } : row,
+    );
+    await page.setViewportSize(narrow);
+    await open(page, '/staff?talk=erik');
+    await expect(talk(page, 'Erik Sandström').getByText('Tiden för samtalet har passerat')).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
   });
   test('the form for the time of a talk reflows at 320 px', async ({ page, api }) => {

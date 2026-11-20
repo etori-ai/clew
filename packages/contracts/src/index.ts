@@ -1406,11 +1406,12 @@ export type CommitmentsResult = Static<typeof CommitmentsResultSchema>;
 export const TalkBookingBodySchema = object({ start: instant, end: instant });
 export type TalkBookingBody = Static<typeof TalkBookingBodySchema>;
 /**
- * What the manager whose booking it is decides when the calendar no longer holds what the booking says (D133): `adopt`
- * takes the time the event has now, `remove` takes the time off a talk whose event is gone, and `keep` keeps the time of
- * such a talk as one set by hand, with no invitation.
+ * What the manager whose booking it is decides about the meeting of an invitation (D133, D134). When the calendar no
+ * longer holds what the booking says: `adopt` takes the time the event has now, `remove` takes the time off a talk whose
+ * event is gone, and `keep` keeps the time of such a talk as one set by hand, with no invitation. When the meeting's
+ * time has passed without the talk taking place: `missed` ends the invitation and takes the time off the talk.
  */
-export const TALK_CALENDAR_DECISIONS = ['adopt', 'remove', 'keep'] as const;
+export const TALK_CALENDAR_DECISIONS = ['adopt', 'remove', 'keep', 'missed'] as const;
 export type TalkCalendarDecision = (typeof TALK_CALENDAR_DECISIONS)[number];
 export const TalkCalendarBodySchema = object({ decision: literals(TALK_CALENDAR_DECISIONS) });
 export type TalkCalendarBody = Static<typeof TalkCalendarBodySchema>;

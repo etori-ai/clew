@@ -575,6 +575,13 @@
       "when": 1795159068359,
       "tag": "0081_talk_calendar",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795159854361,
+      "tag": "0082_talk_round_prepare_days",
+      "breakpoints": true
     }
   ]
 }

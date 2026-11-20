@@ -1,7 +1,7 @@
 import type { AuthenticatedContext, TalkCalendarDecision } from '@clew/contracts';
 import type { EventOccurrence } from '@clew/calendar/model';
 import { ForbiddenError, InputError } from '../../../context';
-import type { CalendarBinder, ProposalRecord, ProposalStore, Team } from '../model';
+import type { CalendarBinder, ProposalRecord, ProposalStore, ProposalTx, Team } from '../model';
 import { BOOKED } from './booked';
 
 /**
@@ -29,6 +29,7 @@ const DECIDING = 'Ärendet väntar på kalenderns besked. Försök igen om en st
 const AGREES = 'Mötet i kalendern stämmer med samtalet. Läs om sidan.';
 const STILL_THERE = 'Mötet finns kvar i kalendern. Läs om sidan.';
 const IS_GONE = 'Mötet finns inte längre i kalendern. Läs om sidan.';
+const NOT_YET = 'Tiden för samtalet har inte passerat än.';
 
 export function invitationUsecases({ store, bind, team, clock }: InvitationDeps) {
   /** When each manager's invitations were last read back, in this process. */
@@ -92,6 +93,10 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
      * talk then lacks a time, or keeps it as a time the manager set by hand. A decision that no longer fits what the
      * calendar holds is refused and what it holds is recorded, so the page reads right again. Nothing is written to the
      * calendar: a meeting moved by mistake is moved back there, and the next reading finds them agreeing.
+     *
+     * `missed` is the manager's answer when the meeting's time has passed and the talk did not take place (D134): the
+     * invitation is over, the talk lacks a time, and it is planned again. The calendar is not read for it, and the
+     * meeting stays there as what was once planned.
      */
     async settle(persona: AuthenticatedContext, employeeId: string, decision: TalkCalendarDecision): Promise<void> {
       await persona.authorize();
@@ -100,6 +105,42 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
         .filter(p => p.participant.personId === employeeId)
         .sort((a, b) => b.start.localeCompare(a.start));
       if (!candidates.length) throw new InputError(NO_INVITATION);
+      const at = clock().toISOString(),
+        actor = persona.principal.id;
+      /** The proposal as it is now, locked: still an invitation that books someone, with no decision on its way. */
+      const locked = async (tx: ProposalTx, p: ProposalRecord) => {
+        const found = await tx.lockThread(persona.id, p.threadId);
+        const current = found?.proposals.find(x => x.id === p.id);
+        if (!found || !current || !BOOKED.includes(current.status)) throw new InputError(NO_INVITATION);
+        if (found.thread.execution && ['pending', 'running', 'unknown'].includes(found.thread.execution.state))
+          throw new InputError(DECIDING);
+      };
+      /** The invitation is over: the proposal is undone and the talks domain told, with the audit row, in one transaction. */
+      const end = (p: ProposalRecord, why: 'cancelled' | 'missed', keep: boolean) =>
+        store.transaction(async tx => {
+          await locked(tx, p);
+          await tx.updateProposals([p.id], { status: 'undone', undoUntil: null });
+          await tx.invitations.ended({
+            actor,
+            invitationId: p.id,
+            why,
+            at,
+            ...(keep ? { keep: { managerId: persona.id } } : {}),
+          });
+          await tx.updateThread(p.threadId, { updatedAt: at });
+          await tx.writeAudit({
+            actor,
+            action: why === 'missed' ? 'proposals.missed' : 'proposals.cancelled',
+            subject: 'thread:' + p.threadId,
+            at,
+            details: why === 'missed' ? { proposal: p.id } : { proposal: p.id, kept: keep, by: 'calendar' },
+          });
+        });
+      if (decision === 'missed') {
+        const past = candidates.find(p => Date.parse(p.end) <= Date.parse(at));
+        if (!past) throw new InputError(NOT_YET);
+        return end(past, 'missed', false);
+      }
       const read: Array<{ p: ProposalRecord; event: EventOccurrence | null }> = [];
       for (const p of candidates) {
         try {
@@ -108,9 +149,6 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
           throw new InputError(UNREADABLE);
         }
       }
-      const found = read.find(r => differs(r.p, r.event));
-      const at = clock().toISOString(),
-        actor = persona.principal.id;
       const observe = (r: (typeof read)[number]) =>
         store.transaction(tx =>
           tx.invitations.observed({
@@ -120,6 +158,7 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
             at,
           }),
         );
+      const found = read.find(r => differs(r.p, r.event));
       if (!found) {
         // The calendar agrees again: what was recorded as differing is cleared, and there is nothing to decide.
         for (const r of read) await observe(r);
@@ -130,39 +169,23 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
         await observe(found);
         throw new InputError(event ? STILL_THERE : IS_GONE);
       }
+      if (!event) return end(p, 'cancelled', decision === 'keep');
       await store.transaction(async tx => {
-        const locked = await tx.lockThread(persona.id, p.threadId);
-        const current = locked?.proposals.find(x => x.id === p.id);
-        if (!locked || !current || !BOOKED.includes(current.status)) throw new InputError(NO_INVITATION);
-        if (locked.thread.execution && ['pending', 'running', 'unknown'].includes(locked.thread.execution.state))
-          throw new InputError(DECIDING);
-        if (event) {
-          await tx.updateProposals([p.id], {
-            start: event.start,
-            end: event.end,
-            eventRef: event.ref,
-            eventRevision: event.revision,
-          });
-          await tx.invitations.moved({ actor, invitationId: p.id, start: event.start, end: event.end, at });
-        } else {
-          await tx.updateProposals([p.id], { status: 'undone', undoUntil: null });
-          await tx.invitations.ended({
-            actor,
-            invitationId: p.id,
-            why: 'cancelled',
-            at,
-            ...(decision === 'keep' ? { keep: { managerId: persona.id } } : {}),
-          });
-        }
+        await locked(tx, p);
+        await tx.updateProposals([p.id], {
+          start: event.start,
+          end: event.end,
+          eventRef: event.ref,
+          eventRevision: event.revision,
+        });
+        await tx.invitations.moved({ actor, invitationId: p.id, start: event.start, end: event.end, at });
         await tx.updateThread(p.threadId, { updatedAt: at });
         await tx.writeAudit({
           actor,
-          action: event ? 'proposals.moved' : 'proposals.cancelled',
+          action: 'proposals.moved',
           subject: 'thread:' + p.threadId,
           at,
-          details: event
-            ? { proposal: p.id, start: event.start, end: event.end, by: 'calendar' }
-            : { proposal: p.id, kept: decision === 'keep', by: 'calendar' },
+          details: { proposal: p.id, start: event.start, end: event.end, by: 'calendar' },
         });
       });
     },

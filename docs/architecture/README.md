@@ -17,6 +17,7 @@ The [vocabulary and entity map](../reference/vocabulary.md) separates work items
 | [Identity](identity.md) | How are login, local grants, connector authority and source credentials separated? |
 | [Working across connectors](working-across-connectors.md) | How does Clew coordinate changes and follow-up across several systems? |
 | [Entities](entities.md) | How do sources attach what they know to a person or a unit, who may be asked about, and where does it show? |
+| [Development talks](talks.md) | What is the talk, the invitation and the meeting, who owns which, and what happens when the calendar says something else? |
 | [Connector administration](connector-administration.md) | How are registration, governance, model providers and changes managed? |
 | [Scheduled work](scheduled-work.md) | What belongs in PostgreSQL and what does the durable engine execute? |
 | [Observability](observability.md) | What does Clew log, trace and export, what does a model turn leave behind, and how does that relate to the audit trail? |

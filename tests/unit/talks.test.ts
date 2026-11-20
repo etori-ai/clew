@@ -27,6 +27,7 @@ import {
   talksView,
 } from '../../apps/server/src/modules/talks/capabilities';
 import {
+  bookingAsks,
   nextTalk,
   normaliseText,
   openWords,
@@ -34,6 +35,7 @@ import {
   overdueWords,
   swedishDayAndMonth,
   swedishShortDay,
+  workdaysBefore,
 } from '../../apps/server/src/modules/talks/domain';
 import {
   TalkError,
@@ -177,7 +179,7 @@ describe('the round', () => {
         action: 'talks.round_opened',
         subject: 'round:' + first,
         at: at(),
-        details: { organisationId: ORG, opensOn: '2026-10-01', dueOn: '2026-11-28', closed: null },
+        details: { organisationId: ORG, opensOn: '2026-10-01', dueOn: '2026-11-28', prepareDays: 5, closed: null },
       },
     ]);
     now = new Date('2027-03-01T08:00:00.000Z');
@@ -200,7 +202,7 @@ describe('the round', () => {
         action: 'talks.round_opened',
         subject: 'round:' + second,
         at: at(),
-        details: { organisationId: ORG, opensOn: '2027-03-01', dueOn: '2027-05-31', closed: first },
+        details: { organisationId: ORG, opensOn: '2027-03-01', dueOn: '2027-05-31', prepareDays: 5, closed: first },
       },
     ]);
     expect(store.state.rounds.get(first)?.closedAt).toBe(at());
@@ -212,7 +214,7 @@ describe('the round', () => {
   });
 
   test('a round needs a label and a period that ends after it starts', async () => {
-    const bad = (input: Partial<{ label: string; opensOn: string; dueOn: string }>) =>
+    const bad = (input: Partial<{ label: string; opensOn: string; dueOn: string; prepareDays: number }>) =>
       talks.openRound('operator:cli', {
         organisationId: ORG,
         label: 'Hösten',
@@ -223,6 +225,8 @@ describe('the round', () => {
     await expect(bad({ label: '   ' })).rejects.toBeInstanceOf(TalkError);
     await expect(bad({ dueOn: '2026-02-30' })).rejects.toBeInstanceOf(TalkError);
     await expect(bad({ dueOn: '2026-09-30' })).rejects.toBeInstanceOf(TalkError);
+    // The working days a manager is reminded before a booked talk (D134): a whole number from 0 to 30.
+    for (const prepareDays of [-1, 31, 2.5]) await expect(bad({ prepareDays })).rejects.toBeInstanceOf(TalkError);
     expect(store.audit()).toEqual([]);
   });
 
@@ -759,6 +763,181 @@ describe('what the calendar holds against a booking (D133)', () => {
     staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
     await seen('p1', MOVED);
     expect(await rowOf(co, 'dan.d')).toMatchObject({ state: 'booked', at: DAN.start, own: false, calendar: MOVED });
+  });
+});
+
+describe('the cards before and after a booked talk (D134)', () => {
+  const personas = new Map([boss, other, co, asAnna].map(p => [p.id, p]));
+  const registry = () =>
+    new Registry().register(
+      talksConnector(talks, async a => {
+        const p = personas.get(a.id);
+        if (!p) throw new Error('unknown');
+        return p;
+      }),
+    );
+  const actor = (p: AuthenticatedContext): Actor => ({
+    id: p.id,
+    name: p.name,
+    unitId: p.unitId,
+    unitLabel: p.unitLabel,
+    role: p.role,
+  });
+  const cards = async (p: AuthenticatedContext) => (await registry().scanOne(actor(p), 'talks')).drafts;
+
+  test('working days are Monday to Friday, counted back from the day of the talk', () => {
+    // Friday 20 November 2026: five working days before is Friday the 13th, across one weekend.
+    expect(workdaysBefore('2026-11-20', 5)).toBe('2026-11-13');
+    expect(workdaysBefore('2026-11-20', 1)).toBe('2026-11-19');
+    expect(workdaysBefore('2026-11-16', 1)).toBe('2026-11-13');
+    expect(workdaysBefore('2026-11-16', 6)).toBe('2026-11-06');
+    expect(workdaysBefore('2026-11-20', 0)).toBe('2026-11-20');
+  });
+
+  test('a booking asks for preparation in the working days before it, for nothing while it goes on, and whether it was held from the day after', () => {
+    const asks = (now: string, prepareDays = 5) => bookingAsks(DAN, prepareDays, now);
+    expect(asks('2026-11-12T16:00:00.000Z')).toBeUndefined();
+    expect(asks('2026-11-13T05:00:00.000Z')).toBe('prepare');
+    expect(asks('2026-11-20T08:59:00.000Z')).toBe('prepare');
+    // From its start to the end of that day: neither.
+    expect(asks('2026-11-20T09:00:00.000Z')).toBeUndefined();
+    expect(asks('2026-11-20T22:59:00.000Z')).toBeUndefined();
+    // 23:00 UTC is the next day in Stockholm.
+    expect(asks('2026-11-20T23:00:00.000Z')).toBe('held');
+    expect(asks('2026-12-20T09:00:00.000Z')).toBe('held');
+    // The reminder switched off: nothing before, the question after.
+    expect(asks('2026-11-19T09:00:00.000Z', 0)).toBeUndefined();
+    expect(asks('2026-11-21T09:00:00.000Z', 0)).toBe('held');
+  });
+
+  test('the manager whose booking it is gets one card to prepare, then one that asks whether the talk was held; neither names anyone', async () => {
+    const roundId = await open();
+    await bookDan();
+    // Tuesday 10 November: ten days before the talk, nothing is asked.
+    expect(await cards(boss)).toEqual([]);
+    now = new Date('2026-11-13T05:00:00.000Z');
+    const revision = `${DAN.start}/${DAN.end}`;
+    const row = {
+      ref: 'talk:talks:dan',
+      label: 'Medarbetare',
+      detail: 'fre 20 nov kl. 10:00–11:00',
+      selectable: false,
+      selected: false,
+      subject: { entity: 'person' as const, key: 'dan.d' },
+    };
+    const open_ = {
+      id: 'open',
+      label: 'Visa samtalet',
+      capability: 'talks.person',
+      kind: 'read' as const,
+      role: 'primary' as const,
+      target: 'panel' as const,
+      input: { keys: ['dan.d'] },
+    };
+    expect(await cards(boss)).toEqual([
+      {
+        topic: `talks:prepare:dan:${roundId}`,
+        area: 'talks',
+        title: 'Förbered utvecklingssamtalet',
+        summary:
+          'Ett utvecklingssamtal är bokat fre 20 nov kl. 10:00–11:00. Öppna samtalet för att se åtgärdspunkterna från förra gången.',
+        reason: 'Bokat samtal',
+        deadline: '2026-11-20',
+        items: [row],
+        actions: [open_],
+        occurrences: [{ key: 'talks:prepare:dan', revision, period: roundId }],
+      },
+    ]);
+    // While the talk goes on and for the rest of that day nothing is asked: the card to prepare is resolved.
+    now = new Date('2026-11-20T09:30:00.000Z');
+    expect(await cards(boss)).toEqual([]);
+    now = new Date('2026-11-21T05:00:00.000Z');
+    const after = await cards(boss);
+    expect(after).toEqual([
+      {
+        topic: `talks:held:dan:${roundId}`,
+        area: 'talks',
+        title: 'Hölls utvecklingssamtalet?',
+        summary:
+          'Tiden för samtalet var fre 20 nov kl. 10:00–11:00. Markera det som hållet, eller ta bort tiden om det inte blev av.',
+        reason: 'Tiden har passerat',
+        items: [row],
+        actions: [open_],
+        occurrences: [{ key: 'talks:held:dan', revision, period: roundId }],
+      },
+    ]);
+    for (const name of NAMES) expect(JSON.stringify(after)).not.toContain(name);
+    // Answered either way, nothing is asked any more.
+    await talks.markHeld(boss, 'dan', { heldOn: '2026-11-20' });
+    expect(await cards(boss)).toEqual([]);
+    await talks.unmarkHeld(boss, 'dan');
+    expect((await cards(boss)).map(c => c.title)).toEqual(['Hölls utvecklingssamtalet?']);
+    await talks.unbook(boss, 'dan');
+    expect(await cards(boss)).toEqual([]);
+  });
+
+  test('a talk moved to another time is a card that comes back; a round that reminds no days before asks only afterwards', async () => {
+    await open();
+    await bookDan();
+    now = new Date('2026-11-16T08:00:00.000Z');
+    const [first] = await cards(boss);
+    const later = { start: '2026-11-25T09:00:00.000Z', end: '2026-11-25T10:00:00.000Z' };
+    await talks.book(boss, 'dan', later);
+    // Wednesday the 25th: five working days before is the 18th, so on the 16th nothing is asked yet.
+    expect(await cards(boss)).toEqual([]);
+    now = new Date('2026-11-18T08:00:00.000Z');
+    const [again] = await cards(boss);
+    expect(again!.topic).toBe(first!.topic);
+    expect(again!.occurrences![0]!.revision).not.toBe(first!.occurrences![0]!.revision);
+    expect(again).toMatchObject({ deadline: '2026-11-25', items: [{ detail: 'ons 25 nov kl. 10:00–11:00' }] });
+    // The next round reminds nobody beforehand.
+    now = new Date('2026-11-18T09:00:00.000Z');
+    await talks.openRound('operator:cli', {
+      organisationId: ORG,
+      label: 'Utan påminnelse',
+      opensOn: '2026-11-18',
+      dueOn: '2026-12-18',
+      prepareDays: 0,
+    });
+    await talks.book(boss, 'dan', later);
+    now = new Date('2026-11-24T09:00:00.000Z');
+    expect(await cards(boss)).toEqual([]);
+    now = new Date('2026-11-26T09:00:00.000Z');
+    expect((await cards(boss)).map(c => c.title)).toEqual(['Hölls utvecklingssamtalet?']);
+  });
+
+  test('only the manager whose booking it is gets the cards, and only while they manage the person', async () => {
+    staff.set('co', { units: [{ unitId: 'u2', unitLabel: 'Enhet 2', people: [dan] }] });
+    await open();
+    await talks.book(co, 'dan', DAN);
+    now = new Date('2026-11-21T05:00:00.000Z');
+    expect((await cards(co)).map(c => c.title)).toEqual(['Hölls utvecklingssamtalet?']);
+    expect(await cards(boss)).toEqual([]);
+    expect(await cards(other)).toEqual([]);
+    expect(await cards(asAnna)).toEqual([]);
+    // Lena leaves Dan: her booking counts for nobody, and nobody is asked about it.
+    staff.set('co', { units: [] });
+    expect(await cards(co)).toEqual([]);
+    expect(await cards(boss)).toEqual([]);
+  });
+
+  test('a meeting that was moved in the calendar and a talk that is coming are two cards about one person', async () => {
+    store.addPerson({ id: 'boss', organisationId: ORG, name: 'Karin Chef', userName: 'boss', enabled: true });
+    await open();
+    await invitations(port => port.established(invitation('p1', 'boss', 'dan')));
+    await invitations(port =>
+      port.observed({
+        actor: 'assistant:scan',
+        invitationId: 'p1',
+        event: { start: '2026-11-23T12:00:00.000Z', end: '2026-11-23T13:00:00.000Z' },
+        at: at(),
+      }),
+    );
+    now = new Date('2026-11-16T08:00:00.000Z');
+    expect((await cards(boss)).map(c => c.title)).toEqual([
+      'Mötet för ett utvecklingssamtal har flyttats i kalendern',
+      'Förbered utvecklingssamtalet',
+    ]);
   });
 });
 

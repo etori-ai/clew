@@ -26,6 +26,7 @@ import { commitmentsQuery, staffQuery, talksQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { useTalkAction } from '../../mutations';
 import {
+  bookedDay,
   bookingNote,
   calendarDifference,
   dueText,
@@ -37,6 +38,7 @@ import {
   talkSpan,
   talkSpanText,
   talkStatus,
+  timePassed,
   type CommitmentEntry,
   type TalkEntry,
 } from '../../talks';
@@ -59,7 +61,8 @@ const responsible = (row: Pick<CommitmentEntry, 'owner' | 'mine' | 'id'>) =>
  * `section` (`person-address.ts`); an address that laid the drawer over a page (`?talk=<personId>`) leads here. Its
  * state with Markera som hållet and Ångra, when it is booked and, for a time no invitation carries, Ange tid, Ändra tid
  * and Ta bort tiden (D132 item 4), what the calendar holds when the meeting was moved or is gone and the manager's
- * choice between them (D133), the person's action points carried over first, then this round's, then the done ones, and
+ * choice between them (D133), that the booked time has passed and whether the talk took place (D134), the person's
+ * action points carried over first, then this round's, then the done ones, and
  * a form to add one while a round is open; the round's name under the tab's heading. Opened only for
  * Clew's own module (`writable`): when another system answers, the tab is that system's row, as any other source's.
  * Nothing is read until the tab is shown.
@@ -150,6 +153,10 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
   // The meeting in the calendar is not where the talk says: the talk stands, and the manager whose booking it is chooses.
   const differs = row ? calendarDifference(row) : null;
   const settles = canWrite && !!differs && row.own === true;
+  // The booked time has passed and the talk is not marked held: the manager says whether it took place (D134). A time
+  // set by hand is any manager's to take off; an invitation's is its own manager's.
+  const passed = canWrite && !differs && timePassed(row, Date.now());
+  const missable = passed && (row.invited === false || row.own === true);
   // A time is set and changed here while no invitation carries the booking, and never for a talk that is held.
   const timeByHand = canWrite && row.state !== 'held' && !(row.state === 'booked' && row.invited !== false);
   const day = today();
@@ -286,6 +293,33 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
             }
           />
         )}
+        {passed && (
+          <Banner
+            status="info"
+            title="Tiden för samtalet har passerat"
+            description="Markera samtalet som hållet om det blev av. Annars tar du bort tiden, så kan samtalet bokas igen."
+            endContent={
+              missable ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  label="Samtalet blev inte av"
+                  clickAction={() =>
+                    write(
+                      'set-time',
+                      () =>
+                        row.invited === false
+                          ? api.talks.unbook(person.id)
+                          : api.talks.settleCalendar(person.id, 'missed'),
+                      'Tiden för samtalet är borttagen.',
+                      time,
+                    )
+                  }
+                />
+              ) : undefined
+            }
+          />
+        )}
         {!round ? (
           <Text as="p">
             Ingen samtalsomgång är öppen. Samtalet kan inte markeras som hållet och inga åtgärdspunkter kan läggas till.
@@ -315,7 +349,13 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
                 variant="primary"
                 label="Markera som hållet"
                 clickAction={() =>
-                  write('undo-held', () => api.talks.markHeld(person.id), 'Samtalet är markerat som hållet.', held)
+                  write(
+                    'undo-held',
+                    // A talk whose booked time has passed was held the day it was booked for, not the day this is pressed.
+                    () => api.talks.markHeld(person.id, passed ? { heldOn: bookedDay(row) } : {}),
+                    'Samtalet är markerat som hållet.',
+                    held,
+                  )
                 }
               />
             )}
