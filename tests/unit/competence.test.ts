@@ -962,6 +962,11 @@ describe('the built-in connector', () => {
       ['Heta arbeten gick ut 31 maj', 'Har gått ut', '2026-05-31'],
       ['HLR går ut 10 januari', 'Går ut inom 90 dagar', '2027-01-10'],
     ]);
+    // Nothing on a card is pressed to end it, so the last sentence of its summary says how it ends.
+    expect(drafts.map(d => d.summary)).toEqual([
+      'Intyget gäller inte längre. Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.',
+      'Intyget behöver förnyas innan det går ut. Prata med din chef om nästa tillfälle. Ärendet avslutas av sig självt när det förnyade intyget är registrerat.',
+    ]);
     expect(drafts.every(d => d.area === 'competence' && d.connector === 'competence')).toBe(true);
     // Keyed on the competence type, not the holding's row (D47 occurrences: see the cards' own tests).
     expect(drafts[0]!.topic).toBe('competence:due:' + hot);
@@ -1592,6 +1597,8 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         topic: 'competence:missing:' + degree,
         area: 'competence',
         title: 'Socionomexamen saknas',
+        summary:
+          'Det här krävs i ditt arbete men finns inte registrerat för dig. Prata med din chef om hur du får det. Ärendet avslutas av sig självt när det är registrerat för dig.',
         reason: 'Saknas',
         actions: [
           {
@@ -3896,11 +3903,12 @@ describe('skills with levels and interest (D120)', () => {
       expect(card).toMatchObject({
         topic: 'competence:missing:' + records,
         title: 'Journalsystem saknas',
-        summary: 'Det här krävs i ditt arbete. Din egen bedömning räknas när din chef har bekräftat nivån.',
+        summary:
+          'Det här krävs i ditt arbete. Din egen bedömning räknas när din chef har bekräftat nivån. Ärendet avslutas av sig självt när din chef har bekräftat nivån som krävs.',
       });
       const [bos] = await registry.scan(actor(asBo));
       expect(bos?.summary).toBe(
-        'Det här krävs i ditt arbete på en högre nivå än den din chef har bekräftat. Prata med din chef om hur du kommer dit.',
+        'Det här krävs i ditt arbete på en högre nivå än den din chef har bekräftat. Prata med din chef om hur du kommer dit. Ärendet avslutas av sig självt när din chef har bekräftat nivån som krävs.',
       );
       // A card names no level, as a certificate's card names no particulars (D108 item 12).
       for (const level of ['Grundläggande', 'Självständig', 'Expert'])
@@ -3915,7 +3923,7 @@ describe('skills with levels and interest (D120)', () => {
       await competence.removeOwnSkill(asAnna, annas);
       const [fresh] = await registry.scan(actor(asAnna));
       expect(fresh?.summary).toBe(
-        'Det här krävs i ditt arbete. Lägg till färdigheten med din nivå, så kan din chef bekräfta den.',
+        'Det här krävs i ditt arbete. Lägg till färdigheten med din nivå, så kan din chef bekräfta den. Ärendet avslutas av sig självt när din chef har bekräftat nivån som krävs.',
       );
     });
 

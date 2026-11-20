@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { SUBJECT_CHANGED, type ExecutionSummary, type Receipt, type Thread } from '@clew/contracts';
 import { executionKind, executionStatus } from '../src/execution-status';
-import { receiptRowsInOrder, statusOf, type StatusContext } from '../src/status-of';
+import { nothingToDecide, receiptRowsInOrder, statusOf, summaryNotice, type StatusContext } from '../src/status-of';
 
 /**
  * One status vocabulary (D126 item 13): what the app already knows about a work item, as one of eight states with a
@@ -65,6 +65,89 @@ describe('a plain to-do has no notice: its title and its buttons say what is exp
   test('a stopped reminder is said on the row', () => {
     const timers: Thread['timers'] = [{ kind: 'reminder', dueAt: NOW, state: 'blocked' }];
     expect(statusOf(thread({ timers }), ctx()).detail).toBe('påminnelsen stoppad');
+  });
+});
+
+describe('a to-do with nothing to decide says what holds in a notice, in the source’s words', () => {
+  const read = { id: 'open', label: 'Visa mina kompetenser', capability: 'competence.holdings', kind: 'read' } as const;
+  const expired = (values: Partial<Thread> = {}) =>
+    thread({
+      title: 'Delegering läkemedel gick ut 8 oktober',
+      trigger: { reason: 'Har gått ut', source: 'Kompetens', at: NOW },
+      summary:
+        'Intyget gäller inte längre. Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.',
+      deadline: '2026-10-08',
+      actions: [{ ...read, role: 'primary' }],
+      ...values,
+    });
+  test('every action is a read: the summary’s first sentence is the title, the rest the description, and no move', () => {
+    const s = statusOf(expired(), ctx());
+    expect(s).toMatchObject({ kind: 'needs-you', noDecision: true, rest: [], review: false });
+    expect(s.notice).toEqual({
+      title: 'Intyget gäller inte längre',
+      description:
+        'Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.',
+    });
+    // The row is as it was: when the day was.
+    expect(s.detail).toBe('försenad');
+  });
+  test('several reads are still nothing to decide; one sentence is a title alone; no summary is no notice', () => {
+    const more = { ...read, id: 'more', label: 'Visa kraven', role: 'secondary' } as const;
+    const two = statusOf(
+      expired({ actions: [{ ...read, role: 'primary' }, more], summary: 'Kravet gäller alla.' }),
+      ctx(),
+    );
+    expect(two).toMatchObject({ noDecision: true, notice: { title: 'Kravet gäller alla' } });
+    expect(two.notice?.description).toBeUndefined();
+    expect(statusOf(expired({ summary: ' ' }), ctx())).toMatchObject({ noDecision: true, notice: null });
+  });
+  test('a decision to make, a proposal, or no action at all is a plain to-do as before', () => {
+    const approve = {
+      id: 'a',
+      label: 'Attestera',
+      capability: 'finance.approve',
+      kind: 'execute',
+      role: 'primary',
+    } as const;
+    const propose = {
+      id: 'p',
+      label: 'Föreslå tid',
+      capability: 'calendar.propose',
+      kind: 'propose',
+      role: 'primary',
+    } as const;
+    for (const actions of [[approve, { ...read, role: 'secondary' as const }], [propose], []])
+      expect(statusOf(expired({ actions }), ctx())).toMatchObject({ noDecision: false, notice: null });
+    const proposals = [{ id: 'p1' }] as unknown as Thread['proposals'];
+    expect(statusOf(expired({ proposals }), ctx())).toMatchObject({ noDecision: false, notice: null });
+  });
+  test('waiting, set aside, decided or closed, it is not: the state’s own notice stands', () => {
+    const cases: Partial<Thread>[] = [
+      { waitingOn: 'din chef' },
+      { snoozedUntil: '2026-11-17T05:00:00.000Z' },
+      { receipt: receipt(['done']) },
+      { execution: execution('pending') },
+      { state: 'handled', handledAt: NOW },
+      { state: 'dismissed', handledAt: NOW },
+    ];
+    for (const values of cases) {
+      expect(nothingToDecide(expired(values), NOW)).toBe(false);
+      expect(statusOf(expired(values), ctx()).noDecision).toBe(false);
+    }
+    expect(statusOf(expired({ waitingOn: 'din chef' }), ctx()).notice?.title).toBe('Väntar på din chef');
+    // A time to come back that has passed is awake, as everywhere else.
+    expect(nothingToDecide(expired({ snoozedUntil: '2026-11-16T05:00:00.000Z' }), NOW)).toBe(true);
+  });
+  test('a sentence ends before a capital letter, so an abbreviation or a time does not end one', () => {
+    expect(summaryNotice('Ansökan kom kl. 16.40 i går. Läs den i personalsystemet.')).toEqual({
+      title: 'Ansökan kom kl. 16.40 i går',
+      description: 'Läs den i personalsystemet.',
+    });
+    expect(summaryNotice('Två rader\n\n  väntar!  Se listan.')).toEqual({
+      title: 'Två rader väntar!',
+      description: 'Se listan.',
+    });
+    expect(summaryNotice('')).toBeNull();
   });
 });
 

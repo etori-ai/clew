@@ -2171,6 +2171,27 @@ export const NOTICE_TEXT = [
   'Varje dos signeras direkt efter att den har getts. En dos som inte kunde ges rapporteras till ansvarig sjuksköterska under samma pass.',
   'I den fullständiga rutinen finns checklistor och kontaktuppgifter. Bekräfta att du har tagit del av rutinen.',
 ];
+/**
+ * A work item with nothing to decide (`nothingToDecide` in the web's `status-of.ts`): its only action is a read, as a
+ * source's check raises one for a certificate that has run out. Its summary says what holds, what the person can do
+ * outside Clew and how the item ends; its day is the certificate's last, a month before the frozen day.
+ */
+export const CERTIFICATE_TITLE = 'Delegering läkemedel gick ut 8 oktober';
+export const expiredCertificate = (over: Partial<Thread> = {}): Thread =>
+  thread({
+    id: 'intyg',
+    title: CERTIFICATE_TITLE,
+    connector: 'hr',
+    area: 'personal',
+    deadline: '2026-10-08',
+    trigger: { reason: 'Har gått ut', source: 'Personalsystemet', at: NOW },
+    summary:
+      'Intyget gäller inte längre. Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.',
+    actions: [
+      { id: 'open', label: 'Visa mina kompetenser', capability: 'competence.holdings', kind: 'read', role: 'primary' },
+    ],
+    ...over,
+  });
 export const NOTICE_REASON = 'Publicerat av Vård och omsorg 2026-11-03 06:30 · läskvitto krävs';
 export function asNotice(base: Thread, id = base.id, over: Partial<Thread> = {}): Thread {
   const ref = `communication:notice:${id}`;

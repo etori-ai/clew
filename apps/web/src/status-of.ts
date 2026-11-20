@@ -16,6 +16,11 @@ import { dueOf } from './work-items';
  * one the item has always offered for that state (check the status, decide again, see the review, undo, remind, take
  * it up, reopen). A move is the person's (`offer: false`, a filled button) or an offer (`offer: true`, a secondary one).
  * A move the state also allows but the notice does not carry is in `rest`, for the item's ⋯ menu.
+ *
+ * A to-do with nothing to decide (`nothingToDecide`: every action it offers is a read) has no button that says what is
+ * expected, so its notice does: the source's own summary, its first sentence as the title and the rest as the
+ * description, with no move. The source says there what holds, what the person can do outside Clew and how the item
+ * ends.
  */
 export type StatusMoveKind = 'check' | 'decide' | 'review' | 'undo' | 'remind' | 'take-up' | 'reopen';
 export interface StatusMoveWords {
@@ -34,6 +39,11 @@ export interface ItemStatus {
   detail?: string;
   /** The notice under the title, or null for a plain to-do. */
   notice: StatusNoticeWords | null;
+  /**
+   * The item is the person's and there is nothing of theirs to decide on it (`nothingToDecide`): no button is filled,
+   * the two ways out stand beside its read, and nothing on it says an answer is late.
+   */
+  noDecision: boolean;
   /** The moves the state allows besides the notice's one, for the ⋯ menu. */
   rest: StatusMoveWords[];
   /**
@@ -72,6 +82,37 @@ const withMoves = (notice: Omit<StatusNoticeWords, 'move'>, moves: (StatusMoveWo
   const [move, ...rest] = moves.filter((m): m is StatusMoveWords => !!m);
   return { notice: { ...notice, ...(move ? { move } : {}) }, rest };
 };
+
+/**
+ * An open work item that is the person's and has no decision of theirs to make: it offers at least one action and
+ * every one is a read, it holds no proposal, nothing on it has been decided or sent (no execution, no receipt), it
+ * waits on nobody and is not set aside. A review needs an execute, so there is none. Such an item ends by itself, when
+ * its source stops raising it, or by the person's Inte nu or Avfärda. An item with no action at all is a notice of
+ * something that happened ("till kännedom") and stays as it was.
+ */
+export function nothingToDecide(thread: Thread, now: string): boolean {
+  return (
+    thread.state === 'open' &&
+    !thread.waitingOn &&
+    !isSnoozed(thread, now) &&
+    !thread.execution &&
+    !thread.receipt &&
+    thread.proposals.length === 0 &&
+    thread.actions.length > 0 &&
+    thread.actions.every(a => a.kind === 'read')
+  );
+}
+/**
+ * The source's summary as a notice's words: its first sentence is the title, without its full stop, and the rest the
+ * description. A sentence ends at a full stop, a question mark or an exclamation mark before a capital letter, so "kl.
+ * 16" and "t.ex. i dag" do not end one. Null when the source said nothing.
+ */
+export function summaryNotice(summary: string): StatusNoticeWords | null {
+  const text = summary.replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  const parts = /^(.*?[.!?])\s+(?=\p{Lu})(.+)$/u.exec(text);
+  return parts ? { title: bare(parts[1]!), description: parts[2]! } : { title: bare(text) };
+}
 
 /** A receipt row's state: read back, in doubt, refused; a row that was never sent has none ("Inte skickad"). */
 export function outcomeStatus(outcome: ReceiptRow['outcome']): StatusKind | null {
@@ -294,7 +335,7 @@ function todoDetail(thread: Thread, ctx: StatusContext): string | undefined {
 }
 
 /** The state, its row's detail and its notice, before the review's link is placed. */
-function stateOf(thread: Thread, ctx: StatusContext): Omit<ItemStatus, 'review'> {
+function stateOf(thread: Thread, ctx: StatusContext): Omit<ItemStatus, 'review' | 'noDecision'> {
   const source = thread.trigger.source;
   const c = counts(thread);
   const executed = executionKind(thread.execution);
@@ -376,7 +417,9 @@ function stateOf(thread: Thread, ctx: StatusContext): Omit<ItemStatus, 'review'>
   }
   const detail = todoDetail(thread, ctx);
   const undo = thread.receipt ? undoMove(thread, ctx) : undefined;
-  return { kind: 'needs-you', ...(detail ? { detail } : {}), notice: null, rest: undo ? [undo] : [] };
+  // Nothing to decide: the source's summary says what holds and how the item ends, where a button would have.
+  const notice = nothingToDecide(thread, ctx.now) ? summaryNotice(thread.summary) : null;
+  return { kind: 'needs-you', ...(detail ? { detail } : {}), notice, rest: undo ? [undo] : [] };
 }
 
 export function statusOf(thread: Thread, ctx: StatusContext): ItemStatus {
@@ -384,5 +427,6 @@ export function statusOf(thread: Thread, ctx: StatusContext): ItemStatus {
   // Once decided, the review that was sent can be read again; the notice may already lead there.
   const decided = !!thread.receipt || !!executionKind(thread.execution) || thread.state !== 'open';
   const review = !!ctx.reviewed && decided && state.notice?.move?.kind !== 'review';
-  return { ...state, rest: state.rest.filter(m => m.kind !== 'review'), review };
+  const noDecision = nothingToDecide(thread, ctx.now);
+  return { ...state, rest: state.rest.filter(m => m.kind !== 'review'), review, noDecision };
 }

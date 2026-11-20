@@ -90,9 +90,19 @@ const decided = (thread: Thread) => !!thread.execution || !!thread.receipt || th
  * A due day as the title's badge says it (board Ärende: "Svara i dag"), on a plain to-do only: once the person has
  * decided, the notice says where it stands and the day is a fact (D126 item 13). A badge that only repeats the row's
  * word ("Påminnelse") is left out, as on the item's row.
+ *
+ * An item with nothing to decide (`status.noDecision`) has no answer that can be late: its badge says the source's
+ * reason instead ("Har gått ut", "Saknas"), in the colour its day gives it, or the notice's own where it has no day. A
+ * reason too long for a badge is a sentence, which "Varför ser jag detta?" already holds, and is not drawn here.
  */
-function dueBadge(thread: Thread, day: string) {
+const REASON_BADGE_MAX = 32;
+function dueBadge(thread: Thread, day: string, status: ItemStatus) {
   const due = decided(thread) ? null : dueOf(thread, day);
+  if (status.noDecision) {
+    const reason = thread.trigger.reason.trim().replace(/\.$/, '');
+    if (!reason || reason.length > REASON_BADGE_MAX) return null;
+    return <Badge variant={due?.variant ?? 'warning'} label={reason} />;
+  }
   if (!due || due.label === 'Påminnelse') return null;
   const label = due.label === 'Försenad' ? due.label : `Svara ${due.label.toLocaleLowerCase('sv-SE')}`;
   return <Badge variant={due.variant} label={label} />;
@@ -149,7 +159,10 @@ type ItemState = ReturnType<typeof useWorkItem>;
  * it says more than the reason (the invoices' match): no sentence of the item's stands without a heading.
  */
 function Why({ thread, item }: { thread: Thread; item: ItemState }) {
-  const summary = !item.notice && thread.summary && thread.summary !== thread.trigger.reason ? thread.summary : null;
+  // The summary of an item with nothing to decide is its notice under the title, and is not said again here.
+  const noticed = item.actions.status.noDecision && !!item.actions.status.notice;
+  const summary =
+    !item.notice && !noticed && thread.summary && thread.summary !== thread.trigger.reason ? thread.summary : null;
   return (
     <VStack gap={3}>
       <Text as="p">
@@ -444,13 +457,16 @@ const hasEvents = (thread: Thread) => !!thread.timers?.some(t => t.state === 'sc
  * the rows name as links to their pages, when it is due, the source and when it came. Only what the item really has.
  * Where the item stands, what it waits on, when it comes back and when it was done are the notice's (D126 item 13: the
  * state is said once). When it was due is a badge while it is the person's to decide, and a plain date once decided.
+ * On an item with nothing to decide the day is the last day of what the item is about, never an answer's: "Sista dag"
+ * and the plain date.
  */
 function Facts({ thread, item, columns }: { thread: Thread; item: ItemState; columns?: number | 'multi' }) {
   const day = today();
   const subjects = thread.items.filter(
     (i, n, all) => i.subject && all.findIndex(j => j.subject && sameSubject(j.subject, i.subject!)) === n,
   );
-  const due = decided(thread) ? null : dueOf(thread, day);
+  const nothing = item.actions.status.noDecision;
+  const due = decided(thread) || nothing ? null : dueOf(thread, day);
   const deadline = thread.deadline?.slice(0, 10);
   const days = deadline ? daysUntil(deadline, day) : null;
   return (
@@ -475,7 +491,7 @@ function Facts({ thread, item, columns }: { thread: Thread; item: ItemState; col
         </MetadataListItem>
       )}
       {deadline && (
-        <MetadataListItem label="Svara senast">
+        <MetadataListItem label={nothing ? 'Sista dag' : 'Svara senast'}>
           <HStack gap={2} vAlign="center" wrap="wrap">
             {due ? <Badge variant={due.variant} label={due.label.toLocaleLowerCase('sv-SE')} /> : null}
             {(!due || days === null || days > 1) && <Text>{longDate(deadline)}</Text>}
@@ -792,7 +808,7 @@ export function WorkItemPage({
       }
       title={thread.title}
       titleRef={item.title}
-      status={dueBadge(thread, day)}
+      status={dueBadge(thread, day, item.actions.status)}
       below={
         <VStack gap={4}>
           <ActionRow

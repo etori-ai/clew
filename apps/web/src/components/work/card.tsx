@@ -313,14 +313,16 @@ export const TimePicker = ({
   rows,
   own,
   size = 'sm',
+  variant = 'ghost',
 }: {
   label: string;
   rows: TimeRows['rows'];
   own: TimeRows['own'];
   size?: 'sm' | 'md';
+  variant?: 'ghost' | 'secondary';
 }) => (
   <DropdownMenu
-    button={{ label, size, variant: 'ghost' }}
+    button={{ label, size, variant }}
     presentation="adaptive"
     menuMaxHeight={480}
     items={[...rows, { type: 'divider' as const }, own]}
@@ -705,6 +707,11 @@ const reopenable = (thread: Thread) =>
  * buttons keep their look, the pressed one loading (D64), and the notice comes when the item has come to rest; the focus
  * that was on a button the notice replaced goes to the item's title, which the notice stands under (2.4.3).
  *
+ * A to-do with nothing to decide (`status.noDecision`, `nothingToDecide` in `status-of.ts`: every action is a read) has
+ * no button that says what is expected, so the notice stands over its buttons and says it in the source's words, and no
+ * button is filled: its read is a secondary button, and the two ways out stand beside it instead of under ⋯, "Inte nu"
+ * (D49) and "Avfärda", since they are the only things the person can do to the item itself.
+ *
  * `pinned` is a bar at the foot of a phone's page: the decisions side by side the width of the screen, everything else
  * under ⋯. An action the item draws elsewhere (`omit`: a notice's link out, after its text) is not drawn here too.
  */
@@ -803,7 +810,7 @@ export function ActionRow({
       />
     ) : (
       <Button
-        variant={due ? 'primary' : 'secondary'}
+        variant={due && !status.noDecision ? 'primary' : 'secondary'}
         label={primaryLabel ?? ''}
         isDisabled={selectable && count === 0}
         isLoading={settling && pressed === primary.id}
@@ -833,16 +840,18 @@ export function ActionRow({
   // person's own action settles: the pressed button keeps loading where it was until the item has come to rest (D64).
   const notice = status.notice;
   const showNotice = !!notice && !(settling && pressed !== null);
-  const noticeShown = useRef(showNotice);
+  // The notice of an item with nothing to decide stands over its buttons and replaces none of them.
+  const replaced = showNotice && !status.noDecision;
+  const noticeShown = useRef(replaced);
   useEffect(() => {
     const was = noticeShown.current;
-    noticeShown.current = showNotice;
-    if (was === showNotice) return;
+    noticeShown.current = replaced;
+    if (was === replaced) return;
     // The button that had the focus is gone with the row it stood in: the title the notice stands under takes it.
     const active = document.activeElement;
     if (active && active !== document.body && active.isConnected) return;
     requestAnimationFrame(() => titleRef?.current?.focus());
-  }, [showNotice]);
+  }, [replaced]);
   const reopen = async () => {
     await run(() => api.reopen(thread.id), { optimistic: reopened(thread) });
   };
@@ -948,6 +957,55 @@ export function ActionRow({
     );
   };
 
+  // Nothing to decide: what holds and how the item ends in the notice, then the read and the two ways out, none filled.
+  if (status.noDecision) {
+    const read = primary ?? here.find(isRead);
+    const others = here.filter(a => a !== read);
+    const said = notice ? (
+      <StatusNotice kind={status.kind} title={notice.title} description={notice.description} />
+    ) : null;
+    const readButton = read ? (
+      <Button
+        variant="secondary"
+        label={read.label}
+        width={width}
+        {...pressOrLink(read)}
+        data-action={read.id}
+        data-thread={thread.id}
+        {...leavingMark(read)}
+      />
+    ) : null;
+    // The phone's bar: the read the width of the screen and the ways out under ⋯, so no word is cut at 320 px (1.4.10).
+    if (pinned)
+      return (
+        <VStack gap={3}>
+          {said}
+          <HStack gap={2} vAlign="center">
+            {readButton && <StackItem size="fill">{readButton}</StackItem>}
+            {more({ items: others, time: snoozeRows, extra: moves })}
+          </HStack>
+        </VStack>
+      );
+    return (
+      <VStack gap={3}>
+        {said}
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          {readButton}
+          <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size="md" variant="secondary" />
+          <Button
+            variant="ghost"
+            label="Avfärda"
+            clickAction={async () => {
+              await dismiss();
+            }}
+          />
+          {ask}
+          {addToConversation}
+          {more({ items: others, dismissable: false, extra: moves })}
+        </HStack>
+      </VStack>
+    );
+  }
   if (showNotice) {
     const move = notice.move ? moveOf(notice.move) : undefined;
     // While it waits on someone or is set aside it is still the person's to let go of (Avfärda) and its other actions
