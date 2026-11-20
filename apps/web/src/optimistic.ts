@@ -10,6 +10,21 @@ import type { Thread } from '@clew/contracts';
 export const dismissed = (thread: Thread, at: string): Thread => ({ ...thread, state: 'dismissed', handledAt: at });
 /** Inte nu: the card sits in the pile until the chosen time (D29). */
 export const snoozed = (thread: Thread, until: string): Thread => ({ ...thread, snoozedUntil: until });
+/** The person said the next step is taken (D139): the card waits on whom its source named, as of now. */
+export const handedOn = (thread: Thread, at: string): Thread =>
+  thread.handOn
+    ? {
+        ...thread,
+        waitingOn: thread.handOn.waitingOn,
+        handedOn: { to: thread.handOn.waitingOn, at },
+        snoozedUntil: null,
+      }
+    : thread;
+/** "Det blev inte gjort": the card is the person's again. */
+export const handedBack = (thread: Thread): Thread => {
+  const { handedOn: _, ...rest } = thread;
+  return { ...rest, waitingOn: null };
+};
 /** Ta upp nu and Ångra: back in the stream, open, with no landing time; a dismissed card no longer waits on anyone. */
 export const reopened = (thread: Thread): Thread => ({
   ...thread,

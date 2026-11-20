@@ -472,6 +472,11 @@ export interface ThreadDraft {
   actions: ThreadAction[];
   waitingOn?: string | null;
   deadline?: string | null;
+  /**
+   * An offer to the person to say that the next step, someone else's and taken outside Clew, is taken (D139): the
+   * button's words and whom the card then waits on. Nothing is sent to the connector when it is pressed.
+   */
+  handOn?: { label: string; waitingOn: string };
 }
 /** A fact kind a connector creates (D55). The kind's name is its contract (D37): a breaking change is a new kind. */
 export interface FactDeclaration {

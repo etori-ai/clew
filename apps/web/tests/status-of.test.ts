@@ -88,8 +88,15 @@ describe('a to-do with nothing to decide says what holds in a notice, in the sou
       description:
         'Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.',
     });
-    // The row is as it was: when the day was.
-    expect(s.detail).toBe('försenad');
+    // The row says the source's reason where another item says when its answer is due: no answer is late here.
+    expect(s.detail).toBe('har gått ut');
+    const long = 'Intyget gick ut för mer än en månad sedan';
+    expect(
+      statusOf(expired({ trigger: { reason: long, source: 'Kompetens', at: NOW } }), ctx()).detail,
+    ).toBeUndefined();
+    // With a decision to make the row says the day as before.
+    const approve = { id: 'a', label: 'Förnya', capability: 'x.renew', kind: 'execute', role: 'primary' } as const;
+    expect(statusOf(expired({ actions: [approve] }), ctx()).detail).toBe('försenad');
   });
   test('several reads are still nothing to decide; one sentence is a title alone; no summary is no notice', () => {
     const more = { ...read, id: 'more', label: 'Visa kraven', role: 'secondary' } as const;
@@ -137,6 +144,45 @@ describe('a to-do with nothing to decide says what holds in a notice, in the sou
     expect(statusOf(expired({ waitingOn: 'din chef' }), ctx()).notice?.title).toBe('Väntar på din chef');
     // A time to come back that has passed is awake, as everywhere else.
     expect(nothingToDecide(expired({ snoozedUntil: '2026-11-16T05:00:00.000Z' }), NOW)).toBe(true);
+  });
+  const OFFER = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
+  test('the source’s offer to say the next step is taken (D139): the filled button here, a row under ⋯ on a to-do with a decision', () => {
+    const s = statusOf(expired({ handOn: OFFER }), ctx());
+    expect(s).toMatchObject({ noDecision: true, handOn: 'Jag har bett min chef', rest: [] });
+    expect(s.notice?.move).toBeUndefined();
+    const approve = { id: 'a', label: 'Förnya', capability: 'x.renew', kind: 'execute', role: 'primary' } as const;
+    const decide = statusOf(expired({ handOn: OFFER, actions: [approve] }), ctx());
+    expect(decide).toMatchObject({ noDecision: false, notice: null, handOn: 'Jag har bett min chef' });
+    expect(decide.rest).toEqual([{ kind: 'hand-on', label: 'Jag har bett min chef', offer: false }]);
+    // Without the offer there is none, and once decided or waiting it cannot be said.
+    expect(statusOf(expired(), ctx()).handOn).toBeUndefined();
+    for (const values of [
+      { waitingOn: 'din chef' },
+      { receipt: receipt(['done']) },
+      { execution: execution('pending') },
+    ])
+      expect(statusOf(expired({ handOn: OFFER, ...values }), ctx()).handOn).toBeUndefined();
+  });
+  test('once said, the item waits on whom the source named: when the person said it, Påminn mig, and the way back under ⋯', () => {
+    const handedOn = { to: 'din chef', at: '2026-11-16T07:40:00.000Z' };
+    const s = statusOf(expired({ handOn: OFFER, waitingOn: 'din chef', handedOn }), ctx());
+    expect(s).toMatchObject({ kind: 'waiting', noDecision: false });
+    expect(s.notice).toEqual({
+      title: 'Väntar på din chef',
+      description: 'Du sa ”Jag har bett min chef” när 07:40.',
+      move: { kind: 'remind', label: 'Påminn mig', offer: true },
+    });
+    expect(s.rest).toEqual([{ kind: 'hand-back', label: 'Det blev inte gjort', offer: true }]);
+    // With the person's own reminder, both are said; an offer the source has taken away leaves plain words.
+    const timers: Thread['timers'] = [{ kind: 'reminder', dueAt: '2026-11-17T09:00:00.000Z', state: 'scheduled' }];
+    expect(
+      statusOf(expired({ handOn: OFFER, waitingOn: 'din chef', handedOn, timers }), ctx()).notice?.description,
+    ).toMatch(/^Du sa ”Jag har bett min chef” när 07:40\. Påminner dig /);
+    expect(statusOf(expired({ waitingOn: 'din chef', handedOn }), ctx()).notice?.description).toBe(
+      'Du lämnade ärendet vidare när 07:40.',
+    );
+    // An item that waits because its source says so has no way back of the person's.
+    expect(statusOf(expired({ waitingOn: 'din chef' }), ctx()).rest).toEqual([]);
   });
   test('a sentence ends before a capital letter, so an abbreviation or a time does not end one', () => {
     expect(summaryNotice('Ansökan kom kl. 16.40 i går. Läs den i personalsystemet.')).toEqual({

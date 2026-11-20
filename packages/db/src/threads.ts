@@ -60,6 +60,8 @@ export function toThread(
     ...(row.askedBeside ? { askedBeside: row.askedBeside } : {}),
     actions: row.actions,
     waitingOn: row.waitingOn,
+    ...(row.handOn ? { handOn: row.handOn } : {}),
+    ...(row.handedOnAt && row.handedOnTo ? { handedOn: { to: row.handedOnTo, at: row.handedOnAt.toISOString() } } : {}),
     deadline: row.deadline,
     receipt: row.receipt ?? null,
     ...(row.execution ? { execution: row.execution } : {}),

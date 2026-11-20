@@ -1868,6 +1868,19 @@ export class MockApi {
       return json(this.update(id, { snoozedUntil: until }));
     }
     if (path.endsWith('/dismiss') && post) return json(this.update(id, { state: 'dismissed', handledAt: NOW }));
+    // The person says the next step is someone else's and taken (D139), and takes it back.
+    if (path.endsWith('/hand-on') && post) {
+      const to = this.threads.find(t => t.id === id)?.handOn?.waitingOn ?? '';
+      return json(this.update(id, { waitingOn: to, handedOn: { to, at: NOW } }));
+    }
+    if (path.endsWith('/hand-back') && post) {
+      this.threads = this.threads.map(t => {
+        if (t.id !== id) return t;
+        const { handedOn: _, ...rest } = t;
+        return { ...rest, waitingOn: null, updatedAt: NOW };
+      });
+      return json(this.threads.find(t => t.id === id)!);
+    }
     if (path.endsWith('/remind-invitees') && post) {
       const t = this.threads.find(t => t.id === id)!;
       return json(

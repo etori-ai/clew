@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**142 in force**: 98 accepted and 44 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**143 in force**: 98 accepted and 45 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -171,6 +171,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D130 · Clew's look and layout are the startsidan prototype's, built with Astryx](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) | 2026-11-18 | provisional |  |
 | [D135 · The assistant is asked beside every page, through one button and one pane that the page frame provides](D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | 2026-11-18 | provisional | [D138](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) |
 | [D138 · The corner's "Fråga AI" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) | 2026-11-19 | provisional |  |
+| [D139 · A card with nothing to decide says what holds, and the person can say that the next step is taken](D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md) | 2026-11-20 | provisional |  |
 
 ## Assistant
 

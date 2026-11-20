@@ -63,7 +63,7 @@ import {
   fromClewItself,
   itemPageHref,
   needsYouOf,
-  openDeadline,
+  isOverdue,
   rowFacts,
   sourcesNotice,
   tabOf,
@@ -561,7 +561,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   // Beside its reading pane the list stands in the frame's card and draws none of its own.
   const beside = !!itemId && !single;
   // Due today and overdue share a badge colour. Only an open item due before the Stockholm day is overdue.
-  const overdue = piles['needs-you'].filter(t => inArea(t) && (openDeadline(t, todayDate)?.days ?? 0) < 0).length;
+  const overdue = piles['needs-you'].filter(t => inArea(t) && isOverdue(t, todayDate)).length;
   /**
    * The piles as key figures over the list (D130 item 19), as the reference opens Mina aktiviteter: what needs the
    * person, how much of it is overdue, what waits on others and what is done, each leading to its pile. Not drawn

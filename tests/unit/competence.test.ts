@@ -967,6 +967,11 @@ describe('the built-in connector', () => {
       'Intyget gäller inte längre. Prata med din chef om att förnya det. Ärendet avslutas av sig självt när ett giltigt intyg är registrerat.',
       'Intyget behöver förnyas innan det går ut. Prata med din chef om nästa tillfälle. Ärendet avslutas av sig självt när det förnyade intyget är registrerat.',
     ]);
+    // The summary sends the person to their manager, so the card offers them to say that they have asked (D139).
+    expect(drafts.map(d => d.handOn)).toEqual([
+      { label: 'Jag har bett min chef', waitingOn: 'din chef' },
+      { label: 'Jag har bett min chef', waitingOn: 'din chef' },
+    ]);
     expect(drafts.every(d => d.area === 'competence' && d.connector === 'competence')).toBe(true);
     // Keyed on the competence type, not the holding's row (D47 occurrences: see the cards' own tests).
     expect(drafts[0]!.topic).toBe('competence:due:' + hot);
@@ -1597,6 +1602,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         topic: 'competence:missing:' + degree,
         area: 'competence',
         title: 'Socionomexamen saknas',
+        handOn: { label: 'Jag har bett min chef', waitingOn: 'din chef' },
         summary:
           'Det här krävs i ditt arbete men finns inte registrerat för dig. Prata med din chef om hur du får det. Ärendet avslutas av sig självt när det är registrerat för dig.',
         reason: 'Saknas',
@@ -3906,7 +3912,11 @@ describe('skills with levels and interest (D120)', () => {
         summary:
           'Det här krävs i ditt arbete. Din egen bedömning räknas när din chef har bekräftat nivån. Ärendet avslutas av sig självt när din chef har bekräftat nivån som krävs.',
       });
+      // Her next step was her own, and now it is her manager's without her asking: nothing to say she has asked for.
+      expect(card && 'handOn' in card).toBe(false);
       const [bos] = await registry.scan(actor(asBo));
+      // Bo's level is confirmed and too low: the way on is a talk with his manager, which he can say he has had (D139).
+      expect(bos?.handOn).toEqual({ label: 'Jag har bett min chef', waitingOn: 'din chef' });
       expect(bos?.summary).toBe(
         'Det här krävs i ditt arbete på en högre nivå än den din chef har bekräftat. Prata med din chef om hur du kommer dit. Ärendet avslutas av sig självt när din chef har bekräftat nivån som krävs.',
       );
@@ -3922,6 +3932,7 @@ describe('skills with levels and interest (D120)', () => {
       // A skill not held at all says it can be added.
       await competence.removeOwnSkill(asAnna, annas);
       const [fresh] = await registry.scan(actor(asAnna));
+      expect(fresh && 'handOn' in fresh).toBe(false);
       expect(fresh?.summary).toBe(
         'Det här krävs i ditt arbete. Lägg till färdigheten med din nivå, så kan din chef bekräfta den. Ärendet avslutas av sig självt när din chef har bekräftat nivån som krävs.',
       );

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Thread } from '@clew/contracts';
-import { openDeadline, rowFacts, rowLine, whyOf } from '../src/work-items';
+import { isOverdue, openDeadline, reasonMark, rowFacts, rowLine, whyOf } from '../src/work-items';
 
 const NOW = '2026-11-10T09:00:00.000Z';
 const TODAY = '2026-11-10';
@@ -96,6 +96,57 @@ describe("a work item's row says its state in words (WCAG 1.4.1)", () => {
       variant: 'error',
       label: 'I dag',
     });
+  });
+  test('an item with nothing to decide says the source’s reason once, as its badge, and never that an answer is late', () => {
+    const read = { id: 'open', label: 'Visa', capability: 'x.read', kind: 'read', role: 'primary' } as const;
+    const expired = (values: Partial<Thread> = {}) =>
+      thread({
+        deadline: '2026-11-01',
+        trigger: { reason: 'Har gått ut.', source: 'Kompetens', at: NOW },
+        actions: [read],
+        ...values,
+      });
+    // The badge is the reason in the day's colour, the state is the pile's word, and the line does not say it again.
+    expect(rowFacts(expired(), NOW, TODAY)).toEqual({
+      state: { variant: 'warning', label: 'Behöver dig' },
+      due: { variant: 'error', label: 'Har gått ut' },
+      why: '',
+    });
+    expect(rowLine(rowFacts(expired(), NOW, TODAY))).toBe('Behöver dig');
+    // Without a day the badge has the colour of Behöver dig; a day far off is grey, as any day is.
+    const missing = { reason: 'Saknas', source: 'Kompetens', at: NOW };
+    expect(rowFacts(expired({ deadline: null, trigger: missing }), NOW, TODAY).due).toEqual({
+      variant: 'warning',
+      label: 'Saknas',
+    });
+    expect(reasonMark(expired({ deadline: '2027-01-10' }), TODAY)).toEqual({
+      variant: 'neutral',
+      label: 'Har gått ut',
+    });
+    // A reason that is a sentence is no badge: it stays in the line.
+    const long = { reason: 'Intyget gick ut för mer än en månad sedan.', source: 'Kompetens', at: NOW };
+    expect(rowFacts(expired({ trigger: long }), NOW, TODAY)).toMatchObject({
+      due: null,
+      why: 'Intyget gick ut för mer än en månad sedan',
+    });
+    // With a decision to make, the row is as it was.
+    const approve = { id: 'a', label: 'Förnya', capability: 'x.renew', kind: 'execute', role: 'primary' } as const;
+    expect(rowFacts(expired({ actions: [approve] }), NOW, TODAY)).toEqual({
+      state: { variant: 'error', label: 'Ska göras i dag' },
+      due: { variant: 'error', label: 'Försenad' },
+      why: 'Har gått ut',
+    });
+    // Waiting on someone it says so as any other item, and its badge is still the reason, never the day.
+    expect(rowFacts(expired({ waitingOn: 'din chef' }), NOW, TODAY)).toEqual({
+      state: { variant: 'neutral', label: 'Väntar på andra' },
+      due: { variant: 'error', label: 'Har gått ut' },
+      why: 'Väntar på din chef',
+    });
+    // Its day is a last day and never an answer's: it is not counted as late, where an item with a decision is.
+    expect(isOverdue(expired(), TODAY)).toBe(false);
+    expect(isOverdue(expired({ waitingOn: 'din chef' }), TODAY)).toBe(false);
+    expect(isOverdue(expired({ actions: [approve] }), TODAY)).toBe(true);
+    expect(isOverdue(expired({ actions: [approve], deadline: TODAY }), TODAY)).toBe(false);
   });
   test('a reason of only spaces, or none where a reminder waits to be scheduled, leaves no separator alone', () => {
     const queued: Thread['timers'] = [{ kind: 'reminder', dueAt: '2026-11-11T09:00:00.000Z', state: 'queued' }];

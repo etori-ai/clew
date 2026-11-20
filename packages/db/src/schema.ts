@@ -31,6 +31,7 @@ import type {
   Receipt,
   Subject,
   AskedBeside,
+  HandOn,
   Handover,
   ThreadAction,
   ThreadItem,
@@ -335,6 +336,11 @@ export const threads = pgTable(
     askedBeside: jsonb('asked_beside').$type<AskedBeside>(),
     actions: jsonb('actions').$type<ThreadAction[]>().notNull().default([]),
     waitingOn: text('waiting_on'),
+    // D139: the source's offer to say that the next step is someone else's and taken (`hand_on`), and the person's
+    // having said so: whom the card waits on since and when. While `handed_on_at` is set, `waiting_on` is theirs.
+    handOn: jsonb('hand_on').$type<HandOn>(),
+    handedOnTo: text('handed_on_to'),
+    handedOnAt: timestamp('handed_on_at', { withTimezone: true }),
     deadline: text('deadline'),
     receipt: jsonb('receipt').$type<Receipt | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

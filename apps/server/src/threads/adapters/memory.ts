@@ -134,7 +134,18 @@ export function memoryThreadStore(): MemoryThreadStore {
     async updateThread(id, patch) {
       const row = threads.get(id);
       if (!row) return;
-      row.thread = { ...row.thread, ...copy(patch) };
+      // An offer or a hand-over taken off the card is absent on the thread, as Postgres reads a null column back (D139).
+      const { handOn, handedOn, ...rest } = copy(patch);
+      const next = { ...row.thread, ...rest };
+      if (handOn !== undefined) {
+        if (handOn) next.handOn = handOn;
+        else delete next.handOn;
+      }
+      if (handedOn !== undefined) {
+        if (handedOn) next.handedOn = handedOn;
+        else delete next.handedOn;
+      }
+      row.thread = next;
     },
     async addMessage(threadId, message) {
       const row = threads.get(threadId);

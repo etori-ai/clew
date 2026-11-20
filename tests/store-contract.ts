@@ -259,6 +259,43 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(tx => tx.updateThread(handed.id, { summary: 'Svar', updatedAt: plus(T0, 2000) }));
       expect((await store.readThread(a, handed.id))!.handover).toEqual(continued);
     });
+    test('a card’s offer to hand it on and the person’s having done so are kept, patched and taken off again (D139)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const handOn = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
+      const plain = draft(a);
+      const offered = draft(a, { topic: 'offered', handOn });
+      await store.transaction(async tx => {
+        await tx.insertThread(plain);
+        await tx.insertThread(offered);
+      });
+      const bare = (await store.readThread(a, plain.id))!;
+      expect('handOn' in bare || 'handedOn' in bare).toBe(false);
+      expect((await store.readThread(a, offered.id))!.handOn).toEqual(handOn);
+      expect('handedOn' in (await store.readThread(a, offered.id))!).toBe(false);
+      // The person says so: whom the card waits on since, and when, read back as written inside and outside the lock.
+      const handedOn = { to: 'din chef', at: plus(T0, 1000) };
+      await store.transaction(async tx => {
+        await tx.updateThread(offered.id, { waitingOn: 'din chef', handedOn, updatedAt: plus(T0, 1000) });
+        expect((await tx.lockThread(a, offered.id))!.handedOn).toEqual(handedOn);
+      });
+      expect(await store.readThread(a, offered.id)).toMatchObject({ waitingOn: 'din chef', handOn, handedOn });
+      // A patch that names neither leaves both.
+      await store.transaction(tx => tx.updateThread(offered.id, { summary: 'Ny', updatedAt: plus(T0, 2000) }));
+      expect(await store.readThread(a, offered.id)).toMatchObject({ handOn, handedOn });
+      // Null takes each off the card, and the thread reads as one that never had it.
+      await store.transaction(tx =>
+        tx.updateThread(offered.id, { waitingOn: null, handedOn: null, handOn: null, updatedAt: plus(T0, 3000) }),
+      );
+      const cleared = (await store.readThread(a, offered.id))!;
+      expect('handOn' in cleared || 'handedOn' in cleared).toBe(false);
+      // The source's offer can change and come back.
+      const other = { label: 'Jag har skickat in det', waitingOn: 'lönekontoret' };
+      await store.transaction(tx => tx.updateThread(offered.id, { handOn: other, updatedAt: plus(T0, 4000) }));
+      expect((await store.readThread(a, offered.id))!.handOn).toEqual(other);
+    });
     test('the page a conversation was asked beside is kept with it, patched to opened, and absent on every other thread (D135)', async () => {
       const {
         store,

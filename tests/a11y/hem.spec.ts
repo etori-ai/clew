@@ -19,7 +19,16 @@ import {
   workRowLines,
   type MockApi,
 } from './support';
-import { ENTITY_UNIT, NEWS_LINK, asNotice, newsMenuRow, newsOutput, user } from './data';
+import {
+  CERTIFICATE_TITLE,
+  ENTITY_UNIT,
+  NEWS_LINK,
+  asNotice,
+  expiredCertificate,
+  newsMenuRow,
+  newsOutput,
+  user,
+} from './data';
 import { menuRows } from './phonebook';
 import { Units } from './unit-data';
 
@@ -159,6 +168,23 @@ test.describe('Hem', () => {
     await expect(heading(page, 1, GREETING)).toBeVisible();
   });
 
+  test('Behöver dig: an item with nothing to decide says the source’s reason as its badge, once, and never Försenad (D139)', async ({
+    page,
+    api,
+  }) => {
+    api.threads.push(expiredCertificate());
+    await open(page, '/');
+    const row = needs(page).getByRole('listitem').filter({ hasText: CERTIFICATE_TITLE });
+    await expect(row.getByRole('link', { name: `Öppna ${CERTIFICATE_TITLE}` })).toHaveAttribute(
+      'href',
+      '/items/intyg?from=%2F',
+    );
+    await expect(row.locator('.astryx-badge')).toHaveText('Har gått ut');
+    await expect(row.getByText('Har gått ut', { exact: true })).toHaveCount(1);
+    await expect(row).not.toContainText(/försenad/i);
+    await expect(row).not.toContainText('Ska göras');
+    await expectNoAxeViolations(page);
+  });
   test('an address that opened something beside Hem before leads to that thing’s page', async ({ page, api: _ }) => {
     await open(page, '/?card=ledighet');
     await expect(page).toHaveURL('/items/ledighet?from=%2F');

@@ -2176,6 +2176,8 @@ export const NOTICE_TEXT = [
  * source's check raises one for a certificate that has run out. Its summary says what holds, what the person can do
  * outside Clew and how the item ends; its day is the certificate's last, a month before the frozen day.
  */
+/** The source's offer on such a card to say that the manager has been asked (D139). */
+export const ASKED_MANAGER = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
 export const CERTIFICATE_TITLE = 'Delegering läkemedel gick ut 8 oktober';
 export const expiredCertificate = (over: Partial<Thread> = {}): Thread =>
   thread({

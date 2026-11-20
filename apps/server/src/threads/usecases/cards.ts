@@ -141,7 +141,9 @@ export function threadUsecases(deps: ThreadDeps) {
         ...i,
         selected: existing.items.find(x => x.ref === i.ref)?.selected ?? i.selected,
       }));
-      if (sameDraft(existing, d, items)) continue;
+      // The offer to hand the card on (D139) follows the source too, and is no activity: it wakes nothing.
+      const sameOffer = JSON.stringify(existing.handOn ?? null) === JSON.stringify(d.handOn ?? null);
+      if (sameDraft(existing, d, items) && sameOffer) continue;
       // A row that names another person, or nobody, because the directory changed (a rename, a leaver, a reused name) is
       // rewritten, but only the source moving is activity that wakes a snoozed card (D122).
       const moved = !sameDraft({ ...existing, items: unnamed(existing.items) }, d, unnamed(items));
@@ -161,6 +163,7 @@ export function threadUsecases(deps: ThreadDeps) {
           items,
           actions: d.actions,
           deadline: d.deadline ?? null,
+          handOn: d.handOn ?? null,
           updatedAt: now.toISOString(),
         });
         await tx.writeAudit({
@@ -236,6 +239,7 @@ export function threadUsecases(deps: ThreadDeps) {
         items: d.items ?? [],
         actions: d.actions,
         waitingOn: d.waitingOn ?? null,
+        ...(d.handOn ? { handOn: d.handOn } : {}),
         deadline: d.deadline ?? null,
         trigger: { reason: d.reason, source: registry.connector(d.connector)?.source ?? d.connector, at },
         createdAt: at,
@@ -457,7 +461,7 @@ export function threadUsecases(deps: ThreadDeps) {
         state: 'open',
         handledAt: null,
         snoozedUntil: null,
-        ...(dismissed ? { waitingOn: null } : {}),
+        ...(dismissed ? { waitingOn: null, handedOn: null } : {}),
         updatedAt: at,
       });
       await tx.addMessage(threadId, { role: 'user', body: 'Ångra', at });
@@ -471,6 +475,69 @@ export function threadUsecases(deps: ThreadDeps) {
     });
     if (dismissed && t.week && t.proposals.length && !t.proposals.some(p => p.status === 'proposed'))
       return calendar.replan(persona, threadId, t.week);
+    return read(persona, threadId);
+  }
+  /**
+   * The person says that the next step, which is someone else's and is taken outside Clew, is taken (D139): "Jag har
+   * bett min chef". Only on an open card whose source offers it (`handOn`), that waits on nobody yet and has nothing
+   * decided or on its way. The card then waits on whom the source named, so it leaves Behöver dig for Väntar på andra
+   * with "Påminn mig" as its one time action (D49); nothing is sent to the source and nobody is told. The person's own
+   * statement: reached by its route alone, never a tool and never a capability, so the assistant cannot make it.
+   */
+  async function handOnThread(persona: AuthenticatedContext, threadId: string) {
+    const thread = await threadFor(persona, threadId);
+    if (!thread || thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
+    await persona.authorize();
+    const at = clock().toISOString();
+    await store.transaction(async tx => {
+      const current = await tx.lockThread(persona.id, threadId);
+      if (!current || current.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
+      if (
+        !current.handOn ||
+        current.waitingOn ||
+        current.receipt ||
+        (current.execution && ['pending', 'running', 'unknown'].includes(current.execution.state))
+      )
+        throw new InputError('Ärendet har ändrats. Läs om sidan.');
+      const to = current.handOn.waitingOn;
+      // Set aside meanwhile (Inte nu): the snooze ends, since the card now waits on someone and not on a time.
+      if (current.snoozedUntil) await tx.cancelTimer(`snooze:${threadId}`, at);
+      await tx.updateThread(threadId, { waitingOn: to, handedOn: { to, at }, snoozedUntil: null, updatedAt: at });
+      await tx.addMessage(threadId, { role: 'user', body: current.handOn.label, at });
+      await tx.writeAudit({
+        actor: persona.principal.id,
+        action: 'thread.handed_on',
+        subject: 'thread:' + threadId,
+        at,
+        details: { to },
+      });
+    });
+    return read(persona, threadId);
+  }
+  /**
+   * "Det blev inte gjort", and Ångra on the toast (D139): the card the person handed on is theirs again. A reminder of
+   * theirs that was to bring it back is ended, since there is nothing left to wait for.
+   */
+  async function handBackThread(persona: AuthenticatedContext, threadId: string) {
+    const thread = await threadFor(persona, threadId);
+    if (!thread || thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
+    await persona.authorize();
+    const at = clock().toISOString();
+    await store.transaction(async tx => {
+      const current = await tx.lockThread(persona.id, threadId);
+      if (!current || current.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
+      if (!current.handedOn) throw new InputError('Ärendet har ändrats. Läs om sidan.');
+      await tx.cancelTimer(`reminder:${threadId}`, at);
+      await tx.updateThread(threadId, { waitingOn: null, handedOn: null, updatedAt: at });
+      await tx.addMessage(threadId, { role: 'user', body: 'Det blev inte gjort', at });
+      await tx.writeAudit({
+        actor: persona.principal.id,
+        action: 'thread.handed_back',
+        subject: 'thread:' + threadId,
+        at,
+        details: { to: current.handedOn.to },
+      });
+    });
     return read(persona, threadId);
   }
   /**
@@ -618,6 +685,8 @@ export function threadUsecases(deps: ThreadDeps) {
     dismissThread,
     snoozeThread,
     snoozeOptions,
+    handOnThread,
+    handBackThread,
     reopenThread,
     attentionFor,
     listThreadsFor,

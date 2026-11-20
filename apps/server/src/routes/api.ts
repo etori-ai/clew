@@ -77,6 +77,8 @@ const {
   reopenThread,
   snoozeOptions,
   snoozeThread,
+  handOnThread,
+  handBackThread,
   threadFor,
   undoReceipt,
 } = threads;
@@ -403,6 +405,14 @@ api.post('/threads/:id/snooze', async c =>
       await body(c.req.raw, validators.snooze as unknown as (value: unknown) => value is SnoozeInput),
     ),
   ),
+);
+/**
+ * The person says the next step is someone else's and taken (D139), and takes that back. Their own statement: a route
+ * to a use case, with no body, never a capability and never a tool of the assistant's.
+ */
+api.post('/threads/:id/hand-on', async c => c.json(await handOnThread(c.get('session').context, c.req.param('id'))));
+api.post('/threads/:id/hand-back', async c =>
+  c.json(await handBackThread(c.get('session').context, c.req.param('id'))),
 );
 api.get('/snooze/presets', async c => c.json({ presets: await snoozeOptions(c.get('session').context) }));
 /** A person's own timer (D17, D85): a durable reminder workflow that pushes a card back at this thread. */

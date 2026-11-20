@@ -1,6 +1,14 @@
 import type { Locator, Page } from '@playwright/test';
 import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, short, test } from './support';
-import { CERTIFICATE_TITLE, NOTICE_REASON, NOTICE_TEXT, NOW, asNotice, expiredCertificate } from './data';
+import {
+  ASKED_MANAGER,
+  CERTIFICATE_TITLE,
+  NOTICE_REASON,
+  NOTICE_TEXT,
+  NOW,
+  asNotice,
+  expiredCertificate,
+} from './data';
 
 /**
  * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`, the `work-item-detail` template): reached by
@@ -407,6 +415,76 @@ test.describe('a work item with nothing to decide', () => {
     await expect(main.getByText(HOLDS, { exact: true })).toBeVisible();
     const { read, later, dismiss } = controls(main);
     for (const control of [read, later, dismiss]) await expect(control).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+
+  test('where its source offers it, Jag har bett min chef is the one filled button; pressed, the item waits on the manager, with Påminn mig and the way back', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(wide);
+    api.threads.push(expiredCertificate({ handOn: ASKED_MANAGER }));
+    await open(page, '/items/intyg');
+    const main = page.getByRole('main');
+    await expect(page.getByRole('heading', { level: 1, name: CERTIFICATE_TITLE })).toBeFocused();
+    await expect(main.getByText(HOLDS, { exact: true })).toBeVisible();
+    // The person's statement first, the read beside it, and the two ways out under ⋯ again (board Intyg, variant c).
+    const asked = main.getByRole('button', { name: 'Jag har bett min chef' });
+    const { read, later, dismiss } = controls(main);
+    await expect(later).toHaveCount(0);
+    await expect(dismiss).toHaveCount(0);
+    await asked.focus();
+    await page.keyboard.press('Tab');
+    await expect(read).toBeFocused();
+    await page.keyboard.press('Tab');
+    const more = main.getByRole('button', { name: 'Fler åtgärder' });
+    await expect(more).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'Inte nu' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expectNoAxeViolations(page);
+    // Said from the keyboard: the item waits on whom the source named, the notice says so, and the toast offers Ångra.
+    await asked.focus();
+    await page.keyboard.press('Enter');
+    const toasts = page.getByRole('region', { name: 'Aviseringar' });
+    await expect(toasts.getByText('Ärendet väntar på din chef. Det ligger under Väntar på andra.')).toBeVisible();
+    await expect(toasts.getByRole('button', { name: 'Ångra' })).toBeVisible();
+    await expect(main.getByText('Väntar på din chef', { exact: true })).toBeVisible();
+    await expect(main.getByText(/^Du sa ”Jag har bett min chef” /)).toBeVisible();
+    await expect(asked).toHaveCount(0);
+    await expect(main.getByRole('button', { name: 'Påminn mig' })).toBeVisible();
+    // Its read is still a button beside ⋯ (board Intyg, variant c2).
+    await expect(read).toBeVisible();
+    // Still nothing says an answer is late: the reason by the title, the day as Sista dag.
+    await expect(main.locator('.astryx-badge').filter({ hasText: 'Har gått ut' })).toBeVisible();
+    await expect(main.getByText(/^försenad$/i)).toHaveCount(0);
+    await expect(page.getByText('Svara senast', { exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // The way back is under ⋯, and gives the item back as it was.
+    await more.focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('menuitem', { name: 'Det blev inte gjort' }).click();
+    await expect(asked).toBeVisible();
+    await expect(main.getByText(HOLDS, { exact: true })).toBeVisible();
+    await expect(main.getByText('Väntar på din chef', { exact: true })).toHaveCount(0);
+  });
+
+  test('at 320 px the filled button, the read and ⋯ reflow without sideways scrolling, before and after it is said', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(narrow);
+    api.threads.push(expiredCertificate({ handOn: ASKED_MANAGER }));
+    await open(page, '/items/intyg');
+    const main = page.getByRole('main');
+    const asked = main.getByRole('button', { name: 'Jag har bett min chef' });
+    await expect(asked).toBeVisible();
+    await expect(controls(main).read).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await asked.click();
+    await expect(main.getByText('Väntar på din chef', { exact: true })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
   });

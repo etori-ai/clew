@@ -66,7 +66,10 @@ function cardState(t: Thread, now: string): string {
   }
   if (isSnoozed(t, now)) return ' Ärendet ligger under Inte nu.' + buttons(['Ta upp nu', more()]);
   if (t.waitingOn) return ` Ärendet väntar på ${t.waitingOn}.` + buttons(['Påminn mig', more()]);
-  return buttons([...(primary ? [primary.label] : []), ...secondary.map(a => a.label), 'Inte nu', more()]);
+  // The source's offer to say that the next step is someone else's and taken (D139) is a button of the person's own:
+  // the model is told it is there, and has no tool that presses it.
+  const handOn = t.handOn && !t.receipt && !t.execution ? [t.handOn.label] : [];
+  return buttons([...handOn, ...(primary ? [primary.label] : []), ...secondary.map(a => a.label), 'Inte nu', more()]);
 }
 /** A work item's last day as a person reads it ("måndag 16 november"); anything that is not a date as it came. */
 export const dueLabel = (date: string) => (/^\d{4}-\d{2}-\d{2}$/.test(date) ? dayLabel(date) : date);

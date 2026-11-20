@@ -1651,6 +1651,15 @@
       "status": "provisional (the product owner chose it on 2026-11-19 from the canvas \"Clew",
       "date": "2026-11-19",
       "area": "ui, product, assistant"
+    },
+    {
+      "key": "D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken",
+      "number": 139,
+      "path": "docs/decisions/D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md",
+      "title": "D139 · A card with nothing to decide says what holds, and the person can say that the next step is taken",
+      "status": "provisional (the product owner chose it on 2026-11-20 from the canvas \"Clew",
+      "date": "2026-11-20",
+      "area": "ui, product, integrations"
     }
   ],
   "documents": [
@@ -2522,6 +2531,12 @@
     {
       "path": "docs/decisions/D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md",
       "title": "D138 · The corner's \"Fråga AI\" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md",
+      "title": "D139 · A card with nothing to decide says what holds, and the person can say that the next step is taken",
       "category": "decision-history",
       "headings": []
     },

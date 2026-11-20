@@ -11,7 +11,7 @@ import {
   silentSaidIn,
   test,
 } from './support';
-import { NOTICE_REASON, NOTICE_TEXT, asNotice } from './data';
+import { ASKED_MANAGER, CERTIFICATE_TITLE, NOTICE_REASON, NOTICE_TEXT, asNotice, expiredCertificate } from './data';
 
 /**
  * Att göra (D126 rule 2, board Att göra, the `table-inbox` template): a queue that indexes a reading pane. The piles are
@@ -481,5 +481,46 @@ test.describe('Att göra when a system does not answer', () => {
     await open(page, '/todo');
     await expect(page.locator('#work-omtanke')).toContainText('kan vara gammal');
     expect(await reflowProblems(page)).toEqual([]);
+  });
+});
+
+/**
+ * An item with nothing to decide (D139): its row never says an answer is late. The Status column says the source's
+ * reason where another row says when its answer is due, once, and the line under the name does not say it again. Once
+ * the person has said that the next step is taken it is a row of Väntar på andra, which says on whom.
+ */
+test.describe('Att göra: an item with nothing to decide', () => {
+  test.use({ viewport: wide });
+
+  test('its row says the source’s reason in the Status column and never försenad; handed on, it waits on the manager under Väntar på andra', async ({
+    page,
+    api,
+  }) => {
+    api.threads.push(expiredCertificate({ handOn: ASKED_MANAGER }));
+    await open(page, '/todo');
+    const item = queue(page).locator('#work-intyg');
+    await expect(item.getByRole('link', { name: CERTIFICATE_TITLE })).toBeVisible();
+    await expect(item.getByRole('img')).toHaveAccessibleName('Behöver dig, har gått ut');
+    await expect(item.getByRole('cell').last()).toHaveText('har gått ut');
+    await expect(item).not.toContainText(/försenad/i);
+    // Its day is a last day, not an answer's: the pile's count of late items does not count it.
+    await expect(page.getByRole('link', { name: 'Försenade: 0 ärenden', exact: true })).toBeVisible();
+    // Said once: the line under the name does not repeat the reason.
+    await expect(item.getByText('Har gått ut', { exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // Said in the reading pane, the item leaves the pile for Väntar på andra.
+    await item.getByRole('link', { name: CERTIFICATE_TITLE }).click();
+    const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+    await pane.getByRole('button', { name: 'Jag har bett min chef' }).click();
+    await expect(queue(page).locator('#work-intyg')).toHaveCount(0);
+    await page
+      .getByRole('navigation', { name: 'Urval' })
+      .getByRole('link', { name: /^Väntar på andra/ })
+      .click();
+    await expect(page).toHaveURL(/tab=waiting/);
+    const waiting = queue(page, 'Väntar på andra').locator('#work-intyg');
+    await expect(waiting).toContainText('Väntar på din chef');
+    await expect(waiting).not.toContainText(/försenad/i);
+    await expectNoAxeViolations(page);
   });
 });

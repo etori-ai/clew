@@ -51,9 +51,12 @@ const naming = (subjects: readonly Subject[]) => {
 const date = (value: string | null | undefined) =>
   value === undefined ? undefined : value === null ? null : new Date(value);
 const toRow = (patch: ThreadPatch) => {
-  const { handledAt, updatedAt, remindedAt, snoozedUntil, ...rest } = patch;
+  const { handledAt, updatedAt, remindedAt, snoozedUntil, handedOn, ...rest } = patch;
   return {
     ...rest,
+    ...(handedOn !== undefined
+      ? { handedOnTo: handedOn?.to ?? null, handedOnAt: handedOn ? new Date(handedOn.at) : null }
+      : {}),
     ...(handledAt !== undefined ? { handledAt: date(handledAt) } : {}),
     ...(updatedAt !== undefined ? { updatedAt: date(updatedAt)! } : {}),
     ...(remindedAt !== undefined ? { remindedAt: date(remindedAt) } : {}),
@@ -121,6 +124,7 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
         askedBeside: t.askedBeside ?? null,
         actions: t.actions,
         waitingOn: t.waitingOn,
+        handOn: t.handOn ?? null,
         deadline: t.deadline,
         trigger: t.trigger,
         execution: t.execution ?? null,

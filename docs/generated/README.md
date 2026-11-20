@@ -112,6 +112,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `actions` | yes | array of object |  |
 | `waitingOn` | no | string / null |  |
 | `deadline` | no | string / null |  |
+| `handOn` | no | object | An offer to the person to say that the next step, which is someone else's and is taken outside Clew, is taken (D139). Clew then lists the card as waiting on `waitingOn` until the person takes it back, a reminder of theirs fires, the occurrence's revision changes or the scan stops raising it. Nothing is sent to the connector: pressing it is not a capability call. Leave it out on a draft that sets `waitingOn` itself. |
 
 ## ExecuteResult
 

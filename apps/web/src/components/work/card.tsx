@@ -48,7 +48,7 @@ import { useDecisionSend, useSettling, useThreadAction, type RunAction } from '.
 import { opensDialog, type ActionStep } from '../../action-path';
 import { takeActionRequest, useActionRequest } from '../../action-requests';
 import { ActionDialog } from './action-dialog';
-import { dismissed, reopened, snoozed } from '../../optimistic';
+import { dismissed, handedBack, handedOn, reopened, snoozed } from '../../optimistic';
 import { invalidateStream } from '../../thread-cache';
 import { useConversation } from '../conversation/conversation-context';
 import { executionStatus } from '../../execution-status';
@@ -629,6 +629,23 @@ export function useThreadActions({ thread, onChange }: ActionProps) {
       },
       { optimistic: dismissed(thread, new Date().toISOString()) },
     );
+  /**
+   * "Jag har bett min chef" (D139): the item waits on whom its source named, at once (D64); the toast says where it
+   * went and its Ångra takes it back.
+   */
+  const handOn = () =>
+    run(
+      async () => {
+        const t = await api.handOn(thread.id);
+        leave(
+          t,
+          `Ärendet väntar på ${t.waitingOn ?? thread.handOn?.waitingOn ?? 'någon annan'}. Det ligger under Väntar på andra.`,
+          () => api.handBack(thread.id),
+        );
+        return t;
+      },
+      { optimistic: handedOn(thread, new Date().toISOString()) },
+    );
   /** A person's own timer on a card that waits on someone else (D17, D49): the card stays where it is until the timer brings it back; Ångra cancels the timer. When it fires, the stream is read again. */
   const remind = (seconds: number) =>
     run(async () => {
@@ -656,6 +673,7 @@ export function useThreadActions({ thread, onChange }: ActionProps) {
     leave,
     perform,
     dismiss,
+    handOn,
     pickRemind,
     reviewed,
     /** The review begun on its page, if any: "Granska N" is then "Fortsätt granska". */
@@ -710,7 +728,10 @@ const reopenable = (thread: Thread) =>
  * A to-do with nothing to decide (`status.noDecision`, `nothingToDecide` in `status-of.ts`: every action is a read) has
  * no button that says what is expected, so the notice stands over its buttons and says it in the source's words, and no
  * button is filled: its read is a secondary button, and the two ways out stand beside it instead of under ⋯, "Inte nu"
- * (D49) and "Avfärda", since they are the only things the person can do to the item itself.
+ * (D49) and "Avfärda", since they are the only things the person can do to the item itself. Where its source offers
+ * the person to say that the next step is someone else's and taken (`status.handOn`, D139: "Jag har bett min chef"),
+ * that is the one filled button, the read stands beside it, and "Inte nu" and "Avfärda" are under ⋯ again (board Intyg,
+ * variant c). Once pressed the item waits: the notice says on whom, with "Påminn mig", and "Det blev inte gjort" under ⋯.
  *
  * `pinned` is a bar at the foot of a phone's page: the decisions side by side the width of the screen, everything else
  * under ⋯. An action the item draws elsewhere (`omit`: a notice's link out, after its text) is not drawn here too.
@@ -749,7 +770,7 @@ export function ActionRow({
   const chipRef = 'thread:' + thread.id;
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
-  const { selected, selectable, settling, pressed, perform, dismiss, run, leave, pickRemind } = actions;
+  const { selected, selectable, settling, pressed, perform, dismiss, handOn, run, leave, pickRemind } = actions;
   const { reviewed, returned, status } = actions;
   const snoozeRows = useSnoozeRows({ thread, run, leave });
   const remindRows = useTimeRows({
@@ -867,6 +888,20 @@ export function ActionRow({
       case 'take-up':
       case 'reopen':
         return { label: m.label, clickAction: reopen };
+      case 'hand-on':
+        return {
+          label: m.label,
+          clickAction: async () => {
+            await handOn();
+          },
+        };
+      case 'hand-back':
+        return {
+          label: m.label,
+          clickAction: async () => {
+            await run(() => api.handBack(thread.id), { optimistic: handedBack(thread) });
+          },
+        };
       case 'remind':
         return { label: m.label, menu: [...remindRows.rows, { type: 'divider' as const }, remindRows.own] };
       case 'decide':
@@ -975,13 +1010,42 @@ export function ActionRow({
         {...leavingMark(read)}
       />
     ) : null;
+    // The source's offer to say the next step is taken (D139): the one filled button.
+    const handOnButton = status.handOn ? (
+      <Button
+        variant="primary"
+        label={status.handOn}
+        width={width}
+        clickAction={async () => {
+          await handOn();
+        }}
+      />
+    ) : null;
     // The phone's bar: the read the width of the screen and the ways out under ⋯, so no word is cut at 320 px (1.4.10).
     if (pinned)
       return (
         <VStack gap={3}>
           {said}
           <HStack gap={2} vAlign="center">
-            {readButton && <StackItem size="fill">{readButton}</StackItem>}
+            {handOnButton && <StackItem size="fill">{handOnButton}</StackItem>}
+            {!handOnButton && readButton && <StackItem size="fill">{readButton}</StackItem>}
+            {more({
+              items: handOnButton && read ? [read, ...others] : others,
+              time: snoozeRows,
+              extra: moves,
+            })}
+          </HStack>
+        </VStack>
+      );
+    if (handOnButton)
+      return (
+        <VStack gap={3}>
+          {said}
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            {handOnButton}
+            {readButton}
+            {ask}
+            {addToConversation}
             {more({ items: others, time: snoozeRows, extra: moves })}
           </HStack>
         </VStack>
@@ -1013,7 +1077,12 @@ export function ActionRow({
     const stillOpen =
       open && !unresolvedExecution(thread) && (isSnoozed(thread, new Date().toISOString()) || !!thread.waitingOn);
     const allReads = here.filter(a => a !== primary && isRead(a));
-    const menu = stillOpen ? more({ extra: moves }) : more({ items: allReads, dismissable: false, extra: moves });
+    // An item whose every action is a read keeps its read as a button while it waits or is set aside (board Intyg,
+    // variant c2): there it is the one thing the item does, and it stood beside the buttons the notice replaced.
+    const kept = status.noAnswer && stillOpen ? (primary ?? here.find(isRead)) : undefined;
+    const menu = stillOpen
+      ? more({ ...(kept ? { items: here.filter(a => a !== kept) } : {}), extra: moves })
+      : more({ items: allReads, dismissable: false, extra: moves });
     return (
       <VStack gap={3}>
         <StatusNotice
@@ -1023,6 +1092,16 @@ export function ActionRow({
           {...(move ? (notice.move!.offer ? { offer: move } : { action: move }) : {})}
         />
         <HStack gap={2} vAlign="center" wrap="wrap">
+          {kept && (
+            <Button
+              variant="secondary"
+              label={kept.label}
+              {...pressOrLink(kept)}
+              data-action={kept.id}
+              data-thread={thread.id}
+              {...leavingMark(kept)}
+            />
+          )}
           {ask}
           {addToConversation}
           {menu}

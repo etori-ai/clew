@@ -568,6 +568,24 @@ export const ThreadDraftSchema = object({
   actions: Type.Array(ThreadActionSchema),
   waitingOn: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   deadline: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  handOn: Type.Optional(
+    object(
+      {
+        label: Type.String({
+          minLength: 1,
+          maxLength: 60,
+          description: 'Swedish. The button, in the person\'s own voice: "Jag har bett min chef".',
+        }),
+        waitingOn: Type.String({
+          minLength: 1,
+          maxLength: 80,
+          description:
+            'Swedish. Whom the card waits on once the person has said so, read after "Väntar på": "din chef".',
+        }),
+      },
+      "An offer to the person to say that the next step, which is someone else's and is taken outside Clew, is taken (D139). Clew then lists the card as waiting on `waitingOn` until the person takes it back, a reminder of theirs fires, the occurrence's revision changes or the scan stops raising it. Nothing is sent to the connector: pressing it is not a capability call. Leave it out on a draft that sets `waitingOn` itself.",
+    ),
+  ),
 });
 export const ScanRequestSchema = object({ actor: ActorSchema });
 export const ScanResponseSchema = object({

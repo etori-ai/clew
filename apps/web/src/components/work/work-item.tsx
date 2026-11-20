@@ -39,7 +39,7 @@ import { readOf, withoutRead } from '../../panel-address';
 import { documentHref, reviewHref } from '../../review-address';
 import { entityHref } from '../../person-address';
 import { outcomeStatus, receiptRowsInOrder, type ItemStatus } from '../../status-of';
-import { dueOf, fromClewItself, itemPageHref, noticeOf, rowsSaySomething } from '../../work-items';
+import { dueOf, fromClewItself, itemPageHref, noticeOf, reasonMark, rowsSaySomething } from '../../work-items';
 import { readPageHref } from '../../view-address';
 import { whenWord } from '../../when-word';
 import { useConversation } from '../conversation/conversation-context';
@@ -91,17 +91,15 @@ const decided = (thread: Thread) => !!thread.execution || !!thread.receipt || th
  * decided, the notice says where it stands and the day is a fact (D126 item 13). A badge that only repeats the row's
  * word ("Påminnelse") is left out, as on the item's row.
  *
- * An item with nothing to decide (`status.noDecision`) has no answer that can be late: its badge says the source's
+ * An item that asks for no answer (`status.noAnswer`), open, has no answer that can be late: its badge says the source's
  * reason instead ("Har gått ut", "Saknas"), in the colour its day gives it, or the notice's own where it has no day. A
  * reason too long for a badge is a sentence, which "Varför ser jag detta?" already holds, and is not drawn here.
  */
-const REASON_BADGE_MAX = 32;
 function dueBadge(thread: Thread, day: string, status: ItemStatus) {
   const due = decided(thread) ? null : dueOf(thread, day);
-  if (status.noDecision) {
-    const reason = thread.trigger.reason.trim().replace(/\.$/, '');
-    if (!reason || reason.length > REASON_BADGE_MAX) return null;
-    return <Badge variant={due?.variant ?? 'warning'} label={reason} />;
+  if (status.noAnswer) {
+    const reason = thread.state === 'open' ? reasonMark(thread, day) : null;
+    return reason ? <Badge variant={reason.variant} label={reason.label} /> : null;
   }
   if (!due || due.label === 'Påminnelse') return null;
   const label = due.label === 'Försenad' ? due.label : `Svara ${due.label.toLocaleLowerCase('sv-SE')}`;
@@ -369,6 +367,10 @@ function eventWords(e: ItemEvent, thread: Thread): string {
       return 'avfärdade ärendet';
     case 'reopened':
       return 'återöppnade ärendet';
+    case 'handed-on':
+      return e.to ? `sa att ärendet väntar på ${e.to}` : 'sa att ärendet väntar på någon annan';
+    case 'handed-back':
+      return 'sa att det inte blev gjort';
     case 'decided':
       return e.action ? `beslutade: ${e.action}` : 'fattade ett beslut';
     case 'undo-decided':
@@ -465,7 +467,7 @@ function Facts({ thread, item, columns }: { thread: Thread; item: ItemState; col
   const subjects = thread.items.filter(
     (i, n, all) => i.subject && all.findIndex(j => j.subject && sameSubject(j.subject, i.subject!)) === n,
   );
-  const nothing = item.actions.status.noDecision;
+  const nothing = item.actions.status.noAnswer;
   const due = decided(thread) || nothing ? null : dueOf(thread, day);
   const deadline = thread.deadline?.slice(0, 10);
   const days = deadline ? daysUntil(deadline, day) : null;

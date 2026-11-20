@@ -80,7 +80,9 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
     why and since when, and it carries at most one move: a filled button when the move is the person's, a secondary one
     when it is an offer (Påminn, Ångra); the move is the one the thing has always offered for that state (Kontrollera
     status, the decision again, the review, Ångra, Påminn mig, Ta upp nu, Återöppna), and the others stand under ⋯. A
-    plain to-do has no notice: its title and its buttons say what is expected. Once something has happened or is in
+    plain to-do has no notice: its title and its buttons say what is expected (amended 2026-11-20 by
+    [D139](D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md):
+    a to-do with nothing to decide has a notice with no move, which stands over its buttons). Once something has happened or is in
     the way, the notice takes the place of the buttons and of the grey sentence among them, and "Fråga Clew" and ⋯
     stand under it. `apps/web/src/status-of.ts` is the one mapping from what the item holds (its execution, receipt,
     undo window, what it waits on, a silent system) to a state and its words, keeping every sentence D45, D47, D116 and

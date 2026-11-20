@@ -83,6 +83,15 @@ export function itemEvents(
       case 'thread.reopened':
         events.push({ at, by, kind: 'reopened' });
         break;
+      case 'thread.handed_on':
+      case 'thread.handed_back':
+        events.push({
+          at,
+          by,
+          kind: row.action === 'thread.handed_on' ? 'handed-on' : 'handed-back',
+          ...(typeof d.to === 'string' && d.to ? { to: d.to.slice(0, 80) } : {}),
+        });
+        break;
       case 'thread.decision_approved': {
         if (d.compensates) {
           events.push({ at, by, kind: 'undo-decided', ...execution });

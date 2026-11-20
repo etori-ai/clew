@@ -3848,6 +3848,17 @@ export const AskedBesideSchema = object({
   thing: Type.Optional(OpenThingSchema),
 });
 export type AskedBeside = Static<typeof AskedBesideSchema>;
+/**
+ * What a source offers the person to say on a card where the next step is someone else's and is taken outside Clew
+ * (D139): the button's words ("Jag har bett min chef") and whom the card then waits on ("din chef", as `waitingOn` says
+ * it after "Väntar på"). Saying it writes nothing to the source. Not to be confused with `handover`, a conversation's
+ * exchange with another system's assistant.
+ */
+export const HandOnSchema = object({
+  label: Type.String({ minLength: 1, maxLength: 60 }),
+  waitingOn: Type.String({ minLength: 1, maxLength: 80 }),
+});
+export type HandOn = Static<typeof HandOnSchema>;
 /** Every thread answers "varför ser jag detta?" with trigger, source and time. */
 export const ThreadSchema = object({
   /** Clew authority under which source content was projected; absent legacy snapshots are not trusted. */
@@ -3884,6 +3895,14 @@ export const ThreadSchema = object({
   actions: Type.Array(CardActionSchema),
   /** Set when the thread waits on someone else: it is listed under "Pågår utan dig" and never notifies. */
   waitingOn: Type.Union([Type.String(), Type.Null()]),
+  /** The source's offer to say that the next step is taken and whom the card then waits on (D139); absent on most cards. */
+  handOn: Type.Optional(HandOnSchema),
+  /**
+   * The person said so (D139): whom the card waits on since, which is its `waitingOn` while this stands, and when they
+   * said it. Clew's own record, never the source's; gone when the person takes it back, when a reminder of theirs brings
+   * the card back, and when the source changes the card or stops raising it.
+   */
+  handedOn: Type.Optional(object({ to: Type.String(), at: instant })),
   deadline: Type.Union([Type.String(), Type.Null()]),
   receipt: Type.Union([ReceiptSchema, Type.Null()]),
   execution: Type.Optional(Type.Union([ExecutionSummarySchema, Type.Null()])),
@@ -3925,6 +3944,9 @@ export const ItemEventKindSchema = Type.Union([
   Type.Literal('reminder-stopped'),
   Type.Literal('dismissed'),
   Type.Literal('reopened'),
+  /** The person said the next step is taken, so the item waits on someone else (D139), and took that back. */
+  Type.Literal('handed-on'),
+  Type.Literal('handed-back'),
   /** The person decided one of the item's writes; the durable ledger carries it to the source (D45). */
   Type.Literal('decided'),
   /** The person asked to undo the decision. */
@@ -3944,6 +3966,8 @@ export const ItemEventSchema = object(
     kind: ItemEventKindSchema,
     /** `snoozed` and `reminder-set`: when the item comes back. */
     until: Type.Optional(instant),
+    /** `handed-on` and `handed-back`: whom the item waits on, or waited on, in the source's words ("din chef"). */
+    to: Type.Optional(Type.String({ maxLength: 80 })),
     /** `woken`: the time came, or the source changed the item. */
     reason: Type.Optional(Type.Union([Type.Literal('time'), Type.Literal('changed')])),
     /** `decided`: the label of the action decided on, as the item names it now; absent when the item no longer has it. */

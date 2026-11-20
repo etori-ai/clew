@@ -34,7 +34,12 @@ export type ThreadPatch = Partial<
     | 'handover'
     | 'askedBeside'
   >
->;
+> & {
+  /** The source's offer to hand the card on (D139), or null to take it off the card. */
+  handOn?: Thread['handOn'] | null;
+  /** The person's having handed the card on (D139), or null once that no longer stands. */
+  handedOn?: Thread['handedOn'] | null;
+};
 export interface NewMessage {
   role: 'assistant' | 'user';
   body: string;

@@ -374,6 +374,13 @@ const plural = (n: number, one: string, other: string) => `${n} ${n === 1 ? one 
  * rated again on the way there is a new period (`ownCard`), so the card is followed by one with the next of these
  * summaries until then.
  */
+/**
+ * Whether the next step on a missing type's card is the manager's and taken by talking to them (D139): a certificate
+ * the person lacks, or a skill confirmed below the level asked. A skill not added or not rated is the person's own next
+ * step, and one that waits for the manager's confirmation has nothing left for the person to ask for.
+ */
+export const missingAsksManager = (s: MissingStanding): boolean =>
+  s.least === undefined || (!!s.held && s.held.level !== null && confirmed(s.held));
 const ENDS_WHEN_CONFIRMED = 'Ärendet avslutas av sig självt när din chef har bekräftat nivån som krävs.';
 export function missingSummary(s: MissingStanding): string {
   if (s.least === undefined)
@@ -587,6 +594,9 @@ export function competenceConnector(
         { id: 'open', label: 'Visa mina kompetenser', capability: holdings.name, kind: 'read', role: 'primary' },
       ] as const;
       const occurrence = (card: CardIdentity) => [{ key: card.key, revision: card.revision, period: card.period }];
+      // Where the summary sends the person to their manager, the card offers them to say that they have asked (D139):
+      // it then waits on the manager, and still ends by itself when the scan stops raising it.
+      const askedManager = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
       for (const { standing: s, card } of own) {
         if (s.holding === null) {
           drafts.push({
@@ -596,6 +606,7 @@ export function competenceConnector(
             summary: missingSummary(s),
             reason: 'Saknas',
             actions: [...open],
+            ...(missingAsksManager(s) ? { handOn: askedManager } : {}),
             occurrences: occurrence(card),
           });
           continue;
@@ -614,6 +625,7 @@ export function competenceConnector(
           reason: expired ? 'Har gått ut' : 'Går ut inom 90 dagar',
           deadline: s.end,
           actions: [...open],
+          handOn: askedManager,
           occurrences: occurrence(card),
         });
       }

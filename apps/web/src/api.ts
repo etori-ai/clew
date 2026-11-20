@@ -631,6 +631,9 @@ export const api = {
   checkCorrection: (id: string) => post<CorrectionExecution>(`/api/executions/${encodeURIComponent(id)}/reconcile`),
   snooze: (id: string, input: SnoozeInput = {}) => post<Thread>(`/api/threads/${id}/snooze`, input),
   snoozePresets: () => call<{ presets: SnoozePreset[] }>('/api/snooze/presets'),
+  /** The person says the next step is someone else's and taken (D139), and takes that back. */
+  handOn: (id: string) => post<Thread>(`/api/threads/${id}/hand-on`),
+  handBack: (id: string) => post<Thread>(`/api/threads/${id}/hand-back`),
   remindInvitees: (id: string) => post<Thread>(`/api/threads/${id}/remind-invitees`),
   remind: (id: string, seconds: number) =>
     post<{ id: string; fireAt: string; thread: Thread }>(`/api/threads/${id}/remind`, { seconds }),

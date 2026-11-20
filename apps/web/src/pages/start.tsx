@@ -27,6 +27,7 @@ import {
   useToast,
   VStack,
 } from '@clew/ui';
+import { STATUS } from '@clew/ui/status-words';
 import { dayLabel, today } from '@clew/calendar/dates';
 import { errorMessage, noCalendar } from '../query-policy';
 import { areasQuery, assistantQuery, threadsQuery, todayQuery } from '../queries';
@@ -253,7 +254,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     const mark = marks.ofThread(t);
     const own = !!marks.system(mark.connector) && mark.ordinal === null;
     const stale = t.state === 'open' && !!silent.of(t.connector);
-    const state = facts.state.label.startsWith('Ska göras') && !unresolvedExecution(t) ? null : facts.state.label;
+    // "Behöver dig" is the card's own heading: the state of an item with nothing to decide is not said again under it.
+    const plain = facts.state.label.startsWith('Ska göras') || facts.state.label === STATUS['needs-you'].word;
+    const state = plain && !unresolvedExecution(t) ? null : facts.state.label;
     return [own ? null : mark.source, state, stale ? staleWhy(facts.why) : facts.why].filter(Boolean).join(DOT);
   };
   /**
