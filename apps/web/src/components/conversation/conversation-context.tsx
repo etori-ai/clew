@@ -356,7 +356,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const verbsQ = useQuery({ ...verbsQuery(chipThread ?? ''), enabled: !!chipThread });
   const verbs = chipThread ? (verbsQ.data?.verbs ?? EMPTY_VERBS) : EMPTY_VERBS;
 
+  // While Clew asks where a question should go, the offer's first button has the focus (`HandoverOffer`): a page that
+  // gives the box the focus as it arrives does not take it from the offer.
   const focus = useCallback(() => {
+    if (offered.current) return;
     input.current?.focus();
   }, [input]);
   // Esc reaches here after a dialog or a menu has already taken it; with nothing open there is nothing to close and focus stays where it is.

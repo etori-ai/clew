@@ -229,7 +229,7 @@ test.describe('another system’s assistant beside the conversation', () => {
   }) => {
     api.handoverAssistants = [hrAssistant];
     api.routes = /semesterdagar/;
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill(QUESTION);
     await composer(page).press('Enter');
     // Nothing has gone anywhere: the question stands, and Clew asks where it should go (board SamtalEneoFraga).
@@ -292,7 +292,7 @@ test.describe('another system’s assistant beside the conversation', () => {
   }) => {
     api.handoverAssistants = [hrAssistant];
     api.routes = /semesterdagar/;
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill('Hur många semesterdagar har jag?');
     await composer(page).press('Enter');
     await page.getByRole('button', { name: 'Svara själv', exact: true }).click();
@@ -391,7 +391,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     api.handoverAssistants = [hrAssistant];
     api.routes = /semesterdagar/;
     await page.setViewportSize(narrow);
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill(QUESTION);
     await composer(page).press('Enter');
     await page.getByRole('button', { name: 'Skicka till HR-assistenten', exact: true }).click();

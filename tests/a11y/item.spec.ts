@@ -88,11 +88,10 @@ test.describe('the work item as a page', () => {
     ).toBeVisible();
     await page.keyboard.press('Escape');
     await expectNoAxeViolations(page);
-    // From the title the keyboard reaches the frame's "Fråga assistenten" at the end of the title's line (D130 rule 1,
-    // D131 item 9), then the decision: the buttons stand directly under the title.
+    // From the title the keyboard reaches the decision: the buttons stand directly under the title, and no button to
+    // ask the assistant stands on the title's line (D133 item 1).
+    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     await title.focus();
-    await page.keyboard.press('Tab');
-    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(page.getByRole('button', { name: 'Attestera 2 valda' })).toBeFocused();
     // The trail leads back to the pane it was opened from.

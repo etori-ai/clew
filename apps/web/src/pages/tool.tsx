@@ -335,7 +335,13 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                     />
                   ) : (
                     /* A read that declares no view (D38) is drawn as the panel draws one: its hits, its rows or its facts. */
-                    <PanelBody output={tool.output} source={tool.source} input={tool.input} hrefFor={hrefFor} />
+                    <PanelBody
+                      output={tool.output}
+                      source={tool.source}
+                      input={tool.input}
+                      hrefFor={hrefFor}
+                      dayHeadingLevel={2}
+                    />
                   )}
                 </ContentArrival>
               ) : (

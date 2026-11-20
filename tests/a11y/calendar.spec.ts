@@ -68,7 +68,7 @@ test.describe('the three views', () => {
     await open(page, '/calendar');
     for (const day of ['mån 2 nov', 'tis 3 nov', 'ons 4 nov', 'tors 5 nov', 'fre 6 nov'])
       await expect(heading(page, 2, day)).toBeVisible();
-    // The head's two rows are full on a phone: the frame draws no "Fråga assistenten" there (D130, `onPhone: false`).
+    // No page draws a way to ask of its own (D133 item 1): on a phone the corner's "Fråga AI" is the way.
     await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     // The view switch is an adaptive menu on a phone (D31 §5).
     await page.getByRole('button', { name: 'Vy: Vecka' }).click();
@@ -616,23 +616,24 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await dialog.getByRole('button', { name: 'Ja, ställ in' }).click();
     await expect.poll(() => sent.length).toBe(1);
   });
-  test('the frame’s Fråga assistenten gives the pane to the week: the box has the focus, the question goes with the week’s read, and Esc gives the focus back (D130)', async ({
+  test('the corner’s Fråga AI gives the pane to the week: the box has the focus, the question goes with the week’s read, and Esc gives the focus back (D130, D133)', async ({
     page,
     api,
   }) => {
     await page.setViewportSize(WIDE);
     await open(page, '/calendar');
-    // One button, the same on every page, at the end of the title's line: the old "Fråga om veckan" is gone.
+    // One door, the same on every page, in the corner: no "Fråga om veckan" and no button on the title's line.
     await expect(page.getByRole('button', { name: 'Fråga om veckan' })).toHaveCount(0);
-    const button = page.getByRole('button', { name: 'Fråga assistenten' });
-    await expect(button).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
+    const button = page.getByRole('button', { name: 'Fråga AI', exact: true });
     await button.click();
-    const pane = page.getByRole('complementary', { name: 'Assistenten', exact: true });
+    const pane = page.getByRole('complementary', { name: 'Fråga AI', exact: true });
     await expect(pane.getByText('Om vecka 45', { exact: true })).toBeVisible();
     const box = pane.getByRole('textbox', { name: 'Fråga om veckan' });
     await expect(box).toBeFocused();
     await expect(page).toHaveURL(/\/calendar\?ask=1$/);
-    await expect(button).toHaveAttribute('aria-expanded', 'true');
+    // Not drawn while the pane stands (D133 item 5).
+    await expect(button).toHaveCount(0);
     await expectNoAxeViolations(page);
     await box.fill('Vad händer i veckan?');
     await box.press('Enter');
@@ -647,15 +648,15 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(page).not.toHaveURL(/ask=1/);
     await expect(button).toBeFocused();
   });
-  test('an entry opened takes the place of the assistant’s pane, and the button lets go of the entry (D130 rule 5)', async ({
+  test('an entry opened takes the place of the assistant’s pane with the box at its foot, so the corner is not drawn, and Back gives the pane its place again (D130 rule 5, D133 item 5)', async ({
     page,
     api: _,
   }) => {
     await page.setViewportSize(WIDE);
     await open(page, '/calendar');
-    const button = page.getByRole('button', { name: 'Fråga assistenten' });
+    const button = page.getByRole('button', { name: 'Fråga AI', exact: true });
     await button.click();
-    const pane = page.getByRole('complementary', { name: 'Assistenten', exact: true });
+    const pane = page.getByRole('complementary', { name: 'Fråga AI', exact: true });
     await expect(pane).toBeVisible();
     await page.locator('.clew-cal-event').first().click();
     const entry = page.getByRole('complementary', { name: 'Morgonmöte ledningsgrupp', exact: true });
@@ -663,16 +664,14 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(pane).toHaveCount(0);
     await expect(page).toHaveURL(/entry=/);
     await expect(page).not.toHaveURL(/ask=1/);
-    await expect(button).toHaveAttribute('aria-expanded', 'false');
-    await button.click();
+    // The entry's own pane holds the box, so no "Fråga AI" floats over the page.
+    await expect(button).toHaveCount(0);
+    await expect(entry.getByRole('textbox').last()).toBeVisible();
+    // Back gives the pane its place again.
+    await page.goBack();
     await expect(pane).toBeVisible();
     await expect(entry).toHaveCount(0);
     await expect(page).not.toHaveURL(/entry=/);
-    await expect(pane.getByRole('textbox', { name: 'Fråga om veckan' })).toBeFocused();
-    // Back gives the entry its place again.
-    await page.goBack();
-    await expect(entry).toBeVisible();
-    await expect(pane).toHaveCount(0);
   });
   test('the pane says in plain words what asking here does, and an answer that needs room is one row that leads to the conversation (D130 rules 7 and 10)', async ({
     page,
@@ -680,13 +679,17 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
   }) => {
     await page.setViewportSize(WIDE);
     await open(page, '/calendar');
-    await page.getByRole('button', { name: 'Fråga assistenten' }).click();
-    const pane = page.getByRole('complementary', { name: 'Assistenten', exact: true });
-    // Before anything is asked: what asking here does, and what opening it as a conversation adds.
+    await page.getByRole('button', { name: 'Fråga AI', exact: true }).click();
+    const pane = page.getByRole('complementary', { name: 'Fråga AI', exact: true });
+    // Before anything is asked: what asking here does, the week as what the assistant may read here, and what opening
+    // it as a conversation adds (D133 item 7).
     await expect(
       pane.getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
     ).toBeVisible();
-    await expect(pane.getByText(/^Öppnar du frågan som ett samtal får den hela sidan/)).toBeVisible();
+    await expect(pane.getByRole('list', { name: 'Det här kan jag läsa här' }).getByRole('listitem')).toHaveText([
+      'Vecka 45',
+    ]);
+    await expect(pane.getByText(/^Behöver frågan mer plats\? Öppna som samtal/)).toBeVisible();
     await expect(pane.getByRole('link', { name: 'Öppna som samtal' })).toHaveCount(1);
     const box = pane.getByRole('textbox', { name: 'Fråga om veckan' });
     await box.fill('Sök lärare i telefonboken');
@@ -790,7 +793,11 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     const form = page.getByRole('complementary', { name: 'Flytta Utvecklingssamtal' });
     await expect(form.getByRole('button', { name: 'Spara' })).toBeInViewport({ ratio: 1 });
     await expect(form.getByRole('button', { name: 'Avbryt' })).toBeInViewport({ ratio: 1 });
-    await expect(form.getByText('behåller sin längd')).toBeInViewport({ ratio: 1 });
+    // The fields scroll above the box and the buttons where the window is too low for them all (D133 item 2).
+    const kept = form.getByText('behåller sin längd');
+    await kept.scrollIntoViewIfNeeded();
+    await expect(kept).toBeInViewport({ ratio: 1 });
+    await expect(form.getByRole('button', { name: 'Spara' })).toBeInViewport({ ratio: 1 });
   });
   test('below the beside width the entry is the drawer over the grid, and closing it gives the focus back', async ({
     page,

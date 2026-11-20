@@ -7,6 +7,7 @@ import {
   useRef,
   type ReactNode,
   type Ref,
+  useEffect,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import type { ConversationResponse, Prepared } from '@clew/contracts';
@@ -120,6 +121,10 @@ const OWNS_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
 /** How many frames the press waits for the box to be drawn (its editor may still be loading): about a second. */
 const BOX_WITHIN = 60;
+/** The drawer the pane is below `paneBesideQuery`: Astryx draws it as a dialog. */
+const DRAWER = 'dialog, [role="dialog"]';
+/** How many frames a closed pane waits for its drawer to let the focus out: about a second. */
+const BACK_WITHIN = 60;
 
 export type EntryStyle = NonNullable<ReturnType<typeof useEntryAnimation>> | undefined;
 /** Where a page's way back leads, by the name of the place (D116): "Personal", "Att göra", "Alla verktyg". */
@@ -352,6 +357,7 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
     else returnFocus();
   }, [returnFocus]);
   const wasOpen = useRef(open);
+  const settling = useRef(0);
   const { input } = talk.state;
   // The box takes the focus once it is drawn: the first time a page draws a box its editor may still be loading, so the
   // press waits for it a frame at a time, never longer than `BOX_WITHIN` frames.
@@ -375,8 +381,21 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
       return;
     }
     const active = document.activeElement;
-    if (how === 'close' || !active || active === document.body) giveBack();
+    if (how !== 'close' && active && active !== document.body) return;
+    giveBack();
+    // As a drawer the pane is a modal dialog until it has slid away, and nothing outside it takes the focus before
+    // then: the button is asked again a frame at a time while the focus is nowhere or still in the closing drawer,
+    // never longer than `BACK_WITHIN` frames, and not at all once the focus is somewhere else on the page.
+    let left = BACK_WITHIN;
+    const again = () => {
+      const at = document.activeElement;
+      if (at && at !== document.body && !at.closest(DRAWER)) return;
+      giveBack();
+      if (--left > 0) settling.current = requestAnimationFrame(again);
+    };
+    settling.current = requestAnimationFrame(again);
   }, [open, focus, giveBack]);
+  useEffect(() => () => cancelAnimationFrame(settling.current), []);
   // The drawer keeps its content once it has been opened, so it is never empty while it slides away; before that it
   // holds nothing, and no box waits hidden in it.
   const drawerHeld = useRef(false);

@@ -75,13 +75,17 @@ do the branch's D131 and D132.
   [D132](D132-an-action-says-which-record-it-is-about-and-the-assistant-fills-in-the-actions-of-what-stands-open.md)); Start's answer card,
   drawn with the transcript's own parts (item 9); the footer's door (item 5).
 - **Chosen in the build where nothing was drawn:** below 1180 px of window the pane is a drawer over the page; the
-  pane's width is the person's, 400 px until they drag Astryx's grip (360 px to half the column, at most 720 px);
-  under a picked item in Att göra and a picked entry in Kalender only the box is drawn before anything is asked; a
+  pane's width is the person's, 400 px until they drag Astryx's grip (360 px to half the column, at most 720 px); a
   sent draft says "Skickat" with a link to the work item, and "Väntar på dig" when the item was made and nothing was
   decided in it.
-- **Differs from the boards, and the product owner has not said which stands:** the pane and Start's card draw the
-  transcript's steps ("Läste …"), times and the answering model's name, where the boards draw the text alone; on
-  Start a question is always answered by Clew, never offered to another system's assistant; Start's card stays
+- **Under a picked thing only the box is drawn before anything is asked** (the product owner, 2026-11-20: "only the
+  box under a picked item is fine"): no introduction and no "Öppna som samtal" under an item in Att göra or an entry
+  in Kalender until there is a conversation. The thing's own buttons stand right above, and the introduction is in
+  the pane on the thing's own page.
+- **An answer beside a page says what the transcript says** (the product owner, 2026-11-20: "keep the steps and
+  model line, as the transcript has them"): the pane and Start's card draw the steps ("Läste …"), the time and the
+  answering model's name, where the boards draw the text alone.
+- **Differs from the boards, and the product owner has not said which stands:** on Start a question is always answered by Clew, never offered to another system's assistant; Start's card stays
   through a visit to another page and is gone after a reload; Fokusnyhet stays under the answer, where the board
   replaces it; the reads list names the page's reads as one chip each ("Att göra"), not the sources behind them.
 - **A read and an action need not go together.** A record whose read the assistant may not make can still declare an
@@ -97,4 +101,5 @@ do the branch's D131 and D132.
   beside the frame's `Layout`, composed of Astryx's parts with no style of its own.
 - **Not seen live:** the review's decision footer with its door (the development data holds only a read-only review),
   a filled-in action on Start, and the phone. No manual screen-reader pass is made, and nobody outside the team has
-  used it. The a11y specs were being brought up to date when this was written.
+  used it. The a11y specs that the change touches are brought up to date and pass (twenty spec files, 2026-11-20); the
+  `screens.*` picture specs are not, and the whole suite has not been run.

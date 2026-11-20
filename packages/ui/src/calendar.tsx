@@ -105,6 +105,8 @@ const isList = (view: CalendarView) => view === 'listWeek' || view === 'listDay'
 const shownDays = (view: CalendarView, date: string, weekends = false) =>
   isDay(view) ? [date] : isMonth(view) ? [] : dates(date, weekends ? 7 : 5);
 
+/** The lowest a half-hour row of the page's grid is fitted to: a 24 px meeting block and its 2 px inset. */
+const SLOT_MIN = 26;
 /**
  * The event calendar: FullCalendar 7 Standard under Clew's theme (D27). The toolbar is the host's, so `headerToolbar`
  * stays off; `date` and `view` are controlled through the calendar API. Events render through Astryx Text, the day
@@ -181,7 +183,9 @@ export function EventCalendar({
       scroller = scroller.parentElement;
     if (!scroller || scroller === host.current) return;
     const seen = scroller;
-    const fit = () => setFitted(Math.max(20, Math.floor(seen.clientHeight / pageRows)));
+    // Never lower than a pointer target (2.5.8): a half-hour meeting is drawn 2 px lower than its row, so a row is
+    // at least 26 px, and in a low window the grid scrolls inside itself instead of drawing the meeting under 24 px.
+    const fit = () => setFitted(Math.max(SLOT_MIN, Math.floor(seen.clientHeight / pageRows)));
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(seen);

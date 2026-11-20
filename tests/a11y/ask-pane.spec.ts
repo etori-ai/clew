@@ -1,10 +1,10 @@
 import type { Page } from '@playwright/test';
 import {
-  desktop,
   expect,
   expectNoAxeViolations,
   narrow,
   open,
+  pagesNav,
   phone,
   reflowProblems,
   test,
@@ -18,21 +18,36 @@ import { People } from './person-data';
 import { SICK_UNIT, Units } from './unit-data';
 
 /**
- * The assistant beside every page (D130; canvas boards AskRegister, AskArende-empty and AskArende-more), on the first
- * page that has it, a register: the phone book's directory, a table, as a tool. The frame draws "Fråga assistenten" at the
- * end of the title's line; it opens the assistant's pane beside the page, in the address (`ask=1`), with the focus in its
- * box. The pane says what it is about and what asking here does, sends every question with the list's chip, as what
- * stands open and with the page's subject, and finds the conversation again after a reload. Back, Esc, ✕ and the button
- * close it. "Öppna som samtal" leads to the conversation's page, which marks it opened, and only then does the rail list
- * it. Below 1340 px the pane is a drawer, and on a phone the button leads to a conversation.
+ * The assistant beside every page (D130 on the branch, D133; canvas boards AttGora-tom and Arende-tom), on the first
+ * page that has it, a register: the phone book's directory, a table, as a tool. The corner's floating "Fråga AI" is the
+ * door (D133 items 1, 3 and 5): it opens the assistant's pane, a card at the end of the shell's column, in the address
+ * (`ask=1`), with the focus in its box, and is not drawn while the pane stands. The pane says what it is about and what
+ * the assistant can do here (item 7), sends every question with the list's chip, as what stands open and with the
+ * page's subject, and finds the conversation again after a reload. Back, Esc and ✕ close it. "Öppna som samtal" leads
+ * to the conversation's page, which marks it opened. Below 1180 px the pane is a drawer, and on a phone the corner
+ * leads to a conversation (item 11).
  */
 const directory = '/tools/phonebook.directory';
 const WIDE = { width: 1440, height: 900 };
+/** The narrowest window the pane stands beside the page in (`paneBesideQuery`); below it the pane is a drawer. */
+const BESIDE = 1180;
 /** The conversation the mock makes for the first question beside the directory: one per thing asked in place. */
 const ASKED = 'om-capability-phonebook-directory';
-const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
-const button = (page: Page) => page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' });
-const pane = (page: Page) => page.getByRole('complementary', { name: 'Assistenten' });
+/**
+ * The door to the pane: the corner's floating "Fråga AI", or the same button at the start of a footer the page pins
+ * (the review's decision), where the corner gives way.
+ */
+const door = (page: Page) => page.getByRole('button', { name: 'Fråga AI', exact: true });
+/** A way to ask drawn by the page itself: none stands after D133 (item 1). */
+const ownButton = (page: Page) => page.getByRole('button', { name: /^Fråga (assistenten|Clew)/ });
+const pane = (page: Page) => page.getByRole('complementary', { name: 'Fråga AI', exact: true });
+/** The pane's three lists of what the assistant can do here before anything is asked (D133 item 7). */
+const READS = 'Det här kan jag läsa här';
+const FILLS = 'Det här kan jag fylla i åt dig';
+const CANNOT = 'Det här kan jag inte läsa';
+/** Astryx's grip between the page and the pane. */
+const GRIP = 'Ändra bredden på Fråga AI';
+const listed = (page: Page, list: string) => pane(page).getByRole('list', { name: list, exact: true });
 const box = (page: Page) => page.getByRole('textbox', { name: 'Fråga om telefonbok' });
 const ask = async (page: Page, question: string) => {
   await box(page).fill(question);
@@ -45,36 +60,42 @@ test.describe('the assistant’s pane beside a register', () => {
     api.menu = menuRows;
   });
 
-  test('Fråga assistenten ends the title’s line and opens the pane beside the list, with the focus in its box, ask in the address and what asking here does in words', async ({
+  test('the corner’s Fråga AI opens the pane beside the list, with the focus in its box, ask in the address and what the assistant can do here in words; no button stands on the title’s line', async ({
     page,
   }) => {
     await open(page, directory);
     const title = page.getByRole('heading', { level: 1, name: 'Telefonbok' });
-    const ownBadge = page.getByRole('main').getByText('Telefonboken', { exact: true }).first();
-    const toggle = button(page);
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    // At the end of the title's line: on the title's line, after the system's badge.
-    const [t, b, s] = await Promise.all([title.boundingBox(), toggle.boundingBox(), ownBadge.boundingBox()]);
-    expect(b!.y).toBeLessThan(t!.y + t!.height);
-    expect(b!.y + b!.height).toBeGreaterThan(t!.y);
-    expect(b!.x).toBeGreaterThan(s!.x + s!.width);
+    // The door is the corner's (D133 item 1): the page draws no way to ask of its own.
+    await expect(door(page)).toHaveCount(1);
+    await expect(door(page)).toBeInViewport({ ratio: 1 });
+    await expect(ownButton(page)).toHaveCount(0);
     await expect(page.getByRole('table')).toHaveCount(1);
-    await toggle.click();
+    await door(page).click();
     await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?ask=1$/);
     await expect(pane(page)).toBeVisible();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    // The corner is not drawn while the pane stands (item 5).
+    await expect(door(page)).toHaveCount(0);
     await expect(box(page)).toBeFocused();
-    // Its heading and what it is about; "Öppna som samtal" and ✕ at the end of its line.
-    await expect(pane(page).getByRole('heading', { level: 2, name: 'Assistenten' })).toBeVisible();
+    // Its heading and what it is about; "Öppna som samtal" and ✕ at the end of its line (item 6).
+    await expect(pane(page).getByRole('heading', { level: 2, name: 'Fråga AI', exact: true })).toBeVisible();
     await expect(pane(page).getByText('Om Telefonbok', { exact: true })).toBeVisible();
     await expect(pane(page).getByRole('link', { name: 'Öppna som samtal' })).toHaveCount(1);
     await expect(pane(page).getByRole('button', { name: 'Stäng' })).toBeVisible();
-    // Before anything is asked: what asking here does and what opening it as a conversation adds (rule 10).
-    await expect(pane(page).getByText('Fråga om telefonbok', { exact: true }).first()).toBeVisible();
+    // Before anything is asked: what asking here does, what the assistant may read here, and last what opening it as a
+    // conversation adds (item 7). Nothing stands open to fill in and nothing is closed, so those lists are not drawn.
+    await expect(pane(page).getByRole('heading', { level: 3, name: 'Fråga om telefonbok', exact: true })).toBeVisible();
     await expect(
       pane(page).getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
     ).toBeVisible();
-    await expect(pane(page).getByText(/^Öppnar du frågan som ett samtal får den hela sidan/)).toBeVisible();
+    await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Telefonbok']);
+    await expect(listed(page, FILLS)).toHaveCount(0);
+    await expect(listed(page, CANNOT)).toHaveCount(0);
+    await expect(
+      pane(page).getByText(
+        'Behöver frågan mer plats? Öppna som samtal: där får den hela sidan, med tabeller och dokument, och finns sedan under Samtal.',
+        { exact: true },
+      ),
+    ).toBeVisible();
     // The page stays, and draws its narrow layout while the pane takes its room: the table is its list (rule 11).
     await expect(title).toBeVisible();
     await expect(page.getByRole('table')).toHaveCount(0);
@@ -88,7 +109,7 @@ test.describe('the assistant’s pane beside a register', () => {
     api,
   }) => {
     await open(page, directory);
-    await button(page).click();
+    await door(page).click();
     await ask(page, 'Vad väntar de på från mig?');
     await expect(pane(page).getByText('Tio personer är på plats i dag.')).toBeVisible();
     await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?ask=1$/);
@@ -118,10 +139,15 @@ test.describe('the assistant’s pane beside a register', () => {
     page,
   }) => {
     await open(page, directory);
-    await button(page).click();
+    await door(page).click();
     // Astryx's resize handle between the page and the pane: a separator that says the width and takes the keyboard.
-    const grip = page.getByRole('separator', { name: 'Ändra assistentens bredd' });
+    const grip = page.getByRole('separator', { name: GRIP });
     await expect(grip).toHaveAttribute('aria-valuenow', '400');
+    // Its limits: never under 360 px, and at most half of the shell's column, so the page keeps the larger part.
+    await expect(grip).toHaveAttribute('aria-valuemin', '360');
+    const most = Number(await grip.getAttribute('aria-valuemax'));
+    expect(most).toBeGreaterThan(400);
+    expect(most).toBeLessThanOrEqual(640);
     await grip.focus();
     await page.keyboard.press('ArrowLeft');
     await expect(grip).not.toHaveAttribute('aria-valuenow', '400');
@@ -134,23 +160,17 @@ test.describe('the assistant’s pane beside a register', () => {
     );
     await expectNoAxeViolations(page);
     await page.reload();
-    await expect(page.getByRole('separator', { name: 'Ändra assistentens bredd' })).toHaveAttribute(
-      'aria-valuenow',
-      String(wider),
-    );
+    await expect(page.getByRole('separator', { name: GRIP })).toHaveAttribute('aria-valuenow', String(wider));
     // One width for every page: Nyheter's pane opens as wide.
     await open(page, '/tools/clew.news?ask=1');
-    await expect(page.getByRole('separator', { name: 'Ändra assistentens bredd' })).toHaveAttribute(
-      'aria-valuenow',
-      String(wider),
-    );
+    await expect(page.getByRole('separator', { name: GRIP })).toHaveAttribute('aria-valuenow', String(wider));
   });
 
-  test('Back closes the pane and Forward opens it again without moving the focus; Esc, ✕ and the button again close it and give the focus back to the button', async ({
+  test('Back closes the pane and Forward opens it again without moving the focus; Esc and ✕ close it and give the focus back to the corner’s button, which opens it again by keyboard', async ({
     page,
   }) => {
     await open(page, directory);
-    const toggle = button(page);
+    const toggle = door(page);
     await toggle.click();
     await expect(pane(page)).toBeVisible();
     await page.goBack();
@@ -165,52 +185,45 @@ test.describe('the assistant’s pane beside a register', () => {
     await expect(pane(page)).toHaveCount(0);
     await expect(page).not.toHaveURL(/ask=1/);
     await expect(toggle).toBeFocused();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    // ✕.
-    await toggle.click();
+    // ✕, with the pane opened by keyboard from the button that has the focus again.
+    await page.keyboard.press('Enter');
+    await expect(pane(page)).toBeVisible();
     await expect(box(page)).toBeFocused();
     await pane(page).getByRole('button', { name: 'Stäng' }).click();
     await expect(pane(page)).toHaveCount(0);
     await expect(toggle).toBeFocused();
-    // The button again.
-    await page.keyboard.press('Enter');
-    await expect(pane(page)).toBeVisible();
-    await expect(box(page)).toBeFocused();
-    await toggle.click();
-    await expect(pane(page)).toHaveCount(0);
-    await expect(toggle).toBeFocused();
   });
 
-  test('Öppna som samtal leads to the conversation’s page, which marks it opened, and only then is it among the rail’s latest', async ({
+  test('Öppna som samtal leads to the conversation’s page, which marks it opened and stands under Samtal in the row of pages; Back finds the pane again', async ({
     page,
     api,
   }) => {
     await open(page, directory);
-    await button(page).click();
+    await door(page).click();
     await ask(page, 'Vad väntar de på från mig?');
     await expect(pane(page).getByText('Tio personer är på plats i dag.')).toBeVisible();
-    // The rail's latest, by the conversation's address: the mock gives its conversations one title.
-    const inRail = rail(page)
-      .getByRole('group', { name: 'Fråga assistenten' })
-      .locator(`a[href="/conversations/${ASKED}"]`);
-    await expect(inRail).toHaveCount(0);
     expect(api.opened).toEqual([]);
     await pane(page).getByRole('link', { name: 'Öppna som samtal' }).click();
     await expect(page).toHaveURL(new RegExp(`/conversations/${ASKED}$`));
     await expect(page.getByRole('main').getByText('Vad väntar de på från mig?', { exact: true }).first()).toBeVisible();
     await expect.poll(() => api.opened).toEqual([ASKED]);
-    await expect(inRail).toHaveAttribute('aria-current', 'page');
-    // Back on the list the conversation stays in the rail.
+    // A conversation is found under Samtal (D133 item 10): the shell lists no latest conversations.
+    await expect(pagesNav(page).getByRole('link', { name: 'Samtal', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(pagesNav(page).locator(`a[href="/conversations/${ASKED}"]`)).toHaveCount(0);
+    // Back on the list the pane stands again with the conversation in it.
     await page.goBack();
     await expect(pane(page)).toBeVisible();
-    await expect(inRail).toBeVisible();
+    await expect(pane(page).getByText('Tio personer är på plats i dag.')).toBeVisible();
   });
 
   test('an answer that needs room is one row in the pane, "Visa i samtalet", that leads to the conversation (rule 7)', async ({
     page,
   }) => {
     await open(page, directory);
-    await button(page).click();
+    await door(page).click();
     await ask(page, 'Sök lärare i telefonboken');
     await expect(pane(page).getByText('Sök i telefonboken: 2 rader.')).toBeVisible();
     const row = pane(page).getByRole('link', { name: 'Visa i samtalet' });
@@ -227,63 +240,100 @@ test.describe('the assistant’s pane on smaller screens', () => {
     api.menu = menuRows;
   });
 
-  test('below 1340 px the pane is a drawer over the page; Esc closes it and the focus goes back to the button', async ({
+  test('below 1180 px the pane is a drawer over the page, with the focus in its box, and Esc closes it', async ({
     page,
   }) => {
-    await page.setViewportSize(desktop);
+    await page.setViewportSize({ width: BESIDE - 1, height: 800 });
     await open(page, directory);
-    await button(page).click();
-    const drawer = page.getByRole('dialog', { name: 'Assistenten' });
+    await door(page).click();
+    const drawer = page.getByRole('dialog', { name: 'Fråga AI', exact: true });
     await expect(drawer).toBeVisible();
     await expect(page).toHaveURL(/ask=1/);
     await expect(pane(page)).toHaveCount(0);
-    await expect(drawer.getByRole('heading', { level: 2, name: 'Assistenten' })).toBeVisible();
+    await expect(drawer.getByRole('heading', { level: 2, name: 'Fråga AI', exact: true })).toBeVisible();
     await expect(drawer.getByText('Om Telefonbok', { exact: true })).toBeVisible();
     await expect(drawer.getByRole('textbox', { name: 'Fråga om telefonbok' })).toBeFocused();
+    await expect(drawer.getByRole('list', { name: READS, exact: true }).getByRole('listitem')).toHaveText([
+      'Telefonbok',
+    ]);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(drawer).toBeHidden();
     await expect(page).not.toHaveURL(/ask=1/);
-    await expect(button(page)).toBeFocused();
+    await expect(door(page)).toHaveCount(1);
   });
 
-  test('on a phone the button leads to a conversation about the list, and there is no pane', async ({ page }) => {
+  test('below 1180 px, closing the drawer gives the focus back to the corner’s button', async ({ page }) => {
+    await page.setViewportSize({ width: BESIDE - 1, height: 800 });
+    await open(page, directory);
+    await door(page).click();
+    const drawer = page.getByRole('dialog', { name: 'Fråga AI', exact: true });
+    await expect(drawer.getByRole('textbox', { name: 'Fråga om telefonbok' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    await expect(door(page)).toBeFocused();
+  });
+
+  test('at 1180 px the pane stands beside the page, not over it, and the page does not scroll sideways', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: BESIDE, height: 800 });
+    await open(page, directory);
+    await door(page).click();
+    await expect(pane(page)).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(
+      0,
+    );
+  });
+
+  test('on a phone the corner’s button leads to a conversation about the list, and there is no pane', async ({
+    page,
+  }) => {
     await page.setViewportSize(phone);
     await open(page, directory);
-    const toggle = button(page);
-    await expect(toggle).toBeVisible();
-    await expect(toggle).not.toHaveAttribute('aria-expanded');
-    await toggle.click();
+    await expect(door(page)).toBeVisible();
+    await expect(ownButton(page)).toHaveCount(0);
+    await door(page).click();
     await expect(page).toHaveURL(/\/conversations\/new$/);
-    await expect(page.getByRole('complementary', { name: 'Assistenten' })).toHaveCount(0);
-    await expect(page.getByRole('dialog', { name: 'Assistenten' })).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Fråga AI', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Fråga AI', exact: true })).toHaveCount(0);
   });
 
-  test('at 320 px the register with its button reflows with nothing cut', async ({ page }) => {
+  test('at 320 px the register with the corner’s button reflows with nothing cut', async ({ page }) => {
     await page.setViewportSize(narrow);
     await open(page, directory);
-    await expect(button(page)).toBeVisible();
+    await expect(door(page)).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
   });
 
-  test('without a model there is no button, and an address with the pane opens nothing', async ({ page, api }) => {
+  test('without a model an address with the pane opens nothing, and the corner starts a new question instead', async ({
+    page,
+    api,
+  }) => {
     api.modelChoices = 0;
     await page.setViewportSize(WIDE);
     await open(page, `${directory}?ask=1`);
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     await expect(pane(page)).toHaveCount(0);
     await expect(page.getByRole('table')).toHaveCount(1);
+    // No pane to open: the corner is the link to a new question, as on a page with no subject.
+    await expect(door(page)).toHaveCount(0);
+    await expect(ownButton(page)).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveAttribute(
+      'href',
+      '/conversations/new',
+    );
   });
 });
 
 /**
- * Stage 2 (D130 rules 1, 4 and 11): the registers, Läget and Att göra's queue say what they show, and the frame draws
- * "Fråga assistenten" and the pane. On every one the button ends the title's line, the pane opens beside the page with
+ * Stage 2 (D130 rules 1, 4 and 11 on the branch, D133): the registers, Läget and Att göra's queue say what they show,
+ * and the frame provides the pane that the corner's "Fråga AI" opens. On every one the pane opens beside the page with
  * what it is about in words and its box, the page stays and never scrolls sideways while its column is 400 px narrower
  * (a table scrolls inside itself or becomes its list), and nothing breaks axe. Where the assistant cannot read what a
- * page shows, the pane says so under its heading before anything is asked; where it can, the question goes with the
- * read's chip, as what stands open and with the page's subject.
+ * page shows, the pane lists it by name before anything is asked ("Det här kan jag inte läsa", D133 item 7); where it
+ * can, the question goes with the read's chip, as what stands open and with the page's subject.
  */
 const sideways = (page: Page) =>
   page.evaluate(() => {
@@ -293,9 +343,6 @@ const sideways = (page: Page) =>
       main ? main.scrollWidth - main.clientWidth : 0,
     );
   });
-/** The frame's button: the pane's toggle, the one "Fråga assistenten" that says whether it is open. */
-const frameButton = (page: Page) =>
-  page.getByRole('main').locator('button[aria-expanded]').filter({ hasText: 'Fråga assistenten' });
 const offer = (api: MockApi, capability: string, title: string) => {
   api.views = [...api.views.filter(v => v.capability !== capability), { capability, title, assistant: true }];
 };
@@ -316,8 +363,8 @@ const REGISTERS: Array<{
   path: string;
   about: string;
   box: string;
-  /** What the pane says it cannot read, or null where it can read all the page shows; unchecked when absent. */
-  closed?: string | null;
+  /** What the pane lists as what it cannot read, or null where it can read all the page shows; unchecked when absent. */
+  cannot?: string[] | null;
   setup?: (api: MockApi, page: Page) => void | Promise<void>;
 }> = [
   {
@@ -325,7 +372,7 @@ const REGISTERS: Array<{
     path: '/tools/clew.news',
     about: 'Om Nyheter',
     box: 'Fråga om nyheter',
-    closed: null,
+    cannot: null,
     setup: api => {
       api.news = newsOutput();
     },
@@ -353,7 +400,7 @@ const REGISTERS: Array<{
     about: 'Om Medarbetarnas kompetens',
     box: 'Fråga om medarbetarnas kompetens',
     // What is required and what is held are offered; the units' coverage is not among the person's reads.
-    closed: 'Assistenten kan inte läsa kompetenstäckning här.',
+    cannot: ['Kompetenstäckning'],
     setup: api => {
       api.competenceTypes = competenceTypes();
       api.competenceMatrix = largeMatrix();
@@ -383,36 +430,35 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
   test.use({ viewport: WIDE });
 
   for (const r of REGISTERS)
-    test(`${r.name}: the frame’s button opens the pane beside the page, which says what it is about, and the page never scrolls sideways`, async ({
+    test(`${r.name}: the corner’s button opens the pane beside the page, which says what it is about, and the page never scrolls sideways`, async ({
       page,
       api,
     }) => {
       await r.setup?.(api, page);
       await open(page, r.path);
-      const toggle = frameButton(page);
-      await expect(toggle).toHaveCount(1);
-      await expect(toggle).toHaveAccessibleName('Fråga assistenten');
-      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      // One way to ask on the page: the frame's (a page that draws its own is a defect against D130).
-      await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(1);
-      await toggle.click();
+      // One way to ask on the page: the corner's (a page that draws its own is a defect against D133).
+      await expect(door(page)).toHaveCount(1);
+      await expect(ownButton(page)).toHaveCount(0);
+      await door(page).click();
       await expect(page).toHaveURL(/[?&]ask=1(&|$)/);
       await expect(pane(page)).toBeVisible();
-      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(door(page)).toHaveCount(0);
       await expect(pane(page).getByText(r.about, { exact: true })).toBeVisible();
-      if (r.closed === null) await expect(pane(page).getByText(/^Assistenten (kan inte|läser aldrig)/)).toHaveCount(0);
-      else if (r.closed) await expect(pane(page).getByText(r.closed, { exact: true })).toBeVisible();
+      if (r.cannot === null) {
+        await expect(listed(page, CANNOT)).toHaveCount(0);
+        await expect(pane(page).getByText(/^Assistenten (kan inte|läser aldrig)/)).toHaveCount(0);
+      } else if (r.cannot) await expect(listed(page, CANNOT).getByRole('listitem')).toHaveText(r.cannot);
       await expect(pane(page).getByRole('textbox', { name: r.box })).toBeFocused();
       await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
       expect(await sideways(page)).toBe(0);
       await expectNoAxeViolations(page);
     });
 
-  test('at 1340 px, the narrowest window the pane stands beside, no register scrolls the page sideways', async ({
+  test('at 1180 px, the narrowest window the pane stands beside, no register scrolls the page sideways', async ({
     page,
     api,
   }) => {
-    await page.setViewportSize({ width: 1340, height: 900 });
+    await page.setViewportSize({ width: BESIDE, height: 900 });
     for (const r of REGISTERS) {
       await r.setup?.(api, page);
       await open(page, `${r.path}${r.path.includes('?') ? '&' : '?'}ask=1`);
@@ -452,7 +498,7 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
   }) => {
     registrar(api);
     await open(page, '/competence/search');
-    await frameButton(page).click();
+    await door(page).click();
     await expect(
       pane(page).getByText(
         'Assistenten läser aldrig din sökning eller det den hittar: sökningen görs bara av dig, här på sidan. Du kan ändå fråga om annat som du har tillgång till.',
@@ -480,14 +526,11 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
       view.capability.startsWith(system) || !assistant ? view : { ...view, assistant },
     );
     await open(page, `/staff?show=${PRESENCE_LENS}`);
-    await frameButton(page).click();
+    await door(page).click();
     await expect(pane(page).getByText('Om Frånvaro', { exact: true })).toBeVisible();
-    await expect(
-      pane(page).getByText(
-        'Assistenten kan inte läsa det som Personalsystemet visar här. Du kan ändå fråga om annat som du har tillgång till.',
-        { exact: true },
-      ),
-    ).toBeVisible();
+    await expect(listed(page, CANNOT).getByRole('listitem')).toHaveText(['Personalsystemet']);
+    // The list says it: no sentence under the heading repeats it.
+    await expect(pane(page).getByText(/^Assistenten kan inte läsa/)).toHaveCount(0);
     await expect(pane(page).getByRole('link', { name: 'Öppna som samtal' })).toHaveAttribute(
       'href',
       `/conversations/new?lens=${encodeURIComponent(PRESENCE_LENS)}`,
@@ -507,8 +550,10 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     };
     offer(api, 'talks.talks', 'Utvecklingssamtal');
     await open(page, `/staff?show=${TALK_LENS}`);
-    await frameButton(page).click();
+    await door(page).click();
     await expect(pane(page).getByText(/^Assistenten kan inte läsa/)).toHaveCount(0);
+    await expect(listed(page, CANNOT)).toHaveCount(0);
+    await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Utvecklingssamtal']);
     const field = pane(page).getByRole('textbox', { name: 'Fråga om utvecklingssamtal' });
     await field.fill('Vem har inte bokat?');
     await field.press('Enter');
@@ -525,10 +570,9 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     });
     offer(api, 'qlik.units', 'Sjukfrånvaro per enhet');
     await open(page, '/units');
-    await frameButton(page).click();
-    await expect(
-      pane(page).getByText('Assistenten kan inte läsa utvecklingssamtal här.', { exact: true }),
-    ).toBeVisible();
+    await door(page).click();
+    await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Sjukfrånvaro']);
+    await expect(listed(page, CANNOT).getByRole('listitem')).toHaveText(['Utvecklingssamtal']);
     const field = pane(page).getByRole('textbox', { name: 'Fråga om läget' });
     await field.fill('Var är sjukfrånvaron högst?');
     await field.press('Enter');
@@ -541,19 +585,19 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await expectNoAxeViolations(page);
   });
 
-  test('Att göra: the frame’s button with no item; an item opened takes the end slot and the address lets go of the pane, and closing it leaves the queue as it was', async ({
+  test('Att göra: the corner’s button with no item; beside the pane a row leads to the item’s page, and with the pane closed an item opened takes the end slot, where no corner is drawn, and closing it leaves the queue as it was', async ({
     page,
     api,
   }) => {
     offer(api, 'clew.work', 'Att göra');
     await open(page, '/todo');
-    const toggle = frameButton(page);
-    await toggle.click();
+    await door(page).click();
     await expect(page).toHaveURL(/\/todo\?ask=1$/);
     await expect(pane(page).getByText('Om Att göra · Behöver dig', { exact: true })).toBeVisible();
-    // The queue holds beside the pane: its rows are links, its columns all there.
+    // The queue holds beside the pane in the width that is left, as in a narrower window (D133 item 4): its rows are
+    // links, and the table drops the column it already drops there.
     const table = page.getByRole('table', { name: 'Behöver dig' });
-    await expect(table.getByRole('columnheader')).toHaveText(['Ärende', 'Från', 'Status']);
+    await expect(table.getByRole('columnheader')).toHaveText(['Ärende', 'Status']);
     expect(await sideways(page)).toBe(0);
     const field = pane(page).getByRole('textbox', { name: 'Fråga om ärendena' });
     await field.fill('Vad är mest bråttom?');
@@ -564,26 +608,39 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
       beside: 'capability:clew.work',
       page: { subject: 'todo:needs-you', label: 'Om Att göra · Behöver dig' },
     });
+    // Beside the pane the queue is laid out as in a narrower window (D133 item 4): the reading pane has no room, so a
+    // row leads to the item's page, with the queue and its pane as the way back.
+    const first = table.getByRole('row').nth(1).getByRole('link').first();
+    await first.click();
+    await expect(page).toHaveURL(/\/items\/[^/?]+\?from=/);
+    await expect(page.getByRole('main').getByRole('link', { name: 'Att göra', exact: true })).toHaveAttribute(
+      'href',
+      '/todo?ask=1',
+    );
+    await page.goBack();
+    await expect(pane(page)).toBeVisible();
+    await pane(page).getByRole('button', { name: 'Stäng' }).click();
+    await expect(pane(page)).toHaveCount(0);
     // An item opened: the reading pane has the end slot, the address names the item and not the pane, and no button
     // asks the assistant: the box stands under the item (rule 5).
-    const first = table.getByRole('row').nth(1).getByRole('link').first();
     await first.click();
     const reading = page.getByRole('complementary', { name: 'Valt ärende' });
     await expect(reading).toBeVisible();
     await expect(page).toHaveURL(/\/todo\?item=[^&]+$/);
     await expect(pane(page)).toHaveCount(0);
-    await expect(frameButton(page)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
+    // With an item picked the corner is not drawn (D133 item 5): the box is on the page already.
+    await expect(door(page)).toHaveCount(0);
+    await expect(ownButton(page)).toHaveCount(0);
     await expect(reading.getByRole('textbox', { name: 'Fråga om ärendet' })).toBeVisible();
     await expectNoAxeViolations(page);
-    // Closed, the queue is as it was before the pane was opened, with the frame's button back.
+    // Closed, the queue is as it was before the pane was opened, with the corner's button back.
     await reading
       .getByRole('button', { name: /^Stäng/ })
       .first()
       .click();
     await expect(page).toHaveURL(/\/todo$/);
     await expect(pane(page)).toHaveCount(0);
-    await expect(frameButton(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(door(page)).toHaveCount(1);
   });
 
   test('Att göra, an item in the reading pane (rule 5): its name has the focus, the box stands at the pane’s foot under the read, a question goes with the item as what stands open and is answered there, and a reload finds the conversation again', async ({
@@ -608,10 +665,14 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     expect(fieldBox.y).toBeGreaterThan(readBox.y + readBox.height);
     // Under the field stand only the box's own row with Skicka and the pane's inset.
     expect(paneBox.y + paneBox.height - (fieldBox.y + fieldBox.height)).toBeLessThan(120);
-    // Before anything is asked the part says what asking here does (rule 10).
+    // Before anything is asked only the box stands under the item: no introduction, no lists, no way to the
+    // conversation's page and no grip (D133 item 2 as built).
     await expect(
       reading.getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
-    ).toBeVisible();
+    ).toHaveCount(0);
+    await expect(reading.getByRole('list', { name: READS, exact: true })).toHaveCount(0);
+    await expect(reading.getByRole('link', { name: 'Öppna som samtal' })).toHaveCount(0);
+    await expect(reading.getByRole('separator', { name: 'Ändra samtalets höjd' })).toHaveCount(0);
     await expectNoAxeViolations(page);
     await field.fill('Vad händer om jag godkänner?');
     await field.press('Enter');
@@ -635,7 +696,7 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     );
   });
 
-  test('Att göra, an item in the reading pane: the height of the conversation is the person’s own, by Astryx’s grip and the arrow keys, and is kept over a reload', async ({
+  test('Att göra, an item in the reading pane: once something is asked the height of the conversation is the person’s own, by Astryx’s grip and the arrow keys, and is kept over a reload', async ({
     page,
     api: _,
   }) => {
@@ -643,19 +704,36 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await page.getByRole('table', { name: 'Behöver dig' }).getByRole('row').nth(1).getByRole('link').first().click();
     const reading = page.getByRole('complementary', { name: 'Valt ärende' });
     const grip = reading.getByRole('separator', { name: 'Ändra samtalets höjd' });
-    await expect(grip).toHaveAttribute('aria-valuenow', '260');
+    // The grip comes with the conversation: before anything is asked the part is as low as its box.
+    await expect(grip).toHaveCount(0);
+    const field = reading.getByRole('textbox', { name: 'Fråga om ärendet' });
+    await field.fill('Vad händer om jag godkänner?');
+    await field.press('Enter');
+    await expect(reading.getByText('Vad händer om jag godkänner?', { exact: true })).toBeVisible();
+    // It starts at 260 px, or at the most the conversation may take where the pane is lower than that allows: never
+    // more than its share of the pane, so the read keeps the larger part.
+    await expect(grip).toHaveAttribute('aria-valuenow', /^\d+$/);
+    const start = Number(await grip.getAttribute('aria-valuenow'));
+    const most = Number(await grip.getAttribute('aria-valuemax'));
+    expect(most).toBeLessThan((await reading.boundingBox())!.height / 2);
+    expect(start).toBe(Math.min(260, most));
     const read = reading.locator('[aria-label="Ärendet"]');
     const before = (await read.boundingBox())!.height;
+    // The arrow keys move it: up for a higher conversation, or down where it already stands at its most.
+    const up = start < most;
     await grip.focus();
-    await page.keyboard.press('ArrowUp');
-    await expect(grip).not.toHaveAttribute('aria-valuenow', '260');
+    await page.keyboard.press(up ? 'ArrowUp' : 'ArrowDown');
+    await expect(grip).not.toHaveAttribute('aria-valuenow', String(start));
     const higher = Number(await grip.getAttribute('aria-valuenow'));
-    expect(higher).toBeGreaterThan(260);
-    // The read gives the room, and never all of it: the conversation takes at most its share of the pane.
     const after = (await read.boundingBox())!.height;
-    expect(after).toBeLessThan(before);
+    if (up) {
+      expect(higher).toBeGreaterThan(start);
+      expect(after).toBeLessThan(before);
+    } else {
+      expect(higher).toBeLessThan(start);
+      expect(after).toBeGreaterThan(before);
+    }
     expect(after).toBeGreaterThan(40);
-    expect(Number(await grip.getAttribute('aria-valuemax'))).toBeLessThan((await reading.boundingBox())!.height / 2);
     await expectNoAxeViolations(page);
     await page.reload();
     await expect(reading.getByRole('separator', { name: 'Ändra samtalets höjd' })).toHaveAttribute(
@@ -675,7 +753,7 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await expect(reading.getByRole('heading', { level: 2 }).first()).toBeFocused();
     await expect(reading.getByRole('textbox')).toHaveCount(0);
     await expect(reading.getByRole('separator', { name: 'Ändra samtalets höjd' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
+    await expect(ownButton(page)).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
 
@@ -687,17 +765,18 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await expect(page.getByRole('complementary', { name: 'Valt ärende' })).toBeVisible();
     await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
     await expect(pane(page)).toHaveCount(0);
-    await expect(frameButton(page)).toHaveCount(0);
+    await expect(door(page)).toHaveCount(0);
   });
 });
 
 /**
- * Stage 3 (D131): a thing's page asks through the frame too. A work item, its review, a record, a person, a unit and a
- * plan each say what stands open; the frame's button is the only "Fråga assistenten" on the page (the thing's own among
- * its actions is gone, item 9); the pane opens about the thing in its words, with the facts above the read (the review's
- * "Hittills" after its step, as where the window is narrow), and the page never scrolls sideways. A question carries the
- * thing that stands open (`thing`: a person or a unit by Clew's id, a record by its read and input), and for a work item
- * its chip as what stands open, with no `thing`.
+ * Stage 3 (D131, D133): a thing's page asks through the frame too. A work item, its review, a record, a person, a unit
+ * and a plan each say what stands open; the door is the corner's "Fråga AI", and on the review, which pins its decision
+ * at the window's foot, the same button at the start of that footer; no thing has a "Fråga assistenten" among its
+ * actions (D131 item 9, D133 item 1); the pane opens about the thing in its words, with the facts above the read (the
+ * review's "Hittills" after its step, as where the window is narrow), and the page never scrolls sideways. A question
+ * carries the thing that stands open (`thing`: a person or a unit by Clew's id, a record by its read and input), and for
+ * a work item its chip as what stands open, with no `thing`.
  */
 const record = (ref: string) =>
   `/tools/phonebook.person?input=${encodeURIComponent(JSON.stringify({ ref }))}&title=Kontaktkort`;
@@ -711,6 +790,8 @@ const reviewed = (api: MockApi) => {
     a.id === 'approve' ? { ...a, review: 'each' as const, preview: 'finance.preview' } : a,
   );
 };
+/** The review's pinned footer, by its name. */
+const decision = (page: Page) => page.getByRole('main').locator('[aria-label="Granskningens beslut"]');
 const THINGS: Array<{
   name: string;
   path: string;
@@ -783,20 +864,19 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
   test.use({ viewport: WIDE });
 
   for (const t of THINGS)
-    test(`${t.name}: the frame’s button is the only one on the page, the pane says what stands open, the facts stand above the read, and nothing scrolls sideways`, async ({
+    test(`${t.name}: one Fråga AI is the only way to ask on the page, the pane says what stands open, the facts stand above the read, and nothing scrolls sideways`, async ({
       page,
       api,
     }) => {
       await t.setup?.(api, page);
       await open(page, t.path);
-      const toggle = frameButton(page);
-      await expect(toggle).toHaveCount(1);
-      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      // The thing's own "Fråga assistenten" among its actions is gone (D131 item 9).
-      await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(1);
-      await toggle.click();
+      // One door, the corner's or the footer's, and no "Fråga assistenten" among the thing's actions (D131 item 9).
+      await expect(door(page)).toHaveCount(1);
+      await expect(ownButton(page)).toHaveCount(0);
+      await door(page).click();
       await expect(page).toHaveURL(/[?&]ask=1(&|$)/);
       await expect(pane(page)).toBeVisible();
+      await expect(door(page)).toHaveCount(0);
       await expect(pane(page).getByText(t.about, { exact: true })).toBeVisible();
       await expect(pane(page).getByRole('textbox', { name: t.box })).toBeFocused();
       // The pane has the end slot: no other panel stands beside the column, and the facts stand in it, above the read.
@@ -809,8 +889,8 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
       await expectNoAxeViolations(page);
     });
 
-  test('at 1366 px, beside the page, and at 1728 px no thing’s page scrolls sideways', async ({ page, api }) => {
-    for (const width of [1366, 1728]) {
+  for (const width of [BESIDE, 1366, 1728])
+    test(`at ${width} px, with the pane beside the page, no thing’s page scrolls sideways`, async ({ page, api }) => {
       await page.setViewportSize({ width, height: 900 });
       for (const t of THINGS) {
         await t.setup?.(api, page);
@@ -818,7 +898,45 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
         await expect(pane(page).getByText(t.about, { exact: true })).toBeVisible();
         expect(await sideways(page), `${t.name} at ${width}`).toBe(0);
       }
-    }
+    });
+
+  test('a work item: the pane lists what it may read, what the server says it may fill in with who sends it, and nothing else; the lists give way to the conversation', async ({
+    page,
+    api,
+  }) => {
+    api.reach = { prepares: [{ title: 'Bevilja ledigheten' }, { title: 'Avslå ledigheten' }] };
+    await open(page, '/items/ledighet');
+    await door(page).click();
+    await expect(pane(page).getByRole('heading', { level: 3, name: 'Fråga om ärendet', exact: true })).toBeVisible();
+    // What it may read here is the item that stands open, by its name.
+    await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Ledighetsansökan från Johan Byström']);
+    // What it may fill in is what the server answered for what stands open (D133 item 7): asked with the item, never
+    // written by the page.
+    await expect(listed(page, FILLS).getByRole('listitem')).toHaveText(['Bevilja ledigheten', 'Avslå ledigheten']);
+    await expect(pane(page).getByText('Du granskar och skickar alltid själv.', { exact: true })).toBeVisible();
+    await expect(listed(page, CANNOT)).toHaveCount(0);
+    expect(api.reachAsked).toEqual([{ beside: 'thread:ledighet' }]);
+    // The three lists are named lists in the pane's reading order, before the line about the conversation's page.
+    const order = await pane(page)
+      .getByRole('list')
+      .evaluateAll(lists => lists.map(l => l.getAttribute('aria-label')));
+    expect(order).toEqual([READS, FILLS]);
+    await expectNoAxeViolations(page);
+    await ask3(page, 'Fråga om ärendet', 'Vad händer om jag godkänner?');
+    await expect(listed(page, READS)).toHaveCount(0);
+    await expect(listed(page, FILLS)).toHaveCount(0);
+  });
+
+  test('with nothing for the assistant to fill in, the pane draws no such list and no line about sending', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/items/ledighet');
+    await door(page).click();
+    await expect(listed(page, READS).getByRole('listitem')).toHaveCount(1);
+    await expect.poll(() => api.reachAsked.length).toBe(1);
+    await expect(listed(page, FILLS)).toHaveCount(0);
+    await expect(pane(page).getByText('Du granskar och skickar alltid själv.')).toHaveCount(0);
   });
 
   test('a person’s page sends the person by Clew’s id with every question, and no chip about them', async ({
@@ -827,9 +945,10 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
   }) => {
     await new People().route(page);
     await open(page, `/people/johan?section=${PRESENCE_LENS}&from=%2Fstaff`);
-    await frameButton(page).click();
-    // What Clew's own talks and the other systems show about him stays closed (D131 item 7), said before anything is asked.
-    await expect(pane(page).getByText(/^Assistenten kan inte läsa/)).toBeVisible();
+    await door(page).click();
+    // What Clew's own talks and the other systems show about him stays closed (D131 item 7), listed before anything is
+    // asked (D133 item 7).
+    await expect(listed(page, CANNOT).getByRole('listitem').first()).toBeVisible();
     await expect(pane(page).getByText(/^Assistenten får inte veta vem sidan gäller/)).toHaveCount(0);
     await ask3(page, 'Fråga om Johan Byström', 'Hur går det för honom?');
     expect(api.asked.at(-1)).toMatchObject({
@@ -852,7 +971,7 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
     people.colleague = true;
     await people.route(page);
     await open(page, '/people/johan');
-    await frameButton(page).click();
+    await door(page).click();
     await expect(
       pane(page).getByText(/^Assistenten får inte veta vem sidan gäller, eftersom du inte är chef för personen\./),
     ).toBeVisible();
@@ -867,7 +986,7 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
   }) => {
     await new People().route(page);
     await open(page, '/people/johan?from=%2Fstaff');
-    await frameButton(page).click();
+    await door(page).click();
     await ask3(page, 'Fråga om Johan Byström', 'Hur går det för honom?');
     await pane(page).getByRole('link', { name: 'Öppna som samtal' }).click();
     await expect(page).toHaveURL(/\/conversations\/om-person-johan\?person=johan$/);
@@ -887,7 +1006,7 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
   test('a unit’s page sends the unit by Clew’s id', async ({ page, api }) => {
     await new Units().route(page);
     await open(page, `/units/${ENTITY_UNIT.id}`);
-    await frameButton(page).click();
+    await door(page).click();
     await ask3(page, `Fråga om ${ENTITY_UNIT.label}`, 'Hur ser det ut?');
     expect(api.asked.at(-1)).toMatchObject({
       chips: [],
@@ -902,8 +1021,10 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
   }) => {
     offer(api, 'phonebook.person', 'Kontaktkort');
     await open(page, ANNA_CARD);
-    await frameButton(page).click();
+    await door(page).click();
     await expect(pane(page).getByText(/^Assistenten kan inte läsa/)).toHaveCount(0);
+    await expect(listed(page, CANNOT)).toHaveCount(0);
+    await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Kontaktkort']);
     await ask3(page, 'Fråga om Anna Lindqvist', 'Vem är hennes chef?');
     const anna = api.asked.at(-1)!;
     expect(anna).toMatchObject({
@@ -933,13 +1054,9 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
     api,
   }) => {
     await open(page, ANNA_CARD);
-    await frameButton(page).click();
-    await expect(
-      pane(page).getByText(
-        'Assistenten kan inte läsa det som Telefonboken visar här. Du kan ändå fråga om annat som du har tillgång till.',
-        { exact: true },
-      ),
-    ).toBeVisible();
+    await door(page).click();
+    await expect(listed(page, CANNOT).getByRole('listitem')).toHaveText(['Telefonboken']);
+    await expect(listed(page, READS)).toHaveCount(0);
     await ask3(page, 'Fråga om Anna Lindqvist', 'Vem är hon?');
     expect(api.asked.at(-1)).toMatchObject({
       chips: [],
@@ -950,7 +1067,7 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
   test('a plan is a record of boarding.plan by its id', async ({ page, api }) => {
     api.boarding = new BoardingMock();
     await open(page, `/boarding/${ANNA}?from=%2Fstaff`);
-    await frameButton(page).click();
+    await door(page).click();
     await ask3(page, 'Fråga om introduktion för Anna Lindqvist', 'Vad är försenat?');
     expect(api.asked.at(-1)).toMatchObject({
       page: { subject: `view:boarding.plan:{"plan":"${PLAN}"}`, label: 'Om Introduktion för Anna Lindqvist' },
@@ -964,7 +1081,7 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
   }) => {
     reviewed(api);
     await open(page, '/items/fakturor');
-    await frameButton(page).click();
+    await door(page).click();
     await ask3(page, 'Fråga om ärendet', 'Vilken är störst?');
     expect(api.asked.at(-1)).toMatchObject({
       chips: [{ ref: 'thread:fakturor', kind: 'thread', label: 'Attestera 3 fakturor, 48 200 kr' }],
@@ -981,7 +1098,7 @@ test.describe('the assistant’s pane beside a thing’s page (D130 stage 3, D13
 test.describe('a thing’s page on a phone (D130 rule 11, D131 item 1)', () => {
   test.use({ viewport: phone });
 
-  test('the button leads to the conversation with the thing beside its address, and a question there carries the thing', async ({
+  test('the corner’s button leads to the conversation with the thing beside its address, and a question there carries the thing', async ({
     page,
     api,
   }) => {
@@ -995,7 +1112,8 @@ test.describe('a thing’s page on a phone (D130 rule 11, D131 item 1)', () => {
     ] as const) {
       if (path.startsWith('/units')) await new Units().route(page);
       await open(page, path);
-      await page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' }).click();
+      await expect(ownButton(page)).toHaveCount(0);
+      await door(page).click();
       await expect(page).toHaveURL(address);
     }
     // The record stands beside the conversation by its address: a question there carries it.
@@ -1010,10 +1128,13 @@ test.describe('a thing’s page on a phone (D130 rule 11, D131 item 1)', () => {
     });
   });
 
-  test('a person’s button leads to the conversation about them, which carries the person', async ({ page, api }) => {
+  test('on a person’s page the corner’s button leads to the conversation about them, which carries the person', async ({
+    page,
+    api,
+  }) => {
     await new People().route(page);
     await open(page, '/people/johan?from=%2Fstaff');
-    await page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' }).click();
+    await door(page).click();
     await expect(page).toHaveURL('/conversations/new?person=johan');
     const box = page.getByRole('combobox', { name: 'Svara i samtalet' });
     await box.fill('Hur går det?');
@@ -1022,17 +1143,87 @@ test.describe('a thing’s page on a phone (D130 rule 11, D131 item 1)', () => {
     expect(api.asked.at(-1)).toMatchObject({ chips: [], thing: { kind: 'person', id: 'johan' } });
   });
 
-  test('the review on a phone has the frame’s button under its title', async ({ page, api }) => {
+  for (const viewport of [phone, narrow])
+    test(`the review on a phone has Fråga AI in its pinned footer, above the decision’s buttons, which keep their order; nothing scrolls sideways at ${viewport.width} px and it leads to the conversation`, async ({
+      page,
+      api,
+    }) => {
+      await page.setViewportSize(viewport);
+      reviewed(api);
+      await open(page, REVIEW);
+      await expect(page.getByRole('heading', { level: 1, name: 'Granska 3 rader' })).toBeVisible();
+      const footer = decision(page);
+      await expect(door(page)).toHaveCount(1);
+      await expect(footer.getByRole('button', { name: 'Fråga AI', exact: true })).toBeVisible();
+      await expect(ownButton(page)).toHaveCount(0);
+      // The door first, then the page's own controls in the order they had.
+      const names = await footer.getByRole('button').evaluateAll(all => all.map(b => b.textContent?.trim() ?? ''));
+      expect(names[0]).toBe('Fråga AI');
+      expect(names.indexOf('Hoppa över')).toBeLessThan(names.indexOf('Lämna kvar'));
+      expect(names.indexOf('Lämna kvar')).toBeLessThan(names.length - 1);
+      const [d, skip] = await Promise.all([
+        door(page).boundingBox(),
+        footer.getByRole('button', { name: 'Hoppa över' }).boundingBox(),
+      ]);
+      expect(d!.y + d!.height).toBeLessThanOrEqual(skip!.y);
+      expect(await sideways(page)).toBe(0);
+      expect(await reflowProblems(page)).toEqual([]);
+      await expectNoAxeViolations(page);
+      await door(page).click();
+      await expect(page).toHaveURL('/conversations/new?card=fakturor');
+    });
+});
+
+/**
+ * The door in a pinned footer (D133 item 5; the product owner, 2026-11-19): the review pins its decision at the window's
+ * foot, so the floating corner is not drawn over it and the frame draws the same "Fråga AI" at the start of that footer,
+ * before the page's own controls.
+ */
+test.describe('the review’s footer holds the door to the pane', () => {
+  test.use({ viewport: WIDE });
+
+  test('Fråga AI is the first control of the decision’s footer and no corner floats over it; it opens the pane with the focus in its box, and ✕ and Esc give the focus back to it', async ({
+    page,
+    api,
+  }) => {
     reviewed(api);
     await open(page, REVIEW);
-    const button = page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' });
-    await expect(button).toHaveCount(1);
-    const [t, b] = await Promise.all([
-      page.getByRole('heading', { level: 1, name: 'Granska 3 rader' }).boundingBox(),
-      button.boundingBox(),
-    ]);
-    expect(b!.y).toBeGreaterThan(t!.y + t!.height);
-    await button.click();
-    await expect(page).toHaveURL('/conversations/new?card=fakturor');
+    const footer = decision(page);
+    const inFooter = footer.getByRole('button', { name: 'Fråga AI', exact: true });
+    await expect(inFooter).toBeVisible();
+    // The only one: the floating corner gives way to what the page pins.
+    await expect(door(page)).toHaveCount(1);
+    await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
+    const names = await footer.getByRole('button').evaluateAll(all => all.map(b => b.textContent?.trim() ?? ''));
+    expect(names[0]).toBe('Fråga AI');
+    expect(names).toContain('Hoppa över');
+    expect(names).toContain('Lämna kvar');
+    await expectNoAxeViolations(page);
+    await inFooter.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/[?&]ask=1(&|$)/);
+    await expect(pane(page)).toBeVisible();
+    await expect(pane(page).getByRole('textbox', { name: 'Fråga om ärendet' })).toBeFocused();
+    // Not drawn while the pane stands; the page's own controls stay.
+    await expect(door(page)).toHaveCount(0);
+    await expect(footer.getByRole('button', { name: 'Lämna kvar' })).toBeVisible();
+    await expectNoAxeViolations(page);
+    await pane(page).getByRole('button', { name: 'Stäng' }).click();
+    await expect(pane(page)).toHaveCount(0);
+    await expect(inFooter).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(pane(page).getByRole('textbox', { name: 'Fråga om ärendet' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(pane(page)).toHaveCount(0);
+    await expect(inFooter).toBeFocused();
+  });
+
+  test('without a model the footer has no door', async ({ page, api }) => {
+    api.modelChoices = 0;
+    reviewed(api);
+    await open(page, REVIEW);
+    await expect(decision(page).getByRole('button', { name: 'Lämna kvar' })).toBeVisible();
+    await expect(door(page)).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
   });
 });

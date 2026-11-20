@@ -358,7 +358,8 @@ interface Shown {
   form: boolean;
   /**
    * The pane holds a conversation with the assistant (`PageTalk`): its body does not scroll as one, the transcript
-   * scrolls in itself between the facts and the box.
+   * scrolls in itself between the facts and the box. Before anything is asked there is only the box under the facts,
+   * and the body scrolls as one, as a pane without a box does.
    */
   talk?: boolean;
 }
@@ -823,10 +824,13 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     const prepared = (p: Prepared) => <PreparedRow prepared={p} action={preparedAction(p, askSubject)} />;
     return {
       ...s,
-      talk: true,
+      talk: asked,
       body: (
-        <VStack gap={6} height="100%">
-          <StackItem size={asked ? 'static' : 'fill'} isScrollable aria-label={s.form ? s.title : 'Uppgifter'}>
+        // Before anything is asked the body is at least as high as the pane, so the box stands at its foot, and as
+        // high as its content where the window is too low: the pane then scrolls, and the fields never give way to
+        // the box. With a conversation the body is the pane's height and the conversation scrolls in what is left.
+        <VStack gap={6} {...(asked ? { height: '100%' } : { minHeight: '100%' })}>
+          <StackItem size={asked ? 'static' : 'fill'} isScrollable={asked} aria-label={s.form ? s.title : 'Uppgifter'}>
             {s.body}
           </StackItem>
           {s.body && <Divider />}

@@ -276,11 +276,12 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
       '/staff',
     );
 
-    await open(page, '/');
+    // On the conversation's own page: a question on Hem's line is answered under the line (D133 item 9).
+    await open(page, '/conversations/new');
     await composer(page).fill('attestera en faktura');
     await composer(page).press('Enter');
     await expect(card).toBeVisible();
-    await expect(page).toHaveURL(/\/conversations\/[^/?]+$/);
+    await expect(page).toHaveURL(/\/conversations\/(?!new$)[^/?]+$/);
     const conversation = new URL(page.url()).pathname;
     await card.getByRole('link', { name: 'Fortsätt granska' }).click();
     await expect(page).toHaveURL(`/items/fakturor/review?from=${encodeURIComponent(conversation)}&step=2`);
@@ -498,8 +499,22 @@ test.describe('the review on a phone: the same page, stacked (D73 amended 2026-1
     const img = page.getByRole('img', { name: /Energibolaget AB/ });
     await expect(img).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Underlag från ekonomisystemet' })).toBeFocused();
-    // The decision is pinned at the window's foot, so the floating way to the assistant is not drawn over it (D130).
+    // The decision is pinned at the window's foot, so the floating way to the assistant is not drawn over it (D130);
+    // the one "Fråga AI" is the first control of that footer, before the decision's own (D133 item 5,
+    // `ask-pane.spec.ts`).
     await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
+    const door = page.getByRole('button', { name: 'Fråga AI', exact: true });
+    await expect(door).toHaveCount(1);
+    expect(
+      await door.evaluate(
+        el =>
+          !!(
+            el.compareDocumentPosition(document.querySelector('[aria-label="Granskningens beslut"]')!) &
+            Node.DOCUMENT_POSITION_CONTAINS
+          ),
+      ),
+    ).toBe(true);
+    expect((await door.boundingBox())!.y).toBeLessThan((await verb(page).boundingBox())!.y);
     const [paper, button] = [await img.boundingBox(), await verb(page).boundingBox()];
     expect(paper!.y).toBeLessThan(button!.y);
     await expect(verb(page)).toBeInViewport();

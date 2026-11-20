@@ -43,6 +43,8 @@ type BodyProps = {
   isLoading?: boolean;
   /** Beside the page, where the panel is as narrow as a phone: a table is drawn as its list. */
   inline?: boolean;
+  /** The level of a calendar read's day headings: 3 under a pane's own heading, 2 on the read's own page, under its title. */
+  dayHeadingLevel?: 2 | 3;
 };
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isoDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -201,6 +203,7 @@ export function PanelBody({
   hrefFor,
   isLoading,
   inline = false,
+  dayHeadingLevel = 3,
 }: BodyProps) {
   const declared = view ?? null;
   const day = !declared && isDayView(output) ? output : null;
@@ -242,7 +245,7 @@ export function PanelBody({
           <DayStrip
             date={day.from}
             items={dayItems}
-            dayHeadingLevel={3}
+            dayHeadingLevel={dayHeadingLevel}
             accessiblePath="Retur på en post öppnar den."
             onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined}
           />
@@ -254,7 +257,7 @@ export function PanelBody({
           <DayStrip
             date={todayView.date}
             items={dayItems}
-            dayHeadingLevel={3}
+            dayHeadingLevel={dayHeadingLevel}
             accessiblePath="Retur på en post öppnar den."
             onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined}
           />
@@ -270,7 +273,7 @@ export function PanelBody({
           from={week.from}
           days={5}
           items={dayItems}
-          dayHeadingLevel={3}
+          dayHeadingLevel={dayHeadingLevel}
           accessiblePath="Retur på en post öppnar den."
           onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined}
         />

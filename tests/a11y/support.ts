@@ -34,7 +34,7 @@ import {
   siteHeader,
 } from './data';
 import { newsItemOutput, newsItemSpec, newsSpec } from './data';
-import type { NewsResult } from '@clew/contracts';
+import type { AssistantReach, NewsResult, RecordAction } from '@clew/contracts';
 import {
   assistantStatus,
   modelDetail,
@@ -186,6 +186,15 @@ const talkTime = (instant: string) =>
   }).format(new Date(instant));
 
 /** The API as the browser sees it, held in memory per test. `/api/**` never leaves the page. */
+/** One action about a record as it reached the mock (`RecordActionInput`, D132), with the read it was posted to. */
+export interface RecordActed {
+  read: string;
+  input: Record<string, unknown>;
+  capability: string;
+  values?: Record<string, string>;
+  draft?: { conversationId: string; messageId: string };
+}
+
 export class MockApi {
   threads = threads();
   /** The areas and the systems behind them with their marks' ordinals (D71); a test may add a system's area. */
@@ -507,6 +516,20 @@ export class MockApi {
   /** Händelser cannot be read. */
   itemEventsFail = false;
   unmocked: string[] = [];
+  /** What the assistant may fill in for what stands open (`POST /api/assistant/reach`, D133 item 7): none by default. */
+  reach: AssistantReach = { prepares: [] };
+  /** Every body sent to `POST /api/assistant/reach`. */
+  reachAsked: unknown[] = [];
+  /** A record's actions by its read (`GET /api/records/:read/actions`, D132): none by default; `null` answers 404. */
+  recordActions: Record<string, RecordAction[] | null> = {};
+  /**
+   * Every action about a record that reached the mock (D132), by its route: `effect` (what an execute would write),
+   * `decide` (the human decision) and `actions` (a propose's start), each with the read, the record's input, the
+   * person's answers and the assistant's draft it was sent from.
+   */
+  recordEffects: RecordActed[] = [];
+  recordDecides: RecordActed[] = [];
+  recordStarts: RecordActed[] = [];
   /** Keeps every turn pending until the returned function is called, for a test that works while the answer is on its way: `answerDelay` can run out first on a slow machine. */
   holdAnswer() {
     let release = () => {};
@@ -994,6 +1017,21 @@ export class MockApi {
     if (path === '/attention') return json(attention);
     if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
     if (path === '/assistant/handover') return json({ assistants: this.handoverAssistants });
+    if (path === '/assistant/reach' && post) {
+      this.reachAsked.push(request.postDataJSON());
+      return json(this.reach);
+    }
+    {
+      const acted = post ? /^\/records\/([^/]+)\/(effect|decide|actions)$/.exec(path) : null;
+      if (acted)
+        return this.recordStart(route, decodeURIComponent(acted[1]!), acted[2] as 'effect' | 'decide' | 'actions');
+      const listed = /^\/records\/([^/]+)\/actions$/.exec(path);
+      if (listed && !post) {
+        const actions = this.recordActions[decodeURIComponent(listed[1]!)];
+        if (actions === null) return route.fulfill({ status: 404, json: { error: 'Posten finns inte.' } });
+        return json({ actions: actions ?? [] });
+      }
+    }
     if (path === '/assistant/model' && request.method() === 'PATCH') {
       this.currentModel = (request.postDataJSON() as { modelId: string }).modelId;
       return json(assistantStatus(this.modelChoices, this.currentModel));
@@ -1736,6 +1774,21 @@ export class MockApi {
                 : undefined),
             body.beside,
           );
+      // Asked for a comment beside a record that offers one, the assistant fills the action in and sends nothing
+      // (D132 item 4): the draft is kept on the answer, and the turn's response carries it with its action.
+      const offered = body.thing?.kind === 'record' ? this.recordActions[body.thing.capability ?? '']?.[0] : undefined;
+      if (!handed && offered && /kommentar/i.test(body.text)) {
+        const drafted = {
+          capability: offered.capability,
+          record: { capability: body.thing!.capability!, input: body.thing!.input ?? {} },
+          values: { text: 'Behörigheten gäller Skönsmons skola.' },
+        };
+        const written = response.thread.messages.at(-1)!;
+        written.body = 'Jag har fyllt i en kommentar. Inget är skickat.';
+        written.meta = { ...written.meta, recordDraft: drafted };
+        response.answer = { ...response.answer, body: written.body };
+        response.recordDraft = { ...drafted, action: offered };
+      }
       // The server keeps the chips a question went with on it (`MessageMeta.chips`): how a page finds the
       // conversation about its thing again. Kept here for a question asked in place.
       const question = [...response.thread.messages].reverse().find(m => m.role === 'user');
@@ -2027,6 +2080,77 @@ export class MockApi {
    * makes an execute's work item with the human decision in it, here read back at once as the source would answer it.
    * An action the entity does not offer, or the wrong route for its kind, is the server's 404.
    */
+  /**
+   * An action about a record (D132) from its dialog, answered as the records module does: `effect` reads what an
+   * execute would write and writes nothing; `decide` makes the work item with the human decision in it, read back at
+   * once as the source would answer it; `actions` starts a propose's work item. A decision or a start that names the
+   * assistant's draft it was sent from marks that draft as sent with the work item it became, once. An action the
+   * record does not offer, or the wrong route for its kind, is the server's 404.
+   */
+  private recordStart(route: Route, read: string, sub: 'effect' | 'decide' | 'actions') {
+    const posted = route.request().postDataJSON() as Omit<RecordActed, 'read'>;
+    const action = (this.recordActions[read] ?? []).find(a => a.capability === posted.capability);
+    if (!action || (sub !== 'actions' && action.kind !== 'execute'))
+      return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
+    const asked: RecordActed = { read, ...posted };
+    if (sub === 'effect') {
+      this.recordEffects.push(asked);
+      return route.fulfill({
+        json: {
+          rows: [{ label: 'Kommentaren läggs till på beställningen', detail: posted.values?.text ?? '' }],
+          source: action.source,
+        } satisfies EffectPreview,
+      });
+    }
+    (sub === 'decide' ? this.recordDecides : this.recordStarts).push(asked);
+    const id = `record-${action.capability.replace(/\W/g, '-')}-${this.recordDecides.length + this.recordStarts.length}`;
+    const made: Thread = {
+      ...this.threads[0]!,
+      id,
+      topic: id,
+      connector: action.connector,
+      title: action.title,
+      trigger: { ...this.threads[0]!.trigger, reason: `Du valde ${action.title}`, source: action.source },
+      summary: `${action.title}.`,
+      items: [],
+      actions: [],
+      proposals: [],
+      deadline: null,
+      ...(sub === 'decide'
+        ? {
+            state: 'handled' as const,
+            handledAt: NOW,
+            receipt: {
+              at: NOW,
+              headline: `Kommentaren är tillagd i ${action.source}.`,
+              undoUntil: null,
+              undoCapability: null,
+              rows: [
+                { ref: `${action.connector}:kommentar`, label: action.title, outcome: 'done' as const, detail: '' },
+              ],
+            },
+          }
+        : { state: 'open' as const }),
+    };
+    // The draft the send names is marked with the work item it became, the first time only.
+    const { draft } = posted;
+    if (draft)
+      this.threads = this.threads.map(t =>
+        t.id !== draft.conversationId
+          ? t
+          : {
+              ...t,
+              messages: t.messages.map(m =>
+                m.id === draft.messageId && m.meta?.recordDraft && !m.meta.recordDraft.sent
+                  ? { ...m, meta: { ...m.meta, recordDraft: { ...m.meta.recordDraft, sent: { threadId: id } } } }
+                  : m,
+              ),
+            },
+      );
+    this.threads = [...this.threads.filter(t => t.id !== id), made];
+    return route.fulfill({ json: { threadId: id } });
+  }
+
   private entityStart(route: Route, path: string) {
     const [, , kind, key = '', sub = ''] = path.split('/');
     const posted = route.request().postDataJSON() as { capability?: string; values?: Record<string, string> } | null;

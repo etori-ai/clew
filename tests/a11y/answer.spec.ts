@@ -28,7 +28,7 @@ test.describe('the answer on its way', () => {
     page,
     api,
   }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     // Held, not timed: the axe scan below takes over a second here and longer in CI, and an answer that comes first would let Enter send the next question.
     const release = api.holdAnswer();
     const input = composer(page);
@@ -63,27 +63,30 @@ test.describe('the answer on its way', () => {
     page,
     api,
   }) => {
-    await open(page, '/');
+    // On the conversation's own page: a question asked on Hem's line is answered under the line, where "Stäng" stops
+    // it (D133 item 9, `hem.spec.ts`).
+    await open(page, '/conversations/new');
     api.answerDelay = 2_000;
     const input = composer(page);
     await input.fill('Vem är på plats?');
     await input.press('Enter');
     await page.getByRole('button', { name: 'Stoppa' }).click();
     await expect(page.getByRole('log')).toHaveCount(0);
-    await expect(heading(page, 1, GREETING)).toBeVisible();
-    // Back on Hem, the question stands in Hem's line, a plain field whose value it is.
-    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+    // The question stands in the box again.
+    await expect(composer(page)).toHaveText('Vem är på plats?');
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Frågan avbröts'));
     await page.waitForTimeout(api.answerDelay + 500);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/conversations\/new$/);
     await expect(page.getByRole('log')).toHaveCount(0);
-    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+    await expect(composer(page)).toHaveText('Vem är på plats?');
   });
 
   // D92: the conversation takes Hem's place with Astryx's fade and Hem comes back with one; under reduced motion both are
   // there at once. (Hem's own first entrance is D76's, tested in loading.spec.ts.)
+  // STALE BY D133, not a product fault: Hem's line no longer hands the column to a conversation (the answer is a card
+  // under the line), so nothing fades in over Hem from here; whether D92's fade has a place left is the owner's call.
   for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-    test(`the conversation fades in over Hem, Hem fades back, and ${reducedMotion} motion is respected`, async ({
+    test.fixme(`the conversation fades in over Hem, Hem fades back, and ${reducedMotion} motion is respected`, async ({
       page,
       api,
     }) => {
@@ -243,10 +246,10 @@ test.describe('the cards in a conversation', () => {
  */
 test.describe('a conversation about a thing', () => {
   const TITLE = 'Attestera 3 fakturor, 48 200 kr';
-  /** The thing's page asks through the frame's pane (D131 item 9), which leads to the conversation's page. */
+  /** The thing's page asks through the frame's pane (D131 item 9, D133 item 3), which leads to the conversation's page. */
   const asConversation = async (page: Page) => {
-    await page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' }).click();
-    // Beside the page from 1340 px, a drawer over it below: the same pane either way.
+    await page.getByRole('button', { name: 'Fråga AI', exact: true }).click();
+    // Beside the page from 1180 px, a drawer over it below: the same pane either way.
     await page.getByRole('link', { name: 'Öppna som samtal' }).click();
   };
   test('"Öppna som samtal" lands on an empty conversation with the thing beside it, and nothing is sent until the person writes', async ({

@@ -320,9 +320,15 @@ function HandoverOffer({
 }) {
   const talk = useConversation();
   const first = useRef<HTMLButtonElement>(null);
+  // The offer comes while its turn is still ending, with its buttons disabled: the first one takes the focus once it
+  // can, one time for each offer.
+  const taken = useRef<string | null>(null);
+  const key = `${offer.id}:${held ?? ''}`;
   useEffect(() => {
+    if (isDisabled || taken.current === key) return;
+    taken.current = key;
     first.current?.focus();
-  }, [offer.id, held]);
+  }, [key, isDisabled]);
   // A question Clew held on its way out (D125 item 13): the safe answer comes first and takes the focus.
   if (held)
     return (
@@ -854,7 +860,7 @@ function HeldAnswer() {
  *
  * The parts stand in the same places on the way and once written, so the calls and the answer's place become the
  * written ones in place: the log speaks the answer once (D36, 4.1.3) and the calls stay as the person left them. `bare`
- * draws the answer without its bubble and its time line, where the card it stands in is its frame (Hem's answer).
+ * draws the answer without its bubble, with its time line under it, where the card it stands in is its frame (Hem’s answer).
  */
 export function AssistantTurn({
   pending,
@@ -1032,7 +1038,12 @@ export function AssistantTurn({
     <>
       {calls.length > 0 && <ChatToolCalls calls={calls} />}
       {bare ? (
-        body
+        // Without its bubble the answer still says when it came and which model wrote it, as the transcript does
+        // (the product owner, 2026-11-20).
+        <>
+          {body}
+          {time}
+        </>
       ) : (
         <ChatMessageBubble variant="ghost" width="100%" metadata={time}>
           {body}

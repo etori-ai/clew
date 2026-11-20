@@ -218,6 +218,7 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
         setLatest(null);
       }
       const controller = new AbortController();
+      let offered = false;
       inflight.current = controller;
       abortReason.current = 'stop';
       busyRef.current = true;
@@ -270,6 +271,8 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
               : `${offer.name} i ${offer.source} kan svara på det här. Välj i samtalet.`,
           );
           onOffer?.(offer, held);
+          // The offer's first button takes the focus (`HandoverOffer`); the box does not take it back.
+          offered = true;
           return;
         }
         // The message list was on the page while the answer was written, so the log speaks it once it is done (4.1.3).
@@ -296,7 +299,7 @@ export function useTurns(onThreadChange: (thread: Thread) => void): Turns {
         if (inflight.current === controller) inflight.current = null;
         busyRef.current = false;
         setBusy(false);
-        if (refocus?.() ?? true) input.current?.focus();
+        if (!offered && (refocus?.() ?? true)) input.current?.focus();
       }
     },
     [announce, apply, client],
