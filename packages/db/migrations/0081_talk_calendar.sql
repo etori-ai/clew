@@ -1,0 +1,4 @@
+ALTER TABLE "talk" ADD COLUMN "calendar_start" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "talk" ADD COLUMN "calendar_end" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "talk" ADD COLUMN "calendar_gone" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "talk" ADD CONSTRAINT "talk_calendar" CHECK (("talk"."calendar_start" IS NULL) = ("talk"."calendar_end" IS NULL) AND NOT ("talk"."calendar_gone" AND "talk"."calendar_start" IS NOT NULL) AND (("talk"."calendar_start" IS NULL AND NOT "talk"."calendar_gone") OR "talk"."invitation_id" IS NOT NULL));

@@ -6708,6 +6708,48 @@
             "type": "boolean",
             "description": "For a booked talk: true when an invitation the system sent carries the booking, false when a manager registered the time by hand."
           },
+          "own": {
+            "type": "boolean",
+            "description": "For a booked talk: true when the booking is the reader's own, so theirs to settle."
+          },
+          "calendar": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "properties": {
+                  "start": {
+                    "type": "string",
+                    "format": "date-time",
+                    "maxLength": 40
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date-time",
+                    "maxLength": 40
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "gone"
+                ],
+                "properties": {
+                  "gone": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            ],
+            "description": "For a booked talk an invitation carries, when the calendar no longer holds what the booking says (D133): the time the event has now, or that it is gone. The booking stands until its manager settles it. Absent while they agree."
+          },
           "openCommitments": {
             "type": "integer",
             "minimum": 0,
@@ -6840,6 +6882,48 @@
                 "invited": {
                   "type": "boolean",
                   "description": "For a booked talk: true when an invitation the system sent carries the booking, false when a manager registered the time by hand."
+                },
+                "own": {
+                  "type": "boolean",
+                  "description": "For a booked talk: true when the booking is the reader's own, so theirs to settle."
+                },
+                "calendar": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "start",
+                        "end"
+                      ],
+                      "properties": {
+                        "start": {
+                          "type": "string",
+                          "format": "date-time",
+                          "maxLength": 40
+                        },
+                        "end": {
+                          "type": "string",
+                          "format": "date-time",
+                          "maxLength": 40
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "gone"
+                      ],
+                      "properties": {
+                        "gone": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ],
+                  "description": "For a booked talk an invitation carries, when the calendar no longer holds what the booking says (D133): the time the event has now, or that it is gone. The booking stands until its manager settles it. Absent while they agree."
                 },
                 "openCommitments": {
                   "type": "integer",

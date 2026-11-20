@@ -167,6 +167,7 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
         bookedBy: w.boss,
         bookedAt: '2026-11-10T09:00:00.000Z',
         invitationId: w.p + '-invitation',
+        calendar: null,
       };
       await w.store.transaction(tx => tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking })));
       expect(await w.store.transaction(tx => tx.talk(w.round, w.anna))).toEqual(
@@ -183,6 +184,19 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
         heldOn: '2026-11-20',
         booking,
       });
+      // What the calendar holds against the booking is kept beside it (D133): another time, or that the event is gone.
+      const moved = { ...booking, calendar: { start: '2026-11-23T09:00:00.000Z', end: '2026-11-23T10:00:00.000Z' } };
+      await w.store.transaction(tx => tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking: moved })));
+      expect((await w.store.transaction(tx => tx.talk(w.round, w.anna)))?.booking).toEqual(moved);
+      const gone = { ...booking, calendar: 'gone' as const };
+      await w.store.transaction(tx => tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking: gone })));
+      expect((await w.store.transaction(tx => tx.talkByInvitation(w.p + '-invitation')))?.booking).toEqual(gone);
+      // Only an invitation has an event to differ from.
+      await expect(
+        w.store.transaction(tx =>
+          tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking: { ...gone, invitationId: null } })),
+        ),
+      ).rejects.toThrow();
       // A time set by hand carries no invitation; a save without a booking removes it whole.
       const byHand = { ...booking, invitationId: null };
       await w.store.transaction(tx => tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking: byHand })));
@@ -305,6 +319,7 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
         bookedBy: w.boss,
         bookedAt: '2026-11-10T09:00:00.000Z',
         invitationId: null,
+        calendar: null,
       };
       await w.store.transaction(async tx => {
         await tx.saveTalk(talkRow(w.p + '-t-anna', w.round, w.anna, { heldOn: '2026-11-05', heldBy: w.boss }));

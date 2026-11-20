@@ -27,6 +27,7 @@ import { errorMessage } from '../../query-policy';
 import { useTalkAction } from '../../mutations';
 import {
   bookingNote,
+  calendarDifference,
   dueText,
   endFor,
   groupCommitments,
@@ -57,8 +58,9 @@ const responsible = (row: Pick<CommitmentEntry, 'owner' | 'mine' | 'id'>) =>
  * over the page is gone; the talk is where the person is). The address is the person's page with the talk's source as
  * `section` (`person-address.ts`); an address that laid the drawer over a page (`?talk=<personId>`) leads here. Its
  * state with Markera som hållet and Ångra, when it is booked and, for a time no invitation carries, Ange tid, Ändra tid
- * and Ta bort tiden (D132 item 4), the person's action points carried over first, then this round's, then the done
- * ones, and a form to add one while a round is open; the round's name under the tab's heading. Opened only for
+ * and Ta bort tiden (D132 item 4), what the calendar holds when the meeting was moved or is gone and the manager's
+ * choice between them (D133), the person's action points carried over first, then this round's, then the done ones, and
+ * a form to add one while a round is open; the round's name under the tab's heading. Opened only for
  * Clew's own module (`writable`): when another system answers, the tab is that system's row, as any other source's.
  * Nothing is read until the tab is shown.
  */
@@ -145,6 +147,9 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
   };
   const when = row ? talkSpanText(row) : null;
   const note = row ? bookingNote(row) : null;
+  // The meeting in the calendar is not where the talk says: the talk stands, and the manager whose booking it is chooses.
+  const differs = row ? calendarDifference(row) : null;
+  const settles = canWrite && !!differs && row.own === true;
   // A time is set and changed here while no invitation carries the booking, and never for a talk that is held.
   const timeByHand = canWrite && row.state !== 'held' && !(row.state === 'booked' && row.invited !== false);
   const day = today();
@@ -218,6 +223,69 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
           </HStack>
         )}
         {note && <Text type="supporting">{note}</Text>}
+        {differs && (
+          <Banner
+            status="warning"
+            title={differs.kind === 'gone' ? 'Mötet är borta ur kalendern' : 'Mötet har flyttats i kalendern'}
+            description={
+              settles
+                ? differs.kind === 'gone'
+                  ? `${differs.text} Välj om tiden ska stå kvar utan inbjudan.`
+                  : `${differs.text} Stämmer inte den nya tiden flyttar du tillbaka mötet i kalendern.`
+                : `${differs.text} Chefen som bokade samtalet avgör vad som gäller.`
+            }
+            endContent={
+              settles ? (
+                <HStack gap={2} wrap="wrap">
+                  {differs.kind === 'moved' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      label="Flytta samtalet till den nya tiden"
+                      clickAction={() =>
+                        write(
+                          'mark-held',
+                          () => api.talks.settleCalendar(person.id, 'adopt'),
+                          'Samtalet har flyttats till den nya tiden.',
+                          time,
+                        )
+                      }
+                    />
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        label="Behåll tiden"
+                        clickAction={() =>
+                          write(
+                            'set-time',
+                            () => api.talks.settleCalendar(person.id, 'keep'),
+                            'Tiden står kvar, utan inbjudan.',
+                            time,
+                          )
+                        }
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        label="Ta bort tiden"
+                        clickAction={() =>
+                          write(
+                            'set-time',
+                            () => api.talks.settleCalendar(person.id, 'remove'),
+                            'Tiden för samtalet är borttagen.',
+                            time,
+                          )
+                        }
+                      />
+                    </>
+                  )}
+                </HStack>
+              ) : undefined
+            }
+          />
+        )}
         {!round ? (
           <Text as="p">
             Ingen samtalsomgång är öppen. Samtalet kan inte markeras som hållet och inga åtgärdspunkter kan läggas till.

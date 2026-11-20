@@ -1291,6 +1291,17 @@ export const TalkRowSchema = object(
           'For a booked talk: true when an invitation the system sent carries the booking, false when a manager registered the time by hand.',
       }),
     ),
+    own: Type.Optional(
+      Type.Boolean({
+        description: "For a booked talk: true when the booking is the reader's own, so theirs to settle.",
+      }),
+    ),
+    calendar: Type.Optional(
+      Type.Union([object({ start: instant, end: instant }), object({ gone: Type.Literal(true) })], {
+        description:
+          'For a booked talk an invitation carries, when the calendar no longer holds what the booking says (D133): the time the event has now, or that it is gone. The booking stands until its manager settles it. Absent while they agree.',
+      }),
+    ),
     openCommitments: Type.Integer({
       minimum: 0,
       description: 'How many action points with this employee are open, from this round and earlier ones.',
@@ -1394,6 +1405,15 @@ export type CommitmentsResult = Static<typeof CommitmentsResultSchema>;
  */
 export const TalkBookingBodySchema = object({ start: instant, end: instant });
 export type TalkBookingBody = Static<typeof TalkBookingBodySchema>;
+/**
+ * What the manager whose booking it is decides when the calendar no longer holds what the booking says (D133): `adopt`
+ * takes the time the event has now, `remove` takes the time off a talk whose event is gone, and `keep` keeps the time of
+ * such a talk as one set by hand, with no invitation.
+ */
+export const TALK_CALENDAR_DECISIONS = ['adopt', 'remove', 'keep'] as const;
+export type TalkCalendarDecision = (typeof TALK_CALENDAR_DECISIONS)[number];
+export const TalkCalendarBodySchema = object({ decision: literals(TALK_CALENDAR_DECISIONS) });
+export type TalkCalendarBody = Static<typeof TalkCalendarBodySchema>;
 /** Marking a talk held (D96 item 2): the day it was held, today in Swedish time when absent. */
 export const TalkHeldBodySchema = object({ heldOn: Type.Optional(calendarDay) });
 export type TalkHeldBody = Static<typeof TalkHeldBodySchema>;

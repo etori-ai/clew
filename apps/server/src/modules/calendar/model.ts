@@ -100,20 +100,37 @@ export interface InvitationNotice {
   at: string;
 }
 /**
- * What the domain that owns the talks is told of an invitation the calendar sent (D132 item 3), inside the transaction
- * that changes the proposal, so the talk and the invitation that carries its booking commit or roll back as one. The
- * calendar module keeps the invitation; when a talk is booked is the talks domain's record, never the calendar's.
- * Composition binds it to the talks module, which the calendar never imports; a store built without it tells nobody.
+ * What the domain that owns the talks is told of an invitation the calendar sent (D132 item 3, D133), inside the
+ * transaction that changes the proposal, so the talk and the invitation that carries its booking commit or roll back as
+ * one. The calendar module keeps the invitation; when a talk is booked is the talks domain's record, never the
+ * calendar's. Composition binds it to the talks module, which the calendar never imports; a store built without it tells
+ * nobody.
  */
 export interface InvitationsTx {
   /** The invitation was sent and read back from the calendar. */
   established(invitation: InvitationNotice): Promise<void>;
-  /** The invitation no longer stands: the manager undid it or replaced it, or the invitee said no. */
+  /**
+   * What the calendar holds for the invitation's event now, read by the event's own id: its time, or null when it is
+   * gone. Told at every reading; whether that differs from the booking is the talks domain's to say and keep.
+   */
+  observed(seen: {
+    actor: string;
+    invitationId: string;
+    event: { start: string; end: string } | null;
+    at: string;
+  }): Promise<void>;
+  /** The invitation is at another time now: the proposal was moved with its event, by a decision in Clew. */
+  moved(move: { actor: string; invitationId: string; start: string; end: string; at: string }): Promise<void>;
+  /**
+   * The invitation no longer stands: the manager undid it or replaced it, the invitee said no, or its event was
+   * cancelled. With `keep`, the manager keeps the time as one set by hand, with no invitation.
+   */
   ended(end: {
     actor: string;
     invitationId: string;
-    why: 'undone' | 'replaced' | 'declined';
+    why: 'undone' | 'replaced' | 'declined' | 'cancelled';
     at: string;
+    keep?: { managerId: string };
   }): Promise<void>;
 }
 export interface ProposalTx {

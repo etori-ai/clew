@@ -108,6 +108,7 @@ import type {
   ModelSummary,
   ProviderSummary,
   TalkBookingBody,
+  TalkCalendarBody,
   TalkHeldBody,
   TalkRound,
   RelationGrant,
@@ -2203,19 +2204,41 @@ export class MockApi {
       this.talkRows = this.talkRows.map(r => (r.personId === personId ? before : r));
       return empty();
     }
+    if (what === 'booking' && path.endsWith('/booking/calendar')) {
+      // What the calendar holds against the reader's booking, settled as the calendar module settles it (D133).
+      if (!row?.calendar || row.own !== true)
+        return fail(400, 'Samtalet har ingen inbjudan från dig att ändra. Läs om sidan.');
+      const { decision } = body as TalkCalendarBody;
+      const { calendar, ...settled } = row;
+      const gone = 'gone' in calendar;
+      if ((decision === 'adopt') === gone)
+        return fail(
+          400,
+          gone ? 'Mötet finns inte längre i kalendern. Läs om sidan.' : 'Mötet finns kvar i kalendern. Läs om sidan.',
+        );
+      const { at: _at, until: _until, invited: _invited, own: _own, ...bare } = settled;
+      const next: typeof row =
+        'gone' in calendar
+          ? decision === 'keep'
+            ? { ...settled, invited: false }
+            : { ...bare, state: 'missing' }
+          : { ...settled, at: calendar.start, until: calendar.end };
+      this.talkRows = this.talkRows.map(r => (r.personId === personId ? next : r));
+      return empty();
+    }
     if (what === 'booking') {
       if (!row) return fail(400, 'Personen finns inte i samtalsomgången.');
       // As the talks module refuses it (D132 item 4): never a talk marked held, nor a booking an invitation carries.
       if (row.state === 'held') return fail(400, 'Samtalet är redan markerat som hållet.');
       if (row.state === 'booked' && row.invited !== false)
         return fail(400, 'Samtalet är bokat genom en inbjudan från Clew, så tiden kan inte ändras här.');
-      const { at: _at, until: _until, invited: _invited, ...bare } = row;
+      const { at: _at, until: _until, invited: _invited, own: _own, ...bare } = row;
       if (method === 'PUT') {
         const { start, end } = body as TalkBookingBody;
         if (!(Date.parse(end) > Date.parse(start)))
           return fail(400, 'Ange en giltig start- och sluttid, med högst ett dygn emellan.');
         this.talkRows = this.talkRows.map(r =>
-          r.personId === personId ? { ...bare, state: 'booked', at: start, until: end, invited: false } : r,
+          r.personId === personId ? { ...bare, state: 'booked', at: start, until: end, invited: false, own: true } : r,
         );
         return json({ id: `talk-${personId}`, start, end });
       }

@@ -1,6 +1,6 @@
 import { TALKS_CONNECTOR } from '@clew/connectors';
 import { stockholmDate, TALK_STATES, type CommitmentRow, type TalkRow, type TalkState } from '@clew/contracts';
-import type { CommitmentRecord, PersonRef, TalkBooking, TalkRecord } from './model';
+import type { CalendarDifference, CommitmentRecord, PersonRef, TalkBooking, TalkRecord } from './model';
 
 /**
  * The rules of the talks domain (D96) as pure functions: where a person stands in a round, which action points are
@@ -128,6 +128,45 @@ export function talkState(
   if (booking) return { state: 'booked', at: booking.start };
   return { state: 'missing' };
 }
+/**
+ * What the calendar holds against a booking (D133): null when the event is at the booking's time, the event's span when
+ * it is at another, `gone` when there is no event. Undefined when the event's span cannot be read as one, which says
+ * nothing either way.
+ */
+export function differenceOf(
+  booking: Pick<TalkBooking, 'start' | 'end'>,
+  event: { start: string; end: string } | null,
+): CalendarDifference | null | undefined {
+  if (event === null) return 'gone';
+  const span = normaliseSpan(event.start, event.end);
+  if (!span) return undefined;
+  return span.start === booking.start && span.end === booking.end ? null : span;
+}
+/** Whether two readings of what the calendar holds say the same. */
+export const sameDifference = (a: CalendarDifference | null, b: CalendarDifference | null) =>
+  a === b || (!!a && !!b && a !== 'gone' && b !== 'gone' && a.start === b.start && a.end === b.end);
+/** The difference as an audit row carries it: instants or that the event is gone, never a name. */
+export const differenceDetails = (d: CalendarDifference) => (d === 'gone' ? { gone: true } : d);
+const clockTime = new Intl.DateTimeFormat('sv-SE', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Europe/Stockholm',
+});
+/** A span as a sentence reads it, in Swedish time: "tors 20 nov kl. 13:00–14:00". */
+export const swedishSpan = (span: { start: string; end: string }) =>
+  `${swedishShortDay(stockholmDate(span.start))} kl. ${clockTime.format(new Date(span.start))}–${clockTime.format(new Date(span.end))}`;
+/**
+ * A card the scan asks for about one person's talk (D133): what it is about, and its identity (D47). One card per
+ * person and round for each kind; `revision` is what the card says, so a card the manager handled comes back when that
+ * changes, and a cause that is gone resolves the card at the next scan.
+ */
+export type TalkNoticeKind = 'calendar';
+export const noticeCard = (kind: TalkNoticeKind, personId: string, roundId: string, revision: string) => ({
+  topic: `talks:${kind}:${personId}:${roundId}`,
+  key: `talks:${kind}:${personId}`,
+  revision,
+  period: roundId,
+});
 /** The longest a talk may be booked for: a day, as a meeting in the calendar. */
 const BOOKING_MAX_MS = 86_400_000;
 /**
@@ -169,17 +208,22 @@ export function orderCommitmentRows<T extends Pick<CommitmentRow, 'carried' | 'd
 export function talkRow(
   person: Pick<PersonRef, 'id' | 'name' | 'userName'>,
   talk: Pick<TalkRecord, 'heldOn'> | undefined,
-  booking: Pick<TalkBooking, 'start' | 'end' | 'invitationId'> | undefined,
+  booking: Pick<TalkBooking, 'start' | 'end' | 'invitationId' | 'bookedBy' | 'calendar'> | undefined,
   openCommitments: number,
+  readerId: string,
 ): TalkRow {
   const { state, at } = talkState(talk, booking);
+  const differs = state === 'booked' ? (booking?.calendar ?? null) : null;
   return {
     ref: talkRef(person.id),
     userName: personKey(person),
     name: person.name,
     state,
     ...(at ? { at } : {}),
-    ...(state === 'booked' && booking ? { until: booking.end, invited: booking.invitationId !== null } : {}),
+    ...(state === 'booked' && booking
+      ? { until: booking.end, invited: booking.invitationId !== null, own: booking.bookedBy === readerId }
+      : {}),
+    ...(differs ? { calendar: differs === 'gone' ? { gone: true as const } : differs } : {}),
     openCommitments,
   };
 }

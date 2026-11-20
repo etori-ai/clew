@@ -11,6 +11,8 @@ import type {
   CommitmentsResult,
   NewsResult,
   TalkBookingBody,
+  TalkCalendarBody,
+  TalkCalendarDecision,
   TalkHeldBody,
   TalksResult,
   GroupCapabilityInputType,
@@ -319,6 +321,9 @@ export const api = {
       put<{ id: string; start: string; end: string }>(`${talkPath(personId)}/booking`, body),
     /** Removes a time registered by hand. */
     unbook: (personId: string) => del<void>(`${talkPath(personId)}/booking`),
+    /** Settles what the calendar holds against the reader's booking: take its time, or drop or keep a time whose meeting is gone (D133). */
+    settleCalendar: (personId: string, decision: TalkCalendarDecision) =>
+      post<void>(`${talkPath(personId)}/booking/calendar`, { decision } satisfies TalkCalendarBody),
     /** Adds an action point in the person's talk, for the employee or the manager. */
     addCommitment: (personId: string, body: CommitmentAddBody) =>
       post<{ id: string }>(`${talkPath(personId)}/commitments`, body),

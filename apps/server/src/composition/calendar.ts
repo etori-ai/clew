@@ -18,6 +18,7 @@ import {
 } from '../modules/calendar/usecases/decisions';
 import { bookedElsewhere } from '../modules/calendar/usecases/booked';
 import { followupUsecases } from '../modules/calendar/usecases/followups';
+import { invitationUsecases } from '../modules/calendar/usecases/invitations';
 import { postgresFollowupStore } from './followup-store';
 import { ledger } from './durable';
 import { cancelDurable } from '../dbos/start';
@@ -97,6 +98,11 @@ const core = calendarUsecases({
   notify: (personId, draft) => notifier.push(personId, draft),
   obligations: durableObligations(),
 });
+/**
+ * A sent invitation is followed by its event's id (D133): the scan reads it back and tells the talks module what the
+ * calendar holds, and the manager's decision on a difference is carried out here.
+ */
+export const invitations = invitationUsecases({ store, bind, team, clock });
 export const calendarAuthority: { current: (id: string) => Promise<AuthenticatedContext | undefined> } = {
   current: async () => undefined,
 };

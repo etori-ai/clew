@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**135 in force**: 98 accepted and 37 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**136 in force**: 98 accepted and 38 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -32,7 +32,8 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D120 · A manager's own notes in the follow-up dialogue are private posts, and their files go to the document system](D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md) | 2026-11-13 | provisional |  |
 | [D120 · A skill is a holding with a level, and the competence domain covers what a skills platform does for a public-sector organisation](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md) | 2026-11-12 | provisional |  |
 | [D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item](D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md) | 2026-11-13 | provisional |  |
-| [D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation](D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md) | 2026-11-19 | provisional |  |
+| [D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation](D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md) | 2026-11-19 | provisional | [D133](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) |
+| [D133 · A talk follows its meeting by the event's id, and only the manager changes it](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) | 2026-11-20 | provisional |  |
 
 ## Integrations
 

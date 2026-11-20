@@ -35,6 +35,12 @@ export interface RoundRecord {
  * calendar, or when a manager registers a time they agreed on by hand. It is whose booking it is that decides whether
  * it counts: only while `bookedBy` manages the employee (`standingBooking` in `domain.ts`).
  */
+/**
+ * What the calendar holds for a booking's invitation when it is not what the booking says (D133): the event at another
+ * time, or no event (`gone`). It is read by the event's own id, and it changes nothing by itself: the booking stands
+ * until the manager whose booking it is settles it.
+ */
+export type CalendarDifference = { start: string; end: string } | 'gone';
 export interface TalkBooking {
   start: string;
   end: string;
@@ -47,6 +53,8 @@ export interface TalkBooking {
    * replaced or declined, and is not changed by hand. Null for a time a manager registered by hand.
    */
   invitationId: string | null;
+  /** Null while the calendar agrees with the booking, has not been read, or no invitation carries it. */
+  calendar: CalendarDifference | null;
 }
 /**
  * One employee's talk in one round; it exists once it has been booked or a manager has marked it held, and stays when

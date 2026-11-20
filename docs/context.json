@@ -1582,8 +1582,17 @@
       "number": 132,
       "path": "docs/decisions/D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md",
       "title": "D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation",
-      "status": "provisional (accepted once a manager and an HR practitioner have booked a round with it; questions 6 and 11 of [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) still hold real data back)",
+      "status": "provisional (accepted once a manager and an HR practitioner have booked a round with it; questions 6 and 11 of [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) still hold real data back); what happens when the meeting is changed afterwards is [D133](D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md) (2026-11-20, provisional)",
       "date": "2026-11-19",
+      "area": "product, integrations"
+    },
+    {
+      "key": "D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it",
+      "number": 133,
+      "path": "docs/decisions/D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md",
+      "title": "D133 · A talk follows its meeting by the event's id, and only the manager changes it",
+      "status": "provisional (accepted once a manager has moved and cancelled a talk's meeting in a real calendar and settled it in Clew)",
+      "date": "2026-11-20",
       "area": "product, integrations"
     }
   ],
@@ -2400,6 +2409,12 @@
     {
       "path": "docs/decisions/D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md",
       "title": "D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D133-a-talk-follows-its-meeting-by-the-events-id-and-only-the-manager-changes-it.md",
+      "title": "D133 · A talk follows its meeting by the event's id, and only the manager changes it",
       "category": "decision-history",
       "headings": []
     },

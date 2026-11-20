@@ -163,6 +163,8 @@ export function memoryTalkStore(seed: { persons?: PersonRef[] } = {}) {
       );
       if (talk.booking && Date.parse(talk.booking.end) <= Date.parse(talk.booking.start))
         throw new Error('new row for relation "talk" violates check constraint "talk_booking"');
+      if (talk.booking?.calendar && talk.booking.invitationId === null)
+        throw new Error('new row for relation "talk" violates check constraint "talk_calendar"');
       if (existing)
         Object.assign(existing, {
           heldOn: talk.heldOn,
