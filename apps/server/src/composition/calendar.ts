@@ -21,6 +21,7 @@ import { followupUsecases } from '../modules/calendar/usecases/followups';
 import { postgresFollowupStore } from './followup-store';
 import { ledger } from './durable';
 import { cancelDurable } from '../dbos/start';
+import { talkInvitationsOn } from './talk-invitations';
 
 /**
  * The calendar's live wiring (D25). It is its own file because the registry registers the calendar connector over
@@ -58,7 +59,8 @@ export const planningRound: { read: RoundReader } = { read: async () => null };
 const round: RoundReader = persona => planningRound.read(persona);
 /** The follow-up card goes into an invitee's stream through the threads module, which is built after this file: `index.ts` fills the slot. */
 export const notifier: { push: Notifier } = { push: async () => undefined };
-const store = postgresProposalStore(ledger);
+/** An invitation's fate reaches the talk whose booking it carries in the proposal store's own transaction (D132 item 3). */
+const store = postgresProposalStore(ledger, { invitations: talkInvitationsOn });
 /** Who owns a thread, or booked a person, as a system identity with the grant they have now. */
 const people: People = { personaFor: id => systemContext(id, 'system:obligation') };
 export const calendarApproval: Pick<CalendarDecisionDeps, 'approve' | 'previous'> = {

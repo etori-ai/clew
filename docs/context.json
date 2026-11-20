@@ -1150,7 +1150,7 @@
       "number": 96,
       "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
       "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
-      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) (2026-11-10): a person is due a talk with the manager they report to in the organisation tree; item 7 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional, rule 5): the talk lies over the page it was opened on; items 2 and 4 and As built item 4 amended 2026-11-12 in the fixes of the review of users and the organisation (Q12): a person has one talk a round however many current managers they have, a booking any of them made through Clew counts as booked for all of them, any of them marks, moves or undoes the held mark, and a manager ticks off only their own action points and a manager's point whose owner no longer manages the person; question 6 of the checklist amended the same day (M2): every current manager reads the record, and a former manager reads nothing about the person but the action points they own, which stay on their Hem until done; item 8 amended by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): rows stay keyed on the user name on the wire, a user name can be renamed and reused, and Clew keys its own records about a person by the person's id",
+      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) (2026-11-10): a person is due a talk with the manager they report to in the organisation tree; item 7 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional, rule 5): the talk lies over the page it was opened on; items 2 and 4 and As built item 4 amended 2026-11-12 in the fixes of the review of users and the organisation (Q12): a person has one talk a round however many current managers they have, a booking any of them made through Clew counts as booked for all of them, any of them marks, moves or undoes the held mark, and a manager ticks off only their own action points and a manager's point whose owner no longer manages the person; question 6 of the checklist amended the same day (M2): every current manager reads the record, and a former manager reads nothing about the person but the action points they own, which stay on their Hem until done; item 8 amended by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): rows stay keyed on the user name on the wire, a user name can be renamed and reused, and Clew keys its own records about a person by the person's id; item 2 amended by [D132](D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md) (2026-11-19, provisional): when a talk is booked is stored on the talk, an invitation Clew sent or a time a manager registers by hand, nothing is read from a calendar, and every current manager reads the booking with its time",
       "date": "2026-11-10",
       "area": "product, integrations"
     },
@@ -1576,6 +1576,15 @@
       "status": "provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them)",
       "date": "2026-11-17",
       "area": "platform"
+    },
+    {
+      "key": "D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation",
+      "number": 132,
+      "path": "docs/decisions/D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md",
+      "title": "D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation",
+      "status": "provisional (accepted once a manager and an HR practitioner have booked a round with it; questions 6 and 11 of [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) still hold real data back)",
+      "date": "2026-11-19",
+      "area": "product, integrations"
     }
   ],
   "documents": [
@@ -2385,6 +2394,12 @@
     {
       "path": "docs/decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
       "title": "D131 · Clew builds a server image and a web image from the repository root",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D132-when-a-talk-is-booked-is-the-talks-own-record-and-the-calendar-holds-a-copy-of-the-invitation.md",
+      "title": "D132 · When a talk is booked is the talk's own record, and the calendar holds a copy of the invitation",
       "category": "decision-history",
       "headings": []
     },

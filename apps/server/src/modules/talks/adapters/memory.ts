@@ -146,19 +146,31 @@ export function memoryTalkStore(seed: { persons?: PersonRef[] } = {}) {
     async talks(roundId, employeeIds) {
       return byCreated(
         [...state.talks.values()].filter(t => t.roundId === roundId && employeeIds.includes(t.employeeId)),
-      ).map(t => ({ ...t }));
+      ).map(t => structuredClone(t));
     },
     async talk(roundId, employeeId) {
       const t = [...state.talks.values()].find(t => t.roundId === roundId && t.employeeId === employeeId);
-      return t && { ...t };
+      return t && structuredClone(t);
+    },
+    async talkByInvitation(invitationId) {
+      const t = [...state.talks.values()].find(t => t.booking?.invitationId === invitationId);
+      return t && structuredClone(t);
     },
     async saveTalk(talk) {
       if (!state.rounds.has(talk.roundId)) throw new Error('talk references an unknown round');
       const existing = [...state.talks.values()].find(
         t => t.roundId === talk.roundId && t.employeeId === talk.employeeId,
       );
-      if (existing) Object.assign(existing, { heldOn: talk.heldOn, heldBy: talk.heldBy, updatedAt: talk.updatedAt });
-      else state.talks.set(talk.id, { ...talk });
+      if (talk.booking && Date.parse(talk.booking.end) <= Date.parse(talk.booking.start))
+        throw new Error('new row for relation "talk" violates check constraint "talk_booking"');
+      if (existing)
+        Object.assign(existing, {
+          heldOn: talk.heldOn,
+          heldBy: talk.heldBy,
+          booking: structuredClone(talk.booking),
+          updatedAt: talk.updatedAt,
+        });
+      else state.talks.set(talk.id, structuredClone(talk));
     },
     async commitmentsAbout(employeeIds, roundId) {
       return byCreated(
@@ -211,9 +223,15 @@ export function memoryTalkStore(seed: { persons?: PersonRef[] } = {}) {
         if (t.employeeId === personId) {
           state.talks.delete(id);
           talks++;
-        } else if (t.heldBy === personId) {
-          t.heldBy = null;
-          cleared.add('talk:' + id);
+        } else {
+          if (t.heldBy === personId) {
+            t.heldBy = null;
+            cleared.add('talk:' + id);
+          }
+          if (t.booking?.bookedBy === personId) {
+            t.booking.bookedBy = null;
+            cleared.add('talk:' + id);
+          }
         }
       for (const [id, c] of [...state.commitments]) {
         if (c.employeeId === personId) {

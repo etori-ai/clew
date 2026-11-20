@@ -49,6 +49,7 @@ export const talkRow = (
   employeeId,
   heldOn: null,
   heldBy: null,
+  booking: null,
   createdAt: T,
   updatedAt: T,
   ...extra,
@@ -158,6 +159,45 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
       expect(await w.store.transaction(tx => tx.talks(w.round, []))).toEqual([]);
     });
 
+    test('a talk keeps its booking beside the held mark, is found by the invitation that carries it, and loses it by a save without one (D132)', async () => {
+      const w = await world();
+      const booking = {
+        start: '2026-11-20T09:00:00.000Z',
+        end: '2026-11-20T10:00:00.000Z',
+        bookedBy: w.boss,
+        bookedAt: '2026-11-10T09:00:00.000Z',
+        invitationId: w.p + '-invitation',
+      };
+      await w.store.transaction(tx => tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking })));
+      expect(await w.store.transaction(tx => tx.talk(w.round, w.anna))).toEqual(
+        talkRow(w.p + '-t1', w.round, w.anna, { booking }),
+      );
+      expect((await w.store.transaction(tx => tx.talks(w.round, [w.anna])))[0]?.booking).toEqual(booking);
+      expect((await w.store.transaction(tx => tx.talkByInvitation(w.p + '-invitation')))?.id).toBe(w.p + '-t1');
+      expect(await w.store.transaction(tx => tx.talkByInvitation(w.p + '-other'))).toBeUndefined();
+      // Marked held: the booking stays on the record.
+      await w.store.transaction(tx =>
+        tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking, heldOn: '2026-11-20', heldBy: w.boss })),
+      );
+      expect(await w.store.transaction(tx => tx.talk(w.round, w.anna))).toMatchObject({
+        heldOn: '2026-11-20',
+        booking,
+      });
+      // A time set by hand carries no invitation; a save without a booking removes it whole.
+      const byHand = { ...booking, invitationId: null };
+      await w.store.transaction(tx => tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking: byHand })));
+      expect((await w.store.transaction(tx => tx.talk(w.round, w.anna)))?.booking).toEqual(byHand);
+      expect(await w.store.transaction(tx => tx.talkByInvitation(w.p + '-invitation'))).toBeUndefined();
+      await w.store.transaction(tx => tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna)));
+      expect((await w.store.transaction(tx => tx.talk(w.round, w.anna)))?.booking).toBeNull();
+      // A booking that ends before it starts is refused.
+      await expect(
+        w.store.transaction(tx =>
+          tx.saveTalk(talkRow(w.p + '-t1', w.round, w.anna, { booking: { ...booking, end: booking.start } })),
+        ),
+      ).rejects.toThrow();
+    });
+
     test('action points: the round shows its own and the open ones of earlier rounds; owned ones the same way; open counts from any round', async () => {
       const w = await world();
       const old = w.p + '-r0';
@@ -259,9 +299,16 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
 
     test('erasing a person removes their talks and the action points about them, clears them from the rest, and names the cards', async () => {
       const w = await world();
+      const booking = {
+        start: '2026-11-20T09:00:00.000Z',
+        end: '2026-11-20T10:00:00.000Z',
+        bookedBy: w.boss,
+        bookedAt: '2026-11-10T09:00:00.000Z',
+        invitationId: null,
+      };
       await w.store.transaction(async tx => {
         await tx.saveTalk(talkRow(w.p + '-t-anna', w.round, w.anna, { heldOn: '2026-11-05', heldBy: w.boss }));
-        await tx.saveTalk(talkRow(w.p + '-t-bo', w.round, w.bo, { heldOn: '2026-11-06', heldBy: w.boss }));
+        await tx.saveTalk(talkRow(w.p + '-t-bo', w.round, w.bo, { heldOn: '2026-11-06', heldBy: w.boss, booking }));
       });
       // About Anna, owned by her and by the manager: removed with both cards.
       await addWithCard(w, commitmentRow(w.p + '-c1', w.round, w.anna), w.p + '-th1');
@@ -293,6 +340,11 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
       const boss = await w.store.transaction(tx => tx.erasePerson(w.boss));
       expect(boss).toEqual({ talks: 0, commitments: 0, cleared: 2, threadIds: [w.p + '-th3'] });
       expect((await w.store.transaction(tx => tx.talk(w.round, w.bo)))?.heldBy).toBeNull();
+      // The booking stays with the employee's talk, booked by nobody (D132 item 2); one talk, cleared once.
+      expect((await w.store.transaction(tx => tx.talk(w.round, w.bo)))?.booking).toEqual({
+        ...booking,
+        bookedBy: null,
+      });
       expect((await w.store.transaction(tx => tx.talk(w.round, w.bo)))?.heldOn).toBe('2026-11-06');
       const c3 = await w.store.transaction(tx => tx.commitment(w.p + '-c3'));
       expect(c3).toMatchObject({ ownerId: null, createdBy: null, doneBy: null, threadId: null, employeeId: w.bo });

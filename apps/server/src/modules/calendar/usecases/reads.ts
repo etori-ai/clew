@@ -4,6 +4,10 @@ import type { EventOccurrence } from '@clew/calendar/model';
 import type { UnitMember } from '../model';
 
 /** Pure projections of calendar events for the use cases in `samtal.ts`. */
+/**
+ * The title Clew gives the invitation to a talk. It is what the invitee reads, never how a talk is recognised: who has
+ * a talk booked is the round's record (D132), by person id.
+ */
 export const SAMTAL_TITLE = 'Utvecklingssamtal';
 /** Projection for the browser: participants are display names, resolved from the person's team, never raw addresses. */
 export function toEvent(
@@ -34,11 +38,4 @@ export function toEvent(
     recurring: event.recurring,
     organizer: names.get(event.organizer.toLowerCase()) ?? event.organizerName ?? 'Okänd',
   };
-}
-/** Addresses that already have an utvecklingssamtal among these events. */
-export function heldAddresses(events: EventOccurrence[]) {
-  const done = new Set<string>();
-  for (const event of events)
-    if (event.title.startsWith(SAMTAL_TITLE)) for (const p of event.participants) done.add(p.email.toLowerCase());
-  return done;
 }

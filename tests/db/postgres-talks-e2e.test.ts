@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { eq, inArray, or } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import type { AuthenticatedContext, StaffOverview } from '../../packages/contracts/src/index';
-import { talkHolders, talkManages, talkStoreWithCards } from '../../apps/server/src/composition/talks';
+import { talkHolders, talkReports, talkStoreWithCards } from '../../apps/server/src/composition/talks';
 import { dueTimerId } from '../../apps/server/src/composition/talk-work-items';
 import { talkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import type { TalkStore } from '../../apps/server/src/modules/talks/model';
@@ -84,8 +84,7 @@ const usecases = (s: TalkStore) =>
   talkUsecases({
     store: s,
     staff: async p => (p.id === manager ? overview : { units: [] }),
-    manages: async (managerId, employeeId) => managerId === manager && employeeId === employee,
-    bookings: async () => new Map(),
+    reports: async managerId => new Set(managerId === manager ? [employee] : []),
     clock,
     ids,
   });
@@ -347,6 +346,7 @@ describe('the talks module on Postgres through the composition store (D96)', () 
       { personId: moved, unitId: unitB, unitLabel: 'Enhet B', role: 'manager', capabilities: [] },
       { personId: staffer, unitId: unitA, unitLabel: 'Enhet A', role: 'employee', capabilities: [] },
     ]);
+    const talkManages = async (managerId: string, employeeId: string) => (await talkReports(managerId)).has(employeeId);
     expect(await talkManages(current, staffer)).toBe(true);
     // A manager moved to another unit, a deactivated one, someone unknown and the employee herself manage nobody here.
     expect(await talkManages(moved, staffer)).toBe(false);

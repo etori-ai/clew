@@ -138,7 +138,7 @@ test('Stockholm meetings keep their instant and reject skipped or repeated local
   assert.throws(() => localInstant('2026-10-25T02:30'));
 });
 
-test('the talks routes (D96): thin writes over the use cases, Swedish refusals, and a 403 on every write while the built-in module does not answer', async () => {
+test('the talks routes (D96, D132): thin writes over the use cases, Swedish refusals, and a 403 on every write while the built-in module does not answer', async () => {
   const { memoryTalkStore } = await import('../src/modules/talks/adapters/memory');
   const { talkUsecases } = await import('../src/modules/talks/usecases');
   const { NOT_WRITABLE, talkRoutes } = await import('../src/routes/talks');
@@ -165,8 +165,7 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
     }),
     staff: async p =>
       p.id === 'boss' ? { units: [{ unitId: 'u1', unitLabel: 'Enheten', people: [anna] }] } : { units: [] },
-    manages: async (managerId, employeeId) => managerId === 'boss' && employeeId === 'anna',
-    bookings: async () => new Map(),
+    reports: async managerId => new Set(managerId === 'boss' ? ['anna'] : []),
     clock: () => new Date('2026-11-10T09:00:00.000Z'),
     ids: () => 'id-' + ++n,
   });
@@ -208,6 +207,21 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   assert.equal(held.status, 200);
   assert.deepEqual(await held.json(), { id: 'id-4', heldOn: '2026-11-03' });
   assert.equal((await call('boss', 'DELETE', '/anna/held')).status, 204);
+  // The time of the talk, registered by hand (D132 item 4): on the talk the held mark made, so no new id.
+  const span = { start: '2026-11-20T09:00:00.000Z', end: '2026-11-20T10:00:00.000Z' };
+  const booked = await call('boss', 'PUT', '/anna/booking', span);
+  assert.equal(booked.status, 200);
+  assert.deepEqual(await booked.json(), { id: 'id-4', ...span });
+  const backwards = await call('boss', 'PUT', '/anna/booking', { start: span.end, end: span.start });
+  assert.equal(backwards.status, 400);
+  assert.deepEqual(await backwards.json(), {
+    error: 'Ange en giltig start- och sluttid, med högst ett dygn emellan.',
+  });
+  const noInstants = await call('boss', 'PUT', '/anna/booking', { start: 'i morgon', end: 'senare' });
+  assert.equal(noInstants.status, 400);
+  assert.deepEqual(await noInstants.json(), { error: 'Ogiltig förfrågan.' });
+  assert.equal((await call('anna', 'PUT', '/anna/booking', span)).status, 403);
+  assert.equal((await call('boss', 'DELETE', '/anna/booking')).status, 204);
   assert.equal((await call('anna', 'POST', `/commitments/${id}/done`)).status, 204);
   // The employee's own point is hers: her manager may not open it again (Q12).
   const notTheirs = await call('boss', 'DELETE', `/commitments/${id}/done`);
@@ -242,6 +256,8 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   for (const [method, path, body] of [
     ['POST', '/anna/held', {}],
     ['DELETE', '/anna/held', undefined],
+    ['PUT', '/anna/booking', span],
+    ['DELETE', '/anna/booking', undefined],
     ['POST', '/anna/commitments', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' }],
     ['POST', `/commitments/${id}/done`, undefined],
     ['DELETE', `/commitments/${id}/done`, undefined],

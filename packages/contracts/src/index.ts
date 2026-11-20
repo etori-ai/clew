@@ -1244,13 +1244,13 @@ export const RequestsResultSchema = object({
 });
 export type RequestsResult = Static<typeof RequestsResultSchema>;
 /**
- * Where one person stands in the round of development talks (D96 item 2): no talk yet, a talk in the calendar, or held.
+ * Where one person stands in the round of development talks (D96 item 2, D132): no talk yet, a talk booked, or held.
  * The order here is the order a list is drawn in.
  */
 export const TALK_STATES = ['missing', 'booked', 'held'] as const;
 export const TalkState = literals(TALK_STATES, {
   description:
-    '`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held.',
+    '`missing`: no talk is booked or held. `booked`: the system records when the talk is to take place. `held`: the manager has marked it held.',
 });
 export type TalkState = (typeof TALK_STATES)[number];
 /** The period in which every person on a unit is due a talk with the unit's manager (D96 item 1). */
@@ -1281,7 +1281,14 @@ export const TalkRowSchema = object(
     at: Type.Optional(
       Type.Union([calendarDay, instant], {
         description:
-          "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked.",
+          'When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk the system does not say the time of.',
+      }),
+    ),
+    until: Type.Optional({ ...instant, description: 'For a booked talk: when it ends.' }),
+    invited: Type.Optional(
+      Type.Boolean({
+        description:
+          'For a booked talk: true when an invitation the system sent carries the booking, false when a manager registered the time by hand.',
       }),
     ),
     openCommitments: Type.Integer({
@@ -1303,8 +1310,7 @@ export const TalksOutputSchema = object(
     rows: Type.Array(TalkRowSchema, { maxItems: 500 }),
     bookedUnknown: Type.Optional(
       Type.Boolean({
-        description:
-          'True when the system could not tell who is booked (the calendar did not answer), so a `missing` row may be booked.',
+        description: 'True when the system could not tell who is booked, so a `missing` row may be booked.',
       }),
     ),
   },
@@ -1382,6 +1388,12 @@ export const CommitmentsResultSchema = object({
   source: Type.String(),
 });
 export type CommitmentsResult = Static<typeof CommitmentsResultSchema>;
+/**
+ * A manager registers when a talk is to take place (D132 item 4): a time agreed on that no invitation carries. Nothing is
+ * sent and nothing is written to a calendar.
+ */
+export const TalkBookingBodySchema = object({ start: instant, end: instant });
+export type TalkBookingBody = Static<typeof TalkBookingBodySchema>;
 /** Marking a talk held (D96 item 2): the day it was held, today in Swedish time when absent. */
 export const TalkHeldBodySchema = object({ heldOn: Type.Optional(calendarDay) });
 export type TalkHeldBody = Static<typeof TalkHeldBodySchema>;

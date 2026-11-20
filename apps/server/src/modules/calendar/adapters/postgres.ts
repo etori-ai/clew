@@ -3,7 +3,7 @@ import { database, schema, type Transaction } from '@clew/db';
 import { readThread, type ProposalRow } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
 import type { DurableQueue } from '@clew/db/durable';
-import type { ProposalPatch, ProposalRecord, ProposalStore, ProposalThread, ProposalTx } from '../model';
+import type { InvitationsTx, ProposalPatch, ProposalRecord, ProposalStore, ProposalThread, ProposalTx } from '../model';
 
 /** The proposal store the server runs (D25): the `ProposalStore` port over Drizzle and Postgres. */
 const { threads, threadMessages, proposals, audit } = schema;
@@ -45,7 +45,9 @@ async function read(personId: string | undefined, id: string): Promise<ProposalT
   const found = await readThread(owner, id);
   return found ? { thread: found.thread, proposals: found.proposalRows.map(toRecord) } : undefined;
 }
-const txOf = (tx: Transaction, durable: DurableQueue): ProposalTx => ({
+/** Told of invitations when the store is built without the port (a test of the store alone): nobody. */
+const nobody: InvitationsTx = { established: async () => {}, ended: async () => {} };
+const txOf = (tx: Transaction, durable: DurableQueue, invitations: InvitationsTx): ProposalTx => ({
   async lockThread(personId, id) {
     const [r] = await tx
       .select()
@@ -148,9 +150,17 @@ const txOf = (tx: Transaction, durable: DurableQueue): ProposalTx => ({
   async scheduleJob(job) {
     await scheduleJob({ id: job.id, kind: job.kind, runAt: new Date(job.runAt), payload: job.payload }, durable, tx);
   },
+  invitations,
 });
-/** The proposal store in Postgres; `durable` names the engine's application and queue for the jobs it schedules (D86). */
-export function postgresProposalStore(durable: DurableQueue): ProposalStore {
+/**
+ * The proposal store in Postgres; `durable` names the engine's application and queue for the jobs it schedules (D86).
+ * `invitations` builds, on the store's own transaction, the port the talks domain is told of invitations through
+ * (D132 item 3): composition passes the talks module's, so the talk follows the invitation in one commit.
+ */
+export function postgresProposalStore(
+  durable: DurableQueue,
+  options: { invitations?: (tx: Transaction) => InvitationsTx } = {},
+): ProposalStore {
   return {
     readThread: (personId, id) => read(personId, id),
     readThreadById: id => read(undefined, id),
@@ -197,6 +207,6 @@ export function postgresProposalStore(durable: DurableQueue): ProposalStore {
           )
       ).map(toRecord);
     },
-    transaction: fn => database().transaction(tx => fn(txOf(tx, durable))),
+    transaction: fn => database().transaction(tx => fn(txOf(tx, durable, options.invitations?.(tx) ?? nobody))),
   };
 }

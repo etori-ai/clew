@@ -18,8 +18,9 @@ import {
  * page), at `/people/<id>?section=<the talks source>`; the address that laid the drawer over a page (`/staff?talk=<id>`)
  * leads there, with the page it lay over as the way back. Since D97 Personal knows no talk: the way in is the source's
  * page, "Öppna samtalet" in the person's menu, and the tab itself on the person's page. The mock's round (`data.ts`):
- * Anna's talk is held with one action point carried over, two of this round's and one done; Erik's is booked with one
- * carried over; Karin's is missing with none; Lena's is booked with none.
+ * Anna's talk is held with one action point carried over, two of this round's and one done; Erik's is booked by an
+ * invitation Clew sent, with one carried over; Karin's is missing with none; Lena's is booked at a time set by hand, with
+ * none (D132).
  */
 const talk = (page: Page, _name: string) =>
   page.getByRole('main').getByRole('region', { name: 'Utvecklingssamtal', exact: true });
@@ -72,20 +73,138 @@ for (const [layout, viewport] of [
         expect(hidden).toEqual([]);
       });
 
-    test('a talk another of the person’s managers booked reads Bokat without a time, and is axe clean (Q12)', async ({
+    test('a talk booked by an invitation says so and its time is not changed here; a time set by hand is (D132)', async ({
       page,
       api,
     }) => {
-      // Booked through Clew by Lena's other manager: booked for this reader too, and when is that manager's to know.
-      api.talkRows = api.talkRows.map(row => {
-        if (row.personId !== 'lena') return row;
-        const { at: _when, ...booked } = row;
-        return booked;
-      });
+      await open(page, '/staff?talk=erik');
+      const erik = talk(page, 'Erik Sandström');
+      await expect(erik.getByText('ons 11 nov. kl. 09:00–10:00', { exact: true })).toBeVisible();
+      await expect(
+        erik.getByText('Bokat genom en inbjudan från Clew. Tiden följer inbjudan och ändras inte här.'),
+      ).toBeVisible();
+      await expect(erik.getByRole('button', { name: 'Markera som hållet' })).toBeVisible();
+      await expect(erik.getByRole('button', { name: 'Ändra tid' })).toHaveCount(0);
+      await expect(erik.getByRole('button', { name: 'Ta bort tiden' })).toHaveCount(0);
+      await expectNoAxeViolations(page);
+
+      await open(page, '/staff?talk=lena');
+      const lena = talk(page, 'Lena Berg');
+      await expect(lena.getByText('tors 12 nov. kl. 14:30–15:30', { exact: true })).toBeVisible();
+      await expect(lena.getByText('Tiden är angiven här. Ingen inbjudan har skickats från Clew.')).toBeVisible();
+      await expect(lena.getByRole('button', { name: 'Ändra tid', exact: true })).toBeVisible();
+      await expect(lena.getByRole('button', { name: 'Ta bort tiden', exact: true })).toBeVisible();
+      await expectNoAxeViolations(page);
+      // A talk that is held has no time to set.
+      await open(page, '/staff?talk=anna');
+      await expect(talk(page, 'Anna Lindqvist').getByRole('button', { name: /tid/i })).toHaveCount(0);
+      expect(api.talkWrites).toEqual([]);
+    });
+
+    test('the time of a talk by keyboard: Ange tid, what is missing is said on its field, save, change, cancel, remove (D132)', async ({
+      page,
+      api,
+    }) => {
+      await open(page, '/staff?talk=karin');
+      const dialog = talk(page, 'Karin Lindqvist');
+      await expect(dialog.getByText('Saknas', { exact: true })).toBeVisible();
+      await dialog.getByRole('button', { name: 'Ange tid', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      // The form takes the place of the buttons, and the focus is in its first field.
+      const form = dialog.getByRole('form', { name: 'Tid för samtalet' });
+      const field = (name: string) => form.getByLabel(name, { exact: true }).and(page.locator('input'));
+      await expect(form).toBeVisible();
+      await expect(field('Börjar')).toBeFocused();
+      await expect(dialog.getByRole('button', { name: 'Markera som hållet' })).toHaveCount(0);
+      await expectNoAxeViolations(page);
+      const { unmarked, hidden } = await hiddenFocusStops(page);
+      expect(unmarked).toEqual([]);
+      expect(hidden).toEqual([]);
+
+      // Spara with nothing picked: the field says what is missing and takes the focus; nothing is written.
+      await form.getByRole('button', { name: 'Spara', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(form.getByText('Välj dag och starttid.')).toBeVisible();
+      await expect(field('Börjar')).toBeFocused();
+      expect(api.talkWrites).toEqual([]);
+
+      // A day and a start: an hour is suggested for the end, and it follows the start the person picks.
+      await page.keyboard.type('2026-11-20');
+      // The day's field gives the start a time of its own; the person replaces it with theirs.
+      await field('Börjar tid').focus();
+      await page.keyboard.press('ControlOrMeta+a');
+      await page.keyboard.type('13:00');
+      await page.keyboard.press('Tab');
+      await expect(field('Börjar')).toHaveValue('20 november 2026');
+      await expect(field('Börjar tid')).toHaveValue('13:00');
+      await expect(field('Slutar')).toHaveValue('14:00');
+      await expect(form.getByText('Välj dag och starttid.')).toHaveCount(0);
+      await form.getByRole('button', { name: 'Spara', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(notices(page).getByText('Tiden för samtalet är sparad.')).toBeAttached();
+      // The form is gone, the talk reads booked, and the button that took Ange tid's place has the focus.
+      const change = dialog.getByRole('button', { name: 'Ändra tid', exact: true });
+      await expect(change).toBeFocused();
+      await expect(form).toHaveCount(0);
+      await expect(dialog.getByText('Bokat', { exact: true })).toBeVisible();
+      await expect(dialog.getByText('fre 20 nov. kl. 13:00–14:00', { exact: true })).toBeVisible();
+      await expect(dialog.getByText('Tiden är angiven här. Ingen inbjudan har skickats från Clew.')).toBeVisible();
+      expect(api.talkWrites).toEqual([
+        {
+          method: 'PUT',
+          path: '/talks/karin/booking',
+          body: { start: '2026-11-20T12:00:00Z', end: '2026-11-20T13:00:00Z' },
+        },
+      ]);
+
+      // Ändra tid opens the form with the time it has; Avbryt writes nothing and hands the focus back.
+      await page.keyboard.press('Enter');
+      await expect(field('Börjar')).toBeFocused();
+      await expect(field('Börjar')).toHaveValue('20 november 2026');
+      await expect(field('Börjar tid')).toHaveValue('13:00');
+      await expect(field('Slutar')).toHaveValue('14:00');
+      await form.getByRole('button', { name: 'Avbryt', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(change).toBeFocused();
+      expect(api.talkWrites).toHaveLength(1);
+
+      // An end before the start is said on the end's field.
+      await page.keyboard.press('Enter');
+      await field('Slutar').focus();
+      await page.keyboard.press('ControlOrMeta+a');
+      await page.keyboard.type('12:00');
+      await form.getByRole('button', { name: 'Spara', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(form.getByText('Sluttiden måste vara efter starttiden.')).toBeVisible();
+      await expect(field('Slutar')).toBeFocused();
+      expect(api.talkWrites).toHaveLength(1);
+      await form.getByRole('button', { name: 'Avbryt', exact: true }).focus();
+      await page.keyboard.press('Enter');
+
+      // Ta bort tiden: the talk lacks a time again, and Ange tid has the focus.
+      await dialog.getByRole('button', { name: 'Ta bort tiden', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(notices(page).getByText('Tiden för samtalet är borttagen.')).toBeAttached();
+      await expect(dialog.getByRole('button', { name: 'Ange tid', exact: true })).toBeFocused();
+      await expect(dialog.getByText('Saknas', { exact: true })).toBeVisible();
+      expect(api.talkWrites.at(-1)).toMatchObject({ method: 'DELETE', path: '/talks/karin/booking' });
+    });
+
+    test('a time the server refuses is said under the fields, and what was picked stays (D132)', async ({
+      page,
+      api,
+    }) => {
       await open(page, '/staff?talk=lena');
       const dialog = talk(page, 'Lena Berg');
-      await expect(dialog.getByText('Bokat', { exact: true })).toBeVisible();
-      await expect(dialog.getByText(/kl\. \d/)).toHaveCount(0);
+      await dialog.getByRole('button', { name: 'Ändra tid', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      const form = dialog.getByRole('form', { name: 'Tid för samtalet' });
+      api.talksFail = true;
+      await form.getByRole('button', { name: 'Spara', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(form.getByText(TALKS_FAIL_ERROR, { exact: true })).toHaveAttribute('role', 'alert');
+      await expect(form.getByLabel('Slutar', { exact: true }).and(page.locator('input'))).toHaveValue('15:30');
+      await expect(dialog.getByText('tors 12 nov. kl. 14:30–15:30', { exact: true })).toBeVisible();
       await expectNoAxeViolations(page);
     });
 
@@ -158,7 +277,7 @@ for (const [layout, viewport] of [
       const dialog = talk(page, 'Lena Berg');
       await expect(dialog.getByText('Inga åtgärdspunkter än.')).toBeVisible();
       await expect(dialog.getByRole('heading', { level: 4 })).toHaveCount(0);
-      await expect(dialog.getByText('tors 12 nov. kl. 14:30', { exact: true })).toBeVisible();
+      await expect(dialog.getByText('tors 12 nov. kl. 14:30–15:30', { exact: true })).toBeVisible();
     });
 
     test('the whole flow by keyboard: open, add a point, tick it off, open it again, mark held, undo, back', async ({
@@ -378,6 +497,17 @@ test.describe('1.4.10 reflow', () => {
     await open(page, '/staff?talk=anna');
     const dialog = talk(page, 'Anna Lindqvist');
     await expect(dialog.getByRole('form', { name: 'Ny åtgärdspunkt' })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+  });
+  test('the form for the time of a talk reflows at 320 px', async ({ page, api }) => {
+    expect(api.talksWritable).toBe(true);
+    await page.setViewportSize(narrow);
+    await open(page, '/staff?talk=lena');
+    const dialog = talk(page, 'Lena Berg');
+    await expect(dialog.getByText('Tiden är angiven här. Ingen inbjudan har skickats från Clew.')).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await dialog.getByRole('button', { name: 'Ändra tid', exact: true }).click();
+    await expect(dialog.getByRole('form', { name: 'Tid för samtalet' })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
   });
 });

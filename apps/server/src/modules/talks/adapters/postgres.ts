@@ -1,6 +1,15 @@
 import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
-import type { CommitmentRecord, RoundRecord, Sealer, TalkRecord, TalkStore, TalkTx, WorkItemTx } from '../model';
+import type {
+  CommitmentRecord,
+  RoundRecord,
+  Sealer,
+  TalkBooking,
+  TalkRecord,
+  TalkStore,
+  TalkTx,
+  WorkItemTx,
+} from '../model';
 
 const { talkRounds: rounds, talks, talkCommitments: commitments, people, audit } = schema;
 type RoundRow = typeof rounds.$inferSelect;
@@ -17,10 +26,110 @@ const roundOf = (r: RoundRow): RoundRecord => ({
   closedAt: iso(r.closedAt),
 });
 const talkOf = (r: TalkRow): TalkRecord => ({
-  ...r,
+  id: r.id,
+  roundId: r.roundId,
+  employeeId: r.employeeId,
+  heldOn: r.heldOn,
+  heldBy: r.heldBy,
+  booking:
+    r.bookedStart && r.bookedEnd && r.bookedAt
+      ? {
+          start: r.bookedStart.toISOString(),
+          end: r.bookedEnd.toISOString(),
+          bookedBy: r.bookedBy,
+          bookedAt: r.bookedAt.toISOString(),
+          invitationId: r.invitationId,
+        }
+      : null,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
+/** The booking as the row's five columns: all null when there is none (the table's `talk_booking` check). */
+const bookingColumns = (b: TalkBooking | null) => ({
+  bookedStart: b ? new Date(b.start) : null,
+  bookedEnd: b ? new Date(b.end) : null,
+  bookedBy: b ? b.bookedBy : null,
+  bookedAt: b ? new Date(b.bookedAt) : null,
+  invitationId: b ? b.invitationId : null,
+});
+
+/**
+ * The part of the talks tables a caller needs to keep a talk's booking (D132): the open round, one talk, the people and
+ * the audit row, on a transaction the caller holds. It opens no action point, so it needs no sealer and no card port:
+ * the calendar's transaction builds it to tell the talks module of an invitation (`talkInvitations`).
+ */
+export function talkRecordsTx(
+  tx: Transaction,
+): Pick<TalkTx, 'currentRound' | 'talks' | 'talk' | 'talkByInvitation' | 'saveTalk' | 'persons' | 'audit'> {
+  return {
+    async currentRound(organisationId, kind = 'development') {
+      const [r] = await tx
+        .select()
+        .from(rounds)
+        .where(and(eq(rounds.organisationId, organisationId), eq(rounds.kind, kind), isNull(rounds.closedAt)))
+        .for('update');
+      return r ? roundOf(r) : undefined;
+    },
+    async talks(roundId, employeeIds) {
+      if (!employeeIds.length) return [];
+      const rows = await tx
+        .select()
+        .from(talks)
+        .where(and(eq(talks.roundId, roundId), inArray(talks.employeeId, [...employeeIds])))
+        .orderBy(asc(talks.createdAt), asc(talks.id));
+      return rows.map(talkOf);
+    },
+    async talk(roundId, employeeId) {
+      const [r] = await tx
+        .select()
+        .from(talks)
+        .where(and(eq(talks.roundId, roundId), eq(talks.employeeId, employeeId)))
+        .for('update');
+      return r ? talkOf(r) : undefined;
+    },
+    async talkByInvitation(invitationId) {
+      const [r] = await tx.select().from(talks).where(eq(talks.invitationId, invitationId)).for('update');
+      return r ? talkOf(r) : undefined;
+    },
+    async saveTalk(t) {
+      const { booking, createdAt, updatedAt, ...row } = t;
+      await tx
+        .insert(talks)
+        .values({
+          ...row,
+          ...bookingColumns(booking),
+          createdAt: new Date(createdAt),
+          updatedAt: new Date(updatedAt),
+        })
+        .onConflictDoUpdate({
+          target: [talks.roundId, talks.employeeId],
+          set: { heldOn: t.heldOn, heldBy: t.heldBy, ...bookingColumns(booking), updatedAt: new Date(updatedAt) },
+        });
+    },
+    async persons(ids) {
+      if (!ids.length) return [];
+      return tx
+        .select({
+          id: people.id,
+          organisationId: people.organisationId,
+          name: people.name,
+          userName: people.userName,
+          enabled: people.enabled,
+        })
+        .from(people)
+        .where(inArray(people.id, [...ids]));
+    },
+    async audit(e) {
+      await tx.insert(audit).values({
+        actor: e.actor,
+        action: e.action,
+        subject: e.subject,
+        createdAt: new Date(e.at),
+        details: e.details ?? {},
+      });
+    },
+  };
+}
 
 /**
  * The talks tables (D96) on one Postgres transaction. Composition opens the transaction itself, with the thread store's
@@ -48,14 +157,7 @@ export function talkTx(tx: Transaction, options: { sealer: Sealer; workItems: Wo
   const shown = (roundId: string | null) =>
     roundId === null ? isNull(commitments.doneAt) : or(isNull(commitments.doneAt), eq(commitments.roundId, roundId));
   return {
-    async currentRound(organisationId, kind = 'development') {
-      const [r] = await tx
-        .select()
-        .from(rounds)
-        .where(and(eq(rounds.organisationId, organisationId), eq(rounds.kind, kind), isNull(rounds.closedAt)))
-        .for('update');
-      return r ? roundOf(r) : undefined;
-    },
+    ...talkRecordsTx(tx),
     async insertRound(round) {
       await tx
         .insert(rounds)
@@ -66,32 +168,6 @@ export function talkTx(tx: Transaction, options: { sealer: Sealer; workItems: Wo
         .update(rounds)
         .set({ closedAt: new Date(at) })
         .where(eq(rounds.id, id));
-    },
-    async talks(roundId, employeeIds) {
-      if (!employeeIds.length) return [];
-      const rows = await tx
-        .select()
-        .from(talks)
-        .where(and(eq(talks.roundId, roundId), inArray(talks.employeeId, [...employeeIds])))
-        .orderBy(asc(talks.createdAt), asc(talks.id));
-      return rows.map(talkOf);
-    },
-    async talk(roundId, employeeId) {
-      const [r] = await tx
-        .select()
-        .from(talks)
-        .where(and(eq(talks.roundId, roundId), eq(talks.employeeId, employeeId)))
-        .for('update');
-      return r ? talkOf(r) : undefined;
-    },
-    async saveTalk(t) {
-      await tx
-        .insert(talks)
-        .values({ ...t, createdAt: new Date(t.createdAt), updatedAt: new Date(t.updatedAt) })
-        .onConflictDoUpdate({
-          target: [talks.roundId, talks.employeeId],
-          set: { heldOn: t.heldOn, heldBy: t.heldBy, updatedAt: new Date(t.updatedAt) },
-        });
     },
     async commitmentsAbout(employeeIds, roundId) {
       if (!employeeIds.length) return [];
@@ -151,29 +227,17 @@ export function talkTx(tx: Transaction, options: { sealer: Sealer; workItems: Wo
       if (!Object.keys(set).length) return;
       await tx.update(commitments).set(set).where(eq(commitments.id, id));
     },
-    async persons(ids) {
-      if (!ids.length) return [];
-      return tx
-        .select({
-          id: people.id,
-          organisationId: people.organisationId,
-          name: people.name,
-          userName: people.userName,
-          enabled: people.enabled,
-        })
-        .from(people)
-        .where(inArray(people.id, [...ids]));
-    },
     async erasePerson(personId) {
       const threadIds = new Set<string>(),
         cleared = new Set<string>();
       const removedTalks = await tx.delete(talks).where(eq(talks.employeeId, personId)).returning({ id: talks.id });
-      for (const r of await tx
-        .update(talks)
-        .set({ heldBy: null })
-        .where(eq(talks.heldBy, personId))
-        .returning({ id: talks.id }))
-        cleared.add('talk:' + r.id);
+      for (const column of ['heldBy', 'bookedBy'] as const)
+        for (const r of await tx
+          .update(talks)
+          .set({ [column]: null })
+          .where(eq(talks[column], personId))
+          .returning({ id: talks.id }))
+          cleared.add('talk:' + r.id);
       const removed = await tx
         .delete(commitments)
         .where(eq(commitments.employeeId, personId))
@@ -229,15 +293,6 @@ export function talkTx(tx: Transaction, options: { sealer: Sealer; workItems: Wo
         talks: talkRows.map(talkOf),
         commitments: commitmentRows.map(commitmentOf),
       };
-    },
-    async audit(e) {
-      await tx.insert(audit).values({
-        actor: e.actor,
-        action: e.action,
-        subject: e.subject,
-        createdAt: new Date(e.at),
-        details: e.details ?? {},
-      });
     },
     workItems: options.workItems,
   };
