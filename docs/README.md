@@ -49,6 +49,7 @@ Clew's integration contract is the connector protocol. A connector can use an MC
 | Find code and understand dependency rules | [Backend structure](architecture/backend-structure.md) |
 | Understand identity, capability dispatch or scheduling | [Architecture index](architecture/README.md) |
 | Understand how sources attach what they know to a person or a unit, and where Clew shows it | [Entities](architecture/entities.md) |
+| Understand how a development talk is booked, what Clew owns and what the calendar holds | [Development talks](architecture/talks.md) |
 | Place and run tests | [Testing](architecture/testing.md) |
 | Configure connectors and model providers | [Connector administration](architecture/connector-administration.md) |
 | Customize colors and logo | [Branding](maintainers/branding.md) |

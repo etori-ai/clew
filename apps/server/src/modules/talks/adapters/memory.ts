@@ -137,6 +137,8 @@ export function memoryTalkStore(seed: { persons?: PersonRef[] } = {}) {
           code: '23505',
           constraint_name: 'talk_round_open',
         });
+      if (!Number.isInteger(round.prepareDays) || round.prepareDays < 0 || round.prepareDays > 30)
+        throw new Error('new row for relation "talk_round" violates check constraint "talk_round_prepare_days"');
       state.rounds.set(round.id, { ...round });
     },
     async closeRound(id, at) {

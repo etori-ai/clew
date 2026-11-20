@@ -228,19 +228,20 @@ test('the talks routes (D96, D132, D133): thin writes over the use cases, Swedis
   assert.equal((await call('anna', 'PUT', '/anna/booking', span)).status, 403);
   assert.equal((await call('boss', 'DELETE', '/anna/booking')).status, 204);
   // What the calendar holds against a booking is settled by one of three decisions, handed to the use case as given.
-  for (const decision of ['adopt', 'remove', 'keep'])
+  for (const decision of ['adopt', 'remove', 'keep', 'missed'])
     assert.equal((await call('boss', 'POST', '/anna/booking/calendar', { decision })).status, 204);
   assert.deepEqual(settled, [
     ['boss', 'anna', 'adopt'],
     ['boss', 'anna', 'remove'],
     ['boss', 'anna', 'keep'],
+    ['boss', 'anna', 'missed'],
   ]);
   for (const bad of [{ decision: 'restore' }, {}, { decision: 'adopt', start: span.start }]) {
     const response = await call('boss', 'POST', '/anna/booking/calendar', bad);
     assert.equal(response.status, 400);
     assert.deepEqual(await response.json(), { error: 'Ogiltig förfrågan.' });
   }
-  assert.equal(settled.length, 3);
+  assert.equal(settled.length, 4);
   assert.equal((await call('anna', 'POST', `/commitments/${id}/done`)).status, 204);
   // The employee's own point is hers: her manager may not open it again (Q12).
   const notTheirs = await call('boss', 'DELETE', `/commitments/${id}/done`);
@@ -287,7 +288,7 @@ test('the talks routes (D96, D132, D133): thin writes over the use cases, Swedis
     assert.deepEqual(await response.json(), { error: NOT_WRITABLE, code: 'denied' });
   }
   assert.equal(n, 4, 'no write reached the use cases while the built-in module did not answer');
-  assert.equal(settled.length, 3, 'nor did a decision on the calendar');
+  assert.equal(settled.length, 4, 'nor did a decision on the calendar');
 });
 
 test('the dialogue routes (D118, D120): one unit read and its writes over the use cases, Swedish refusals, and a 403 on all while the module is off', async () => {

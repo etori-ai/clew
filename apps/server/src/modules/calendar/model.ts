@@ -122,13 +122,14 @@ export interface InvitationsTx {
   /** The invitation is at another time now: the proposal was moved with its event, by a decision in Clew. */
   moved(move: { actor: string; invitationId: string; start: string; end: string; at: string }): Promise<void>;
   /**
-   * The invitation no longer stands: the manager undid it or replaced it, the invitee said no, or its event was
-   * cancelled. With `keep`, the manager keeps the time as one set by hand, with no invitation.
+   * The invitation no longer stands: the manager undid it or replaced it, the invitee said no, its event was
+   * cancelled, or its time passed without the talk taking place. With `keep`, the manager keeps the time as one set by
+   * hand, with no invitation.
    */
   ended(end: {
     actor: string;
     invitationId: string;
-    why: 'undone' | 'replaced' | 'declined' | 'cancelled';
+    why: 'undone' | 'replaced' | 'declined' | 'cancelled' | 'missed';
     at: string;
     keep?: { managerId: string };
   }): Promise<void>;

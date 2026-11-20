@@ -33,6 +33,7 @@ export const roundRow = (id: string, organisationId: string, extra: Partial<Roun
   label: 'Utvecklingssamtal hösten 2026',
   opensOn: '2026-10-01',
   dueOn: '2026-11-28',
+  prepareDays: 5,
   createdBy: 'operator:test',
   createdAt: T,
   closedAt: null,
@@ -124,11 +125,26 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
       });
       const current = await w.store.transaction(tx => tx.currentRound(w.org));
       expect(current).toEqual(roundRow(w.p + '-r2', w.org, { createdAt: '2026-11-11T08:00:00.000Z' }));
+      // A round keeps how many working days before a booked talk it reminds (D134), none included; out of range is refused.
+      await w.store.transaction(async tx => {
+        await tx.closeRound(w.p + '-r2', '2026-11-12T08:00:00.000Z');
+        await tx.insertRound(roundRow(w.p + '-r3', w.org, { createdAt: '2026-11-12T08:00:00.000Z', prepareDays: 0 }));
+      });
+      expect((await w.store.transaction(tx => tx.currentRound(w.org)))?.prepareDays).toBe(0);
+      await expect(
+        w.store.transaction(tx =>
+          tx.insertRound(roundRow(w.p + '-r9', w.org, { closedAt: '2026-01-01T00:00:00.000Z', prepareDays: 31 })),
+        ),
+      ).rejects.toThrow();
+      await w.store.transaction(async tx => {
+        await tx.closeRound(w.p + '-r3', '2026-11-13T08:00:00.000Z');
+        await tx.insertRound(roundRow(w.p + '-r2b', w.org, { createdAt: '2026-11-13T08:00:00.000Z' }));
+      });
       // A closed round may sit beside the open one.
       await w.store.transaction(tx =>
         tx.insertRound(roundRow(w.p + '-r0', w.org, { closedAt: '2026-01-01T00:00:00.000Z' })),
       );
-      expect((await w.store.transaction(tx => tx.currentRound(w.org)))?.id).toBe(w.p + '-r2');
+      expect((await w.store.transaction(tx => tx.currentRound(w.org)))?.id).toBe(w.p + '-r2b');
     });
 
     test('a talk is held and the hold undone by one row per round and employee, which keeps its own id', async () => {

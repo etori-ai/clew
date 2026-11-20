@@ -2206,9 +2206,19 @@ export class MockApi {
     }
     if (what === 'booking' && path.endsWith('/booking/calendar')) {
       // What the calendar holds against the reader's booking, settled as the calendar module settles it (D133).
+      const { decision } = body as TalkCalendarBody;
+      // The meeting's time passed without a talk (D134): the invitation is over and the talk lacks a time.
+      if (decision === 'missed') {
+        if (row?.own !== true || row.invited !== true)
+          return fail(400, 'Samtalet har ingen inbjudan från dig att ändra. Läs om sidan.');
+        if (!row.until || Date.parse(row.until) > Date.parse(NOW))
+          return fail(400, 'Tiden för samtalet har inte passerat än.');
+        const { at: _a, until: _u, invited: _i, own: _o, calendar: _c, ...gone } = row;
+        this.talkRows = this.talkRows.map(r => (r.personId === personId ? { ...gone, state: 'missing' } : r));
+        return empty();
+      }
       if (!row?.calendar || row.own !== true)
         return fail(400, 'Samtalet har ingen inbjudan från dig att ändra. Läs om sidan.');
-      const { decision } = body as TalkCalendarBody;
       const { calendar, ...settled } = row;
       const gone = 'gone' in calendar;
       if ((decision === 'adopt') === gone)

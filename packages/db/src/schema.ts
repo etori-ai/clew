@@ -930,6 +930,8 @@ export const talkRounds = pgTable(
     label: text('label').notNull(),
     opensOn: date('opens_on', { mode: 'string' }).notNull(),
     dueOn: date('due_on', { mode: 'string' }).notNull(),
+    // How many working days before a booked talk its manager is reminded to prepare (D134); 0 is no reminder.
+    prepareDays: integer('prepare_days').notNull().default(5),
     // An actor string (`operator:cli`, the seed's), not a person: an operator opens a round.
     createdBy: text('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -938,6 +940,7 @@ export const talkRounds = pgTable(
   t => [
     check('talk_round_kind', sql`${t.kind} IN ('development')`),
     check('talk_round_period', sql`${t.dueOn} >= ${t.opensOn}`),
+    check('talk_round_prepare_days', sql`${t.prepareDays} BETWEEN 0 AND 30`),
     uniqueIndex('talk_round_open')
       .on(t.organisationId, t.kind)
       .where(sql`${t.closedAt} IS NULL`),

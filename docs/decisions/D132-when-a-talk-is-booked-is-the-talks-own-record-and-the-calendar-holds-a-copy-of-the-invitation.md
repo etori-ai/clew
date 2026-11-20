@@ -88,7 +88,9 @@ and the invitation that was sent replaces a time set by hand in between.
   back by its id, a difference is recorded beside the booking and settled by the manager, and a move or a
   cancellation made on Clew's calendar page moves or ends the invitation and the talk with it.
 - An invitation read back while no round is open books nothing, also when a round opens later.
-- No card reminds the manager to prepare before a booked talk, and none asks afterwards whether it was held.
+- No card reminded the manager to prepare before a booked talk, and none asked afterwards whether it was held.
+  Settled 2026-11-20 by
+  [D134](D134-a-booked-talk-reminds-its-manager-to-prepare-and-asks-afterwards-whether-it-was-held.md).
 - A talk booked by hand in a calendar no longer counts until its manager registers the time. Whether managers do
   is what makes the figure trustworthy, and nothing outside the repository has tested it.
 - No screen-reader pass has been made of the form.

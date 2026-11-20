@@ -13,6 +13,7 @@ import {
   type TalksInput,
   type View,
   literals,
+  stockholmDate,
 } from '@clew/contracts';
 import { systemContext } from '../../system-context';
 import {
@@ -160,29 +161,53 @@ const headingOf = (round: RoundHeading | null) =>
 /** The row of a card about a person's talk: never their name (vision principle 7); the person is the row's subject. */
 const NOTICE_LABEL = 'Medarbetare';
 /**
- * A card the scan asks for (D133), as the manager reads it. It names nobody in its title, summary, reason or row: the
- * person is the row's subject, by user name, and the input of the read the card opens, the person's place in the round,
- * from which the talk opens.
+ * What a card the scan asks for says (D133, D134), as the manager reads it: that the meeting was moved or is gone, that
+ * a booked talk is coming and they need to prepare, or that its time has passed and it is theirs to say whether it was
+ * held. How they prepare is theirs: the card leads to the talk, where the action points from last time are.
+ */
+function noticeWords(notice: TalkNotice): Pick<ThreadDraft, 'title' | 'summary' | 'reason'> {
+  const stands = swedishSpan(notice.booking);
+  if (notice.kind === 'prepare')
+    return {
+      title: 'Förbered utvecklingssamtalet',
+      summary: `Ett utvecklingssamtal är bokat ${stands}. Öppna samtalet för att se åtgärdspunkterna från förra gången.`,
+      reason: 'Bokat samtal',
+    };
+  if (notice.kind === 'held')
+    return {
+      title: 'Hölls utvecklingssamtalet?',
+      summary: `Tiden för samtalet var ${stands}. Markera det som hållet, eller ta bort tiden om det inte blev av.`,
+      reason: 'Tiden har passerat',
+    };
+  return notice.calendar === 'gone'
+    ? {
+        title: 'Mötet för ett utvecklingssamtal finns inte längre i kalendern',
+        summary: `Samtalet i Clew står kvar på ${stands}. Öppna samtalet och välj om tiden ska stå kvar.`,
+        reason: 'Borttaget i kalendern',
+      }
+    : {
+        title: 'Mötet för ett utvecklingssamtal har flyttats i kalendern',
+        summary: `Mötet ligger nu ${swedishSpan(notice.calendar)}. Samtalet i Clew står kvar på ${stands}. Öppna samtalet och välj vilken tid som gäller.`,
+        reason: 'Flyttat i kalendern',
+      };
+}
+/**
+ * A card the scan asks for (D133, D134). It names nobody in its title, summary, reason or row: the person is the row's
+ * subject, by user name, and the input of the read the card opens, the person's place in the round, from which the
+ * talk opens. A reminder to prepare is due the day of the talk.
  */
 function noticeDraft(notice: TalkNotice, open: string): ThreadDraft {
   const key = notice.userName && [...notice.userName].length <= ENTITY_KEY_MAX ? notice.userName : undefined;
-  const stands = swedishSpan(notice.booking);
-  const gone = notice.calendar === 'gone';
   return {
     topic: notice.card.topic,
     area: 'talks',
-    title: gone
-      ? 'Mötet för ett utvecklingssamtal finns inte längre i kalendern'
-      : 'Mötet för ett utvecklingssamtal har flyttats i kalendern',
-    summary: gone
-      ? `Samtalet i Clew står kvar på ${stands}. Öppna samtalet och välj om tiden ska stå kvar.`
-      : `Mötet ligger nu ${swedishSpan(notice.calendar as { start: string; end: string })}. Samtalet i Clew står kvar på ${stands}. Öppna samtalet och välj vilken tid som gäller.`,
-    reason: gone ? 'Borttaget i kalendern' : 'Flyttat i kalendern',
+    ...noticeWords(notice),
+    ...(notice.kind === 'prepare' ? { deadline: stockholmDate(notice.booking.start) } : {}),
     items: [
       {
         ref: talkRef(notice.personId),
         label: NOTICE_LABEL,
-        detail: stands,
+        detail: swedishSpan(notice.booking),
         selectable: false,
         selected: false,
         ...(key ? { subject: { entity: 'person' as const, key } } : {}),
@@ -339,8 +364,9 @@ export function talksConnector(
     ],
     capabilities: [round as Capability, commitments as Capability, aboutPerson as Capability, aboutUnit as Capability],
     /**
-     * The cards that hang on a talk's booking (D133), derived from the talk's own record each time and never stored: a
-     * meeting moved in the calendar or gone from it, for the manager whose booking it is. Every card is one occurrence
+     * The cards that hang on a talk's booking (D133, D134), derived from the talk's own record and the clock each time
+     * and never stored: a meeting moved in the calendar or gone from it, a booked talk that is coming, and one whose time
+     * has passed, for the manager whose booking it is. Every card is one occurrence
      * per person and round, so a card whose cause is gone (the manager settled it, or the calendar agrees again) is
      * resolved at the next scan, and one whose difference changed comes back. The observation is complete: the whole of
      * the reader's people, read now, and a read that fails throws, so the scan is never a complete observation of

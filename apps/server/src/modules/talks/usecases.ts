@@ -12,6 +12,9 @@ import type {
 } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
+  PREPARE_DAYS_DEFAULT,
+  PREPARE_DAYS_MAX,
+  bookingAsks,
   commitmentRow,
   differenceDetails,
   differenceOf,
@@ -93,19 +96,19 @@ export interface UnitStanding {
   missing: number;
 }
 /**
- * A card the scan asks for about one person's talk (D133): for the manager whose booking it is, when the calendar no
- * longer holds what the booking says. Derived from the talk's record each time and never stored: the platform opens the
- * card, resolves it when its cause is gone and brings a handled one back when what it says changes (D47).
+ * A card the scan asks for about one person's talk (D133, D134), for the manager whose booking it is: `calendar` when
+ * the calendar no longer holds what the booking says, `prepare` in the working days before a booked talk, and `held`
+ * from the day after its time, asking whether it took place. Derived from the talk's record and the clock each time and
+ * never stored: the platform opens the card, resolves it when its cause is gone and brings a handled one back when what
+ * it says changes (D47).
  */
-export interface TalkNotice {
-  kind: 'calendar';
+export type TalkNotice = {
   personId: string;
   /** The person's user name, by which a card's row names them; null for a person provisioned without one. */
   userName: string | null;
   booking: { start: string; end: string };
-  calendar: CalendarDifference;
   card: ReturnType<typeof noticeCard>;
-}
+} & ({ kind: 'calendar'; calendar: CalendarDifference } | { kind: 'prepare' } | { kind: 'held' });
 /**
  * What erasing one person from the domain did, counts only (D96 item 10), or why it erased nothing: an id the people
  * table does not hold, or a person the source has not deactivated (D122 item 7, D123 item 3).
@@ -289,10 +292,13 @@ export function talkUsecases(deps: TalkDeps) {
      */
     async openRound(
       actor: string,
-      input: { organisationId: string; label: string; opensOn: string; dueOn: string },
+      input: { organisationId: string; label: string; opensOn: string; dueOn: string; prepareDays?: number },
     ): Promise<string> {
       const label = normaliseLabel(input.label);
       if (!label) throw new TalkError('The label must be 1 to 120 characters.');
+      const prepareDays = input.prepareDays ?? PREPARE_DAYS_DEFAULT;
+      if (!Number.isInteger(prepareDays) || prepareDays < 0 || prepareDays > PREPARE_DAYS_MAX)
+        throw new TalkError(`prepareDays must be a whole number from 0 to ${PREPARE_DAYS_MAX}.`);
       if (!isCalendarDay(input.opensOn) || !isCalendarDay(input.dueOn))
         throw new TalkError('opensOn and dueOn must be calendar days, YYYY-MM-DD.');
       if (input.dueOn < input.opensOn) throw new TalkError('dueOn may not be before opensOn.');
@@ -317,6 +323,7 @@ export function talkUsecases(deps: TalkDeps) {
           label,
           opensOn: input.opensOn,
           dueOn: input.dueOn,
+          prepareDays,
           createdBy: actor,
           createdAt: at,
           closedAt: null,
@@ -330,6 +337,7 @@ export function talkUsecases(deps: TalkDeps) {
             organisationId: input.organisationId,
             opensOn: input.opensOn,
             dueOn: input.dueOn,
+            prepareDays,
             closed: current?.id ?? null,
           },
         });
@@ -618,9 +626,10 @@ export function talkUsecases(deps: TalkDeps) {
     },
 
     /**
-     * What the scan asks cards for (D133): for each person whose talk the persona booked through an invitation, and
-     * which is not held, what the calendar holds when it differs from the booking. Only the manager whose booking it is
-     * gets the card; a co-manager reads the difference on the talk. Nothing for someone who manages nobody or without an
+     * What the scan asks cards for (D133, D134): for each person whose talk the persona booked and which is not held,
+     * what the calendar holds when it differs from the booking, and what the booking's time asks now, a reminder to
+     * prepare in the round's working days before it or, from the day after it, whether it was held. Only the manager
+     * whose booking it is gets a card; a co-manager reads the talk. Nothing for someone who manages nobody or without an
      * open round. A complete reading of the persona's people, so a read that fails throws.
      */
     async scanOf(persona: AuthenticatedContext): Promise<{ observedAt: string; notices: TalkNotice[] }> {
@@ -632,16 +641,29 @@ export function talkUsecases(deps: TalkDeps) {
       const notices: TalkNotice[] = [];
       for (const p of read.people.values()) {
         const booking = read.stateOf(p.id).state === 'booked' ? read.bookingOf(p.id) : undefined;
-        if (!booking?.calendar || booking.bookedBy !== persona.id) continue;
-        const says = booking.calendar === 'gone' ? 'gone' : `${booking.calendar.start}/${booking.calendar.end}`;
-        notices.push({
-          kind: 'calendar',
+        if (!booking || booking.bookedBy !== persona.id) continue;
+        const about = {
           personId: p.id,
           userName: p.userName,
           booking: { start: booking.start, end: booking.end },
-          calendar: booking.calendar,
-          card: noticeCard('calendar', p.id, read.round.id, says),
-        });
+        };
+        if (booking.calendar) {
+          const says = booking.calendar === 'gone' ? 'gone' : `${booking.calendar.start}/${booking.calendar.end}`;
+          notices.push({
+            ...about,
+            kind: 'calendar',
+            calendar: booking.calendar,
+            card: noticeCard('calendar', p.id, read.round.id, says),
+          });
+        }
+        const asks = bookingAsks(booking, read.round.prepareDays, observedAt);
+        // The card says the time it is about: a talk moved to another time is a card that comes back.
+        if (asks)
+          notices.push({
+            ...about,
+            kind: asks,
+            card: noticeCard(asks, p.id, read.round.id, `${booking.start}/${booking.end}`),
+          });
       }
       return { observedAt, notices: notices.sort((a, b) => a.card.topic.localeCompare(b.card.topic)) };
     },
@@ -808,10 +830,10 @@ export interface TalkInvitation {
   at: string;
 }
 /**
- * Why an invitation no longer carries a booking: the manager undid it, replaced it, the employee said no, or its event
- * was cancelled, in Clew or in the calendar.
+ * Why an invitation no longer carries a booking: the manager undid it, replaced it, the employee said no, its event was
+ * cancelled, in Clew or in the calendar, or its time passed without the talk taking place.
  */
-export type InvitationEnd = 'undone' | 'replaced' | 'declined' | 'cancelled';
+export type InvitationEnd = 'undone' | 'replaced' | 'declined' | 'cancelled' | 'missed';
 /**
  * What an invitation Clew sent means to the talks module (D132 item 3, D133), told by the calendar module in the
  * transaction that changes the invitation (bound in composition, the way the people module tells of a leaver), so the

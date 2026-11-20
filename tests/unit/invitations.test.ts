@@ -360,6 +360,41 @@ describe('the manager settles what the calendar holds (D133)', () => {
     expect((await w.rowOf(boss, 'anna')).state).toBe('missing');
   });
 
+  test('missed: when the meeting’s time has passed without a talk, the invitation is over and the talk lacks a time, with nothing read from the calendar (D134)', async () => {
+    const w = world();
+    await open(w);
+    const sent = await w.invite(dan);
+    // Before its time has passed there is nothing to call missed.
+    await expect(w.invitations.settle(boss, 'dan', 'missed')).rejects.toThrow(
+      'Tiden för samtalet har inte passerat än.',
+    );
+    now = new Date('2026-11-21T07:00:00.000Z');
+    w.calendar.lookup = async () => {
+      throw new Error('The calendar is not read for this.');
+    };
+    await w.invitations.settle(boss, 'dan', 'missed');
+    expect((await w.proposal(sent.id, sent.threadId)).status).toBe('undone');
+    expect((await w.rowOf(boss, 'dan')).state).toBe('missing');
+    expect(w.proposals.audit.at(-1)).toEqual({
+      actor: 'person:boss',
+      action: 'proposals.missed',
+      subject: 'thread:' + sent.threadId,
+      at: now.toISOString(),
+      details: { proposal: sent.id },
+    });
+    expect(w.talkStore.audit().at(-1)).toMatchObject({
+      actor: 'person:boss',
+      action: 'talks.booking_removed',
+      details: { employeeId: 'dan', invitationId: sent.id, why: 'missed' },
+    });
+    // The meeting stays in the calendar as what was once planned.
+    expect(w.calendar.events).toHaveLength(1);
+    // Settled once: there is no invitation left to answer for.
+    await expect(w.invitations.settle(boss, 'dan', 'missed')).rejects.toThrow(
+      'Samtalet har ingen inbjudan från dig att ändra. Läs om sidan.',
+    );
+  });
+
   test('a decision that does not fit what the calendar holds now is refused, and what it holds is recorded', async () => {
     const w = world();
     await open(w);

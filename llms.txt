@@ -9,6 +9,7 @@
 - [Architecture overview](docs/architecture/overview.md): components, data ownership, reads, scans, approvals, durable execution and browser updates.
 - [Backend structure](docs/architecture/backend-structure.md): current code map, ports/adapters and dependency rules.
 - [Observability](docs/architecture/observability.md): the structured log, OpenTelemetry export, what a model turn records, and the audit trail's place beside them.
+- [Development talks](docs/architecture/talks.md): the talk (what holds), the invitation (what Clew sent) and the meeting (the calendar's copy); how a booking comes to be, the port between the calendar and talks modules, what happens when the meeting changes, and the cards derived by the scan (D132, D133, D134).
 - [Entities](docs/architecture/entities.md): how a source says what its rows are about (a person or a unit), who may be asked about, the batch rules, the administrator's lenses and columns, subjects on cards and what is not built (D97).
 - [Implementation status](docs/reference/status.md): implemented behavior versus proposals and fixtures.
 - [Interface spaces](docs/reference/interface-spaces.md): the shared header with Clew's pages under it, the eight page types, one page per thing, the two panes (beside Att göra's queue and beside a conversation) and the action dialog (D126), with their addresses, close targets and focus.

@@ -3,6 +3,7 @@ import type { CommitmentsResult, StaffUnit, TalksResult } from '@clew/contracts'
 import { ApiError } from '../src/api-error';
 import { refused, unlessRefused } from '../src/query-policy';
 import {
+  bookedDay,
   bookingNote,
   calendarDifference,
   commitmentCounts,
@@ -18,6 +19,7 @@ import {
   talkFor,
   talkSpan,
   talkSpanText,
+  timePassed,
   talkStateTone,
   talkStateWord,
   talkStatus,
@@ -138,6 +140,19 @@ describe('the words of a talk (D96 item 2)', () => {
       kind: 'gone',
       text: 'Mötet finns inte längre i kalendern. Samtalet i Clew står kvar på ons 11 nov. kl. 09:00–10:00.',
     });
+  });
+  test('a booked talk whose time has passed is the manager’s to answer for, held on the day it was booked for (D134)', () => {
+    const talk = { state: 'booked' as const, at: '2026-11-11T22:30:00.000Z', until: '2026-11-11T23:30:00.000Z' };
+    expect(timePassed(talk, Date.parse('2026-11-11T23:30:00.000Z'))).toBe(false);
+    expect(timePassed(talk, Date.parse('2026-11-11T23:30:01.000Z'))).toBe(true);
+    // Not a booked talk, or one that does not say when it ends: nothing has passed.
+    expect(timePassed({ ...talk, state: 'held' }, Date.parse('2026-12-01T00:00:00.000Z'))).toBe(false);
+    expect(timePassed({ state: 'booked' }, Date.parse('2026-12-01T00:00:00.000Z'))).toBe(false);
+    // 22:30 UTC is 23:30 the same day in Stockholm; a held day is not a booked instant.
+    expect(bookedDay(talk)).toBe('2026-11-11');
+    expect(bookedDay({ at: '2026-11-12T23:30:00.000Z' })).toBe('2026-11-13');
+    expect(bookedDay({ at: '2026-11-03' })).toBeUndefined();
+    expect(bookedDay({})).toBeUndefined();
   });
   test('the span a manager picks is two instants in Swedish time, and what does not hold names its field', () => {
     expect(talkSpan('2026-11-20T13:00', '14:00')).toEqual({

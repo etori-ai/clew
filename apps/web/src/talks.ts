@@ -91,6 +91,15 @@ export function calendarDifference(
   return { kind: 'moved', text: `Mötet i kalendern ligger nu på ${to}. Samtalet i Clew står kvar på ${stands}.` };
 }
 /**
+ * A booked talk whose time has passed (D134): it is its manager's to say whether it was held, or to take the time off
+ * so that it is booked again. `now` is the reader's clock, in milliseconds.
+ */
+export const timePassed = (talk: Pick<TalkEntry, 'state' | 'until'>, now: number): boolean =>
+  talk.state === 'booked' && !!talk.until && Date.parse(talk.until) < now;
+/** The day a talk whose time has passed is marked held on: the day it was booked for, in Swedish time. */
+export const bookedDay = (talk: Pick<TalkEntry, 'at'>): string | undefined =>
+  talk.at && !calendarDay.test(talk.at) ? displayDate(talk.at) : undefined;
+/**
  * The span a manager picks for a talk, as the write takes it: the day and start as the field holds them
  * (`YYYY-MM-DDTHH:MM`, Swedish time) and the end as a time the same day. `problem` names the first field that does not
  * hold, with the sentence under it; a time the day does not have (the hour skipped in spring) is one.
