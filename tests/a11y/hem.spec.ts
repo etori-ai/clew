@@ -619,6 +619,46 @@ test.describe('Hem, narrow', () => {
   });
 });
 
+/** D135: the session person holds two units, the school and a second one, and the leave request is about the second. */
+const HAGA = { unitId: 'unit-haga', unitLabel: 'Hagaskolan', role: 'manager' as const };
+function twoUnits(api: MockApi) {
+  api.assignments = [{ unitId: user.unitId, unitLabel: user.unitLabel, role: 'manager' }, HAGA];
+  api.threads = api.threads.map(t =>
+    t.id === 'ledighet' ? { ...t, subjects: [{ entity: 'unit' as const, key: HAGA.unitId }] } : t,
+  );
+}
+test.describe('Hem for a person with several units (D135)', () => {
+  test('the line under the greeting names both units, and the row whose item is about one of them names it after its system', async ({
+    page,
+    api,
+  }) => {
+    twoUnits(api);
+    await open(page, '/');
+    await expect(page.getByRole('main').getByText(`${user.unitLabel} och ${HAGA.unitLabel}`)).toBeVisible();
+    const ledighet = needs(page).locator('#work-ledighet');
+    await expect(ledighet).toContainText(`Personalsystemet · ${HAGA.unitLabel} · `);
+    // Only the item about a unit says one; the others are as they were.
+    await expect(needs(page).locator('#work-fakturor')).not.toContainText(HAGA.unitLabel);
+    await expect(needs(page).locator('#work-fakturor')).not.toContainText(user.unitLabel);
+    await expectNoAxeViolations(page);
+  });
+  test('a person with one unit sees no unit on a row, even on an item that names one', async ({ page, api }) => {
+    twoUnits(api);
+    api.assignments = undefined;
+    await open(page, '/');
+    await expect(needs(page).locator('#work-ledighet')).not.toContainText(HAGA.unitLabel);
+  });
+  test('at 320 px the row with its unit reflows and draws its whole line', async ({ page, api }) => {
+    twoUnits(api);
+    await page.setViewportSize(narrow);
+    await open(page, '/');
+    expect(await reflowProblems(page)).toEqual([]);
+    const lines = await workRowLines(needs(page).locator('#work-ledighet'));
+    expect(lines.map(l => l.text)).toContainEqual(expect.stringContaining(HAGA.unitLabel));
+    for (const line of lines) expect(line, line.text).toMatchObject({ cut: false });
+  });
+});
+
 test.describe('Hem on a phone', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 

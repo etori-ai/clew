@@ -39,7 +39,17 @@ describe('deriveAuthority', () => {
       { unitId: 'u2', role: 'manager' },
     ]);
     expect(d.active).toEqual({ unitId: 'u2', role: 'manager' });
-    expect(d.grant).toEqual({ unitId: 'u2', unitLabel: 'Enhet 2', role: 'manager', capabilities: ['admin.users'] });
+    // D135: with two assignments, the grant carries both beside the primary one.
+    expect(d.grant).toEqual({
+      unitId: 'u2',
+      unitLabel: 'Enhet 2',
+      role: 'manager',
+      capabilities: ['admin.users'],
+      assignments: [
+        { unitId: 'u1', unitLabel: 'Enhet 1', role: 'employee' },
+        { unitId: 'u2', unitLabel: 'Enhet 2', role: 'manager' },
+      ],
+    });
     expect(d.protected).toBe(true);
   });
   test('a mapping gives a capability only to members of that group, and only from the closed list', () => {
@@ -225,6 +235,26 @@ describe('deriveAuthority', () => {
     // D121: a relation to people is authority too; none and an empty list are the same.
     expect(sameGrant(g, { ...g, relations: ['registrar'] })).toBe(false);
     expect(sameGrant(g, { ...g, relations: [] })).toBe(true);
+    // D135: the assignments are authority, compared as a set by unit, role and label, in any order.
+    const two = {
+      ...g,
+      assignments: [
+        { unitId: 'u', unitLabel: 'U', role: 'manager' as const },
+        { unitId: 'v', unitLabel: 'V', role: 'employee' as const },
+      ],
+    };
+    expect(sameGrant(two, { ...two, assignments: [...two.assignments].reverse() })).toBe(true);
+    expect(sameGrant(g, two)).toBe(false);
+    expect(
+      sameGrant(two, { ...two, assignments: [two.assignments[0]!, { ...two.assignments[1]!, role: 'manager' }] }),
+    ).toBe(false);
+    expect(
+      sameGrant(two, { ...two, assignments: [two.assignments[0]!, { ...two.assignments[1]!, unitLabel: 'W' }] }),
+    ).toBe(false);
+    expect(
+      sameGrant(two, { ...two, assignments: [two.assignments[0]!, { ...two.assignments[1]!, unitId: 'w' }] }),
+    ).toBe(false);
+    expect(sameGrant(g, { ...g, assignments: [] })).toBe(true);
   });
   test('a relation to people comes from a row of its own table alone: no group key gives it, and it is never a capability (D121, D118)', () => {
     const memberships = [

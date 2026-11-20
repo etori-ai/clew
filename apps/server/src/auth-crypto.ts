@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { byUnitId } from '@clew/contracts';
 
 export const randomToken = () => randomBytes(32).toString('base64url');
 export const tokenDigest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -59,6 +60,11 @@ export interface Authority {
   version: number;
   /** D121: the relations to people held by grant; absent when none, so the value of everyone else did not change. */
   relations?: string[];
+  /**
+   * D135: every assignment, by unit id and role, when the person holds more than one; absent otherwise, so the value of
+   * a person with one assignment did not change. A unit's label is not authority.
+   */
+  assignments?: Array<{ unitId: string; role: string }>;
 }
 export function authorityOf(access: {
   person: { organisationId: string; enabled: boolean };
@@ -68,9 +74,14 @@ export function authorityOf(access: {
     capabilities: readonly string[];
     version: number;
     relations?: readonly string[];
+    assignments?: ReadonlyArray<{ unitId: string; role: string }>;
   };
 }): Authority {
   const relations = [...new Set(access.grant.relations ?? [])].sort();
+  // In unit id order by UTF-16 code unit, as the derivation orders them (D101 item 8), whatever order they were stored in.
+  const assignments = (access.grant.assignments ?? [])
+    .map(a => ({ unitId: a.unitId, role: a.role }))
+    .sort((a, b) => byUnitId(a.unitId, b.unitId));
   return {
     enabled: access.person.enabled,
     organisationId: access.person.organisationId,
@@ -80,6 +91,8 @@ export function authorityOf(access: {
     version: access.grant.version,
     // Authority: a relation granted or taken back is a change of whom the person may read about (D121).
     ...(relations.length ? { relations } : {}),
+    // Authority: a unit gained or lost, or a role changed on one, is a change of what the person acts for (D135).
+    ...(assignments.length > 1 ? { assignments } : {}),
   };
 }
 /** An HMAC over the authority alone, in a fixed field order, so the value changes exactly when the authority does. */

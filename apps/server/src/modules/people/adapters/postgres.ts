@@ -362,13 +362,19 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
           role: schema.accessGrants.role,
           capabilities: schema.accessGrants.capabilities,
           relations: schema.accessGrants.relations,
+          assignments: schema.accessGrants.assignments,
         })
         .from(schema.accessGrants)
         .where(eq(schema.accessGrants.personId, personId));
       if (!row) return undefined;
-      // As the memory store holds it: `relations` only when the person holds one (D121).
-      const { relations, ...rest } = row;
-      return relations.length ? { ...rest, relations } : rest;
+      // As the memory store holds it: `relations` only when the person holds one (D121), `assignments` only when they
+      // hold more than one (D135).
+      const { relations, assignments, ...rest } = row;
+      return {
+        ...rest,
+        ...(relations.length ? { relations } : {}),
+        ...(assignments.length > 1 ? { assignments } : {}),
+      };
     },
     async writeGrant(personId, grant) {
       if (!grant) {
@@ -381,6 +387,7 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
         role: grant.role,
         capabilities: [...grant.capabilities],
         relations: [...(grant.relations ?? [])],
+        assignments: (grant.assignments ?? []).map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })),
       };
       await tx
         .insert(schema.accessGrants)

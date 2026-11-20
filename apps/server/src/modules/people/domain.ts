@@ -17,6 +17,7 @@
 import {
   CAPABILITIES,
   EmploymentSchema,
+  byUnitId,
   RELATION_GRANTS,
   PROVISIONED_KEY_LENGTH,
   checkContract,
@@ -105,9 +106,15 @@ export interface DerivedUnit {
   id: string;
   label: string;
 }
+/** An assignment with its unit's label, as the grant carries it (D135). */
+export interface GrantAssignment extends Assignment {
+  unitLabel: string;
+}
 /**
- * The grant projection: the one active assignment with its label, the capabilities, and the relations to people by
- * grant (`auth_access_grant`). `relations` is present only when the person holds one (D121), sorted.
+ * The grant projection: the primary assignment with its label, the capabilities, the relations to people by grant
+ * (`auth_access_grant`), and every assignment when the person holds more than one (D135). `relations` is present only
+ * when the person holds one (D121), sorted; `assignments` only when there are two or more, sorted by unit id, the
+ * primary among them.
  */
 export interface Grant {
   unitId: string;
@@ -115,13 +122,17 @@ export interface Grant {
   role: Role;
   capabilities: Capability[];
   relations?: RelationGrant[];
+  assignments?: GrantAssignment[];
 }
 export interface Derived {
   /** Every unit the person is assigned to, sorted by unit id. */
   units: DerivedUnit[];
   /** Every assignment, one per unit, sorted by unit id. */
   assignments: Assignment[];
-  /** The assignment the person acts as until switching exists: manager before employee, then the lowest unit id. */
+  /**
+   * The primary assignment: manager before employee, then the lowest unit id. It is the `unitId` and `role` a connector
+   * is told and decides who reaches a connector; the others travel beside it (D135).
+   */
   active: Assignment | undefined;
   capabilities: Capability[];
   /** D121: the relations the person's groups give by grant, sorted; empty for nearly everyone. */
@@ -132,12 +143,10 @@ export interface Derived {
   positions: Position[];
 }
 /**
- * The order of unit ids, which decides the active assignment (D101 item 8): character by character, by UTF-16 code
- * unit, as `<` and JavaScript's default sort compare. A unit id is an opaque key, so no locale orders it: `Skola` comes
- * before `förskola`, `z` before `ä`, `10` before `9`, and no upgrade of ICU or Node moves anyone's active unit. Both
- * adapters reach the active unit through this one derivation.
+ * The order of unit ids decides the primary assignment (D101 item 8): `byUnitId` from the contracts, the comparator the
+ * authorization fingerprint orders assignments by too, so `Skola` comes before `förskola`, `z` before `ä` and `10`
+ * before `9`. Both adapters reach the primary unit through this one derivation.
  */
-const byUnitId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export function activeOf(assignments: readonly Assignment[]): Assignment | undefined {
   return [...assignments].sort(
     (a, b) => Number(b.role === 'manager') - Number(a.role === 'manager') || byUnitId(a.unitId, b.unitId),
@@ -194,6 +203,10 @@ export function deriveAuthority(
       role: active.role,
       capabilities: sorted,
       ...(relations.length ? { relations } : {}),
+      // D135: a person with one assignment has a grant as before; with more, every one rides on it.
+      ...(assignments.length > 1
+        ? { assignments: assignments.map(a => ({ unitId: a.unitId, unitLabel: labelOf(a.unitId), role: a.role })) }
+        : {}),
     },
     positions: derivePositions(memberships),
   };
@@ -218,6 +231,19 @@ export function givesAuthority(key: string | null, rules: readonly GroupCapabili
     (readScimGroupKey(key) !== undefined || key === PROTECTED_KEY || rules.some(row => row.groupExternalId === key))
   );
 }
+/**
+ * Whether two grants carry the same assignments (D135): the same units, each with the same role and label, in any
+ * order. Compared field by field, never as text: a JSON column gives back neither the order of the keys it was written
+ * with nor the order of the units, and the database does not order unit ids as `byUnitId` does.
+ */
+function sameAssignments(a: readonly GrantAssignment[] = [], b: readonly GrantAssignment[] = []) {
+  if (a.length !== b.length) return false;
+  const held = new Map(b.map(x => [x.unitId, x]));
+  return a.every(x => {
+    const y = held.get(x.unitId);
+    return !!y && y.role === x.role && y.unitLabel === x.unitLabel;
+  });
+}
 /** Whether two grant projections carry the same authority and label, so an unchanged derivation writes no audit row. */
 export function sameGrant(a: Grant | undefined, b: Grant | undefined) {
   if (!a || !b) return a === b;
@@ -230,7 +256,8 @@ export function sameGrant(a: Grant | undefined, b: Grant | undefined) {
     a.capabilities.length === b.capabilities.length &&
     a.capabilities.every((c, i) => c === b.capabilities[i]) &&
     ra.length === rb.length &&
-    ra.every((r, i) => r === rb[i])
+    ra.every((r, i) => r === rb[i]) &&
+    sameAssignments(a.assignments, b.assignments)
   );
 }
 

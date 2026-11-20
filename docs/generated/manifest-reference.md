@@ -1077,6 +1077,19 @@ Example:
 true
 ```
 
+#### `assignments`
+
+Whether the connector takes the actor's `assignments` (D135): every unit of a person who holds more than one, each with the role they have there. Without it the actor never carries them, and the connector answers for `unitId` and `role` alone.
+
+- Type: boolean
+- optional
+
+Example:
+
+```json
+true
+```
+
 #### `documents`
 
 Implements POST /clew/documents for authorised, versioned binary document reads (D79).

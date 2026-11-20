@@ -18,7 +18,7 @@ connector, and imports nothing from the rest of the repository (D21). Start with
 
 ## What it answers
 
-A manager of the unit (role `manager`, unit `unit-skola` after `FIXTURE_UNIT_MAP`) gets the area `employees`: who is at
+A manager of the unit (role `manager`, unit `unit-skola` after `FIXTURE_UNIT_MAP`) gets the area `employees`. Two more units, the finance and the HR department (`unit-ekonomi`, `unit-hr`), hold a few people and one leave request each. Its manifest sets `assignments: true`, so a manager told several assignments (the actor's `assignments`, [D135](../../docs/decisions/D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md)) is answered for every unit they manage, never for one where they are an employee: the scan's cards for each unit, each naming it in `subjects`, and the reads and writes about their people. The figure stays the primary unit's. The area `employees` holds: who is at
 work, absence per person with the rehab pattern (`hr.absenceOverview`, each row naming the employee by user name in
 `person`, the view's `subject`, so the name leads to the person in Clew and the pattern is the row's own link, "Mönster";
 its rows are `hr.person`'s asked for everyone, `byKey`, so where an administrator offers that lens on Personal whatever

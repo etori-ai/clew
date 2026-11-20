@@ -65,6 +65,26 @@ describe('authorizationVersion', () => {
       { relations: ['registrar'] },
     );
   });
+  test('every assignment is authority when there are two or more: one leaves the value as it was, and a unit or a role on one changes it, in any order and whatever the labels (D135)', () => {
+    const before = version();
+    const one = [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' as const }];
+    expect(authorizationVersion({ ...access, grant: { ...access.grant, assignments: [] } })).toBe(before);
+    expect(authorizationVersion({ ...access, grant: { ...access.grant, assignments: one } })).toBe(before);
+    const two = [...one, { unitId: 'unit-haga', unitLabel: 'Hagaskolan', role: 'employee' as const }];
+    const both = authorizationVersion({ ...access, grant: { ...access.grant, assignments: two } });
+    expect(both).not.toBe(before);
+    expect(authorizationVersion({ ...access, grant: { ...access.grant, assignments: [...two].reverse() } })).toBe(both);
+    const relabelled = two.map(a => ({ ...a, unitLabel: a.unitLabel + ' F-9' }));
+    expect(authorizationVersion({ ...access, grant: { ...access.grant, assignments: relabelled } })).toBe(both);
+    const promoted = two.map(a => ({ ...a, role: 'manager' as const }));
+    expect(authorizationVersion({ ...access, grant: { ...access.grant, assignments: promoted } })).not.toBe(both);
+    expect(authorityOf({ ...access, grant: { ...access.grant, assignments: two } })).toMatchObject({
+      assignments: [
+        { unitId: 'unit-haga', role: 'employee' },
+        { unitId: 'unit-skola', role: 'manager' },
+      ],
+    });
+  });
   test('projects exactly the authority fields', () => {
     expect(authorityOf(access)).toEqual({
       enabled: true,

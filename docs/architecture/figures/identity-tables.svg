@@ -85,7 +85,7 @@
 <text x="812" y="98" font-size="11.5" fill="#374151">Every change writes a row in audit (actor, action,</text>
 <text x="812" y="115" font-size="11.5" fill="#374151">subject, details jsonb) in the change&#x27;s transaction:</text>
 <text x="812" y="132" font-size="11.5" fill="#374151">scim.user.*, scim.group.*, grant.derived,</text>
-<text x="812" y="149" font-size="11.5" fill="#374151">assignments.derived, group-capability.added/.removed,</text>
+<text x="812" y="149" font-size="11.5" fill="#374151">positions.derived, group-capability.added/.removed,</text>
 <text x="812" y="166" font-size="11.5" fill="#374151">provisioner.added/.rotated/.revoked/.seen,</text>
 <text x="812" y="183" font-size="11.5" fill="#374151">identity.bound/.conflict/.rebound, person.erased.</text>
 <text x="812" y="200" font-size="11.5" fill="#374151">Sign-in events go to auth_audit: login, identity-bound,</text>
@@ -121,7 +121,7 @@
 <line x1="432" y1="636" x2="768" y2="636" stroke="#e5e7eb"/>
 <text x="432" y="650" font-size="10.5" fill="#6b7280">one role per unit and person · role: manager | employee</text>
 <text x="432" y="666" font-size="10.5" fill="#6b7280">→ auth_person.id, → auth_unit.id</text>
-<rect x="800" y="538" width="360" height="230" rx="8" fill="#ffffff" stroke="#059669"/>
+<rect x="800" y="538" width="360" height="234" rx="8" fill="#ffffff" stroke="#059669"/>
 <path d="M 808 538 H 1152 a 8 8 0 0 1 8 8 V 568 H 800 V 546 a 8 8 0 0 1 8 -8 Z" fill="#ecfdf5" stroke="#059669"/>
 <text x="812" y="558" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_access_grant</text>
 <text x="812" y="586" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">person_id</text>
@@ -138,11 +138,12 @@
 <text x="970" y="666" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">jsonb</text>
 <text x="812" y="686" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">version</text>
 <text x="970" y="686" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">integer</text>
-<line x1="812" y1="696" x2="1148" y2="696" stroke="#e5e7eb"/>
-<text x="812" y="710" font-size="10.5" fill="#6b7280">At most one row per person with a unit assignment.</text>
-<text x="812" y="726" font-size="10.5" fill="#6b7280">Managers first, then the lowest unit id by UTF-16 code unit.</text>
-<text x="812" y="742" font-size="10.5" fill="#6b7280">Capabilities from capability groups and mapped groups.</text>
-<text x="812" y="758" font-size="10.5" fill="#6b7280">version: part of the authority fingerprint</text>
+<text x="812" y="706" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">assignments</text>
+<text x="970" y="706" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">jsonb</text>
+<line x1="812" y1="716" x2="1148" y2="716" stroke="#e5e7eb"/>
+<text x="812" y="730" font-size="10.5" fill="#6b7280">One row per person with a unit; every unit when several.</text>
+<text x="812" y="746" font-size="10.5" fill="#6b7280">unit_id: managers first, then the lowest id (UTF-16).</text>
+<text x="812" y="762" font-size="10.5" fill="#6b7280">version, assignments: part of the authority fingerprint</text>
 <line x1="420" y1="607" x2="400" y2="607" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
 <line x1="600" y1="480" x2="600" y2="500" stroke="#4b5563" stroke-width="2" marker-end="url(#a)"/>
 <text x="610" y="496" font-size="12" fill="#6b7280">memberships + mapping → derivation</text>

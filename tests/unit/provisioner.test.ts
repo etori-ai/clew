@@ -512,8 +512,19 @@ describe('the synthetic provisioner', () => {
       derived = store.state.audit
         .slice(audited)
         .filter(a => a.subject === 'person:' + hassan && a.action === 'grant.derived');
+    // On both units for a moment, which the grant carries (D135), then on the one he moved to.
     expect(derived.map(a => a.details)).toEqual([
-      { unitId: 'unit-aldreboende-natt', role: 'employee', capabilities: [], assignments: 2 },
+      {
+        unitId: 'unit-aldreboende-natt',
+        role: 'employee',
+        capabilities: [],
+        assignments: 2,
+        placements: [
+          { unitId: 'unit-aldreboende-natt', role: 'employee' },
+          { unitId: 'unit-omsorg', role: 'employee' },
+        ],
+      },
+      { unitId: 'unit-aldreboende-natt', role: 'employee', capabilities: [], assignments: 1 },
     ]);
     expect(store.state.assignments.get(hassan)).toEqual([{ unitId: 'unit-aldreboende-natt', role: 'employee' }]);
     // The groups are patched, the one he joins before the one he leaves.

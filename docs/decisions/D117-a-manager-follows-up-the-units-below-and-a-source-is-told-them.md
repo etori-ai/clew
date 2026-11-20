@@ -1,6 +1,6 @@
 # D117 · A manager follows up the units of the managers who report to them, and a source is told those units
 
-**Status:** provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice); item 5 as built differs, see the note of 2026-11-13 at the end · **Date:** 2026-11-13 · **Area:** product, integrations
+**Status:** provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice); item 5 as built differs, see the note of 2026-11-13 at the end; item 5 amended by [D135](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md) (2026-11-20, provisional): the actor gains `assignments`, the person's own units and roles, beside `units`, which stays the units a manager follows up · **Date:** 2026-11-13 · **Area:** product, integrations
 
 **Decision.** The follow-up of the dialogue support (Dialogstöd) reaches one level down the organisation tree that SCIM
 pushes ([D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)): a manager

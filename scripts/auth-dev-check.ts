@@ -1,3 +1,4 @@
+import { testPasswordKey } from './test-password-key';
 /**
  * Runs on the host against the published dev port: real Keycloak login for the synthetic manager, then the first
  * use case end to end through the API: proposals exist, confirm creates calendar events and an audit row, undo
@@ -6,12 +7,12 @@
 const base = process.env.PUBLIC_URL ?? 'http://localhost:3020';
 const env = Object.fromEntries(
   (await Bun.file('.auth-test.env').text()).split('\n').flatMap(line => {
-    const m = /^([A-Z_]+)=(.*)$/.exec(line);
+    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line);
     return m ? [[m[1]!, m[2]!]] : [];
   }),
 );
 const user = process.argv[2] ?? 'hillevi',
-  password = env['TEST_' + user.toUpperCase() + '_PASSWORD'];
+  password = env[testPasswordKey(user)];
 if (!password) throw new Error('Test password missing in .auth-test.env');
 const jar = new Map<string, string>();
 const cookieHeader = () => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');

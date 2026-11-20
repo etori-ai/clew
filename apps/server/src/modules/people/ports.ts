@@ -145,7 +145,10 @@ export interface ProvisionTx {
   /** Upsert by id, one per assignment, before the assignments that reference them; the label is the derived one. */
   writeUnits(organisationId: string, units: readonly DerivedUnit[]): Promise<void>;
   replaceAssignments(personId: string, assignments: readonly Assignment[]): Promise<void>;
-  /** The projection as stored; `relations` (D121) present only when the person holds one. */
+  /**
+   * The projection as stored; `relations` (D121) present only when the person holds one, `assignments` (D135) only when
+   * they hold more than one assignment.
+   */
   grant(
     personId: string,
   ): Promise<

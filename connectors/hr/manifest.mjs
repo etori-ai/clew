@@ -612,6 +612,8 @@ export const manifest = {
   source: 'Personalsystemet',
   uses: [],
   scan: true,
+  // D135: a manager of several units is answered for each of them (`managedUnits` in connector.mjs).
+  assignments: true,
   facts: [{ kind: ABSENCE_FACT, title: 'Sjukfrånvaro', attributes: AbsenceAttributes }],
   areas: [
     {

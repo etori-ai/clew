@@ -39,6 +39,7 @@ import { START_PAGE_ID, type ShellNav } from './nav';
 import { WithAssistantCorner } from './assistant-corner';
 import { pageLocation, usePublishPageLocation } from '../../page-location';
 import { useFocusOnTheWayBack } from '../../way-back';
+import { unitsLine, unitsList } from '../../user-units';
 
 export { mobileQuery, shortQuery } from '../../media';
 /** The installation's name in the header until the header's own answer has said it. */
@@ -134,6 +135,8 @@ type Props = {
  */
 export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const { mode, setMode, isPersistent } = useAppearance();
+  // D135: every unit of a person who holds more than one, the primary one first; their one unit otherwise.
+  const units = unitsList(user);
   const toast = useToast();
   const location = useLocation(),
     navigate = useNavigate();
@@ -277,7 +280,9 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
                 <ReminderBell />
                 <SiteHeaderPerson
                   name={user.name}
-                  description={user.unitLabel}
+                  // D135: the band says the first unit and how many more; its dialog names every one.
+                  description={unitsLine(user)}
+                  detail={units}
                   onSignOut={() => void logout()}
                   appearance={{ mode, onChange: setMode, isPersistent }}
                   // The person's own page (D126 rule 1): with no rail, the band's person is the shell's way to it.
@@ -308,7 +313,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
           }}
         />
         <VStack gap={4} padding={3}>
-          {user.unitLabel ? <Text type="supporting">{user.unitLabel}</Text> : null}
+          {units ? <Text type="supporting">{units}</Text> : null}
           <RadioList
             label="Utseende"
             value={mode}

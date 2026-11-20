@@ -87,6 +87,18 @@ export const CHECK_EMPLOYEE: Actor = {
   userName: 'check-employee',
 };
 /**
+ * The check's manager as a person with two assignments (D135): manager on the check's unit and employee on a second
+ * unit no installation has either. It shows that a source takes the actor's `assignments`; since no installation has
+ * these units, it cannot show that the source keeps the two roles apart.
+ */
+export const CHECK_ASSIGNED: Actor = {
+  ...CHECK_MANAGER,
+  assignments: [
+    { unitId: 'unit-check', unitLabel: 'Kontrollenheten', role: 'manager' },
+    { unitId: 'unit-check-second', unitLabel: 'Andra kontrollenheten', role: 'employee' },
+  ],
+};
+/**
  * One of the check's people in the fullest shape the server hands a person to the registry: the whole authenticated
  * context, provisioned groups and session fields included, as the refresh and a connector's callback do (a request
  * hands the published actor with the groups, `audiencedActorOf`). Either way only the published actor leaves the
@@ -745,6 +757,38 @@ export async function checkConnector(
         'Ärenden',
         `Genomgången föreslår ${counts.join(' och ')}. ${same ? 'Två genomgångar gav samma ärenden.' : 'Två genomgångar gav olika ärenden.'}`,
       );
+    // D135: a person with two assignments, for a connector that says it takes them. The source must take the field, and
+    // a card that names a unit names one of the person's own; whether it keeps the roles apart, no unit of an
+    // installation can show here. A connector that does not say so is never sent the field.
+    const assigned = asInProduction(CHECK_ASSIGNED),
+      held = new Set(CHECK_ASSIGNED.assignments!.map(a => a.unitId));
+    if (manifest.assignments)
+      try {
+        const drafts = await registry.scan(assigned),
+          stray = drafts.filter(d => d.subjects?.some(s => !held.has(s.key)));
+        if (stray.length) {
+          fail(
+            `scan with two assignments: ${stray.map(d => d.topic).join(', ')} names a unit the person does not hold`,
+          );
+          item(
+            'fail',
+            'surfaces',
+            'Ärenden',
+            'Ett ärende för en person med två placeringar pekar på en enhet som personen inte har.',
+          );
+        } else {
+          ok(`scan with two assignments: ${drafts.length} drafts, every unit named is one of the person's`);
+          item('ok', 'surfaces', 'Ärenden', 'En person med två placeringar får sina ärenden utan fel.');
+        }
+      } catch (error) {
+        fail(`scan with two assignments: ${(error as Error).message}`);
+        item(
+          'fail',
+          'surfaces',
+          'Ärenden',
+          `Genomgången misslyckades för en person med två placeringar: ${(error as Error).message}`,
+        );
+      }
   }
   // The shared header (D88): asked as both roles; the answer must be in the protocol's shape, or the holder's `denied`
   // (its 403), which is how it lists nothing for a person and Clew then draws its own. Its words stay out of the report

@@ -12,6 +12,7 @@ import { scim } from '../apps/server/src/composition/people';
 import { scimClient } from './provisioner/client';
 import { developmentScope, developmentDirectory, fullName } from './provisioner/directory';
 import { push } from './provisioner/push';
+import { testPasswordKey } from './test-password-key';
 const realm = 'clew',
   issuer = 'http://keycloak.orb.local:8090/realms/' + realm;
 const base = process.env.KEYCLOAK_ADMIN_URL ?? 'http://host.docker.internal:8090';
@@ -201,14 +202,22 @@ try {
   // capabilities) through SCIM, and the first login binds the Keycloak subject to the person by `preferred_username`
   // (D68 item 6), so no binding is written here.
   for (const person of developmentDirectory.people.filter(p => p.login)) {
-    const id = person.userName,
-      key = 'TEST_' + id.toUpperCase() + '_PASSWORD';
-    let user = (await objects(root + '/users?exact=true&username=' + id)).find(u => u.username === id);
+    // A persona's person row has its user name as its id, the id the fixtures and calendars key on. A generated person
+    // given an account later (D135) was provisioned under an id of its own before, and keeps it.
+    const [provisioned] = await database()
+      .select({ id: people.id })
+      .from(people)
+      .where(eq(people.externalId, person.externalId));
+    const id = provisioned?.id ?? person.userName,
+      key = testPasswordKey(person.userName);
+    let user = (await objects(root + '/users?exact=true&username=' + person.userName)).find(
+      u => u.username === person.userName,
+    );
     let secret = previousTest[key];
     if (!user) {
       secret = randomBytes(18).toString('base64url');
       await admin(root + '/users', 'POST', {
-        username: id,
+        username: person.userName,
         firstName: person.givenName,
         lastName: person.familyName,
         email: person.email,
@@ -217,7 +226,9 @@ try {
         requiredActions: [],
         credentials: [{ type: 'password', value: secret, temporary: false }],
       });
-      user = (await objects(root + '/users?exact=true&username=' + id)).find(u => u.username === id);
+      user = (await objects(root + '/users?exact=true&username=' + person.userName)).find(
+        u => u.username === person.userName,
+      );
     }
     if (!user || typeof user.id !== 'string') throw new Error('Unable to bind synthetic account');
     if (secret) testPasswords[key] = secret;
@@ -334,8 +345,8 @@ try {
   };
   // The development sign-in (D6): one click per persona on the sign-in page. Set AUTH_DEV_LOGIN=false to keep the form.
   const devAccounts = developmentDirectory.people
-    .filter(p => p.login && testPasswords['TEST_' + p.userName.toUpperCase() + '_PASSWORD'])
-    .map(p => p.userName + ':' + testPasswords['TEST_' + p.userName.toUpperCase() + '_PASSWORD']);
+    .filter(p => p.login && testPasswords[testPasswordKey(p.userName)])
+    .map(p => p.userName + ':' + testPasswords[testPasswordKey(p.userName)]);
   await writeSettings(localFile, {
     ...settings,
     AUTH_DEV_LOGIN: existing.AUTH_DEV_LOGIN ?? 'true',

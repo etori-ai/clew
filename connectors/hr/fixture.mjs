@@ -3,7 +3,9 @@
 // within the rehab rule's window, two leave requests waiting, a delegation about to expire, a long sick leave and a vab
 // running today, and a sick report made this morning. Refs are stable; only the dates move with the seed day. Reseed
 // with FIXTURE_RESEED=true. An employee's `personId` is their user name; the people the development directory has on
-// Bergsåkers skola carry the ones it gives them.
+// Bergsåkers skola carry the ones it gives them. Two more units, the finance and the HR department, hold a few people
+// and one leave request each, so a manager of both (the development directory's sara.nystrom) has something from each
+// of her units (D135).
 
 export const UNIT = 'unit-skola';
 export const WARD = 'Björken';
@@ -102,14 +104,17 @@ export const isWeekday = day => {
   return n >= 1 && n <= 5;
 };
 
-const employee = (n, personId, name, role) => ({
+const employee = (n, personId, name, role, unitId = UNIT) => ({
   ref: 'hr:emp:' + n,
   personId,
   name,
   email: personId + '@clew.test',
-  unitId: UNIT,
+  unitId,
   role,
 });
+/** The finance and the HR department (D135), as the development directory names them. */
+export const FINANCE = 'unit-ekonomi';
+export const PERSONNEL = 'unit-hr';
 
 /** Everything the HR system holds about the unit, relative to `today` (YYYY-MM-DD). */
 export function seed(today) {
@@ -136,6 +141,13 @@ export function seed(today) {
     employee(1017, 'petra.karlsson', 'Petra Karlsson', 'Lärare'),
     employee(1018, 'sven.lundgren', 'Sven Lundgren', 'Lärare'),
     employee(1019, 'yusuf.lindqvist', 'Yusuf Lindqvist', 'Elevassistent'),
+    // The finance and the HR department, by the user names the development directory gives the people on them (D135).
+    employee(2001, 'amir.pettersson', 'Amir Pettersson', 'Ekonom', FINANCE),
+    employee(2002, 'birgitta.sjoberg', 'Birgitta Sjöberg', 'Controller', FINANCE),
+    employee(2003, 'leila.andersson', 'Leila Andersson', 'Redovisningsekonom', FINANCE),
+    employee(3001, 'hanna.eriksson', 'Hanna Eriksson', 'HR-specialist', PERSONNEL),
+    employee(3002, 'dragan.hosseini', 'Dragan Hosseini', 'HR-konsult', PERSONNEL),
+    employee(3003, 'anna.lundgren', 'Anna Lundgren', 'Lönespecialist', PERSONNEL),
   ];
   /** Inclusive dates. `short` is sjuk up to 14 days, `vab`, `long` is sjukskrivning. */
   const absences = [
@@ -168,6 +180,24 @@ export function seed(today) {
       days: 5,
       type: 'semester',
       submittedAt: d(-1) + 'T06:35:00+01:00',
+    },
+    {
+      ref: 'hr:leave:8101',
+      employee: 'hr:emp:2001',
+      from: d(30),
+      to: d(32),
+      days: 3,
+      type: 'semester',
+      submittedAt: d(-1) + 'T14:10:00+01:00',
+    },
+    {
+      ref: 'hr:leave:8201',
+      employee: 'hr:emp:3001',
+      from: d(20),
+      to: d(20),
+      days: 1,
+      type: 'tjänstledighet',
+      submittedAt: d(-3) + 'T09:05:00+01:00',
     },
   ];
   const delegations = [

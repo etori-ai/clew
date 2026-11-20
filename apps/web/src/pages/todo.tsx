@@ -87,6 +87,7 @@ import { itemSubject } from '../components/views/view-read';
 import { AskClew } from '../components/conversation/thing-panel';
 import type { ThingSubject } from '../components/conversation/conversation-context';
 import { PageFrame } from '../components/shell/page-frame';
+import { workUnit } from '../user-units';
 
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
@@ -445,7 +446,8 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     const stale = t.state === 'open' && !!silent.of(t.connector);
     const about = aboutOf(t);
     const why = tab !== 'needs-you' || !about ? r.facts.why : null;
-    const words = [about, why].filter(Boolean).join(DOT);
+    // D135: the unit the work item is about, for a person with several.
+    const words = [workUnit(user, t), about, why].filter(Boolean).join(DOT);
     return stale ? (words ? staleWhy(words) : 'Kan vara gammal') : words;
   };
   const columns: TableColumn<QueueRow>[] = [

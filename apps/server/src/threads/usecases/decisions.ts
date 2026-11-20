@@ -17,6 +17,11 @@ import { startedDecision, takesStarted } from '../domain';
 import type { PersonKeys } from '../model';
 import { viewWithPeople } from './keys';
 
+/** The unit a work item is about (D135): its one unit subject, when it names exactly one. */
+const cardUnit = (t: Pick<Thread, 'subjects'>) => {
+  const units = (t.subjects ?? []).filter(s => s.entity === 'unit');
+  return units.length === 1 ? units[0]!.key : undefined;
+};
 export interface CardDecisionsDeps {
   documentPreview?: (persona: AuthenticatedContext, capability: string, ref: string) => Promise<DocumentReview>;
   read(persona: AuthenticatedContext, id: string): Promise<Thread | undefined>;
@@ -37,6 +42,8 @@ export interface CardDecisionsDeps {
        * decided, and dispatch checks that it still is.
        */
       subject?: { param: string; personId: string };
+      /** The unit the work item is about (D135), when it names exactly one. */
+      unit?: string;
     },
   ): Promise<unknown>;
   clock: () => Date;
@@ -139,6 +146,7 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     if (!previous && t.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
     if (previous && previous.operation !== action.capability)
       throw new InputError('Ett tidigare beslut väntar redan på besked.');
+    const unit = cardUnit(t);
     try {
       await approve(persona, {
         decisionId: previous?.decisionId ?? `card:${id}:${actionId}:${Date.parse(t.updatedAt)}`,
@@ -147,6 +155,7 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
         presentation: { threadId: id, version: t.updatedAt, actionId },
         ...(Object.keys(asked).length ? { asked } : {}),
         ...(subject ? { subject } : {}),
+        ...(unit ? { unit } : {}),
       });
     } catch (error) {
       // An approved input the capability's schema refuses (the answers merged in, D112) is the person's to correct.

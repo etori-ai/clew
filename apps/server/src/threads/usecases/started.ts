@@ -157,6 +157,8 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
         area: draft.area,
         summary: draft.summary,
         items: draft.items ?? [],
+        // D135: the units the source says the card is about (D97 item 6).
+        ...(draft.subjects?.length ? { subjects: draft.subjects } : {}),
         actions: draft.actions,
         // The person asked for it, so it waits on them.
         waitingOn: null,

@@ -7,6 +7,7 @@
  *   docker exec -w /workspace clew-app-1 bun scripts/auth-exchange-check.ts [hillevi|hassan] [--connector]
  */
 import { resolve } from 'node:path';
+import { testPasswordKey } from './test-password-key';
 try {
   process.loadEnvFile(resolve(import.meta.dir, '../apps/server/.env.local'));
 } catch {
@@ -21,12 +22,14 @@ const target = (url: string) =>
   process.env.BFF_URL && url.startsWith(base) ? process.env.BFF_URL + url.slice(base.length) : url;
 const env = Object.fromEntries(
   (await Bun.file(resolve(import.meta.dir, '../.auth-test.env')).text()).split('\n').flatMap(line => {
-    const m = /^([A-Z_]+)=(.*)$/.exec(line);
+    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line);
     return m ? [[m[1]!, m[2]!]] : [];
   }),
 );
-const user = process.argv.find(a => !a.startsWith('--') && /^[a-z]+$/.test(a) && a !== 'bun') ?? 'hillevi';
-const password = env['TEST_' + user.toUpperCase() + '_PASSWORD'];
+const user =
+  process.argv.find(a => !a.startsWith('--') && /^[a-z][a-z0-9._-]*$/.test(a) && !a.endsWith('.ts') && a !== 'bun') ??
+  'hillevi';
+const password = env[testPasswordKey(user)];
 if (!password) throw new Error('Test password missing in .auth-test.env');
 const audience = process.env.DELEGATION_AUDIENCE ?? 'eneo';
 const jar = new Map<string, string>();

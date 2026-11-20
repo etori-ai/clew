@@ -8,7 +8,7 @@ import type { Capability } from '../../packages/contracts/src/scim-group-key';
  * capabilities that become `capability:` groups; may hold positions from the source's own list, which become
  * `position:` groups and grant nothing (D108 item 5); and may have several current employments, each with its own unit and title (D114). Two hundred and fifty people in forty-eight
  * units: four personas with a Keycloak account (`login`), seven written by hand for the names a real directory
- * holds, and the rest generated deterministically, so every manager has a team, the users page has something to page
+ * holds, and the rest generated deterministically, one of them with an account too (`GENERATED_LOGINS`), so every manager has a team, the users page has something to page
  * and a group has anything from no members to eighty.
  *
  * The units are a tree (D99), as a municipality's line organisation is, six levels at its deepest: the municipality
@@ -82,7 +82,10 @@ export interface DirectoryPerson {
   /** D108 item 5: the codes of the positions the person holds, of those the directory lists. */
   positions?: string[];
   capabilities: Capability[];
-  /** A persona: has a Keycloak account in the development stack and a fixed person id the fixtures key on. */
+  /**
+   * Has a Keycloak account in the development stack. A persona also has a fixed person id the fixtures key on; a
+   * generated person given one (`GENERATED_LOGINS`) keeps the id provisioning gave them.
+   */
   login?: boolean;
 }
 export interface Directory {
@@ -229,6 +232,11 @@ const UNITS: UnitPlan[] = [
  * plain-group rules were written for those first units and are theirs alone.
  */
 const TREE_UNITS = new Set(UNITS.slice(UNITS.findIndex(u => u.id === ROOT)).map(u => u.id));
+/**
+ * Generated people who get a Keycloak account like the personas (D135): `sara.nystrom` leads the finance and the HR
+ * department, so the stack has someone who signs in with two units. Her person row keeps the id provisioning gave her.
+ */
+const GENERATED_LOGINS = new Set(['sara.nystrom']);
 /** The second generated person in each of these units holds another employment and is assigned to both units. */
 const SECOND_EMPLOYMENT: Partial<Record<string, Employment>> = {
   'unit-bibliotek': { unitId: 'unit-kommunikation', title: 'Webbredaktör' },
@@ -662,6 +670,7 @@ function generated(): DirectoryPerson[] {
         ...(secondEmployment ? { alsoIn: [secondEmployment.unitId] } : {}),
         ...(groups.length ? { groups } : {}),
         ...(secondPosition ? { positions: [secondPosition] } : {}),
+        ...(GENERATED_LOGINS.has(userName) ? { login: true } : {}),
         capabilities:
           unit.id === 'unit-it' && seat.manager
             ? ['admin.connectors']
