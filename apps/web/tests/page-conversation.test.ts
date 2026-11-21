@@ -8,6 +8,8 @@ import {
   itemPageSubject,
   listSubject,
   pageSubject,
+  paneBoxName,
+  PANE_PLACEHOLDER,
   paneReach,
   pageTurn,
   recordKey,
@@ -349,6 +351,7 @@ describe('before anything is asked the pane says what it can do here, every line
     })!;
     expect(paneReach(subject, [{ title: 'Lägg till en kommentar' }, { title: 'Lägg till en kommentar' }])).toEqual({
       reads: ['Utvecklingssamtal', 'Dina ärenden i Att göra'],
+      readsPage: false,
       prepares: ['Lägg till en kommentar'],
       cannotRead: ['Introduktion och avslut', 'Personalsystemet'],
     });
@@ -361,13 +364,15 @@ describe('before anything is asked the pane says what it can do here, every line
       views,
       named: 'ärendena',
     })!;
-    expect(paneReach(subject)).toEqual({ reads: ['Att göra'], prepares: [], cannotRead: [] });
-    expect(paneReach(subject, [])).toEqual({ reads: ['Att göra'], prepares: [], cannotRead: [] });
+    // The one read is the page the header names ("Om Att göra · Behöver dig"): a sentence, not a list of one.
+    expect(paneReach(subject)).toEqual({ reads: ['Att göra'], readsPage: true, prepares: [], cannotRead: [] });
+    expect(paneReach(subject, [])).toEqual({ reads: ['Att göra'], readsPage: true, prepares: [], cannotRead: [] });
   });
   test('a work item’s page reads the item by its title, and fills in its actions as the server says them', () => {
     const subject = itemPageSubject({ id: 'ledighet-1', title: 'Ledighetsansökan från Anna Lindqvist' });
     expect(paneReach(subject, [{ title: 'Bevilja' }, { title: 'Avslå' }])).toEqual({
       reads: ['Ledighetsansökan från Anna Lindqvist'],
+      readsPage: true,
       prepares: ['Bevilja', 'Avslå'],
       cannotRead: [],
     });
@@ -383,7 +388,36 @@ describe('before anything is asked the pane says what it can do here, every line
       ],
       views,
     })!;
-    expect(paneReach(subject)).toEqual({ reads: [], prepares: [], cannotRead: ['Personalsystemet'] });
+    expect(paneReach(subject)).toEqual({
+      reads: [],
+      readsPage: false,
+      prepares: [],
+      cannotRead: ['Personalsystemet'],
+    });
+  });
+  test('one read is listed by name when it is not the page’s own name, or when something on the page is closed', () => {
+    const chips = [{ ref: 'capability:hr.presenceAll', kind: 'capability' as const, label: 'Sjukfrånvaro' }];
+    // The page's own name: the header says it once, and the box says that the page is read.
+    expect(paneReach({ chips, about: 'Om Sjukfrånvaro' }).readsPage).toBe(true);
+    expect(paneReach({ chips, about: 'Om sjukfrånvaro i dag' }).readsPage).toBe(true);
+    // Another name than the page's: the name says what is read.
+    expect(paneReach({ chips, about: 'Om Läget' }).readsPage).toBe(false);
+    // Something closed: "what the page shows" would promise more than the one read.
+    expect(paneReach({ chips, about: 'Om Sjukfrånvaro', cannotRead: ['Personalsystemet'] }).readsPage).toBe(false);
+    expect(
+      paneReach({ chips, about: 'Om Sjukfrånvaro', closed: 'Assistenten kan inte läsa allt som visas här.' }).readsPage,
+    ).toBe(false);
+    // Several reads, or none: never the sentence.
+    expect(
+      paneReach({ chips: [...chips, { ...chips[0]!, label: 'Samtalen' }], about: 'Om Sjukfrånvaro' }).readsPage,
+    ).toBe(false);
+    expect(paneReach({ chips: [], about: 'Om Sjukfrånvaro' }).readsPage).toBe(false);
+  });
+  test('the pane’s box is named by its visible words and what the page’s box asks about', () => {
+    expect(PANE_PLACEHOLDER).toBe('Skriv din fråga');
+    expect(paneBoxName('Fråga om ärendet')).toBe('Skriv din fråga om ärendet');
+    expect(paneBoxName('Fråga om Johan Byström')).toBe('Skriv din fråga om Johan Byström');
+    expect(paneBoxName('Vad undrar du?')).toBe('Skriv din fråga: Vad undrar du?');
   });
 });
 

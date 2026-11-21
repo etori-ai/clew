@@ -15,6 +15,7 @@ import {
   type ViewRef,
 } from '@clew/contracts';
 import {
+  Card,
   ChatLayout,
   EyeIcon,
   Heading,
@@ -52,7 +53,11 @@ import { itemSubject } from '../views/view-read';
 export interface PageSubject extends ThingSubject {
   /** What the pane is about, in words a person reads ("Om mötet Morgonmöte ledningsgrupp"). */
   about: string;
-  /** What the empty box says, and its name. */
+  /**
+   * What the box asks about ("Fråga om ärendet"). Under a picked thing (Att göra's item, Kalender's entry) it is what
+   * the empty box says and its name; in the frame's pane, whose header already names the page, the empty box says the
+   * same words on every page (`PANE_PLACEHOLDER`) and these words are in its name (`paneBoxName`).
+   */
   placeholder: string;
   /**
    * What the pane says under its heading that the list of what the assistant cannot read (`cannotRead`) does not
@@ -242,23 +247,45 @@ export function pageSubject(page: {
  * `ViewEntry.assistant`, or the work item the page shows), by their words; the actions of what stands open it may fill
  * in, as the server says them (`prepares`; none while the server has not answered); and what the page shows that it
  * cannot read (`cannotRead`). An empty list is not drawn.
+ *
+ * `readsPage` (D138 item 7 as amended 2026-11-21): the one read is the page the pane's header already names ("Om
+ * Avvikelser och tillbud" over the read "Avvikelser och tillbud") and nothing the page shows is closed, so a list of
+ * it would say the page's name once more. The pane then says in one sentence that the assistant reads what the page
+ * shows, which is exactly what the chip allows. With several reads, with a read under another name than the page's, or
+ * with anything closed, the reads are listed by name: there the names say what the sentence could not.
  */
 export interface PaneReach {
   reads: string[];
+  readsPage: boolean;
   prepares: string[];
   cannotRead: string[];
 }
 export function paneReach(
-  subject: Pick<PageSubject, 'chips' | 'cannotRead'>,
+  subject: Pick<PageSubject, 'chips' | 'cannotRead'> & Partial<Pick<PageSubject, 'about' | 'closed'>>,
   prepares?: readonly { title: string }[] | undefined,
 ): PaneReach {
   const unique = (names: readonly string[]) => [...new Set(names.filter(Boolean))];
-  return {
-    reads: unique(subject.chips.map(c => c.label)),
-    prepares: unique((prepares ?? []).map(p => p.title)),
-    cannotRead: unique(subject.cannotRead ?? []),
-  };
+  const reads = unique(subject.chips.map(c => c.label));
+  const cannotRead = unique(subject.cannotRead ?? []);
+  const folded = (words: string) => words.toLocaleLowerCase('sv-SE');
+  const [only] = reads;
+  const readsPage =
+    reads.length === 1 &&
+    cannotRead.length === 0 &&
+    !subject.closed &&
+    !!subject.about &&
+    folded(subject.about).includes(folded(only!));
+  return { reads, readsPage, prepares: unique((prepares ?? []).map(p => p.title)), cannotRead };
 }
+
+/** What the empty box of the frame's pane says, the same on every page (the product owner, 2026-11-21). */
+export const PANE_PLACEHOLDER = 'Skriv din fråga';
+/**
+ * The name of the frame's pane's box: the words a person sees in it with what the page's box asks about ("Skriv din
+ * fråga om ärendet", from "Fråga om ärendet"), so the name stays the page's own and holds the visible words (2.5.3).
+ */
+export const paneBoxName = (asks: string) =>
+  asks.startsWith('Fråga ') ? `Skriv din ${lowered(asks)}` : `${PANE_PLACEHOLDER}: ${asks}`;
 
 /** The longest subject a conversation keeps (`AskedBeside.subject`). */
 export const SUBJECT_MAX = 1200;
@@ -573,36 +600,49 @@ function ReachList({ title, mark, rows }: { title: string; mark: typeof EyeIcon;
 }
 
 /**
- * What the pane says before anything is asked (D138 item 7, D141 rule 10; canvas board AttGora-tom, `Explains`): what
- * asking here does, then what the assistant may do here, every line built from what it is allowed and none of them free
- * text or a suggested question: the reads it may make on the page, the actions of what stands open it may fill in, with
- * the person always sending them, and what it cannot read. A list with nothing in it is not drawn. Last, what opening
- * the question as a conversation adds.
+ * What the pane says before anything is asked (D138 item 7 as amended 2026-11-21, D141 rule 10), in one box under the
+ * header, which alone names the page ("Om …"): what the assistant may do here, every line built from what it is allowed
+ * and none of them free text or a suggested question. The reads it may make on the page: one sentence where the one
+ * read is the page itself (`PaneReach.readsPage`), a named list where the names say more; the actions of what stands
+ * open it may fill in, with the person always sending them; and what it cannot read. A list with nothing in it is not
+ * drawn. Last, in one line, where the answer stays and what opening the question as a conversation adds. The box is
+ * Astryx's muted card with a heading of its own under the pane's "Fråga AI", so the introduction is one stop in the
+ * outline and the three lists keep their names.
  */
-function Explains({ about, reach }: { about: string; reach: PaneReach }) {
+function Explains({ reach }: { reach: PaneReach }) {
   return (
-    <VStack gap={5}>
-      <VStack gap={2}>
-        <Heading level={3}>{`Fråga om ${about}`}</Heading>
-        <Text as="p">Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.</Text>
+    <Card variant="muted" padding={4}>
+      <VStack gap={4}>
+        <Heading level={4} accessibilityLevel={3}>
+          Innan du frågar
+        </Heading>
+        {reach.readsPage ? (
+          <HStack gap={2} vAlign="start" wrap="nowrap">
+            <Icon icon={EyeIcon} size="sm" color="secondary" />
+            <StackItem size="fill">
+              <Text as="p">Jag kan läsa det som sidan visar.</Text>
+            </StackItem>
+          </HStack>
+        ) : (
+          reach.reads.length > 0 && <ReachList title="Det här kan jag läsa här" mark={EyeIcon} rows={reach.reads} />
+        )}
+        {reach.prepares.length > 0 && (
+          <VStack gap={1}>
+            <ReachList title="Det här kan jag fylla i åt dig" mark={PencilSquareIcon} rows={reach.prepares} />
+            <Text as="p" type="supporting" color="secondary">
+              Du granskar och skickar alltid själv.
+            </Text>
+          </VStack>
+        )}
+        {reach.cannotRead.length > 0 && (
+          <ReachList title="Det här kan jag inte läsa" mark={LockClosedIcon} rows={reach.cannotRead} />
+        )}
+        <Text as="p" type="supporting" color="secondary">
+          Svaret visas här bredvid sidan och finns kvar när du kommer tillbaka. Öppna som samtal ger frågan hela sidan,
+          och samtalet finns sedan under Samtal.
+        </Text>
       </VStack>
-      {reach.reads.length > 0 && <ReachList title="Det här kan jag läsa här" mark={EyeIcon} rows={reach.reads} />}
-      {reach.prepares.length > 0 && (
-        <VStack gap={1}>
-          <ReachList title="Det här kan jag fylla i åt dig" mark={PencilSquareIcon} rows={reach.prepares} />
-          <Text as="p" type="supporting" color="secondary">
-            Du granskar och skickar alltid själv.
-          </Text>
-        </VStack>
-      )}
-      {reach.cannotRead.length > 0 && (
-        <ReachList title="Det här kan jag inte läsa" mark={LockClosedIcon} rows={reach.cannotRead} />
-      )}
-      <Text as="p" type="supporting" color="secondary">
-        Behöver frågan mer plats? Öppna som samtal: där får den hela sidan, med tabeller och dokument, och finns sedan
-        under Samtal.
-      </Text>
-    </VStack>
+    </Card>
   );
 }
 
@@ -664,7 +704,14 @@ export function PageTalk({
           <VStack height="100%">
             {/* Before anything is asked there is nothing to scroll to: no room is kept over the box for the button. */}
             <ChatLayout
-              composer={<Composer place="pane" placeholder={subject.placeholder} />}
+              composer={
+                headed ? (
+                  // The header names the page: the box says the same words on every page and keeps the page in its name.
+                  <Composer place="pane" placeholder={PANE_PLACEHOLDER} name={paneBoxName(subject.placeholder)} />
+                ) : (
+                  <Composer place="pane" placeholder={subject.placeholder} />
+                )
+              }
               {...(asked ? {} : { scrollButton: null })}
             >
               {asked ? (
@@ -678,7 +725,7 @@ export function PageTalk({
                   conversationHref={whole ?? undefined}
                 />
               ) : headed ? (
-                <Explains about={subject.label} reach={paneReach(subject, fills)} />
+                <Explains reach={paneReach(subject, fills)} />
               ) : null}
             </ChatLayout>
           </VStack>

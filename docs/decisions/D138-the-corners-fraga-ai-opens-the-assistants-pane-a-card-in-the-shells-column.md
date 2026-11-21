@@ -40,6 +40,21 @@ assistants. The aim is that they meet the new parts through what they already kn
    allowed.** After the opening sentence: the reads it may make for this person on this page, the actions of what
    stands open that it may fill in, with "Du granskar och skickar alltid själv", and the systems it may not read. No
    line is free text and none is a suggested question. Last, what opening as a conversation adds.
+   **Amended 2026-11-21 (the product owner): the pane says each thing once, in one box.** Shown the empty pane beside
+   the register "Avvikelser och tillbud", where the page's name stood four times (the line under the heading, a
+   second heading "Fråga om …", a list of the one read, and the empty box) over two separate grey sentences, the
+   owner said: "this information is quite redundant, I think we can consolidate this info into a more comprehensive
+   infobox". So the line under "Fråga AI" ("Om …") is the one place that names the page. Under it stands one box
+   (Astryx's muted card, headed "Innan du frågar" one level under the pane's heading): what the assistant may read
+   here, as a named list only where the names say more than the page's own (several reads, a read under another
+   name, or anything closed beside it) and otherwise the one sentence "Jag kan läsa det som sidan visar.", drawn
+   only where the one read that goes with every question is the page the header names and nothing on the page is
+   closed; what it may fill in, with "Du granskar och skickar alltid själv."; what it cannot read; and one closing
+   line for where the answer stays and what "Öppna som samtal" adds. The second heading is gone. The empty box says
+   "Skriv din fråga" on every page, and its accessible name keeps the page ("Skriv din fråga om ärendet"). Every
+   line is still built from what the assistant is allowed (the subject's chips, `POST /api/assistant/reach`,
+   `cannotRead`), and the condition below holds for the sentence as for the lists. Under a picked thing (Att göra's
+   item, Kalender's entry) nothing changes: only the box, which there says what it asks about.
 8. **An action the assistant has filled in is a row of the board's own kind**, the row that needs the person with its
    edge in the assistant's blue: "Ifyllt åt dig", what it is, what was filled in, and "Granska och skicka", which
    opens the action's own dialog. Nothing is sent before that dialog's last button.

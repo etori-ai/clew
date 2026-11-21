@@ -718,23 +718,25 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await open(page, '/calendar');
     await page.getByRole('button', { name: 'Fråga AI', exact: true }).click();
     const pane = page.getByRole('complementary', { name: 'Fråga AI', exact: true });
-    // Before anything is asked: what asking here does, the week as what the assistant may read here, and what opening
-    // it as a conversation adds (D138 item 7).
+    // Before anything is asked, one box (D138 item 7 as amended 2026-11-21): that the assistant reads what the page
+    // shows, the week the header names ("Om vecka 45") and so no list of one, and where the answer stays with what
+    // opening it as a conversation adds.
+    await expect(pane.getByText('Om vecka 45', { exact: true })).toBeVisible();
+    await expect(pane.getByRole('heading', { name: 'Innan du frågar', exact: true })).toHaveAttribute(
+      'aria-level',
+      '3',
+    );
+    await expect(pane.getByText('Jag kan läsa det som sidan visar.', { exact: true })).toBeVisible();
+    await expect(pane.getByRole('list', { name: 'Det här kan jag läsa här' })).toHaveCount(0);
     await expect(
-      pane.getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
+      pane.getByText(/^Svaret visas här bredvid sidan .* Öppna som samtal ger frågan hela sidan/),
     ).toBeVisible();
-    await expect(pane.getByRole('list', { name: 'Det här kan jag läsa här' }).getByRole('listitem')).toHaveText([
-      'Vecka 45',
-    ]);
-    await expect(pane.getByText(/^Behöver frågan mer plats\? Öppna som samtal/)).toBeVisible();
     await expect(pane.getByRole('link', { name: 'Öppna som samtal' })).toHaveCount(1);
     const box = pane.getByRole('textbox', { name: 'Fråga om veckan' });
     await box.fill('Sök lärare i telefonboken');
     await box.press('Enter');
     await expect(pane.getByText('Sök i telefonboken: 2 rader.')).toBeVisible();
-    await expect(pane.getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.')).toHaveCount(
-      0,
-    );
+    await expect(pane.getByRole('heading', { name: 'Innan du frågar' })).toHaveCount(0);
     // The view is drawn on the conversation's page: here one row names it and leads there.
     await expect(pane.getByText('Sök i telefonboken', { exact: true })).toBeVisible();
     const row = pane.getByRole('link', { name: 'Visa i samtalet' });

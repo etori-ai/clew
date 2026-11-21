@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   expect,
   expectNoAxeViolations,
@@ -15,7 +15,7 @@ import { ENTITY_UNIT, PRESENCE_LENS, TALK_LENS, newsOutput, talkSource } from '.
 import { ANNA, BoardingMock, PLAN } from './boarding';
 import { competenceTypes, largeMatrix, searchHolders, withSkills } from './competence';
 import { People } from './person-data';
-import { SICK_UNIT, Units } from './unit-data';
+import { SICK_UNIT, TALK_UNITS, Units } from './unit-data';
 
 /**
  * The assistant beside every page (D141, D138; canvas boards AttGora-tom and Arende-tom), on the first
@@ -41,7 +41,18 @@ const door = (page: Page) => page.getByRole('button', { name: 'Fråga AI', exact
 /** A way to ask drawn by the page itself: none stands after D138 (item 1). */
 const ownButton = (page: Page) => page.getByRole('button', { name: /^Fråga (assistenten|Clew)/ });
 const pane = (page: Page) => page.getByRole('complementary', { name: 'Fråga AI', exact: true });
-/** The pane's three lists of what the assistant can do here before anything is asked (D138 item 7). */
+/**
+ * The pane's one box before anything is asked (D138 item 7 as amended 2026-11-21): its heading, the sentence that
+ * stands where a list of the page's own name would stand, its three named lists, and its one closing line.
+ */
+const INTRO = 'Innan du frågar';
+const READS_PAGE = 'Jag kan läsa det som sidan visar.';
+const CLOSING =
+  'Svaret visas här bredvid sidan och finns kvar när du kommer tillbaka. Öppna som samtal ger frågan hela sidan, och samtalet finns sedan under Samtal.';
+/** The box's heading: drawn at Astryx's fourth size and one level under the pane's "Fråga AI" (`aria-level`). */
+const introIn = (scope: Locator) =>
+  scope.getByRole('heading', { name: INTRO, exact: true }).and(scope.locator('[aria-level="3"]'));
+const intro = (page: Page) => introIn(pane(page));
 const READS = 'Det här kan jag läsa här';
 const FILLS = 'Det här kan jag fylla i åt dig';
 const CANNOT = 'Det här kan jag inte läsa';
@@ -81,21 +92,19 @@ test.describe('the assistant’s pane beside a register', () => {
     await expect(pane(page).getByText('Om Telefonbok', { exact: true })).toBeVisible();
     await expect(pane(page).getByRole('link', { name: 'Öppna som samtal' })).toHaveCount(1);
     await expect(pane(page).getByRole('button', { name: 'Stäng' })).toBeVisible();
-    // Before anything is asked: what asking here does, what the assistant may read here, and last what opening it as a
-    // conversation adds (item 7). Nothing stands open to fill in and nothing is closed, so those lists are not drawn.
-    await expect(pane(page).getByRole('heading', { level: 3, name: 'Fråga om telefonbok', exact: true })).toBeVisible();
-    await expect(
-      pane(page).getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
-    ).toBeVisible();
-    await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Telefonbok']);
-    await expect(listed(page, FILLS)).toHaveCount(0);
-    await expect(listed(page, CANNOT)).toHaveCount(0);
-    await expect(
-      pane(page).getByText(
-        'Behöver frågan mer plats? Öppna som samtal: där får den hela sidan, med tabeller och dokument, och finns sedan under Samtal.',
-        { exact: true },
-      ),
-    ).toBeVisible();
+    // Before anything is asked, one box (item 7 as amended 2026-11-21): its heading under the pane's, that the
+    // assistant reads what the page shows, and one closing line about where the answer stays and what opening it as a
+    // conversation adds. The one read is the page itself, so it is a sentence and no list of one; nothing stands open
+    // to fill in and nothing is closed, so those lists are not drawn.
+    await expect(intro(page)).toBeVisible();
+    await expect(pane(page).getByRole('heading')).toHaveText(['Fråga AI', INTRO]);
+    await expect(pane(page).getByText(READS_PAGE, { exact: true })).toBeVisible();
+    await expect(pane(page).getByRole('list')).toHaveCount(0);
+    await expect(pane(page).getByText(CLOSING, { exact: true })).toBeVisible();
+    // The page is named once, in the line under the pane's heading: not in a second heading, a list or the empty box.
+    await expect(pane(page).getByText(/telefonbok/i)).toHaveCount(1);
+    await expect(box(page)).toHaveAttribute('aria-label', 'Skriv din fråga om telefonbok');
+    await expect(pane(page).getByText('Skriv din fråga', { exact: true })).toBeVisible();
     // The page stays, and draws its narrow layout while the pane takes its room: the table is its list (rule 11).
     await expect(title).toBeVisible();
     await expect(page.getByRole('table')).toHaveCount(0);
@@ -120,9 +129,8 @@ test.describe('the assistant’s pane beside a register', () => {
     expect(asked.page).toEqual({ subject: 'view:phonebook.directory', label: 'Om Telefonbok' });
     expect(asked.conversationId).toBeUndefined();
     // The introduction gives way to the conversation.
-    await expect(
-      pane(page).getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
-    ).toHaveCount(0);
+    await expect(intro(page)).toHaveCount(0);
+    await expect(pane(page).getByText(CLOSING)).toHaveCount(0);
     await expectNoAxeViolations(page);
     // A reload opens the pane again with the conversation in it, and moves no focus.
     await page.reload();
@@ -253,9 +261,8 @@ test.describe('the assistant’s pane on smaller screens', () => {
     await expect(drawer.getByRole('heading', { level: 2, name: 'Fråga AI', exact: true })).toBeVisible();
     await expect(drawer.getByText('Om Telefonbok', { exact: true })).toBeVisible();
     await expect(drawer.getByRole('textbox', { name: 'Fråga om telefonbok' })).toBeFocused();
-    await expect(drawer.getByRole('list', { name: READS, exact: true }).getByRole('listitem')).toHaveText([
-      'Telefonbok',
-    ]);
+    await expect(introIn(drawer)).toBeVisible();
+    await expect(drawer.getByText(READS_PAGE, { exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(drawer).toBeHidden();
@@ -553,7 +560,9 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     await door(page).click();
     await expect(pane(page).getByText(/^Assistenten kan inte läsa/)).toHaveCount(0);
     await expect(listed(page, CANNOT)).toHaveCount(0);
-    await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Utvecklingssamtal']);
+    // The one read is the lens the header names: the sentence, no list of one.
+    await expect(pane(page).getByText(READS_PAGE, { exact: true })).toBeVisible();
+    await expect(listed(page, READS)).toHaveCount(0);
     const field = pane(page).getByRole('textbox', { name: 'Fråga om utvecklingssamtal' });
     await field.fill('Vem har inte bokat?');
     await field.press('Enter');
@@ -564,15 +573,51 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     expect(asked.page).toEqual({ subject: `lens:${TALK_LENS}`, label: 'Om Utvecklingssamtal' });
   });
 
-  test('Läget goes with the columns the assistant may read and names the one it may not', async ({ page, api }) => {
+  test('Läget with every column readable: several reads are a named list in the box, and nothing is said to be closed', async ({
+    page,
+    api,
+  }) => {
+    await units(page, u => {
+      u.overviews = { [SICK_UNIT]: ['qlik.units'], [TALK_UNITS]: ['talks.talks'] };
+    });
+    offer(api, 'qlik.units', 'Sjukfrånvaro per enhet');
+    offer(api, 'talks.talks', 'Utvecklingssamtal');
+    await open(page, '/units');
+    await door(page).click();
+    await expect(intro(page)).toBeVisible();
+    await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Sjukfrånvaro', 'Utvecklingssamtal']);
+    await expect(pane(page).getByText(READS_PAGE)).toHaveCount(0);
+    await expect(listed(page, CANNOT)).toHaveCount(0);
+    await expect(pane(page).getByText(CLOSING, { exact: true })).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
+  test('Läget goes with the columns the assistant may read and names the one it may not; with something to fill in the box holds its three named lists in reading order', async ({
+    page,
+    api,
+  }) => {
     await units(page, u => {
       u.overviews = { [SICK_UNIT]: ['qlik.units'] };
     });
     offer(api, 'qlik.units', 'Sjukfrånvaro per enhet');
+    api.reach = { prepares: [{ title: 'Lägg till en kommentar' }] };
     await open(page, '/units');
     await door(page).click();
+    // One box under the pane's heading: its own heading, then the three lists by name, then its closing line.
+    await expect(pane(page).getByRole('heading')).toHaveText(['Fråga AI', INTRO]);
+    await expect(listed(page, FILLS).getByRole('listitem')).toHaveText(['Lägg till en kommentar']);
+    await expect(pane(page).getByText('Du granskar och skickar alltid själv.', { exact: true })).toBeVisible();
+    const order = await pane(page)
+      .getByRole('list')
+      .evaluateAll(lists => lists.map(l => l.getAttribute('aria-label')));
+    expect(order).toEqual([READS, FILLS, CANNOT]);
+    await expect(pane(page).getByText(CLOSING, { exact: true })).toBeVisible();
+    await expectNoAxeViolations(page);
+    // One read, and something closed: both are listed by name, since "what the page shows" would promise the closed
+    // column too.
     await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Sjukfrånvaro']);
     await expect(listed(page, CANNOT).getByRole('listitem')).toHaveText(['Utvecklingssamtal']);
+    await expect(pane(page).getByText(READS_PAGE)).toHaveCount(0);
     const field = pane(page).getByRole('textbox', { name: 'Fråga om läget' });
     await field.fill('Var är sjukfrånvaron högst?');
     await field.press('Enter');
@@ -667,9 +712,9 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
     expect(paneBox.y + paneBox.height - (fieldBox.y + fieldBox.height)).toBeLessThan(120);
     // Before anything is asked only the box stands under the item: no introduction, no lists, no way to the
     // conversation's page and no grip (D138 item 2 as built).
-    await expect(
-      reading.getByText('Svaret visas här, bredvid sidan, och finns kvar när du kommer tillbaka.'),
-    ).toHaveCount(0);
+    await expect(reading.getByRole('heading', { name: INTRO })).toHaveCount(0);
+    await expect(reading.getByText(CLOSING)).toHaveCount(0);
+    await expect(reading.getByText(READS_PAGE)).toHaveCount(0);
     await expect(reading.getByRole('list', { name: READS, exact: true })).toHaveCount(0);
     await expect(reading.getByRole('link', { name: 'Öppna som samtal' })).toHaveCount(0);
     await expect(reading.getByRole('separator', { name: 'Ändra samtalets höjd' })).toHaveCount(0);
@@ -900,30 +945,36 @@ test.describe('the assistant’s pane beside a thing’s page (D141 stage 3, D13
       }
     });
 
-  test('a work item: the pane lists what it may read, what the server says it may fill in with who sends it, and nothing else; the lists give way to the conversation', async ({
+  test('a work item: the pane’s box says that it reads the item, lists what the server says it may fill in with who sends it, and nothing else; the box gives way to the conversation', async ({
     page,
     api,
   }) => {
     api.reach = { prepares: [{ title: 'Bevilja ledigheten' }, { title: 'Avslå ledigheten' }] };
     await open(page, '/items/ledighet');
     await door(page).click();
-    await expect(pane(page).getByRole('heading', { level: 3, name: 'Fråga om ärendet', exact: true })).toBeVisible();
-    // What it may read here is the item that stands open, by its name.
-    await expect(listed(page, READS).getByRole('listitem')).toHaveText(['Ledighetsansökan från Johan Byström']);
+    await expect(intro(page)).toBeVisible();
+    await expect(pane(page).getByRole('heading', { name: 'Fråga om ärendet' })).toHaveCount(0);
+    // What it may read here is the item that stands open, which the header names: a sentence, no list of one.
+    await expect(pane(page).getByText('Om ärendet Ledighetsansökan från Johan Byström', { exact: true })).toBeVisible();
+    await expect(pane(page).getByText(READS_PAGE, { exact: true })).toBeVisible();
+    await expect(listed(page, READS)).toHaveCount(0);
+    await expect(pane(page).getByText('Ledighetsansökan från Johan Byström')).toHaveCount(1);
     // What it may fill in is what the server answered for what stands open (D138 item 7): asked with the item, never
     // written by the page.
     await expect(listed(page, FILLS).getByRole('listitem')).toHaveText(['Bevilja ledigheten', 'Avslå ledigheten']);
     await expect(pane(page).getByText('Du granskar och skickar alltid själv.', { exact: true })).toBeVisible();
     await expect(listed(page, CANNOT)).toHaveCount(0);
     expect(api.reachAsked).toEqual([{ beside: 'thread:ledighet' }]);
-    // The three lists are named lists in the pane's reading order, before the line about the conversation's page.
+    // The lists are named lists in the box's reading order, before its closing line.
     const order = await pane(page)
       .getByRole('list')
       .evaluateAll(lists => lists.map(l => l.getAttribute('aria-label')));
-    expect(order).toEqual([READS, FILLS]);
+    expect(order).toEqual([FILLS]);
+    await expect(pane(page).getByText(CLOSING, { exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
     await ask3(page, 'Fråga om ärendet', 'Vad händer om jag godkänner?');
-    await expect(listed(page, READS)).toHaveCount(0);
+    await expect(intro(page)).toHaveCount(0);
+    await expect(pane(page).getByText(READS_PAGE)).toHaveCount(0);
     await expect(listed(page, FILLS)).toHaveCount(0);
   });
 
@@ -947,7 +998,7 @@ test.describe('the assistant’s pane beside a thing’s page (D141 stage 3, D13
   }) => {
     await open(page, '/items/ledighet');
     await door(page).click();
-    await expect(listed(page, READS).getByRole('listitem')).toHaveCount(1);
+    await expect(pane(page).getByText(READS_PAGE, { exact: true })).toBeVisible();
     await expect.poll(() => api.reachAsked.length).toBe(1);
     await expect(listed(page, FILLS)).toHaveCount(0);
     await expect(pane(page).getByText('Du granskar och skickar alltid själv.')).toHaveCount(0);

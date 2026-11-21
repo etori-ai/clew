@@ -144,6 +144,7 @@ export function Composer({
   about,
   thing,
   placeholder: aboutPlaceholder,
+  name,
   stoppable = true,
 }: {
   place: ComposerPlace;
@@ -152,6 +153,8 @@ export function Composer({
   thing?: OpenThing | undefined;
   /** What the empty box says in a conversation about someone ("Fråga om Johan"); else whom it writes to. */
   placeholder?: string | undefined;
+  /** The box's name beside a page, where it is not what the empty box says (the frame's pane, `paneBoxName`). */
+  name?: string | undefined;
   /**
    * A turn asked here can be stopped (D36): while one runs the send button is Stoppa and the field stays open. The box
    * of another system's assistant's panel (D128) cannot call a question back once it has left Clew: it rests until the
@@ -254,8 +257,8 @@ export function Composer({
       input={
         <ChatComposerInput
           handleRef={talk.input}
-          // Beside a page the box is named by what it asks about, as its empty field says it.
-          label={place === 'conversation' ? 'Svara i samtalet' : pane ? placeholder : 'Vad vill du göra'}
+          // Beside a page the box is named by what it asks about: as its empty field says it, or by the name given.
+          label={place === 'conversation' ? 'Svara i samtalet' : pane ? (name ?? placeholder) : 'Vad vill du göra'}
           maxRows={place === 'landing' ? 4 : 3}
           hasHistory={false}
           {...(pane ? {} : { triggers: [trigger] })}
