@@ -5,7 +5,7 @@ import { roomsMenuRow } from './rooms';
 /**
  * Not a test: screenshots of artboards 4, 7 and 8 of the canvas "Clew · hierarki, områden och figurer" as built (D71):
  * the view's header on a view's page and under an answer, a list and the search hits on their pages and a record beside
- * the page (D116), the review's page (D73, amended 2026-11-12), the composer's tokens, and a system that does not answer
+ * the page (D116), the item's page as the review of its rows (D142), the composer's tokens, and a system that does not answer
  * said on its work items where artboard 8 drew a banner (D116, amended 2026-11-12). Run on demand with `CLEW_SCREENS=1 …
  * playwright test -c tests/a11y screens.pattern`; the images land in test-results/screens/.
  */
@@ -69,8 +69,11 @@ test.describe('screens', () => {
       a.id === 'approve' ? { ...a, review: 'each' as const, preview: 'finance.preview' } : a,
     );
     await open(page, '/');
-    await page.getByRole('main').locator('#thread-fakturor').getByRole('link', { name: 'Granska 3' }).click();
-    // The review is a page of its own (D73, amended 2026-11-12): wait for its document.
+    await page
+      .getByRole('region', { name: 'Behöver dig' })
+      .getByRole('link', { name: /^Granska 3: / })
+      .click();
+    // The item's page is the review (D142), and Hem's row leads straight to it: wait for its document.
     await page
       .getByRole('main')
       .getByRole('img', { name: /Energibolaget AB/ })
@@ -83,17 +86,14 @@ test.describe('screens', () => {
     await page.getByRole('heading', { level: 1, name: 'Mitt teams kontaktlista' }).waitFor();
     await page.screenshot({ path: out('pattern-phone-page-list') });
   });
-  test('the review on a phone: the same page, stacked (D73, amended 2026-11-12)', async ({ page, api }) => {
+  test('the item’s page as the review on a phone: the same page, stacked (D142)', async ({ page, api }) => {
     const card = api.threads.find(t => t.id === 'fakturor')!;
     card.actions = card.actions.map(a =>
       a.id === 'approve' ? { ...a, review: 'each' as const, preview: 'finance.preview' } : a,
     );
     await page.setViewportSize(phone);
-    await open(page, '/?card=fakturor');
-    await page
-      .getByRole('dialog', { name: /^Ärende: / })
-      .getByRole('link', { name: 'Granska 3' })
-      .click();
+    // Where Att göra has no pane the item is its page (D126 rule 2), which is the review.
+    await open(page, '/todo?item=fakturor');
     await page
       .getByRole('main')
       .getByRole('img', { name: /Energibolaget AB/ })

@@ -16,7 +16,6 @@ import {
   SparklesIcon,
   StackItem,
   StatusNotice,
-  StatusRow,
   Text,
   TextInput,
   Theme,
@@ -33,6 +32,7 @@ import { errorMessage, noCalendar } from '../query-policy';
 import { areasQuery, assistantQuery, threadsQuery, todayQuery } from '../queries';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
+import { NeedRow } from '../components/work/need-row';
 import { declaredPage, viewPageHref, type ViewTarget } from '../view-address';
 import { itemPageHref, needsYouOf, rowFacts, sourcesNotice, todoHref } from '../work-items';
 import { DOT } from '../dot';
@@ -265,17 +265,17 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   };
   /**
    * A work item as a row of "Behöver dig" (D130 item 13): an edge in its due day's colour, its name, the line that says
-   * where it is from and why, the due day as its badge and "Öppna", the link to the item's page. The answer under the
+   * where it is from and why, the due day as its badge and the button that names its next press (`NeedRow`, D142). The answer under the
    * line draws the items it names with the same row (D138 item 9); only the board's own rows carry the id the focus is
    * sent to.
    */
   const needRow = (t: Thread, id?: string) => {
     const due = rowFacts(t, now, todayDate).due;
     return (
-      <StatusRow
+      <NeedRow
+        thread={t}
         {...(id ? { id } : {})}
         status={due?.variant === 'error' ? 'error' : due?.variant === 'warning' ? 'warning' : 'neutral'}
-        title={t.title}
         meta={lineOf(t)}
         href={itemHref(t.id)}
         end={due ? <Badge variant={due.variant} label={due.label} /> : undefined}

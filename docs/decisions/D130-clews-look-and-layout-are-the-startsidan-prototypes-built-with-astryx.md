@@ -221,3 +221,5 @@ of [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) a
 [D48](D48-one-next-step-the-rest-one-step-away.md) (their three levels and one filled button stand); Neutral's Figtree
 in [D46](D46-astryx-neutral-is-the-default-theme.md); "typography, motion, radii" staying Astryx's in
 [D38](D38-municipal-branding-uses-astryx-themes.md), for typography and radii.
+
+**Amended 2026-11-21 by [D142](D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md).** Item 13: the button at the end of a row of "Behöver dig" names the person's next press ("Granska 3", the item's one decision, else "Öppna"); on a row whose button runs, the title is the link to the item's page.

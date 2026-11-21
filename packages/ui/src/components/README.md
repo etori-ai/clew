@@ -10,7 +10,7 @@ the address or the session lives in the web app (`apps/web/src/components`, grou
 |---|---|---|---|
 | `BoardCard` | `board-card.tsx` | `Card`, `Heading`, `HStack`, `VStack`, `Text`, `Skeleton` | A card with its heading inside, how many it holds after it, an action at the end of that line, tools under it and the content. `list`, `flush` and `bare` say how the content is inset |
 | `KeyFigure` | `key-figure.tsx` | `Card` or `ClickableCard`, `Text`, `Icon` | A key figure: the label in small capitals, the value in its status colour, a line and a foot |
-| `StatusRow` | `status-row.tsx` | `Card` (the theme's `row-*` variants), `Text`, `Button` | A row that needs the person: an edge in its status colour, the title, its badge and "Öppna" |
+| `StatusRow` | `status-row.tsx` | `Card` (the theme's `row-*` variants), `Text`, `Link`, `Button` | A row that needs the person: an edge in its status colour, the title, its badge and the button that names the next press ("Öppna", "Granska 3"); where that button runs on the row, the title is the link (D142) |
 | `FigureRow`, `PersonAvatar`, `registerTable`, `SECTION_GAP`, `CARD_GAP` | `measures.tsx` | `Grid`, `Avatar`, props for `Table` | The measures pages share (`docs/reference/layout-measures.md`) |
 | `FigureTile`, `FigureLine`, `FigureTileSkeleton` | `figure.tsx` | `Card`, `ClickableCard`, `ProgressBar`, `Badge`, `StatusDot` | A figure as a connector declares it, drawn from `figure-items.ts`: with a bar, a silent source or a sentence. The unit's page uses it |
 | `StatusNotice` and the status vocabulary's parts | `status.tsx` | `Banner`, `Badge`, `StatusDot`, `Spinner`, `Button`, `DropdownMenu` | One state said the same everywhere (D126 item 13), from `status-words.ts` |

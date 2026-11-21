@@ -1668,6 +1668,15 @@
       "status": "provisional, amended by [D138](D138-the-corners-fraga-ai-opens-the-assistants-pane-a-card-in-the-shells-column.md) (2026-11-19, in the look of `main`: the corner's \"Fråga AI\" replaces rule 1's button at the end of the title's line, the pane is a card at the end of the shell's column instead of rules 2 and 11's end slot, the rail's latest of rule 6 are gone with the rail, and on Start rule 9's answer stands under the line; rules 3 to 8 and 10 and the conditions stand) (the product owner chose it on 2026-11-18, after the review [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md) and the canvas \"Clew",
       "date": "2026-11-18",
       "area": "ui, product"
+    },
+    {
+      "key": "D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press",
+      "number": 142,
+      "path": "docs/decisions/D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md",
+      "title": "D142 · An item reviewed row by row has one page, which is its review, and a row's button names the next press",
+      "status": "provisional (the product owner chose it on 2026-11-21 from the canvas \"Clew",
+      "date": "2026-11-21",
+      "area": "ui, product"
     }
   ],
   "documents": [
@@ -2559,6 +2568,14 @@
       "title": "D141 · The assistant is asked beside every page, through one button and one pane that the page frame provides",
       "category": "decision-history",
       "headings": []
+    },
+    {
+      "path": "docs/decisions/D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md",
+      "title": "D142 · An item reviewed row by row has one page, which is its review, and a row's button names the next press",
+      "category": "decision-history",
+      "headings": [
+        "As built"
+      ]
     },
     {
       "path": "docs/decisions/D15-postgres-scheduler-now-temporal-later.md",

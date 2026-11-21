@@ -994,3 +994,31 @@ test.describe('I dag when the calendar does not answer, and for a person with no
     }
   });
 });
+
+test.describe('a row whose next press is the decision itself runs it from the row (D142, D70 item 1)', () => {
+  test.use({ viewport: desktop });
+
+  test('the button says the action, the title is the link to the item’s page, and one press writes and is said', async ({
+    page,
+    api,
+  }) => {
+    // Hem draws the most urgent rows: the notice is due today here, so it is among them.
+    const notice = api.threads.find(t => t.id === 'rutin')!;
+    notice.deadline = '2026-11-04';
+    await open(page, '/');
+    const row = needs(page).locator('#work-rutin');
+    // The button is not a link to the page here, so the item's name is (D142 item 7).
+    await expect(row.getByRole('link', { name: 'Ny rutin för läkemedelshantering' })).toHaveAttribute(
+      'href',
+      '/items/rutin?from=%2F',
+    );
+    await expect(row.getByRole('link', { name: /^Öppna/ })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    const ack = row.getByRole('button', { name: 'Jag har läst: Ny rutin för läkemedelshantering' });
+    await ack.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => api.acted.map(a => [a.threadId, a.body.actionId])).toEqual([['rutin', 'ack']]);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(toasts(page).getByText(/^Läskvittot är registrerat\. Ärendet ligger under Klart\./)).toBeVisible();
+  });
+});

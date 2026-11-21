@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**144 in force**: 98 accepted and 46 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**145 in force**: 98 accepted and 47 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -173,6 +173,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D139 · A card with nothing to decide says what holds, and the person can say that the next step is taken](D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md) | 2026-11-20 | provisional |  |
 | [D140 · The assistant is asked in place where its answer is drawn on the page, and an answer can carry a decision it has filled in](D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) | 2026-11-18 | provisional |  |
 | [D141 · The assistant is asked beside every page, through one button and one pane that the page frame provides](D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) | 2026-11-18 | provisional |  |
+| [D142 · An item reviewed row by row has one page, which is its review, and a row's button names the next press](D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md) | 2026-11-21 | provisional |  |
 
 ## Assistant
 

@@ -352,7 +352,7 @@ test.describe('the work item page at 320 px and on a short screen', () => {
       expect(await reflowProblems(page)).toEqual([]);
     });
 
-  test('on a desktop a row under Rader leads to its document on the review’s page, and Back to the row', async ({
+  test('on a desktop the page of an item reviewed one row at a time is the review: its rows are the steps, a step shows its document on the same page, and Back leaves the page for the link that opened it', async ({
     page,
     api,
   }) => {
@@ -361,21 +361,35 @@ test.describe('the work item page at 320 px and on a short screen', () => {
     card.actions = card.actions.map(a =>
       a.id === 'approve' ? { ...a, review: 'each' as const, preview: 'finance.preview' } : a,
     );
-    await open(page, '/items/fakturor');
-    // The rows and their documents are one list (D126 item 13): each row's name leads to the review's page at that row
-    // (D73, amended 2026-11-12), and there is no second list of the same things.
-    const documents = page.getByRole('region', { name: 'Rader' });
-    await expect(page.getByRole('region', { name: 'Dokument' })).toHaveCount(0);
-    const row = documents.getByRole('link', { name: 'Öppna underlaget för Skolmaterial Norrland AB · 18 300 kr' });
+    await open(page, '/todo?item=fakturor');
+    const name = page
+      .getByRole('complementary', { name: 'Valt ärende' })
+      .getByRole('heading', { name: INVOICES })
+      .getByRole('link', { name: INVOICES });
+    await name.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor');
+    await expect(page.getByRole('heading', { level: 1, name: INVOICES })).toBeVisible();
+    // The item has one page (D142): the rows are its steps, there is no second list of them or of their documents
+    // (D126 item 13), and nothing on it leads to a review elsewhere.
+    const main = page.getByRole('main');
+    const steps = main.getByRole('list', { name: 'Rader', exact: true });
+    await expect(steps).toHaveCount(1);
+    await expect(main.getByRole('region', { name: 'Dokument' })).toHaveCount(0);
+    await expect(main.getByRole('link', { name: /^Öppna underlaget för/ })).toHaveCount(0);
+    await expect(main.getByRole('link', { name: /^Granska 3|^Visa granskning/ })).toHaveCount(0);
+    const row = steps.getByRole('button', { name: /Skolmaterial Norrland AB · 18 300 kr/ });
     await row.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL('/items/fakturor/review?from=%2Fitems%2Ffakturor&step=2');
-    await expect(page.getByRole('heading', { level: 1, name: 'Granska 3 rader' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
+    await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor&step=2');
+    await expect(page.getByRole('heading', { level: 1, name: INVOICES })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
+    await expect(main.getByRole('img', { name: /Skolmaterial Norrland AB/ })).toBeVisible();
     await expectNoAxeViolations(page);
+    // A step is rewritten in place: Back leaves the item's page, and the link that opened it has the focus again.
     await page.goBack();
-    await expect(page).toHaveURL('/items/fakturor');
-    await expect(row).toBeFocused();
+    await expect(page).toHaveURL('/todo?item=fakturor');
+    await expect(name).toBeFocused();
   });
 });
 

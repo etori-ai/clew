@@ -815,11 +815,12 @@ test.describe('the assistant’s pane beside every register, Läget and Att gör
 });
 
 /**
- * Stage 3 (D136, D138): a thing's page asks through the frame too. A work item, its review, a record, a person, a unit
- * and a plan each say what stands open; the door is the corner's "Fråga AI", and on the review, which pins its decision
- * at the window's foot, the same button at the start of that footer; no thing has a "Fråga assistenten" among its
- * actions (D136 item 9, D138 item 1); the pane opens about the thing in its words, with the facts above the read (the
- * review's "Hittills" after its step, as where the window is narrow), and the page never scrolls sideways. A question
+ * Stage 3 (D136, D138): a thing's page asks through the frame too. A work item, a work item whose page is the review of
+ * its rows (D142), a record, a person, a unit and a plan each say what stands open; the door is the one "Fråga AI" on
+ * the title's line, on the review too, which pins its decision at the window's foot; no thing has a "Fråga assistenten"
+ * among its actions (D136 item 9, D138 item 1); the pane opens about the thing in its words, with the facts above the
+ * read (on the review the item's "Uppgifter" after its step, as where the window is narrow), and the page never scrolls
+ * sideways. A question
  * carries the thing that stands open (`thing`: a person or a unit by Clew's id, a record by its read and input), and for
  * a work item its chip as what stands open, with no `thing`.
  */
@@ -827,7 +828,9 @@ const record = (ref: string) =>
   `/tools/phonebook.person?input=${encodeURIComponent(JSON.stringify({ ref }))}&title=Kontaktkort`;
 const ANNA_CARD = record('person:p1003');
 const HILLEVI_CARD = record('person:p1001');
-const REVIEW = '/items/fakturor/review?from=%2Fitems%2Ffakturor';
+/** The page of an item reviewed one row at a time, which is its review (D142), opened from Att göra. */
+const REVIEW = '/items/fakturor?from=%2Ftodo';
+const REVIEWED = 'Attestera 3 fakturor, 48 200 kr';
 /** The invoice card as a connector that asks for a review one row at a time declares it (D70, `review.spec.ts`). */
 const reviewed = (api: MockApi) => {
   const card = api.threads.find(t => t.id === 'fakturor')!;
@@ -854,12 +857,12 @@ const THINGS: Array<{
     order: ['Uppgifter', 'Varför ser jag detta?'],
   },
   {
-    name: 'the review of a work item',
+    name: 'a work item whose page is the review of its rows',
     path: REVIEW,
     about: 'Om ärendet Attestera 3 fakturor, 48 200 kr',
     box: 'Fråga om ärendet',
-    // "Hittills" follows the step, as it does where the window is narrow.
-    order: ['Underlag från Ekonomisystemet', 'Hittills'],
+    // What the item says about itself follows the step, as it does where the window is narrow.
+    order: ['Underlag från Ekonomisystemet', 'Uppgifter'],
     setup: reviewed,
   },
   { name: 'a record', path: ANNA_CARD, about: 'Om Anna Lindqvist', box: 'Fråga om Anna Lindqvist' },
@@ -1140,7 +1143,7 @@ test.describe('the assistant’s pane beside a thing’s page (D141 stage 3, D13
     });
   });
 
-  test('a work item’s page and its review go with the item’s chip as what stands open, no thing, and are one conversation', async ({
+  test('a work item’s page, which is its review, goes with the item’s chip as what stands open, no thing, and is one conversation at every step and way in', async ({
     page,
     api,
   }) => {
@@ -1154,8 +1157,8 @@ test.describe('the assistant’s pane beside a thing’s page (D141 stage 3, D13
       page: { subject: 'thread:fakturor', label: 'Om ärendet Attestera 3 fakturor, 48 200 kr' },
     });
     expect(api.asked.at(-1)!.thing).toBeUndefined();
-    // The review is about the same item: the same conversation.
-    await open(page, `${REVIEW}&ask=1`);
+    // Another way in and another step are the same item: the same conversation.
+    await open(page, `${REVIEW}&step=2&ask=1`);
     await expect(pane(page).getByText('Vilken är störst?', { exact: true })).toBeVisible();
   });
 });
@@ -1216,7 +1219,7 @@ test.describe('a thing’s page on a phone (D141 rule 11, D136 item 1)', () => {
       await page.setViewportSize(viewport);
       reviewed(api);
       await open(page, REVIEW);
-      await expect(page.getByRole('heading', { level: 1, name: 'Granska 3 rader' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1, name: REVIEWED })).toBeVisible();
       const footer = decision(page);
       await expect(door(page)).toHaveCount(1);
       await expect(footer.getByRole('button', { name: 'Fråga AI', exact: true })).toHaveCount(0);
@@ -1259,7 +1262,7 @@ test.describe('the review has its door on the title’s line, not in its footer'
     await expect(footer.getByRole('button', { name: 'Fråga AI', exact: true })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Fråga AI', exact: true })).toHaveCount(0);
     const [title, at] = await Promise.all([
-      page.getByRole('heading', { level: 1, name: 'Granska 3 rader' }).boundingBox(),
+      page.getByRole('heading', { level: 1, name: REVIEWED }).boundingBox(),
       inFooter.boundingBox(),
     ]);
     expect(at!.x).toBeGreaterThan(title!.x + title!.width);

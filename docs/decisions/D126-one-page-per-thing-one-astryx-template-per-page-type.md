@@ -145,3 +145,5 @@ Astryx's templates use `stylex.create` for a few details that Clew's pre-compile
 screen-reader pass has been made. Astryx's `Banner` has no neutral tone, so the notice of "Väntar" is blue like
 "Skickas" (its mark and badge are neutral). A heading cannot stand inside the `Collapsible`'s trigger button, so the
 folded "Händelser" is a named region whose name is the trigger's text, not a heading in the outline.
+
+**Amended 2026-11-21 by [D142](D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md).** Item 1: the one page of a work item reviewed one row at a time is its review (the row and its document in the column, the facts with "Varför ser jag detta?" and "Händelser" in the end panel, the rows as steps under the title). Item 13: that page draws no "Visa granskning" and no "Rader" section; the notice's move where rows were refused is "Granska avvisade igen".

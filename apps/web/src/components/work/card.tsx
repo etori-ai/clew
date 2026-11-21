@@ -746,6 +746,8 @@ export function ActionRow({
   titleRef,
   reviewShown = false,
   beside = false,
+  part,
+  retry,
 }: {
   thread: Thread;
   actions: Actions;
@@ -765,6 +767,13 @@ export function ActionRow({
   titleRef?: RefObject<HTMLHeadingElement | null> | undefined;
   /** "Visa granskning" stands at the end of the rows' heading, so it is not drawn under ⋯ too. */
   reviewShown?: boolean;
+  /**
+   * On the page of an item reviewed one row at a time, which is its review (D142): the notice alone, under the title,
+   * or ⋯ alone, at the end of the title's line. Nothing leads to the review from there, since the person is on it.
+   */
+  part?: 'notice' | 'menu';
+  /** There, the notice's own move where the state's would have led to the review: "Granska avvisade igen" (D80). */
+  retry?: StatusMove | undefined;
 }) {
   const conversation = useConversation();
   const chipRef = 'thread:' + thread.id;
@@ -933,7 +942,9 @@ export function ActionRow({
   };
   // The decided review is seen again from the end of the rows' heading; where no rows are drawn, from ⋯.
   const moves: StatusMoveWords[] = [
-    ...(status.review && !reviewShown ? [{ kind: 'review' as const, label: 'Visa granskning', offer: false }] : []),
+    ...(status.review && !reviewShown && !part
+      ? [{ kind: 'review' as const, label: 'Visa granskning', offer: false }]
+      : []),
     ...status.rest,
   ];
 
@@ -1071,7 +1082,7 @@ export function ActionRow({
     );
   }
   if (showNotice) {
-    const move = notice.move ? moveOf(notice.move) : undefined;
+    const move = notice.move ? (part && notice.move.kind === 'review' ? retry : moveOf(notice.move)) : undefined;
     // While it waits on someone or is set aside it is still the person's to let go of (Avfärda) and its other actions
     // stay under ⋯, as before; a decision on its way, decided or done offers its reads and the state's other moves.
     const stillOpen =
@@ -1089,6 +1100,15 @@ export function ActionRow({
       description: notice.description,
       ...(move ? (notice.move!.offer ? { offer: move } : { action: move }) : {}),
     };
+    if (part === 'menu') return menu;
+    // The notice's own reminder asks for a time of the person's in a dialog of this part's own.
+    if (part === 'notice')
+      return (
+        <>
+          <StatusNotice {...words} />
+          {remindRows.dialog}
+        </>
+      );
     // Nothing else would stand under the notice: the menu ends the notice, beside its move, and no row of its own is
     // drawn for it (the product owner, 2026-11-21).
     if (!kept && !ask && !addToConversation) return <StatusNotice {...words} end={menu} />;
@@ -1113,6 +1133,12 @@ export function ActionRow({
       </VStack>
     );
   }
+  // The review's page has its decisions at its foot: without a notice, only ⋯ is the item's own there.
+  if (part === 'notice') return null;
+  if (part === 'menu')
+    return open && !thread.waitingOn && !isSnoozed(thread, new Date().toISOString())
+      ? more({ items: [...decisions, ...reads, ...rest], time: snoozeRows, extra: moves })
+      : more(open ? {} : { items: here.filter(a => a !== primary && isRead(a)), dismissable: false });
   // Set aside (D28), while the person's own Inte nu settles: the way back is the first button.
   if (open && isSnoozed(thread, new Date().toISOString()))
     return (

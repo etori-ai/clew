@@ -299,3 +299,5 @@ Forward and a way out and back keeping the decisions, a change to the rows dropp
 "Granska N" and on a row under Dokument, beside Personal and in a conversation's answer, the old addresses, the phone,
 320 px), `tests/a11y/documents.spec.ts` (an approval sent after a reload with a fresh read, and taken back when the
 record has moved on), `tests/a11y/item.spec.ts`. No screen-reader pass.
+
+**Amended 2026-11-21 by [D142](D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md).** The review is no longer a page beside the work item's: an item reviewed one row at a time has one page, `/items/<threadId>`, which is the review, with the step in `step`. `/items/<threadId>/review` leads there. After Skicka the page stays and shows the source's answer; "Tillbaka till ärendet" and "Visa kvittot" are gone with the page they led back to. The rule that the review has an address, and what is written and when, stand.

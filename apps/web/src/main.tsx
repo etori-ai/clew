@@ -15,8 +15,7 @@ import { TodoPage } from './pages/todo';
 import { ItemPage } from './pages/item';
 import { todoFromHem } from './work-items';
 import { ConversationProvider } from './components/conversation/conversation-context';
-import { ReviewPage } from './pages/review';
-import { legacyReview, reviewPageFrom } from './review-address';
+import { formerReviewPage, legacyReview, reviewPageFrom } from './review-address';
 import { clearDrafts } from './review-session';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
@@ -236,11 +235,10 @@ const RouterLink = forwardRef<
  * is being answered). `/todo` is Att göra, the queue, with the pile as `tab`, the system as `area`, the filter's words
  * as `filter` and the chosen work item as `item` (`work-items.ts`); Hem's addresses from before it (`/?card=`, `/?tab=`,
  * `/?area=`) lead there. What the panel holds is in the query of whichever page it is beside (`panel-address.ts`).
- * `/items/:threadId` is a work item as a page (D112 item 4), with `from` as the way back, and `/items/:threadId/review`
- * the review of its rows one at a time, a page too since 2026-11-12, with the step as `step` and the same `from`
- * (`review-address.ts`). `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell
+ * `/items/:threadId` is a work item as a page (D112 item 4), with `from` as the way back; for an item reviewed one row
+ * at a time it is the review too, with the step as `step` (D142, `review-address.ts`). `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell
  * (D42). The review's addresses from before are cold links only: `?review=<threadId>&step=n` over any page and
- * `/cards/:threadId/review` lead to the review's page at the step they named; `/cards/:threadId` leads to the item's page.
+ * `/cards/:threadId/review` and `/items/:threadId/review` lead to the item's page at the step they named; `/cards/:threadId` leads to the item's page.
  */
 function App() {
   // One element for every start route: a route change between Hem and a conversation re-renders the page
@@ -440,11 +438,8 @@ function App() {
         path="/items/:threadId"
         element={<Protected>{shell => <ItemPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
-      {/* The review of a work item's rows one at a time (D70 item 2, D73 amended 2026-11-12): "Granska N" and Dokument lead here. */}
-      <Route
-        path="/items/:threadId/review"
-        element={<Protected>{shell => <ReviewPage user={shell.user} admin={shell.admin} />}</Protected>}
-      />
+      {/* The review was a page beside the item's until 2026-11-21 (D142): its address leads to the item's page. */}
+      <Route path="/items/:threadId/review" element={<Protected>{() => <FormerReview />}</Protected>} />
       {/* What was a card is a work item (D112 item 4): its address leads to the item's page. */}
       <Route path="/cards/:threadId" element={<Protected>{() => <LegacyItem />}</Protected>} />
       <Route path="/" element={start} />
@@ -472,6 +467,12 @@ function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {
 function LegacyItem() {
   const { threadId = '' } = useParams<{ threadId: string }>();
   return <Navigate to={`/items/${encodeURIComponent(threadId)}`} replace />;
+}
+/** `/items/:threadId/review?step=n`, the review's page until 2026-11-21: the item's page at that step. */
+function FormerReview() {
+  const { threadId = '' } = useParams<{ threadId: string }>();
+  const [search] = useSearchParams();
+  return <Navigate to={formerReviewPage(threadId, search)} replace />;
 }
 /** `/cards/:threadId/review?step=n`, the review's first address: its page at that step. */
 function LegacyReview() {
