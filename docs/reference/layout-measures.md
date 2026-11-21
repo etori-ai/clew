@@ -47,6 +47,8 @@ Spacing is written in Astryx's steps (`gap={6}` is 24 px).
 | The assistant's button | 46 px high with 24 px at each side, a pill, in the ask pill and in the corner | `theme.ts` (`variant:ai` with `size:lg`) |
 | Focus news | 32 px inset, the headline 30 px | `focus-news.tsx` |
 | Closing line | 12 px; 40 px under a board's last card, a rule over it | `PageFrame` |
+| What scrolls | A board and a read with facts, sections or tabs (a work item, a record, a person, a unit, a plan, Administration) scroll as one page under the shell's header; a fixed work surface (Kalender, Att göra with its reading pane, a conversation, the review) and every page beside the assistant's pane keep their header while their column scrolls; a short screen pins nothing (D130 item 8 as amended 2026-11-21) | `PageFrame` (`asOne`, `pin`) |
+| A sticking tab row | On a page that scrolls as one, the tabs alone stay at the top of the window: 8 px over them and 12 px under, the ground's colour behind, and 64 px of `scroll-padding-top` on the shell's column so the keyboard's focus stops under the row (2.4.11). The one sticky written by hand, D130 "Astryx gaps"; not on a short screen | `PageFrame` (`STUCK_TABS`, `STUCK_ROOM`) |
 | The assistant's pane | A card at the end of the shell's column, 400 px wide (the person's grip: 360 px to half the column, at most 720), 20 px from the page's card or 32 px from a board's cards; beside the page from 1180 px of window, a drawer below | `PageFrame` (`aside`), `paneBesideQuery` in `media.ts` |
 
 ## Checking a page

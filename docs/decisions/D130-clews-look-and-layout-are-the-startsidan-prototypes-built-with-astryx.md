@@ -63,6 +63,19 @@ it, nothing opens over a page. The comparison this rests on is
    a pane, so a title does not move when a pane opens. Hem and a register of cards scroll as one page under the
    shell's header, as the prototype's pages do, and nothing of them stays behind; a page with panels keeps its title
    while its column scrolls. A phone keeps the page as the window.
+   **Amended 2026-11-21 (the product owner): a thing's page scrolls as one, and its tab row sticks.** Shown a
+   person's page and then a work item's page in a window about 1000 px high, where the pinned way back, title,
+   buttons and tabs left about 600 px for the content ("the content window gets quite small, height-wise"; "I am
+   still seeing this page like this"), and asked for pages without tabs to scroll as one and pages with tabs to
+   scroll as one with the tab row sticking, by one hand-written sticky recorded here, the owner answered: "yes do
+   step 1, and allow the exception". So a page whose content is a read with facts or sections beside it (a work
+   item, a record, a person, a unit, a plan, Administration) scrolls as one page under the shell's header, as a
+   board does: its title and buttons scroll away and its panels scroll with it. Where such a page or a board has
+   tabs (a person, a unit, a plan, Personal, Att göra's queue), the tab row alone stays at the top of the window
+   once the title has scrolled past it. A fixed work surface keeps what it pins: Kalender's grid, Att göra with
+   its reading pane, a conversation, the review with its footer, and every page while the assistant's pane stands
+   beside it. A short screen pins nothing, as before (1.4.10). The sticking row is the exception recorded under
+   "Astryx gaps" below.
 9. **A key figure** is drawn as the prototype draws one, on Hem (`lage.tsx`) and on the unit's page (`FigureTile`):
    the label in small capitals with an arrow when the tile leads somewhere, the value large in its tone's colour, and
    a line with the tone's word and the comparison. No badge, outline or tint.
@@ -151,6 +164,21 @@ dig.
   holds the rule that moves it off the control the keyboard is on (it reads where the focus is when the focus
   moves). This is the exception `CLAUDE.md` asks a decision to record before anything custom is written; nothing
   else is positioned by hand.
+- Astryx has no sticky on its layout primitives (recorded 2026-11-21, Astryx 0.7.16). `Layout` pins a
+  `LayoutHeader` from the start and cannot let a title scroll away and then hold the row under it; `LayoutContent`
+  and `LayoutPanel` only document `isScrollable={false}` "for auto-height layouts where sticky positioning needs to
+  work with parent containers", and `ScrollableArea` only `stickyContainment`: the sticking element is the
+  caller's. Astryx's own `course-detail` page template says so ("no sticky prop on Astryx layout primitives —
+  #2613") and writes `position: sticky` in an inline `style` on a `VStack`, as its
+  `ScrollableAreaStickyGroupHeaders` block does in StyleX. The product owner allowed the same by hand on
+  2026-11-21 ("yes do step 1, and allow the exception"), for item 8's tab row and nothing else: one inline `style`
+  on one Astryx `VStack` around the page's tabs, in `PageFrame` alone
+  (`apps/web/src/components/shell/page-frame.tsx`, `STUCK_TABS`), with Astryx's tokens only (`position: sticky`,
+  the top edge, a layer over the page's content and the ground's colour behind the row), and with it the
+  scroller's `scroll-padding-top` of the row's height in tokens, set from the same file, so that a control the
+  keyboard reaches is never hidden under the row (2.4.11). No stylesheet, no observer and no media query come
+  with it; the facts' panel and the assistant's pane are not made to stick. It goes the day Astryx ships a sticky
+  for a row in a scrolling `Layout`.
 
 **Why.** Oliver Borgström asked on 2026-11-18 for the same look and layout as the startsidan prototype, and whether
 to build Clew's own components for it. Composing Clew's components from Astryx's keeps the rule that makes Clew one

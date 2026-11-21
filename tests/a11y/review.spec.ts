@@ -4,6 +4,7 @@ import {
   announcements,
   composer,
   desktop,
+  scrollPage,
   expect,
   expectNoAxeViolations,
   narrow,
@@ -44,6 +45,20 @@ const draftOf = (page: Page) => page.evaluate(() => window.sessionStorage.getIte
 
 test.describe('the review is a page with its own address (D70, D73 amended 2026-11-12)', () => {
   test.use({ viewport: desktop });
+
+  test('the review keeps what it pins while a thing’s page scrolls as one: its title and its decision stay, and only its column scrolls (D130 item 8 as amended 2026-11-21)', async ({
+    page,
+    api,
+  }) => {
+    reviewed(api);
+    await page.setViewportSize({ width: 1280, height: 560 });
+    await open(page, FROM_ITEM);
+    await expect(title(page, 'Granska 3 rader')).toBeVisible();
+    // The page has nothing to scroll under the shell: it is a fixed work surface.
+    expect((await scrollPage(page, 400)).room).toBeLessThanOrEqual(1);
+    await expect(title(page, 'Granska 3 rader')).toBeInViewport();
+    await expect(verb(page)).toBeInViewport();
+  });
 
   test('Granska on the work item in Att göra leads to the page; the keyboard takes each row beside its document, the step in the address; Skicka writes once, shows the check and leads back to the item with its receipt', async ({
     page,

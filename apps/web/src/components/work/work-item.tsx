@@ -780,8 +780,9 @@ export function WorkItem({
  * buttons or the status notice directly under it; the read in the column; the facts under "Uppgifter" in the end panel,
  * 340 px beside the column, and as the read's first section at 1024 px and below and while the assistant's pane stands
  * beside the page (`FactsInColumn`, D136 item 9, board AskArende). The corner's "Fråga AI" opens the assistant's pane
- * about the item (`itemPageSubject`, D138); the item's own buttons have no way to ask here. On a short screen nothing is
- * pinned and the page scrolls as one (1.4.10).
+ * about the item (`itemPageSubject`, D138); the item's own buttons have no way to ask here. The page scrolls as one,
+ * its title and buttons with the read (D130 item 8 as amended 2026-11-21); beside the assistant's pane it keeps its
+ * header while the read scrolls, and on a short screen nothing is pinned (1.4.10).
  */
 export function WorkItemPage({
   thread,

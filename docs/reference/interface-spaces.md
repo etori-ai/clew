@@ -26,7 +26,8 @@ This is the current placement reference. [D83](../decisions/D83-interface-spaces
 - **Kalender** has its pane beside the grid from 1340 px; narrower, on a short screen and on a phone it is the drawer over the grid. The pane holds an entry, or one of the page's two forms: "Ny bokning" and "Flytta …" (the product owner, 2026-11-18).
 - **Tabs** (a thing's, a register's) are Astryx's `TabList` of links; on a phone the first stands and the others are under Astryx's `TabMenu` ("Fler"), so the strip fits 320 px.
 - **A phone** is below 768 px (AppShell's `md`): Clew's pages are in the header's "Meny", a work item's page pins its next step at the foot with the rest under ⋯, a page's actions stand under its title, and Administration's sections are a list of their own at `/admin`.
-- **A short screen** (480 px high or less, WCAG 1.4.10) pins nothing: every page scrolls as one.
+- **What scrolls** ([D130](../decisions/D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) item 8 as amended 2026-11-21): a board and a thing's page (a work item, a record, a person, a unit, a plan) and Administration scroll as one page under the header, title and panels with them; where such a page has tabs, their row alone stays at the top of the window. Kalender, Att göra with its reading pane, a conversation and the review keep their header while their column scrolls, and so does every page while the assistant's pane stands beside it.
+- **A short screen** (480 px high or less, WCAG 1.4.10) pins nothing and no row sticks: every page scrolls as one.
 
 ## Placement and return rules
 

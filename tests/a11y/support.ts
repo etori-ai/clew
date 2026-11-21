@@ -3035,6 +3035,63 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
   return { hidden, unmarked, stops: [...seen] };
 }
 
+/**
+ * The page's own scrolling under the shell's header (D130 item 8 as amended 2026-11-21): scrolls the shell's column,
+ * the outermost scrolling ancestor of the page's level-1 heading (the document on a short screen), by `by` px, and answers how far it has gone, how far
+ * it can go, and where its top edge is in the window. A page that keeps its header has no room to scroll there.
+ */
+export const scrollPage = (page: Page, by: number) =>
+  page.evaluate(by => {
+    // On a short screen the shell lets the window scroll (1.4.10): then no ancestor scrolls, and the document does.
+    let shell = document.scrollingElement as HTMLElement;
+    for (let el = document.querySelector('h1')?.parentElement ?? null; el; el = el.parentElement) {
+      const overflow = getComputedStyle(el).overflowY;
+      if (overflow === 'auto' || overflow === 'scroll') shell = el;
+    }
+    shell.scrollTop += by;
+    return {
+      scrolled: Math.round(shell.scrollTop),
+      room: Math.round(shell.scrollHeight - shell.clientHeight),
+      top: Math.max(0, Math.round(shell.getBoundingClientRect().top)),
+    };
+  }, by);
+
+/**
+ * Walks backwards with Shift+Tab from the last control in the page's main region, the direction in which the browser
+ * brings a control in at the top edge, and names every stop any part of which is under `row` (a row that sticks at
+ * the top of the page): stricter than 2.4.11, which only forbids a stop that is entirely hidden. The walk ends when the
+ * focus reaches the row itself or leaves the main region.
+ */
+export async function stopsUnderStuckRow(page: Page, row: Locator, limit = 80) {
+  await page.evaluate(() => {
+    const main = document.querySelector('main, [role="main"]')!;
+    const stops = [...main.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex="0"]')].filter(
+      el => el.getClientRects().length > 0,
+    );
+    stops.at(-1)?.focus();
+  });
+  const handle = await row.elementHandle();
+  const under: string[] = [];
+  let stops = 0;
+  for (let step = 0; step < limit; step++) {
+    await page.keyboard.press('Shift+Tab');
+    const stop = await page.evaluate(row => {
+      const active = document.activeElement;
+      if (!active || active === document.body || !active.closest('main, [role="main"]')) return 'out' as const;
+      if (row!.contains(active)) return 'row' as const;
+      const a = active.getBoundingClientRect();
+      const r = row!.getBoundingClientRect();
+      const covered = a.top < r.bottom - 1 && a.bottom > r.top + 1 && a.left < r.right && a.right > r.left;
+      const name = `${active.tagName.toLowerCase()} "${(active.getAttribute('aria-label') ?? active.textContent ?? '').trim().slice(0, 40)}" at ${Math.round(a.top)} under the row ending at ${Math.round(r.bottom)}`;
+      return { name, covered };
+    }, handle);
+    if (stop === 'out' || stop === 'row') break;
+    stops++;
+    if (stop.covered) under.push(stop.name);
+  }
+  return { under, stops };
+}
+
 /** The focused element, as a person using a screen reader would be told about it. `body` means focus was lost. */
 export const focused = (page: Page) =>
   page.evaluate(() => {

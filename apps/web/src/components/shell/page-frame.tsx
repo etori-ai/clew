@@ -1,4 +1,13 @@
-import { useCallback, useContext, useLayoutEffect, useRef, type ReactNode, type Ref, useEffect } from 'react';
+import {
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+  useEffect,
+} from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import type { ConversationResponse, Prepared } from '@clew/contracts';
 import {
@@ -22,6 +31,7 @@ import {
   Link,
   ResizeHandle,
   ScrollableArea,
+  Section,
   SparklesIcon,
   StackItem,
   Text,
@@ -105,6 +115,33 @@ const ASK_PANE_SHARE = 50;
 const PANE_GAP = 20;
 const BOARD_INSET = 24;
 const BOARD_PANE_GAP = BOARD_INSET + 8;
+/**
+ * The one thing the frame positions by hand (D130 item 8 as amended 2026-11-21, and its "Astryx gaps"): the tab row of
+ * a page that scrolls as one stays at the top of the window once the title has scrolled past it. Astryx has no sticky
+ * on its layout primitives (its `course-detail` template writes the same inline, its issue #2613), and the product
+ * owner allowed this one: an inline `style` on the Astryx `VStack` around the tabs, tokens only, over the page's
+ * content and with the ground's colour behind it so nothing shows through the row. It goes when Astryx ships a sticky.
+ */
+const STUCK_TABS: CSSProperties = {
+  position: 'sticky',
+  insetBlockStart: 0,
+  zIndex: 1,
+  backgroundColor: 'var(--color-background-body)',
+};
+/**
+ * The room the sticking row takes at the top of the page's scroller (its 32 px of tabs, their rule and the row's own
+ * inset, within 64 px), as the scroller's `scroll-padding-top`: what the keyboard's focus scrolls into view stops under
+ * the row, never behind it (2.4.11).
+ */
+const STUCK_ROOM = 'calc(var(--spacing-10) + var(--spacing-6))';
+/** The element that scrolls an element's page: its nearest ancestor that scrolls on the block axis (the shell's column). */
+function scrollerOf(element: HTMLElement | null): HTMLElement | null {
+  for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
+    const overflow = getComputedStyle(parent).overflowY;
+    if (overflow === 'auto' || overflow === 'scroll') return parent;
+  }
+  return null;
+}
 /** What a key pressed in the pane belongs to rather than the pane: a menu, a list box or a dialog over it. */
 const OWNS_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
 /** A field the person types in: where the press has put the focus once the box has it. */
@@ -222,7 +259,12 @@ interface PageFrameProps {
   start?: ReactNode;
   /** Only Att göra may widen its column (the list and the pane side by side), and only by the product owner's decision. */
   width?: number;
-  /** Whether the header stays while the content scrolls; by default on a page with panels, where the screen is tall enough (1.4.10). */
+  /**
+   * Whether the header stays while the content scrolls. By default only on a fixed work surface (a pane of the page's
+   * own, a footer, a transcript, Kalender's grid), on a page with neither panels nor tabs, and on any page while the
+   * assistant's pane stands beside it, where the screen is tall enough (1.4.10); a read with facts, sections or tabs
+   * scrolls as one (D130 item 8 as amended 2026-11-21).
+   */
   pinned?: boolean;
   /** The content is the page's own scroller and inset (the conversation's ChatLayout): no padding of the frame's. */
   bare?: boolean;
@@ -257,8 +299,11 @@ interface PageFrameProps {
  * item's decisions, Hem's box) and the page's tabs at its foot. The content is the column; `facts` is the end panel of
  * the `work-item-detail` template (above the column at `narrowPageQuery`), `end` a pane of the page's own (Att göra's
  * reading pane, the thing beside a conversation) and `start` a panel before the column (Administration's sections), all
- * inside the same frame. The header stays while the content scrolls; on a short screen nothing is pinned and the page
- * scrolls as one (1.4.10). Every page says what it is about (`ask`): the frame draws "Fråga AI" at the end of the title's
+ * inside the same frame. A read with facts, sections or tabs (a work item, a record, a person, a unit, a plan,
+ * Administration) scrolls as one page, as a board does, and where it has tabs their row alone stays at the top of the
+ * window (`STUCK_TABS`, D130 item 8 as amended 2026-11-21); a fixed work surface (Kalender, Att göra with its reading
+ * pane, a conversation, the review) keeps its header while its column scrolls, as does every page while the
+ * assistant's pane stands beside it; on a short screen nothing is pinned or sticks and the page scrolls as one (1.4.10). Every page says what it is about (`ask`): the frame draws "Fråga AI" at the end of the title's
  * line (the product owner, 2026-11-20, in place of the corner's floating button of D138 items 1 and 5) and provides the
  * assistant's pane, a card at the end of the shell's column (`AskingFrame`, D138 item 4). No page draws a way to ask of
  * its own. Hem alone keeps the corner's button, which leads to its line. On a phone the button is its mark alone, named
@@ -602,10 +647,28 @@ function FrameBody({
   });
   const paneWidth = besidePane ? region.size + (board ? BOARD_PANE_GAP : PANE_GAP) : 0;
   // A board (Hem, a register of cards) scrolls as one page under the shell's header, as the startsidan prototype's
-  // pages do (D130): nothing of it stays behind. A page with panels keeps its title while its column scrolls, so the
-  // panels stand beside what they are about, and so does a board while the assistant's pane stands beside it (D138
-  // item 4); on a short screen nothing is pinned anywhere (1.4.10).
-  const pin = pinned ?? (!short && (!board || besidePane));
+  // pages do (D130): nothing of it stays behind. So does a read with facts, sections or tabs beside it (a work item, a
+  // record, a person, a unit, a plan, Administration; item 8 as amended 2026-11-21): the pinned title, buttons and tabs
+  // left too little of a window for the read. A fixed work surface keeps its header while its column scrolls: a pane of
+  // the page's own (Att göra's, Kalender's, the thing beside a conversation), a footer (the review's decision), a
+  // transcript and Kalender's grid; so does a page with neither panels nor tabs, whose card is its one region, and
+  // every page while the assistant's pane stands beside it (D138 item 4), since the pane is as high as the window and
+  // has its own scroll. On a short screen nothing is pinned anywhere (1.4.10).
+  const asOne = board || ((!!facts || !!start || !!tabs) && !end && !footer && !bare && !bleed);
+  const pin = pinned ?? (!short && (!asOne || besidePane));
+  // The tab row of a page that scrolls as one stays at the top of the window (`STUCK_TABS`); on a short screen it
+  // scrolls away with the rest, so it takes nothing of the little height there is.
+  const sticks = !!tabs && !pin && !short;
+  const stuckRow = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!sticks) return;
+    const scroller = scrollerOf(stuckRow.current);
+    if (!scroller) return;
+    scroller.style.scrollPaddingTop = STUCK_ROOM;
+    return () => {
+      scroller.style.scrollPaddingTop = '';
+    };
+  }, [sticks, mobile]);
   const gutter = tight ? 4 : 6;
   // A page's facts line is running text under its title, as the startsidan prototype sets it (D130 item 18, measured:
   // 16 px in the softer ink); Hem's day line stays the small line it is under the greeting.
@@ -685,7 +748,9 @@ function FrameBody({
     ) : (
       metaLine
     );
-  const hasHeader = !!(wayLine || titleLine || below || tabs);
+  // Tabs that stick stand first in the content, whose height they stay within; the others end the header.
+  const headTabs = sticks ? null : tabs;
+  const hasHeader = !!(wayLine || titleLine || below || headTabs);
   // The page pattern (D130): where the window is wide, a page's way back, title, facts line and tabs stand on the ground,
   // on the header's lines, and what the page holds is a card under them, as the startsidan prototype draws a page. Hem
   // (`plain`) and a page whose content is cards already (`cards`) are boards with no card of the frame's; a phone keeps
@@ -694,12 +759,14 @@ function FrameBody({
   const header = hasHeader ? (
     <LayoutHeader
       padding={ground ? 0 : gutter}
-      paddingBlockEnd={ground ? (tabs ? 3 : 5) : plain ? 6 : board || tabs ? 0 : gutter}
-      hasDivider={!ground && !board}
+      // Over tabs that stick the header keeps one step, and the row its own two: together the three between a title and
+      // its tabs.
+      paddingBlockEnd={sticks ? 1 : ground ? (tabs ? 3 : 5) : plain ? 6 : board || tabs ? 0 : gutter}
+      hasDivider={!ground && !board && !sticks}
     >
       {/* Hem opens with the reference's air over its greeting (48 px with the header's own inset) and 20 px between
           the greeting and the line to ask. */}
-      <VStack gap={tabs ? 3 : 0} {...(plain && !mobile ? { paddingBlockStart: 6 } : {})}>
+      <VStack gap={headTabs ? 3 : 0} {...(plain && !mobile ? { paddingBlockStart: 6 } : {})}>
         <VStack gap={plain ? 5 : 4}>
           {/* The way back stands close over a title (board Ärende) and a full step over a title with an avatar or a
               swatch before it (board Person). */}
@@ -714,10 +781,38 @@ function FrameBody({
           {mobile && !actionsOnLine && actions}
           {below}
         </VStack>
-        {tabs}
+        {headTabs}
       </VStack>
     </LayoutHeader>
   ) : undefined;
+  // The sticking row: on the ground it is as wide as the card under it and stands three steps over it; on a board and
+  // on a phone it keeps the header's inset, with the same three steps under it on a board, and on a phone's thing page
+  // the header's rule closes it.
+  const stuck = sticks ? (
+    <VStack
+      ref={stuckRow}
+      style={STUCK_TABS}
+      hAlign="stretch"
+      maxWidth="100%"
+      paddingBlockStart={2}
+      paddingBlockEnd={ground || board ? 3 : 0}
+    >
+      {ground ? (
+        tabs
+      ) : (
+        // Astryx's `Section` gives the strip the inset it bleeds into, as the header's does, so its labels start on the
+        // title's line and it has the column's whole width (1.4.10); on a phone's thing page it draws the header's rule.
+        <Section
+          variant="transparent"
+          paddingInline={gutter}
+          paddingBlock={0}
+          {...(board ? {} : { dividers: ['bottom'] as const })}
+        >
+          {tabs}
+        </Section>
+      )}
+    </VStack>
+  ) : null;
   // The facts and the assistant's pane: while the pane stands beside the page the facts stand above the read, as where
   // the window is narrow (D136 item 9, D138 item 4; `useFactsInColumn` says the same to a page that places them).
   const factsInColumn = narrow || besidePane;
@@ -768,6 +863,19 @@ function FrameBody({
         {closed}
       </ScrollableArea>
     </LayoutContent>
+  ) : stuck && !ground ? (
+    // A board's or a phone's tabs stick over the column they belong to: the row runs the column's width, and the content
+    // keeps the frame's inset under it.
+    <LayoutContent padding={0} isScrollable={false} {...(label ? { label } : {})}>
+      {/* No wider than the column, so a strip of tabs too long for it scrolls in itself (1.4.10, 1.4.12). */}
+      <VStack hAlign="stretch" maxWidth="100%">
+        {stuck}
+        {/* Under a board's row, whose own foot is three steps, the content starts the rest of the frame's inset down. */}
+        <VStack hAlign="stretch" padding={gutter} {...(board ? { paddingBlockStart: tight ? 1 : 3 } : {})}>
+          {closed}
+        </VStack>
+      </VStack>
+    </LayoutContent>
   ) : (
     <LayoutContent padding={gutter} isScrollable={pin} {...(label ? { label } : {})}>
       {closed}
@@ -789,16 +897,20 @@ function FrameBody({
       header={header}
       content={
         <LayoutContent padding={0} isScrollable={false}>
-          <Card padding={0} height={pin ? '100%' : undefined}>
-            <Layout
-              {...(layoutRef ? { ref: layoutRef } : {})}
-              height={pin ? 'fill' : 'auto'}
-              start={start}
-              content={content}
-              footer={footer}
-              end={endPanel}
-            />
-          </Card>
+          {/* One tree with and without the sticking row, which stays within the card's height under it. */}
+          <VStack hAlign="stretch" height={pin ? '100%' : undefined}>
+            {stuck}
+            <Card padding={0} height={pin ? '100%' : undefined}>
+              <Layout
+                {...(layoutRef ? { ref: layoutRef } : {})}
+                height={pin ? 'fill' : 'auto'}
+                start={start}
+                content={content}
+                footer={footer}
+                end={endPanel}
+              />
+            </Card>
+          </VStack>
         </LayoutContent>
       }
       footer={

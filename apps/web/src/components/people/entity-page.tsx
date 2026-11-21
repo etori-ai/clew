@@ -11,7 +11,9 @@ import { PageFrame, type PageAsk } from '../shell/page-frame';
  * the thing's tabs where it has them, each a link with its own address (D126 rule 9). The column holds the tab's
  * sections one under the other, each with its heading, a wide step apart; the facts are a 340 px end panel, a
  * named complementary region, and above the read at 1024 px and below, as on the work item's page. Nothing opens over
- * or beside the page (rule 3). On a short screen nothing is pinned and the page scrolls as one (1.4.10).
+ * or beside the page (rule 3). The page scrolls as one, and its tab row stays at the top of the window (D130 item 8
+ * as amended 2026-11-21); beside the assistant's pane it keeps its header, and on a short screen nothing is pinned
+ * or sticks (1.4.10).
  */
 
 /** One of a thing's tabs (D126 rule 9): its value, its name, its address and what it carries beside its name. */

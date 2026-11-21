@@ -1,5 +1,16 @@
 import type { Locator, Page } from '@playwright/test';
-import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, short, test } from './support';
+import {
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  narrow,
+  open,
+  phone,
+  reflowProblems,
+  scrollPage,
+  short,
+  test,
+} from './support';
 import {
   ASKED_MANAGER,
   CERTIFICATE_TITLE,
@@ -283,6 +294,50 @@ test.describe('the work item page on a phone', () => {
     await expect(page.getByRole('main').getByRole('heading', { name: 'Uppgifter' })).toBeVisible();
     await expectNoAxeViolations(page);
   });
+});
+
+/**
+ * A work item's page scrolls as one (D130 item 8 as amended 2026-11-21): the way back, the title and the decisions
+ * scroll away under the shell's header with the read and the facts, so the whole window is the item's. Nothing on the
+ * page sticks or is pinned: it has no tabs, and the frame's one sticky is a tab row's.
+ */
+test.describe('a long work item’s page scrolls as one', () => {
+  for (const [name, viewport] of [
+    ['1280 px', { width: 1280, height: 640 }],
+    ['a phone', { width: 390, height: 700 }],
+  ] as const)
+    test(`at ${name} the title scrolls away with the read and the facts, and nothing but the shell stays`, async ({
+      page,
+      api: _,
+    }) => {
+      await page.setViewportSize(viewport);
+      await open(page, '/items/fakturor');
+      const title = page.getByRole('heading', { level: 1, name: INVOICES });
+      await expect(title).toBeVisible();
+      const start = await scrollPage(page, 0);
+      expect(start.room).toBeGreaterThan(100);
+      const at = await scrollPage(page, start.room);
+      expect(at.scrolled).toBe(start.room);
+      // The title has gone over the top edge, and the foot of the read is in the window.
+      const gone = (await title.boundingBox())!;
+      expect(gone.y + gone.height).toBeLessThanOrEqual(at.top + 1);
+      await expect(page.getByRole('banner')).toBeInViewport();
+      // Nothing in the page sticks, and no region inside it scrolls on its own.
+      const held = await page.evaluate(() => {
+        const main = document.querySelector('main, [role="main"]')!;
+        return [...main.querySelectorAll<HTMLElement>('*')]
+          .filter(el => {
+            const s = getComputedStyle(el);
+            return (
+              s.position === 'sticky' ||
+              ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1)
+            );
+          })
+          .map(el => el.className.toString().slice(0, 60) || el.tagName);
+      });
+      expect(held).toEqual([]);
+      await expectNoAxeViolations(page);
+    });
 });
 
 test.describe('the work item page at 320 px and on a short screen', () => {

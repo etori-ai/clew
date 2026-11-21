@@ -7,6 +7,8 @@ import {
   narrow,
   open,
   reflowProblems,
+  scrollPage,
+  stopsUnderStuckRow,
   test,
 } from './support';
 import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS, usersPeople } from './data';
@@ -391,6 +393,104 @@ test.describe('the person on a phone', () => {
     await expect(main.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Fråga AI', exact: true })).toBeVisible();
     await expect(tabs(page).getByRole('link', { name: 'Översikt' })).toBeInViewport();
+  });
+});
+
+/**
+ * A person's page scrolls as one, and its tab row sticks (D130 item 8 as amended 2026-11-21): the way back, the name and
+ * its buttons scroll away under the shell's header and the facts scroll with the page, and the tabs alone stay at the
+ * top of the window, by the one sticky the frame writes by hand (D130, "Astryx gaps"). The keyboard's focus is never
+ * under the row (2.4.11). While the assistant's pane stands beside the page it keeps its header, as before.
+ */
+test.describe('a long person’s page scrolls as one with its tabs sticking', () => {
+  for (const [name, viewport] of [
+    ['1280 px', { width: 1280, height: 720 }],
+    ['320 px', narrow],
+  ] as const)
+    test(`at ${name} the title scrolls away, the tab row stays at the top, and no control the keyboard reaches is under it`, async ({
+      page,
+      api: _,
+    }) => {
+      await page.setViewportSize(viewport);
+      await new People().route(page);
+      await open(page, '/people/johan?from=%2Fstaff');
+      const title = page.getByRole('heading', { level: 1, name: 'Johan Byström' });
+      const strip = tabs(page);
+      const before = (await strip.boundingBox())!;
+      const start = await scrollPage(page, 0);
+      // The page itself scrolls: the shell's column has more than the window holds.
+      expect(start.room).toBeGreaterThan(200);
+      expect(before.y).toBeGreaterThan(start.top + 60);
+      const at = await scrollPage(page, Math.min(start.room, 500));
+      expect(at.scrolled).toBeGreaterThan(200);
+      // The title is gone over the top edge; the tabs are still there, at the top of the column.
+      const gone = (await title.boundingBox())!;
+      expect(gone.y + gone.height).toBeLessThanOrEqual(at.top);
+      await expect(strip.getByRole('link', { name: 'Översikt' })).toBeInViewport();
+      const stuck = (await strip.boundingBox())!;
+      expect(stuck.y - at.top).toBeGreaterThanOrEqual(0);
+      expect(stuck.y - at.top).toBeLessThan(16);
+      // Scrolled further the row does not move.
+      await scrollPage(page, 120);
+      expect(Math.round((await strip.boundingBox())!.y)).toBe(Math.round(stuck.y));
+      expect(await reflowProblems(page)).toEqual([]);
+      await expectNoAxeViolations(page);
+      // From the foot of the page backwards, every control comes to rest under the row, never behind it.
+      await scrollPage(page, 10_000);
+      const walk = await stopsUnderStuckRow(page, strip);
+      expect(walk.stops).toBeGreaterThan(3);
+      expect(walk.under).toEqual([]);
+    });
+
+  test('the facts scroll with the page, and a tab pressed while the row sticks leads to its tab', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await new People().route(page);
+    await open(page, '/people/johan?from=%2Fstaff');
+    const facts = page.getByRole('complementary', { name: 'Uppgifter' });
+    const before = (await facts.boundingBox())!;
+    const at = await scrollPage(page, 300);
+    const after = (await facts.boundingBox())!;
+    expect(Math.round(before.y - after.y)).toBe(at.scrolled);
+    await tabs(page).getByRole('link', { name: 'Kontakt' }).click();
+    await expect(page).toHaveURL(/section=directory\.contact/);
+    await expect(tabs(page).getByRole('link', { name: 'Kontakt' })).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('on a short screen nothing sticks: the tabs scroll away with the rest (1.4.10)', async ({ page, api: _ }) => {
+    await page.setViewportSize({ width: 900, height: 440 });
+    await new People().route(page);
+    await open(page, '/people/johan?from=%2Fstaff');
+    const start = await scrollPage(page, 0);
+    await scrollPage(page, Math.min(start.room, 600));
+    await expect(tabs(page).getByRole('link', { name: 'Översikt' })).not.toBeInViewport();
+  });
+
+  test('with the assistant’s pane beside it the page keeps its header and its column scrolls; closed, it scrolls as one again', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 720 });
+    await new People().route(page);
+    await open(page, '/people/johan?from=%2Fstaff');
+    const door = page.getByRole('button', { name: 'Fråga AI', exact: true });
+    await door.click();
+    const pane = page.getByRole('complementary', { name: 'Fråga AI', exact: true });
+    await expect(pane).toBeVisible();
+    // Nothing of the page scrolls under the shell: the title, the tabs and the pane stay, and the read scrolls in its card.
+    expect((await scrollPage(page, 400)).room).toBeLessThanOrEqual(1);
+    await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeInViewport();
+    await expect(tabs(page).getByRole('link', { name: 'Översikt' })).toBeInViewport();
+    const paneBox = (await pane.boundingBox())!;
+    expect(paneBox.y + paneBox.height).toBeLessThanOrEqual(720);
+    await expectNoAxeViolations(page);
+    // Closed, the focus is on the button that opened it, on the title's line, and the page scrolls as one again.
+    await pane.getByRole('button', { name: 'Stäng' }).click();
+    await expect(door).toBeFocused();
+    await expect(door).toBeInViewport();
+    expect((await scrollPage(page, 0)).room).toBeGreaterThan(200);
   });
 });
 
