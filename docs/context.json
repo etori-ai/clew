@@ -2963,7 +2963,9 @@
       "path": "docs/decisions/D74-one-page-header-for-every-surface.md",
       "title": "D74 · One page header for every surface",
       "category": "decision-history",
-      "headings": []
+      "headings": [
+        "Amendment, 2026-11-20: the calendar's steps are a row of their own"
+      ]
     },
     {
       "path": "docs/decisions/D75-source-snapshots-retain-the-authority-that-produced-them.md",

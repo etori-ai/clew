@@ -1059,8 +1059,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   // with how it is shown, 44 px controls under a finger. The controls are Astryx's `sm`, as the toolbar that held them
   // made them (28 px, under the heading's 32 px line). An entry opened on a phone still has "Fråga assistenten" among
   // its buttons in the drawer, which has no box of its own.
-  // In the one page frame (D126): the title on the line every page's title stands on. Where in time stands beside the
-  // title it changes (board "Förslag: veckan fyller arket"); how it is shown and what can be done at the line's end.
+  // In the one page frame (D126): the title on the line every page's title stands on, with what can be done at the
+  // line's end; where in time and how it is shown stand on a row of their own under it (D74, amended 2026-11-20).
   const head = mobile
     ? {
         title: shortTitle,
@@ -1085,24 +1085,33 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
             {silentHead}
           </VStack>
         ),
+        below: null,
       }
     : {
-        title: capital(title),
-        status: steps,
+        title: shortTitle,
+        status: undefined,
         actions: (
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            {proposalsMenu}
+            {bookButton}
+          </HStack>
+        ),
+        meta: silentHead,
+        // Where in time and how it is shown are a row of their own under the title (D74, amended 2026-11-20): on the
+        // title's line they shared a wrapping row with a title whose length changes as the person steps, so a long
+        // title pushed them onto the next line and the arrow moved under the pointer. The controls come first and the
+        // week's dates, whose length varies, last, so stepping never moves a control.
+        below: (
           <HStack gap={3} vAlign="center" wrap="wrap">
+            {steps}
             <SegmentedControl label="Vy" size="sm" value={view} onChange={v => go({ view: v as View })}>
               <SegmentedControlItem value="day" label="Dag" />
               <SegmentedControlItem value="week" label="Vecka" />
               <SegmentedControlItem value="month" label="Månad" />
             </SegmentedControl>
-            <HStack gap={2} vAlign="center" wrap="wrap">
-              {proposalsMenu}
-              {bookButton}
-            </HStack>
+            {view === 'week' && <Text color="secondary">{rangeLabel(anchor, 7)}</Text>}
           </HStack>
         ),
-        meta: silentHead,
       };
   // A person with no calendar (D116, amended 2026-11-12): the page says so and who connects one, and draws no grid or
   // controls that would only fail.
@@ -1177,6 +1186,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         meta={head.meta}
         actions={head.actions}
         actionsOnLine
+        below={head.below}
         bleed={fill}
         label="Kalender"
         end={pane}
