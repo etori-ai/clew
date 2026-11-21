@@ -22,7 +22,7 @@ import type { BoardingUsecases, PersonStanding } from './usecases';
  * every report with the report's name (what the assistant reads beside Introduktion och avslut), `boarding.plan`, one
  * plan with its items (what an item's card opens, and the plan's page), and a scan that suggests an introduction for a
  * report whose employment starts soon. `boarding.plans` and `boarding.plan` are offered to the model (D122 item 3,
- * D135 rule 4), read as the person and nobody more; `boarding.person` is a read about an entity and stays closed, as
+ * D141 rule 4), read as the person and nobody more; `boarding.person` is a read about an entity and stays closed, as
  * the loader holds every such read (D97 item 7). No view declares a `ref` (a title a manager typed is free text about a
  * person), the module logs no read, so the assistant's reads are logged nowhere either (D122 item 6), and nothing here
  * writes: an owned domain's own writes are routes, not ledger executions (D96). The use cases come built from
@@ -108,7 +108,7 @@ export const personBoardingView: View = {
   open: { capability: BOARDING_CONNECTOR + '.plan', title: 'Planen', params: { plan: 'plan' } },
 };
 /**
- * Where every report stands (Introduktion och avslut, D135 rule 4): the report's name, then the same words as
+ * Where every report stands (Introduktion och avslut, D141 rule 4): the report's name, then the same words as
  * `boarding.person`, and the plan's id, the one handle `boarding.plan` takes, drawn last so the model reads it too. A row
  * names its person (`subject`), and `boarding.person` answers the same rows asked by key (D127).
  */
@@ -216,7 +216,7 @@ export function boardingConnector(
       rows: (await boarding.aboutPeople(await persona(actor), input.keys)).map(personRow),
     }),
   };
-  // Offered to the model (D122 item 3, D135 rule 4): what Introduktion och avslut shows of the reader's reports, and
+  // Offered to the model (D122 item 3, D141 rule 4): what Introduktion och avslut shows of the reader's reports, and
   // nobody else's. The model reads the rows here, since `boarding.person` takes keys and is never a tool.
   const plans: Capability<Record<string, never>> = {
     name: BOARDING_CONNECTOR + '.plans',

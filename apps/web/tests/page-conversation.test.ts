@@ -45,7 +45,7 @@ const meeting: Chip = { ref: 'event:v1', kind: 'event', label: 'Morgonmöte ledn
 const week45: Chip = { ref: 'capability:calendar.week', kind: 'capability', label: 'Vecka 45' };
 const week46: Chip = { ref: 'capability:calendar.week', kind: 'capability', label: 'Vecka 46' };
 
-describe('the conversation beside a page is the person’s newest about its subject (D135 rule 6)', () => {
+describe('the conversation beside a page is the person’s newest about its subject (D141 rule 6)', () => {
   test('a question asked with the subject’s chip makes the conversation about it, and the newest one wins', () => {
     const older = thread('om-1', '2026-11-17T10:00:00.000Z', [asked([meeting]), answer]);
     const newer = thread('om-2', '2026-11-18T10:00:00.000Z', [asked([meeting]), answer]);
@@ -79,7 +79,7 @@ describe('the conversation beside a page is the person’s newest about its subj
   });
 });
 
-describe('the subject a conversation was asked beside finds it on any device (D135 rule 6)', () => {
+describe('the subject a conversation was asked beside finds it on any device (D141 rule 6)', () => {
   const requests: Chip = { ref: 'capability:clew.requests', kind: 'capability', label: 'Beställningar' };
   const subject = { key: 'view:clew.requests', chips: [requests] };
   test('the subject kept on the conversation finds it, without the chip on any question', () => {
@@ -109,7 +109,7 @@ describe('the subject a conversation was asked beside finds it on any device (D1
   });
 });
 
-describe('a list’s subject in the words of the pane (D135 rules 4 and 10)', () => {
+describe('a list’s subject in the words of the pane (D141 rules 4 and 10)', () => {
   const read = {
     key: 'view:clew.requests',
     label: 'beställningar och felanmälningar',
@@ -134,7 +134,7 @@ describe('a list’s subject in the words of the pane (D135 rules 4 and 10)', ()
   });
 });
 
-describe('a page’s subject goes with the reads the assistant may make, and says which it may not (D135 rule 4)', () => {
+describe('a page’s subject goes with the reads the assistant may make, and says which it may not (D141 rule 4)', () => {
   const views = [
     { capability: 'people.reports', title: 'Mina medarbetare', assistant: true as const },
     { capability: 'talks.talks', title: 'Utvecklingssamtal', assistant: true as const },
@@ -277,7 +277,7 @@ describe('a page’s subject goes with the reads the assistant may make, and say
   });
 });
 
-describe('a source about people or units is read through its overviews (D127, D135 rule 4)', () => {
+describe('a source about people or units is read through its overviews (D127, D141 rule 4)', () => {
   test('each overview of the source’s connector is a read, named as the source', () => {
     expect(
       sourceReads({

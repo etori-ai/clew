@@ -256,7 +256,7 @@ const read = <T>(registry: Registry, p: AuthenticatedContext, name: string, inpu
   registry.run<T>(audiencedActorOf(p), name, input);
 /**
  * The reads of the talks profile that never reach the model (D96 item 6): the composites, every system's action points
- * and another system's round. The built-in module's round, `talks.talks`, is opened (D122 item 3, D135 rule 4).
+ * and another system's round. The built-in module's round, `talks.talks`, is opened (D122 item 3, D141 rule 4).
  */
 const PROFILE = ['clew.talks', 'clew.commitments', 'talks.commitments'];
 const noProfileTool = (registry: Registry, actor: Actor) =>

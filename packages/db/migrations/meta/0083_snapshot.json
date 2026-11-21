@@ -1,5 +1,5 @@
 {
-  "id": "8280b2f5-8515-491b-987d-47a7d3d2da72",
+  "id": "d784cfc6-43e3-4b22-b108-7800b5e46070",
   "prevId": "5e1a41d4-8e0b-40a6-ae04-cf0ad8b44546",
   "version": "7",
   "dialect": "postgresql",
@@ -47,6 +47,13 @@
         },
         "relations": {
           "name": "relations",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "assignments": {
+          "name": "assignments",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
@@ -6661,12 +6668,6 @@
         },
         "handover": {
           "name": "handover",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "asked_beside": {
-          "name": "asked_beside",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

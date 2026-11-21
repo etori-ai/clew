@@ -106,6 +106,37 @@ describe('approved source execution', () => {
     ).rejects.toThrow('annat innehåll');
     expect(w.store.audit()).toHaveLength(1);
   });
+  test("the approval row names the work item's unit when it is one of the person's, and only then (D135)", async () => {
+    const w = world();
+    const several: AuthenticatedContext = {
+      ...persona,
+      assignments: [
+        { unitId: 'unit', unitLabel: 'Unit', role: 'manager' },
+        { unitId: 'other', unitLabel: 'Other', role: 'manager' },
+      ],
+    };
+    await w.uc.approve(several, {
+      decisionId: 'd-held',
+      operation: 'test.do',
+      payload: { revision: 'r1' },
+      unit: 'other',
+    });
+    await w.uc.approve(several, {
+      decisionId: 'd-stray',
+      operation: 'test.do',
+      payload: { revision: 'r2' },
+      unit: 'x',
+    });
+    await w.uc.approve(persona, {
+      decisionId: 'd-one',
+      operation: 'test.do',
+      payload: { revision: 'r3' },
+      unit: 'unit',
+    });
+    expect(w.store.audit().map(e => e.details?.unit)).toEqual(['other', undefined, undefined]);
+    // The execution itself acts as the primary unit, whatever the card was about.
+    expect(w.store.dump().map(e => e.unitId)).toEqual(['unit', 'unit', 'unit']);
+  });
   test('concurrent workers produce one effect and one confirmed outcome', async () => {
     const w = world(),
       e = await w.approve();

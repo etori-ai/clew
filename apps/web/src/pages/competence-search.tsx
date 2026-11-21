@@ -226,7 +226,7 @@ function HoldingsLink({ row, from }: { row: CompetenceSearchRow; from: string })
  * shows, every page of it. Every search, every person opened and every file is logged on the server (D121 item 5), a
  * search read once per address while the page is mounted, and the page says so. A Table where it fits, its rows as a
  * list on a phone and where the columns do not fit the page's column (narrower while the assistant's pane stands beside
- * it, D135 rule 11), with "Sortera" in place of the headers. The pane beside the search says before anything is asked
+ * it, D141 rule 11), with "Sortera" in place of the headers. The pane beside the search says before anything is asked
  * that the assistant reads none of it (D122 item 5). Anyone
  * without the relation, or with the module off for them, is refused by the server, the page says why, and nothing is
  * searched or logged.
@@ -511,13 +511,13 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
     },
   ];
   // The rows are a table where its columns fit in the column beside the rail, else a list: while the assistant's pane
-  // stands beside the page the column is that much narrower (D135 rule 11). The page draws its frame, so the parts that
+  // stands beside the page the column is that much narrower (D141 rule 11). The page draws its frame, so the parts that
   // follow the column read it inside the frame (`InColumn`).
   const { tableMinWidth } = resolveColumnWidths(
     columns.map(c => ({ key: c.key, ...(c.width ? { width: c.width } : {}) })),
   );
   const tableQuery = `(min-width: ${SIDE_NAV + tableMinWidth + 2 * PADDING}px)`;
-  // The assistant beside the search reads none of it (D122 item 5): the pane says so before anything is asked (D135).
+  // The assistant beside the search reads none of it (D122 item 5): the pane says so before anything is asked (D141).
   const subject = pageSubject({
     key: 'competence:search',
     title: 'Kompetenssökning',

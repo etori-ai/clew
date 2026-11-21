@@ -590,7 +590,7 @@ describe('clew.talks and clew.commitments', () => {
       for (const name of ['clew.talks', 'clew.commitments', 'talks.commitments', 'appraisals.talks'])
         expect(names).not.toContain(name);
     }
-    // The built-in module's round is opened (D122 item 3, D135 rule 4), for whoever may read it.
+    // The built-in module's round is opened (D122 item 3, D141 rule 4), for whoever may read it.
     expect(registry.tools(hillevi).map(t => t.name)).toContain('talks.talks');
   });
 });

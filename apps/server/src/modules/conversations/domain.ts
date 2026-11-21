@@ -1,7 +1,7 @@
 import type { Thread } from '@clew/contracts';
 
 /**
- * Alla samtal as a read (D135 rule 4), the pure part: the person's own conversations (threads of kind `question`),
+ * Alla samtal as a read (D141 rule 4), the pure part: the person's own conversations (threads of kind `question`),
  * newest first by when each was last continued, as the page lists them, each its title, what it was asked beside
  * (`askedBeside.label`) and its address. Never a message's text, and never anything but what `threads` holds: the
  * caller hands in the person's own threads through the stream's read boundary.

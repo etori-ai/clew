@@ -90,6 +90,19 @@ test("a scanned card's trigger names the system in words, the id stays on the th
   await w.uc.tick();
   expect(w.store.threads.dump()[0]!.thread.trigger.source).toBe('Ärendesystemet');
 });
+test('the units a scanned card says it is about are kept on the card, and a card that says none has none (D135)', async () => {
+  const w = world();
+  w.set([
+    { ...draft(), subjects: [{ entity: 'unit', key: 'unit-hr' }] },
+    { ...draft(), topic: 'other', occurrences: [{ key: 'case:2', revision: '1', period: '2026' }] },
+  ]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const byTopic = Object.fromEntries(
+    w.store.threads.dump().map(r => [r.thread.topic.split(':')[0], r.thread.subjects]),
+  );
+  expect(byTopic).toEqual({ cases: [{ entity: 'unit', key: 'unit-hr' }], other: undefined });
+});
 /** A person of the memory directory, as SCIM provisioned them. */
 const user = (id: string, userName: string | null, organisationId = 'org'): UserRecord => ({
   id,
@@ -424,6 +437,57 @@ test('source reads are independent of requesting refresh and a revoked actor nev
   expect((await w.store.statuses(actor.id))[0]?.error).toBe('authorization-required');
 });
 
+test('a change of assignments closes the open card made under the old authority as the new one is made, and back again (D135)', async () => {
+  const store = memoryRefreshStore();
+  let current = { ...actor },
+    time = Date.parse('2026-11-07T12:00:00Z'),
+    n = 0;
+  const uc = refreshUsecases({
+    store,
+    clock: () => new Date(time),
+    ids: () => `superseded-${++n}`,
+    key: value => createHash('sha256').update(JSON.stringify(value)).digest('hex'),
+    current: async () => current,
+    sources: async () => ['source'],
+    system: () => 'Source',
+    // The same work under the same primary unit and role: only the set of assignments, and so the authority, moves.
+    scan: async p => ({
+      drafts: [draft()],
+      observation: {
+        scope: p.unitId + ':' + p.role,
+        observedAt: new Date(time).toISOString(),
+        version: String(time),
+        completeness: 'complete',
+        exhausted: true,
+      },
+    }),
+  });
+  const scanAs = async (version: string) => {
+    current = { ...current, authorizationVersion: version };
+    time += 60_001;
+    await uc.request(current);
+    // Every due request is claimed in turn: the old authority's is refused, the new one's scans.
+    while (await uc.tick());
+  };
+  const cards = () => store.threads.dump().map(r => [r.thread.sourceAuthorization, r.thread.state]);
+  await scanAs('v1');
+  expect(cards()).toEqual([['v1', 'open']]);
+  await scanAs('v2');
+  expect(cards()).toEqual([
+    ['v1', 'handled'],
+    ['v2', 'open'],
+  ]);
+  await scanAs('v1');
+  expect(cards()).toEqual([
+    ['v1', 'handled'],
+    ['v2', 'handled'],
+    ['v1', 'open'],
+  ]);
+  expect(store.threads.audit.filter(a => a.action === 'thread.superseded').map(a => a.subject)).toEqual([
+    'thread:superseded-1',
+    'thread:superseded-2',
+  ]);
+});
 test('source snapshots keep their original authority across transfers, role changes and history reads', async () => {
   const store = memoryRefreshStore();
   const registry = new Registry()

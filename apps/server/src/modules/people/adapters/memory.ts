@@ -200,11 +200,12 @@ export function memoryProvisionStore(
         state.grants.delete(personId);
         return;
       }
-      const { relations, ...rest } = grant;
+      const { relations, assignments, ...rest } = grant;
       state.grants.set(personId, {
         ...rest,
         capabilities: [...grant.capabilities],
         ...(relations?.length ? { relations: [...relations] } : {}),
+        ...(assignments && assignments.length > 1 ? { assignments: assignments.map(a => ({ ...a })) } : {}),
       });
     },
     async positionsOf(personId) {

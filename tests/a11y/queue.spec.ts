@@ -150,6 +150,29 @@ test.describe('Att göra: the piles', () => {
   });
 });
 
+test.describe('Att göra for a person with several units (D135)', () => {
+  test.use({ viewport: wide });
+  test('the row whose item is about one of the person’s units names it first on its line, and no other row does', async ({
+    page,
+    api,
+  }) => {
+    api.assignments = [
+      { unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' },
+      { unitId: 'unit-haga', unitLabel: 'Hagaskolan', role: 'manager' },
+    ];
+    api.threads = api.threads.map(t =>
+      t.id === 'ledighet' ? { ...t, subjects: [{ entity: 'unit' as const, key: 'unit-haga' }] } : t,
+    );
+    await open(page, '/todo');
+    const ledighet = page.locator('#work-ledighet');
+    await expect(ledighet).toContainText('Hagaskolan · ');
+    await expect(page.locator('#work-fakturor')).not.toContainText('Hagaskolan');
+    // The unit is read in the row beside its link; the link is still named by the title alone.
+    await expect(ledighet.getByRole('link')).toHaveAccessibleName(/^Ledighetsansökan från Johan Byström/);
+    await expectNoAxeViolations(page);
+  });
+});
+
 test.describe('Att göra: the reading pane', () => {
   test.use({ viewport: wide });
 

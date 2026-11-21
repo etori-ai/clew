@@ -200,7 +200,7 @@ Works shifts in hemtjänst, no desk, uses a phone and sometimes a shared tablet 
 - **Trigger:** 06:30 on the phone.
 - **Flow:** First block: today's shift, start time, and a link to the route in the care app. Second: leave balance. Third: any message from Kim.
 - **Data:** Scheduling system, HR balances, internal messages.
-- **Exercises:** Phone-first layout of an operator-built page targeted to "medarbetare i hemtjänst"; multiple employments in `UserContext` (which unit's schedule is shown, both?).
+- **Exercises:** Phone-first layout of an operator-built page targeted to "medarbetare i hemtjänst"; multiple employments: the work of both units is shown, each item naming its unit ([D135](decisions/D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md)).
 
 ### UC-FATIMA-2 · Apply for leave
 - **Trigger:** Wants two weeks in July.

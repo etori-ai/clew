@@ -1,11 +1,11 @@
 # D138 · The corner's "Fråga AI" opens the assistant's pane, a card in the shell's column, and the conversation stands where the box is
 
-**Status:** provisional (the product owner chose it on 2026-11-19 from the canvas "Clew · the assistant inside the prototype's look", thirteen artboards rendered from the real components of `main`, with "Yes, as drawn", and on 2026-11-20 added the door in a pinned footer with "Yes, in the footer". Built on the branch `assistant-beside-every-page` on 2026-11-19 and 2026-11-20; see "As built". Numbered D133 until the merge of `main` on 2026-11-20, where `main` had taken D131 to D134: this record and the branch's three before it became D135 to D138, and the numbers are taken again from the generated index when the change lands on `main`. It amends a record of each side) · **Date:** 2026-11-19 · **Area:** ui, product, assistant
+**Status:** provisional (the product owner chose it on 2026-11-19 from the canvas "Clew · the assistant inside the prototype's look", thirteen artboards rendered from the real components of `main`, with "Yes, as drawn", and on 2026-11-20 added the door in a pinned footer with "Yes, in the footer". Built on the branch `assistant-beside-every-page` on 2026-11-19 and 2026-11-20; see "As built". Numbered D133 until the merge of `main` on 2026-11-20, where `main` had taken D131 to D134: this record and the branch's three before it became D141 to D138, and the numbers are taken again from the generated index when the change lands on `main`. It amends a record of each side) · **Date:** 2026-11-19 · **Area:** ui, product, assistant
 
-**Context.** Two records numbered D130 met on 2026-11-19 (the branch's is D135 since 2026-11-20).
+**Context.** Two records numbered D130 met on 2026-11-19 (the branch's is D141 since 2026-11-20).
 [Clew's look and layout are the startsidan prototype's](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md),
 on `main`, took the rail away, bounded every page to a centred column of at most 1280 px and put a floating "Fråga AI"
-in the lower corner, which leaves the page for a new conversation. `D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md`,
+in the lower corner, which leaves the page for a new conversation. `D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md`,
 on the branch `assistant-beside-every-page` with its D136 and D137, put one button at the end of every title's line and
 one pane in the page's end slot, and listed a conversation among the rail's latest. The product owner decided the same
 day that the look on `main` is the one to work against: the organisation is testing the prototype and it meets their
@@ -61,7 +61,7 @@ assistants. The aim is that they meet the new parts through what they already kn
   defect, not a wording question.
 
 **Replaces.** Item 10 of the D130 on `main` for what the floating button does on a page; its three rules for keeping
-it out of the way stand. Of the D135: rule 1 (the button at the end of the title's line), the placement
+it out of the way stand. Of the D141: rule 1 (the button at the end of the title's line), the placement
 in rules 2 and 11 (the page's end slot becomes the column's end), the last clause of rule 6 (the rail's latest), and
 rule 9 for Start, where the answer now stands under the line. Its rules 3 to 8 and 10 and its conditions stand, as
 do the branch's D136 and D137.

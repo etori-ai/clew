@@ -157,7 +157,7 @@ export class Units {
   withBelow = false;
   /**
    * The reads of a source's connector that answer its rows without keys (`EntitySource.overviews`, D127), by the
-   * source's capability: what the assistant beside Läget reads a column through (D135 rule 4). None unless a test says.
+   * source's capability: what the assistant beside Läget reads a column through (D141 rule 4). None unless a test says.
    */
   overviews: Record<string, string[]> = {};
   private sources(sections: EntitySource[]): EntitySource[] {

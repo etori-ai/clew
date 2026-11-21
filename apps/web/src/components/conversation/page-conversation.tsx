@@ -46,7 +46,7 @@ import { conversationOf, useTurns, type Send } from './turns';
 import { itemSubject } from '../views/view-read';
 
 /**
- * What the assistant beside a page is about (D135 rule 4): the thing or the list the page shows, as "Fråga assistenten"
+ * What the assistant beside a page is about (D141 rule 4): the thing or the list the page shows, as "Fråga assistenten"
  * asks about it (`ThingSubject`), with the words the pane says it in.
  */
 export interface PageSubject extends ThingSubject {
@@ -56,7 +56,7 @@ export interface PageSubject extends ThingSubject {
   placeholder: string;
   /**
    * What the pane says under its heading that the list of what the assistant cannot read (`cannotRead`) does not
-   * (D135 rule 4, D136 item 4): why a page is never read (the competence search), that the assistant is not told who a
+   * (D141 rule 4, D136 item 4): why a page is never read (the competence search), that the assistant is not told who a
    * person is, or that not all of the page can be read where a closed read has no name to be listed by.
    */
   closed?: string | undefined;
@@ -73,7 +73,7 @@ export interface PageSubject extends ThingSubject {
 }
 
 /**
- * The person's newest conversation about a subject (D135 rule 6). The server keeps the subject a conversation was
+ * The person's newest conversation about a subject (D141 rule 6). The server keeps the subject a conversation was
  * started beside (`Thread.askedBeside`), so it is found again after a reload and on any device, whichever page of the
  * subject it was asked on. A conversation from before that was kept is found by its question instead: one asked with
  * the subject's chip, as the server keeps the chips on a question (`MessageMeta.chips`). A read of a range
@@ -103,7 +103,7 @@ export function conversationFor(
 }
 
 /**
- * A list's subject (D135 rule 4: the page's list), from its read's subject (`viewSubject`) and its title: what the pane
+ * A list's subject (D141 rule 4: the page's list), from its read's subject (`viewSubject`) and its title: what the pane
  * is about ("Om Beställningar och felanmälningar") and what its box asks ("Fråga om beställningar och felanmälningar").
  * Only the title's first letter is lowered, and not in a word written in capitals ("IT-ärenden"), so a name in it reads
  * as written ("Kompetenser för Anna Lindqvist").
@@ -116,7 +116,7 @@ export function listSubject(read: ThingSubject, title: string): PageSubject {
 const lowered = (title: string) =>
   /^\p{Lu}\p{Lu}/u.test(title) ? title : title.charAt(0).toLocaleLowerCase('sv-SE') + title.slice(1);
 
-/** One read a page shows (D135 rule 4), as `pageSubject` is given it. */
+/** One read a page shows (D141 rule 4), as `pageSubject` is given it. */
 export interface PageRead {
   /**
    * The read the assistant would make to read what the page shows: a list's own read, or the overview that answers a
@@ -138,7 +138,7 @@ export interface PageRead {
   about?: string | undefined;
 }
 /**
- * What a source about a person or a unit shows, as the reads the assistant could make for it (D135 rule 4): a source's
+ * What a source about a person or a unit shows, as the reads the assistant could make for it (D141 rule 4): a source's
  * own read takes keys and is never a tool, so the assistant reads its rows through the overviews of the same connector
  * that answer them without keys (`EntitySource.overviews`, D127). A source with none is a read it cannot make, named by
  * its system, or by its title for Clew's own.
@@ -166,7 +166,7 @@ const NEVER: Record<NeverRead, string> = {
 };
 
 /**
- * A page's subject (D135 rules 1 and 4), from its key, its title, the reads it shows and the person's reads (`views`
+ * A page's subject (D141 rules 1 and 4), from its key, its title, the reads it shows and the person's reads (`views`
  * of `/api/areas`): a read the assistant may make for the person (`ViewEntry.assistant`) goes with every question as a
  * capability chip, so the server can tell the model which tool reads the open list; any other read, one the person may
  * not call (absent from `views`) among them, is closed, and the pane lists it before anything is asked (`cannotRead`,
@@ -362,7 +362,7 @@ export const UNNAMED_PERSON = 'Assistenten får inte veta vem sidan gäller, eft
  * A person's or a unit's page (D136 items 1 to 5 and 7): one subject for every tab (`person:<id>`, `unit:<id>`, as
  * "Fråga assistenten" asked about them), the person or the unit by Clew's id as the thing that stands open, and no chip:
  * what a source says about them is never the assistant's (D97 item 7), so the pane names a section's system it cannot
- * read otherwise by the rule of D135's stage 2 (`sourceReads`). On the page of a person the reader neither is nor
+ * read otherwise by the rule of D141's stage 2 (`sourceReads`). On the page of a person the reader neither is nor
  * manages (`relation` `colleague`) the pane also says that the assistant is not told who it is (`UNNAMED_PERSON`); the
  * thing still goes, and the server decides. They stand beside the conversation the pane opens as (`?person=`, `?unit=`,
  * with the tab the pane shows first).
@@ -398,7 +398,7 @@ export function entityPageSubject(page: {
 /**
  * What goes with every question asked in the pane beside a page: the subject's chips, the first of them as what stands
  * open (`beside`); the page's subject by its key and in its words (`page`), so a conversation the question starts is
- * kept as asked beside it (D135 rule 6), found again on any device and left out of the rail until opened; and the thing
+ * kept as asked beside it (D141 rule 6), found again on any device and left out of the rail until opened; and the thing
  * that stands open, where the page has one (`thing`, D136 item 1), which the server resolves as the asker on every turn.
  */
 export function pageTurn(subject: PageSubject): Pick<Send, 'chips' | 'beside' | 'page' | 'thing'> {
@@ -422,7 +422,7 @@ const EMPTY: Thread[] = [];
 const noop = () => undefined;
 
 /**
- * The conversation about what a page shows (D135 rules 4 and 6), held by the page itself so it outlives the pane
+ * The conversation about what a page shows (D141 rules 4 and 6), held by the page itself so it outlives the pane
  * becoming a drawer and back. It is the app's inert conversation (`INERT_CONVERSATION`) with turns of its own over it:
  * the drawer, `@`, another system's assistant, a new conversation and closing are the conversation's page's and stay
  * inert here, and nothing here navigates. Every question goes with the subject's chips, as what stands open
@@ -537,7 +537,7 @@ export function usePageConversation(
 }
 
 /**
- * "Öppna som samtal" (D135 rules 6 and 10): where the conversation beside a page continues at full size, its page with
+ * "Öppna som samtal" (D141 rules 6 and 10): where the conversation beside a page continues at full size, its page with
  * the subject beside it where a thing can stand there (`subject.search`); before anything is asked, a new conversation
  * about the subject. Null while an answer is on its way, since leaving the page would stop it.
  */
@@ -573,7 +573,7 @@ function ReachList({ title, mark, rows }: { title: string; mark: typeof EyeIcon;
 }
 
 /**
- * What the pane says before anything is asked (D138 item 7, D135 rule 10; canvas board AttGora-tom, `Explains`): what
+ * What the pane says before anything is asked (D138 item 7, D141 rule 10; canvas board AttGora-tom, `Explains`): what
  * asking here does, then what the assistant may do here, every line built from what it is allowed and none of them free
  * text or a suggested question: the reads it may make on the page, the actions of what stands open it may fill in, with
  * the person always sending them, and what it cannot read. A list with nothing in it is not drawn. Last, what opening
@@ -607,7 +607,7 @@ function Explains({ about, reach }: { about: string; reach: PaneReach }) {
 }
 
 /**
- * The conversation beside a page (D135, "One component"; canvas boards AskArende-empty and AskArende-more): the same
+ * The conversation beside a page (D141, "One component"; canvas boards AskArende-empty and AskArende-more): the same
  * transcript and box as the conversation's page, in Astryx's `ChatLayout` with the box docked under the conversation,
  * read from a second provider of the one conversation context that wraps only what is drawn here, so the page's own
  * cards keep reading the app's conversation. `headed` is the page frame's pane, whose header says what the pane is about
@@ -648,7 +648,7 @@ export function PageTalk({
   }).data;
   if (!subject) return null;
   const whole = conversation ? `/conversations/${conversation.id}${subject.search}` : null;
-  // A view an answer names is a link to its own page, with this page as the way back (D126 rule 1, D135 rule 7).
+  // A view an answer names is a link to its own page, with this page as the way back (D126 rule 1, D141 rule 7).
   const viewHref = (v: ViewRef) => declaredPage(views, v.capability, v.input) ?? viewPageHref(v, pathname + search);
   const opener =
     open && !headed && conversation ? (

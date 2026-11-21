@@ -437,7 +437,7 @@ export function ConversationPage({ entry, onChange }: { entry: EntryStyle; onCha
 }
 
 /**
- * A conversation asked beside a page is opened as a conversation when its page shows it (D135 rule 6): the page says so
+ * A conversation asked beside a page is opened as a conversation when its page shows it (D141 rule 6): the page says so
  * once, and the answer goes into the cache (D33), so the rail lists it among the latest from then on. Only for one not
  * marked yet; a failure is left alone, and the next visit says it again.
  */

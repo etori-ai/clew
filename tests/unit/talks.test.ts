@@ -1635,7 +1635,7 @@ describe('the built-in connector', () => {
     expect(() => registry()).not.toThrow();
     expect(connector).toMatchObject({ id: 'talks', kind: 'core', source: 'Utvecklingssamtal' });
     const reads = connector.capabilities;
-    // The round is opened to the model (D122 item 3, D135 rule 4); the action points never (D96 item 6), nor the reads
+    // The round is opened to the model (D122 item 3, D141 rule 4); the action points never (D96 item 6), nor the reads
     // about an entity (D97 item 7).
     expect(reads.map(c => [c.name, c.kind, c.model])).toEqual([
       ['talks.talks', 'read', true],
@@ -1822,7 +1822,7 @@ describe('the built-in connector', () => {
     await expect(r.run(actor(asAnna), 'talks.talks', {})).rejects.toThrow('Du saknar behörighet för åtgärden.');
   });
 
-  test('the round is the assistant’s to read for a manager (D122 item 3, D135 rule 4): where each report stands, never what an action point says', async () => {
+  test('the round is the assistant’s to read for a manager (D122 item 3, D141 rule 4): where each report stands, never what an action point says', async () => {
     const r = registry();
     await open();
     await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' });

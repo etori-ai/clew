@@ -818,6 +818,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       name: persona.name,
       role: persona.role,
       unitLabel: persona.unitLabel,
+      ...(persona.assignments ? { unitId: persona.unitId, assignments: persona.assignments } : {}),
       now,
       week: weekNumber(displayDate(now.toISOString())),
       // What stands open beside the transcript is said as that, apart from what the person added to the conversation.
@@ -1203,7 +1204,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(chips.length ? { chips, refs } : {}),
     };
     // Only a conversation this question starts is kept as asked beside the page; on one that exists `page` says nothing
-    // (D135). It keeps the thing the page showed (D136 item 1): which thing, never what the browser said about it.
+    // (D141). It keeps the thing the page showed (D136 item 1): which thing, never what the browser said about it.
     const beside: AskedBeside | undefined =
       !existing && input.page
         ? { subject: input.page.subject, label: input.page.label, openedAt: null, ...(asked ? { thing: asked } : {}) }
@@ -1221,7 +1222,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           connector: 'clew',
           area: 'fragor',
           summary: produced!.body,
-          // Asked in the pane beside a page (D135 rule 6): the conversation keeps the page's subject, so the pane finds
+          // Asked in the pane beside a page (D141 rule 6): the conversation keeps the page's subject, so the pane finds
           // it again on any device, and stays out of the rail's latest until it is opened as a conversation.
           ...(beside ? { askedBeside: beside } : {}),
           items: [],
@@ -1255,7 +1256,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           shape: produced!.shape,
           chips: refs,
           tools: (produced!.toolCalls ?? []).map(c => c.capability),
-          // Asked in the pane beside a page (D135): that it was, never the page's subject or its words (D91).
+          // Asked in the pane beside a page (D141): that it was, never the page's subject or its words (D91).
           ...(beside ? { askedBeside: true } : {}),
           // What kind of thing stood open on the page (D136), never which: a read made of a record is among `reads`.
           ...(thing ? { thing: thing.kind } : {}),
@@ -1365,7 +1366,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     reply,
     /** What the assistant may fill in for what stands open, said in the pane before anything is asked (D138 item 7). */
     reach,
-    /** The conversation's page marks a conversation asked beside a page as opened (D135 rule 6); idempotent. */
+    /** The conversation's page marks a conversation asked beside a page as opened (D141 rule 6); idempotent. */
     markOpened: openedPath(deps),
     listObjects: (persona: AuthenticatedContext, q: string, near: string[] = []) => listObjects(deps, persona, q, near),
     /** The assistants of other systems the person may hand a conversation to; none when no source has any for them. */

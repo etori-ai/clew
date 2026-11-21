@@ -112,7 +112,7 @@ export function AssistantsMenu({ open, hrefFor }: { open: string | null; hrefFor
  * question back, and a question for Clew is typed in Clew's box. The whole assistant, with its files
  * and its own history, is in its own system: the header links there.
  *
- * Under the header the exchange and its box are the conversation's own parts (D135, "One component"): `Transcript` in
+ * Under the header the exchange and its box are the conversation's own parts (D141, "One component"): `Transcript` in
  * the panel's room and the plain box of a pane, read from a second provider of the conversation context whose state is
  * this assistant's side of the conversation. Its messages are that assistant's exchange, its turn on the way is the
  * panel's question, and its box sends to that assistant alone; the one way from it to Clew's own turn is "Låt

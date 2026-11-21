@@ -124,7 +124,7 @@ describe('a work item from Clew itself names no source (D126)', () => {
   });
 });
 
-describe('an item opened beside the queue takes the assistant’s place (D135 rule 5)', () => {
+describe('an item opened beside the queue takes the assistant’s place (D141 rule 5)', () => {
   test('opening an item lets go of the assistant’s pane, and closing it leaves the queue as it was', () => {
     expect(todoHref({ item: 'omtanke' }, '?tab=waiting&ask=1')).toBe('/todo?tab=waiting&item=omtanke');
     expect(todoHref({ item: null }, '?item=omtanke&tab=waiting')).toBe('/todo?tab=waiting');

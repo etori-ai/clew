@@ -296,7 +296,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(tx => tx.updateThread(offered.id, { handOn: other, updatedAt: plus(T0, 4000) }));
       expect((await store.readThread(a, offered.id))!.handOn).toEqual(other);
     });
-    test('the page a conversation was asked beside is kept with it, patched to opened, and absent on every other thread (D135)', async () => {
+    test('the page a conversation was asked beside is kept with it, patched to opened, and absent on every other thread (D141)', async () => {
       const {
         store,
         people: [a],

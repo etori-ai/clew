@@ -74,10 +74,27 @@ export function buildTools(
     ]),
   ]);
 }
+const roleWord = (role: 'manager' | 'employee') => (role === 'manager' ? 'chef' : 'medarbetare');
+const inWords = new Intl.ListFormat('sv', { type: 'conjunction' });
+/**
+ * Where the person works, as the prompt says it: their role on their unit, or on each of their units when they hold more
+ * than one (D135), the primary one first and every unit once by its id, two of the same name included: "chef på
+ * Ekonomiavdelningen och chef på HR-avdelningen".
+ */
+function placements(ctx: Pick<PromptContext, 'unitId' | 'role' | 'unitLabel' | 'assignments'>) {
+  const primary = `${roleWord(ctx.role)} på ${ctx.unitLabel}`;
+  if (!ctx.assignments || ctx.assignments.length < 2) return primary;
+  const others = ctx.assignments.filter(a => a.unitId !== ctx.unitId).map(a => `${roleWord(a.role)} på ${a.unitLabel}`);
+  return inWords.format([primary, ...others]);
+}
 export interface PromptContext {
   name: string;
   role: 'manager' | 'employee';
   unitLabel: string;
+  /** The primary unit's id, which `assignments` holds too (D135). */
+  unitId?: string;
+  /** Every assignment of a person who holds more than one (D135), the primary one among them; absent for one. */
+  assignments?: Array<{ unitId: string; unitLabel: string; role: 'manager' | 'employee' }>;
   now: Date;
   week: number;
   objects: string[];
@@ -128,7 +145,7 @@ export function systemPrompt(ctx: PromptContext): string {
   });
   const time = ctx.now.toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' });
   const lines = [
-    `Du är assistenten på Startsidan, Sundsvalls kommuns startsida för medarbetare. Du hjälper ${ctx.name}, ${ctx.role === 'manager' ? 'chef' : 'medarbetare'} på ${ctx.unitLabel}.`,
+    `Du är assistenten på Startsidan, Sundsvalls kommuns startsida för medarbetare. Du hjälper ${ctx.name}, ${placements(ctx)}.`,
     `I dag är det ${date}, klockan ${time}, vecka ${ctx.week}.`,
     'Regler:',
     '- Svara på svenska och kort: en eller två meningar räcker oftast. Räknar du upp tre eller fler saker, skriv dem som en punktlista, en sak per rad.',

@@ -472,3 +472,63 @@ test('postgres source snapshots reject transferred and renewed authority without
   expect((await threads.readThread(current.id, previous[0]!))?.sourceAuthorization).toBe('v1');
   expect(await threads.listThreads(current.id, clock().toISOString())).toHaveLength(3);
 });
+test('postgres: a card keeps the unit its source says it is about, and a change of assignments closes the old open card (D135)', async () => {
+  let current = await person(),
+    time = Date.parse('2098-11-06T09:00:00.000Z');
+  const clock = () => new Date(time),
+    store = postgresRefreshStore({ durable: testDurable, sealer }, current.id),
+    threads = postgresThreadStore({ durable: testDurable });
+  const uc = refreshUsecases({
+    store,
+    clock,
+    key: value => createHash('sha256').update(JSON.stringify(value)).digest('hex'),
+    ids: () => crypto.randomUUID(),
+    current: async () => current,
+    sources: async () => ['reference'],
+    system: () => 'Reference',
+    scan: async actor => ({
+      drafts: [
+        {
+          topic: 'leave',
+          title: 'A leave request',
+          summary: 'Source content',
+          area: 'test',
+          reason: 'Source',
+          actions: [],
+          subjects: [{ entity: 'unit', key: 'unit-hr' }],
+          occurrences: [{ key: 'leave:1', period: 'once', revision: '1' }],
+        },
+      ],
+      observation: {
+        scope: actor.unitId + ':' + actor.role,
+        observedAt: clock().toISOString(),
+        version: String(time),
+        completeness: 'complete',
+        exhausted: true,
+      },
+    }),
+  });
+  const scanAs = async (authorizationVersion: string) => {
+    current = { ...current, authorizationVersion, authorize: async () => ({ version: authorizationVersion }) };
+    time += 60_001;
+    await uc.request(current);
+    subjects.push(...(await store.statuses(current.id)).map(r => 'refresh:' + r.id));
+    while (await uc.tick());
+  };
+  await scanAs('v1');
+  const [first] = await threads.listThreads(current.id, clock().toISOString());
+  subjects.push('thread:' + first!.id);
+  expect(first).toMatchObject({ state: 'open', subjects: [{ entity: 'unit', key: 'unit-hr' }] });
+  // The card is found from the unit it names, as the unit's page asks.
+  expect((await threads.threadsNaming(current.id, [{ entity: 'unit', key: 'unit-hr' }])).map(n => n.thread.id)).toEqual(
+    [first!.id],
+  );
+  await scanAs('v2');
+  const all = await threads.listThreads(current.id, clock().toISOString());
+  for (const t of all) subjects.push('thread:' + t.id);
+  expect(all.map(t => [t.sourceAuthorization, t.state]).sort()).toEqual([
+    ['v1', 'handled'],
+    ['v2', 'open'],
+  ]);
+  expect(await auditActions('thread:' + first!.id)).toContain('thread.superseded');
+});

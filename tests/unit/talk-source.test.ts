@@ -244,7 +244,7 @@ describe('the talks profile', () => {
     ]);
     const names = () => registry.tools(hillevi).map(t => t.name);
     expect(names()).toEqual(expect.arrayContaining(['talks.other', 'appraisals.other']));
-    // The built-in module's round is opened (D122 item 3, D135 rule 4) and governed as any read: here it says model.
+    // The built-in module's round is opened (D122 item 3, D141 rule 4) and governed as any read: here it says model.
     expect(names()).toContain('talks.talks');
     // Every system's action points, another system's round and the composites never are (D96 item 6).
     expect(names()).not.toContain('talks.commitments');

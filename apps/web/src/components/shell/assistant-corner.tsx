@@ -85,7 +85,7 @@ interface CornerChannel {
   /** The page says what the button does, with the press for `pane`; what it returns takes it back. */
   door(kind: CornerDoor, open: () => void): () => void;
   /**
-   * The assistant's pane has closed: the focus goes back to the button that opened it (D135 rule 2,
+   * The assistant's pane has closed: the focus goes back to the button that opened it (D141 rule 2,
    * D138 item 3), once the button is drawn again.
    */
   returnFocus(): void;

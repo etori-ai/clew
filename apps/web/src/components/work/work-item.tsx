@@ -664,7 +664,7 @@ export function WorkItem({
   tools?: ReactNode;
   /**
    * In a reading pane: a part of its own under the read, at the pane's foot (Att göra's conversation with the assistant
-   * and its box, D135 rule 5). The read scrolls above it; on a short screen it follows the read in the one flow.
+   * and its box, D141 rule 5). The read scrolls above it; on a short screen it follows the read in the one flow.
    */
   under?: ReactNode;
 }) {

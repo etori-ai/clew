@@ -47,7 +47,7 @@ export interface TodoState {
 const TODO_KEYS: Record<keyof TodoState, string> = { tab: 'tab', area: 'area', filter: 'filter', item: 'item' };
 /**
  * `/todo` with `next` applied over `search`; whatever else the address holds (a review over the page) is kept. An item
- * opened in the reading pane takes the end slot from the assistant's pane (D135 rule 5), so the address lets go of it
+ * opened in the reading pane takes the end slot from the assistant's pane (D141 rule 5), so the address lets go of it
  * (`ask`): closing the item leaves the queue as it was before the pane was opened.
  */
 export function todoHref(next: TodoState, search: URLSearchParams | string = ''): string {

@@ -210,7 +210,7 @@ export function dialogueUsecases(deps: DialogueDeps) {
       );
     },
     /**
-     * The dialogue of every unit the persona follows up, in short (`dialogue.units`, D135 rule 4): the same rows as
+     * The dialogue of every unit the persona follows up, in short (`dialogue.units`, D141 rule 4): the same rows as
      * `aboutUnits` gives for each of them, with the unit's name, by name in Swedish order. Someone who follows up no
      * unit has none. Reads, so no audit row.
      */

@@ -18,7 +18,7 @@ import { People } from './person-data';
 import { SICK_UNIT, Units } from './unit-data';
 
 /**
- * The assistant beside every page (D135, D138; canvas boards AttGora-tom and Arende-tom), on the first
+ * The assistant beside every page (D141, D138; canvas boards AttGora-tom and Arende-tom), on the first
  * page that has it, a register: the phone book's directory, a table, as a tool. The corner's floating "Fråga AI" is the
  * door (D138 items 1, 3 and 5): it opens the assistant's pane, a card at the end of the shell's column, in the address
  * (`ask=1`), with the focus in its box, and is not drawn while the pane stands. The pane says what it is about and what
@@ -328,7 +328,7 @@ test.describe('the assistant’s pane on smaller screens', () => {
 });
 
 /**
- * Stage 2 (D135 rules 1, 4 and 11, D138): the registers, Läget and Att göra's queue say what they show,
+ * Stage 2 (D141 rules 1, 4 and 11, D138): the registers, Läget and Att göra's queue say what they show,
  * and the frame provides the pane that the corner's "Fråga AI" opens. On every one the pane opens beside the page with
  * what it is about in words and its box, the page stays and never scrolls sideways while its column is 400 px narrower
  * (a table scrolls inside itself or becomes its list), and nothing breaks axe. Where the assistant cannot read what a
@@ -426,7 +426,7 @@ const REGISTERS: Array<{
   { name: 'Att göra', path: '/todo', about: 'Om Att göra · Behöver dig', box: 'Fråga om ärendena' },
 ];
 
-test.describe('the assistant’s pane beside every register, Läget and Att göra (D135 stage 2)', () => {
+test.describe('the assistant’s pane beside every register, Läget and Att göra (D141 stage 2)', () => {
   test.use({ viewport: WIDE });
 
   for (const r of REGISTERS)
@@ -860,7 +860,7 @@ const ask3 = async (page: Page, box: string, question: string) => {
   await expect(pane(page).getByText(question, { exact: true })).toBeVisible();
 };
 
-test.describe('the assistant’s pane beside a thing’s page (D135 stage 3, D136)', () => {
+test.describe('the assistant’s pane beside a thing’s page (D141 stage 3, D136)', () => {
   test.use({ viewport: WIDE });
 
   for (const t of THINGS)
@@ -1109,7 +1109,7 @@ test.describe('the assistant’s pane beside a thing’s page (D135 stage 3, D13
   });
 });
 
-test.describe('a thing’s page on a phone (D135 rule 11, D136 item 1)', () => {
+test.describe('a thing’s page on a phone (D141 rule 11, D136 item 1)', () => {
   test.use({ viewport: phone });
 
   test('the corner’s button leads to the conversation with the thing beside its address, and a question there carries the thing', async ({

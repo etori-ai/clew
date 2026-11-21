@@ -616,7 +616,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await dialog.getByRole('button', { name: 'Ja, ställ in' }).click();
     await expect.poll(() => sent.length).toBe(1);
   });
-  test('the corner’s Fråga AI gives the pane to the week: the box has the focus, the question goes with the week’s read, and Esc gives the focus back (D135, D138)', async ({
+  test('the corner’s Fråga AI gives the pane to the week: the box has the focus, the question goes with the week’s read, and Esc gives the focus back (D141, D138)', async ({
     page,
     api,
   }) => {
@@ -648,7 +648,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(page).not.toHaveURL(/ask=1/);
     await expect(button).toBeFocused();
   });
-  test('an entry opened takes the place of the assistant’s pane with the box at its foot, so the corner is not drawn, and Back gives the pane its place again (D135 rule 5, D138 item 5)', async ({
+  test('an entry opened takes the place of the assistant’s pane with the box at its foot, so the corner is not drawn, and Back gives the pane its place again (D141 rule 5, D138 item 5)', async ({
     page,
     api: _,
   }) => {
@@ -673,7 +673,7 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(entry).toHaveCount(0);
     await expect(page).not.toHaveURL(/entry=/);
   });
-  test('the pane says in plain words what asking here does, and an answer that needs room is one row that leads to the conversation (D135 rules 7 and 10)', async ({
+  test('the pane says in plain words what asking here does, and an answer that needs room is one row that leads to the conversation (D141 rules 7 and 10)', async ({
     page,
     api: _,
   }) => {

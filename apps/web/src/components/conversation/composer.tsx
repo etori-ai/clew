@@ -125,7 +125,7 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
 /**
  * Where the box sits (D126 item 4: the assistant has two homes): `landing` is the box on Ny fråga, under the greeting,
  * which starts a conversation; `conversation` is the box docked under a conversation's transcript, which continues it.
- * Hem has one line that starts a conversation with its question (`HemQuestion`). `pane` is the box beside a page (D135
+ * Hem has one line that starts a conversation with its question (`HemQuestion`). `pane` is the box beside a page (D141
  * rules 3 and 10): the plain one, with no `@`, drawer, model, dictation or verbs, which belong to the conversation's
  * page; flat and at Astryx's own density (the product owner, 2026-11-18: the compact one put its text too close to its
  * border). It is not a conversation's own box, so "Lägg till i samtalet" is not offered for it.

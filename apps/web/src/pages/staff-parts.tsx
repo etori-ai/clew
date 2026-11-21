@@ -622,7 +622,7 @@ let pressedTab: string | null = null;
  * Kompetens and Introduktion och avslut while their module is visible to the person (D23). The rail marks Personal on
  * every tab. The content scrolls under the header; on a short screen nothing is pinned and the page scrolls as one
  * (1.4.10). Every tab sits in the one page frame (`PageFrame`, D126), which provides the assistant's pane beside the
- * tab, opened by the corner's "Fråga AI" (D135, D138): each tab says what it shows (`subject`), and the frame draws the
+ * tab, opened by the corner's "Fråga AI" (D141, D138): each tab says what it shows (`subject`), and the frame draws the
  * pane.
  */
 export function PersonalFrame({
@@ -640,7 +640,7 @@ export function PersonalFrame({
   /** The tab shown: `ALL_TAB`, a lens's capability, `COMPETENCE_TAB` or `BOARDING_TAB`. */
   tab: string;
   /**
-   * What the tab shows, as the assistant beside it is about it (D135 rules 1 and 4): required, so no tab leaves the
+   * What the tab shows, as the assistant beside it is about it (D141 rules 1 and 4): required, so no tab leaves the
    * button out; null until the tab knows it.
    */
   subject: PageSubject | null;

@@ -829,7 +829,7 @@ export function boardingUsecases(deps: BoardingDeps) {
     },
 
     /**
-     * Where every report of the persona's stands (`boarding.plans`, D135 rule 4): the rows `aboutPeople` answers when it
+     * Where every report of the persona's stands (`boarding.plans`, D141 rule 4): the rows `aboutPeople` answers when it
      * is asked about each report with a user name, keyed by that name, with the report's name, by name in Swedish order.
      * A report with neither a plan nor a start to plan for has no row; someone with no reports has none. Reads, so no
      * audit row.

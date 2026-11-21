@@ -8,6 +8,7 @@
  *   docker exec -e BFF_URL=http://127.0.0.1:3000 -w /workspace clew-app-1 bun scripts/appearance-check.ts
  */
 import { resolve } from 'node:path';
+import { testPasswordKey } from './test-password-key';
 try {
   process.loadEnvFile(resolve(import.meta.dir, '../apps/server/.env.local'));
 } catch {
@@ -24,7 +25,7 @@ const target = (url: string) =>
   process.env.BFF_URL && url.startsWith(base) ? process.env.BFF_URL + url.slice(base.length) : url;
 const env = Object.fromEntries(
   (await Bun.file(resolve(import.meta.dir, '../.auth-test.env')).text()).split('\n').flatMap(line => {
-    const m = /^([A-Z_]+)=(.*)$/.exec(line);
+    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line);
     return m ? [[m[1]!, m[2]!]] : [];
   }),
 );
@@ -53,7 +54,7 @@ async function client(user?: string) {
   };
   let csrf = '';
   if (user) {
-    const password = env['TEST_' + user.toUpperCase() + '_PASSWORD'];
+    const password = env[testPasswordKey(user)];
     if (!password) throw new Error('Test password missing in .auth-test.env');
     const form = await go(base + '/api/auth/login?returnTo=/');
     const action = /action="([^"]+)"/.exec(await form.text())?.[1]?.replace(/&amp;/g, '&');

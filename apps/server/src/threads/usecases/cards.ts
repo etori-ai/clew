@@ -133,6 +133,22 @@ export function threadUsecases(deps: ThreadDeps) {
       )
         continue;
       if (!existing || existing.sourceAuthorization !== persona.authorizationVersion) {
+        // D135: the open card made under other authority is superseded by this one, so none is left behind unseen.
+        if (existing)
+          await store.transaction(async tx => {
+            const current = await tx.lockThread(persona.id, existing.id);
+            if (current?.state !== 'open' || current.receipt) return;
+            const at = now.toISOString();
+            await tx.updateThread(existing.id, { state: 'handled', handledAt: at, waitingOn: null, updatedAt: at });
+            await tx.cancelTimer(`snooze:${existing.id}`, at);
+            await tx.writeAudit({
+              actor: 'assistant:scan',
+              action: 'thread.superseded',
+              subject: 'thread:' + existing.id,
+              at,
+              details: { connector: d.connector },
+            });
+          });
         await pushDraft(persona, existing ? { ...d, topic: scopedTopic } : d, 'assistant:scan', now);
         continue;
       }
@@ -237,6 +253,8 @@ export function threadUsecases(deps: ThreadDeps) {
         area: d.area,
         summary: d.summary,
         items: d.items ?? [],
+        // D135: the units the source says the card is about, kept as Clew keeps its own cards' subjects (D97 item 6).
+        ...(d.subjects?.length ? { subjects: d.subjects } : {}),
         actions: d.actions,
         waitingOn: d.waitingOn ?? null,
         ...(d.handOn ? { handOn: d.handOn } : {}),

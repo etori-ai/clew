@@ -5,7 +5,7 @@ import { shiftQuery } from '../src/components/shell/page-frame-context';
 import { groupThreads, onlyBeside } from '../src/stream';
 import { listedAbout } from '../src/conversation-about';
 
-describe('the assistant’s pane is in the address (D135 rule 2)', () => {
+describe('the assistant’s pane is in the address (D141 rule 2)', () => {
   test('opening it keeps the page’s own address and takes the place of an entry', () => {
     expect(withAsk('/tools/clew.requests', '?input=%7B%7D&from=%2F')).toBe(
       '/tools/clew.requests?input=%7B%7D&from=%2F&ask=1',
@@ -32,7 +32,7 @@ describe('the assistant’s pane is in the address (D135 rule 2)', () => {
   });
 });
 
-describe('a breakpoint of the column follows the pane’s width (D135 rule 11, D138 item 4)', () => {
+describe('a breakpoint of the column follows the pane’s width (D141 rule 11, D138 item 4)', () => {
   test('min-width and max-width move by the pane, anything else stays', () => {
     expect(shiftQuery('(min-width: 1280px)', 400)).toBe('(min-width: 1680px)');
     expect(shiftQuery('(max-width: 1024px)', 400)).toBe('(max-width: 1424px)');
@@ -57,7 +57,7 @@ describe('a breakpoint of the column follows the pane’s width (D135 rule 11, D
   });
 });
 
-describe('a conversation asked beside a page is among Ny fråga’s latest once opened (D135 rule 6, D138 item 10)', () => {
+describe('a conversation asked beside a page is among Ny fråga’s latest once opened (D141 rule 6, D138 item 10)', () => {
   const NOW = '2026-11-18T10:00:00.000Z';
   const question = (id: string, updatedAt: string, askedBeside?: Thread['askedBeside']): Thread =>
     ({

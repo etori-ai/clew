@@ -11,7 +11,7 @@ done with it, by the person or through the assistant. When the assistant was fir
 ([D140](D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md)), moving and cancelling a
 meeting were therefore built as two kinds of Clew's own with two tools named in the assistant, and the product owner
 said the same day that this belongs in the protocol and not in the calendar.
-[D135](D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) rule 8
+[D141](D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) rule 8
 (the assistant fills in only an action about what stands open, and the person sends it) is met today for a work
 item, a person and a unit, and for Kalender's own two.
 [D136](D136-the-thing-that-stands-open-on-its-page-is-told-to-the-assistant-by-clew.md) made the record that stands

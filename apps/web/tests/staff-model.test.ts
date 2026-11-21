@@ -247,7 +247,7 @@ describe('the whole row and the row in one value (D97)', () => {
   });
 });
 
-describe('what Medarbetare shows, as the reads the assistant could make for it (D135 rule 4)', () => {
+describe('what Medarbetare shows, as the reads the assistant could make for it (D141 rule 4)', () => {
   const field: ViewField = { key: 'state', label: 'Samtal' };
   const view: View = { kind: 'list', title: 'state', fields: [field] };
   const lens = (capability: string, source: string, overviews?: string[], own = false): EntitySource => ({

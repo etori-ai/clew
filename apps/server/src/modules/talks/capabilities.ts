@@ -34,7 +34,7 @@ import type { RoundHeading, TalkNotice, TalkUsecases } from './usecases';
 /**
  * The talks module as Clew's built-in connector (D96 items 7 to 9): it answers the talks profile, `talks.talks` and
  * `talks.commitments`, while an administrator keeps it enabled, and declares the area whose figure is the share of
- * talks held. One read is offered to the model (D122 item 3, D135 rule 4): the open round, `talks.talks`, which says
+ * talks held. One read is offered to the model (D122 item 3, D141 rule 4): the open round, `talks.talks`, which says
  * where each of the reader's reports stands and holds no text of a talk or an action point. The rest stay closed, each
  * for its reason: `talks.commitments`, since the text of an action point is free text about a person (D96 item 6; the
  * registry holds every system's action points from the model whatever a read declares); `talks.person` and

@@ -112,13 +112,19 @@ export const accessGrants = pgTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    // D135: every assignment with its unit's label, when the person holds more than one; empty otherwise. The primary
+    // one is `unit_id` and `role` above, and is among them.
+    assignments: jsonb('assignments')
+      .$type<Array<{ unitId: string; unitLabel: string; role: 'manager' | 'employee' }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
   },
   t => [check('auth_grant_role', sql`${t.role} IN ('manager', 'employee')`)],
 );
 // What a provisioner pushes (D68) and what an administrator maps (D85). `auth_access_grant` above is the derived
-// projection of these tables: the one active assignment (manager before employee, then the lowest unit id) and the
-// capabilities the person's memberships give, written in the same transaction as the change that moves them; the
-// development seed writes both until the derivation lands.
+// projection of these tables: the primary assignment (manager before employee, then the lowest unit id), every
+// assignment when there is more than one (D135), and the capabilities the person's memberships give, written in the
+// same transaction as the change that moves them.
 export const units = pgTable('auth_unit', {
   id: text('id').primaryKey(),
   organisationId: text('organisation_id').notNull(),
@@ -331,7 +337,7 @@ export const threads = pgTable(
     subjects: jsonb('subjects').$type<Subject[]>().notNull().default([]),
     // The source's assistant a question conversation was handed to, with the source's own key for it: null for every other thread.
     handover: jsonb('handover').$type<Handover>(),
-    // A question conversation asked beside a page (D135): its subject, what it is about and when it was opened as a
+    // A question conversation asked beside a page (D141): its subject, what it is about and when it was opened as a
     // conversation. Null for every other thread.
     askedBeside: jsonb('asked_beside').$type<AskedBeside>(),
     actions: jsonb('actions').$type<ThreadAction[]>().notNull().default([]),

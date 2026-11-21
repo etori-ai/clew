@@ -67,6 +67,7 @@ import { useMarks } from '../marks';
 import { PageFrame, type EntryStyle } from '../components/shell/page-frame';
 import { createAskFieldTheme } from '@clew/ui/theme';
 import { useBranding } from '../branding';
+import { unitsLine, workUnit } from '../user-units';
 
 /** How many work items Hem shows under "Behöver dig" (board Hem): the most urgent; every one is in Att göra. */
 const ON_HEM = 4;
@@ -257,7 +258,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     // "Behöver dig" is the card's own heading: the state of an item with nothing to decide is not said again under it.
     const plain = facts.state.label.startsWith('Ska göras') || facts.state.label === STATUS['needs-you'].word;
     const state = plain && !unresolvedExecution(t) ? null : facts.state.label;
-    return [own ? null : mark.source, state, stale ? staleWhy(facts.why) : facts.why].filter(Boolean).join(DOT);
+    // D135: the unit the work item is about, for a person with several.
+    return [own ? null : mark.source, workUnit(user, t), state, stale ? staleWhy(facts.why) : facts.why]
+      .filter(Boolean)
+      .join(DOT);
   };
   /**
    * A work item as a row of "Behöver dig" (D130 item 13): an edge in its due day's colour, its name, the line that says
@@ -453,7 +457,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         plain
         title={greetingOf(user.name, new Date())}
         titleId="hem"
-        meta={dayLine(todayDate, user.unitLabel)}
+        meta={dayLine(todayDate, unitsLine(user))}
         below={<HemQuestion field={line} stacked={mobile} />}
         label="Hem"
       >

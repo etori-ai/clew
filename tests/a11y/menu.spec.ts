@@ -223,7 +223,7 @@ test.describe('Samtal among the pages and the register', () => {
     await expect(all).toHaveAttribute('aria-current', 'page');
   });
 
-  test('a conversation asked beside a page and never opened as a conversation is no page of the row, and Samtal lists it with what it is about (D135 rule 6, D138 item 10)', async ({
+  test('a conversation asked beside a page and never opened as a conversation is no page of the row, and Samtal lists it with what it is about (D141 rule 6, D138 item 10)', async ({
     page,
     api,
   }) => {

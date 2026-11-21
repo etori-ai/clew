@@ -558,7 +558,7 @@ export const api = {
   converse: (input: ConversationInput) => post<ConversationResponse>('/api/conversation', input),
   converseStream,
   /**
-   * The conversation's page shows a conversation asked beside a page (D135 rule 6): it is marked opened once, and from
+   * The conversation's page shows a conversation asked beside a page (D141 rule 6): it is marked opened once, and from
    * then on it is among Ny fråga's latest. Answers the conversation as it stands; another person's is a 404.
    */
   conversationOpened: (id: string) => post<Thread>(`/api/conversations/${encodeURIComponent(id)}/opened`),

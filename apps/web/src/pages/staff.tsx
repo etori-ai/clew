@@ -200,7 +200,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
         .filter(Boolean)
         .join(' · ')
     : '';
-  // What the assistant beside the tab is about (D135 rule 4): under a lens its source, read through its overviews, with
+  // What the assistant beside the tab is about (D141 rule 4): under a lens its source, read through its overviews, with
   // the lens beside the conversation it opens as (`?lens=`); on Medarbetare the people and the columns' sources.
   const views = useQuery(areasQuery).data?.views;
   const subject = lens

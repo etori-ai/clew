@@ -2,7 +2,7 @@
 
 **Status:** provisional (the product owner chose its three open points on 2026-11-19: on a person's page the assistant is told who the person is; what another system shows about a person or a unit stays closed for now; a conversation asked beside a person's page is deleted when the person is erased. Built the same day: a work item, the review, a record, a person, a unit and a plan ask through the frame's button and pane, the browser names the thing and the server resolves it on every turn, and `subject-erase` deletes the conversations asked beside a person. Tried on the development stack with its local model: beside a report's page "hon" was read as that person, her competences were read with her user name and the open work about her was named by title; beside a plan's page the plan was read and its overdue items named; beside a service desk request, whose read the assistant may not make, the pane said so. Nothing outside the repository has tested it, and no manual screen-reader pass is made. Numbered D131 until the merge of `main` on 2026-11-20, where `main` had taken the number) · **Date:** 2026-11-19 · **Area:** assistant, ui, identity
 
-**Context.** [D135](D135-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md)
+**Context.** [D141](D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md)
 puts the assistant's pane beside every page, about one subject: "the page's thing, the page's list, or the thing
 standing in the page's own pane" (rule 4). Its stages 1 and 2 built it for lists, where the subject is the read that
 draws the list. A thing's page is different: what stands open is one work item, one record, one person, one unit or
@@ -11,7 +11,7 @@ its read without the input that says which record; a person and a unit go as not
 [D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) item 7 keeps a source's read about a person
 from the model and [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md) hands the model only the people
 the asker's own words name. A pane about Anna Lindqvist that is told nothing about Anna can answer nothing, and
-D135's "Not built" asked for this decision before a person's page gets the pane. It also noted that erasing a person
+D141's "Not built" asked for this decision before a person's page gets the pane. It also noted that erasing a person
 does not reach the subject a conversation was asked beside.
 
 **Decision.**
@@ -45,16 +45,16 @@ does not reach the subject a conversation was asked beside.
    such a record (`boarding.plan`); the review of a work item is about the work item.
 7. **What another system shows about a person or a unit stays closed** (the product owner, 2026-11-19). D97 item 7
    stands: a source's read about an entity is never the assistant's, on its page as elsewhere, and the pane names
-   the systems it cannot read there, by the rule of D135's stage 2. Clew's own domains are read through the reads
+   the systems it cannot read there, by the rule of D141's stage 2. Clew's own domains are read through the reads
    D122 opened. Opening a source's read about a person is a change to the connector protocol and is decided with
-   D135's stage 5.
+   D141's stage 5.
 8. **Erasing a person deletes the conversations asked beside their page** (the product owner, 2026-11-19). A
    conversation kept as asked beside a person (item 1) is the one conversation Clew can tie to that person with
    certainty, and it is likely to quote what Clew knows about them. `subject-erase` removes each of them whole, for
    whoever asked, with an audit row of counts only. This answers D122's open question for these conversations and
    no others.
 9. **On a thing's page the pane has the end slot and the facts stand above the read** while it is open, as they do
-   where the window is narrow (D135 rule 11). The thing's own "Fråga assistenten" among its actions is gone: the
+   where the window is narrow (D141 rule 11). The thing's own "Fråga assistenten" among its actions is gone: the
    frame draws the one button. "Öppna som samtal" leads to the conversation's page with the thing beside it, as
    D126 rule 5 placed it.
 
@@ -107,4 +107,4 @@ find it again.
 - With the pane open at a wide window the read's column is as wide as the sheet leaves it, about 1000 px at 1728:
   the frame gives the column no measure while a pane stands beside it. Whether a thing's read should keep one is
   the product owner's to say.
-- Att göra's item still has its own "Fråga assistenten" (D135's stage 4).
+- Att göra's item still has its own "Fråga assistenten" (D141's stage 4).

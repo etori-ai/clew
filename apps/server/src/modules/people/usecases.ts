@@ -98,10 +98,10 @@ export interface OrganisationRules {
  * with. Called by whatever changed a membership or such a row, inside that change's transaction, so the grant never lags the
  * fact that produced it: the person is locked before their memberships are read, and the rows are read after that lock
  * or under the organisation's hold on them. An unchanged grant writes no audit row; a changed one writes `grant.derived`
- * on the person with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail
- * closed). Placements that change while the grant stays (a second unit, a manager's role on one) write
- * `assignments.derived` with the placements instead (D99). A `protected` key never reaches these tables (D93), so the
- * derived flag stays false and is never written to the audit row.
+ * on the person with the new unit, role and capabilities, and the placements when there is more than one (D99, D135),
+ * or `removed: true` when the person has no unit left (fail closed). A grant carries every assignment of a person who
+ * holds more than one (D135), so no change of placements leaves it as it was. A `protected` key never reaches these
+ * tables (D93), so the derived flag stays false and is never written to the audit row.
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
   async function deriveWithin(
@@ -152,17 +152,12 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
         role: before.role,
         capabilities: [...before.capabilities].sort() as Capability[],
         ...(heldRelations.length ? { relations: heldRelations } : {}),
+        ...(before.assignments && before.assignments.length > 1 ? { assignments: before.assignments } : {}),
       };
+    // D99: the history of who was assigned where is the audit rows. Since D135 the grant carries every assignment of a
+    // person who holds more than one, so a second unit, or a manager's role on one, changes the grant and is said on
+    // its row with the placements; no change of placements leaves the grant as it was.
     const regranted = !sameGrant(previous, derived.grant);
-    // D99: the history of who was assigned where is the audit rows. A second unit, or a manager's role on one, changes
-    // what a person sees without changing the unit they act as, so it is said by itself when the grant does not say it.
-    if (!sameAssignments && !regranted && derived.grant)
-      await tx.audit({
-        actor,
-        action: 'assignments.derived',
-        subject: 'person:' + personId,
-        details: { assignments: derived.assignments.map(a => ({ unitId: a.unitId, role: a.role })) },
-      });
     if (regranted) {
       await tx.writeGrant(personId, derived.grant);
       await tx.audit({
@@ -175,6 +170,10 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
               role: derived.grant.role,
               capabilities: derived.grant.capabilities,
               assignments: derived.assignments.length,
+              // D135: where the person is placed, when it is more than the one unit above.
+              ...(derived.assignments.length > 1
+                ? { placements: derived.assignments.map(a => ({ unitId: a.unitId, role: a.role })) }
+                : {}),
               // D121: said whenever the person held one before or holds one now, so its loss is on the row too.
               ...(derived.relations.length || heldRelations.length ? { relations: derived.relations } : {}),
             }
@@ -1571,7 +1570,7 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
         };
       }),
     /**
-     * The titles of these people of the reader's organisation (`people.reports`, D135 rule 4), by id: the titles their
+     * The titles of these people of the reader's organisation (`people.reports`, D141 rule 4), by id: the titles their
      * employments carry, each once, or the core title where none does (as the person's page shows them). Someone
      * without a title, deactivated or of another organisation is absent. Nothing else of an employment is read out: no
      * type, date or percentage. Read on every call, never cached.

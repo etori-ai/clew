@@ -36,6 +36,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `uses` | no | array of string | The exact capability names of other connectors this one calls back through `POST /api/connectors/call` while serving a request (D37), such as `calendar.today`. A name not listed is refused; an `execute` can never be called back. |
 | `facts` | no | array of object | The fact kinds this connector creates (D55), each prefixed with its id. |
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |
+| `assignments` | no | boolean | Whether the connector takes the actor's `assignments` (D135): every unit of a person who holds more than one, each with the role they have there. Without it the actor never carries them, and the connector answers for `unitId` and `role` alone. |
 | `delegation` | no | object | The connector acts as the person against its system with a token Clew obtains by token exchange. |
 | `documents` | no | boolean | Implements POST /clew/documents for authorised, versioned binary document reads (D79). |
 | `assistants` | no | object | The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Optional: a manifest without it is untouched. |
@@ -89,6 +90,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `role` | yes | "manager" / "employee" |  |
 | `userName` | no | string | The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one. |
 | `units` | no | array of object | The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone. |
+| `assignments` | no | array of object | Every assignment of a person who holds more than one (D135): each unit they are placed on or manage, with the role they have there. `unitId` and `role` above are the primary one and it is among them. Sent only to a connector whose manifest sets `assignments: true`, on every call for such a person; answer for each with its own role. Not `units`, which is whom a manager follows up. Absent means `unitId` and `role` alone. |
 
 ## CallRequest
 
@@ -113,6 +115,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `waitingOn` | no | string / null |  |
 | `deadline` | no | string / null |  |
 | `handOn` | no | object | An offer to the person to say that the next step, which is someone else's and is taken outside Clew, is taken (D139). Clew then lists the card as waiting on `waitingOn` until the person takes it back, a reminder of theirs fires, the occurrence's revision changes or the scan stops raising it. Nothing is sent to the connector: pressing it is not a capability call. Leave it out on a draft that sets `waitingOn` itself. |
+| `subjects` | no | array of object | The units the card is about (D135): for a person with several assignments, the one it came from. Clew names the unit on the card's line and places the card on that unit's page. A row names a person in its own `subject`. |
 
 ## ExecuteResult
 

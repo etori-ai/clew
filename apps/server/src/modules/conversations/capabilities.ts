@@ -4,7 +4,7 @@ import type { Thread, View } from '@clew/contracts';
 import { CONVERSATIONS_MAX, conversationList, type ConversationList } from './domain';
 
 /**
- * Alla samtal as part of Clew's core connector (D135 rule 4): `clew.conversations` lists the person's own
+ * Alla samtal as part of Clew's core connector (D141 rule 4): `clew.conversations` lists the person's own
  * conversations, so the assistant asked beside Alla samtal can say which one was about what and lead to it. Each is its
  * title, what it was asked beside, when it was last continued and its address; never what was said in it. As
  * `clew.work` is, it reads the person's threads through the stream's own read boundary, handed in at composition

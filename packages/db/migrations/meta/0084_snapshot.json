@@ -1,6 +1,6 @@
 {
-  "id": "a8565ed7-9de1-43bc-b8ed-4431b22bbca4",
-  "prevId": "8280b2f5-8515-491b-987d-47a7d3d2da72",
+  "id": "edf5612e-90f5-4d5f-9b02-64f7674e71dc",
+  "prevId": "d784cfc6-43e3-4b22-b108-7800b5e46070",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -47,6 +47,13 @@
         },
         "relations": {
           "name": "relations",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "assignments": {
+          "name": "assignments",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
@@ -6681,24 +6688,6 @@
         "waiting_on": {
           "name": "waiting_on",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hand_on": {
-          "name": "hand_on",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "handed_on_to": {
-          "name": "handed_on_to",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "handed_on_at": {
-          "name": "handed_on_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

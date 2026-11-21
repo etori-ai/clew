@@ -65,7 +65,7 @@ const search = searchUsecases({
 export const answerCards: AnswerCards = {};
 // Clew's core only (D61): every other system, the development fixtures included, is a connector row (D21, D23).
 // Users are core entities, not installed systems. Their read capabilities share dispatch only (D62). The reader's
-// people as Personal lists them (`people.reports`, D135 rule 4) is the entities module's read, joined here under the
+// people as Personal lists them (`people.reports`, D141 rule 4) is the entities module's read, joined here under the
 // same id, since the rule of who is on that list is that module's.
 const people = userCapabilities(userReads);
 const internal = [

@@ -159,7 +159,7 @@ export function serialiseContext(
           (whyNotChangeable(o.event) ?? OWN_MEETING)
         );
       case 'capability':
-        // A list or a view that stands open is named with the read that draws it (D135 rule 4): asked "vad väntar de
+        // A list or a view that stands open is named with the read that draws it (D141 rule 4): asked "vad väntar de
         // på?" beside a register, the model otherwise reads whichever list it knows best, not the one on the page.
         return (
           `Förmågan "${o.title}" (${o.source}), verktyget ${o.name}. ` +

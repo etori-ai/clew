@@ -120,6 +120,38 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       ]);
       // b is managed without a unit: group of its own, so its label comes from the unit table.
       expect(await h.grant(lena)).toMatchObject({ unitId: p + '-b', unitLabel: 'B från tidigare', role: 'manager' });
+      // D135: the grant carries every assignment with its label, as the port reads it back on either adapter.
+      const stored = () => h.store.transaction(tx => tx.grant(lena));
+      expect((await stored())?.assignments).toEqual([
+        { unitId: p + '-a', unitLabel: 'A', role: 'employee' },
+        { unitId: p + '-b', unitLabel: 'B från tidigare', role: 'manager' },
+        { unitId: p + '-c', unitLabel: 'C', role: 'manager' },
+      ]);
+      const derivedRows = async () => (await h.audit(lena)).filter(row => row.action === 'grant.derived');
+      expect((await derivedRows()).at(-1)?.details).toMatchObject({
+        assignments: 3,
+        placements: [
+          { unitId: p + '-a', role: 'employee' },
+          { unitId: p + '-b', role: 'manager' },
+          { unitId: p + '-c', role: 'manager' },
+        ],
+      });
+      // Derived again unchanged, it writes nothing, whatever order the store gave the units back in.
+      const rows = (await derivedRows()).length;
+      await usecases.derivePerson('system:test', lena);
+      expect(await derivedRows()).toHaveLength(rows);
+      // Down to one unit, the grant is as it is for anyone with one: no list, and no placements on its row.
+      await h.setMembers([{ group: 'unit:' + p + '-a', person: lena }]);
+      await usecases.derivePerson('system:test', lena);
+      const one = await stored();
+      expect(one).toMatchObject({ unitId: p + '-a', role: 'employee' });
+      expect(one && 'assignments' in one).toBe(false);
+      expect((await derivedRows()).at(-1)?.details).toEqual({
+        unitId: p + '-a',
+        role: 'employee',
+        capabilities: [],
+        assignments: 1,
+      });
     });
     test('the lowest unit id is the lowest by code unit on both adapters, whatever the database collates (A5, Q4)', async () => {
       const h = await make(),

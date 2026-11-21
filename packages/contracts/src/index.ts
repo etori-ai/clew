@@ -54,6 +54,12 @@ export {
   type Activity,
 } from './presentation';
 
+/** One of a person's assignments (D68): a unit they are placed on or manage, with its label and their role there. */
+export interface UserAssignment {
+  unitId: string;
+  unitLabel: string;
+  role: 'manager' | 'employee';
+}
 /** Identity as the browser may see it. Never carries tokens, bindings or grants. */
 export interface SessionUser {
   id: string;
@@ -61,6 +67,11 @@ export interface SessionUser {
   unitId: string;
   unitLabel: string;
   role: 'manager' | 'employee';
+  /**
+   * Every assignment the person holds, from their current grant, when there is more than one (D135); `unitId` and
+   * `role` are the primary one and it is among them. Absent for a person with one assignment.
+   */
+  assignments?: UserAssignment[];
 }
 /** In-process identity with a revalidation guard. Never serialised to the browser. */
 export interface AuthenticatedContext extends SessionUser {
@@ -92,12 +103,41 @@ export interface AuthenticatedContext extends SessionUser {
   /** A token the IdP issued for `audience` by token exchange from this session (D26). Absent when no session is behind the context; undefined under a session without IdP tokens. */
   delegate?: (audience: string) => Promise<string | undefined>;
 }
+/**
+ * The order of unit ids (D101 item 8): character by character, by UTF-16 code unit, as `<` and JavaScript's default sort
+ * compare. A unit id is an opaque key, so no locale orders it, and no upgrade of ICU or Node moves anyone's primary unit
+ * or the authority that covers their assignments. The one comparator for both.
+ */
+export const byUnitId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+/**
+ * A person's assignments as a stored grant holds them (D135), only those of a well-formed shape, in unit id order by
+ * UTF-16 code unit (D101 item 8); absent when there are fewer than two, as for a person with one assignment.
+ */
+export function assignmentsOf(values: unknown): UserAssignment[] | undefined {
+  if (!Array.isArray(values)) return undefined;
+  const held = values
+    .filter(
+      (v): v is UserAssignment =>
+        !!v &&
+        typeof v === 'object' &&
+        typeof (v as UserAssignment).unitId === 'string' &&
+        typeof (v as UserAssignment).unitLabel === 'string' &&
+        ((v as UserAssignment).role === 'manager' || (v as UserAssignment).role === 'employee'),
+    )
+    .map(v => ({ unitId: v.unitId, unitLabel: v.unitLabel, role: v.role }))
+    .sort((a, b) => byUnitId(a.unitId, b.unitId));
+  return held.length > 1 ? held : undefined;
+}
 export const sessionUser = (c: SessionUser): SessionUser => ({
   id: c.id,
   name: c.name,
   unitId: c.unitId,
   unitLabel: c.unitLabel,
   role: c.role,
+  // D135: every unit of a person who holds more than one; `units` (D117) is the server's and never leaves.
+  ...(c.assignments && c.assignments.length > 1
+    ? { assignments: c.assignments.map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })) }
+    : {}),
 });
 
 const object = <T extends Record<string, TSchema>>(properties: T, description?: string) =>
@@ -1039,7 +1079,7 @@ export const ViewEntrySchema = object({
    */
   admits: Type.Optional(Type.Array(Type.String())),
   /**
-   * The assistant may make this read for the person (D135 rule 4): it is among the tools the model is offered for
+   * The assistant may make this read for the person (D141 rule 4): it is among the tools the model is offered for
    * them, the read's own `model`, its connector's assistant switch and the read's switch all allowing it (D122 item
    * 4). Absent where it may not, so the pane beside a page that shows the read says so before anything is asked.
    */
@@ -3835,7 +3875,7 @@ export const OpenThingSchema = Type.Union([
 ]);
 export type OpenThing = Static<typeof OpenThingSchema>;
 /**
- * A question conversation that was asked beside a page (D135 rule 6): the subject the page gave it, so the pane finds
+ * A question conversation that was asked beside a page (D141 rule 6): the subject the page gave it, so the pane finds
  * the person's latest conversation about that subject again on any device, the words that say what it is about (Alla
  * samtal), and when the person opened it as a conversation. Until then it is not among the rail's latest: a question
  * asked beside each of ten meetings would otherwise push every longer conversation out. Absent on every other thread.
@@ -3883,7 +3923,7 @@ export const ThreadSchema = object({
   summary: Type.String(),
   /** The assistants of other systems a question conversation has an exchange with, the one asked last first. */
   handover: Type.Optional(HandoverSchema),
-  /** A question conversation asked beside a page (D135): what it is about, and when it was opened as a conversation. */
+  /** A question conversation asked beside a page (D141): what it is about, and when it was opened as a conversation. */
   askedBeside: Type.Optional(AskedBesideSchema),
   items: Type.Array(ThreadItemSchema),
   /**
@@ -4986,7 +5026,7 @@ export const ConversationInput = object({
    */
   beside: Type.Optional(ChipSchema.properties.ref),
   /**
-   * The question is asked in the assistant's pane beside a page (D135): the page's subject, by the key the page gives
+   * The question is asked in the assistant's pane beside a page (D141): the page's subject, by the key the page gives
    * it, and the words for what it is about. A conversation this question starts is kept as asked beside that subject
    * (`Thread.askedBeside`); on a conversation that exists it says nothing.
    */

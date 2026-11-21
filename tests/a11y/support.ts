@@ -8,6 +8,7 @@ import type {
   PanelViewSpec,
   Thread,
   SiteHeaderView,
+  UserAssignment,
   ViewEntry,
 } from '@clew/contracts';
 import {
@@ -219,12 +220,12 @@ export class MockApi {
     suggested?: boolean;
     own?: boolean;
     confirmed?: boolean;
-    /** The page the question was asked beside (`ConversationInput.page`, D135): its subject and its words. */
+    /** The page the question was asked beside (`ConversationInput.page`, D141): its subject and its words. */
     page?: { subject: string; label: string };
     /** The thing that stands open where the question was asked (`ConversationInput.thing`, D136 item 1). */
     thing?: { kind: string; id?: string; capability?: string; input?: Record<string, unknown> };
   }[] = [];
-  /** The conversations the conversation's page marked as opened (`POST /conversations/:id/opened`, D135 rule 6). */
+  /** The conversations the conversation's page marked as opened (`POST /conversations/:id/opened`, D141 rule 6). */
   opened: string[] = [];
   /** The work items the next answers name (`MessageMeta.cards`); none unless a test sets them. */
   answerCards: string[] | undefined;
@@ -364,6 +365,11 @@ export class MockApi {
    * round lists nobody and their own action points are only the ones about them. For Hem without Personal.
    */
   employee = false;
+  /**
+   * Every unit of a session person who holds more than one (D135), as `GET /api/auth/session` gives them; undefined for
+   * the ordinary person with one unit.
+   */
+  assignments: UserAssignment[] | undefined = undefined;
   /**
    * Kompetens (D108): the catalogue a certificate is registered from. Null: the module is switched off for the person,
    * so its routes are refused and Personal offers no registration.
@@ -629,7 +635,15 @@ export class MockApi {
       return this.signedIn
         ? json({
             ...session,
-            ...(this.employee ? { user: { ...user, role: 'employee' } } : {}),
+            ...(this.employee || this.assignments
+              ? {
+                  user: {
+                    ...user,
+                    ...(this.employee ? { role: 'employee' } : {}),
+                    ...(this.assignments ? { assignments: this.assignments } : {}),
+                  },
+                }
+              : {}),
             admin: this.admin && this.capabilities.length > 0,
             capabilities: this.admin ? this.capabilities : [],
             // D121: a relation to people by grant is never an admin flag; it only draws Kompetenssökning.
@@ -1805,7 +1819,7 @@ export class MockApi {
       const earlier = this.threads.find(t => t.id === response.conversationId);
       const before = earlier?.handover;
       if (!handed && before) response.thread.handover = before;
-      // A conversation started beside a page is kept as asked beside its subject (D135 rule 6); one that exists keeps
+      // A conversation started beside a page is kept as asked beside its subject (D141 rule 6); one that exists keeps
       // what it had.
       if (earlier?.askedBeside) response.thread.askedBeside = earlier.askedBeside;
       else if (!handed && !body.conversationId && body.page)
@@ -1836,7 +1850,7 @@ export class MockApi {
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
       return;
     }
-    // The conversation's page marks a conversation asked beside a page as opened, once (D135 rule 6).
+    // The conversation's page marks a conversation asked beside a page as opened, once (D141 rule 6).
     const opening = post ? /^\/conversations\/([^/]+)\/opened$/.exec(path) : null;
     if (opening) {
       const at = decodeURIComponent(opening[1]!);

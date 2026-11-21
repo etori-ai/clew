@@ -292,7 +292,7 @@ export function entityUsecases(deps: EntityDeps) {
   return { list, rows, detail, section };
 }
 /**
- * `people.reports` (D135 rule 4): the people Personal lists for the reader, the list `GET /api/entities/person` draws
+ * `people.reports` (D141 rule 4): the people Personal lists for the reader, the list `GET /api/entities/person` draws
  * (`groupsOf`), each once with the units that list them and their title. For whoever manages a unit; someone who
  * manages none has nobody on the list. Nothing else of a person is read: no HR data, no source is asked. Reads, so no
  * audit row.

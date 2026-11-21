@@ -556,7 +556,7 @@ export function PreparedRow({
   );
 }
 /**
- * Where an answer beside a page needs more room than the pane has (D135 rules 7 and 10; canvas board AskArende-more):
+ * Where an answer beside a page needs more room than the pane has (D141 rules 7 and 10; canvas board AskArende-more):
  * a view, a proposals' week and the sources an answer cites are drawn on the conversation's page, and the pane draws one
  * row that says what it is and leads there. It is also where a person meets what the conversation's page is for.
  */
@@ -845,7 +845,7 @@ function HeldAnswer() {
 }
 
 /**
- * What an assistant's turn draws in its message (D36, D126 item 5, D135 rule 7, D138 items 8 and 9): the transcript's
+ * What an assistant's turn draws in its message (D36, D126 item 5, D141 rule 7, D138 items 8 and 9): the transcript's
  * turns and the answer under Hem's line draw it alike, so an answer reads the same wherever it stands. The message
  * itself, with its name, is the place's.
  *
@@ -974,7 +974,7 @@ export function AssistantTurn({
       compact={pane}
     />
   ) : null;
-  // Beside a page, what needs room is said in one row that leads to the conversation's page (D135 rule 7).
+  // Beside a page, what needs room is said in one row that leads to the conversation's page (D141 rule 7).
   const roomy = pane
     ? [...(card && card.kind !== 'button' ? [viewWords(card)] : []), ...(sources.length ? [sourceWords(sources)] : [])]
     : [];
@@ -1064,7 +1064,7 @@ export function AssistantTurn({
 }
 
 /**
- * What stands after the turns (D32, D135 rule 7): the week a proposal answer drew its times in, Clew's own actions to
+ * What stands after the turns (D32, D141 rule 7): the week a proposal answer drew its times in, Clew's own actions to
  * confirm, and what was done, with Ångra while it can be undone. On the conversation's page the week is drawn whole;
  * beside a page it needs room, and one row leads to the conversation's page (`wholeHref`). Nothing of it while a turn is
  * on its way. `bare` draws them without their bubbles, as `AssistantTurn` does.
@@ -1170,7 +1170,7 @@ export function AfterTheTurns({
  * message with Ångra. The answer is the card (H1): a turn about an open card draws that card in the turn, under its
  * sentence, with the card's own rows and buttons; it is drawn once per conversation and stays live.
  *
- * Beside a page (`room="pane"`, D135 "One component" and rule 7) the same transcript is drawn compact, and an answer is
+ * Beside a page (`room="pane"`, D141 "One component" and rule 7) the same transcript is drawn compact, and an answer is
  * text, a few named rows as links, or one row for an action the assistant filled in: the steps while it reads, the
  * answer's words, a draft and Clew's own confirmations stay; work items become their rows; a view, a proposals' week and
  * the sources become one row each that leads to the conversation's page, where there is room for them.
@@ -1217,7 +1217,7 @@ export function Transcript({
   /** The address that puts a work item beside the transcript: where a row of several items leads. */
   cardHref?: ((threadId: string) => string) | undefined;
   /**
-   * Where the transcript is drawn: the conversation's own page, the pane beside another page (D135), or the panel of
+   * Where the transcript is drawn: the conversation's own page, the pane beside another page (D141), or the panel of
    * another system's assistant beside a conversation, which holds that assistant's own exchange (D128).
    */
   room?: 'page' | 'pane' | 'aside';
@@ -1226,7 +1226,7 @@ export function Transcript({
    * made on (Kalender's "Använd tiden", D140); else the row that leads there.
    */
   prepared?: ((prepared: Prepared) => ReactNode) | undefined;
-  /** The conversation's own page, where an answer that needs room is drawn (the pane only; D135 rules 6 and 7). */
+  /** The conversation's own page, where an answer that needs room is drawn (the pane only; D141 rules 6 and 7). */
   conversationHref?: string | undefined;
 }) {
   const talk = useConversation();

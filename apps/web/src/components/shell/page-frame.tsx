@@ -66,7 +66,7 @@ const FACTS_WIDTH = 340;
 const tightQuery = '(max-width: 359px)';
 
 /**
- * Whether and about what a page has the assistant's pane (D135 rule 1, D138 item 3): every page says, so
+ * Whether and about what a page has the assistant's pane (D141 rule 1, D138 item 3): every page says, so
  * leaving it out is a type error and no page can forget the assistant. `subject` is what the page shows: its list (the
  * registers, Läget and Att göra's queue) or its thing (a work item, its review, a record, a person, a unit and a plan,
  * D136), null until the page knows it (while its data loads, on a thing's missing page) and while a pane of the page's
@@ -76,7 +76,7 @@ const tightQuery = '(max-width: 359px)';
  * (`CornerDoor`).
  */
 export type PageAsk = AskAbout | { none: 'administration' | 'assistant' | 'no-page' };
-/** A page with the assistant's pane (D135 rules 2 to 4, D138 items 3 and 4). */
+/** A page with the assistant's pane (D141 rules 2 to 4, D138 items 3 and 4). */
 export interface AskAbout {
   subject: PageSubject | null;
   /** Hears each finished turn in the pane: the page makes ready what an answer prepared (Kalender, D140). */
@@ -215,7 +215,7 @@ interface PageFrameProps {
   /**
    * A pane of the page's own in the end slot (a `LayoutPanel`), where the page has no facts' panel: Att göra's reading
    * pane, Kalender's entry, the thing beside a conversation. While it holds something the box stands at its foot, and
-   * the assistant's pane is not drawn (D135 rule 5, D138 item 2).
+   * the assistant's pane is not drawn (D141 rule 5, D138 item 2).
    */
   end?: ReactNode;
   /** A panel before the column (a `LayoutPanel`): Administration's sections. */
@@ -268,7 +268,7 @@ export function PageFrame(props: PageFrameProps) {
   return 'subject' in ask ? <AskingFrame {...frame} about={ask} /> : <PageWithoutSubject {...frame} />;
 }
 
-/** A page with no subject (D135 rule 1): "Fråga AI" on its title's line starts a new question there. */
+/** A page with no subject (D141 rule 1): "Fråga AI" on its title's line starts a new question there. */
 function PageWithoutSubject(frame: Omit<PageFrameProps, 'ask'>) {
   // Hem (`plain`) has its own line to ask and keeps the corner's button, which leads to it.
   useCornerDoor(frame.plain ? 'question' : 'hidden');
@@ -293,7 +293,7 @@ function NewQuestionDoor() {
 }
 
 /**
- * A page with a subject (D135 rules 2 to 11, D138 items 3 to 5 and 11; canvas boards AttGora-tom and
+ * A page with a subject (D141 rules 2 to 11, D138 items 3 to 5 and 11; canvas boards AttGora-tom and
  * Arende-tom). "Fråga AI" at the end of the title's line opens the pane (the product owner, 2026-11-20: "On title
  * line", in place of the corner's floating button). It is not drawn while the pane stands, while the page's own pane
  * holds its box (`end`), or before the page knows its subject. Without a model the pane is never drawn (D8) and the

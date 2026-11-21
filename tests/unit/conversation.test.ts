@@ -2125,7 +2125,7 @@ describe('the assistant starts a work item from a propose, the person sends it',
     expect(JSON.stringify(heard)).toContain('anmälare');
   });
 });
-describe('a question asked beside a page (D135 rule 6)', () => {
+describe('a question asked beside a page (D141 rule 6)', () => {
   const page = { subject: 'tool:finance.invoices', label: 'Fakturor att attestera' };
   test('a first question with the page starts a conversation kept as asked beside it, and its audit row says so and no more', async () => {
     const w = world();

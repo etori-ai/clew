@@ -167,7 +167,7 @@ const never = async () => undefined;
 const EMPTY_VERBS: Verb[] = [];
 /**
  * The conversation that does nothing: what a component reads outside any provider, and what the conversation beside a
- * page (`usePageConversation`, D135) starts from before it puts its own turns over it, so that everything route-bound
+ * page (`usePageConversation`, D141) starts from before it puts its own turns over it, so that everything route-bound
  * (the drawer, the panel's assistant, a new conversation, closing) stays inert in the pane.
  */
 export const INERT_CONVERSATION: ConversationState = {

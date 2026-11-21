@@ -21,7 +21,7 @@ import { useThreadAction } from '../../mutations';
 /**
  * The turn machinery of a conversation (D31, D36), apart from where the conversation is drawn: the app's one
  * conversation (`ConversationProvider`, bound to the route) and the conversation beside a page (`usePageConversation`,
- * D135 rule 6) each hold one of these, so the box and the transcript are the same parts in both (D135, "One component").
+ * D141 rule 6) each hold one of these, so the box and the transcript are the same parts in both (D141, "One component").
  * Nothing here navigates.
  */
 export type ClewAction = ConversationResponse['clewActions'][number];
@@ -88,7 +88,7 @@ export interface Send {
   /** Clew held the question and the person chose to send it anyway. */
   confirmed?: boolean;
   /**
-   * The page the question was asked beside (D135 rules 4 and 6): what it shows, as the subject's key and its words. A
+   * The page the question was asked beside (D141 rules 4 and 6): what it shows, as the subject's key and its words. A
    * conversation the question starts is kept as asked beside that subject, so the pane finds it again on any device
    * and the rail leaves it out until it is opened as a conversation; on a conversation that exists it says nothing.
    */
@@ -158,7 +158,7 @@ export interface Turns {
   /**
    * Lets go of everything at once: the turn on its way is left (nothing goes back in the box) and the conversation, the
    * answer, what was done, the error and the words in the box are cleared. The conversation beside a page does this
-   * when the page shows another subject (D135 rule 6: one conversation per subject).
+   * when the page shows another subject (D141 rule 6: one conversation per subject).
    */
   reset(): void;
   send(request: Send): Promise<void>;

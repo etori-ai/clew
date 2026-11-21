@@ -23,6 +23,7 @@ import type {
   ReceiptRow,
   SearchKind,
   SessionUser,
+  UserAssignment,
   SystemMark,
   PanelViewSpec,
   ThreadAction,
@@ -113,6 +114,8 @@ export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | '
   userName?: string;
   /** The units the person follows up (D117), when the call has them. */
   units?: Array<{ unitId: string; unitLabel: string }>;
+  /** Every assignment of a person who holds more than one (D135); `unitId` and `role` are the primary one. */
+  assignments?: UserAssignment[];
 };
 /** An actor with the provisioned groups the authenticated context carries (D68); a bare actor has none. */
 export type AudiencedActor = Actor & { groups?: readonly string[] };
@@ -128,6 +131,9 @@ export const actorOf = (persona: Actor): Actor => ({
   role: persona.role,
   ...(persona.userName ? { userName: persona.userName } : {}),
   ...(persona.units?.length ? { units: persona.units.map(u => ({ unitId: u.unitId, unitLabel: u.unitLabel })) } : {}),
+  ...(persona.assignments && persona.assignments.length > 1
+    ? { assignments: persona.assignments.map(a => ({ unitId: a.unitId, unitLabel: a.unitLabel, role: a.role })) }
+    : {}),
 });
 /**
  * The actor inside Clew's process: the published actor and the person's provisioned groups, which an audience's
@@ -363,7 +369,7 @@ export const BOARDING_CONNECTOR = 'boarding';
 const TALK_COMPOSITE = SEARCH_CONNECTOR + '.talks';
 const COMMITMENT_COMPOSITE = SEARCH_CONNECTOR + '.commitments';
 /**
- * The one source of the talks profile the model may be offered (D122 item 3, D135 rule 4): the built-in module's own
+ * The one source of the talks profile the model may be offered (D122 item 3, D141 rule 4): the built-in module's own
  * round, `talks.talks`, which says where each report stands and holds no text of a talk or an action point. Never
  * another system's round, which may say more than Clew's does.
  */
@@ -477,6 +483,8 @@ export interface ThreadDraft {
    * button's words and whom the card then waits on. Nothing is sent to the connector when it is pressed.
    */
   handOn?: { label: string; waitingOn: string };
+  /** The units the card is about, by Clew's unit id (D135); a row names a person in its own `subject`. */
+  subjects?: Array<{ entity: 'unit'; key: string }>;
 }
 /** A fact kind a connector creates (D55). The kind's name is its contract (D37): a breaking change is a new kind. */
 export interface FactDeclaration {
@@ -1925,7 +1933,7 @@ export class Registry implements HoldingsReader {
    * view it declares (D38) and the input property it takes one person's key in, when it takes one, with the relations
    * to that person it admits (D117). Each has a page of its own; the browser opens one that answers with rows there and
    * anything else beside the page it was opened from. A read the person may not call is missing, as one that does not
-   * exist is. A read the assistant may make for them is marked `assistant` (D135 rule 4): it is among `tools`, so the
+   * exist is. A read the assistant may make for them is marked `assistant` (D141 rule 4): it is among `tools`, so the
    * same governance decides both, and the pane beside a page that shows an unmarked read says so before anything is
    * asked.
    */
@@ -1957,7 +1965,7 @@ export class Registry implements HoldingsReader {
    * per-connector request lists while `clew.requests` is (D123), and the per-connector news lists while `clew.news` is
    * (D112, amended 2026-11-11).
    * The talks profile is opened as D122 item 3 decides and no further: the built-in module's round (`talks.talks`, where
-   * each report stands, no text of a talk or an action point) is governed as any read (D135 rule 4); every system's
+   * each report stands, no text of a talk or an action point) is governed as any read (D141 rule 4); every system's
    * action points, another system's round and the composites `clew.talks` and `clew.commitments` are never tools,
    * registered or not (D96 item 6), since an action point is free text about a person and another system's round is
    * not Clew's to open.

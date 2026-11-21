@@ -122,6 +122,21 @@ export const ActorSchema = object(
           "The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone.",
       }),
     ),
+    assignments: Type.Optional(
+      Type.Array(
+        object({
+          unitId: Type.String({ minLength: 1, maxLength: 256 }),
+          unitLabel: Type.String(),
+          role: RoleSchema,
+        }),
+        {
+          minItems: 2,
+          maxItems: 50,
+          description:
+            'Every assignment of a person who holds more than one (D135): each unit they are placed on or manage, with the role they have there. `unitId` and `role` above are the primary one and it is among them. Sent only to a connector whose manifest sets `assignments: true`, on every call for such a person; answer for each with its own role. Not `units`, which is whom a manager follows up. Absent means `unitId` and `role` alone.',
+        },
+      ),
+    ),
   },
   'The acting person as Clew knows them. Never a token.',
 );
@@ -460,6 +475,12 @@ export const ConnectorManifestSchema = Type.Object(
     scan: Type.Boolean({
       description: 'Whether Clew should POST /clew/scan for each person nightly and on first visit.',
     }),
+    assignments: Type.Optional(
+      Type.Boolean({
+        description:
+          "Whether the connector takes the actor's `assignments` (D135): every unit of a person who holds more than one, each with the role they have there. Without it the actor never carries them, and the connector answers for `unitId` and `role` alone.",
+      }),
+    ),
     delegation: Type.Optional(DelegationSchema),
     documents: Type.Optional(
       Type.Boolean({
@@ -584,6 +605,20 @@ export const ThreadDraftSchema = object({
         }),
       },
       "An offer to the person to say that the next step, which is someone else's and is taken outside Clew, is taken (D139). Clew then lists the card as waiting on `waitingOn` until the person takes it back, a reminder of theirs fires, the occurrence's revision changes or the scan stops raising it. Nothing is sent to the connector: pressing it is not a capability call. Leave it out on a draft that sets `waitingOn` itself.",
+    ),
+  ),
+  subjects: Type.Optional(
+    Type.Array(
+      object(
+        { entity: Type.Literal('unit'), key: Type.String({ minLength: 1, maxLength: 256 }) },
+        "A unit the card is about, by Clew's unit id (D135).",
+      ),
+      {
+        minItems: 1,
+        maxItems: 10,
+        description:
+          "The units the card is about (D135): for a person with several assignments, the one it came from. Clew names the unit on the card's line and places the card on that unit's page. A row names a person in its own `subject`.",
+      },
     ),
   ),
 });

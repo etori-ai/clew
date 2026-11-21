@@ -670,14 +670,26 @@ describe('SCIM groups and derivation', () => {
       { removed: true },
       { unitId: 'omsorg', role: 'employee', capabilities: ['admin.users'], assignments: 1 },
     ]);
-    // The right order, back again: into the one, then out of the other. A grant the whole way, and one row.
+    // The right order, back again: into the one, then out of the other. A grant the whole way; in between it carries
+    // both units (D135), and each step is its row.
     before = derived().length;
     await members(skola, 'add');
     expect(store.state.grants.get(a)).toMatchObject({ unitId: 'omsorg', capabilities: ['admin.users'] });
     expect(store.state.assignments.get(a)).toHaveLength(2);
     await members(omsorg, 'remove');
     expect(store.state.grants.get(a)).toMatchObject({ unitId: 'skola', capabilities: ['admin.users'] });
+    expect(store.state.grants.get(a)?.assignments).toBeUndefined();
     expect(derived().slice(before)).toEqual([
+      {
+        unitId: 'omsorg',
+        role: 'employee',
+        capabilities: ['admin.users'],
+        assignments: 2,
+        placements: [
+          { unitId: 'omsorg', role: 'employee' },
+          { unitId: 'skola', role: 'employee' },
+        ],
+      },
       { unitId: 'skola', role: 'employee', capabilities: ['admin.users'], assignments: 1 },
     ]);
   });
@@ -724,6 +736,25 @@ describe('SCIM groups and derivation', () => {
     await scim.replaceGroup(p, unit.id, group('unit:it', 'IT och digitalisering', [a]), BASE);
     expect(store.state.grants.get(a)?.unitLabel).toBe('IT och digitalisering');
     expect(store.state.units.get('it')?.label).toBe('IT och digitalisering');
+  });
+  test('a renamed unit that is not the one a person acts as relabels it on their grant and says so on its row (D135)', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    await scim.createGroup(p, group('unit-manager:it', 'Chefer IT', [a]), BASE);
+    const second = await scim.createGroup(p, group('unit:stab', 'Stab', [a]), BASE);
+    expect(store.state.grants.get(a)).toMatchObject({ unitId: 'it', role: 'manager' });
+    const before = store.state.audit.length;
+    await scim.replaceGroup(p, second.id, group('unit:stab', 'Ledningsstab', [a]), BASE);
+    expect(store.state.grants.get(a)?.assignments).toEqual([
+      { unitId: 'it', unitLabel: 'it', role: 'manager' },
+      { unitId: 'stab', unitLabel: 'Ledningsstab', role: 'employee' },
+    ]);
+    expect(
+      store.state.audit
+        .slice(before)
+        .filter(x => x.subject === 'person:' + a)
+        .map(x => x.action),
+    ).toEqual(['grant.derived']);
   });
   test('the protected key is refused on create and on patch, and nothing of it is stored (D93)', async () => {
     const { scim, p, store } = harness();

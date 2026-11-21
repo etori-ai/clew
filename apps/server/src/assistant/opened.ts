@@ -3,7 +3,7 @@ import { threadAccess } from '../threads/access';
 import type { AssistantDeps } from './ports';
 
 /**
- * A conversation asked beside a page is opened as a conversation (D135 rule 6): its page marks it once, and from then on
+ * A conversation asked beside a page is opened as a conversation (D141 rule 6): its page marks it once, and from then on
  * it is among the rail's latest. The rail cannot derive this in the browser, since it must hold on every device. A
  * conversation that was never asked beside a page, or one already opened, is left as it is and answered as it stands:
  * the conversation's page calls this on every visit, and only the first call writes, with its audit row in the same

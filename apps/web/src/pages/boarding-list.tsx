@@ -55,7 +55,7 @@ const WIDTHS = {
 /**
  * The window width from which the table keeps every column's least width beside the rail; narrower, the plans are the
  * rows a phone draws, so the page never scrolls sideways for them (1.4.10) and a name is never read apart from its plan.
- * Moved by the assistant's pane while it stands beside the page (`useColumnQuery`, D135 rule 11).
+ * Moved by the assistant's pane while it stands beside the page (`useColumnQuery`, D141 rule 11).
  */
 const TABLE_MIN = resolveColumnWidths(Object.entries(WIDTHS).map(([key, width]) => ({ key, width }))).tableMinWidth;
 const tableQuery = `(min-width: ${SIDE_NAV + TABLE_MIN + 2 * PADDING}px)`;
@@ -169,7 +169,7 @@ export function BoardingListPage({ user, admin }: { user: SessionUser; admin: bo
       </>
     );
 
-  // What the assistant beside the tab is about (D135 rule 4): the plans, as the assistant reads them.
+  // What the assistant beside the tab is about (D141 rule 4): the plans, as the assistant reads them.
   const subject = pageSubject({
     key: 'boarding',
     title: TITLE,

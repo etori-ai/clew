@@ -517,7 +517,7 @@ api.post('/conversation/stream', async c => {
     }
   });
 });
-/** The conversation's page opened a conversation asked beside a page (D135 rule 6): marked once, answered with the thread. */
+/** The conversation's page opened a conversation asked beside a page (D141 rule 6): marked once, answered with the thread. */
 api.post('/conversations/:id/opened', async c => {
   const thread = await markOpened(c.get('session').context, c.req.param('id'));
   return thread ? c.json(thread) : c.json({ error: 'Samtalet finns inte.' }, 404);
