@@ -3,15 +3,19 @@ import { DIALOGUE_CONNECTOR, type Actor, type Capability, type Connector } from 
 import { ENTITY_KEYS_MAX, type AuthenticatedContext, type View } from '@clew/contracts';
 import { systemContext } from '../../system-context';
 import { TONE_WORDS, openWords, overdueWords } from './domain';
-import type { DialogueUsecases } from './usecases';
+import type { DialogueUsecases, UnitStanding } from './usecases';
 
 /**
- * The follow-up dialogue as Clew's built-in connector (D118 item 8). It answers two reads: `dialogue.unit`, the
+ * The follow-up dialogue as Clew's built-in connector (D118 item 8). It answers three reads: `dialogue.unit`, the
  * dialogue of a unit in short, which Clew places as a section on the unit's page (first, since the source sorts first
- * among Clew's own) and as a column on Dialogstöd's overview; and `dialogue.activities`, the reader's own open
- * activities, which the owner's card opens. No read is a model tool and no view declares a `ref`, so no activity can be
- * added to a conversation as a chip: its text is free text about a unit's work. Writes are use cases behind Clew's own
- * routes, never capabilities. The use cases come built from composition (D25).
+ * among Clew's own) and as a column on Läget; `dialogue.units`, the same rows for every unit the reader follows up,
+ * with each unit's name, which is what the assistant reads beside Läget; and `dialogue.activities`, the reader's own
+ * open activities, which the owner's card opens. The last two are offered to the model (D122 item 3, D141 rule 4), read
+ * as the person and nobody more; `dialogue.unit` is a read about an entity and stays closed, as the loader holds every
+ * such read (D97 item 7). No view declares a `ref`, so no activity can be added to a conversation as a chip: its text
+ * is free text about a unit's work. The module logs no read, so the assistant's reads are logged nowhere either (D122
+ * item 6). Writes are use cases behind Clew's own routes, never capabilities. The use cases come built from
+ * composition (D25).
  */
 export const DIALOGUE_SOURCE = 'Uppföljningsdialog';
 const KeysSchema = Type.Object(
@@ -39,6 +43,30 @@ export const UnitDialogueOutputSchema = Type.Object(
   { additionalProperties: false },
 );
 const EmptySchema = Type.Object({}, { additionalProperties: false });
+/** The most units one reader follows up that `dialogue.units` lists. */
+const UNITS_MAX = 500;
+export const UnitsDialogueOutputSchema = Type.Object(
+  {
+    rows: Type.Array(
+      Type.Object(
+        {
+          unitId: Type.String({ minLength: 1, maxLength: 256 }),
+          name: Type.String({ maxLength: 200 }),
+          open: Type.Optional(Type.String({ maxLength: 40 })),
+          alert: Type.Optional(Type.String({ maxLength: 4000 })),
+          warn: Type.Optional(Type.String({ maxLength: 4000 })),
+          state: Type.Optional(Type.String({ maxLength: 40 })),
+          overdue: Type.Optional(Type.String({ maxLength: 40 })),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: UNITS_MAX },
+    ),
+    /** How many units the reader follows up beyond the rows given. */
+    omitted: Type.Optional(Type.Integer({ minimum: 1 })),
+  },
+  { additionalProperties: false },
+);
 export const MyActivitiesOutputSchema = Type.Object(
   {
     rows: Type.Array(
@@ -84,6 +112,20 @@ export const unitDialogueView: View = {
     { key: 'overdue', label: 'Försenade', format: 'status', tones: { '*': 'warn' }, beside: true },
   ],
 };
+/**
+ * Every unit the reader follows up with its dialogue in short (Läget, D141 rule 4): the unit's name, then the same
+ * words as `dialogue.unit`. A row names its unit (`subject`), and `dialogue.unit` answers the same rows asked by key
+ * (D127).
+ */
+export const unitsDialogueView: View = {
+  kind: 'list',
+  title: 'name',
+  noun: { one: 'enhet', other: 'enheter' },
+  empty: 'Du följer inte upp någon enhet.',
+  fields: [{ key: 'name', label: 'Enhet' }, ...(unitDialogueView.kind === 'list' ? unitDialogueView.fields : [])],
+  subject: { entity: 'unit', key: 'unitId' },
+  byKey: DIALOGUE_CONNECTOR + '.unit',
+};
 /** The reader's open activities, the ones they own: what the owner's card opens with no input. */
 export const myActivitiesView: View = {
   kind: 'list',
@@ -104,6 +146,18 @@ const dueWords = (dueOn: string | null) =>
         new Date(dueOn + 'T12:00:00Z'),
       )
     : 'Inget datum';
+
+/** One unit's dialogue in words, as `dialogue.unit` and `dialogue.units` draw it. */
+function unitWords(r: UnitStanding) {
+  const overdue = overdueWords(r.overdue);
+  return {
+    ...(r.open ? { open: openWords(r.open) } : {}),
+    ...(r.alert.length ? { alert: `${TONE_WORDS.alert}: ${r.alert.join(', ')}` } : {}),
+    ...(r.warn.length ? { warn: `${TONE_WORDS.warn}: ${r.warn.join(', ')}` } : {}),
+    ...(r.alert.length || r.warn.length ? {} : { state: r.assessed ? TONE_WORDS.ok : NOT_ASSESSED }),
+    ...(overdue ? { overdue } : {}),
+  };
+}
 
 /** The persona a use case takes, built from the person's current grant as the other built-in connectors do. */
 async function systemPersona(actor: Actor): Promise<AuthenticatedContext> {
@@ -135,27 +189,38 @@ export function dialogueConnector(
     unit: { admits: ['manages', 'below'] },
     run: async (actor, input) => {
       const rows = await dialogue.aboutUnits(await persona(actor), input.keys);
+      return { rows: rows.map(r => ({ key: r.key, ...unitWords(r) })) };
+    },
+  };
+  // Offered to the model (D122 item 3, D141 rule 4): what Läget shows of the dialogue, for the units the reader follows
+  // up and nobody else's. The model reads the rows here, since `dialogue.unit` takes keys and is never a tool.
+  const units: Capability<Record<string, never>> = {
+    name: DIALOGUE_CONNECTOR + '.units',
+    kind: 'read',
+    title: 'Uppföljningsdialog per enhet',
+    model: true,
+    description:
+      'Uppföljningsdialogen för varje enhet du följer upp, dina egna och enheterna under dem: enhetens namn, hur många aktiviteter som är öppna och hur många av dem som är försenade, och vilka bedömda områden som kräver åtgärd eller bevakas; annars att enheten är bra eller inte bedömd än. Tar ingen indata. Svarar med inga rader för den som inte följer upp någon enhet. Varje rad har enhetens id.',
+    input: EmptySchema,
+    output: UnitsDialogueOutputSchema,
+    view: unitsDialogueView,
+    scope: { roles: ['manager'] },
+    run: async actor => {
+      const rows = await dialogue.units(await persona(actor));
       return {
-        rows: rows.map(r => {
-          const overdue = overdueWords(r.overdue);
-          return {
-            key: r.key,
-            ...(r.open ? { open: openWords(r.open) } : {}),
-            ...(r.alert.length ? { alert: `${TONE_WORDS.alert}: ${r.alert.join(', ')}` } : {}),
-            ...(r.warn.length ? { warn: `${TONE_WORDS.warn}: ${r.warn.join(', ')}` } : {}),
-            ...(r.alert.length || r.warn.length ? {} : { state: r.assessed ? TONE_WORDS.ok : NOT_ASSESSED }),
-            ...(overdue ? { overdue } : {}),
-          };
-        }),
+        rows: rows.slice(0, UNITS_MAX).map(r => ({ unitId: r.key, name: r.label, ...unitWords(r) })),
+        ...(rows.length > UNITS_MAX ? { omitted: rows.length - UNITS_MAX } : {}),
       };
     },
   };
+  // Offered to the model (D122 item 3): the reader's own activities, nobody else's.
   const mine: Capability<Record<string, never>> = {
     name: DIALOGUE_CONNECTOR + '.activities',
     kind: 'read',
     title: 'Mina aktiviteter',
-    model: false,
-    description: 'Dina öppna aktiviteter från uppföljningsdialogen, med enheten och området de gäller.',
+    model: true,
+    description:
+      'Dina egna öppna aktiviteter från uppföljningsdialogen, de som du ansvarar för: vad aktiviteten är, enheten och området den gäller, och när den ska vara klar. Tar ingen indata.',
     input: EmptySchema,
     output: MyActivitiesOutputSchema,
     view: myActivitiesView,
@@ -175,6 +240,6 @@ export function dialogueConnector(
     kind: 'core',
     source: DIALOGUE_SOURCE,
     areas: [],
-    capabilities: [aboutUnit as Capability, mine as Capability],
+    capabilities: [aboutUnit as Capability, units as Capability, mine as Capability],
   };
 }

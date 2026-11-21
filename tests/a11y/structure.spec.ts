@@ -210,7 +210,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     page,
     api: _,
   }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill('attestera en faktura');
     await composer(page).press('Enter');
     const card = page.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' });
@@ -270,7 +270,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
 
 test.describe('3.1.2 language of parts', () => {
   test('the conversation names its speakers in Swedish', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     const input = composer(page);
     await input.fill('Vem är på plats?');
     await input.press('Enter');
@@ -299,7 +299,7 @@ test.describe('D26 questions answered from documents', () => {
     page,
     api: _,
   }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     const input = composer(page);
     await input.fill('Brukaren har ramlat, vad gör jag?');
     await input.press('Enter');
@@ -343,9 +343,11 @@ test.describe('D26 questions answered from documents', () => {
       'target',
       '_blank',
     );
-    // A passage goes into a conversation only beside a conversation's own box (D112 item 7); the page has "Fråga assistenten".
+    // A passage goes into a conversation only beside a conversation's own box (D112 item 7); the page's way to the
+    // assistant is the corner's "Fråga AI" (D138 item 1).
     await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    await expect(panel.getByRole('button', { name: 'Fråga assistenten' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Fråga AI', exact: true })).toBeVisible();
     await expect(rows.nth(2)).toContainText('2 år sedan');
     await expect(rows.nth(2).getByRole('link', { name: 'Öppna' })).toHaveCount(0);
     await expect(panel.getByText(/^SharePoint svarade inte\./)).toBeVisible();

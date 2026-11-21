@@ -271,7 +271,7 @@ test.describe('a declared view under an answer', () => {
     page,
     api: _,
   }) => {
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill('telefonboken lärare');
     await composer(page).press('Enter');
     const log = page.getByRole('log');

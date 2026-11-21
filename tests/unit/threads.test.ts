@@ -385,6 +385,148 @@ describe('avfärda, inte nu and ångra', () => {
   });
 });
 
+describe('the person says the next step is someone else’s and taken (D139)', () => {
+  const OFFER = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
+  const offered = async (w: ReturnType<typeof world>) => {
+    const card = await invoices(w);
+    await w.store.transaction(tx => tx.updateThread(card.id, { handOn: OFFER }));
+    return card;
+  };
+  test('the card waits on whom its source named, with an audit row; taking it back writes another', async () => {
+    const w = world();
+    const card = await offered(w);
+    w.clock.advance(MINUTE);
+    const at = w.clock().toISOString();
+    const handed = await w.threads.handOnThread(hillevi, card.id);
+    expect(handed).toMatchObject({ state: 'open', waitingOn: 'din chef', handedOn: { to: 'din chef', at } });
+    expect(handed.messages.at(-1)).toMatchObject({ role: 'user', body: 'Jag har bett min chef' });
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'person:hillevi',
+      action: 'thread.handed_on',
+      subject: 'thread:' + card.id,
+      at,
+      details: { to: 'din chef' },
+    });
+    // Said twice it is refused: it already waits.
+    await expect(w.threads.handOnThread(hillevi, card.id)).rejects.toThrow('Ärendet har ändrats. Läs om sidan.');
+    // Påminn mig is its one time action now (D49), and keeps whom it waits on.
+    const reminder = await w.reminders.remind(hillevi, card.id, 3600);
+    expect(reminder.thread).toMatchObject({ waitingOn: 'din chef', handedOn: { to: 'din chef' } });
+    w.clock.advance(MINUTE);
+    const back = await w.threads.handBackThread(hillevi, card.id);
+    expect(back.waitingOn).toBeNull();
+    expect('handedOn' in back).toBe(false);
+    expect(back.handOn).toEqual(OFFER);
+    expect(back.messages.at(-1)!.body).toBe('Det blev inte gjort');
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'person:hillevi',
+      action: 'thread.handed_back',
+      subject: 'thread:' + card.id,
+      at: w.clock().toISOString(),
+      details: { to: 'din chef' },
+    });
+    // Nothing is left to wait for, so the reminder that was to bring it back is ended.
+    expect(await w.store.readTimer(`reminder:${card.id}`)).toMatchObject({ state: 'cancelled' });
+    expect(actions(w.store, card.id)).toEqual([
+      'thread.pushed',
+      'thread.handed_on',
+      'reminder.set',
+      'thread.handed_back',
+    ]);
+    await expect(w.threads.handBackThread(hillevi, card.id)).rejects.toThrow('Ärendet har ändrats. Läs om sidan.');
+  });
+  test('only where the source offers it, on an open card of the person’s own that waits on nobody', async () => {
+    const w = world();
+    const plain = await invoices(w);
+    const before = w.store.audit.length;
+    await expect(w.threads.handOnThread(hillevi, plain.id)).rejects.toThrow('Ärendet har ändrats. Läs om sidan.');
+    const card = await offered(w);
+    // Another person cannot tell the card exists.
+    await expect(w.threads.handOnThread(hassan, card.id)).rejects.toThrow('Ärendet är redan hanterat.');
+    await expect(w.threads.handBackThread(hassan, card.id)).rejects.toThrow('Ärendet är redan hanterat.');
+    await w.store.transaction(tx => tx.updateThread(card.id, { waitingOn: 'skyddsombudet' }));
+    await expect(w.threads.handOnThread(hillevi, card.id)).rejects.toThrow('Ärendet har ändrats. Läs om sidan.');
+    await w.store.transaction(tx => tx.updateThread(card.id, { waitingOn: null }));
+    await w.threads.dismissThread(hillevi, card.id);
+    await expect(w.threads.handOnThread(hillevi, card.id)).rejects.toThrow('Ärendet är redan hanterat.');
+    expect(w.store.audit.slice(before).map(e => e.action)).toEqual(['thread.dismissed']);
+  });
+  test('a card set aside is taken up by it: the snooze ends, since it waits on someone now', async () => {
+    const w = world();
+    const card = await offered(w);
+    await w.threads.snoozeThread(hillevi, card.id);
+    expect(await w.threads.handOnThread(hillevi, card.id)).toMatchObject({ waitingOn: 'din chef', snoozedUntil: null });
+    expect(await w.store.readTimer(`snooze:${card.id}`)).toMatchObject({ state: 'cancelled' });
+  });
+  test('the person’s reminder brings it back as theirs: what they handed on no longer stands', async () => {
+    const w = world();
+    const card = await offered(w);
+    await w.threads.handOnThread(hillevi, card.id);
+    await w.reminders.remind(hillevi, card.id, 600);
+    w.clock.advance(10 * MINUTE);
+    expect(await w.reminders.fire(`reminder:${card.id}`, 1)).toBe('surfaced');
+    const back = (await w.threads.threadFor(hillevi, card.id))!;
+    expect(back).toMatchObject({
+      waitingOn: null,
+      trigger: { reason: `Du bad 08:00 om en påminnelse · Väntade på din chef · ${card.trigger.reason}` },
+    });
+    expect('handedOn' in back).toBe(false);
+    // It can be said again.
+    expect((await w.threads.handOnThread(hillevi, card.id)).waitingOn).toBe('din chef');
+  });
+  test('a dismissal taken back gives a card that waits on nobody', async () => {
+    const w = world();
+    const card = await offered(w);
+    await w.threads.handOnThread(hillevi, card.id);
+    await w.threads.dismissThread(hillevi, card.id);
+    const back = await w.threads.reopenThread(hillevi, card.id);
+    expect(back.waitingOn).toBeNull();
+    expect('handedOn' in back).toBe(false);
+  });
+  test('Händelser say both, in the source’s words for whom', async () => {
+    const w = world();
+    const card = await offered(w);
+    w.clock.advance(MINUTE);
+    await w.threads.handOnThread(hillevi, card.id);
+    w.clock.advance(MINUTE);
+    await w.threads.handBackThread(hillevi, card.id);
+    const { events } = await w.threads.itemHistory(hillevi, card.id);
+    expect(events.slice(0, 2).map(e => [e.by, e.kind, e.to])).toEqual([
+      ['you', 'handed-back', 'din chef'],
+      ['you', 'handed-on', 'din chef'],
+    ]);
+  });
+  test('the scan’s card carries the offer, and follows the source when it changes, without waking anything', async () => {
+    const w = world();
+    const offer = { ...OFFER };
+    w.registry.register({
+      id: 'intyg',
+      kind: 'core',
+      source: 'Intygsregistret',
+      areas: [{ id: 'intyg', title: 'Intyg', roles: ['manager', 'employee'], standing: [] }],
+      capabilities: [],
+      scan: async () => [
+        {
+          topic: 'intyg:1',
+          area: 'intyg',
+          title: 'Intyget gick ut',
+          summary: 'Prata med din chef.',
+          reason: 'Har gått ut',
+          actions: [],
+          handOn: offer,
+        },
+      ],
+    } as unknown as Connector);
+    await w.threads.ensureThreads(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'intyg')!;
+    expect(card.handOn).toEqual(OFFER);
+    offer.label = 'Jag har pratat med min chef';
+    await w.threads.ensureThreads(hillevi);
+    expect((await w.threads.threadFor(hillevi, card.id))!.handOn).toEqual({ ...OFFER, label: offer.label });
+    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.refreshed']);
+  });
+});
+
 describe('every mutation and its audit row', () => {
   test('name the person as actor and the thread as subject, once per mutation', async () => {
     const w = world();

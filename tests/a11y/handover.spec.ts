@@ -171,6 +171,37 @@ test.describe('another system’s assistant beside the conversation', () => {
     await expect(panel(page).getByRole('log').getByRole('link')).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
+  test('while the panel’s question is answered it stands in the panel’s log, the log is busy, and the box rests with no Stoppa', async ({
+    page,
+    api,
+  }) => {
+    api.handoverAssistants = [hrAssistant];
+    await openBeside(page);
+    const release = api.holdAnswer();
+    await askBeside(page, QUESTION);
+    const log = panel(page).getByRole('log');
+    await expect(log.getByText(QUESTION, { exact: true })).toBeVisible();
+    await expect(log).toHaveAttribute('aria-busy', 'true');
+    await expect(sideBox(page)).toBeDisabled();
+    await expect(panel(page).getByRole('button', { name: 'Stoppa' })).toHaveCount(0);
+    release();
+    await expect(log.getByText('25 semesterdagar')).toBeVisible();
+    await expect(log).not.toHaveAttribute('aria-busy', 'true');
+    await expect(log.getByText(QUESTION, { exact: true })).toHaveCount(1);
+    await expect(sideBox(page)).toBeEnabled();
+  });
+  test('a question the panel cannot send comes back into its box, and the box says why', async ({ page, api }) => {
+    api.handoverAssistants = [hrAssistant];
+    await openBeside(page);
+    await page.route('**/api/conversation/stream', route =>
+      route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } }),
+    );
+    await askBeside(page, QUESTION);
+    await expect(panel(page).getByText('Något gick fel. Försök igen.')).toBeVisible();
+    await expect(sideBox(page)).toHaveText(QUESTION);
+    await expect(panel(page).getByRole('log')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
   test('nothing goes from the panel to Clew: no button under an answer puts a question to Clew, and Clew’s box is where Clew is asked', async ({
     page,
     api,
@@ -198,7 +229,7 @@ test.describe('another system’s assistant beside the conversation', () => {
   }) => {
     api.handoverAssistants = [hrAssistant];
     api.routes = /semesterdagar/;
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill(QUESTION);
     await composer(page).press('Enter');
     // Nothing has gone anywhere: the question stands, and Clew asks where it should go (board SamtalEneoFraga).
@@ -261,7 +292,7 @@ test.describe('another system’s assistant beside the conversation', () => {
   }) => {
     api.handoverAssistants = [hrAssistant];
     api.routes = /semesterdagar/;
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill('Hur många semesterdagar har jag?');
     await composer(page).press('Enter');
     await page.getByRole('button', { name: 'Svara själv', exact: true }).click();
@@ -360,7 +391,7 @@ test.describe('another system’s assistant beside the conversation', () => {
     api.handoverAssistants = [hrAssistant];
     api.routes = /semesterdagar/;
     await page.setViewportSize(narrow);
-    await open(page, '/');
+    await open(page, '/conversations/new');
     await composer(page).fill(QUESTION);
     await composer(page).press('Enter');
     await page.getByRole('button', { name: 'Skicka till HR-assistenten', exact: true }).click();

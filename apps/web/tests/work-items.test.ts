@@ -8,6 +8,7 @@ import {
   rowsSaySomething,
   sourcesNotice,
   todoFromHem,
+  todoHref,
 } from '../src/work-items';
 
 const ack: CardAction = {
@@ -120,5 +121,16 @@ describe('a work item from Clew itself names no source (D126)', () => {
   test('a system the person cannot see, or systems not known yet, are never taken for Clew’s own', () => {
     expect(fromClewItself({ connector: 'finance' }, systems)).toBe(false);
     expect(fromClewItself({ connector: 'boarding' }, undefined)).toBe(false);
+  });
+});
+
+describe('an item opened beside the queue takes the assistant’s place (D141 rule 5)', () => {
+  test('opening an item lets go of the assistant’s pane, and closing it leaves the queue as it was', () => {
+    expect(todoHref({ item: 'omtanke' }, '?tab=waiting&ask=1')).toBe('/todo?tab=waiting&item=omtanke');
+    expect(todoHref({ item: null }, '?item=omtanke&tab=waiting')).toBe('/todo?tab=waiting');
+  });
+  test('any other change keeps the pane open', () => {
+    expect(todoHref({ filter: 'ledig' }, '?ask=1')).toBe('/todo?ask=1&filter=ledig');
+    expect(todoHref({ tab: 'done', item: null }, '?ask=1')).toBe('/todo?ask=1&tab=done');
   });
 });

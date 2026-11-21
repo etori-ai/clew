@@ -397,15 +397,47 @@ test.describe('a booking', () => {
 test.describe('the calendar on a phone', () => {
   test.use({ viewport: phone });
 
-  test('leaves the screen to the calendar: a head of two rows, with proposals waiting too', async ({
+  // The head in the one page frame (D126, D130): where the page stands, the title's line, and two rows of controls,
+  // where in time with how it is shown and what can be done. The title no longer shares a line with what can be done
+  // (with the frame's 24 px inset the two need 339 of 327 px), so the head is one text line and the title's line
+  // taller than the 165 px this case once allowed. What it keeps is that nothing adds a row: "Fråga AI" is its mark
+  // alone at the end of the title's line, and each pair of controls shares its row, with proposals waiting too.
+  test('leaves the screen to the calendar: the title’s line with Fråga AI on it and two rows of controls, with proposals waiting too', async ({
     page,
     api: _,
   }) => {
     await open(page, '/calendar');
-    await expect(page.getByRole('button', { name: /^Förslag/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Förra veckan' })).toBeVisible();
-    const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
-    expect(list!.y).toBeLessThan(165);
+    const main = page.getByRole('main');
+    const at = async (name: string | RegExp) => (await main.getByRole('button', { name }).boundingBox())!;
+    const title = (await page.getByRole('heading', { level: 1, name: 'Vecka 45' }).boundingBox())!;
+    const door = await at('Fråga AI');
+    expect(door.y, 'Fråga AI is on the title’s line').toBeLessThan(title.y + title.height);
+    expect(door.y + door.height).toBeGreaterThan(title.y);
+    expect(door.x, 'and ends it').toBeGreaterThan(title.x + title.width);
+    const [previous, view, proposals, book] = [
+      await at('Förra veckan'),
+      await at(/^Vy: /),
+      await at(/^Förslag/),
+      await at('Ny bokning'),
+    ];
+    expect(view.y, 'where in time and how it is shown share a row').toBe(previous.y);
+    expect(book.y, 'what can be done is one row').toBe(proposals.y);
+    const list = (await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox())!;
+    // Every button of the head stands on one of those three lines.
+    const lines = await main.getByRole('button').evaluateAll(
+      (all, top) => [
+        ...new Set(
+          all
+            .map(b => b.getBoundingClientRect())
+            .filter(b => b.height > 0 && b.bottom <= top)
+            .map(b => Math.round(b.top + b.height / 2)),
+        ),
+      ],
+      list.y,
+    );
+    expect(lines).toHaveLength(3);
+    // 273 px as drawn: the bar (48), the trail's line, the title's line and two rows of 28 px controls with their gaps.
+    expect(list.y).toBeLessThan(280);
   });
 });
 

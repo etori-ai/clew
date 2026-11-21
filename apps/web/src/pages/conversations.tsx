@@ -19,12 +19,12 @@ import {
   VStack,
 } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
-import { threadsQuery } from '../queries';
+import { areasQuery, threadsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { groupThreads } from '../stream';
 import { conversationState } from '../work-items';
-import { aboutWords, storedAbout, talkingTo, withWords, type Recipient } from '../conversation-about';
+import { aboutWords, listedAbout, talkingTo, withWords, type Recipient } from '../conversation-about';
 import { DOT } from '../dot';
 import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
 import { useNav } from '../components/shell/nav';
@@ -32,6 +32,7 @@ import { titled, useConversation } from '../components/conversation/conversation
 import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
 import { LinkRow } from '../components/work/work-row';
 import { PageFrame } from '../components/shell/page-frame';
+import { pageSubject } from '../components/conversation/page-conversation';
 
 type Row = {
   id: string;
@@ -53,11 +54,15 @@ function lastChanged(at: string, day: string) {
 
 /**
  * Alla samtal (D126 rule 7, the `table-page` composition of board Personal): every conversation the person has had,
- * the newest first, where the rail's three latest end. The title is the row's link to the conversation (rule 4), then
+ * the newest first, including those asked beside a page and never opened as a conversation (D141 rule 6, D138
+ * item 10). The title is the row's link to the conversation (rule 4), then
  * whom it is with where that is another system's assistant (D125: its name and its system, as the conversation's own
  * header says it), when it last changed and, only where the data says something about it, its state (the answer being
  * written, a draft that waits for the person), as the rail's dot says it. On a phone the rows are a list, each one
- * link. Nothing is stored here: the list is the session's conversations from the same cache as the rail (D33).
+ * link. Nothing is stored here: the list is the session's conversations from the same cache as the rail (D33). The
+ * corner's "Fråga AI" opens the assistant's pane beside the list (D141, D138), about the person's conversations
+ * (`clew.conversations`); while it stands there the table scrolls sideways inside its card where its columns do not fit
+ * the narrower column (Astryx's scroll region), and the page never does (1.4.10).
  */
 export function ConversationsPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -66,17 +71,25 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
   usePageTitle('Samtal');
   const talk = useConversation();
   const read = useQuery(threadsQuery);
+  const views = useQuery(areasQuery).data?.views;
+  // What the pane beside the page is about (D141 rule 4): the person's conversations, as the assistant reads them.
+  const subject = pageSubject({
+    key: 'conversations',
+    title: 'Alla samtal',
+    reads: [{ capability: 'clew.conversations', own: true, label: 'Alla samtal' }],
+    views,
+  });
   const threads = read.data?.threads ?? EMPTY;
   const day = today();
   const answering = talk.pending ? (talk.conversation?.id ?? null) : null;
   const rows = useMemo<Row[]>(
     () =>
-      groupThreads(threads, new Date().toISOString(), day).questions.map(thread => ({
+      groupThreads(threads, new Date().toISOString(), day).allQuestions.map(thread => ({
         id: thread.id,
         thread,
         state: conversationState(thread, threads, answering),
         with: talkingTo(thread),
-        about: storedAbout(thread).join(', ') || null,
+        about: listedAbout(thread),
       })),
     [threads, day, answering],
   );
@@ -94,8 +107,9 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
         </Link>
       ),
     },
-    // What a conversation is about (the product owner, 2026-11-14), drawn only while some conversation keeps it: the
-    // work item or the view its first question went with. A person or a unit is kept by nothing in the conversation.
+    // What a conversation is about (the product owner, 2026-11-14), drawn only while some conversation keeps it: the page
+    // it was asked beside (D141 rule 6), else the work item or the view its first question went with. A person or a
+    // unit is kept by nothing in the conversation.
     {
       key: 'about',
       header: <Text type="eyebrow">Om</Text>,
@@ -189,6 +203,7 @@ export function ConversationsPage({ user, admin }: { user: SessionUser; admin: b
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        ask={{ subject }}
         cards
         title="Samtal"
         meta={read.data ? (rows.length === 1 ? '1 samtal' : `${rows.length} samtal`) : undefined}

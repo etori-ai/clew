@@ -153,6 +153,8 @@ export function reminderUsecases(deps: ReminderDeps) {
         state: 'open',
         handledAt: null,
         waitingOn: null,
+        // The card is the person's again: what they handed on (D139) no longer stands, and the trigger says whom it waited on.
+        ...(row.handedOn ? { handedOn: null } : {}),
         snoozedUntil: null,
         remindedAt: at,
         updatedAt: at,

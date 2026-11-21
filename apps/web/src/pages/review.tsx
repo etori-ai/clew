@@ -55,6 +55,8 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
 import { ContentSkeleton } from '../components/shell/loading';
 import { reviewedAction, useCardAction } from '../components/work/card';
 import { PageFrame, WayBack, narrowPageQuery } from '../components/shell/page-frame';
+import { FactsInColumn } from '../components/shell/page-frame-context';
+import { itemPageSubject } from '../components/conversation/page-conversation';
 import { DocumentReader } from '../components/views/document-reader';
 import { ReviewRecovery } from '../components/work/review-recovery';
 
@@ -123,7 +125,11 @@ export function ReviewPage({ user, admin }: { user: SessionUser; admin: boolean 
   const reviewing = !!live && !!action && step !== null;
   // The review names the tab itself while it is drawn (`Review`); the page's other states name it here.
   usePageTitle(reviewing ? null : missing ? 'Ärendet finns inte' : live && action ? 'Steget finns inte' : null);
-  const message = (content: ReactNode) => <PageFrame>{content}</PageFrame>;
+  // The review is about its work item (D136 item 6): the item's own subject, so it is the same conversation as on the
+  // item's page; until the item is read there is none.
+  const message = (content: ReactNode) => (
+    <PageFrame ask={{ subject: live ? itemPageSubject(live) : null }}>{content}</PageFrame>
+  );
   let body: ReactNode;
   if (reviewing) body = <Review key={threadId} live={live} action={action} step={step} from={from} back={back} />;
   else if (live && action)
@@ -221,7 +227,6 @@ function Review({
   const location = useLocation();
   const { pathname, search } = location;
   const mobile = useMediaQuery(mobileQuery);
-  const narrow = useMediaQuery(narrowPageQuery);
   // While the decision is on its way the item turns handled in the cache: the review keeps the item it was sending from
   // until it has led back to the item.
   const [sending, setSending] = useState(false);
@@ -444,9 +449,10 @@ function Review({
       <Icon icon="clock" color="warning" label={decisionWord.leave} />
     ) : undefined;
   // "Hittills": every row with what was decided on it and the way to it, beside the step in the rail, which is its
-  // landmark, and under it where the window is narrow, as a section of the column.
-  const soFar = (
-    <VStack gap={3} {...(narrow ? { as: 'section' as const, 'aria-labelledby': 'review-so-far' } : {})}>
+  // landmark, and under it where the window is narrow or the assistant's pane has the end slot, as a section of the
+  // column (`inColumn`).
+  const soFar = (inColumn: boolean) => (
+    <VStack gap={3} {...(inColumn ? { as: 'section' as const, 'aria-labelledby': 'review-so-far' } : {})}>
       <Heading id="review-so-far" level={3} accessibilityLevel={2}>
         Hittills
       </Heading>
@@ -845,19 +851,26 @@ function Review({
   // steps under them, the step in the column, "Hittills" in the end panel and the decision in the footer. On a phone
   // the header scrolls with the step, so the document is not left a strip under it; on a short screen the page scrolls
   // as one (1.4.10).
+  // "Hittills" follows the step where the window is narrow and while the assistant's pane has the end slot (D136 item
+  // 9), read inside the frame.
   const column = (
     <VStack gap={6}>
       {mobile && head}
       {stepBody}
-      {narrow && !completed && soFar}
+      {!completed && (
+        <FactsInColumn query={narrowPageQuery}>{inColumn => (inColumn ? soFar(true) : null)}</FactsInColumn>
+      )}
     </VStack>
   );
+  // About the work item, as on its page (D136 item 6).
+  const ask = { subject: itemPageSubject(thread) };
   return mobile ? (
-    <PageFrame label="Granskningen" scrollTabStop footer={footer}>
+    <PageFrame ask={ask} label="Granskningen" scrollTabStop footer={footer}>
       {column}
     </PageFrame>
   ) : (
     <PageFrame
+      ask={ask}
       back={back}
       trail={trailLine}
       title={title}
@@ -865,9 +878,10 @@ function Review({
       below={headBelow}
       label="Granskningen"
       scrollTabStop
-      facts={completed ? undefined : soFar}
+      facts={completed ? undefined : soFar(false)}
       factsLabel="Hittills"
-      // Where the window is narrow "Hittills" follows the step in the column.
+      // Where the window is narrow, and while the assistant's pane has the end slot, "Hittills" follows the step in the
+      // column.
       factsAbove={false}
       footer={footer}
     >

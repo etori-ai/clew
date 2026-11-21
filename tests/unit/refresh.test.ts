@@ -3,7 +3,8 @@ import { threadAccess } from '../../apps/server/src/threads/access';
 import { draft as storedDraft } from '../store-contract';
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import type { AuthenticatedContext, ThreadItem } from '../../packages/contracts/src';
+import { checkContract, type AuthenticatedContext, type ThreadItem } from '../../packages/contracts/src';
+import { ScanResponseSchema } from '../../packages/connectors/src/protocol';
 import type { ScanObservation, ThreadDraft } from '../../packages/connectors/src';
 import { memoryRefreshStore } from '../../apps/server/src/threads/adapters/refresh-memory';
 import { refreshUsecases } from '../../apps/server/src/threads/usecases/refresh';
@@ -302,6 +303,70 @@ test('dismissal suppresses unchanged work, a changed revision explains its retur
   expect(w.store.dump()).toHaveLength(2);
   expect(w.store.threads.dump()).toHaveLength(2);
   expect(w.store.dump().find(o => o.period === '2026')?.sourceState).toBe('resolved');
+});
+test('a card the person handed on keeps waiting across unchanged scans, comes back on a changed revision, and ends with its source (D139)', async () => {
+  const w = world();
+  const handOn = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
+  const offered = (revision = '1'): ThreadDraft => ({ ...draft(revision), handOn });
+  const card = () => w.store.threads.dump()[0]!.thread;
+  const refreshed = () => w.store.threads.audit.filter(a => a.action === 'thread.refreshed').length;
+  w.set([offered()]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  expect(card().handOn).toEqual(handOn);
+  const handedOn = { to: 'din chef', at: w.clock().toISOString() };
+  await w.store.threads.transaction(tx => tx.updateThread(card().id, { waitingOn: 'din chef', handedOn }));
+  // The same occurrence, raised again: the draft names nobody, and the card still waits on whom the person said.
+  w.advance();
+  w.set([offered()]);
+  await w.uc.tick();
+  expect(card()).toMatchObject({ state: 'open', waitingOn: 'din chef', handedOn });
+  expect(refreshed()).toBe(0);
+  // New words on the same revision are followed, and the hand-over stands.
+  w.advance();
+  w.set([{ ...offered(), summary: 'Gör klart i dag' }]);
+  await w.uc.tick();
+  expect(card()).toMatchObject({ summary: 'Gör klart i dag', waitingOn: 'din chef', handedOn });
+  expect(refreshed()).toBe(1);
+  // A changed revision is the person's again, as it breaks a snooze.
+  w.advance();
+  w.set([offered('2')]);
+  await w.uc.tick();
+  expect(card()).toMatchObject({ state: 'open', waitingOn: null, handOn });
+  expect('handedOn' in card()).toBe(false);
+  // Handed on again, then the source stops raising it: handled, waiting on nobody, with nothing handed on.
+  await w.store.threads.transaction(tx => tx.updateThread(card().id, { waitingOn: 'din chef', handedOn }));
+  w.advance();
+  w.set([]);
+  await w.uc.tick();
+  expect(card()).toMatchObject({ state: 'handled', waitingOn: null });
+  expect('handedOn' in card()).toBe(false);
+  expect(w.store.threads.audit.some(a => a.action === 'thread.source_resolved')).toBe(true);
+});
+test('a scan answer is accepted with and without the offer, and refused when the offer is not whole (D139)', () => {
+  const answer = (handOn?: unknown) => ({ drafts: [{ ...draft(), ...(handOn === undefined ? {} : { handOn }) }] });
+  expect(checkContract(ScanResponseSchema, answer())).toBe(true);
+  expect(checkContract(ScanResponseSchema, answer({ label: 'Jag har bett min chef', waitingOn: 'din chef' }))).toBe(
+    true,
+  );
+  for (const broken of [{ label: 'Jag har bett min chef' }, { label: '', waitingOn: 'din chef' }, 'din chef', null])
+    expect(checkContract(ScanResponseSchema, answer(broken))).toBe(false);
+  expect(checkContract(ScanResponseSchema, answer({ label: 'x'.repeat(61), waitingOn: 'din chef' }))).toBe(false);
+});
+test('a source that says itself whom the card waits on is believed over the person, and an offer taken away leaves the card (D139)', async () => {
+  const w = world();
+  const handOn = { label: 'Jag har bett min chef', waitingOn: 'din chef' };
+  const card = () => w.store.threads.dump()[0]!.thread;
+  w.set([{ ...draft(), handOn }]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const handedOn = { to: 'din chef', at: w.clock().toISOString() };
+  await w.store.threads.transaction(tx => tx.updateThread(card().id, { waitingOn: 'din chef', handedOn }));
+  w.advance();
+  w.set([{ ...draft(), waitingOn: 'lönekontoret' }]);
+  await w.uc.tick();
+  expect(card().waitingOn).toBe('lönekontoret');
+  expect('handedOn' in card() || 'handOn' in card()).toBe(false);
 });
 test('only an exhausted complete snapshot or an explicit tombstone resolves missing work', async () => {
   const w = world();

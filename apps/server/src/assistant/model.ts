@@ -20,7 +20,8 @@ export type ToolSchemaInfo = ToolInfo & { input: unknown };
 export type ToolCallRecord = { capability: string; input: Record<string, unknown>; output: unknown };
 /**
  * A tool of Clew's own beside the read capabilities, named like one (`clew.<verb>`): the draft of a work item's action
- * (D112 item 8, `drafts.ts`). It runs in the process, writes nothing and never reaches a connector's execute.
+ * (D112 item 8, `drafts.ts`) or a prepared decision of Clew's own (`prepared.ts`). It runs in the process, writes
+ * nothing and never reaches a connector's execute.
  */
 export interface ClewTool {
   name: string;
@@ -98,17 +99,27 @@ export interface PromptContext {
   week: number;
   objects: string[];
   /**
-   * What stands open in the pane beside the transcript as the question is asked, in the same lines as `objects`: the
-   * prompt says it is the thing the person means by "the open item", "the card" or "the pane".
+   * What stands open beside the conversation as the question is asked: the thing of the page the assistant's pane
+   * stands beside (D136), then the chip that stands open in the pane beside the transcript, in the same lines as
+   * `objects`. The prompt says it is the thing the person means by "the page", "the open item", "the card" or "the pane".
    */
   beside?: string[];
-  /** The work item's actions may be filled in as a draft (D112 item 8): the prompt says how and that nothing is sent. */
-  drafts?: boolean;
+  /**
+   * The work item's actions (`item`, D112 item 8) or the actions about the record that stands open (`record`, D137 item
+   * 4) may be filled in as a draft: the prompt says how, what the model fills in, and that nothing is sent.
+   */
+  drafts?: 'item' | 'record';
+  /**
+   * The meeting open beside the conversation may be moved or cancelled as a prepared decision (`prepared.ts`): the
+   * prompt says to read the day before a move, that the person decides either themselves, and that it is done where
+   * the meeting is shown, never in another program.
+   */
+  prepares?: boolean;
   /**
    * The asker manages people (D115): the lines about the people the question names, and whether the model may look a
    * name up itself. Absent for someone who manages nobody.
    */
-  people?: { lines: string[]; lookup: boolean };
+  people?: { lines: string[]; lookup: boolean; open?: boolean };
   /**
    * What earlier answers in the conversation read, one line per answer: when, which reads and how many rows each
    * answered. Never what they held: the model reads again for a question about facts.
@@ -156,18 +167,23 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Nämn källor som inte svarade, om sökverktyget rapporterar några.',
     '- Avsluta med en sista rad "Följdfrågor: fråga ett | fråga två | fråga tre": högst tre korta frågor personen kan ställa härnäst. Bara när sökverktyget användes.',
   ];
-  if (ctx.people)
+  if (ctx.people) {
+    // The person whose page stands open is told with what is open beside the conversation (D136 item 2).
+    const where = ctx.people.open
+      ? '"Medarbetare som personen nämnde" eller, för medarbetaren vars sida står öppen, under "Öppet bredvid samtalet"'
+      : '"Medarbetare som personen nämnde"';
     lines.push(
       'När personen frågar om en medarbetare:',
       ...(ctx.people.lookup
         ? [
-            '- Vem det är står under "Medarbetare som personen nämnde". Står det inte där, slå upp namnet som personen skrev det med verktyget clew__findPerson.',
+            `- Vem det är står under ${where}. Står det inte där, slå upp namnet som personen skrev det med verktyget clew__findPerson.`,
           ]
-        : ['- Vem det är står under "Medarbetare som personen nämnde".']),
+        : [`- Vem det är står under ${where}.`]),
       '- Kan namnet vara flera medarbetare: räkna upp namnen och fråga vem personen menar. Heter ingen så: säg det.',
       '- Uppgifter om medarbetarnas hälsa och frånvaro lämnas inte till dig. Utgå från det personen själv skrev, gissa aldrig och fråga aldrig om diagnos.',
       '- Frågar personen vad hen ska göra: läs rutinen med det verktyg som har den och säg kort vad den säger att chefen gör nu. Finns ett öppet ärende om medarbetaren, peka på det och på dess knapp; ärendet visas för personen i samtalet.',
     );
+  }
   // Where another system's assistant covers the question it comes before searching or answering: the rules stand with
   // the others, ahead of the search rules, so a question about rules and routines is not searched for first. The person
   // is asked before anything is sent, so the model is told to suggest when in doubt (D125 item 11).
@@ -182,11 +198,24 @@ export function systemPrompt(ctx: PromptContext): string {
       '- Exempel: "Hur många semesterdagar har man rätt till?" lämnas till en assistent för personalfrågor. "Hur många semesterdagar har jag kvar?" svarar du på själv.',
       '- När du anropar clew__handOver skriver du inget eget svar.',
     );
-  if (ctx.drafts)
+  if (ctx.drafts === 'item')
     lines.push(
       'När personen vill att en av ärendets åtgärder görs:',
       '- Fyll i den med verktyget clew__draftAction, efter att ha läst det du behöver (till exempel lediga tider i kalendern).',
       '- Säg sedan i en mening vad du fyllt i och att inget är skickat: personen granskar utkastet och skickar själv.',
+    );
+  if (ctx.drafts === 'record')
+    lines.push(
+      'När personen vill att en av den öppna postens åtgärder görs:',
+      '- Fyll i den med verktyget clew__draftAction. Du fyller bara i det åtgärden frågar efter, med det personen sagt; posten är den som står öppen bredvid samtalet och anges inte.',
+      '- Säg sedan i en mening vad du fyllt i och att inget är skickat: personen granskar utkastet och skickar själv med åtgärdens knapp på postens sida.',
+    );
+  if (ctx.prepares)
+    lines.push(
+      'När personen vill flytta eller ställa in mötet som står öppet bredvid samtalet:',
+      '- Flytta: läs först dagen med calendar__day eller lediga tider med calendar__freeTimes, och fyll sedan i den nya tiden med verktyget clew__prepareMove. Säg i en mening vilken tid du föreslår och att personen sparar den själv.',
+      '- Ställa in: anropa verktyget clew__prepareCancel. Säg i en mening att personen får frågan om att ställa in mötet och svarar själv.',
+      '- Personen kan också göra båda själv med "Flytta …" och "Ställ in …" där mötet visas. Säg aldrig att det måste göras direkt i kalendern eller i ett annat program, och skriv aldrig att mötet är flyttat eller inställt.',
     );
   if (ctx.earlier?.length)
     lines.push(
@@ -199,7 +228,7 @@ export function systemPrompt(ctx: PromptContext): string {
   if (ctx.beside?.length)
     lines.push(
       '',
-      'Öppet i rutan bredvid samtalet just nu (skriver personen "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
+      'Öppet bredvid samtalet just nu (skriver personen "sidan", "personen", "medarbetaren", "enheten", "den öppna posten", "det öppna ärendet", "kortet", "vyn", "rutan bredvid", "sidopanelen" eller "det här" är det detta som menas):',
       ...ctx.beside.map(o => `- ${o}`),
     );
   if (ctx.objects.length)

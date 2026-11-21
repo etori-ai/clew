@@ -56,6 +56,13 @@ export interface Directory {
   ): Promise<(DirectoryPerson & { unit: DirectoryUnit | null; profile?: PersonProfile }) | undefined>;
 }
 /**
+ * What `people.reports` reads of the directory (composition: the people module's `staffUsecases`): where the reader
+ * stands, and the titles of the people on their list, by id (someone without one is absent).
+ */
+export interface ReportDirectory extends Pick<Directory, 'reach'> {
+  titles(persona: AuthenticatedContext, ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
+}
+/**
  * The person behind a call as the directory reads them (D117): their current grant, built for the actor the registry was
  * handed (composition: `systemContext`); undefined for somebody Clew does not know. Throws when it cannot be read.
  */

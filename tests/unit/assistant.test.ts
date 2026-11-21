@@ -425,7 +425,7 @@ describe('the model path only reads, and falls back when the provider fails', ()
       beside: serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: card }], now),
       objects: ['Mötet "APT" tis 3 nov 09:00–10:00 i kalendern.'],
     });
-    const open = prompt.indexOf('Öppet i rutan bredvid samtalet just nu (skriver personen "det öppna ärendet"');
+    const open = prompt.indexOf('Öppet bredvid samtalet just nu (skriver personen "sidan", "personen"');
     const added = prompt.indexOf('Du tittar på (det personen lagt till i samtalet):');
     expect(open).toBeGreaterThan(0);
     expect(added).toBeGreaterThan(open);

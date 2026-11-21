@@ -47,6 +47,7 @@ Spacing is written in Astryx's steps (`gap={6}` is 24 px).
 | The assistant's button | 46 px high with 24 px at each side, a pill, in the ask pill and in the corner | `theme.ts` (`variant:ai` with `size:lg`) |
 | Focus news | 32 px inset, the headline 30 px | `focus-news.tsx` |
 | Closing line | 12 px; 40 px under a board's last card, a rule over it | `PageFrame` |
+| The assistant's pane | A card at the end of the shell's column, 400 px wide (the person's grip: 360 px to half the column, at most 720), 20 px from the page's card or 32 px from a board's cards; beside the page from 1180 px of window, a drawer below | `PageFrame` (`aside`), `paneBesideQuery` in `media.ts` |
 
 ## Checking a page
 

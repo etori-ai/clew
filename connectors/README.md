@@ -49,7 +49,7 @@ the first seven in process through `tests/fixture-connectors.ts`.
 | [communication](communication/README.md) | `communication` | Kommunikation | Notices with read receipts ("Viktigt nu"), and the same notices as news (the news profile, D112) | 4 reads, 1 write, scan | 4043 |
 | [timesheet](timesheet/README.md) | `timesheet` | Tidrapporteringen | Time reporting and staffing | 2 reads, 2 writes, 1 propose | 4044 |
 | [payroll](payroll/README.md) | `payroll` | Lönesystemet | Payroll figures; Clew never writes here | 2 reads, 1 propose | 4046 |
-| [servicedesk](servicedesk/README.md) | `servicedesk` | IT-servicedesken | The IT service desk: what a person ordered or reported and waits for, the first source of the requests profile (D123); an order for oneself or a direct report; the equipment registered to a person | 6 reads, 1 write, scan | 4054 |
+| [servicedesk](servicedesk/README.md) | `servicedesk` | IT-servicedesken | The IT service desk: what a person ordered or reported and waits for, the first source of the requests profile (D123); a comment on one's own request from its page, the first action about a record (D137); an order for oneself or a direct report; the equipment registered to a person | 7 reads, 2 writes, scan | 4054 |
 | [intranet](intranet/README.md) | `intranet` | Intranätet | The content system that lists the shared header's places (D88) | 1 read, header | 4049 |
 | [appraisals](appraisals/README.md) | `appraisals` | Samtalssystemet | A third-party system that answers the talks profile instead of Clew's own module (D96) | 4 reads | 4051, registered but not enabled |
 

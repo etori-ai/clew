@@ -1,6 +1,8 @@
 import { Type, type Static } from 'typebox';
 import {
   AboutSchema,
+  EntityAboutSchema,
+  RecordAboutSchema,
   EntityKind,
   PersonAccessSchema,
   PersonRelationSchema,
@@ -55,7 +57,9 @@ import {
  * The connector never sends markup; a capability without a view is drawn by Clew's generic rules. A view that
  * opens without input can be a tool in Clew's menu (D40): an administrator chooses which, and `menu` on the capability
  * says what its row is called. A capability may say what its rows are `about` (D97), a person or a unit: a read asked
- * with a batch of keys, or an action that takes one. It never says where it shows; Clew places it from the declaration.
+ * with a batch of keys, or an action that takes one. An action may instead be `about` one record of one of the
+ * connector's reads (D137), its input filled from the read's. It never says where it shows; Clew places it from the
+ * declaration.
  *
  * Routes a connector serves (all JSON, all under the base URL Clew is configured with):
  *   GET  /clew/manifest                 -> ConnectorManifest
@@ -336,7 +340,7 @@ export const ManifestCapabilitySchema = object({
       minItems: 1,
       maxItems: ASKS_MAX,
       description:
-        'On a `propose` or `execute` (D112): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action\'s dialog, "Fyll i", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action\'s own `input` on a work item, or the entity (`about.param`). An answer for anything not asked is refused.',
+        'On a `propose` or `execute` (D112): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action\'s dialog, "Fyll i", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action\'s own `input` on a work item, the entity (`about.param`) or the record (`about.params`, D137). An answer for anything not asked is refused.',
     }),
   ),
   effect: Type.Optional(
@@ -585,6 +589,24 @@ export const ThreadDraftSchema = object({
   actions: Type.Array(ThreadActionSchema),
   waitingOn: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   deadline: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  handOn: Type.Optional(
+    object(
+      {
+        label: Type.String({
+          minLength: 1,
+          maxLength: 60,
+          description: 'Swedish. The button, in the person\'s own voice: "Jag har bett min chef".',
+        }),
+        waitingOn: Type.String({
+          minLength: 1,
+          maxLength: 80,
+          description:
+            'Swedish. Whom the card waits on once the person has said so, read after "Väntar på": "din chef".',
+        }),
+      },
+      "An offer to the person to say that the next step, which is someone else's and is taken outside Clew, is taken (D139). Clew then lists the card as waiting on `waitingOn` until the person takes it back, a reminder of theirs fires, the occurrence's revision changes or the scan stops raising it. Nothing is sent to the connector: pressing it is not a capability call. Leave it out on a draft that sets `waitingOn` itself.",
+    ),
+  ),
   subjects: Type.Optional(
     Type.Array(
       object(
@@ -770,17 +792,20 @@ export const PROTOCOL_ACCEPTED: readonly number[] = [PROTOCOL_VERSION];
 const previewRoles = Type.Array(RoleSchema, {
   description: 'Who may call it: both roles when the capability names none.',
 });
-/** The places Clew gives a capability that is about an entity (D97 item 2), in the order the preview lists them. */
-export const ABOUT_PLACES = ['lens', 'mark', 'section', 'menu'] as const;
+/**
+ * The places Clew gives a capability that is about something (D97 item 2, D137 item 2), in the order the preview lists
+ * them: an entity's four, and the page of the record an action is about.
+ */
+export const ABOUT_PLACES = ['lens', 'mark', 'section', 'menu', 'record'] as const;
 export type AboutPlace = (typeof ABOUT_PLACES)[number];
 /** Where a person can start a propose or an execute (D112 item 11), in the order the preview lists them. */
-export const ACTION_STARTS = ['work-item', 'entity', 'question-box', 'conversation', 'fact'] as const;
+export const ACTION_STARTS = ['work-item', 'entity', 'question-box', 'conversation', 'fact', 'record'] as const;
 export type ActionStart = (typeof ACTION_STARTS)[number];
 /** The steps of the one path a write passes (D112 item 10), in the order the person meets them. */
 export const ACTION_STEPS = ['fill-in', 'effect', 'confirm', 'review', 'receipt'] as const;
 export type ActionStep = (typeof ACTION_STEPS)[number];
 /** Who fills a property of an action's input (D112 item 11). */
-export const INPUT_FILLERS = ['rows', 'entity', 'person', 'fact', 'work-item', 'source'] as const;
+export const INPUT_FILLERS = ['rows', 'entity', 'person', 'fact', 'work-item', 'source', 'record'] as const;
 export type InputFiller = (typeof INPUT_FILLERS)[number];
 /**
  * Both halves of a write as the preview draws them (D112 item 11), from the declaration alone: where a person can start
@@ -799,7 +824,7 @@ export const ActionPathPreviewSchema = object(
       }),
       {
         description:
-          '`work-item`: a button on a work item a scan pushes or a propose drafts (`scan: true`, or a propose about an entity); `entity`: an action on a person or a unit (`about.param`); `question-box`: a suggestion under "Menar du" (`areas[].standing`); `conversation`: drafted by the assistant, a propose with `model: true`; `fact`: a step of a job after a fact elsewhere (`follows` on a propose; an execute is such a step when a propose of the manifest follows a fact).',
+          '`work-item`: a button on a work item a scan pushes or a propose drafts (`scan: true`, or a propose about an entity); `entity`: an action on a person or a unit (`about.param`); `question-box`: a suggestion under "Menar du" (`areas[].standing`); `conversation`: drafted by the assistant, a propose with `model: true`; `fact`: a step of a job after a fact elsewhere (`follows` on a propose; an execute is such a step when a propose of the manifest follows a fact); `record`: a button on the page of the record it is about, which the assistant may also fill in for the record that stands open (`about: { record, params }`, D137), listed only for a write that declares it.',
       },
     ),
     steps: Type.Array(
@@ -823,7 +848,7 @@ export const ActionPathPreviewSchema = object(
         required: Type.Boolean({ description: 'The input schema requires it.' }),
         by: literals(INPUT_FILLERS, {
           description:
-            "`rows`: the selected rows of the work item (`refs`) or the review's evidence (`reviews`); `entity`: the key of the person or unit (`about.param`); `person`: an ask; `fact`: the fact a follower is asked with; `work-item`: the action's own `input` on a draft must give it; `source`: optional, the source's default unless a draft gives it.",
+            "`rows`: the selected rows of the work item (`refs`) or the review's evidence (`reviews`); `entity`: the key of the person or unit (`about.param`); `record`: the record's input, as `about.params` maps it (D137); `person`: an ask; `fact`: the fact a follower is asked with; `work-item`: the action's own `input` on a draft must give it; `source`: optional, the source's default unless a draft gives it.",
         }),
         ask: Type.Optional(AskSchema),
       }),
@@ -869,10 +894,17 @@ export const ManifestPreviewCapabilitySchema = object({
   }),
   follows: Type.Optional(Type.Array(FactKindName)),
   creates: Type.Optional(FactKindName),
-  about: Type.Optional(AboutSchema),
+  about: Type.Optional({
+    ...EntityAboutSchema,
+    description: 'The entity form of `about` (D97), as declared. The record form is in `aboutRecord`.',
+  }),
+  aboutRecord: Type.Optional({
+    ...RecordAboutSchema,
+    description: 'The record form of `about` (D137), as declared: the read whose record the action is about.',
+  }),
   places: Type.Array(literals(ABOUT_PLACES), {
     description:
-      "Where Clew would show it on the entity it is about (D97), from the declaration alone: `lens` a table or list an administrator may offer under Visa on the entity's list, `mark` a `warn` or `alert` tone that marks the entity's row where an administrator chose the source, `section` a section on the opened entity, `menu` an action in the entity's menu, run after a human decision. Empty when it is about nothing.",
+      "Where Clew would show it on what it is about (D97, D137), from the declaration alone: `lens` a table or list an administrator may offer under Visa on the entity's list, `mark` a `warn` or `alert` tone that marks the entity's row where an administrator chose the source, `section` a section on the opened entity, `menu` an action in the entity's menu, `record` an action on the page of the record it is about, under its title; an action runs after a human decision. Empty when it is about nothing.",
   }),
   openedFrom: Type.Array(Type.String(), {
     description:
@@ -887,7 +919,7 @@ export const ManifestPreviewCapabilitySchema = object({
     }),
     {
       description:
-        'Who would see a capability about an entity, place by place (D97), from its scope and the declaration alone: the lens and the mark reach a person who has a list of that kind once an administrator chooses the source, the section anyone who opens an entity the connector answers a row for, the menu anyone who opens one and may call the action; `tool` says whether the model is offered it. Empty when it is about nothing.',
+        'Who would see a capability about an entity or a record, place by place (D97, D137), from its scope and the declaration alone: the lens and the mark reach a person who has a list of that kind once an administrator chooses the source, the section anyone who opens an entity the connector answers a row for, the menu anyone who opens one and may call the action, the record anyone who opens a record of the read that the connector answers them and who may call the action; `tool` says whether the model is offered it. Empty when it is about nothing.',
     },
   ),
   samples: Type.Optional(

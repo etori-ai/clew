@@ -40,6 +40,8 @@ import { SCIM_CONTENT_TYPE, ScimError } from './modules/people/contracts';
 import { staffRoutes } from './routes/staff';
 import { entityRoutes } from './routes/entities';
 import { entities, entityActions } from './composition/entities';
+import { recordRoutes } from './routes/records';
+import { recordActions } from './composition/records';
 import { scim } from './composition/people';
 import { talkRoutes } from './routes/talks';
 import { talks } from './composition/talks';
@@ -123,6 +125,8 @@ app.route('/api/staff', staffRoutes);
 // Entities (D97): a person or a unit and what the sources about it say, behind the core rule of who may be asked about,
 // and an action from its menu, which becomes a card (D8).
 app.route('/api/entities', entityRoutes({ entities, actions: entityActions }));
+// Actions about a record (D137): what a record's page offers under its title, started or decided as an entity's are.
+app.route('/api/records', recordRoutes({ actions: recordActions }));
 // The talks module's writes (D96), only while Clew's own module answers the talks profile for the person.
 app.route('/api/talks', talkRoutes({ talks, invitations, writable: talksWritable }));
 // The follow-up dialogue (D118), only while Clew's own module is switched on and visible to the person.

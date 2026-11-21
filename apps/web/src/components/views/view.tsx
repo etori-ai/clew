@@ -45,7 +45,6 @@ import {
   pixel,
   proportional,
   useAnnounce,
-  useMediaQuery,
 } from '@clew/ui';
 import { counted, dayText, fieldValue, statusWord, type DayLength } from './panel-labels';
 import { DOT } from '../../dot';
@@ -54,6 +53,7 @@ import { useMarks } from '../../marks';
 import { useConversation } from '../conversation/conversation-context';
 import { AddToConversation } from '../conversation/add-to-conversation';
 import { PageHeader } from '../shell/page-header';
+import { useColumnQuery } from '../shell/page-frame-context';
 import { DocumentReader } from './document-reader';
 import { useLocation } from 'react-router';
 import { entityHref, recordSubject } from '../../person-address';
@@ -91,7 +91,10 @@ export interface DeclaredViewProps {
   only?: readonly string[] | undefined;
   /** The outline level of a heading inside the view: 3 in the panel and under an answer, 2 on a tool's page, under its h1. */
   headingLevel?: 2 | 3;
-  /** From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. */
+  /**
+   * From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. Moved by
+   * the assistant's pane while it stands beside the page (`useColumnQuery`, D141 rule 11).
+   */
   tableQuery?: string;
   /** A tool page's title: the page's heading at level 1 with the system's badge on its line, the filter bar under it. */
   title?: string;
@@ -101,8 +104,6 @@ export interface DeclaredViewProps {
   onShowAll?: () => void;
   /** Where "Visa allt" leads, as a link (a list's own page, D116); with it `onShowAll` is not needed. */
   showAllHref?: string | undefined;
-  /** A tool page's own control after the view's (D112 item 7: "Fråga assistenten"), at the end of the title's line. */
-  pageAction?: ReactNode;
   /**
    * Whether a row's own read is the one open beside the page (D112 item 6, board Tool: the inspector): that row is the
    * current one, marked on the row and on its name.
@@ -804,14 +805,15 @@ export function DeclaredView({
   titleId,
   onShowAll,
   showAllHref,
-  pageAction,
   isOpen,
   section,
   part,
   heading,
 }: DeclaredViewProps) {
   const sectionId = useId();
-  const wide = useMediaQuery(tableQuery);
+  // The column's width, not the window's: while the assistant's pane stands beside the page, a table becomes its list
+  // (D141 rule 11).
+  const wide = useColumnQuery(tableQuery);
   const { pathname, search } = useLocation();
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
   const announce = useAnnounce({ hasReplace: true });
@@ -843,16 +845,7 @@ export function DeclaredView({
   // many rows there are at the bar's end. Any other placement keeps the one view header (D71).
   const header = title ? (
     <VStack gap={4}>
-      <PageHeader
-        title={title}
-        {...(titleId ? { titleId } : {})}
-        end={
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            <SourceChip view={view} />
-            {pageAction}
-          </HStack>
-        }
-      />
+      <PageHeader title={title} {...(titleId ? { titleId } : {})} end={<SourceChip view={view} />} />
       {count !== null && (
         <HStack gap={3} vAlign="center" wrap="wrap">
           {controls && (

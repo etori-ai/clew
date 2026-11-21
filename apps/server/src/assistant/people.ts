@@ -175,18 +175,26 @@ export interface PeopleInTurn {
   guards: (thread: Pick<Thread, 'id' | 'items' | 'subjects'>) => boolean;
   /** The asker's open work about one of them: their cards under Behöver dig whose rows name them (D97 item 6). */
   work: (person: ManagedPerson) => Thread[];
+  /**
+   * The person whose page stands open beside the question (D136 item 2), when they are one of the asker's people: a
+   * person the conversation names, on every turn, whatever the question writes. Absent for anyone else.
+   */
+  open?: ManagedPerson;
 }
 const NOBODY: PeopleInTurn = { people: [], named: [], mentioned: [], guards: () => false, work: () => [] };
 
 /**
  * The person part of one turn: the people the asker manages, the names in the question and the work about everyone
  * the conversation's own words could name, read once. `earlier` is what the asker wrote before in this conversation.
+ * `open` is Clew's id of the person whose page stands open (D136 item 1): resolved here among the asker's people and
+ * nobody else, so a page of anyone else names nobody (D115 item 1, D136 item 4).
  */
 export async function peopleInTurn(
   deps: Pick<AssistantDeps, 'people' | 'store' | 'registry' | 'clock'>,
   persona: AuthenticatedContext,
   text: string,
   earlier: readonly string[],
+  open?: string,
 ): Promise<PeopleInTurn> {
   if (!deps.people) return NOBODY;
   const keyed = new Map<string, ManagedPerson>();
@@ -199,6 +207,9 @@ export async function peopleInTurn(
   const about = new Map(mentioned.map(p => [p.key, p]));
   for (const n of named)
     for (const p of n.found.match === 'one' ? [n.found.person] : n.found.people) about.set(p.key, p);
+  // The person whose page stands open is one the conversation names, from its first turn (D136 item 2, D115 item 4).
+  const opened = open === undefined ? undefined : keyed.get(open);
+  if (opened) about.set(opened.key, opened);
   const byKey = new Map<string, Thread[]>();
   const guarded = new Set<string>();
   if (about.size) {
@@ -235,11 +246,20 @@ export async function peopleInTurn(
     // guarded whatever the copy in hand says.
     guards: thread => guarded.has(thread.id) || namedAmong(namedSubjects(thread), asked).length > 0,
     work: person => byKey.get(person.key) ?? [],
+    ...(opened ? { open: opened } : {}),
   };
 }
 
-/** The one work item a turn is about when the question names one person with exactly one: the item the model may draft on. */
+/**
+ * The one work item a turn is about when the question names one person with exactly one: the item the model may draft
+ * on. A question that names nobody, asked beside the page of one of the asker's people, is about that person (D136
+ * item 2).
+ */
 export function personSubject(turn: PeopleInTurn): Thread | undefined {
+  if (!turn.named.length && turn.open) {
+    const work = turn.work(turn.open);
+    return work.length === 1 ? work[0] : undefined;
+  }
   const ones = turn.named.flatMap(n => (n.found.match === 'one' ? [n.found.person] : []));
   if (ones.length !== 1 || turn.named.length !== 1) return undefined;
   const work = turn.work(ones[0]!);
@@ -267,6 +287,13 @@ export const namedWork = (turn: PeopleInTurn): Thread[] =>
 const swedishList = (items: string[]) =>
   items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} och ${items.at(-1)}`;
 
+/** The asker's open work about one of their people, as the prompt says it: by title, source, last day and buttons. */
+const workLine = (turn: PeopleInTurn, person: ManagedPerson, now: string) => {
+  const work = turn.work(person);
+  return work.length
+    ? `Öppna ärenden om medarbetaren under Behöver dig: ${work.map(t => workItemLine(t, now)).join(' ')}`
+    : 'Inga öppna ärenden om medarbetaren under Behöver dig.';
+};
 /**
  * The prompt's lines about the people the question names (Swedish, as the prompt is): who each name is, with the user
  * name a read about one person takes (D122: the registry resolves it as the asker's report, or refuses it), or that it
@@ -277,14 +304,21 @@ export function peopleLines(turn: PeopleInTurn, now: string): string[] {
     if (n.found.match === 'several')
       return `"${n.written}" kan vara flera medarbetare: ${swedishList(n.found.people.map(p => p.name))}. Fråga vem personen menar.`;
     const person = n.found.person;
-    const work = turn.work(person);
-    return (
-      `"${n.written}" är ${person.name} på ${person.unit}, användarnamn ${person.key}. ` +
-      (work.length
-        ? `Öppna ärenden om medarbetaren under Behöver dig: ${work.map(t => workItemLine(t, now)).join(' ')}`
-        : 'Inga öppna ärenden om medarbetaren under Behöver dig.')
-    );
+    return `"${n.written}" är ${person.name} på ${person.unit}, användarnamn ${person.userName}. ${workLine(turn, person, now)}`;
   });
+}
+/**
+ * The prompt's line about the person whose page stands open (D136 item 2), when they are one of the asker's people:
+ * who they are, with the user name a read about one person takes, said as `peopleLines` says it, and the asker's open
+ * work about them. It stands with what is open beside the conversation, so "personen" and "sidan" are them.
+ */
+export function openPersonLine(turn: PeopleInTurn, now: string): string | undefined {
+  const person = turn.open;
+  if (!person) return undefined;
+  return (
+    `Sidan om medarbetaren ${person.name} på ${person.unit}, användarnamn ${person.userName}, som personen är chef för. ` +
+    workLine(turn, person, now)
+  );
 }
 
 /** Clew's tool that looks up a person the asker named (D115): a read of Clew's own, never a source's. */
@@ -336,7 +370,7 @@ export function personTool(turn: PeopleInTurn, now: string, found: (person: Mana
         found: 'one',
         name: match.person.name,
         unit: match.person.unit,
-        userName: match.person.key,
+        userName: match.person.userName,
         workItems: turn.work(match.person).map(t => workItemLine(t, now)),
         note: 'Ärendena visas för personen i samtalet. Uppgifter om medarbetarens hälsa och frånvaro lämnas inte till dig.',
       };

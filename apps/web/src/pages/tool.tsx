@@ -4,7 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import type { SessionUser, ViewRef } from '@clew/contracts';
 import type { PanelViewSpec } from '@clew/contracts';
 import { Button, EmptyState, Heading, HStack, Skeleton, StatusNotice, Text, VStack, useMediaQuery } from '@clew/ui';
-import { areasQuery, entityDetailQuery } from '../queries';
+import { areasQuery, entityDetailQuery, recordActionsQuery } from '../queries';
+import { mobileQuery } from '../media';
+import { EntityActions } from '../components/people/entity-sections';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
@@ -15,12 +17,15 @@ import { placeOfRead, useNav, type NavCurrent } from '../components/shell/nav';
 import { DeclaredView } from '../components/views/view';
 import { PanelBody, answersWithRowsOf } from '../components/views/panel';
 import { useView, viewSubject } from '../components/views/view-read';
-import { AskClew } from '../components/conversation/thing-panel';
 import { PageFrame, WayBack } from '../components/shell/page-frame';
+import { pageSubject, recordSubject } from '../components/conversation/page-conversation';
 import { PageHeader } from '../components/shell/page-header';
 import { ContentArrival, ContentSkeleton } from '../components/shell/loading';
 
-/** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
+/**
+ * The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the
+ * same rows as a list. The view moves the line by the assistant's pane while it stands beside the page (D141 rule 11).
+ */
 const tableQuery = '(min-width: 1280px)';
 /** The kinds of read that are one thing (D126 rule 1): drawn as a thing's page, not as a register. */
 const ONE_THING: ReadonlySet<PanelViewSpec['kind']> = new Set(['record', 'detail', 'document', 'text']);
@@ -42,6 +47,20 @@ function personOf(inputJson: string | null): string | null {
 function nounOf(spec: { kind: string; noun?: { other: string } } | undefined): string | undefined {
   const other = spec?.noun?.other;
   return other ? other.charAt(0).toLocaleUpperCase('sv') + other.slice(1) : undefined;
+}
+
+/**
+ * A record's actions under its title (D137 items 2 and 3): those the server lists for the reader about this record, by
+ * the page's read and input, drawn as a person's page draws a person's (`EntityActions`), each opening the action's own
+ * dialog. None listed, a read with no actions, or a record the reader may not act on draws nothing; nor does the page
+ * while the list is on its way, so a record without actions never shows a placeholder for them.
+ */
+function RecordActions({ read, input, name }: { read: string; input: Record<string, unknown>; name: string }) {
+  const mobile = useMediaQuery(mobileQuery);
+  const listed = useQuery(recordActionsQuery(read, input));
+  const actions = listed.data?.actions ?? [];
+  if (!actions.length) return null;
+  return <EntityActions subject={{ kind: 'record', read, input, name }} actions={actions} mobile={mobile} />;
 }
 
 /**
@@ -70,11 +89,14 @@ function placeOf(from: string | null): NavCurrent {
  * stands when the view is no tool of its own. A read the person may not open, and one that does not exist, both say
  * "Verktyget finns inte" and nothing else, and are not asked for.
  * A list or a table is a register (D126 rule 8, board Personal, the `table-page` template): the name as the heading
- * with the system's badge and "Fråga assistenten" on its line, the view's own search field and choice and the count under it,
- * then the rows. The name in a row is the link to the row's own read, its page (rule 4); a row never opens a panel.
+ * with the system's badge on its line (the corner's "Fråga AI" opens the assistant's pane beside the list, D141),
+ * the view's own search field and choice and the count under it, then the rows. The name in a row is the link to the
+ * row's own read, its page (rule 4); a row never opens a panel.
  * One thing (a record, a contact card, a text, a document) is a thing's page (rule 1, the `work-item-detail`
- * template): the way back and the title, "Fråga assistenten" under it, the read in the column and a record's facts in the end
- * panel, above the read where the window is narrow. The view is drawn by the one renderer (D38).
+ * template): the way back and the title (D136: the assistant's pane, opened by the corner's "Fråga AI", is about this
+ * record, `recordSubject`), the actions about the record at the end of the title's line (D137, `RecordActions`), the
+ * read in the column and a record's facts in the end panel, above the read
+ * where the window is narrow and while the pane stands beside the page. The view is drawn by the one renderer (D38).
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   // 1.4.10: with 480 px or less in height nothing is pinned beside the page.
@@ -134,16 +156,15 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     manager: user.role === 'manager',
   });
   const tool = main.shown?.capability === capability ? main.shown : null;
-  // "Fråga assistenten" (D126 rule 5): a new conversation about the view as it stands; a list goes as its chip alone, one
-  // thing stands beside the conversation.
-  const subject =
+  // What the view is asked about with: its read's chip; a list goes as its chip alone, one thing stands beside the
+  // conversation.
+  const read =
     ready && title
       ? viewSubject(
           { capability, title, input: main.shown?.input ?? {} },
           opensAsPage(views, capability) || answersWithRowsOf(tool?.spec, tool?.output),
         )
       : null;
-  const ask = <AskClew subject={subject} />;
   const heading = missing ? 'Verktyget finns inte' : title || null;
   usePageTitle(heading, heading ?? false);
   // Arrived from a link on another page, the person starts at the heading (2.4.3): the page they left took the focus
@@ -189,6 +210,20 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
         ? (thing.output as Record<string, unknown>)[spec.title]
         : undefined;
     const name = typeof own === 'string' && own.trim() ? own : title;
+    // What the assistant beside the record is about (D136 items 1 and 6): this record, its read and its input, one
+    // conversation per record; the read's chip where the assistant may make it, and the line where it may not. It stands
+    // beside the conversation the pane opens as (`?open=`).
+    const subject =
+      read &&
+      recordSubject({
+        capability,
+        input: thing.input,
+        name,
+        title,
+        source: thing.source ?? spec.source,
+        views,
+        search: read.search,
+      });
     const part = (which: 'facts' | 'body') => (
       <DeclaredView
         view={spec}
@@ -213,6 +248,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       // page that finds the link it was left by on the way back (`useFocusOnTheWayBack`, 2.4.3).
       <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
         <PageFrame
+          ask={{ subject }}
           back={back}
           trail={
             <Text type="supporting" color="secondary">
@@ -221,13 +257,10 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
           }
           title={name}
           titleId={TITLE_ID}
-          // The thing's actions under its title: a read has none of its own here but the question about it.
-          below={
-            <VStack gap={4}>
-              <HStack gap={2}>{ask}</HStack>
-              {banner}
-            </VStack>
-          }
+          // The actions about this record the reader may take (D137 item 2); the assistant is asked from the corner
+          // (D138 item 1), never from here.
+          actions={<RecordActions read={capability} input={thing.input} name={name} />}
+          below={banner || undefined}
           label={title || 'Vyn'}
           scrollTabStop
           facts={
@@ -247,10 +280,25 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     );
   }
   // A register (D126 rule 8): the view draws its own title line with its controls and its count (D74), so the way back
-  // and the title stand in the frame's column, on the lines every page's title stands on.
+  // and the title stand in the frame's column, on the lines every page's title stands on. Its list is what the
+  // assistant beside it is about (D141 rule 4), opened by the corner's "Fråga AI".
   return (
     <Shell key={capability} user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      <PageFrame label={title || 'Vyn'}>
+      <PageFrame
+        ask={{
+          // The list's own read: a chip when the assistant may make it for the person, and otherwise the pane says under
+          // its heading that it cannot read what the system shows here (D141 rule 4, `ViewEntry.assistant`).
+          subject:
+            read &&
+            pageSubject({
+              key: read.key,
+              title,
+              reads: [{ capability, label: title, source: tool?.source ?? tool?.spec?.source }],
+              views,
+            }),
+        }}
+        label={title || 'Vyn'}
+      >
         <VStack gap={4}>
           {missing ? (
             <EmptyState
@@ -264,7 +312,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
               {trail}
               {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
               {title
-                ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} end={ask} />
+                ? !tool?.spec && <PageHeader title={title} titleId={TITLE_ID} />
                 : !failed && <Skeleton height={32} width={200} />}
               {banner}
               {tool ? (
@@ -279,7 +327,6 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                       tableQuery={tableQuery}
                       title={title}
                       titleId={TITLE_ID}
-                      pageAction={ask}
                       /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the page. */
                       onInput={next =>
                         navigate(withViewInput(location.pathname, location.search, next), { replace: true })
@@ -288,7 +335,13 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                     />
                   ) : (
                     /* A read that declares no view (D38) is drawn as the panel draws one: its hits, its rows or its facts. */
-                    <PanelBody output={tool.output} source={tool.source} input={tool.input} hrefFor={hrefFor} />
+                    <PanelBody
+                      output={tool.output}
+                      source={tool.source}
+                      input={tool.input}
+                      hrefFor={hrefFor}
+                      dayHeadingLevel={2}
+                    />
                   )}
                 </ContentArrival>
               ) : (

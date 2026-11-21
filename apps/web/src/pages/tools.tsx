@@ -28,6 +28,7 @@ import { Shell, shortQuery } from '../components/shell/shell';
 import { toolHref, useNav } from '../components/shell/nav';
 import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
 import { PageFrame } from '../components/shell/page-frame';
+import { pageSubject } from '../components/conversation/page-conversation';
 
 /** The search field's words in the address (D43): the narrowed catalogue survives a reload and Back. */
 const FILTER = 'filter';
@@ -67,7 +68,8 @@ function ToolTile({ tool, from }: { tool: MenuEntry; from: string }) {
  * A tile leads to the tool's own page (D42) with this page as the way back, so Back returns to the tile. At the foot the
  * intranet's own page of tools, when the shared header names one (D88, D112 amended 2026-11-11). The tools are what the
  * rail reads (`toolsOf`): the views an administrator placed (D40) and Clew's own lists the person has; nothing else is
- * asked of the server.
+ * asked of the server. The corner's "Fråga AI" opens the assistant's pane beside the tiles (D141, D138), about the
+ * person's tools (`clew.tools`).
  */
 export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   // 1.4.10: with 480 px or less in height nothing is pinned; the whole page scrolls.
@@ -108,6 +110,13 @@ export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: 
     field.current?.focus();
   };
   const failed = read.isError && !read.data;
+  // What the pane beside the page is about (D141 rule 4): the person's tools, as the assistant reads them.
+  const subject = pageSubject({
+    key: 'tools',
+    title: 'Alla verktyg',
+    reads: [{ capability: 'clew.tools', own: true, label: 'Alla verktyg' }],
+    views: read.data?.views,
+  });
   const tiles = failed ? (
     <VStack gap={2}>
       <Text as="p" role="alert">
@@ -159,6 +168,7 @@ export function ToolsPage({ user, admin = false }: { user: SessionUser; admin?: 
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        ask={{ subject }}
         cards
         title="Alla verktyg"
         meta={

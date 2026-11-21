@@ -32,9 +32,11 @@ test.describe('Ny fråga is a page of its own', () => {
 
   test('Fråga AI leads to a clean page, Samtal marked among the pages, with the greeting and the box focused; Hem is another place', async ({
     page,
-    api: _,
+    api,
   }) => {
-    await open(page, '/todo');
+    // A page with nothing to ask about (Administration): "Fråga AI" starts a new question.
+    api.admin = true;
+    await open(page, '/admin');
     await page.getByRole('link', { name: 'Fråga AI', exact: true }).click();
     await expect(page).toHaveURL('/conversations/new');
     await expect(page).toHaveTitle('Ny fråga · Startsidan');
@@ -49,14 +51,15 @@ test.describe('Ny fråga is a page of its own', () => {
     await expectNoAxeViolations(page);
     // Back leads to where the person was.
     await page.goBack();
-    await expect(page).toHaveURL('/todo');
+    await expect(page).toHaveURL(/\/admin/);
   });
 
   test('the first question continues on the conversation’s own address, in its place, with the box still focused', async ({
     page,
     api,
   }) => {
-    await open(page, '/todo');
+    api.admin = true;
+    await open(page, '/admin');
     await page.getByRole('link', { name: 'Fråga AI', exact: true }).click();
     await composer(page).fill('Vem är på plats i dag?');
     await composer(page).press('Enter');
@@ -66,7 +69,7 @@ test.describe('Ny fråga is a page of its own', () => {
     expect(api.asked.at(-1)?.text).toBe('Vem är på plats i dag?');
     // The new conversation's address took Ny fråga's place: one step back is where the person was.
     await page.goBack();
-    await expect(page).toHaveURL('/todo');
+    await expect(page).toHaveURL(/\/admin/);
   });
 
   test('the installation’s mark stands over the greeting when a logo is saved, with no name of its own', async ({

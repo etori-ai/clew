@@ -33,7 +33,7 @@ test.describe('screens', () => {
     await page.getByRole('button', { name: 'Ny bokning' }).click();
     const dialog = page.getByRole('dialog', { name: 'Ny bokning' });
     await dialog.getByRole('textbox', { name: /Rubrik/ }).fill('Ledningsgrupp');
-    await dialog.getByRole('button', { name: 'Kontrollera tillgänglighet' }).click();
+    await dialog.getByRole('list', { name: 'Tillgänglighet' }).waitFor();
     await page.screenshot({ path: out('booking-1280') });
   });
   test('event dialog', async ({ page, api: _ }) => {

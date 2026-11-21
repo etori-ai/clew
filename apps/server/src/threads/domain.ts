@@ -5,13 +5,14 @@ import {
   stockholmDate,
   stockholmInstant,
   type ItemEvent,
+  type RecordDraft,
   type RhythmPoint,
   type Subject,
   type Thread,
   type ThreadAction,
   type ThreadItem,
 } from '@clew/contracts';
-import type { AuditEntry, SubjectErasure, TimerIntent, WorkflowStart } from './model';
+import type { AuditEntry, RecordDraftSent, SubjectErasure, TimerIntent, WorkflowStart } from './model';
 
 /** The audit subjects a work item's own history is written under: the item, and the person's two timers on it. */
 export const historySubjects = (threadId: string) => [
@@ -81,6 +82,15 @@ export function itemEvents(
         break;
       case 'thread.reopened':
         events.push({ at, by, kind: 'reopened' });
+        break;
+      case 'thread.handed_on':
+      case 'thread.handed_back':
+        events.push({
+          at,
+          by,
+          kind: row.action === 'thread.handed_on' ? 'handed-on' : 'handed-back',
+          ...(typeof d.to === 'string' && d.to ? { to: d.to.slice(0, 80) } : {}),
+        });
         break;
       case 'thread.decision_approved': {
         if (d.compensates) {
@@ -172,7 +182,7 @@ export function startedDecision(
  */
 export const takesStarted = (
   started: { person?: { param: string } },
-  about: { entity: string; param?: string | undefined } | undefined,
+  about: { entity?: string; param?: string | undefined; record?: string } | undefined,
 ) => (about?.entity === 'person' ? about.param : undefined) === started.person?.param;
 /** The entities among `asked` that a thread's index rows name, each once. */
 export function namedAmong(named: readonly Subject[], asked: readonly Subject[]): Subject[] {
@@ -199,6 +209,33 @@ export function withoutSubject(
   const cardSubjects = (thread.subjects ?? []).length - subjects.length;
   return rows || cardSubjects ? { items, subjects, erased: { rows, cardSubjects } } : undefined;
 }
+
+/** A JSON value written one way: its objects' keys in order, so two values alike compare alike, as `jsonb` compares. */
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.keys(value as Record<string, unknown>)
+            .sort()
+            .map(k => [k, canonical((value as Record<string, unknown>)[k])]),
+        )
+      : value;
+/**
+ * Whether a message's draft about a record (D137) is the one a sent work item came from and is still unmarked: the same
+ * action about the same record, its read and its input as a JSON value with the keys in any order. The values are not
+ * compared: the person may have changed them in the dialog before sending. What the memory store marks by; the Postgres
+ * store asks the same of `jsonb`.
+ */
+export const marksRecordDraft = (
+  draft: RecordDraft | undefined,
+  mark: Pick<RecordDraftSent, 'capability' | 'record'>,
+): boolean =>
+  !!draft &&
+  !draft.sent &&
+  draft.capability === mark.capability &&
+  draft.record.capability === mark.record.capability &&
+  JSON.stringify(canonical(draft.record.input)) === JSON.stringify(canonical(mark.record.input));
 
 /** The `durableReminder` workflow of a timer generation (D47, D86): the id every start and cancel of it uses. */
 export const reminderWorkflowId = (timer: Pick<TimerIntent, 'id' | 'generation'>) =>

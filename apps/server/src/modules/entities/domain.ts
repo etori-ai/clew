@@ -116,6 +116,37 @@ export function groupsOf(kind: EntityKind, reach: Reach): EntityList['groups'] {
     entities: unit.people.filter(askable).map(p => personRef(p, unit)),
   }));
 }
+/** A person on the reader's list as `people.reports` gives them: no key but the user name another read takes. */
+export interface ReportRow {
+  name: string;
+  userName: string;
+  title?: string;
+  /** The units the reader manages that list them, by label in the list's order. */
+  unit: string;
+}
+/**
+ * The people of `GET /api/entities/person` (`groupsOf`), each once, by name in Swedish order, with the units that list
+ * them and their title where `titles` has one, by id. Exactly the list's people: the rule of who is on it is
+ * `groupsOf`'s, never derived again here.
+ */
+export function reportRows(reach: Reach, titles: ReadonlyMap<string, string>): ReportRow[] {
+  const found = new Map<string, { name: string; userName: string; units: string[] }>();
+  for (const group of groupsOf('person', reach))
+    for (const person of group.entities) {
+      const seen = found.get(person.key);
+      if (seen) {
+        if (!seen.units.includes(group.label)) seen.units.push(group.label);
+      } else found.set(person.key, { name: person.name, userName: person.sourceKey, units: [group.label] });
+    }
+  return [...found]
+    .map(([id, p]) => ({
+      name: p.name,
+      userName: p.userName,
+      ...(titles.get(id) ? { title: titles.get(id)! } : {}),
+      unit: p.units.join(', '),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'sv') || a.userName.localeCompare(b.userName));
+}
 /** An entity of the list by both its keys: Clew's (`key`) and the source's (`sourceKey`). */
 export interface Listed {
   key: string;

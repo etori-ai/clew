@@ -1,7 +1,7 @@
 import { unresolvedExecution, type Thread } from '@clew/contracts';
 import type { AuditEntry, JobInput, ThreadStore, ThreadTx, TimerIntent, WorkflowStart } from '../model';
 import { admitAttention, type AttentionDay } from '../attention-domain';
-import { namedAmong, namedSubjects, reminderWorkflowId, withoutSubject } from '../domain';
+import { marksRecordDraft, namedAmong, namedSubjects, reminderWorkflowId, withoutSubject } from '../domain';
 
 /**
  * The store in memory: the unit tests' adapter (D25). Same contract as Postgres, held to it by `tests/store-contract.ts`.
@@ -134,7 +134,18 @@ export function memoryThreadStore(): MemoryThreadStore {
     async updateThread(id, patch) {
       const row = threads.get(id);
       if (!row) return;
-      row.thread = { ...row.thread, ...copy(patch) };
+      // An offer or a hand-over taken off the card is absent on the thread, as Postgres reads a null column back (D139).
+      const { handOn, handedOn, ...rest } = copy(patch);
+      const next = { ...row.thread, ...rest };
+      if (handOn !== undefined) {
+        if (handOn) next.handOn = handOn;
+        else delete next.handOn;
+      }
+      if (handedOn !== undefined) {
+        if (handedOn) next.handedOn = handedOn;
+        else delete next.handedOn;
+      }
+      row.thread = next;
     },
     async addMessage(threadId, message) {
       const row = threads.get(threadId);
@@ -147,6 +158,15 @@ export function memoryThreadStore(): MemoryThreadStore {
         ...(message.meta ? { meta: message.meta } : {}),
       });
       row.thread.updatedAt = message.at;
+    },
+    async markRecordDraftSent(mark) {
+      const row = threads.get(mark.conversationId);
+      if (!row || row.personId !== mark.personId || row.thread.kind !== 'question') return false;
+      const message = row.thread.messages.find(m => m.id === mark.messageId);
+      const drafted = message?.meta?.recordDraft;
+      if (!message?.meta || !drafted || !marksRecordDraft(drafted, mark)) return false;
+      message.meta = { ...message.meta, recordDraft: { ...drafted, sent: { threadId: mark.threadId } } };
+      return true;
     },
     async writeAudit(entry) {
       audit.push(copy(entry));
@@ -166,6 +186,17 @@ export function memoryThreadStore(): MemoryThreadStore {
         erased.cards++;
         erased.rows += counts.rows;
         erased.cardSubjects += counts.cardSubjects;
+      }
+      return erased;
+    },
+    async eraseConversationsBeside(personId) {
+      const erased = { conversations: 0, messages: 0 };
+      for (const [id, { thread }] of threads) {
+        const open = thread.askedBeside?.thing;
+        if (thread.kind !== 'question' || open?.kind !== 'person' || open.id !== personId) continue;
+        threads.delete(id);
+        erased.conversations++;
+        erased.messages += thread.messages.length;
       }
       return erased;
     },

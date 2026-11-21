@@ -1,6 +1,6 @@
 # D126 · One page per thing, and one Astryx template per page type
 
-**Status:** provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation) · **Date:** 2026-11-14 · **Area:** ui
+**Status:** provisional (product owner, 2026-11-14; accepted when a manager outside the repository has cleared a day's queue and handed a question to another system's assistant in it, and a manual screen-reader pass has been made over the queue, a thing's page and the conversation; item 4 amended by [D140](D140-the-assistant-is-asked-in-place-where-its-answer-is-drawn-on-the-page.md) on 2026-11-18: a page whose answer is drawn on the page itself may hold the assistant's box in its pane, Kalender first; and by [D141](D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) the same day: the assistant is asked beside every page, which replaces the item's last sentence when built) · **Date:** 2026-11-14 · **Area:** ui
 
 **Current scope.** This decision governs destinations, panes, actions and focus.
 [D130](D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md) replaces its rail, sheet layout
@@ -80,7 +80,9 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
     why and since when, and it carries at most one move: a filled button when the move is the person's, a secondary one
     when it is an offer (Påminn, Ångra); the move is the one the thing has always offered for that state (Kontrollera
     status, the decision again, the review, Ångra, Påminn mig, Ta upp nu, Återöppna), and the others stand under ⋯. A
-    plain to-do has no notice: its title and its buttons say what is expected. Once something has happened or is in
+    plain to-do has no notice: its title and its buttons say what is expected (amended 2026-11-20 by
+    [D139](D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md):
+    a to-do with nothing to decide has a notice with no move, which stands over its buttons). Once something has happened or is in
     the way, the notice takes the place of the buttons and of the grey sentence among them, and "Fråga Clew" and ⋯
     stand under it. `apps/web/src/status-of.ts` is the one mapping from what the item holds (its execution, receipt,
     undo window, what it waits on, a silent system) to a state and its words, keeping every sentence D45, D47, D116 and

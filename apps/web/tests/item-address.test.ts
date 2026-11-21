@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { itemPageHref } from '../src/work-items';
+import { itemPageHref, openItemId } from '../src/work-items';
 
 describe('a work item as a page (D112 item 4)', () => {
   test('the page is the item’s own address, with the page it was opened from as the way back', () => {
@@ -13,5 +13,15 @@ describe('a work item as a page (D112 item 4)', () => {
     expect(itemPageHref('a', '/people/anna?from=%2Fstaff&card=a')).toBe('/items/a?from=%2Fpeople%2Fanna%3Fcard%3Da');
     expect(itemPageHref('a', 'https://example.test/')).toBe('/items/a');
     expect(itemPageHref('a', '//example.test/')).toBe('/items/a');
+  });
+});
+
+describe('the work item that stands open at an address', () => {
+  test('its own page or Att göra with it picked; an answer beside it draws no row that leads to it', () => {
+    expect(openItemId('/items/fakturor', '?from=%2F&ask=1')).toBe('fakturor');
+    expect(openItemId('/items/a%20b', '')).toBe('a b');
+    expect(openItemId('/todo', '?item=fakturor')).toBe('fakturor');
+    expect(openItemId('/todo', '')).toBeNull();
+    expect(openItemId('/people/anna', '?item=fakturor')).toBeNull();
   });
 });

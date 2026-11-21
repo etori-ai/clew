@@ -31,12 +31,10 @@ import { usePageTitle } from '../page-title';
 import { NEEDS_YOU, insideClew, originOf, overlayRedirect, sourceTab, toolOf, unitPageHref } from '../person-address';
 import { TALK_PARAM } from '../talk-address';
 import { DIALOGUE_PARAM } from '../dialogue-address';
-import { entitySubject } from '../conversation-about';
 import { declaredPage, viewPageHref } from '../view-address';
 import { toolHref, useNav, type NavCurrent } from '../components/shell/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
 import { ContentSkeleton } from '../components/shell/loading';
-import { AskClew } from '../components/conversation/thing-panel';
 import { DialogueTab } from '../components/people/dialogue-overlay';
 import {
   EntityPage,
@@ -61,6 +59,7 @@ import {
 } from '../components/people/entity-sections';
 import { KeyFigureTiles } from '../components/people/unit-figures';
 import { PageFrame } from '../components/shell/page-frame';
+import { entityPageSubject } from '../components/conversation/page-conversation';
 
 /**
  * Whether the reader manages the unit and how many people it has: the people the reader may ask about come in one group
@@ -352,7 +351,9 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   const staff = useStaffCount(user, id);
   // The units the reader follows up, for the trail's menu (D117); a manager's only, since an employee has one.
   const units = useQuery({ ...entityListQuery('unit'), enabled: user.role === 'manager' });
-  const menu = useQuery(areasQuery).data?.menu;
+  const areas = useQuery(areasQuery).data;
+  const menu = areas?.menu;
+  const views = areas?.views;
   const origin = originOf(from, menu);
   const tool = toolOf(from);
 
@@ -418,7 +419,8 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   let body: ReactNode;
   if (missing || read.isError || !detail)
     body = (
-      <PageFrame>
+      // Until the unit is read, and when it is missing, the page has no subject yet and no button.
+      <PageFrame ask={{ subject: null }}>
         {missing ? (
           <EmptyState
             headingLevel={1}
@@ -448,11 +450,20 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     );
   else {
     const { name } = detail.entity;
-    // "Fråga assistenten" (D126 rule 5): a new conversation about the unit, the same subject from every tab; the tab it was
-    // pressed on is only what the pane beside the transcript shows first. A source's read about a unit never reaches
-    // the model (D97 item 7): the question goes without a chip.
+    // What the assistant beside the page is about (D136 items 1, 5 and 7): the unit, the same subject from every tab,
+    // told to the server by Clew's id with every question; the tab is only what the pane beside the conversation it
+    // opens as shows first. A source's read about a unit is never the assistant's (D97 item 7): no chip, and the pane
+    // names a section's system it cannot read.
     const shownFirst = drawn.some(a => a.source.capability === tab) || tab === NEEDS_YOU ? tab : null;
-    const ask = <AskClew subject={entitySubject('unit', id, shownFirst)} />;
+    const subject = entityPageSubject({
+      kind: 'unit',
+      id: detail.entity.key,
+      name,
+      relation: detail.relation,
+      sections: detail.sections,
+      views,
+      tab: shownFirst,
+    });
     const answer = drawn.find(a => a.source.capability === tab);
     let sections: PageSectionEntry[];
     if (tab === NEEDS_YOU)
@@ -524,12 +535,13 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     }
     body = (
       <EntityPage
+        ask={{ subject }}
         // The trail leads back to Läget's register itself, so a unit opened from it needs no way back of its own.
         back={from?.split('?')[0] === '/units' ? null : origin}
         crumbs={unitTrail(detail, units.data)}
         title={name}
         subtitle="Enhet"
-        actions={<EntityActions detail={detail} mobile={mobile} ask={ask} />}
+        actions={<EntityActions subject={detail.entity} actions={detail.actions} mobile={mobile} />}
         tabs={
           <ThingTabs
             label={`Om ${name}`}

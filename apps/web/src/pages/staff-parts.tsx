@@ -31,6 +31,7 @@ import { personTitle } from '../components/people/entity-sections';
 import { useNav } from '../components/shell/nav';
 import { ThingTabs } from '../components/people/entity-page';
 import { PageFrame } from '../components/shell/page-frame';
+import type { PageSubject } from '../components/conversation/page-conversation';
 import { Shell, shortQuery } from '../components/shell/shell';
 import type { EntityActionStart } from '../entity-actions';
 import { pageOnly } from '../panel-address';
@@ -620,12 +621,15 @@ let pressedTab: string | null = null;
  * for someone the server would answer: the lenses and the competence matrix for a manager, the search for a registrar,
  * Kompetens and Introduktion och avslut while their module is visible to the person (D23). The rail marks Personal on
  * every tab. The content scrolls under the header; on a short screen nothing is pinned and the page scrolls as one
- * (1.4.10). Every tab sits in the one page frame (`PageFrame`, D126).
+ * (1.4.10). Every tab sits in the one page frame (`PageFrame`, D126), which provides the assistant's pane beside the
+ * tab, opened by the corner's "Fråga AI" (D141, D138): each tab says what it shows (`subject`), and the frame draws the
+ * pane.
  */
 export function PersonalFrame({
   user,
   admin,
   tab,
+  subject,
   end,
   badges,
   label,
@@ -635,6 +639,11 @@ export function PersonalFrame({
   admin: boolean;
   /** The tab shown: `ALL_TAB`, a lens's capability, `COMPETENCE_TAB` or `BOARDING_TAB`. */
   tab: string;
+  /**
+   * What the tab shows, as the assistant beside it is about it (D141 rules 1 and 4): required, so no tab leaves the
+   * button out; null until the tab knows it.
+   */
+  subject: PageSubject | null;
   /** The page's own controls at the end of the title's line. */
   end?: ReactNode;
   /** What a lens's tab carries beside its name: how many need the reader (`lensNeed`), where the page knows it. */
@@ -663,6 +672,7 @@ export function PersonalFrame({
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        ask={{ subject }}
         cards
         title="Personal"
         titleId={PERSONAL_TITLE_ID}

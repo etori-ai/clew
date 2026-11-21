@@ -24,7 +24,7 @@ import {
   useTableStickyColumns,
   VStack,
 } from '@clew/ui';
-import { entityDetailQuery, entityListQuery, entitySectionQuery } from '../queries';
+import { areasQuery, entityDetailQuery, entityListQuery, entitySectionQuery } from '../queries';
 import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
 import { useNav } from '../components/shell/nav';
@@ -35,6 +35,7 @@ import { errorMessage } from '../query-policy';
 import { fieldText } from '../components/views/view';
 import { DOT } from '../dot';
 import { PageFrame } from '../components/shell/page-frame';
+import { pageSubject, sourceReads } from '../components/conversation/page-conversation';
 
 type Unit = EntityList['groups'][number]['entities'][number];
 type Answer = { data?: EntitySection; isPending: boolean; isError: boolean };
@@ -100,6 +101,9 @@ function UnitTable({ rows, columns }: { rows: TableRow[]; columns: UnitColumn[] 
  * for the group, each cell the source's row in short, its heading saying what the figure is and where it comes from; on
  * a phone a card per unit with the same figures one under the other. A unit's name opens its page with this one as the
  * way back. Each cell is its own read, so a source that does not answer says so in its own cells while the rest stand.
+ * The corner's "Fråga AI" opens the assistant's pane beside the units (D141, D138), about what the columns show: each
+ * column's source through the overview the assistant may make of it, and the pane says which it may not. While it
+ * stands there the table scrolls sideways inside itself, the names pinned, and the page never does (1.4.10).
  */
 export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -206,18 +210,25 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   // Every group's table has the same columns at the same widths, so a figure stands under the same figure in "Mina
   // enheter" and "Enheter under dig" whatever each group has: a column is there when any unit has something in it, and
   // a unit without is "–".
+  const sourceColumns = sources
+    .map((s, si) => ({ s, si }))
+    .filter(({ si }) => !settled || units.some(u => !!rowIn(answerOf(u.key, si)) || silent(answerOf(u.key, si))));
   const columns: UnitColumn[] = [
     { key: 'unit', header: 'Enhet', width: UNIT_WIDTH, renderCell: r => unitLink(r.unit) },
-    ...sources
-      .map((s, si) => ({ s, si }))
-      .filter(({ si }) => !settled || units.some(u => !!rowIn(answerOf(u.key, si)) || silent(answerOf(u.key, si))))
-      .map(({ s, si }) => ({
-        key: `source:${s.capability}`,
-        header: <SourceHeader source={s} />,
-        width: SOURCE_WIDTH,
-        renderCell: (r: TableRow) => <Cell answer={answerOf(r.unit.key, si)} source={s} />,
-      })),
+    ...sourceColumns.map(({ s, si }) => ({
+      key: `source:${s.capability}`,
+      header: <SourceHeader source={s} />,
+      width: SOURCE_WIDTH,
+      renderCell: (r: TableRow) => <Cell answer={answerOf(r.unit.key, si)} source={s} />,
+    })),
   ];
+
+  // What the pane beside the page is about (D141 rule 4): what the columns show, once the sources are known.
+  const views = useQuery(areasQuery).data?.views;
+  const subject =
+    list.isPending || (first && detail.isPending)
+      ? null
+      : pageSubject({ key: 'units', title: 'Läget', reads: sourceColumns.flatMap(({ s }) => sourceReads(s)), views });
 
   const body = list.isError ? (
     <Text as="p" role="alert">
@@ -276,6 +287,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       <PageFrame
+        ask={{ subject }}
         cards
         title="Läget"
         meta={units.length > 0 ? (units.length === 1 ? '1 enhet' : `${units.length} enheter`) : undefined}

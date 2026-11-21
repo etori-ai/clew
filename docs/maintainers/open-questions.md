@@ -12,6 +12,7 @@ file as they stood there and have not been checked against the code since.
 
 | Question | Last stated | Where it comes from |
 |---|---|---|
+| Is a file a person brings to a conversation Clew's to read, or the AI platform's? Nothing for files exists today, and the vision gives document ingestion to the AI platform. If Clew's: where it is kept, for how long, and who may read it are data-handling decisions for a public-sector installation. The review's default: not now; at full size only, as a chip on the question, kept with the conversation. | 2026-11-18 | [Where the assistant is asked](../reviews/2026-11-18-where-the-assistant-is-asked.md), [D141](../decisions/D141-the-assistant-is-asked-beside-every-page-through-one-button-and-one-pane-of-the-page-frame.md) |
 | Is the KPI surface a commitment that must be visible at a glance, or shown by exception and on demand? "Läget" assumes at a glance. | 2026-11-03 | Design review, [handover](../history/handover.md) section 4 |
 | Is Göra/Hitta/Veta/Förstå a requirement on the interface, or internal framing? Clew hides it. | 2026-11-03 | Same |
 | Is a read receipt a compliance record? (Whether it must stay visible was settled by [D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), amended: Fokusnyhet stands on Hem until the receipt is given and has no dismiss.) | 2026-11-03, narrowed 2026-11-11 | Same |

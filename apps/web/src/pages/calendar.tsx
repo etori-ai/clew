@@ -8,11 +8,14 @@ import {
   useQueryClient,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import type { CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
+import type { CalendarEvent, Prepared, Proposal, SessionUser, Thread } from '@clew/contracts';
 import {
+  AreaMark,
   Badge,
   Button,
+  CHOSEN_ID,
   DatePicker,
+  Divider,
   Drawer,
   DropdownMenu,
   EmptyState,
@@ -23,8 +26,10 @@ import {
   IconButton,
   Layout,
   LayoutContent,
+  LayoutFooter,
   LayoutHeader,
   LayoutPanel,
+  ResizeHandle,
   Link,
   MetadataList,
   MetadataListItem,
@@ -34,7 +39,11 @@ import {
   Text,
   VStack,
   agendaItems,
+  percent,
+  pixel,
+  useAnnounce,
   useMediaQuery,
+  useResizable,
   type AgendaItem,
   type CalendarView,
 } from '@clew/ui';
@@ -59,16 +68,22 @@ import { useThreadAction } from '../mutations';
 import { errorMessage, noCalendar } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
-import { ENTRY_PARAM, viewSearch, withEntry } from '../panel-address';
+import { ASK_PARAM, ENTRY_PARAM, asksBeside, viewSearch, withEntry } from '../panel-address';
 import { itemPageHref } from '../work-items';
 import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { besideQuery } from '../media';
 import { useNav } from '../components/shell/nav';
 import { EventDialog, type Mode } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
+import { BookingButtons, BookingFields, BookingHint, useBooking } from '../components/calendar/booking';
+import { MoveButtons, MoveFields, useMove } from '../components/calendar/move';
 import { PageFrame } from '../components/shell/page-frame';
 import { AsyncContent, ContentSkeleton } from '../components/shell/loading';
+import type { Mark } from '../marks';
 import { AskClew } from '../components/conversation/thing-panel';
-import type { ThingSubject } from '../components/conversation/conversation-context';
+import { useModelConfigured, type ThingSubject } from '../components/conversation/conversation-context';
+import { PageTalk, usePageConversation, type PageSubject } from '../components/conversation/page-conversation';
+import { PreparedRow } from '../components/conversation/conversation';
 import { SilentNotice, useSaySilent, useSilentSources } from '../components/shell/silent-sources';
 
 /** The three views as the URL names them, so a view is addressable and the back button works. */
@@ -121,6 +136,13 @@ const combineWeeks = (results: UseQueryResult<Week>[]) => {
   };
 };
 const selectProposalThread = (data: { threads: Thread[] }) => pickProposalThread(data.threads);
+/** The same page with these of its own things in the address let go of (an entry, the assistant's pane), the rest kept. */
+const withoutOwn = (pathname: string, search: string, names: string[]) => {
+  const q = new URLSearchParams(search);
+  names.forEach(n => q.delete(n));
+  const rest = q.toString();
+  return rest ? `${pathname}?${rest}` : pathname;
+};
 const capital = (s: string) => (s ? s[0]!.toLocaleUpperCase('sv-SE') + s.slice(1) : s);
 /** A chip's ref as the server takes it (`ChipSchema`): an id outside it goes without a chip rather than failing the question. */
 const CHIP_REF = /^[a-z]+:[A-Za-z0-9:_.@-]+$/;
@@ -133,11 +155,37 @@ const inChipWindow = (start: string) => {
   const day = displayDate(start);
   return day >= from && day < addDays(from, 14);
 };
-/** When an entry is, as the panel says it: "Torsdag 19 november 13:15–14:00", or the day and "hela dagen". */
+/** When an entry is, as the pane says it under the name: "Torsdag 19 november · 13:15–14:00", or the day and "hela dagen". */
 const whenOf = (item: AgendaItem) =>
   item.allDay
     ? `${capital(dayLabel(displayDate(item.start)))}, hela dagen`
-    : `${capital(dayLabel(displayDate(item.start)))} ${timeRange(item.start, item.end)}`;
+    : `${capital(dayLabel(displayDate(item.start)))}\u00a0· ${timeRange(item.start, item.end)}`;
+/** A meeting the person may move or cancel: their own, one occurrence, with a clock (the rules of `ownEvent` on the server). */
+const movable = (event: CalendarEvent) => event.mine && event.canCancel && !event.recurring && !event.allDay;
+/**
+ * What the assistant is asked about an entry with: its chip, which is also what stands open (D126 rule 5). A meeting
+ * outside the window the server resolves its chip in has nothing to ask with, and so neither a box nor a button.
+ */
+const entrySubject = (item: AgendaItem): ThingSubject | null => {
+  if (item.proposal) {
+    const p = item.proposal;
+    const ref = 'proposal:' + p.id;
+    // The conversation about a proposal has its work item beside it, where several are chosen at once.
+    return CHIP_REF.test(ref)
+      ? {
+          key: ref,
+          label: 'förslaget',
+          chips: [{ ref, kind: 'proposal', label: `${item.title} · ${p.participant.name}` }],
+          search: '?card=' + encodeURIComponent(p.threadId),
+        }
+      : null;
+  }
+  if (!item.event) return null;
+  const ref = 'event:' + item.event.id;
+  return CHIP_REF.test(ref) && inChipWindow(item.start)
+    ? { key: ref, label: 'mötet', chips: [{ ref, kind: 'event', label: item.title }], search: '' }
+    : null;
+};
 const proposalStatus: Partial<Record<Proposal['status'], string>> = {
   proposed: 'Förslag, inte bokat',
   confirmed: 'Inbjudan skickad',
@@ -147,31 +195,33 @@ const proposalStatus: Partial<Record<Proposal['status'], string>> = {
 };
 
 /**
- * A meeting's buttons (D112 item 9, board Calendar, the `invited` state): what the calendar lets the person do, move or
- * cancel their own booking (the dialog that was the entry's, opened at that step, so the keyboard path is the same as
- * before), and "Fråga assistenten". A meeting someone else organises has no buttons of the organiser's, and the calendar
- * offers no reply of the person's own, so it has none.
+ * A meeting's buttons (D112 item 9, board Calendar, the `invited` state): what the calendar lets the person do, move
+ * their own booking (in this pane, the block on the grid being the one that is placed) or cancel it (a confirmation,
+ * so a dialog). The assistant is asked in the box at the pane's foot (board KalFraga); on a phone, which has no pane,
+ * "Fråga assistenten" leads to a conversation (`askButton`). A meeting someone else organises has no buttons of the
+ * organiser's, and the calendar offers no reply of the person's own, so it has none.
  */
 function EventActions({
   item,
-  subject,
+  askButton,
   onAct,
 }: {
   item: AgendaItem;
-  subject: ThingSubject | null;
+  /** What a phone's "Fråga assistenten" asks about; null where the box stands in the pane instead. */
+  askButton: ThingSubject | null;
   onAct: (mode: Exclude<Mode, 'view'>) => void;
 }) {
-  const event = item.event!;
-  const own = event.mine && event.canCancel && !event.recurring && !event.allDay;
+  const own = movable(item.event!);
+  if (!own && !askButton) return null;
   return (
     <HStack gap={2} wrap="wrap" vAlign="center">
       {own && <Button size="sm" variant="secondary" label="Flytta …" onClick={() => onAct('move')} />}
-      {own && <Button size="sm" variant="ghost" label="Ställ in …" onClick={() => onAct('cancel')} />}
-      {subject && <AskClew subject={subject} size="sm" />}
+      {own && <Button size="sm" variant="secondary" label="Ställ in …" onClick={() => onAct('cancel')} />}
+      {askButton && <AskClew subject={askButton} size="sm" />}
     </HStack>
   );
 }
-/** A meeting's facts: that the person is invited to one they do not organise, when, where and with whom. */
+/** A meeting's facts: that the person is invited to one they do not organise, where and with whom. Its time stands under its name. */
 function EventFacts({ item }: { item: AgendaItem }) {
   const event = item.event!;
   return (
@@ -182,9 +232,6 @@ function EventFacts({ item }: { item: AgendaItem }) {
         </HStack>
       )}
       <MetadataList columns="single">
-        <MetadataListItem label="När">
-          <Text weight="semibold">{whenOf(item)}</Text>
-        </MetadataListItem>
         {event.room && (
           <MetadataListItem label="Plats">
             <Text>{event.room}</Text>
@@ -195,7 +242,11 @@ function EventFacts({ item }: { item: AgendaItem }) {
         </MetadataListItem>
         {event.participants.length > 0 && (
           <MetadataListItem label="Deltagare">
-            <Text>{event.participants.join(', ')}</Text>
+            <VStack gap={1}>
+              {event.participants.map(name => (
+                <Text key={name}>{name}</Text>
+              ))}
+            </VStack>
           </MetadataListItem>
         )}
       </MetadataList>
@@ -206,18 +257,19 @@ function EventFacts({ item }: { item: AgendaItem }) {
 /**
  * A proposal's buttons (D112 item 9, board Calendar, the `thing` state): the proposal's existing decisions, through the
  * same use cases as before (`modules/calendar/usecases/decisions.ts`): send the invitation for this time, move it (the
- * dialog, never drag alone), draw the proposals again in the next week, and undo while the calendar allows it; then
- * "Fråga assistenten". A decision that fails says so above the buttons.
+ * dialog, never drag alone), draw the proposals again in the next week, and undo while the calendar allows it. The
+ * assistant is asked in the box at the pane's foot; on a phone "Fråga assistenten" ends the row (`askButton`). A
+ * decision that fails says so above the buttons.
  */
 function ProposalActions({
   item,
   thread,
-  subject,
+  askButton,
   onMove,
 }: {
   item: AgendaItem;
   thread: Thread | null;
-  subject: ThingSubject | null;
+  askButton: ThingSubject | null;
   onMove: () => void;
 }) {
   const p = item.proposal!;
@@ -259,12 +311,12 @@ function ProposalActions({
         {undoOpen && (
           <Button size="sm" variant="destructive" label="Ångra" clickAction={() => run(() => api.undo(p.threadId))} />
         )}
-        {subject && <AskClew subject={subject} size="sm" />}
+        {askButton && <AskClew subject={askButton} size="sm" />}
       </HStack>
     </VStack>
   );
 }
-/** A proposal's facts: that it is a proposal and not booked, when the round must be done, when it is and with whom. */
+/** A proposal's facts: that it is a proposal and not booked, when the round must be done and with whom. Its time stands under its name. */
 function ProposalFacts({ item, thread }: { item: AgendaItem; thread: Thread | null }) {
   const p = item.proposal!;
   const deadline = thread?.deadline?.slice(0, 10);
@@ -275,9 +327,6 @@ function ProposalFacts({ item, thread }: { item: AgendaItem; thread: Thread | nu
         {deadline && <Badge variant="warning" label={`Senast ${shortDayLabel(deadline)}`} />}
       </HStack>
       <MetadataList columns="single">
-        <MetadataListItem label="När">
-          <Text weight="semibold">{whenOf(item)}</Text>
-        </MetadataListItem>
         <MetadataListItem label="Med">
           <Text>{p.participant.name}</Text>
         </MetadataListItem>
@@ -287,70 +336,109 @@ function ProposalFacts({ item, thread }: { item: AgendaItem; thread: Thread | nu
   );
 }
 
-/** An entry as the calendar's pane draws it: its name, its line, its page where it has one, its buttons and its facts. */
-interface Opened {
+/**
+ * What the calendar's pane holds: an entry (its time and buttons under its name, its facts under them), or a form of the
+ * page's own, "Ny bokning" or "Flytta …" (its fields, and its buttons at the pane's foot).
+ */
+interface Shown {
+  /** What the pane's focus tells apart: an entry's id, the booking, a move of an entry. */
   id: string;
+  /** The line over the name: the system and what the thing is, in words (the mark's colour never stands alone, 1.4.1). */
+  source: string;
+  mark: Pick<Mark, 'ordinal' | 'icon'> | undefined;
   title: string;
-  subtitle: string;
   /** The entry's own page (a proposal's work item): its name in the pane's header is the link there. */
   page?: string;
-  actions: ReactNode;
-  facts: ReactNode;
+  /** Under the name, where it never scrolls away: an entry's time and buttons, a form's one line. */
+  under?: ReactNode;
+  body: ReactNode;
+  /** A form's buttons, which stay at the pane's foot. */
+  foot?: ReactNode;
+  /** A form gives the focus to its first field when it opens; an entry to its name. */
+  form: boolean;
+  /**
+   * The pane holds a conversation with the assistant (`PageTalk`): its body does not scroll as one, the transcript
+   * scrolls in itself between the facts and the box. Before anything is asked there is only the box under the facts,
+   * and the body scrolls as one, as a pane without a box does.
+   */
+  talk?: boolean;
 }
 /**
- * The pane's content, beside the grid and in the drawer alike: the name (a link to the entry's page where it has one,
- * the name being the way in) with its line and ✕, the buttons directly under the name where they never scroll away
- * (D126 rule 2's pane), and the facts under them. The heading takes the focus when the pane opens, from a script only.
+ * The pane's content, beside the grid and in the drawer alike (board "En post i rutan bredvid", 2026-11-18). Its header
+ * is the one the pane beside a conversation has: the area's mark and the source line, ✕, then the name (a link to the
+ * entry's page where it has one, the name being the way in). Under the name, where nothing scrolls away, an entry's time
+ * and buttons (D126 rule 2's pane); the facts or the fields under the rule with their own inset, and under them the
+ * conversation with the assistant and its box where the pane has one; a form's buttons at the foot. An entry's name
+ * takes the focus when the pane opens, from a script only; a form's first field does.
  */
-function EntryPane({
-  opened,
+function PaneFrame({
+  shown,
   headingRef,
   onClose,
 }: {
-  opened: Opened;
+  shown: Shown;
   headingRef: Ref<HTMLHeadingElement>;
   onClose: () => void;
 }) {
   return (
     <Layout
       height="fill"
-      padding={6}
       header={
-        <LayoutHeader hasDivider>
+        <LayoutHeader padding={6} hasDivider>
           <VStack gap={4}>
-            <HStack justify="between" vAlign="start" gap={2}>
-              <StackItem size="fill">
-                <VStack gap={0}>
-                  <Heading ref={headingRef} tabIndex={-1} data-autofocus="" level={2}>
-                    {opened.page ? (
-                      <Link href={opened.page} hasUnderline>
-                        {opened.title}
-                      </Link>
-                    ) : (
-                      opened.title
-                    )}
-                  </Heading>
+            <VStack gap={2}>
+              <HStack hAlign="between" vAlign="center" gap={3}>
+                <HStack gap={2} vAlign="center">
+                  <AreaMark ordinal={shown.mark?.ordinal ?? null} icon={shown.mark?.icon ?? 'calendar'} />
                   <Text type="supporting" color="secondary">
-                    {opened.subtitle}
+                    {shown.source}
                   </Text>
-                </VStack>
-              </StackItem>
-              <IconButton size="sm" variant="ghost" label="Stäng" icon={<Icon icon="close" />} onClick={onClose} />
-            </HStack>
-            {opened.actions}
+                </HStack>
+                <IconButton size="sm" variant="ghost" label="Stäng" icon={<Icon icon="close" />} onClick={onClose} />
+              </HStack>
+              <Heading level={2} {...(shown.form ? {} : { ref: headingRef, tabIndex: -1, 'data-autofocus': '' })}>
+                {shown.page ? (
+                  <Link href={shown.page} hasUnderline>
+                    {shown.title}
+                  </Link>
+                ) : (
+                  shown.title
+                )}
+              </Heading>
+            </VStack>
+            {shown.under}
           </VStack>
         </LayoutHeader>
       }
-      content={<LayoutContent>{opened.facts}</LayoutContent>}
+      content={
+        <LayoutContent padding={6} isScrollable={!shown.talk}>
+          {shown.body}
+        </LayoutContent>
+      }
+      footer={
+        shown.foot ? (
+          <LayoutFooter padding={6} hasDivider>
+            {shown.foot}
+          </LayoutFooter>
+        ) : undefined
+      }
     />
   );
 }
 /**
- * The window width from which the entry's pane stands beside the grid: the rail, the week's least column and the pane,
- * 260 + 640 + 440 px, the line the shared panel kept before D126. Narrower, short (1.4.10) or on a phone it is a drawer.
+ * The pane's width. It stands beside the grid from `besideQuery`, the rail, the week's least column and the pane,
+ * 260 + 640 + 440 px, the line the shared panel kept before D126 and every page's pane keeps now (D141 rule 11).
+ * Narrower, short (1.4.10) or on a phone it is a drawer.
  */
 const PANE = 440;
-const besideQuery = `(min-width: ${260 + 640 + PANE}px)`;
+/**
+ * The limits the pane is dragged between, the ones every pane beside a page has (the assistant's, the one beside a
+ * conversation): never narrower than a form's fields need, never more than this share of the sheet, so the grid keeps
+ * the larger part.
+ */
+const PANE_MIN = 360;
+const PANE_MAX = 720;
+const PANE_SHARE = 40;
 /** What a key pressed in the pane belongs to rather than the pane: a menu, a list box or a dialog over it. */
 const OWNS_ESCAPE = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
@@ -358,15 +446,31 @@ const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [ro
 const TITLE_ID = 'calendar-title';
 
 /**
- * The calendar as a page (D27, D32, D112 item 9, board Calendar): one day, one week or one month on FullCalendar under
- * Clew's theme, inside the one shell; it keeps its own page type (D126, D27), and `EventCalendar` is not redesigned. An
- * event or a proposal chosen in the grid opens in the page's own pane in the end slot (`entry` in the address, so Back,
- * a reload and Esc keep working): its buttons under its name and its facts under them, a proposal's name the link to
- * its work item. Below the width where the pane fits beside the week, on a short screen and on a phone, the same pane is
- * a drawer over the grid. Nothing else opens beside the calendar (D126 rule 3), and the pane has no box: "Fråga assistenten"
- * and "Fråga om veckan" lead to a conversation with the entry or the range beside it (rule 5). The proposals are reached
- * from "Förslag N" in the page's header, a menu that leads to each one. A booking of one's own and a moved or cancelled
- * entry go through dialogs, so every action has a keyboard path; drag is a convenience for proposals alone.
+ * The calendar as a page (D27, D32, D112 item 9, board Calendar; the pass of 2026-11-18, canvas "Clew · Kalender, a
+ * pass"): one day, one week or one month on FullCalendar under Clew's theme, inside the one shell; it keeps its own page
+ * type (D126, D27). The grid is the sheet's own content: it has no frame of its own and fills the sheet. The week is
+ * seven days and the day twenty-four hours (the product owner, 2026-11-18: people work late and at weekends): the grid
+ * opens at the start of the office day and scrolls inside itself to the hours before and after it, the days and hours
+ * outside the working week drawn as the ground. An event or a proposal chosen in the grid opens in the page's own pane in the end slot (`entry`
+ * in the address, so Back, a reload and Esc keep working): its time and buttons under its name and its facts under
+ * them, a proposal's name the link to its work item. The same pane holds the page's two forms: "Ny bokning" (the
+ * button, a click on an hour or a span dragged) and "Flytta …". While one is open the time is a block on the grid that
+ * is dragged and stretched, and the form's fields say the same time, so every action has a keyboard path and drag is
+ * never the only way (D27); the week stays in view and in use, and nothing is written before the form's last button. A
+ * booking being made has no address: a reload never greets the person with a form they did not ask for. Below the width
+ * where the pane fits beside the week and on a short screen the same pane is a drawer over the grid; on a phone the two
+ * forms are the dialogs they were. Nothing else opens beside the calendar (D126 rule 3). The assistant is asked in place
+ * here, since its answer is drawn on the page itself (the product owner, 2026-11-18, boards KalFraga, KalFragaFlytt and
+ * KalFragaVecka): under an entry's facts stands the person's conversation about it, found again when the entry is
+ * opened again, over a box at the pane's foot. The corner's "Fråga AI" (D141, D138) opens the assistant's pane about
+ * the range on screen, the week, the day or the month, at the end of the shell's column: it lets go of an entry or a
+ * move standing in the page's own pane, a booking being made waits under it, and an entry or a form opened takes the
+ * place back.
+ * An answer that prepared a move of the person's own meeting fills in "Flytta …", its block on the grid where it would
+ * end up; one that prepared a cancellation asks "Ställ in mötet?". Nothing is written before the person's own button,
+ * and an earlier answer makes nothing ready by itself. On a phone the question about an entry is still asked in a
+ * conversation with the entry beside it (D126 rule 5). The proposals are reached from "Förslag N" in the page's header, a
+ * menu that leads to each one. "Ställ in …" asks in a dialog: a confirmation is what a dialog is for.
  */
 export function CalendarPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -374,7 +478,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const short = useMediaQuery(shortQuery);
   const beside = useMediaQuery(besideQuery) && !short;
   const [params, setParams] = useSearchParams();
-  const { pathname, search } = useLocation();
+  const { pathname, search, state: routed } = useLocation();
   const navigate = useNavigate();
   const requested = params.get('date') ?? params.get('week');
   const date = requested && isoDate.test(requested) ? requested : today();
@@ -396,15 +500,22 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const thread = threadsQ.data ?? null;
   const { apply } = useThreadAction();
   const [moveError, setMoveError] = useState<string | null>(null);
-  // The entry's own dialog, opened from its buttons in the pane at the step they name.
+  // The entry's own dialog: the question before a meeting is cancelled, and on a phone the move as well.
   const [acting, setActing] = useState<{ item: AgendaItem; mode: Exclude<Mode, 'view'> } | null>(null);
-  const [booking, setBooking] = useState<{ start: string; end: string } | null>(null);
+  // The page's two forms, kept here so the pane, the drawer and a phone's dialog draw the same draft and the grid its block.
+  const booking = useBooking();
+  const move = useMove();
+  const announce = useAnnounce();
+  const model = useModelConfigured();
+  // The assistant's pane beside the page (D141): the frame's, in the address. While it is open the page's own pane holds
+  // nothing; a booking being made waits under it and comes back when it closes.
+  const asking = asksBeside(search);
   const title =
     view === 'day'
       ? dayLabel(anchor)
       : view === 'month'
         ? monthLabel(anchor)
-        : `Vecka ${weekNumber(anchor)}\u00a0· ${rangeLabel(anchor, 5)}`;
+        : `Vecka ${weekNumber(anchor)}\u00a0· ${rangeLabel(anchor, 7)}`;
   const shortTitle = view === 'week' ? `Vecka ${weekNumber(anchor)}` : capital(title);
   /** The weeks the view needs: one for a day or a week, every week the month grid shows. */
   const weeks = useMemo(() => (view === 'month' ? weeksOfMonth(anchor) : [weekStart(anchor)]), [view, anchor]);
@@ -428,6 +539,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const silent = useSilentSources();
   const say = useSaySilent();
   const calendarName = marks.system('calendar')?.source ?? 'Kalendern';
+  /** The calendar's mark at the start of the pane's header (D71), as the pane beside a conversation has its thing's. */
+  const calendarMark = marks.ofRef('calendar:');
   const calendarSince = silent.of('calendar')?.since ?? (lastRead ? new Date(lastRead).toISOString() : null);
   const retrying = useIsFetching({ queryKey: keys.calendarAll }) > 0;
   useEffect(() => {
@@ -446,15 +559,35 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     withoutCalendar
       ? 'Kalender'
       : view === 'week'
-        ? `Vecka ${weekNumber(anchor)}, ${rangeLabel(anchor, 5)}`
+        ? `Vecka ${weekNumber(anchor)}, ${rangeLabel(anchor, 7)}`
         : `${view === 'day' ? 'Dagvy' : 'Månadsvy'}, ${title}`,
   );
-  const items = useMemo(() => agendaItems(events, proposals), [events, proposals]);
-  // The entry the pane holds (`entry`): looked up among the loaded weeks, and kept while another week is on screen.
+  // The time being placed is a block on the grid: a booking's as the entry `agendaItems` draws for a time a person is
+  // choosing (D112 item 10), a move's as the entry's own block at the time the fields say.
+  const draftTitle = booking.draft ? booking.draft.title.trim() || 'Ny bokning' : null;
+  const draftSpan = mobile ? null : booking.span;
+  const movingId = !mobile && move.item ? move.item.id : null;
+  const moveSpan = move.span;
+  const moved = move.item;
+  const agenda = useMemo(
+    () => agendaItems(events, proposals, [], draftSpan && draftTitle ? { ...draftSpan, title: draftTitle } : undefined),
+    [events, proposals, draftSpan, draftTitle],
+  );
+  // The entry being moved stands where the fields say, also in a week other than its own (a time the assistant
+  // prepared, a day typed in the field), so the week its new time is in shows its block.
+  const items = useMemo(() => {
+    if (!movingId || !moveSpan || !moved) return agenda;
+    return agenda.some(i => i.id === movingId)
+      ? agenda.map(i => (i.id === movingId ? { ...i, ...moveSpan } : i))
+      : [...agenda, { ...moved, ...moveSpan }];
+  }, [agenda, movingId, moveSpan, moved]);
+  // The entry the pane holds (`entry`): looked up among the loaded weeks, and kept while another week is on screen. What
+  // is kept is the entry as the calendar answered it, never the time a move being made puts it at.
   const entryId = params.get(ENTRY_PARAM);
   const seen = useRef(new Map<string, AgendaItem>());
-  for (const i of items) seen.current.set(i.id, i);
-  const entryItem = entryId ? (items.find(i => i.id === entryId) ?? seen.current.get(entryId) ?? null) : null;
+  for (const i of agenda) seen.current.set(i.id, i);
+  const entryItem =
+    entryId && entryId !== CHOSEN_ID ? (agenda.find(i => i.id === entryId) ?? seen.current.get(entryId) ?? null) : null;
   const dayItems = useMemo(
     () => (acting ? items.filter(i => occursOn(i, displayDate(acting.item.start))) : []),
     [items, acting],
@@ -486,123 +619,12 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const proposed = thread?.state === 'open' ? thread.proposals.filter(p => p.status === 'proposed') : [];
   const mark = thread ? marks.ofThread(thread) : null;
 
-  /** An entry as the pane draws it (D112 item 9), and what "Fråga assistenten" asks about it with (D126 rule 5). */
-  const entryOpened = (item: AgendaItem): Opened | null => {
-    if (item.proposal) {
-      const p = item.proposal;
-      const own = thread?.id === p.threadId ? thread : null;
-      // The conversation about a proposal has its work item beside it, where several are chosen at once.
-      const subject: ThingSubject | null = CHIP_REF.test('proposal:' + p.id)
-        ? {
-            key: 'proposal:' + p.id,
-            label: 'förslaget',
-            chips: [{ ref: 'proposal:' + p.id, kind: 'proposal', label: `${item.title}\u00a0· ${p.participant.name}` }],
-            search: '?card=' + encodeURIComponent(p.threadId),
-          }
-        : null;
-      return {
-        id: item.id,
-        title: item.title,
-        subtitle: `Förslag\u00a0· ${mark?.source ?? 'Kalendern'}`,
-        // The name is the way in (2026-11-13): the proposal's work item as a page, with Kalender as the way back.
-        page: itemPageHref(p.threadId, pathname + search),
-        actions: (
-          <ProposalActions
-            item={item}
-            thread={own}
-            subject={subject}
-            onMove={() => setActing({ item, mode: 'move' })}
-          />
-        ),
-        facts: <ProposalFacts item={item} thread={own} />,
-      };
-    }
-    if (!item.event) return null;
-    const ref = 'event:' + item.event.id;
-    // A meeting outside the window the server resolves its chip in has nothing to ask with: no "Fråga assistenten" (D126 rule 5).
-    const subject: ThingSubject | null =
-      CHIP_REF.test(ref) && inChipWindow(item.start)
-        ? { key: ref, label: 'mötet', chips: [{ ref, kind: 'event', label: item.title }], search: '' }
-        : null;
-    return {
-      id: item.id,
-      title: item.title,
-      subtitle: `${item.kind === 'booked' ? 'Bokat samtal' : 'Möte'}\u00a0· Kalendern`,
-      actions: <EventActions item={item} subject={subject} onAct={mode => setActing({ item, mode })} />,
-      facts: <EventFacts item={item} />,
-    };
-  };
-  const opened = entryItem ? entryOpened(entryItem) : null;
-  /** The pane closes: the entry leaves the address, everything else in it stays. */
-  const closeEntry = () => {
-    const q = new URLSearchParams(search);
-    q.delete(ENTRY_PARAM);
-    const rest = q.toString();
-    navigate(rest ? `${pathname}?${rest}` : pathname);
-  };
-  // Beside the grid the pane is the page's own, non-modal (the grid stays in use): opening it gives its heading the
-  // focus, never away from a field the person is typing in, and closing it gives the focus back to what opened it, the
-  // entry in the grid (2.4.3). Another entry taking its place keeps the first opener as the way back unless the person
-  // opened it from outside the pane. The drawer does all of this itself (Astryx's Drawer).
-  const paneHeading = useRef<HTMLHeadingElement>(null);
-  const paneRegion = useRef<HTMLDivElement>(null);
-  const opener = useRef<HTMLElement | null>(null);
-  const shownId = useRef<string | null>(null);
-  const besideId = beside && opened ? opened.id : null;
-  useLayoutEffect(() => {
-    const was = shownId.current;
-    shownId.current = besideId;
-    if (besideId === null) {
-      const back = opener.current;
-      opener.current = null;
-      if (was !== null) (back?.isConnected ? back : document.getElementById(TITLE_ID))?.focus();
-      return;
-    }
-    if (was === besideId) return;
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && active !== document.body && !paneRegion.current?.contains(active))
-      opener.current = active;
-    if (!(active instanceof HTMLElement && active.matches(TYPING))) paneHeading.current?.focus();
-  }, [besideId]);
-  // The drawer keeps the last entry while it slides away, so its heading is never empty (axe: empty-heading).
-  const lastOpened = useRef<Opened | null>(null);
-  if (opened) lastOpened.current = opened;
-  const drawn = opened ?? lastOpened.current;
-  const pane =
-    beside && opened ? (
-      <LayoutPanel width={PANE} padding={0} hasDivider isScrollable={false} role="complementary" label={opened.title}>
-        <VStack
-          ref={paneRegion}
-          height="100%"
-          onKeyDown={e => {
-            // Esc inside a menu, a list or a dialog is theirs; a bare Esc lets go of the pane.
-            if (e.key !== 'Escape' || (e.target as HTMLElement).closest(OWNS_ESCAPE)) return;
-            e.stopPropagation();
-            closeEntry();
-          }}
-        >
-          <EntryPane opened={opened} headingRef={paneHeading} onClose={closeEntry} />
-        </VStack>
-      </LayoutPanel>
-    ) : undefined;
-  const drawer = beside ? null : (
-    <Drawer
-      isOpen={!!opened}
-      onOpenChange={open => {
-        if (!open) closeEntry();
-      }}
-      side="end"
-      width={PANE}
-      label={drawn?.title ?? 'Kalender'}
-      padding={0}
-    >
-      {drawn && <EntryPane opened={drawn} headingRef={paneHeading} onClose={closeEntry} />}
-    </Drawer>
-  );
-
+  /** "Flytta …": in the pane where there is one; on a phone the entry's dialog at that step. "Ställ in …" always asks in the dialog. */
+  const act = (item: AgendaItem, mode: Exclude<Mode, 'view'>) =>
+    mode === 'move' && !mobile ? move.start(item) : setActing({ item, mode });
   /**
-   * "Fråga om veckan" (board Calendar, the `week` state): the range on screen is what the conversation is about, with the
-   * calendar's own read of that range as its chip and beside the conversation (D126 rule 5).
+   * What the assistant's pane is about (D141 rule 4, board Calendar's `week` state): the range on screen, the
+   * week, the day or the month, with the calendar's own read of that range as its chip (the product owner, 2026-11-18).
    */
   const rangeRead =
     view === 'day'
@@ -615,7 +637,374 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     chips: [{ ref: 'capability:' + rangeRead.capability, kind: 'capability', label: shortTitle }],
     search: viewSearch(rangeRead),
   };
-
+  /** The range in the words of the frame's pane (board KalFragaVecka): "Om vecka 45", and its box "Fråga om veckan". */
+  const rangeAsked: PageSubject = {
+    ...rangeSubject,
+    about: `Om ${shortTitle.toLocaleLowerCase('sv-SE')}`,
+    placeholder: `Fråga om ${rangeWord}`,
+  };
+  /** What the box in the pane can be about: the entry being moved, else the entry in the address. */
+  const paneItem = (movingId ? move.item : null) ?? entryItem;
+  /**
+   * What the conversation and the box in the page's own pane are about (the product owner, 2026-11-18: they stand under
+   * every entry from the start, no button opens them, D141 rule 5): the entry in the pane, or its move. A booking made
+   * by hand has none. Without a model there is no box (D8), and on a phone no pane.
+   */
+  const thingAsked = mobile || !model ? null : paneItem ? entrySubject(paneItem) : null;
+  /**
+   * The same, with the words the pane says it in (D141 rules 4 and 10): the box's words are those of boards KalFraga and
+   * KalFragaFlytt, the move form's asking for another time.
+   */
+  const askSubject: PageSubject | null = thingAsked && {
+    ...thingAsked,
+    about: `Om ${thingAsked.label} ${paneItem?.title ?? ''}`.trim(),
+    placeholder:
+      movingId && move.item
+        ? move.item.proposal
+          ? 'Fråga om förslaget'
+          : 'Be om en annan tid'
+        : paneItem?.proposal
+          ? 'Fråga om förslaget'
+          : paneItem?.event && movable(paneItem.event)
+            ? 'Fråga om mötet, eller be om en ändring'
+            : 'Fråga om mötet',
+  };
+  // Another entry on screen is another subject: the person's conversation about that one is shown and continued, or the
+  // next question starts one (`usePageConversation`). Held here, so it stays while the pane becomes the drawer and back.
+  const talk = usePageConversation(askSubject, { onAnswer: response => takeAnswer(response.prepared) });
+  // The frame's pane opened (the button, Back, a reload) lets go of a move being made, as an entry in the address is let
+  // go of by the address itself (`withAsk`).
+  useEffect(() => {
+    if (asking && move.moving) move.close();
+  }, [asking]);
+  /** Whether a day is in the range on screen. */
+  const inView = (day: string) =>
+    view === 'week' ? weekStart(day) === anchor : view === 'month' ? monthStart(day) === anchor : day === anchor;
+  /**
+   * A decision of the calendar's the assistant prepared (`Prepared`), made where the person makes it by hand and never
+   * by itself: nothing is written before the person's own button (D45, D47). A move of a meeting of their own fills in
+   * "Flytta …" (board KalFragaFlytt), its block on the grid where it would end up, in the week of its new time unless
+   * the box is about the range on screen; a cancellation asks the page's own question, "Ställ in mötet?", in the
+   * entry's dialog. Only for a meeting that is loaded and is the person's to change; a move needs the pane, so not on a
+   * phone. `about` is the subject a box answer was asked about: a meeting other than that one is left alone.
+   */
+  const takePrepared = (prepared: Prepared, about?: ThingSubject | null): boolean => {
+    if (about && !about.key.startsWith('range:') && about.key !== 'event:' + prepared.event.id) return false;
+    const item = seen.current.get(prepared.event.id);
+    if (!item?.event || !movable(item.event)) return false;
+    if (prepared.kind === 'calendar.cancel') {
+      if (move.moving) move.close();
+      setActing({ item, mode: 'cancel' });
+      announce(`Frågan om att ställa in ${item.title} är öppen. Inget är inställt förrän du svarar ja.`);
+      return true;
+    }
+    if (mobile) return false;
+    move.start(item);
+    move.setSpan({ start: prepared.start, end: prepared.end });
+    // The form takes the page's pane: the assistant's pane closes (D141 rule 5), and its conversation is found again
+    // with the button.
+    if (asking) navigate(withoutOwn(pathname, search, [ASK_PARAM]));
+    announce(
+      `${whenOf({ ...item, start: prepared.start, end: prepared.end })} står i formuläret Flytta ${item.title}. Inget är sparat förrän du trycker på Spara.`,
+    );
+    const day = displayDate(prepared.start);
+    if (about && !about.key.startsWith('range:') && !inView(day)) go({ date: day });
+    return true;
+  };
+  /** An answer in the box: what it prepared for the meeting the box is about is made ready (`takePrepared`). */
+  const takeAnswer = (prepared: Prepared | undefined) => {
+    if (prepared && askSubject) takePrepared(prepared, askSubject);
+  };
+  /** An answer in the frame's pane, about the range: the same for a meeting of the range (`takePrepared`). */
+  const takeRangeAnswer = (prepared: Prepared | undefined) => {
+    if (prepared) takePrepared(prepared, rangeAsked);
+  };
+  /**
+   * Under an earlier answer in the pane, what it prepared is never made by itself (a reload never greets the person
+   * with a form or a question they did not ask for): the row under it has the button that makes it ready.
+   */
+  const preparedAction = (prepared: Prepared, about: ThingSubject | null) => {
+    const item = seen.current.get(prepared.event.id);
+    if (!item?.event || !movable(item.event) || (prepared.kind === 'calendar.move' && mobile)) return null;
+    return {
+      label: prepared.kind === 'calendar.move' ? 'Använd tiden' : 'Ställ in mötet …',
+      onPress: () => void takePrepared(prepared, about),
+    };
+  };
+  // "Visa i kalendern" under an answer in a conversation brings the prepared decision in the router's state, never in
+  // the address: once the meeting is read it is made ready, and the state is cleared, so Back or a reload never does it
+  // again. A move's week replaces the meeting's own in the history.
+  const handed = (routed as { prepared?: Prepared } | null)?.prepared;
+  const tookHanded = useRef<Prepared | null>(null);
+  useEffect(() => {
+    if (!handed || tookHanded.current === handed || pending) return;
+    tookHanded.current = handed;
+    const q = new URLSearchParams(search);
+    if (entryItem?.id === handed.event.id && takePrepared(handed) && handed.kind === 'calendar.move') {
+      const day = displayDate(handed.start);
+      if (!inView(day)) {
+        q.delete('week');
+        q.set('date', day);
+      }
+    }
+    const rest = q.toString();
+    navigate(rest ? `${pathname}?${rest}` : pathname, { replace: true, state: null });
+  });
+  /**
+   * An entry as the pane draws it (D112 item 9). On a phone, which has no box, "Fråga assistenten" ends its buttons and
+   * leads to a conversation about it (D126 rule 5).
+   */
+  const entryShown = (item: AgendaItem): Shown | null => {
+    const askButton = mobile ? entrySubject(item) : null;
+    if (item.proposal) {
+      const p = item.proposal;
+      const own = thread?.id === p.threadId ? thread : null;
+      return {
+        id: item.id,
+        source: `${mark?.source ?? calendarName}\u00a0· Förslag`,
+        mark: mark ?? calendarMark,
+        title: item.title,
+        // The name is the way in (2026-11-13): the proposal's work item as a page, with Kalender as the way back.
+        page: itemPageHref(p.threadId, pathname + search),
+        under: (
+          <>
+            <Text weight="semibold">{whenOf(item)}</Text>
+            <ProposalActions item={item} thread={own} askButton={askButton} onMove={() => act(item, 'move')} />
+          </>
+        ),
+        body: <ProposalFacts item={item} thread={own} />,
+        form: false,
+      };
+    }
+    if (!item.event) return null;
+    return {
+      id: item.id,
+      source: `${calendarName}\u00a0· ${item.kind === 'booked' ? 'Bokat samtal' : 'Möte'}`,
+      mark: calendarMark,
+      title: item.title,
+      under: (
+        <>
+          <Text weight="semibold">{whenOf(item)}</Text>
+          <EventActions item={item} askButton={askButton} onAct={mode => act(item, mode)} />
+        </>
+      ),
+      body: <EventFacts item={item} />,
+      form: false,
+    };
+  };
+  // A form's foot: why its button is greyed or what went wrong, then its buttons, which never scroll away.
+  const foot = (said: ReactNode, buttons: ReactNode) => (
+    <HStack gap={3} vAlign="center" wrap="wrap">
+      <StackItem size="fill">{said}</StackItem>
+      <HStack gap={2} vAlign="center">
+        {buttons}
+      </HStack>
+    </HStack>
+  );
+  const alert = (text: string) => (
+    <Text as="p" role="alert" color="accent">
+      {text}
+    </Text>
+  );
+  const paneFocus = useRef<HTMLElement>(null);
+  /**
+   * The conversation about what the pane holds, and the box (the product owner, 2026-11-18; boards KalFraga,
+   * KalFragaFlytt and the head and box of KalFragaVecka): the entry's facts or the form's fields at the top of the body,
+   * a rule, then the whole conversation over the box, drawn by the conversation's own parts (`PageTalk`, D141 "One
+   * component"); a form's buttons stay at the foot, under the box. Before anything is asked the box is alone and as low
+   * as the box, at the foot of the body (D138 item 2): the facts or the fields have the rest, and scroll there when they
+   * need more. The box keeps its place in the tree from the entry to its move form and back, and from the first state to
+   * the conversation, so the focus and the words in it stay. Esc and ✕ are the pane's as they were: Esc in the move form
+   * goes back to the entry, with the conversation. Under an earlier answer that prepared a decision stands the page's
+   * own button for it (`preparedAction`).
+   */
+  const asked = !!(talk.state.conversation || talk.state.pending);
+  const withAsk = (s: Shown | null): Shown | null => {
+    if (!s || !talk.subject || s.id === 'booking') return s;
+    const prepared = (p: Prepared) => <PreparedRow prepared={p} action={preparedAction(p, askSubject)} />;
+    return {
+      ...s,
+      talk: asked,
+      body: (
+        // Before anything is asked the body is at least as high as the pane, so the box stands at its foot, and as
+        // high as its content where the window is too low: the pane then scrolls, and the fields never give way to
+        // the box. With a conversation the body is the pane's height and the conversation scrolls in what is left.
+        <VStack gap={6} {...(asked ? { height: '100%' } : { minHeight: '100%' })}>
+          <StackItem size={asked ? 'static' : 'fill'} isScrollable={asked} aria-label={s.form ? s.title : 'Uppgifter'}>
+            {s.body}
+          </StackItem>
+          {s.body && <Divider />}
+          <StackItem size={asked ? 'fill' : 'static'}>
+            <PageTalk talk={talk} prepared={prepared} />
+          </StackItem>
+        </VStack>
+      ),
+    };
+  };
+  /**
+   * What the pane holds: the move being made, else the entry in the address, else the booking being made, which waits
+   * while the frame's pane is open (D141: the assistant's pane and the page's own take each other's place).
+   */
+  const shown: Shown | null = withAsk(
+    movingId && move.item
+      ? {
+          id: 'move:' + movingId,
+          source: `${calendarName}\u00a0· ${move.item.proposal ? 'Förslag' : 'Möte'}`,
+          mark: calendarMark,
+          title: `Flytta ${move.item.title}`,
+          body: <MoveFields move={move} dayRef={paneFocus as Ref<HTMLInputElement>} />,
+          foot: foot(move.error ? alert(move.error) : null, <MoveButtons move={move} />),
+          form: true,
+        }
+      : entryItem
+        ? entryShown(entryItem)
+        : !mobile && !asking && booking.draft
+          ? {
+              id: 'booking',
+              source: calendarName,
+              mark: calendarMark,
+              title: 'Ny bokning',
+              under: (
+                <Text type="supporting" color="secondary">
+                  I din kalender, med inbjudan till dem du väljer.
+                </Text>
+              ),
+              body: <BookingFields booking={booking} titleRef={paneFocus as Ref<HTMLInputElement>} />,
+              foot: foot(
+                booking.error && !booking.error.uncertain ? (
+                  alert(booking.error.text)
+                ) : (
+                  <BookingHint booking={booking} />
+                ),
+                <BookingButtons booking={booking} />,
+              ),
+              form: true,
+            }
+          : null,
+  );
+  /** The entry leaves the address, everything else in it stays. */
+  const closeEntry = () => {
+    if (new URLSearchParams(search).has(ENTRY_PARAM)) navigate(withoutOwn(pathname, search, [ENTRY_PARAM]));
+  };
+  /** ✕ and Esc let go of what the pane holds: a move goes back to its entry, a booking is dropped, an entry leaves the address. */
+  const closePane = () => {
+    if (!shown) return;
+    if (shown.id.startsWith('move:')) move.close();
+    else if (shown.id === 'booking') booking.close();
+    else closeEntry();
+  };
+  /**
+   * A booking is started, or the one being made is put at another time: by the button, by a click on an hour or by a
+   * span dragged. It takes the pane, so an entry standing there leaves the address and a move is let go of.
+   */
+  const startBooking = (at: { start: string; end: string } | null) => {
+    // What the person was on when they asked for the form is where the focus goes back to: taken here, since the
+    // form's first field has the focus before the pane's own effect could look.
+    const active = document.activeElement;
+    if (!shown && active instanceof HTMLElement && active !== document.body) opener.current = active;
+    if (move.moving) move.close();
+    if (!booking.draft) booking.start(at ?? nextWholeHour(new Date()));
+    else if (at) booking.setSpan(at);
+    // An entry standing in the pane, and the assistant's pane, give the form their place (D141 rule 5).
+    const q = new URLSearchParams(search);
+    if (q.has(ENTRY_PARAM) || asksBeside(q)) navigate(withoutOwn(pathname, search, [ENTRY_PARAM, ASK_PARAM]));
+  };
+  /** An entry chosen on the grid: the block of the booking being made leads back to its form, any other entry opens. */
+  const openItem = (item: AgendaItem) => {
+    if (move.moving && item.id !== movingId) move.close();
+    if (item.id === CHOSEN_ID) return closeEntry();
+    if (item.id !== entryId) navigate(withEntry(pathname, search, item.id));
+  };
+  /** Where the block being placed was dragged or stretched to: the form's fields follow. A booking has one day. */
+  const placeDraft = (start: string, end: string) => {
+    if (displayDate(start) !== displayDate(end)) return false;
+    (movingId ? move : booking).setSpan({ start, end });
+    return true;
+  };
+  // Beside the grid the pane is the page's own, non-modal (the grid stays in use): opening it gives the focus to an
+  // entry's name or a form's first field, never away from a field the person is typing in, and closing it gives the
+  // focus back to what opened it, the entry in the grid or the button (2.4.3). Another thing taking its place keeps the
+  // first opener as the way back unless the person opened it from outside the pane. The drawer does all of this itself
+  // (Astryx's Drawer).
+  const paneRegion = useRef<HTMLDivElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const shownId = useRef<string | null>(null);
+  const besideId = beside && shown ? shown.id : null;
+  useLayoutEffect(() => {
+    const was = shownId.current;
+    shownId.current = besideId;
+    if (besideId === null) {
+      const back = opener.current;
+      opener.current = null;
+      // The frame's pane taking the place gives the focus to its own box (D141 rule 2): nothing is given back here.
+      if (was !== null && !asking) (back?.isConnected ? back : document.getElementById(TITLE_ID))?.focus();
+      return;
+    }
+    if (was === besideId) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body && !paneRegion.current?.contains(active))
+      opener.current = active;
+    if (!(active instanceof HTMLElement && active.matches(TYPING))) paneFocus.current?.focus();
+  }, [besideId]);
+  // The pane's width is the person's own (Astryx's `useResizable`), kept in the browser.
+  const region = useResizable({
+    defaultSize: PANE,
+    minSize: PANE_MIN,
+    maxSize: percent(PANE_SHARE, { max: pixel(PANE_MAX) }),
+    autoSaveId: 'clew:calendar-pane',
+  });
+  // The drawer keeps the last thing while it slides away, so its heading is never empty (axe: empty-heading).
+  const lastShown = useRef<Shown | null>(null);
+  if (shown) lastShown.current = shown;
+  const drawn = shown ?? lastShown.current;
+  const pane =
+    beside && shown ? (
+      <>
+        {/* The grip draws the line between the grid and the pane, so the pane draws none of its own. */}
+        <ResizeHandle
+          direction="horizontal"
+          isReversed
+          hasDivider
+          resizable={region.props}
+          label="Ändra rutans bredd"
+        />
+        <LayoutPanel
+          width={region.size}
+          padding={0}
+          hasDivider={false}
+          isScrollable={false}
+          role="complementary"
+          label={shown.title}
+        >
+          <VStack
+            ref={paneRegion}
+            height="100%"
+            onKeyDown={e => {
+              // Esc inside a menu, a list or a dialog is theirs; a bare Esc lets go of what the pane holds.
+              if (e.key !== 'Escape' || (e.target as HTMLElement).closest(OWNS_ESCAPE)) return;
+              e.stopPropagation();
+              closePane();
+            }}
+          >
+            <PaneFrame shown={shown} headingRef={paneFocus as Ref<HTMLHeadingElement>} onClose={closePane} />
+          </VStack>
+        </LayoutPanel>
+      </>
+    ) : undefined;
+  const drawer = beside ? null : (
+    <Drawer
+      isOpen={!!shown}
+      onOpenChange={open => {
+        if (!open) closePane();
+      }}
+      side="end"
+      width={PANE}
+      label={drawn?.title ?? 'Kalender'}
+      padding={0}
+    >
+      {drawn && <PaneFrame shown={drawn} headingRef={paneFocus as Ref<HTMLHeadingElement>} onClose={closePane} />}
+    </Drawer>
+  );
   const steps = (
     <HStack gap={1} vAlign="center" role="group" aria-label={`Byt ${stepLabel}`}>
       <IconButton
@@ -664,16 +1053,14 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       })}
     />
   );
-  const askWeek = <AskClew subject={rangeSubject} label={`Fråga om ${rangeWord}`} size="sm" />;
-  const bookButton = (
-    <Button variant="primary" size="sm" label="Ny bokning" onClick={() => setBooking(nextWholeHour(new Date()))} />
-  );
-  // The one page header (D74): the title first, what can be done at the end of its line. A phone has two rows: the
-  // title with what can be done, and under it where in time with how it is shown, 44 px controls under a finger. The
-  // controls are Astryx's `sm`, as the toolbar that held them made them (28 px, under the heading's 32 px line). Both
-  // rows are full at 375 px, so "Fråga om veckan" is not on a phone's head (it would make a third row and push the week
-  // down); an entry opened on a phone still has "Fråga assistenten" among its buttons in the drawer.
-  // In the one page frame (D126): the title on the line every page's title stands on, the controls at its end.
+  const bookButton = <Button variant="primary" size="sm" label="Ny bokning" onClick={() => startBooking(null)} />;
+  // The one page header (D74): the title first, what can be done at the end of its line; the assistant is asked from the
+  // corner's "Fråga AI" (D138 item 1). A phone has two rows: the title with what can be done, and under it where in time
+  // with how it is shown, 44 px controls under a finger. The controls are Astryx's `sm`, as the toolbar that held them
+  // made them (28 px, under the heading's 32 px line). An entry opened on a phone still has "Fråga assistenten" among
+  // its buttons in the drawer, which has no box of its own.
+  // In the one page frame (D126): the title on the line every page's title stands on, with what can be done at the
+  // line's end; where in time and how it is shown stand on a row of their own under it (D74, amended 2026-11-20).
   const head = mobile
     ? {
         title: shortTitle,
@@ -683,6 +1070,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
             {bookButton}
           </HStack>
         ),
+        status: undefined,
         meta: (
           <VStack gap={2}>
             <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
@@ -701,9 +1089,9 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       }
     : {
         title: shortTitle,
+        status: undefined,
         actions: (
           <HStack gap={2} vAlign="center" wrap="wrap">
-            {askWeek}
             {proposalsMenu}
             {bookButton}
           </HStack>
@@ -721,7 +1109,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
               <SegmentedControlItem value="week" label="Vecka" />
               <SegmentedControlItem value="month" label="Månad" />
             </SegmentedControl>
-            {view === 'week' && <Text color="secondary">{rangeLabel(anchor, 5)}</Text>}
+            {view === 'week' && <Text color="secondary">{rangeLabel(anchor, 7)}</Text>}
           </HStack>
         ),
       };
@@ -730,7 +1118,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   if (withoutCalendar)
     return (
       <Shell user={user} nav={nav}>
-        <PageFrame title="Kalender" titleId={TITLE_ID}>
+        <PageFrame ask={{ none: 'no-page' }} title="Kalender" titleId={TITLE_ID}>
           <EmptyState
             headingLevel={2}
             icon={<Icon icon="calendar" size="lg" />}
@@ -744,55 +1132,91 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         </PageFrame>
       </Shell>
     );
+  // The grid fills the sheet wherever the page is pinned (a wide window that is not short); on a phone and on a short
+  // screen the page scrolls as one and the grid is as tall as its day (1.4.10).
+  const fill = !mobile && !short;
+  const draftId = movingId ?? (draftSpan && draftTitle ? CHOSEN_ID : undefined);
+  const grid = (
+    <EventCalendar
+      view={calendarView}
+      date={anchor}
+      items={items}
+      label={capital(title)}
+      dayHeadingLevel={2}
+      accessiblePath={
+        proposed.length
+          ? 'Förslag i sidhuvudet leder till varje förslag; Retur på en post öppnar den.'
+          : 'Retur på en post öppnar den.'
+      }
+      fill={fill}
+      weekends
+      selectedId={movingId ?? entryId ?? (shown?.id === 'booking' ? CHOSEN_ID : undefined)}
+      {...(draftId ? { draftId, onDraftChange: placeDraft } : {})}
+      onItemClick={openItem}
+      onMoveProposal={proposed.length ? moveProposal : undefined}
+      onSelectRange={mobile ? undefined : (start, end) => startBooking({ start, end })}
+    />
+  );
+  // Nothing read while the calendar does not answer: no empty grid that would pass for a free week.
+  const unread = calendarSilent && !read && (
+    <EmptyState
+      headingLevel={2}
+      icon={<Icon icon="calendar" size="lg" />}
+      title="Kalendern kan inte visas just nu"
+      description="Mötena visas här när kalendern svarar igen."
+    />
+  );
+  const skeleton = <ContentSkeleton label="Hämtar kalendern …" rows={7} heading={false} />;
+  const moveAlert = error && (
+    <Text as="p" role="alert" color="accent">
+      {error}
+    </Text>
+  );
   return (
     <Shell user={user} nav={nav}>
       <PageFrame
+        ask={{
+          subject: rangeAsked,
+          onAnswer: response => takeRangeAnswer(response.prepared),
+          prepared: p => <PreparedRow prepared={p} action={preparedAction(p, rangeAsked)} />,
+        }}
         title={head.title}
         titleId={TITLE_ID}
+        status={head.status}
         meta={head.meta}
         actions={head.actions}
         actionsOnLine
         below={head.below}
+        bleed={fill}
+        label="Kalender"
         end={pane}
       >
-        <VStack gap={4}>
-          {error && (
-            <Text as="p" role="alert" color="accent">
-              {error}
-            </Text>
-          )}
-          {/* Nothing read while the calendar does not answer: no empty grid that would pass for a free week. */}
-          {calendarSilent && !read ? (
-            <EmptyState
-              headingLevel={2}
-              icon={<Icon icon="calendar" size="lg" />}
-              title="Kalendern kan inte visas just nu"
-              description="Mötena visas här när kalendern svarar igen."
-            />
-          ) : (
-            <AsyncContent
-              pending={pending}
-              fallback={<ContentSkeleton label="Hämtar kalendern …" rows={7} heading={false} />}
-            >
-              <EventCalendar
-                view={calendarView}
-                date={anchor}
-                items={items}
-                label={capital(title)}
-                dayHeadingLevel={2}
-                accessiblePath={
-                  proposed.length
-                    ? 'Förslag i sidhuvudet leder till varje förslag; Retur på en post öppnar den.'
-                    : 'Retur på en post öppnar den.'
-                }
-                selectedId={entryId ?? undefined}
-                onItemClick={item => navigate(withEntry(pathname, search, item.id))}
-                onMoveProposal={proposed.length ? moveProposal : undefined}
-                onSelectRange={mobile ? undefined : (start, end) => setBooking({ start, end })}
-              />
-            </AsyncContent>
-          )}
-        </VStack>
+        {fill ? (
+          // The grid is the sheet's own content: what stands in its place, or over it, keeps the page's inset.
+          <>
+            {moveAlert && (
+              <VStack padding={4} paddingInline={6}>
+                {moveAlert}
+              </VStack>
+            )}
+            {unread || pending ? (
+              <VStack padding={6} aria-busy={pending}>
+                {unread || skeleton}
+              </VStack>
+            ) : (
+              grid
+            )}
+          </>
+        ) : (
+          <VStack gap={4}>
+            {moveAlert}
+            {unread || (
+              <AsyncContent pending={pending} fallback={skeleton}>
+                {grid}
+              </AsyncContent>
+            )}
+          </VStack>
+        )}
       </PageFrame>
       {drawer}
       {/* Both dialogs write the cache themselves (D33): a moved proposal's thread, or the loaded weeks read again. */}
@@ -803,11 +1227,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         onClose={() => setActing(null)}
         onOpenDay={d => go({ date: d, view: 'day' })}
       />
-      <BookingDialog
-        isOpen={!!booking}
-        initial={booking ?? nextWholeHour(new Date())}
-        onClose={() => setBooking(null)}
-      />
+      {/* A phone has no pane for the form: there it is the dialog it was, and the dialog is mounted there alone. */}
+      {mobile && <BookingDialog booking={booking} isOpen={!!booking.draft} />}
     </Shell>
   );
 }

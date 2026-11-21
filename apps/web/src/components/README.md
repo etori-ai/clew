@@ -7,13 +7,13 @@ sets no gap, inset or size of its own (`docs/reference/layout-measures.md`).
 
 | Folder | What it holds | Files |
 |---|---|---|
-| `shell/` | The frame every page stands in: the shared header with Clew's pages (`shell.tsx`, `nav.tsx`), the page's column, title and card (`page-frame.tsx`, `page-header.tsx`), the floating "Fråga AI" (`assistant-corner.tsx`), the reminders' bell, a system that does not answer, the placeholders while a page loads, the first paint before the session is known, the administration's frame and a dialog's body | 11 |
+| `shell/` | The frame every page stands in: the shared header with Clew's pages (`shell.tsx`, `nav.tsx`), the page's column, title and card, with the assistant's pane at the column's end (`page-frame.tsx`, `page-header.tsx`), what the frame tells the parts inside it (`page-frame-context.ts`), the floating "Fråga AI" and what a page tells it (`assistant-corner.tsx`), the reminders' bell, a system that does not answer, the placeholders while a page loads, the first paint before the session is known, the administration's frame and a dialog's body | 12 |
 | `hem/` | Hem's blocks: the unit's key figures (`lage.tsx`), the day (`today.tsx`), the news and the focus news | 4 |
 | `work/` | A work item wherever it is drawn: what it can do (`card.tsx`), the item itself (`work-item.tsx`), its row, its sections, the action dialog, the receipt notice, the review's recovery and the person's own action points | 11 |
-| `conversation/` | The conversation: its state for the whole app (`conversation-context.tsx`), the transcript and the drafts in it, the box, the pane for another system's assistant, and "Fråga assistenten" about a thing (`thing-panel.tsx`) | 7 |
+| `conversation/` | The conversation: its state for the whole app (`conversation-context.tsx`), its turns (`turns.ts`), the transcript and the drafts in it, the box, the conversation beside a page and what a page is about (`page-conversation.tsx`), the pane for another system's assistant, and a new conversation about a thing (`thing-panel.tsx`) | 10 |
 | `people/` | A person's, a unit's and a plan's page and what stands on them: the sections, the follow-up dialogue, a talk, registering a holding, starting an introduction | 8 |
 | `views/` | A connector's declared view and what reads it: the view itself (`view.tsx`), a read for an address, the search's panel and its labels, the document reader | 5 |
-| `calendar/` | The calendar page's dialogs: an entry opened, and a new booking | 2 |
+| `calendar/` | The calendar page's forms and dialogs: an entry opened, a new booking (in the pane and, on a phone, its dialog) and a move | 4 |
 
 ## Where a new component goes
 

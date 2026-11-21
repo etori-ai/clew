@@ -349,6 +349,102 @@ describe('a capability about an entity (D97)', () => {
       },
     ],
   };
+  /**
+   * The talks manifest with one talk as a record of its own (D137): a read that draws one talk by its id, and a note to
+   * it, an execute about that record whose `talk` the record fills and whose text the person writes.
+   */
+  const withRecord = (change: (m: any) => void = () => {}) =>
+    edited(talks, m => {
+      m.capabilities.push(
+        {
+          name: 'appraisals.talk',
+          kind: 'read',
+          title: 'Samtalet',
+          description: 'Ett samtal.',
+          input: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+          output: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
+          model: false,
+          scope: {},
+          view: { kind: 'detail', title: 'title', fields: [{ key: 'title', label: 'Samtal' }] },
+        },
+        {
+          name: 'appraisals.note',
+          kind: 'execute',
+          title: 'Skriv en anteckning',
+          description: 'Lägger till en anteckning på samtalet.',
+          input: {
+            type: 'object',
+            properties: { talk: { type: 'string' }, text: { type: 'string' } },
+            required: ['talk', 'text'],
+          },
+          output: {},
+          model: false,
+          scope: { roles: ['manager'] },
+          about: { record: 'appraisals.talk', params: { talk: 'id' } },
+          asks: [{ kind: 'long-text', property: 'text', label: 'Anteckning', required: true }],
+        },
+      );
+      change(m);
+    });
+  test('an action about a record loads, and the preview says it stands on the record’s page, filled from it (D137)', () => {
+    const document = withRecord();
+    expect(manifestProblems(document, 'appraisals')).toEqual([]);
+    const preview = previewManifest(document, { id: 'appraisals' });
+    expect(validPreview(preview)).toBe(true);
+    const note = preview.manifest!.capabilities.find(c => c.name === 'appraisals.note')!;
+    // The record form is apart from the entity form, so a reader of `about` meets only a person or a unit there.
+    expect(note).toMatchObject({
+      aboutRecord: { record: 'appraisals.talk', params: { talk: 'id' } },
+      places: ['record'],
+      tool: false,
+      audience: [
+        { places: ['record'], who: expect.stringMatching(/^A manager who opens a record of appraisals\.talk/) },
+        {
+          places: ['tool'],
+          who: expect.stringMatching(/^No\. An action about a record is never offered to the model/),
+        },
+      ],
+    });
+    expect(note).not.toHaveProperty('about');
+    expect(note.path!.starts.at(-1)).toEqual({
+      place: 'record',
+      state: 'declared',
+      declares: 'about: { record, params }',
+    });
+    expect(note.path!.input.map(i => [i.property, i.by])).toEqual([
+      ['talk', 'record'],
+      ['text', 'person'],
+    ]);
+    // A write about nothing lists the five places it always did, and no record.
+    expect(preview.manifest!.capabilities.find(c => c.name === 'appraisals.book')!.path!.starts).toHaveLength(5);
+    // The registry indexes it under the read, for whom its scope admits, with what it asks less what the record fills.
+    const registry = new Registry();
+    registry.register(
+      remoteConnector(parseManifest(document, 'appraisals'), { url: 'http://x', assert: async () => '' }),
+    );
+    registry.govern('appraisals', openGovernance());
+    const manager = { id: 'm', name: 'M', unitId: 'u', unitLabel: 'U', role: 'manager' as const };
+    expect(registry.recordActions(manager, 'appraisals.talk')).toEqual([
+      expect.objectContaining({
+        name: 'appraisals.note',
+        kind: 'execute',
+        params: { talk: 'id' },
+        path: {
+          asks: [{ kind: 'long-text', property: 'text', label: 'Anteckning', required: true }],
+          effect: false,
+          description: 'Lägger till en anteckning på samtalet.',
+        },
+      }),
+    ]);
+    expect(registry.recordActions({ ...manager, role: 'employee' }, 'appraisals.talk')).toEqual([]);
+    // Described for the administration in the manifest's own form.
+    const described = describeBundled(registry.connector('appraisals')!);
+    expect(described.capabilities.find(c => c.name === 'appraisals.note')!.about).toEqual({
+      record: 'appraisals.talk',
+      params: { talk: 'id' },
+    });
+    expect(validManifest(described)).toBe(true);
+  });
   test('a read asked with keys and an action that takes one load, and the preview says where each would show', () => {
     expect(manifestProblems(talks, 'appraisals')).toEqual([]);
     const preview = previewManifest(talks, { id: 'appraisals' });
@@ -665,6 +761,42 @@ describe('a capability about an entity (D97)', () => {
         'an action without its param',
         edited(talks, m => delete m.capabilities[3].about.param),
         { path: 'capabilities[3].about.param', anchor: 'rule-about-action-param' },
+      ],
+      // The record form of `about` (D137).
+      [
+        'a read about a record',
+        withRecord(m => (m.capabilities[2].about = { record: 'appraisals.talk', params: { keys: 'id' } })),
+        { path: 'capabilities[2].about.record', anchor: 'rule-about-record-on-an-action' },
+      ],
+      [
+        "an action about a list's rows",
+        withRecord(m => (m.capabilities[5].about.record = 'appraisals.commitments')),
+        { path: 'capabilities[5].about.record', anchor: 'rule-about-record-one-record' },
+      ],
+      [
+        'an action about a read of another manifest',
+        withRecord(m => (m.capabilities[5].about.record = 'other.talk')),
+        { path: 'capabilities[5].about.record', anchor: 'rule-about-record-one-record' },
+      ],
+      [
+        "params from an input the record's read lacks",
+        withRecord(m => (m.capabilities[5].about.params = { talk: 'nowhere' })),
+        { path: 'capabilities[5].about.params', anchor: 'rule-about-record-params' },
+      ],
+      [
+        'an action about a record that requires more than the record and its asks',
+        withRecord(m => {
+          m.capabilities[5].input.properties.at = { type: 'string' };
+          m.capabilities[5].input.required.push('at');
+        }),
+        { path: 'capabilities[5].input.required', anchor: 'rule-about-record-filled' },
+      ],
+      [
+        'an ask for what the record fills',
+        withRecord(m =>
+          m.capabilities[5].asks.push({ kind: 'text', property: 'talk', label: 'Samtal', required: true }),
+        ),
+        { path: 'capabilities[5].asks[1].property', anchor: 'rule-ask-names-input' },
       ],
       [
         'an action that asks more than the key',

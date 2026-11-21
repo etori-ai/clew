@@ -1,6 +1,7 @@
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type {
+  Chip,
   EffectPreview,
   ItemEvent,
   MenuEntry,
@@ -34,7 +35,7 @@ import {
   siteHeader,
 } from './data';
 import { newsItemOutput, newsItemSpec, newsSpec } from './data';
-import type { NewsResult } from '@clew/contracts';
+import type { AssistantReach, NewsResult, RecordAction } from '@clew/contracts';
 import {
   assistantStatus,
   modelDetail,
@@ -188,6 +189,15 @@ const talkTime = (instant: string) =>
   }).format(new Date(instant));
 
 /** The API as the browser sees it, held in memory per test. `/api/**` never leaves the page. */
+/** One action about a record as it reached the mock (`RecordActionInput`, D137), with the read it was posted to. */
+export interface RecordActed {
+  read: string;
+  input: Record<string, unknown>;
+  capability: string;
+  values?: Record<string, string>;
+  draft?: { conversationId: string; messageId: string };
+}
+
 export class MockApi {
   threads = threads();
   /** The areas and the systems behind them with their marks' ordinals (D71); a test may add a system's area. */
@@ -204,11 +214,21 @@ export class MockApi {
     text: string;
     conversationId?: string;
     chips?: { ref: string }[];
+    /** The one of `chips` that stands open where the question was asked (`ConversationInput.beside`). */
+    beside?: string;
     assistant?: string;
     suggested?: boolean;
     own?: boolean;
     confirmed?: boolean;
+    /** The page the question was asked beside (`ConversationInput.page`, D141): its subject and its words. */
+    page?: { subject: string; label: string };
+    /** The thing that stands open where the question was asked (`ConversationInput.thing`, D136 item 1). */
+    thing?: { kind: string; id?: string; capability?: string; input?: Record<string, unknown> };
   }[] = [];
+  /** The conversations the conversation's page marked as opened (`POST /conversations/:id/opened`, D141 rule 6). */
+  opened: string[] = [];
+  /** The work items the next answers name (`MessageMeta.cards`); none unless a test sets them. */
+  answerCards: string[] | undefined;
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   /** How long the areas take, so a test can see Läget's tiles in their shape (D54). */
@@ -504,6 +524,20 @@ export class MockApi {
   /** Händelser cannot be read. */
   itemEventsFail = false;
   unmocked: string[] = [];
+  /** What the assistant may fill in for what stands open (`POST /api/assistant/reach`, D138 item 7): none by default. */
+  reach: AssistantReach = { prepares: [] };
+  /** Every body sent to `POST /api/assistant/reach`. */
+  reachAsked: unknown[] = [];
+  /** A record's actions by its read (`GET /api/records/:read/actions`, D137): none by default; `null` answers 404. */
+  recordActions: Record<string, RecordAction[] | null> = {};
+  /**
+   * Every action about a record that reached the mock (D137), by its route: `effect` (what an execute would write),
+   * `decide` (the human decision) and `actions` (a propose's start), each with the read, the record's input, the
+   * person's answers and the assistant's draft it was sent from.
+   */
+  recordEffects: RecordActed[] = [];
+  recordDecides: RecordActed[] = [];
+  recordStarts: RecordActed[] = [];
   /** Keeps every turn pending until the returned function is called, for a test that works while the answer is on its way: `answerDelay` can run out first on a slow machine. */
   holdAnswer() {
     let release = () => {};
@@ -999,6 +1033,21 @@ export class MockApi {
     if (path === '/attention') return json(attention);
     if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
     if (path === '/assistant/handover') return json({ assistants: this.handoverAssistants });
+    if (path === '/assistant/reach' && post) {
+      this.reachAsked.push(request.postDataJSON());
+      return json(this.reach);
+    }
+    {
+      const acted = post ? /^\/records\/([^/]+)\/(effect|decide|actions)$/.exec(path) : null;
+      if (acted)
+        return this.recordStart(route, decodeURIComponent(acted[1]!), acted[2] as 'effect' | 'decide' | 'actions');
+      const listed = /^\/records\/([^/]+)\/actions$/.exec(path);
+      if (listed && !post) {
+        const actions = this.recordActions[decodeURIComponent(listed[1]!)];
+        if (actions === null) return route.fulfill({ status: 404, json: { error: 'Posten finns inte.' } });
+        return json({ actions: actions ?? [] });
+      }
+    }
     if (path === '/assistant/model' && request.method() === 'PATCH') {
       this.currentModel = (request.postDataJSON() as { modelId: string }).modelId;
       return json(assistantStatus(this.modelChoices, this.currentModel));
@@ -1686,11 +1735,14 @@ export class MockApi {
         text: string;
         conversationId?: string;
         chips?: { ref: string }[];
+        beside?: string;
         assistant?: string;
         suggested?: boolean;
         own?: boolean;
         confirmed?: boolean;
         side?: boolean;
+        page?: { subject: string; label: string };
+        thing?: { kind: string; id?: string; capability?: string; input?: Record<string, unknown> };
       };
       this.asked.push(body);
       await this.answerHeld;
@@ -1720,10 +1772,58 @@ export class MockApi {
             routed: !!body.suggested,
             side: !!body.side,
           })
-        : conversation(this.threads, body.text, body.conversationId);
+        : conversation(
+            this.threads,
+            body.text,
+            // Asked in place, a new conversation is one per thing, as the server makes a new one per question asked: by
+            // the thing that stands open where there is one (D136: a person, a unit, one record of a read), else by
+            // what stands open beside it.
+            body.conversationId ??
+              (body.own && (body.thing || body.beside)
+                ? 'om-' +
+                  (body.thing
+                    ? [body.thing.kind, body.thing.id ?? body.thing.capability, JSON.stringify(body.thing.input ?? '')]
+                        .join('-')
+                        .replace(/[^A-Za-z0-9]+/g, '-')
+                        .replace(/-+$/, '')
+                    : body.beside!.replace(/[^A-Za-z0-9]/g, '-'))
+                : undefined),
+            body.beside,
+          );
+      // Asked for a comment beside a record that offers one, the assistant fills the action in and sends nothing
+      // (D137 item 4): the draft is kept on the answer, and the turn's response carries it with its action.
+      const offered = body.thing?.kind === 'record' ? this.recordActions[body.thing.capability ?? '']?.[0] : undefined;
+      if (!handed && offered && /kommentar/i.test(body.text)) {
+        const drafted = {
+          capability: offered.capability,
+          record: { capability: body.thing!.capability!, input: body.thing!.input ?? {} },
+          values: { text: 'Behörigheten gäller Skönsmons skola.' },
+        };
+        const written = response.thread.messages.at(-1)!;
+        written.body = 'Jag har fyllt i en kommentar. Inget är skickat.';
+        written.meta = { ...written.meta, recordDraft: drafted };
+        response.answer = { ...response.answer, body: written.body };
+        response.recordDraft = { ...drafted, action: offered };
+      }
+      // The work items the answer names (`MessageMeta.cards`), when a test says which.
+      if (!handed && this.answerCards) {
+        const written = response.thread.messages.at(-1)!;
+        written.meta = { ...written.meta, cards: this.answerCards };
+      }
+      // The server keeps the chips a question went with on it (`MessageMeta.chips`): how a page finds the
+      // conversation about its thing again. Kept here for a question asked in place.
+      const question = [...response.thread.messages].reverse().find(m => m.role === 'user');
+      if (!handed && body.own && body.beside && body.chips?.length && question)
+        question.meta = { ...question.meta, chips: body.chips as Chip[] };
       // A conversation keeps the assistants it has an exchange with whoever answers the turn.
-      const before = this.threads.find(t => t.id === response.conversationId)?.handover;
+      const earlier = this.threads.find(t => t.id === response.conversationId);
+      const before = earlier?.handover;
       if (!handed && before) response.thread.handover = before;
+      // A conversation started beside a page is kept as asked beside its subject (D141 rule 6); one that exists keeps
+      // what it had.
+      if (earlier?.askedBeside) response.thread.askedBeside = earlier.askedBeside;
+      else if (!handed && !body.conversationId && body.page)
+        response.thread.askedBeside = { subject: body.page.subject, label: body.page.label, openedAt: null };
       const step = handed
         ? { id: 'steg-1', capability: 'clew.handover', title: 'Frågar HR-assistenten', source: 'Kunskapsbanken' }
         : { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };
@@ -1750,6 +1850,18 @@ export class MockApi {
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
       return;
     }
+    // The conversation's page marks a conversation asked beside a page as opened, once (D141 rule 6).
+    const opening = post ? /^\/conversations\/([^/]+)\/opened$/.exec(path) : null;
+    if (opening) {
+      const at = decodeURIComponent(opening[1]!);
+      const t = this.threads.find(t => t.id === at && t.kind === 'question');
+      if (!t) return route.fulfill({ status: 404, json: { error: 'Samtalet finns inte.' } });
+      this.opened.push(at);
+      const marked =
+        t.askedBeside && !t.askedBeside.openedAt ? { ...t, askedBeside: { ...t.askedBeside, openedAt: NOW } } : t;
+      this.threads = this.threads.map(x => (x.id === at ? marked : x));
+      return json(marked);
+    }
     if (path === '/conversation') {
       const body = request.postDataJSON() as { text: string; conversationId?: string };
       await this.answerHeld;
@@ -1770,6 +1882,19 @@ export class MockApi {
       return json(this.update(id, { snoozedUntil: until }));
     }
     if (path.endsWith('/dismiss') && post) return json(this.update(id, { state: 'dismissed', handledAt: NOW }));
+    // The person says the next step is someone else's and taken (D139), and takes it back.
+    if (path.endsWith('/hand-on') && post) {
+      const to = this.threads.find(t => t.id === id)?.handOn?.waitingOn ?? '';
+      return json(this.update(id, { waitingOn: to, handedOn: { to, at: NOW } }));
+    }
+    if (path.endsWith('/hand-back') && post) {
+      this.threads = this.threads.map(t => {
+        if (t.id !== id) return t;
+        const { handedOn: _, ...rest } = t;
+        return { ...rest, waitingOn: null, updatedAt: NOW };
+      });
+      return json(this.threads.find(t => t.id === id)!);
+    }
     if (path.endsWith('/remind-invitees') && post) {
       const t = this.threads.find(t => t.id === id)!;
       return json(
@@ -1989,6 +2114,77 @@ export class MockApi {
    * makes an execute's work item with the human decision in it, here read back at once as the source would answer it.
    * An action the entity does not offer, or the wrong route for its kind, is the server's 404.
    */
+  /**
+   * An action about a record (D137) from its dialog, answered as the records module does: `effect` reads what an
+   * execute would write and writes nothing; `decide` makes the work item with the human decision in it, read back at
+   * once as the source would answer it; `actions` starts a propose's work item. A decision or a start that names the
+   * assistant's draft it was sent from marks that draft as sent with the work item it became, once. An action the
+   * record does not offer, or the wrong route for its kind, is the server's 404.
+   */
+  private recordStart(route: Route, read: string, sub: 'effect' | 'decide' | 'actions') {
+    const posted = route.request().postDataJSON() as Omit<RecordActed, 'read'>;
+    const action = (this.recordActions[read] ?? []).find(a => a.capability === posted.capability);
+    if (!action || (sub !== 'actions' && action.kind !== 'execute'))
+      return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
+    const asked: RecordActed = { read, ...posted };
+    if (sub === 'effect') {
+      this.recordEffects.push(asked);
+      return route.fulfill({
+        json: {
+          rows: [{ label: 'Kommentaren läggs till på beställningen', detail: posted.values?.text ?? '' }],
+          source: action.source,
+        } satisfies EffectPreview,
+      });
+    }
+    (sub === 'decide' ? this.recordDecides : this.recordStarts).push(asked);
+    const id = `record-${action.capability.replace(/\W/g, '-')}-${this.recordDecides.length + this.recordStarts.length}`;
+    const made: Thread = {
+      ...this.threads[0]!,
+      id,
+      topic: id,
+      connector: action.connector,
+      title: action.title,
+      trigger: { ...this.threads[0]!.trigger, reason: `Du valde ${action.title}`, source: action.source },
+      summary: `${action.title}.`,
+      items: [],
+      actions: [],
+      proposals: [],
+      deadline: null,
+      ...(sub === 'decide'
+        ? {
+            state: 'handled' as const,
+            handledAt: NOW,
+            receipt: {
+              at: NOW,
+              headline: `Kommentaren är tillagd i ${action.source}.`,
+              undoUntil: null,
+              undoCapability: null,
+              rows: [
+                { ref: `${action.connector}:kommentar`, label: action.title, outcome: 'done' as const, detail: '' },
+              ],
+            },
+          }
+        : { state: 'open' as const }),
+    };
+    // The draft the send names is marked with the work item it became, the first time only.
+    const { draft } = posted;
+    if (draft)
+      this.threads = this.threads.map(t =>
+        t.id !== draft.conversationId
+          ? t
+          : {
+              ...t,
+              messages: t.messages.map(m =>
+                m.id === draft.messageId && m.meta?.recordDraft && !m.meta.recordDraft.sent
+                  ? { ...m, meta: { ...m.meta, recordDraft: { ...m.meta.recordDraft, sent: { threadId: id } } } }
+                  : m,
+              ),
+            },
+      );
+    this.threads = [...this.threads.filter(t => t.id !== id), made];
+    return route.fulfill({ json: { threadId: id } });
+  }
+
   private entityStart(route: Route, path: string) {
     const [, , kind, key = '', sub = ''] = path.split('/');
     const posted = route.request().postDataJSON() as { capability?: string; values?: Record<string, string> } | null;
@@ -2568,13 +2764,19 @@ export const personButton = (page: Page) =>
 export const bell = (page: Page) => page.getByRole('banner').getByRole('button', { name: /^Påminnelser/ });
 /** The search (D126's "Sök"): its button on the band, which opens the command palette over the page. */
 export const searchButton = (page: Page) => page.getByRole('button', { name: 'Sök', exact: true });
-/** The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow. */
+/**
+ * The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow.
+ * It starts from the page's own question field (`composer`: Hem's line is a plain input since D130), never from the
+ * first combobox in the document, which is the search palette's field in its closed dialog.
+ */
 const dockOf = (page: Page) =>
-  page.evaluate(() => {
-    let el = document.querySelector('[role="combobox"]')?.parentElement ?? null;
-    while (el && !['sticky', 'fixed'].includes(getComputedStyle(el).position)) el = el.parentElement;
-    return el ? (el.getBoundingClientRect().toJSON() as DOMRect) : null;
-  });
+  composer(page)
+    .first()
+    .evaluate(field => {
+      let el = field.parentElement;
+      while (el && !['sticky', 'fixed'].includes(getComputedStyle(el).position)) el = el.parentElement;
+      return el ? (el.getBoundingClientRect().toJSON() as DOMRect) : null;
+    });
 export { dockOf };
 
 /** Renders a route and waits for its data, so a check never runs against the empty shell. */

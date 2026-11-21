@@ -17,6 +17,7 @@ import { executionKind } from './execution-status';
 import { DOT } from './dot';
 import { settlingUntil } from './mutations';
 import { wayBack } from './person-address';
+import { ASK_PARAM } from './panel-address';
 
 /**
  * Att göra (D112 item 3): the queue's piles, named as the address names them (D43). Behöver dig is the first and is
@@ -44,7 +45,11 @@ export interface TodoState {
   item?: string | null;
 }
 const TODO_KEYS: Record<keyof TodoState, string> = { tab: 'tab', area: 'area', filter: 'filter', item: 'item' };
-/** `/todo` with `next` applied over `search`; whatever else the address holds (a review over the page) is kept. */
+/**
+ * `/todo` with `next` applied over `search`; whatever else the address holds (a review over the page) is kept. An item
+ * opened in the reading pane takes the end slot from the assistant's pane (D141 rule 5), so the address lets go of it
+ * (`ask`): closing the item leaves the queue as it was before the pane was opened.
+ */
 export function todoHref(next: TodoState, search: URLSearchParams | string = ''): string {
   const q = new URLSearchParams(search);
   for (const key of Object.keys(next) as (keyof TodoState)[]) {
@@ -53,6 +58,7 @@ export function todoHref(next: TodoState, search: URLSearchParams | string = '')
     if (value === null || value === '' || (key === 'tab' && value === 'needs-you')) q.delete(TODO_KEYS[key]);
     else q.set(TODO_KEYS[key], value);
   }
+  if (next.item) q.delete(ASK_PARAM);
   const s = q.toString();
   return s ? `/todo?${s}` : '/todo';
 }
@@ -63,6 +69,17 @@ export function todoHref(next: TodoState, search: URLSearchParams | string = '')
 export function itemPageHref(threadId: string, from?: string | null): string {
   const back = wayBack(from);
   return `/items/${encodeURIComponent(threadId)}${back ? `?from=${encodeURIComponent(back)}` : ''}`;
+}
+
+/**
+ * The work item that stands open at an address: its own page (`/items/<id>`) or Att göra with it picked
+ * (`/todo?item=<id>`), else null. An answer beside it draws no row that leads to it: the person is already there (the
+ * product owner, 2026-11-20).
+ */
+export function openItemId(pathname: string, search: string): string | null {
+  const page = /^\/items\/([^/]+)\/?$/.exec(pathname);
+  if (page) return decodeURIComponent(page[1]!);
+  return pathname === '/todo' ? new URLSearchParams(search).get('item') : null;
 }
 
 /**
@@ -173,6 +190,13 @@ export function openDeadline(thread: Pick<Thread, 'state' | 'deadline'>, today: 
   return { date, days: daysUntil(date, today) };
 }
 
+/**
+ * Whether an item is counted as late (Att göra's "Försenade"): open with a day before today, and with an answer of the
+ * person's to give. An item that asks for none (`asksNoAnswer`) has a last day, which is no answer's and is never late.
+ */
+export const isOverdue = (thread: Thread, today: string): boolean =>
+  (openDeadline(thread, today)?.days ?? 0) < 0 && !asksNoAnswer(thread);
+
 /** The due badge (boards Inbox and Main): "I dag" in red, a day this week in yellow, a later week in grey. */
 export function dueOf(thread: Thread, today: string): RowFacts['due'] {
   const deadline = openDeadline(thread, today);
@@ -186,6 +210,43 @@ export function dueOf(thread: Thread, today: string): RowFacts['due'] {
   if (days === 1) return { variant: 'warning', label: 'I morgon' };
   if (days < 7) return { variant: 'warning', label: capital(weekday(date)) };
   return { variant: 'neutral', label: `Vecka ${weekNumber(date)}` };
+}
+
+/**
+ * An open work item that is the person's and has no decision of theirs to make: it offers at least one action and
+ * every one is a read, it holds no proposal, nothing on it has been decided or sent (no execution, no receipt), it
+ * waits on nobody and is not set aside. A review needs an execute, so there is none. Such an item ends by itself, when
+ * its source stops raising it, or by the person's Inte nu or Avfärda. An item with no action at all is a notice of
+ * something that happened ("till kännedom") and stays as it was.
+ */
+export function nothingToDecide(thread: Thread, now: string): boolean {
+  return thread.state === 'open' && !thread.waitingOn && !isSnoozed(thread, now) && asksNoAnswer(thread);
+}
+/**
+ * The same item wherever it stands (waiting on someone the person said they asked, D139, set aside, or closed): it
+ * offers at least one action and every one is a read, holds no proposal, and nothing on it was decided or sent. Its day
+ * is never an answer's, so nothing about it says "Svara senast" or that it is late.
+ */
+export function asksNoAnswer(thread: Thread): boolean {
+  return (
+    !thread.execution &&
+    !thread.receipt &&
+    thread.proposals.length === 0 &&
+    thread.actions.length > 0 &&
+    thread.actions.every(a => a.kind === 'read')
+  );
+}
+/**
+ * What an item with nothing to decide says where another item says when its answer is due (the badge by its title, the
+ * badge at the end of its row, the Status column's words): the source's reason ("Har gått ut", "Saknas"), in the colour
+ * its day gives it, or the warning of Behöver dig where it has no day. A reason longer than a badge holds is a sentence
+ * and is said where sentences are (the row's line, "Varför ser jag detta?"): null.
+ */
+export const REASON_MARK_MAX = 32;
+export function reasonMark(thread: Thread, today: string): NonNullable<RowFacts['due']> | null {
+  const reason = thread.trigger.reason.trim().replace(/\.$/, '');
+  if (!reason || reason.length > REASON_MARK_MAX) return null;
+  return { variant: dueOf(thread, today)?.variant ?? 'warning', label: reason };
 }
 
 /** The words of an item that waits on someone: its state's, and the start of its reason, which names whom. */
@@ -207,6 +268,8 @@ export function stateOf(thread: Thread, now: string, today: string): RowFacts['s
   if (thread.waitingOn) return { variant: 'neutral', label: WAITING_ON_OTHERS };
   if (thread.remindedAt && stockholmDate(thread.remindedAt) === today)
     return { variant: 'warning', label: 'Påminnelse' };
+  // Nothing to decide: nothing is to be done by a day, so the row says only where the item is, the pile's word.
+  if (nothingToDecide(thread, now)) return { variant: 'warning', label: STATUS['needs-you'].word };
   const kind = cardKind(thread);
   if (kind === 'forslag') return { variant: 'accent', label: 'Förslag' };
   if (kind === 'handelse') return { variant: 'neutral', label: 'Till kännedom' };
@@ -251,6 +314,13 @@ export function sourcesNotice(sources: readonly { lastSuccess: string | null; er
 /** A row's facts. A due badge that only repeats the state's word ("Påminnelse" beside "Påminnelse") is left out. */
 export const rowFacts = (thread: Thread, now: string, today: string): RowFacts => {
   const state = stateOf(thread, now, today);
+  // Nothing to decide (the product owner, 2026-11-20: "yes the rows should follow too"): no row says an answer is late.
+  // The badge says the source's reason, once, so the line does not; a reason too long for a badge stays in the line.
+  // While such an item waits or is set aside its line says that, and the badge still says the reason, never the day.
+  if (thread.state === 'open' && asksNoAnswer(thread)) {
+    const reason = reasonMark(thread, today);
+    return { state, due: reason, why: reason && nothingToDecide(thread, now) ? '' : whyOf(thread, now) };
+  }
   const due = dueOf(thread, today);
   return { state, due: due?.label === state.label ? null : due, why: whyOf(thread, now) };
 };

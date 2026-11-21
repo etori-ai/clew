@@ -7,6 +7,7 @@ import {
   ActInput,
   DocumentRequestSchema,
   AskInput,
+  AssistantReachInput,
   AvailabilityInput,
   CancelEventInput,
   ConfirmInput,
@@ -28,7 +29,11 @@ import type {
   MoveProposalInput as MoveProposalInputType,
   RescheduleEventInput as RescheduleEventInputType,
 } from '@clew/contracts';
-import type { ConversationEvent, ConversationInput as ConversationInputType } from '@clew/contracts';
+import type {
+  AssistantReachInput as AssistantReachInputType,
+  ConversationEvent,
+  ConversationInput as ConversationInputType,
+} from '@clew/contracts';
 import { CalendarError } from '@clew/calendar/model';
 import { HandoverHeld, HandoverOffered, TurnStopped } from '../assistant';
 import type { ActInput as ActInputType, EffectInput as EffectInputType } from '@clew/contracts';
@@ -72,12 +77,14 @@ const {
   reopenThread,
   snoozeOptions,
   snoozeThread,
+  handOnThread,
+  handBackThread,
   threadFor,
   undoReceipt,
 } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
-const { ask, converse, listAssistants, listObjects, reply } = assistant;
+const { ask, converse, listAssistants, listObjects, markOpened, reach, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const approval = ajv.compile(
   Type.Object(
@@ -160,6 +167,7 @@ const validators = {
   act: ajv.compile(ActInput),
   effect: ajv.compile(EffectInput),
   conversation: ajv.compile(ConversationInput),
+  reach: ajv.compile(AssistantReachInput),
   modelChoice: ajv.compile(ModelChoiceInput),
   createEvent: ajv.compile(CreateEventInput),
   rescheduleEvent: ajv.compile(RescheduleEventInput),
@@ -398,6 +406,14 @@ api.post('/threads/:id/snooze', async c =>
     ),
   ),
 );
+/**
+ * The person says the next step is someone else's and taken (D139), and takes that back. Their own statement: a route
+ * to a use case, with no body, never a capability and never a tool of the assistant's.
+ */
+api.post('/threads/:id/hand-on', async c => c.json(await handOnThread(c.get('session').context, c.req.param('id'))));
+api.post('/threads/:id/hand-back', async c =>
+  c.json(await handBackThread(c.get('session').context, c.req.param('id'))),
+);
 api.get('/snooze/presets', async c => c.json({ presets: await snoozeOptions(c.get('session').context) }));
 /** A person's own timer (D17, D85): a durable reminder workflow that pushes a card back at this thread. */
 api.post('/threads/:id/remind', async c =>
@@ -501,6 +517,11 @@ api.post('/conversation/stream', async c => {
     }
   });
 });
+/** The conversation's page opened a conversation asked beside a page (D141 rule 6): marked once, answered with the thread. */
+api.post('/conversations/:id/opened', async c => {
+  const thread = await markOpened(c.get('session').context, c.req.param('id'));
+  return thread ? c.json(thread) : c.json({ error: 'Samtalet finns inte.' }, 404);
+});
 /** What `@` can point at, in the box's context: `near` is a comma-separated list of the refs the person is looking at. */
 api.get('/objects', async c => {
   const q = c.req.query('q') ?? '';
@@ -516,6 +537,18 @@ api.get('/threads/:id/verbs', async c => {
 });
 /** The assistants of other systems the person may hand a conversation to (the assistants profile); empty when no source has any for them. */
 api.get('/assistant/handover', async c => c.json({ assistants: await listAssistants(c.get('session').context) }));
+/**
+ * What the assistant may fill in for what stands open on the page (D138 item 7): the same two fields a question carries
+ * about it, answered with the actions' titles, empty for anything the person may not see. Reads no record, writes nothing.
+ */
+api.post('/assistant/reach', async c =>
+  c.json(
+    await reach(
+      c.get('session').context,
+      await body(c.req.raw, validators.reach as unknown as (value: unknown) => value is AssistantReachInputType),
+    ),
+  ),
+);
 /** The person's models (D24): the ones they may pick, the one in use and whether it answers; choosing one is their own preference. */
 api.get('/assistant/status', async c => c.json(await models.statusFor(c.get('session').context)));
 api.patch('/assistant/model', async c =>

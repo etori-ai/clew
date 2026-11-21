@@ -131,7 +131,8 @@ function MoveButton({ move, variant }: { move: StatusMove; variant: 'primary' | 
 }
 /**
  * Size 3, the notice: directly under a thing's title, once something has happened or is in the way (a plain to-do has
- * none: its title and its buttons say what is expected). The title says what the state is about in the person's words,
+ * none: its title and its buttons say what is expected; one with nothing to decide has one with no move, which says
+ * what holds in the source's words). The title says what the state is about in the person's words,
  * the description why and since when, and there is at most one move: filled when it is the person's (`action`), a
  * secondary button when it is an offer (`offer`: remind, undo). What it concerns may stand inside it (`children`).
  * Astryx's Banner, never folded. It is no live region, so the page says a change of state aloud itself (`useAnnounce`),

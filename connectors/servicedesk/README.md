@@ -1,8 +1,8 @@
 # servicedesk: a generic IT service desk, as a fixture connector
 
 A municipality's IT service desk as the development stack and the unit suite meet it: what a person ordered or
-reported and waits for, an order placed for a person from the desk's catalogue, and the equipment the desk has
-registered to a person. A kind of system, not a product (D52); every request and device is made up. An independent Node
+reported and waits for, a comment the person adds to one of their requests from its page, an order placed for a
+person from the desk's catalogue, and the equipment the desk has registered to a person. A kind of system, not a product (D52); every request and device is made up. An independent Node
 service behind the connector protocol that imports nothing from the rest of the repository (D21); the shape is
 [incidents](../incidents/README.md)'s, with the same store and switches.
 
@@ -20,10 +20,12 @@ layers file; nothing of Clew imports the connector, and an order placed does not
 | Capability | Kind | What |
 |---|---|---|
 | `servicedesk.requests` | read, the `requests` profile | The asking person's own orders and fault reports as `RequestRow`s: open ones and those closed in the last 30 days. Input `{}`. The label is the desk's number and the type ("SD-26110041 · Dator, Beställning"), never a subject, a description or a name. A row opens `servicedesk.request`. |
-| `servicedesk.request` | read, detail | One request with its free text (subject, description, the desk's latest note), the person's own only; anyone else's is not found. `model: false`, opens in the panel. |
+| `servicedesk.request` | read, detail | One request with its free text (subject, description, the desk's latest note, the person's own latest comment), the person's own only; anyone else's is not found. `model: false`, opens in the panel. |
+| `servicedesk.comment` | execute, about a record | "Lägg till en kommentar" on the page of a request the person made (D137): `about: { record: 'servicedesk.request', params: { ref: 'ref' } }`, so Clew fills `ref` from the request's page and asks for the text (`long-text`). A comment on anyone else's request is not found. Deduplicated by Clew's operation id and read back through `servicedesk.lookup` (D45); the desk also keeps the comment under the operation id. The request's read shows it afterwards as "Din senaste kommentar". |
+| `servicedesk.commentEffect` | read | "Det här händer": the comment is added to the request, and which group sees it. Checked as the comment is, written nowhere. |
 | `servicedesk.order` | execute, about a person | Orders a laptop, a phone, an access card or access to a system for the person: the caller themself, or a direct report of a manager (`person.admits: ['self', 'managed']`, D117). Asks what (a choice) and an optional message. Deduplicated by Clew's operation id and read back through `servicedesk.lookup` (D45); the desk also files the order under the operation id. The request is the caller's: it shows in their list and on their cards, and records who it is for by user name. |
 | `servicedesk.orderEffect` | read | "Det här händer": what is ordered, for whom ("till dig", "till medarbetaren"), which group handles it and the day it is expected. Checked as the order is, written nowhere. |
-| `servicedesk.lookup` | read | The read-back of an order by operation id, for the person who made it. |
+| `servicedesk.lookup` | read | The read-back of an order or a comment by operation id, for the person who made it. |
 | `servicedesk.person` | read, about a person | One row per key: how many devices are registered to the person, and how many orders for them are not delivered. Read about oneself, every such order counts; read by anyone else (a manager), only the orders someone else placed on the person's behalf, never what the person ordered for themself. A section on the opened person; its row opens the equipment. |
 | `servicedesk.equipment` | read, list | The devices registered to one person: type, model, inventory number, since when. |
 

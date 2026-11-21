@@ -166,8 +166,9 @@ test.describe('the list', () => {
     await expect(
       page.getByRole('heading', { level: 2, name: 'Ingen introduktion eller något avslut för dig' }),
     ).toBeVisible();
-    // The page's links: where it stands, the one way on, and the floating way to the assistant.
-    await expect(page.getByRole('main').getByRole('link')).toHaveText(['Startsidan', 'Till startsidan', 'Fråga AI']);
+    // The page's links: where it stands and the one way on. The way to the assistant is the button by the title.
+    await expect(page.getByRole('main').getByRole('link')).toHaveText(['Startsidan', 'Till startsidan']);
+    await expect(page.getByRole('main').getByRole('button', { name: 'Fråga AI', exact: true })).toHaveCount(1);
     await expectNoAxeViolations(page);
   });
 });

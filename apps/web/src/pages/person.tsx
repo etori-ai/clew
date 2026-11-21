@@ -37,11 +37,9 @@ import {
   unitPageHref,
 } from '../person-address';
 import { TALK_PARAM } from '../talk-address';
-import { entitySubject } from '../conversation-about';
 import { useNav, type NavCurrent } from '../components/shell/nav';
 import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell/shell';
 import { ContentSkeleton } from '../components/shell/loading';
-import { AskClew } from '../components/conversation/thing-panel';
 import { TalkTab } from '../components/people/talk-overlay';
 import { RegisterHolding } from '../components/people/register-holding';
 import {
@@ -71,6 +69,7 @@ import { OwnCompetence } from './competence';
 import { PlanTab } from './boarding';
 import { employmentLabel, employmentPercent, employmentTitles } from './person-model';
 import { PageFrame } from '../components/shell/page-frame';
+import { entityPageSubject } from '../components/conversation/page-conversation';
 
 /** The rail's width and the facts' panel beside the column (`EntityPage`). */
 const SIDE_NAV = 260,
@@ -296,14 +295,16 @@ export function OverviewSection({ answer, href, level }: { answer: SectionAnswer
 /**
  * The person as a page (D126 rule 1, board Person; D97 item 5), at `/people/:key`, the one way a person is shown,
  * reached from a name on Personal or on any row that names them. The thing's page (`EntityPage`): the way back, their
- * avatar, name, title and unit, the actions under the name (the first as the primary, the second as a secondary, "Fråga
- * Clew" as a ghost that starts a conversation about the person, the rest under "Fler åtgärder"), then the person's
+ * avatar, name, title and unit, the actions under the name (the first as the primary, the second as a secondary, the
+ * rest under "Fler åtgärder"; the corner's "Fråga AI" opens the assistant's pane about the person beside the page,
+ * D136, D138), then the person's
  * sections as tabs, each a link with its own address (`?section=`, D126 rule 9): Översikt (Behöver dig and each
  * source's row in short with "Visa allt"), one tab per source that has something about them (its row and its fuller
  * read; the talk's tab is the talk itself, D126 rule 3), Ärenden (the reader's work items about them) and, on the
  * reader's own page, their own competences (Kompetens) and their own introduction or leaving (Introduktion) (rule 7).
  * A tab is drawn only when the reader may see it and data backs it: a source that answered without a row has none.
- * The facts (Anställning, Kontakt, Enhet) are the end panel, above the read where the window is narrow.
+ * The facts (Anställning, Kontakt, Enhet) are the end panel, above the read where the window is narrow and while the
+ * assistant's pane stands beside the page.
  *
  * Old addresses keep working (rule 3): `?section=<capability>` and `needs-you` are the tabs they named;
  * `?talk=<personId>`, the drawer that lay over the page, is the talk's tab, replaced in the history. "Registrera intyg"
@@ -390,7 +391,8 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   let body: ReactNode;
   if (missing || read.isError || !detail)
     body = (
-      <PageFrame>
+      // Until the person is read, and when they are missing, the page has no subject yet and no button.
+      <PageFrame ask={{ subject: null }}>
         {missing ? (
           <EmptyState
             headingLevel={1}
@@ -422,13 +424,22 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     const { name } = detail.entity;
     // The way back (board Person): the page in `from` when Clew can name it, else Personal for the reader's own people.
     const back = origin ?? (!from && detail.relation === 'managed' ? { label: 'Personal', href: '/staff' } : null);
-    // "Fråga assistenten" (D126 rule 5): a new conversation about the person, the same subject from every tab (the product
-    // owner, 2026-11-14: one conversation per person, not one per tab). The tab it was pressed on only says what the
-    // pane beside the transcript shows first, where the pane has that tab (a source's or Ärenden; the reader's own
-    // Kompetens and Introduktion write, and stay on this page). What a source says about a person never reaches the
-    // model (D97 item 7), so the question goes without a chip.
+    // What the assistant beside the page is about (D136 items 1 to 4 and 7): the person, the same subject from every tab
+    // (the product owner, 2026-11-14: one conversation per person, not one per tab), told to the server by Clew's id
+    // with every question. The tab only says what the pane beside the conversation it opens as shows first, where that
+    // pane has the tab (a source's or Ärenden; the reader's own Kompetens and Introduktion write, and stay on this
+    // page). What a source says about a person is never the assistant's (D97 item 7): no chip, and the pane names a
+    // section's system it cannot read.
     const shownFirst = drawn.some(a => a.source.capability === tab) || tab === NEEDS_YOU ? tab : null;
-    const ask = <AskClew subject={entitySubject('person', key, shownFirst)} />;
+    const subject = entityPageSubject({
+      kind: 'person',
+      id: detail.entity.key,
+      name,
+      relation: detail.relation,
+      sections: detail.sections,
+      views: areas?.views,
+      tab: shownFirst,
+    });
     const answer = drawn.find(a => a.source.capability === tab);
     let sections: PageSectionEntry[];
     if (tab === NEEDS_YOU)
@@ -498,24 +509,21 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
       ];
     body = (
       <EntityPage
+        ask={{ subject }}
         back={back}
         icon={<Avatar name={name} size={mobile ? 48 : 60} tooltip={false} aria-hidden />}
         title={name}
         subtitle={nameLine(detail)}
         actions={
           <EntityActions
-            detail={detail}
+            subject={detail.entity}
+            actions={detail.actions}
             mobile={mobile}
-            ask={
+            extra={
               own ? (
-                <>
-                  {ask}
-                  {/* The person's own settings (D39), which the rail's foot row opened before it led here (D126). */}
-                  <Button variant="secondary" label="Inställningar" href={settingsHref(pathname, here)} />
-                </>
-              ) : (
-                ask
-              )
+                // The person's own settings (D39), which the rail's foot row opened before it led here (D126).
+                <Button variant="secondary" label="Inställningar" href={settingsHref(pathname, here)} />
+              ) : undefined
             }
           />
         }

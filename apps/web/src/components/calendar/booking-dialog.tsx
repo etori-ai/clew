@@ -1,249 +1,33 @@
-import { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AvailabilityResult, CalendarMember, CalendarRoom } from '@clew/contracts';
-import {
-  Banner,
-  Button,
-  DateTimeInput,
-  Dialog,
-  DialogHeader,
-  FormLayout,
-  List,
-  ListItem,
-  MultiSelector,
-  Selector,
-  StatusDot,
-  Text,
-  TextInput,
-  TimeInput,
-  VStack,
-  useAnnounce,
-  useMediaQuery,
-  useToast,
-} from '@clew/ui';
-import { localClock, localInstant, shortDayLabel, timeRange } from '@clew/calendar/dates';
-import { api } from '../../api';
-import { membersQuery, roomsQuery } from '../../queries';
-import { errorMessage } from '../../query-policy';
-import { keys } from '../../query-keys';
-import { mobileQuery } from '../shell/shell';
-import { applyThread } from '../../thread-cache';
+import { Dialog, DialogHeader } from '@clew/ui';
 import { DialogFrame } from '../shell/dialog-frame';
-
-const EMPTY_MEMBERS: CalendarMember[] = [];
-const EMPTY_ROOMS: CalendarRoom[] = [];
-
-type Props = {
-  isOpen: boolean;
-  /** The time to start from: a span dragged or a row clicked on the grid, or the next whole hour. ISO instants. */
-  initial: { start: string; end: string };
-  onClose: (created: boolean) => void;
-};
-const stateWord = { free: 'ledig', busy: 'upptagen', unknown: 'okänt' } as const;
-const stateDot = { free: 'success', busy: 'warning', unknown: 'neutral' } as const;
-const hhmm = (instant: string) => localClock(instant).slice(11, 16);
+import { BookingButtons, BookingFields, BookingHint, type Booking } from './booking';
 
 /**
- * "Ny bokning" (D32, after startsidan's meeting form): a title, a start, an end, guests from the unit and a room, with a
- * free-busy check before the person books. The form is the keyboard path to a booking; a span dragged or a row clicked
- * on the grid only fills it in. Modelled on Astryx's form-wizard-dialog: a form dialog that keeps its content when clicked outside.
+ * "Ny bokning" on a phone (D32, after startsidan's meeting form): the same form the pane beside the grid holds
+ * (`booking.tsx`), in a full-screen dialog, since a phone has no room for a pane beside its list. The page keeps the
+ * draft (`useBooking`); this only draws it. Modelled on Astryx's form-wizard-dialog: a form dialog that keeps its
+ * content when clicked outside.
  */
-export function BookingDialog({ isOpen, initial, onClose }: Props) {
-  const mobile = useMediaQuery(mobileQuery);
-  const announce = useAnnounce();
-  const toast = useToast();
-  const [title, setTitle] = useState('');
-  const [decisionId, setDecisionId] = useState(() => crypto.randomUUID());
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
-  const [participants, setParticipants] = useState<string[]>([]);
-  const [room, setRoom] = useState('');
-  // The unit's members and the rooms come from the cache and are kept a while (D33), so the dialog opens with them.
-  const client = useQueryClient();
-  const members = useQuery({ ...membersQuery, enabled: isOpen }).data?.members ?? EMPTY_MEMBERS;
-  const rooms = useQuery({ ...roomsQuery, enabled: isOpen }).data?.rooms ?? EMPTY_ROOMS;
-  const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ text: string; uncertain: boolean } | null>(null);
-  useEffect(() => {
-    if (!isOpen) return;
-    setDecisionId(crypto.randomUUID());
-    setTitle('');
-    setStart(localClock(initial.start));
-    setEnd(hhmm(initial.end));
-    setParticipants([]);
-    setRoom('');
-    setAvailability(null);
-    setError(null);
-  }, [isOpen, initial.start, initial.end]);
-  useEffect(() => {
-    setAvailability(null);
-  }, [start, end, participants, room]);
-  const startAt = start ? localInstant(start) : null;
-  const endAt = startAt && end ? localInstant(`${start.slice(0, 10)}T${end}`) : null;
-  const endFirst = !!startAt && !!endAt && Date.parse(endAt) <= Date.parse(startAt);
-  const ready = !!title.trim() && !!startAt && !!endAt && !endFirst;
-  const input = () => ({ start: startAt!, end: endAt!, participants, ...(room ? { room } : {}) });
-  const check = async () => {
-    if (!startAt || !endAt || endFirst) return;
-    setError(null);
-    try {
-      const result = await api.availability(input());
-      setAvailability(result);
-      announce(
-        `Du är ${stateWord[result.mine]}. ${result.participants.map(p => `${p.name} ${stateWord[p.state]}`).join(', ')}${result.room ? `. Rummet ${result.room.name} ${stateWord[result.room.state]}` : ''}.`,
-      );
-    } catch (e) {
-      setError({ text: errorMessage(e, 'Något gick fel.'), uncertain: false });
-    }
+export function BookingDialog({ booking, isOpen }: { booking: Booking; isOpen: boolean }) {
+  const close = (open: boolean) => {
+    if (!open) booking.close();
   };
-  const book = async () => {
-    if (!ready || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const thread = await api.createEvent({ decisionId, title: title.trim(), ...input() });
-      await applyThread(client, thread);
-      void client.invalidateQueries({ queryKey: keys.calendarAll });
-      toast({
-        body: 'Bokningsbeslutet är sparat. Ärendet visar när kalendern har bekräftat bokningen.',
-        uniqueID: 'booking:' + thread.id,
-      });
-      onClose(true);
-    } catch (e) {
-      const text = errorMessage(e, 'Något gick fel.');
-      setError({ text, uncertain: /osäker/.test(text) });
-    } finally {
-      setBusy(false);
-    }
-  };
-  const close = () => onClose(false);
   return (
-    <Dialog
-      isOpen={isOpen}
-      onOpenChange={open => {
-        if (!open) close();
-      }}
-      width={560}
-      purpose="form"
-      variant={mobile ? 'fullscreen' : 'standard'}
-    >
+    <Dialog isOpen={isOpen} onOpenChange={close} width={560} purpose="form" variant="fullscreen">
       <DialogFrame
         header={
           <DialogHeader
             title="Ny bokning"
             subtitle="I din kalender, med inbjudan till dem du väljer."
-            onOpenChange={open => {
-              if (!open) close();
-            }}
+            onOpenChange={close}
           />
         }
-        error={error && !error.uncertain ? error.text : null}
-        secondary={
-          <Button
-            size="sm"
-            variant="ghost"
-            label="Kontrollera tillgänglighet"
-            isDisabled={!startAt || !endAt || endFirst}
-            clickAction={check}
-          />
-        }
-        primary={
-          <>
-            <Button size="sm" variant="ghost" label="Avbryt" onClick={close} />
-            <Button size="sm" variant="primary" label="Boka" isDisabled={!ready} clickAction={book} />
-          </>
-        }
+        error={booking.error && !booking.error.uncertain ? booking.error.text : null}
+        secondary={isOpen && <BookingHint booking={booking} />}
+        primary={isOpen && <BookingButtons booking={booking} />}
       >
-        <VStack gap={3}>
-          <FormLayout direction="vertical" defaultOptionality="required">
-            <TextInput
-              label="Rubrik"
-              value={title}
-              onChange={setTitle}
-              isRequired
-              placeholder="Vad handlar mötet om?"
-            />
-            <DateTimeInput
-              label="Börjar"
-              value={start as never}
-              onChange={v => setStart(v ?? '')}
-              isRequired
-              weekStartsOn="mon"
-              timeIncrement={15}
-              presentation="adaptive-bottom-sheet"
-            />
-            <TimeInput
-              label="Slutar"
-              value={end as never}
-              onChange={v => setEnd(v ?? '')}
-              isRequired
-              increment={15}
-              status={endFirst ? { type: 'error', message: 'Sluttiden måste vara efter starttiden.' } : undefined}
-            />
-            <MultiSelector
-              label="Deltagare"
-              isOptional
-              options={members.map(m => ({ value: m.email, label: m.name }))}
-              value={participants}
-              onChange={v => setParticipants(v.slice(0, 8))}
-              placeholder={members.length ? 'Välj från din enhet' : 'Bara du själv'}
-              triggerDisplay="badges"
-              hasSearch={members.length > 6}
-              presentation="adaptive"
-              isDisabled={!members.length}
-              disabledMessage="Din enhet har inga medlemmar att bjuda in."
-            />
-            <Selector
-              label="Rum"
-              isOptional
-              options={[
-                { value: '', label: 'Inget rum' },
-                ...rooms.map(r => ({
-                  value: r.ref,
-                  label: r.name,
-                  description: `${r.capacity} platser${r.equipment.length ? '\u00a0· ' + r.equipment.join(', ') : ''}`,
-                })),
-              ]}
-              value={room}
-              onChange={v => setRoom(v ?? '')}
-              presentation="adaptive"
-            />
-          </FormLayout>
-          {availability && (
-            <List density="compact" hasDividers aria-label="Tillgänglighet">
-              <ListItem
-                label={<Text>Du</Text>}
-                endContent={<StatusDot variant={stateDot[availability.mine]} label={stateWord[availability.mine]} />}
-              />
-              {availability.participants.map(p => (
-                <ListItem
-                  key={p.email}
-                  label={<Text>{p.name}</Text>}
-                  endContent={<StatusDot variant={stateDot[p.state]} label={stateWord[p.state]} />}
-                />
-              ))}
-              {availability.room && (
-                <ListItem
-                  label={<Text>{availability.room.name}</Text>}
-                  endContent={
-                    <StatusDot variant={stateDot[availability.room.state]} label={stateWord[availability.room.state]} />
-                  }
-                />
-              )}
-            </List>
-          )}
-          {error?.uncertain && (
-            <Banner
-              status="warning"
-              title="Bokningsresultatet är osäkert"
-              description={error.text}
-              collapsible={false}
-            />
-          )}
-          {/* A greyed button with no word about why is a dead end: what is missing is said beside it. */}
-          {!title.trim() && <Text type="supporting">Skriv en rubrik så går det att boka.</Text>}
-        </VStack>
+        {/* Only the frame stays while the dialog is closed (it names the dialog): the form is the pane's then. */}
+        {isOpen && <BookingFields booking={booking} />}
       </DialogFrame>
     </Dialog>
   );
