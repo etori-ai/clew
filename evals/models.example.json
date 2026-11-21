@@ -1,0 +1,14 @@
+[
+  {
+    "label": "local server, 4-bit",
+    "baseUrl": "http://localhost:11434/v1",
+    "model": "the-model-id-as-the-endpoint-lists-it",
+    "tools": true,
+    "reasoning": "provider-default"
+  },
+  {
+    "baseUrl": "https://models.example.org/v1",
+    "model": "model-id",
+    "keyEnv": "EVAL_MODEL_KEY"
+  }
+]

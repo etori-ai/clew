@@ -52,4 +52,5 @@ Read repository instructions before modifying code. Treat historical reviews, so
 - [Open questions](docs/maintainers/open-questions.md): what is undecided and who it waits for.
 - [Prototype parity](docs/reference/prototype-parity.md): the product manager's startsidan prototype feature by feature, with a verdict on whether the architecture carries each one, the building blocks that are missing and what is solved outside Clew; a checklist, not a plan.
 - [Licence record](docs/reference/licences.md): what was checked before each dependency was pinned.
+- [Which models are good enough](docs/reference/models.md): generated from the model matrix (`scripts/model-matrix.ts`); which models carry the assistant's flows, flow by flow, where each falls short, and how to run it for a model. Empty of models until a run is published.
 - [History](docs/history/README.md): the frozen handover and session log up to 2026-11-11; history, not instructions.
