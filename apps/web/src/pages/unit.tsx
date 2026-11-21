@@ -323,7 +323,7 @@ function OverviewSection({ answer, href }: { answer: SectionAnswer; href: string
 /**
  * The unit as a page (D126 rule 1, the composition of board Person; D97 items 5 and 6), at `/units/:id`, "Läget" in the
  * rail for a manager who follows up one unit: the way back and the unit's place among the units the reader follows up,
- * its name, its actions and "Fråga assistenten" under the name, then its tabs, each a link with its own address (`?section=`):
+ * its name, its actions in the one menu "Åtgärder" beside the frame's "Fråga AI", then its tabs, each a link with its own address (`?section=`):
  * Översikt (Läget, every figure of the reader's own unit; the sources' key figures; Behöver dig; each source's row in
  * short with "Visa allt"), one tab per source that answered for this unit (its row and its fuller read; the follow-up
  * dialogue's tab is the dialogue itself, D118, D126 rule 3) and Ärenden (the reader's work items about the unit). The

@@ -91,6 +91,8 @@ a list: more reach, but dense tables get a control per row and the record's page
   for which read and action and which asks, never the values.
 - A record's page draws its actions where a person's page draws a person's: at the end of the title's line, the
   first as the primary button, and under the title in one "Åtgärder" menu on a phone. A list's rows get none.
+  (Amended 2026-11-21 with [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) rule 1: no action is
+  a button of its own; they stand in the one "Åtgärder" menu at every width, also when there is one.)
 - A draft sent from its card is marked `sent: { threadId }` on the stored message in the work item's own transaction,
   and the start's audit row says `fromDraft`, with no conversation id, message id or text. Only the server writes the
   mark. The card then says what the work item says of itself: "Skickat" with the receipt's headline, "Skickat, väntar

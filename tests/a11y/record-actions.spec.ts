@@ -5,8 +5,9 @@ import { deskRequestOutput, deskRequestRef, deskRequestTitle } from './requests'
 
 /**
  * An action about a record (D137), on the first record that has one: a request in the IT service desk, with "Lägg till
- * en kommentar". The record's page draws the actions the server lists for it where a person's page draws its own, at the
- * end of the title's line and as one "Åtgärder" menu on a phone, and each opens the action's own dialog: nothing is sent
+ * en kommentar". The record's page draws the actions the server lists for it where a person's page draws its own, as
+ * the one "Åtgärder" menu at the end of the title's line (under the title on a phone; D126 rule 1 as amended
+ * 2026-11-21: no action is a button of its own), and each opens the action's own dialog: nothing is sent
  * before the dialog's last button. Asked for it in the pane beside the record, the assistant fills the action in and
  * sends nothing (D138 item 8): the answer holds the row "Ifyllt åt dig" with what was filled in and "Granska och
  * skicka", which opens the same dialog at its last step. Sent from there, the draft says so with the way to the work
@@ -54,22 +55,30 @@ const askForComment = async (page: Page) => {
 test.describe('a record’s actions on its page (D137)', () => {
   test.use({ viewport: WIDE });
 
-  test('the action stands at the end of the title’s line and opens its own dialog; Nästa reads what will happen and sends nothing, and the last button decides and opens the work item', async ({
+  test('the Åtgärder menu stands at the end of the title’s line and its action opens its own dialog; Nästa reads what will happen and sends nothing, and the last button decides and opens the work item', async ({
     page,
     api,
   }) => {
     offered(api);
     await open(page, RECORD);
     const title = page.getByRole('heading', { level: 1, name: NAME });
-    const button = page.getByRole('main').getByRole('button', { name: COMMENT, exact: true });
+    // One menu, also for one action (D126 rule 1 as amended 2026-11-21): the action is no button of its own.
+    const button = page.getByRole('main').getByRole('button', { name: `Åtgärder för ${NAME}`, exact: true });
     await expect(button).toBeVisible();
+    await expect(page.getByRole('main').getByRole('button', { name: COMMENT, exact: true })).toHaveCount(0);
     // On the title's line, after the title.
     const [t, b] = [(await title.boundingBox())!, (await button.boundingBox())!];
     expect(b.y).toBeLessThan(t.y + t.height);
     expect(b.y + b.height).toBeGreaterThan(t.y);
     expect(b.x).toBeGreaterThan(t.x);
     await expectNoAxeViolations(page);
+    // By keyboard: Enter opens the menu under the system the action acts in, and Enter on its row opens the dialog.
     await button.focus();
+    await page.keyboard.press('Enter');
+    const menu = page.getByRole('menu', { name: `Åtgärder för ${NAME}` });
+    await expect(menu.getByRole('group', { name: 'IT-servicedesken' }).getByRole('menuitem')).toHaveText([COMMENT]);
+    await expect(menu.getByRole('menuitem', { name: COMMENT })).toBeFocused();
+    await expectNoAxeViolations(page);
     await page.keyboard.press('Enter');
     await expect(dialog(page)).toBeVisible();
     await expect(dialog(page).getByText(`IT-servicedesken · ${NAME}`)).toBeVisible();
@@ -105,7 +114,7 @@ test.describe('a record’s actions on its page (D137)', () => {
     await expect(page).toHaveURL(/\/items\/record-servicedesk-comment-1\?from=/);
     await page.goBack();
     await expect(title).toBeVisible();
-    await expect(page.getByRole('main').getByRole('button', { name: COMMENT, exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('button', { name: `Åtgärder för ${NAME}` })).toBeVisible();
   });
 
   test('a record with no action listed, or whose list is refused, has no buttons', async ({ page, api }) => {

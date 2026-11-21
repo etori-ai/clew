@@ -14,8 +14,9 @@ import { CONTACT, FRITIDS, JOHAN_EMAIL, MELLANSTADIET, People } from './person-d
 
 /**
  * The person as a page (D126 rule 1, board Person; D97 item 5): the thing's page, with the way back, the avatar, the
- * name with the title and the unit, the actions under the name (the first as the primary, the second as a secondary,
- * the rest under Fler åtgärder; no Fråga assistenten among them, D138 item 1), the person's sections as tabs that are links
+ * name with the title and the unit, the actions at the end of the title's line (every one in the one menu "Åtgärder",
+ * grouped by system, and none a button of its own, D126 rule 1 as amended 2026-11-21; no Fråga assistenten among them,
+ * D138 item 1), the person's sections as tabs that are links
  * with their own address (`?section=`), and the facts (Anställning, Kontakt, Enhet) in the end panel, above the read
  * where the window is narrow. Nothing opens over or beside the page (rule 3): a work item is its own page, the talk is
  * its tab, and a propose's dialog comes before anything is created (rule 4). `person-data.ts` answers the person and
@@ -64,14 +65,18 @@ test.describe('the person as a page', () => {
     await expect(main.getByText('Lärare 4–6 · Bergsåkers skola', { exact: true })).toBeVisible();
     // The avatar is decoration: the name beside it says who it is.
     await expect(main.locator('.astryx-avatar').first()).toHaveAttribute('aria-hidden', 'true');
-    // The actions: the first as the primary, the second as a secondary, the rest under Fler åtgärder; no way to ask
-    // the assistant stands among them (D138 item 1: the door is the corner's "Fråga AI").
-    await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toBeVisible();
-    await expect(main.getByRole('button', { name: 'Registrera frånvaro', exact: true })).toBeVisible();
+    // The actions: one menu, "Åtgärder", beside "Fråga AI", and no action a button of its own (D126 rule 1 as amended
+    // 2026-11-21); no way to ask the assistant stands among them (D138 item 1: the door is the frame's "Fråga AI").
+    const actions = main.getByRole('button', { name: 'Åtgärder för Johan Byström', exact: true });
+    await expect(actions).toBeVisible();
+    await expect(actions).toHaveText('Åtgärder');
+    await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toHaveCount(0);
+    await expect(main.getByRole('button', { name: 'Registrera frånvaro', exact: true })).toHaveCount(0);
+    await expect(main.getByRole('button', { name: /Fler åtgärder/ })).toHaveCount(0);
     await expect(main.getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Fråga AI', exact: true })).toHaveCount(1);
-    await main.getByRole('button', { name: 'Fler åtgärder för Johan Byström' }).click();
-    await expect(page.getByRole('menuitem')).toHaveText(['Boka samtal']);
+    await actions.click();
+    await expect(page.getByRole('menuitem')).toHaveText(['Boka möte', 'Registrera frånvaro', 'Boka samtal']);
     await page.keyboard.press('Escape');
     // The tabs, each a link with its own address; Översikt is the current one.
     const strip = tabs(page);
@@ -156,23 +161,76 @@ test.describe('the person as a page', () => {
     await new People().route(page, api);
     const here = '/people/johan?from=%2Fstaff';
     await open(page, here);
-    const button = page.getByRole('main').getByRole('button', { name: 'Registrera frånvaro', exact: true });
+    const button = page.getByRole('main').getByRole('button', { name: 'Åtgärder för Johan Byström', exact: true });
+    const pick = () => page.getByRole('menuitem', { name: 'Registrera frånvaro' }).click();
     await button.click();
+    await pick();
     const dialog = page.getByRole('dialog', { name: 'Registrera frånvaro' });
     await expect(dialog).toBeVisible();
     expect(api.entityStarts).toEqual([]);
     await expectNoAxeViolations(page);
-    // Avbryt sends nothing, and the focus goes back to the button.
+    // Avbryt sends nothing, and the focus goes back to the menu's button.
     await dialog.getByRole('button', { name: 'Avbryt' }).click();
     await expect(dialog).toBeHidden();
     await expect(button).toBeFocused();
     expect(api.entityStarts).toEqual([]);
     // The last button starts it, and its work item opens on its own page with this page as the way back.
     await button.click();
+    await pick();
     await dialog.getByRole('button', { name: 'Registrera frånvaro' }).click();
     await expect(dialog).toBeHidden();
     expect(api.entityStarts).toEqual([{ key: 'johan', capability: 'hr.registerAbsence', values: {} }]);
     await expect(page).toHaveURL('/items/entity-hr-registerAbsence-johan?from=%2Fpeople%2Fjohan');
+  });
+
+  test('the one Åtgärder menu by keyboard: its actions stand under the system each acts in, Esc and a closed dialog give the focus back to its button (D126 rule 1 as amended 2026-11-21)', async ({
+    page,
+    api,
+  }) => {
+    await new People().route(page, api);
+    await open(page, '/people/johan?from=%2Fstaff');
+    const main = page.getByRole('main');
+    const button = main.getByRole('button', { name: 'Åtgärder för Johan Byström', exact: true });
+    // The menu stands beside "Fråga AI", on the title's line.
+    const [menuBox, doorBox] = await Promise.all([
+      button.boundingBox(),
+      page.getByRole('button', { name: 'Fråga AI', exact: true }).boundingBox(),
+    ]);
+    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(doorBox!.x);
+    expect(Math.abs(menuBox!.y - doorBox!.y)).toBeLessThan(menuBox!.height);
+    await button.focus();
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.press('Enter');
+    const menu = page.getByRole('menu', { name: 'Åtgärder för Johan Byström' });
+    await expect(menu).toBeVisible();
+    await expect(button).toHaveAttribute('aria-expanded', 'true');
+    // One group per system, named by it, in the order the systems first appear.
+    const groups = menu.getByRole('group');
+    await expect(groups).toHaveCount(3);
+    await expect(menu.getByRole('group', { name: 'Kalendern' }).getByRole('menuitem')).toHaveText(['Boka möte']);
+    await expect(menu.getByRole('group', { name: 'Personalsystemet' }).getByRole('menuitem')).toHaveText([
+      'Registrera frånvaro',
+    ]);
+    await expect(menu.getByRole('menuitem', { name: 'Boka möte' })).toBeFocused();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('ArrowDown');
+    await expect(menu.getByRole('menuitem', { name: 'Registrera frånvaro' })).toBeFocused();
+    // Esc closes the menu, and the focus is on its button again.
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(button).toBeFocused();
+    // Enter on a row opens that action's dialog; closed with Esc, the focus is on the menu's button (2.4.3).
+    await page.keyboard.press('Enter');
+    await expect(menu.getByRole('menuitem', { name: 'Boka möte' })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(menu.getByRole('menuitem', { name: 'Registrera frånvaro' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Registrera frånvaro' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(button).toBeFocused();
+    expect(api.entityStarts).toEqual([]);
   });
 
   test('a source that refuses an action says why under the buttons, once aloud, and the page stays', async ({
@@ -185,7 +243,8 @@ test.describe('the person as a page', () => {
     const here = `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`;
     await open(page, here);
     const main = page.getByRole('main');
-    await main.getByRole('button', { name: 'Registrera frånvaro', exact: true }).click();
+    await main.getByRole('button', { name: 'Åtgärder för Johan Byström', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Registrera frånvaro' }).click();
     const dialog = page.getByRole('dialog', { name: 'Registrera frånvaro' });
     await dialog.getByRole('button', { name: 'Registrera frånvaro' }).click();
     // The dialog places the refusal; the page does not say it a second time.
@@ -231,7 +290,10 @@ test.describe('the person as a page', () => {
     await open(page, '/people/johan');
     await expect(wayBack(page, 'Personal')).toHaveCount(0);
     await expectTabs(page, ['Översikt', 'Kontakt']);
-    await expect(page.getByRole('main').getByRole('button', { name: 'Boka möte', exact: true })).toBeVisible();
+    // One action is still the menu: one rule at every count (D126 rule 1 as amended 2026-11-21).
+    await page.getByRole('main').getByRole('button', { name: 'Åtgärder för Johan Byström', exact: true }).click();
+    await expect(page.getByRole('menuitem')).toHaveText(['Boka möte']);
+    await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: /Fler åtgärder/ })).toHaveCount(0);
     const facts = page.getByRole('complementary', { name: 'Uppgifter' });
     await expect(facts).not.toContainText('Chef');

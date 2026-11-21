@@ -50,9 +50,9 @@ function nounOf(spec: { kind: string; noun?: { other: string } } | undefined): s
 }
 
 /**
- * A record's actions under its title (D137 items 2 and 3): those the server lists for the reader about this record, by
- * the page's read and input, drawn as a person's page draws a person's (`EntityActions`), each opening the action's own
- * dialog. None listed, a read with no actions, or a record the reader may not act on draws nothing; nor does the page
+ * A record's actions at the end of its title's line (D137 items 2 and 3): those the server lists for the reader about
+ * this record, by the page's read and input, drawn as a person's page draws a person's (`EntityActions`: one menu,
+ * "Åtgärder"), each opening the action's own dialog. None listed, a read with no actions, or a record the reader may not act on draws nothing; nor does the page
  * while the list is on its way, so a record without actions never shows a placeholder for them.
  */
 function RecordActions({ read, input, name }: { read: string; input: Record<string, unknown>; name: string }) {

@@ -24,7 +24,6 @@ import {
   ListItem,
   MetadataList,
   MetadataListItem,
-  MoreMenu,
   Section,
   Skeleton,
   Text,
@@ -504,15 +503,17 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
 }
 
 /**
- * The opened person's, unit's or record's actions under its name (D126 rule 1, board Person; D137 item 2 for a
- * record), every one of them: the first as the primary button, the second as a secondary one, what the page adds of its
- * own after them (`extra`: the reader's own Inställningar), and the rest under "Fler åtgärder", grouped by the system
- * they act in, as the row menu on Personal is (artboard A3). On a phone one button, "Åtgärder", the width of the
- * column, holds them all, with `extra` under it. None of them asks the assistant: the corner's "Fråga AI" does (D138
- * item 1). Every one opens the action dialog, and nothing is created before its last button, after which its work item
- * opens (`entity-actions.ts`). A source's refusal is said aloud and stands under the buttons until the next action. They
- * hold what can be done about the thing, never a choice of where Clew shows it, and never a way into a source's page,
- * which is a link in its section.
+ * The opened person's, unit's or record's actions at the end of its title's line (D126 rule 1 as amended 2026-11-21,
+ * board Person; D137 item 2 for a record), every one of them in one menu, "Åtgärder", grouped by the system each acts in,
+ * as the row menu on Personal is (artboard A3). No action is a button of its own: which system's action stood first was
+ * only the order the server listed them in, and no connector is given a place by position. The menu is the same at
+ * every width and with one action as with ten; on a phone its button is the width of the column. What the page adds of
+ * its own (`extra`: the reader's own Inställningar) stands beside it, under it on a phone. None of them asks the
+ * assistant: the frame's "Fråga AI" does, after the menu on the title's line (D138 item 1). Every one opens the action
+ * dialog, and nothing is created before its last button, after which its work item opens (`entity-actions.ts`); a dialog
+ * that closes gives the focus back to the menu's button. A source's refusal is said aloud and stands under the menu
+ * until the next action. They hold what can be done about the thing, never a choice of where Clew shows it, and never a
+ * way into a source's page, which is a link in its section.
  */
 export function EntityActions({
   subject,
@@ -527,51 +528,39 @@ export function EntityActions({
 }) {
   const { start, error, dialog } = useEntityAction();
   const { name } = subject;
-  const run = (a: SubjectAction) => start(a, subject);
   const refusal = error ? <Text as="p">{error}</Text> : null;
   // Nothing to act on: no empty group under the name.
   if (!actions.length && !extra && !refusal) return dialog;
-  if (mobile)
-    return (
-      <VStack gap={2}>
-        {actions.length > 0 && (
-          <DropdownMenu
-            renderTrigger={trigger => (
-              <Button
-                {...trigger}
-                variant="secondary"
-                label="Åtgärder"
-                aria-label={`Åtgärder för ${name}`}
-                width="100%"
-              />
-            )}
-            presentation="adaptive"
-            items={actionMenuItems(actions, run)}
-          />
-        )}
-        {extra && <HStack>{extra}</HStack>}
-        {refusal}
-        {dialog}
-      </VStack>
-    );
-  const [first, second] = actions;
-  const rest = actions.slice(2);
-  // One shape with or without a refusal, so the button that was pressed keeps the focus when the refusal appears.
+  const menu = actions.length > 0 && (
+    <DropdownMenu
+      renderTrigger={trigger => (
+        <Button
+          {...trigger}
+          variant="secondary"
+          label="Åtgärder"
+          aria-label={`Åtgärder för ${name}`}
+          {...(mobile ? { width: '100%' } : {})}
+        />
+      )}
+      alignment={mobile ? 'start' : 'end'}
+      presentation="adaptive"
+      items={actionMenuItems(actions, a => start(a, subject))}
+    />
+  );
+  // One shape with or without a refusal, so the menu's button keeps the focus when the refusal appears.
   return (
-    <VStack gap={2} hAlign="end">
-      <HStack gap={2} wrap="wrap" vAlign="center">
-        {first && <Button variant="primary" label={first.title} onClick={() => run(first)} />}
-        {second && <Button variant="secondary" label={second.title} onClick={() => run(second)} />}
-        {extra}
-        {rest.length > 0 && (
-          <MoreMenu
-            label={`Fler åtgärder för ${name}`}
-            alignment="end"
-            presentation="adaptive"
-            items={actionMenuItems(rest, run)}
-          />
-        )}
-      </HStack>
+    <VStack gap={2} {...(mobile ? {} : { hAlign: 'end' as const })}>
+      {mobile ? (
+        <>
+          {menu}
+          {extra && <HStack>{extra}</HStack>}
+        </>
+      ) : (
+        <HStack gap={2} wrap="wrap" vAlign="center">
+          {extra}
+          {menu}
+        </HStack>
+      )}
       {refusal}
       {dialog}
     </VStack>

@@ -457,8 +457,8 @@ test.describe('an action about a person or a unit that asks', () => {
     await page.setViewportSize(WIDE);
     const here = `/people/johan?section=${PRESENCE_LENS}&from=%2Fstaff`;
     await open(page, here);
-    // Every action about the person is in the page's header (D126 rule 1): the third and on under Fler åtgärder.
-    const more = page.getByRole('main').getByRole('button', { name: 'Fler åtgärder för Johan Byström' });
+    // Every action about the person is in the one menu at the end of the title's line (D126 rule 1 as amended 2026-11-21).
+    const more = page.getByRole('main').getByRole('button', { name: 'Åtgärder för Johan Byström', exact: true });
     await more.click();
     await page.getByRole('menuitem', { name: 'Boka omtankesamtal' }).click();
     const dialog = dialogOf(page, 'Boka omtankesamtal');

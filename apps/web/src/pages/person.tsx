@@ -295,9 +295,9 @@ export function OverviewSection({ answer, href, level }: { answer: SectionAnswer
 /**
  * The person as a page (D126 rule 1, board Person; D97 item 5), at `/people/:key`, the one way a person is shown,
  * reached from a name on Personal or on any row that names them. The thing's page (`EntityPage`): the way back, their
- * avatar, name, title and unit, the actions under the name (the first as the primary, the second as a secondary, the
- * rest under "Fler åtgärder"; the corner's "Fråga AI" opens the assistant's pane about the person beside the page,
- * D136, D138), then the person's
+ * avatar, name, title and unit, the actions at the end of the title's line (every one in the one menu "Åtgärder",
+ * rule 1 as amended 2026-11-21; the frame's "Fråga AI" beside it opens the assistant's pane about the person beside
+ * the page, D136, D138), then the person's
  * sections as tabs, each a link with its own address (`?section=`, D126 rule 9): Översikt (Behöver dig and each
  * source's row in short with "Visa allt"), one tab per source that has something about them (its row and its fuller
  * read; the talk's tab is the talk itself, D126 rule 3), Ärenden (the reader's work items about them) and, on the

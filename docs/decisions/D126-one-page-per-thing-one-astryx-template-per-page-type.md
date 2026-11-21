@@ -20,6 +20,18 @@ chose from it: one page per thing, the assistant in two homes, the manager's pla
    page, the `work-item-detail` composition: the way back and the title, the actions directly under the title, the
    read in the column, the facts in the end `LayoutPanel` (above the read when the page is narrow). The name in a
    row is the link to that page, wherever the row is.
+   **Amended 2026-11-21 (the product owner): a thing's actions are one menu, and no connector gets a button by
+   position.** As built, a person's, a unit's and a record's page drew the first action the server listed as a filled
+   button, the second as a secondary one and the rest under "Fler åtgärder"; which system's action got a button was
+   only the order of the list. Shown a person's title line with "Registrera frånvaro", "Beställ från
+   IT-servicedesken" and "Fråga AI", the owner asked: "how will these actions scale as there are more actions to perform? Right now this might be fine, but we need to keep the modular mindset, what if there are 10 connectors that want this position?"
+   Of three rules offered (one menu; a button only for an action Clew itself ranks first; a button a connector
+   declares) the owner chose the first. So every action about a person, a unit or a record stands in one menu,
+   "Åtgärder" (named "Åtgärder för <name>"), grouped by the system each acts in, at the end of the title's line
+   beside "Fråga AI", in the same shape at every width (the width of the column under the title on a phone) and with
+   one action as with ten. What the page adds of its own (the reader's own "Inställningar") stays a button beside
+   it. A work item's decisions are not actions about a thing in this sense and keep their buttons (rule 2,
+   [D139](D139-a-card-with-nothing-to-decide-says-what-holds-and-the-person-can-say-the-next-step-is-taken.md)).
 2. **A pane exists in two places.** Beside the queue in Att göra (`table-inbox`: the `Table`, the three piles as a
    `TabList`, the reading pane in the end slot), and beside a conversation (`ai-chat`: the thing the conversation is
    about). The pane draws the same parts as the page; its title is the link to the page; the decision buttons sit

@@ -21,7 +21,7 @@ A capability declares `about: { entity }` on a read, or `about: { entity, param 
 
 | Declared | Place | Who places it |
 |---|---|---|
-| A propose or execute about the kind | The entity's actions: the row menu on Personal, and the buttons and "Fler åtgärder" under the name on the person's or the unit's page | Nobody: scope and audience decide |
+| A propose or execute about the kind | The entity's actions: the row menu on Personal, and the one "Åtgärder" menu at the end of the title's line on the person's or the unit's page | Nobody: scope and audience decide |
 | A read about the kind (always a table or list) | A tab of the opened entity, and its row in short on the overview | Nobody |
 | The same read | A lens, a tab of the entity's list (Personal) | An administrator |
 | A field of that read with a `warn` or `alert` tone | A mark on the entity's row on "Medarbetare", under "Just nu" | An administrator, by offering the read as a lens |
