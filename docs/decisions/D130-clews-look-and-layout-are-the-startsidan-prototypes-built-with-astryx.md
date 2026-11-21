@@ -126,8 +126,25 @@ it, nothing opens over a page. The comparison this rests on is
     are still what an administrator chose from the sources (D62), and a value without a tone is still ordinary text.
 17. **A place of its own opens with a trail**: the site's name and the page, Astryx's `Breadcrumbs`, over the title.
     A page reached from another keeps its named way back (D116).
+    **Amended 2026-11-21 (the product owner): a page of the row "Mina sidor" has no trail.** Shown Att göra with an
+    item picked in a window about 1000 px high, where the trail, the title, the counts line and the tabs took about
+    250 px over the list and the reading pane, the owner said: "There is quite some wasted space in the top section
+    of tha pge here, leaving very little to the chat and content". Offered four changes (no trail on a row's own
+    page, no counts line that repeats the tabs, the tabs on the title's line while an item is picked, and the box
+    under the item one line high until used), and warned that the trail and the facts line are the prototype's look,
+    which the people testing it know, the owner answered: "yes all". So a page that is itself a page of the row
+    (Att göra, Kalender, Personal, Läget, Samtal, and Administration's own list on a phone) opens with its title: the
+    row right above marks it (`aria-current`), and its title and the document's title name it. The shell says which
+    page that is (`RowPage`: the row's current page, at its own address or under its own name); no page says it of
+    itself. A page under them (an Administration section, a tool, Alla verktyg) keeps its trail, and a page reached
+    from another its way back.
 18. **A page's facts line is running text** under its title, 17 px in the softer ink with the prototype's air around
     the title; Hem's day line stays the small line it is.
+    **Amended 2026-11-21 (the product owner, "yes all", as under item 17): no facts line that repeats the page's
+    tabs.** Att göra's "6 behöver dig · 3 väntar på andra" is gone: its tabs say both numbers. The others were read
+    and stay, since none repeats its tabs or title: Kalender's (its controls, or the system that does not answer),
+    Personal's (how many people on which units), Läget's ("3 enheter"), Samtal's ("12 samtal") and Alla verktyg's
+    (how many tools, or how many of them the filter leaves).
 
 19. **Att göra is the prototype's Mina aktiviteter.** Over the list the piles as key figures: what needs the person,
     how much of it is overdue, what waits on others and what is done, each leading to its pile, a plain count in the
@@ -136,6 +153,17 @@ it, nothing opens over a page. The comparison this rests on is
     Beside the reading pane the figures are not drawn and the list stands in the frame's card without one of its own.
     The piles are still tabs and a row still opens beside the list (D112); the prototype stacks its piles as cards of
     rows with "Öppna".
+    **Amended 2026-11-21 (the product owner, "yes all", as under item 17): the piles stand on the title's line.**
+    From 1025 px of window the tabs stand right after "Att göra" on its line (`PageFrame`'s `tabsOnLine`), with and
+    without an item picked, so the header is one row and does not move when an item is picked; they stand after the
+    title and not at the line's end, so they also stay when "Fråga AI" leaves the line. At 1024 px and below and on
+    a phone they keep their own row under the title, where they stick while the queue scrolls (item 8); on the
+    title's line they scroll away with the title. With the trail and the counts line gone the header is 108 px
+    lower at 1440 px: the picked item's read has 452 px of a 1000 px window and 172 px of a 720 px one. The fourth
+    change, the box under a picked item one line high until it is used, is not built: Astryx's `ChatComposer` always
+    draws its input over a footer row with the send button, and has no prop for its rows or its least height
+    (`density="compact"` takes 12 px off and was the density the owner turned down on 2026-11-18); it waits for a
+    decision on what to draw there instead.
 
 20. **Läget and Samtal are registers of the same kind.** On Läget what to take up and each group of units is a card
     with its heading inside and, for a group, how many units it has, the table inside the card's inset with the

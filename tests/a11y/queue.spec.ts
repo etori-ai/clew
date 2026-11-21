@@ -56,7 +56,10 @@ test.describe('Att göra: the piles', () => {
     await open(page, '/todo');
     await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
     await expect(page.getByRole('link', { name: /^Försenade:/ })).toHaveCount(0);
-    await expect(page.getByText('0 behöver dig · 0 väntar på andra', { exact: true })).toHaveCount(0);
+    // No pile says a number it does not know: the tabs carry no counts.
+    const piles = page.getByRole('navigation', { name: 'Urval' });
+    for (const name of ['Behöver dig', 'Väntar på andra', 'Klart'])
+      await expect(piles.getByRole('link', { name, exact: true })).toBeVisible();
   });
 
   test('the piles are tabs that lead to their address, each with its rows; the rail says how much needs the person', async ({
@@ -74,8 +77,10 @@ test.describe('Att göra: the piles', () => {
     await expect(tabs.getByRole('link', { name: /^Behöver dig\s*6 ärenden$/ })).toHaveAttribute('aria-current', 'true');
     await expect(tabs.getByRole('link', { name: /^Väntar på andra\s*3 ärenden$/ })).toBeVisible();
     await expect(tabs.getByRole('link', { name: 'Klart', exact: true })).toBeVisible();
-    // The counts line under the title (board Att göra).
-    await expect(page.getByText('6 behöver dig\u00a0· 3 väntar på andra', { exact: true })).toBeVisible();
+    // The tabs carry the counts: no line under the title says them a second time, and no trail repeats the row
+    // over the page (D130 items 17 and 19 as amended 2026-11-21).
+    await expect(page.getByText(/behöver dig\s*· \d+ väntar på andra/)).toHaveCount(0);
+    await expect(page.getByRole('navigation', { name: 'Du är här' })).toHaveCount(0);
     // Behöver dig in Hem's order: what is due, what comes later, the proposal, the notice.
     const all = rows(page);
     await expect(all).toHaveCount(6);
@@ -175,6 +180,45 @@ test.describe('Att göra for a person with several units (D135)', () => {
 
 test.describe('Att göra: the reading pane', () => {
   test.use({ viewport: wide });
+
+  for (const [width, height, leastRows, leastRead] of [
+    [1440, 1000, 5, 430],
+    [1280, 720, 2, 150],
+  ] as const)
+    test(`at ${width} × ${height} the header is one row, and the list and the picked item have the window: at least ${leastRows} rows and ${leastRead} px of the item’s read`, async ({
+      page,
+      api: _,
+    }) => {
+      await page.setViewportSize({ width, height });
+      await open(page, '/todo?item=fakturor');
+      const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+      await expect(pane).toBeVisible();
+      // One row over the list and the pane (D130 items 17 and 19 as amended 2026-11-21): the title with the piles on
+      // its line; no trail, no counts line.
+      const title = (await page.getByRole('heading', { level: 1, name: 'Att göra' }).boundingBox())!;
+      const tabs = (await page.getByRole('navigation', { name: 'Urval' }).boundingBox())!;
+      expect(tabs.x).toBeGreaterThan(title.x + title.width);
+      expect(tabs.y).toBeLessThan(title.y + title.height);
+      expect(tabs.y + tabs.height).toBeGreaterThan(title.y);
+      await expect(page.getByRole('navigation', { name: 'Du är här' })).toHaveCount(0);
+      // Where the person is, is still said (2.4.8): by the row's current page, the title and the document's title.
+      await expect(
+        page.getByRole('navigation', { name: 'Mina sidor', exact: true }).getByRole('link', { name: /^Att göra/ }),
+      ).toHaveAttribute('aria-current', 'page');
+      await expect(page).toHaveTitle(/Att göra/);
+      // Measured 2026-11-21: six rows and 452 px at 1440 × 1000, three rows and 172 px at 1280 × 720 (344 px and 64 px
+      // before the header became one row); the bounds stand a little under.
+      // What the window leaves: the list's rows that are wholly in view, and the height of the item's read over its box.
+      const whole = await rows(page).evaluateAll(
+        (list, h) =>
+          list.filter(r => r.getBoundingClientRect().top >= 0 && r.getBoundingClientRect().bottom <= h).length,
+        height,
+      );
+      const readBox = (await pane.locator('[aria-label="Ärendet"]').boundingBox())!;
+      expect(whole).toBeGreaterThanOrEqual(leastRows);
+      expect(readBox.height).toBeGreaterThanOrEqual(leastRead);
+      await expectNoAxeViolations(page);
+    });
 
   test('a row puts its work item in the pane beside the list and in the address; another row takes its place; Back, Forward and a reload show the same; Esc gives the focus back', async ({
     page,

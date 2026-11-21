@@ -44,7 +44,7 @@ import {
 } from '@clew/ui';
 import { mobileQuery, paneBesideQuery, shortQuery } from '../../media';
 import { asksBeside, withAsk, withoutAsk } from '../../panel-address';
-import { SHELL_WIDTH, SiteName } from './shell';
+import { RowPage, SHELL_WIDTH, SiteName } from './shell';
 import { useClearCorner, useCornerDoor, useReturnFocusToCorner, type CornerDoor } from './assistant-corner';
 import { PageFrameContext } from './page-frame-context';
 import { useConversation, useModelConfigured } from '../conversation/conversation-context';
@@ -229,6 +229,12 @@ interface PageFrameProps {
   below?: ReactNode;
   /** The page's tabs (`ThingTabs`), at the foot of the header. */
   tabs?: ReactNode;
+  /**
+   * The tabs stand on the title's line, right after the title, so the header is one row (Att göra, D130 item 19 as
+   * amended 2026-11-21); where the line has no room they wrap under the title. The page says when: it draws the strip
+   * for the place it stands in. Never on a phone, where the tabs keep their own row.
+   */
+  tabsOnLine?: boolean;
   /** Hem: no rule under the header, which ends where the content's padding starts. */
   plain?: boolean;
   /**
@@ -599,7 +605,8 @@ function FrameBody({
   actionsOnLine = false,
   door,
   below,
-  tabs,
+  tabs: pageTabs,
+  tabsOnLine = false,
   plain = false,
   cards = false,
   children,
@@ -631,6 +638,9 @@ function FrameBody({
   const short = useMediaQuery(shortQuery);
   const narrow = useMediaQuery(narrowPageQuery);
   const tight = useMediaQuery(tightQuery);
+  // Tabs on the title's line are part of that line: only tabs under it are a row of the header's, or a row that sticks.
+  const lineTabs = tabsOnLine && !mobile ? pageTabs : null;
+  const tabs = lineTabs ? null : pageTabs;
   // What the page pins at the window's foot is the page's to press: the floating way to the assistant gives way.
   useClearCorner(!!footer);
   const board = plain || (cards && !end && !facts && !start && !footer);
@@ -695,9 +705,12 @@ function FrameBody({
   // The way back and what stands beside it, a step apart with no rule between them (board Ärende).
   // A place of its own has no way back: it opens with where it stands, the site and then the page (D130 item 17), as
   // the startsidan prototype opens a page with its trail. A page reached from another keeps its named way back.
+  // A page of the row "Mina sidor" itself (Att göra, Kalender, Personal, Läget, Samtal, Administration's list) opens with
+  // no trail (item 17 as amended 2026-11-21): the row right above marks it, and the trail said the same once more.
   const site = useContext(SiteName);
+  const rowPage = useContext(RowPage);
   const crumbs =
-    !plain && !back && !trail && typeof title === 'string' ? (
+    !plain && !back && !trail && typeof title === 'string' && !(rowPage && (rowPage.own || rowPage.label === title)) ? (
       <Breadcrumbs label="Du är här" variant="supporting" separator="›">
         <BreadcrumbItem href="/">{site}</BreadcrumbItem>
         <BreadcrumbItem isCurrent>{title}</BreadcrumbItem>
@@ -712,13 +725,23 @@ function FrameBody({
     ) : (
       crumbs
     );
-  const titled = status ? (
+  const named = status ? (
     <HStack gap={3} vAlign="center" wrap="wrap">
       {heading}
       {status}
     </HStack>
   ) : (
     heading
+  );
+  // Tabs on the title's line stand right after the title, where they stay when "Fråga AI" comes and goes at the line's
+  // end; with no room beside the title they wrap under it.
+  const titled = lineTabs ? (
+    <HStack gap={6} vAlign="center" wrap="wrap">
+      {named}
+      {lineTabs}
+    </HStack>
+  ) : (
+    named
   );
   // On a phone the frame's "Fråga AI" is its mark alone and ends the title's own line, which does not wrap: the title
   // takes the lines it needs beside it, and the facts line and the page's actions keep the header's whole width under.

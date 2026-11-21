@@ -93,7 +93,7 @@ import {
 } from '../components/conversation/page-conversation';
 import { useModelConfigured } from '../components/conversation/conversation-context';
 import { asksBeside } from '../panel-address';
-import { PageFrame } from '../components/shell/page-frame';
+import { PageFrame, narrowPageQuery } from '../components/shell/page-frame';
 import { workUnit } from '../user-units';
 
 const EMPTY_THREADS: Thread[] = [];
@@ -187,6 +187,7 @@ function aboutOf(thread: Thread): string | null {
 export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
+  const narrowPage = useMediaQuery(narrowPageQuery);
   const client = useQueryClient();
   const navigate = useNavigate();
   const [search] = useSearchParams();
@@ -378,9 +379,11 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   // A source with a last successful read can contribute its saved work even during a failed refetch.
   const countsKnown = !!threadsQ.data && !threadsQ.data.sources?.some(s => !s.lastSuccess);
   const count = (t: TodoTab) => piles[t].filter(inArea).length;
-  // The counts line under the title (board Att göra): what needs the person and what waits on others; what is done is
-  // not a call to look.
-  const countsLine = countsKnown ? `${count('needs-you')} behöver dig · ${count('waiting')} väntar på andra` : null;
+  // No counts line under the title (D130 item 19 as amended 2026-11-21): the tabs say how many need the person and how
+  // many wait on others. Where the window is wide the tabs stand on the title's line, with or without an item picked,
+  // so the header is one row and does not move when an item is picked; at 1024 px and below, and on a phone, they keep
+  // their own row under the title.
+  const tabsOnLine = !mobile && !narrowPage;
   // On a phone the strip has the short words (board PhoneInbox: "Väntar"), so the three with their counts fit 320 px
   // under the text-spacing overrides (1.4.12).
   const tabBadge = (t: TodoTab) => {
@@ -773,9 +776,9 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
         cards
         title="Att göra"
         titleId="att-gora"
-        meta={countsLine ?? undefined}
+        tabsOnLine={tabsOnLine}
         tabs={
-          <TabList hasDivider={false} isFullBleed value={tab} onChange={() => {}} aria-label="Urval">
+          <TabList hasDivider={false} isFullBleed={!tabsOnLine} value={tab} onChange={() => {}} aria-label="Urval">
             {todoTabs.map(t => {
               const badge = tabBadge(t);
               return (

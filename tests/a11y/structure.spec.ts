@@ -43,13 +43,14 @@ test.describe('2.4.2 page titled', () => {
 
 test.describe('1.3.1 and 2.4.6 structure', () => {
   // The shared header is every page's banner (D130): its heading row, named by the site, and under the band Clew's own
-  // pages, "Mina sidor". A page of its own says where it stands ("Du är här"), and Att göra adds its piles. The header's
-  // landmarks with a connector are header.spec.ts's.
+  // pages, "Mina sidor". A page of that row has no trail of its own (D130 item 17 as amended 2026-11-21): the row marks
+  // it (`aria-current`), and its title and the document's say it again. Att göra adds its piles. The header's landmarks
+  // with a connector are header.spec.ts's.
   for (const [path, navigations] of [
     ['/', ['Startsidan', 'Mina sidor']],
-    ['/todo', ['Startsidan', 'Mina sidor', 'Du är här', 'Urval']],
-    ['/todo?tab=done', ['Startsidan', 'Mina sidor', 'Du är här', 'Urval']],
-    ['/calendar', ['Startsidan', 'Mina sidor', 'Du är här']],
+    ['/todo', ['Startsidan', 'Mina sidor', 'Urval']],
+    ['/todo?tab=done', ['Startsidan', 'Mina sidor', 'Urval']],
+    ['/calendar', ['Startsidan', 'Mina sidor']],
   ] as const)
     test(`${path} has one h1, one main, one banner, and every navigation landmark named`, async ({ page, api: _ }) => {
       await open(page, path);
@@ -62,6 +63,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
       ).toEqual(navigations);
       await expect(pagesNav(page)).toHaveCount(1);
       await expect(banner.getByRole('link', { name: 'Startsidan' })).toHaveAttribute('href', '/');
+      // Where the person is (2.4.8): the row marks exactly one page, and the page's title is that page's name.
+      await expect(pagesNav(page).locator('[aria-current="page"]')).toHaveCount(1);
+      await expect(page.getByRole('main').getByRole('navigation', { name: 'Du är här' })).toHaveCount(0);
     });
 
   test('Clew’s pages are one navigation landmark of places (D50, D130), in the drawer on a phone', async ({
