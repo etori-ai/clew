@@ -79,6 +79,11 @@ do the branch's D136 and D137.
   unchanged (items 3, 5 and 11), and the focus comes back to it when the pane closes. Start keeps the floating
   button, which leads to its line, as the prototype has it; the owner has not said whether it stays there. The pane
   starts closed; "to start with" leaves open by default for later.
+- **On a phone the button is its mark alone (built 2026-11-21, not yet shown to the product owner).** With its words
+  the button took a row of its own under the title on every page at phone width, and Kalender's head grew from three
+  rows to four. Below 768 px it is Astryx's icon-only button, the sparkles with "Fråga AI" as its name and tooltip,
+  at the end of the title's own line, which does not wrap; the facts line and the page's actions keep the header's
+  whole width under it. From 768 px nothing changes.
 - **Built on the branch:** the pane as a card in the frame's `aside` slot with the corner as its door (items 1 to 6);
   the introduction's lists, the fill-in list from the server read `POST /api/assistant/reach`, which answers what a
   turn asked now would be offered by the turn's own rules (item 7); the filled-in action as a `row-info` card, for a

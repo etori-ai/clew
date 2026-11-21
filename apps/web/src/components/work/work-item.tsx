@@ -143,9 +143,12 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void) {
   const own = fromClewItself(thread, areas?.systems);
   const here = pathname + search;
   // Where the rows stand: the receipt's, read back, once there is one; else the item's own (`rowsSaySomething`).
-  // The rows say something (`rowsSaySomething`), or the receipt read back more than one: a notice's one row, which is
-  // the notice itself, is never a section of its own.
-  const rowsShown = rowsSaySomething(thread) || (thread.receipt?.rows.length ?? 0) > 1;
+  // The rows say something (`rowsSaySomething`), or the receipt read back more than one, or its one row says a fact of
+  // its own (D112 rule 3: the time and place a booking was registered with, what the source did with an approval). A
+  // notice's one row, which is the notice itself with when it was acknowledged, is never a section of its own: the
+  // status under the title says both.
+  const read = thread.receipt?.rows ?? [];
+  const rowsShown = rowsSaySomething(thread) || read.length > 1 || (!notice && !!read[0]?.detail.trim());
   // Each row has a document behind it, read on the review's page (D70, D73 amended 2026-11-12).
   const documents = !!reviewedAction(thread)?.preview && thread.items.some(i => i.selectable);
   return { title, actions, mark, systems, own, from: here, readHref, notice, omit, rowsShown, documents };

@@ -261,12 +261,20 @@ interface PageFrameProps {
  * scrolls as one (1.4.10). Every page says what it is about (`ask`): the frame draws "Fråga AI" at the end of the title's
  * line (the product owner, 2026-11-20, in place of the corner's floating button of D138 items 1 and 5) and provides the
  * assistant's pane, a card at the end of the shell's column (`AskingFrame`, D138 item 4). No page draws a way to ask of
- * its own. Hem alone keeps the corner's button, which leads to its line.
+ * its own. Hem alone keeps the corner's button, which leads to its line. On a phone the button is its mark alone, named
+ * "Fråga AI", at the end of the title's own line (`doorShape`), so it adds no row to a page's header.
  */
 export function PageFrame(props: PageFrameProps) {
   const { ask, ...frame } = props;
   return 'subject' in ask ? <AskingFrame {...frame} about={ask} /> : <PageWithoutSubject {...frame} />;
 }
+
+/**
+ * The shape of the frame's "Fråga AI". On a phone it is Astryx's icon-only button, the mark alone with the words as its
+ * name and its tooltip: the words beside the mark took a row of their own under the title on every page (Kalender's
+ * head grew from three rows to four), and the mark fits the title's own line at 320 px.
+ */
+const doorShape = (mobile: boolean) => (mobile ? { isIconOnly: true, tooltip: 'Fråga AI' } : {});
 
 /** A page with no subject (D141 rule 1): "Fråga AI" on its title's line starts a new question there. */
 function PageWithoutSubject(frame: Omit<PageFrameProps, 'ask'>) {
@@ -279,6 +287,7 @@ function PageWithoutSubject(frame: Omit<PageFrameProps, 'ask'>) {
 function NewQuestionDoor() {
   const talk = useConversation();
   const { pathname, search } = useLocation();
+  const mobile = useMediaQuery(mobileQuery);
   // A conversation's own page has its box: nothing more to ask through.
   if (talk.open) return null;
   return (
@@ -286,6 +295,7 @@ function NewQuestionDoor() {
       variant="ai"
       label="Fråga AI"
       icon={<Icon icon={SparklesIcon} color="inherit" />}
+      {...doorShape(mobile)}
       href="/conversations/new"
       onClick={() => talk.newConversation({ from: pathname + search, stay: true })}
     />
@@ -350,6 +360,7 @@ function AskingFrame({ about, ...frame }: Omit<PageFrameProps, 'ask'> & { about:
       variant="ai"
       label="Fråga AI"
       icon={<Icon icon={SparklesIcon} color="inherit" />}
+      {...doorShape(mobile)}
       onClick={press}
     />
   ) : door === 'question' ? (
@@ -565,7 +576,10 @@ function FrameBody({
 }: Omit<PageFrameProps, 'ask'> & {
   /** The assistant's pane, a card of its own at the end of the shell's column (D138 item 4). */
   aside?: ReactNode;
-  /** The frame's "Fråga AI", at the end of the title's line after the page's own actions; under the title where the line has no room. */
+  /**
+   * The frame's "Fråga AI": at the end of the title's line after the page's own actions, and under them where the line
+   * has no room. On a phone it is the mark alone at the end of the title itself, on a line that never wraps.
+   */
   door?: ReactNode;
 }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -635,6 +649,25 @@ function FrameBody({
     ) : (
       crumbs
     );
+  const titled = status ? (
+    <HStack gap={3} vAlign="center" wrap="wrap">
+      {heading}
+      {status}
+    </HStack>
+  ) : (
+    heading
+  );
+  // On a phone the frame's "Fråga AI" is its mark alone and ends the title's own line, which does not wrap: the title
+  // takes the lines it needs beside it, and the facts line and the page's actions keep the header's whole width under.
+  const lead =
+    mobile && door ? (
+      <HStack gap={3} vAlign="center" wrap="nowrap">
+        <StackItem size="fill">{titled}</StackItem>
+        {door}
+      </HStack>
+    ) : (
+      titled
+    );
   const titleLine =
     heading || icon || actions || door ? (
       <HStack gap={4} vAlign="center" wrap="wrap">
@@ -642,19 +675,12 @@ function FrameBody({
         <StackItem size="fill">
           {/* Hem's greeting stands a step further from its day line than a page's title from its facts (board Hem). */}
           <VStack gap={plain ? 1 : 2}>
-            {status ? (
-              <HStack gap={3} vAlign="center" wrap="wrap">
-                {heading}
-                {status}
-              </HStack>
-            ) : (
-              heading
-            )}
+            {lead}
             {metaLine}
           </VStack>
         </StackItem>
         {(!mobile || actionsOnLine) && actions}
-        {door}
+        {!mobile && door}
       </HStack>
     ) : (
       metaLine

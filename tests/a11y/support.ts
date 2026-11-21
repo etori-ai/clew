@@ -2764,13 +2764,19 @@ export const personButton = (page: Page) =>
 export const bell = (page: Page) => page.getByRole('banner').getByRole('button', { name: /^Påminnelser/ });
 /** The search (D126's "Sök"): its button on the band, which opens the command palette over the page. */
 export const searchButton = (page: Page) => page.getByRole('button', { name: 'Sök', exact: true });
-/** The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow. */
+/**
+ * The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow.
+ * It starts from the page's own question field (`composer`: Hem's line is a plain input since D130), never from the
+ * first combobox in the document, which is the search palette's field in its closed dialog.
+ */
 const dockOf = (page: Page) =>
-  page.evaluate(() => {
-    let el = document.querySelector('[role="combobox"]')?.parentElement ?? null;
-    while (el && !['sticky', 'fixed'].includes(getComputedStyle(el).position)) el = el.parentElement;
-    return el ? (el.getBoundingClientRect().toJSON() as DOMRect) : null;
-  });
+  composer(page)
+    .first()
+    .evaluate(field => {
+      let el = field.parentElement;
+      while (el && !['sticky', 'fixed'].includes(getComputedStyle(el).position)) el = el.parentElement;
+      return el ? (el.getBoundingClientRect().toJSON() as DOMRect) : null;
+    });
 export { dockOf };
 
 /** Renders a route and waits for its data, so a check never runs against the empty shell. */

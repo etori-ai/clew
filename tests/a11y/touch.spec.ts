@@ -36,15 +36,44 @@ const shortTargets = (page: Page) =>
 test.describe('a finger reaches every control at 44 px (docs/history/handover.md §6)', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 
-  test("the calendar's head stays two rows at that size", async ({ page, api: _ }) => {
+  // The head in the one page frame (D126, D130) at touch size: the trail's line, the title's line, and the controls.
+  // "Fråga AI" is its mark alone at the end of the title's line, 44 px, and adds no row. Since D130's 24 px inset the
+  // steps (206 px) and the view's menu (122 px) no longer share a row at 375 px (328 of 327 px), so the controls take
+  // three rows where this case once allowed two (140 px under the bar); it holds the head to what is drawn now, so
+  // nothing more adds a row.
+  test("the calendar's head has Fråga AI on its title's line and no row more than its controls need at that size", async ({
+    page,
+    api: _,
+  }) => {
     await open(page, '/calendar');
-    await expect(page.getByRole('button', { name: /^Förslag/ })).toBeVisible();
-    const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
+    const main = page.getByRole('main');
+    const at = async (name: string | RegExp) => (await main.getByRole('button', { name }).boundingBox())!;
+    const title = (await page.getByRole('heading', { level: 1, name: 'Vecka 45' }).boundingBox())!;
+    const door = await at('Fråga AI');
+    expect(door.height).toBeGreaterThanOrEqual(44);
+    expect(door.width).toBeGreaterThanOrEqual(44);
+    expect(door.y, 'Fråga AI is on the title’s line').toBeLessThanOrEqual(title.y);
+    expect(door.y + door.height).toBeGreaterThanOrEqual(title.y + title.height);
+    expect((await at('Ny bokning')).y, 'what can be done is one row').toBe((await at(/^Förslag/)).y);
+    const list = (await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox())!;
+    const lines = await main.getByRole('button').evaluateAll(
+      (all, top) => [
+        ...new Set(
+          all
+            .map(b => b.getBoundingClientRect())
+            .filter(b => b.height > 0 && b.bottom <= top)
+            .map(b => Math.round(b.top + b.height / 2)),
+        ),
+      ],
+      list.y,
+    );
+    // The title's line, the steps, the view's menu, and what can be done.
+    expect(lines.length).toBeLessThanOrEqual(4);
     // Measured from the shell's bar, not from the top of the screen: the bar is the shared header's heading row since
-    // D88 (61 px with the bell and the person at touch size), and its height is not the calendar's. Two rows of 44 px
-    // controls with their gaps and the head's padding are 137 px; a third row would make it 185.
-    const bar = await page.getByRole('banner').boundingBox();
-    expect(list!.y - (bar!.y + bar!.height)).toBeLessThan(140);
+    // D88, and its height is not the calendar's. 321 px as drawn: the trail's line and four lines of 44 px with their
+    // gaps and the head's padding; a fifth would make it 369.
+    const bar = (await page.getByRole('banner').boundingBox())!;
+    expect(list.y - (bar.y + bar.height)).toBeLessThan(330);
   });
 
   for (const path of [

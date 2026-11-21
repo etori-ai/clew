@@ -187,6 +187,9 @@ export function AdminFrame({
         ) : undefined
       }
       label={label}
+      // A section's column may hold nothing that takes the focus (a table of plain cells, its list on a phone), so
+      // while it scrolls under the pinned head it is a tab stop of its own (2.1.1).
+      scrollTabStop
       start={mobile ? undefined : <SectionsPanel current={section} />}
     >
       {children}
