@@ -144,6 +144,7 @@ export function StatusNotice({
   description,
   action,
   offer,
+  end,
   children,
 }: {
   kind: StatusKind;
@@ -151,6 +152,8 @@ export function StatusNotice({
   description?: string | undefined;
   action?: StatusMove | undefined;
   offer?: StatusMove | undefined;
+  /** After the move, at the notice's end: the item's menu where nothing else would stand beside it under the notice. */
+  end?: ReactNode;
   children?: ReactNode;
 }) {
   const move = action ?? offer;
@@ -163,7 +166,14 @@ export function StatusNotice({
       title={title}
       description={description}
       collapsible={false}
-      endContent={move ? <MoveButton move={move} variant={action ? 'primary' : 'secondary'} /> : undefined}
+      endContent={
+        move || end ? (
+          <HStack gap={2} vAlign="center">
+            {move && <MoveButton move={move} variant={action ? 'primary' : 'secondary'} />}
+            {end}
+          </HStack>
+        ) : undefined
+      }
     >
       {children}
     </Banner>

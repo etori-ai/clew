@@ -1083,14 +1083,18 @@ export function ActionRow({
     const menu = stillOpen
       ? more({ ...(kept ? { items: here.filter(a => a !== kept) } : {}), extra: moves })
       : more({ items: allReads, dismissable: false, extra: moves });
+    const words = {
+      kind: status.kind,
+      title: notice.title,
+      description: notice.description,
+      ...(move ? (notice.move!.offer ? { offer: move } : { action: move }) : {}),
+    };
+    // Nothing else would stand under the notice: the menu ends the notice, beside its move, and no row of its own is
+    // drawn for it (the product owner, 2026-11-21).
+    if (!kept && !ask && !addToConversation) return <StatusNotice {...words} end={menu} />;
     return (
       <VStack gap={3}>
-        <StatusNotice
-          kind={status.kind}
-          title={notice.title}
-          description={notice.description}
-          {...(move ? (notice.move!.offer ? { offer: move } : { action: move }) : {})}
-        />
+        <StatusNotice {...words} />
         <HStack gap={2} vAlign="center" wrap="wrap">
           {kept && (
             <Button
