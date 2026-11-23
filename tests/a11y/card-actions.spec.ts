@@ -402,10 +402,24 @@ test.describe('the calendar on a phone', () => {
     api: _,
   }) => {
     await open(page, '/calendar');
-    await expect(page.getByRole('button', { name: /^Förslag/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Förra veckan' })).toBeVisible();
+    // D74, amended 2026-11-23: the title on a line of its own, then the controls as two rows, the steps with the view
+    // menu and Förslag with Ny bokning. `touch.spec.ts` holds the same at a finger's 44 px.
+    const controls = [
+      page.getByRole('group', { name: /^Byt / }),
+      page.getByRole('button', { name: /^Vy: / }),
+      page.getByRole('button', { name: /^Förslag/ }),
+      page.getByRole('button', { name: 'Ny bokning' }),
+    ];
+    for (const control of controls) await expect(control).toBeVisible();
+    const tops = await Promise.all(controls.map(async control => Math.round((await control.boundingBox())!.y)));
+    expect([...new Set(tops)]).toHaveLength(2);
+    // Measured from the shell's bar, whose height is not the calendar's. The 165 px from the top of the screen that
+    // stood here was written before the page frame's inset and trail (D126, D130), which with the title are 144 px
+    // before any control; this case had failed on `main` since. Under a mouse the two rows are 28 px controls.
     const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
-    expect(list!.y).toBeLessThan(165);
+    const bar = await page.getByRole('banner').boundingBox();
+    expect(list!.y - (bar!.y + bar!.height)).toBeLessThan(230);
   });
 });
 

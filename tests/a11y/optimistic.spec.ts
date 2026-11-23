@@ -9,6 +9,9 @@ async function dismiss(page: Page, row: Locator) {
   await page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' }).click();
 }
 const row = (page: Page, id: string) => page.getByRole('table', { name: 'Behöver dig' }).locator(`#work-${id}`);
+/** On a phone the queue is a list of rows, not a table (D130 item 19, amended 2026-11-23). */
+const phoneRow = (page: Page, id: string) =>
+  page.getByRole('main').getByRole('list', { name: 'Behöver dig', exact: true }).locator(`#work-${id}`);
 
 test.describe("a card shows the person's own action at once (D64)", () => {
   test.use({ viewport: desktop });
@@ -59,9 +62,9 @@ test.describe('on a phone the work item is its page (D126 rule 2)', () => {
   }) => {
     api.mutationDelay = 1_500;
     await open(page, '/todo');
-    await dismiss(page, row(page, 'omtanke'));
+    await dismiss(page, phoneRow(page, 'omtanke'));
     await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toHaveCount(0);
-    await expect(row(page, 'omtanke')).toHaveCount(0, { timeout: 700 });
-    await expect(row(page, 'ledighet').getByRole('link')).toBeFocused();
+    await expect(phoneRow(page, 'omtanke')).toHaveCount(0, { timeout: 700 });
+    await expect(phoneRow(page, 'ledighet').getByRole('link')).toBeFocused();
   });
 });

@@ -233,6 +233,7 @@ export { Outline, type OutlineItem } from '@astryxdesign/core/Outline';
 export { CodeBlock } from '@astryxdesign/core/CodeBlock';
 export { Field, FieldStatus } from '@astryxdesign/core/Field';
 export { Popover } from '@astryxdesign/core/Popover';
+export { COMPACT_TOUCH_QUERY, Flyout, useCompactTouch } from './flyout';
 export { useAppearance } from './appearance';
 
 export { swedish } from './locale';

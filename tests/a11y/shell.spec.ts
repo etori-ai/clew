@@ -8,6 +8,7 @@ import {
   narrow,
   open,
   openNav,
+  openSettings,
   pagesNav,
   personButton,
   reflowProblems,
@@ -63,18 +64,13 @@ test('a person with several units: the band names both of two, or the first and 
   await expect(personButton(page)).toHaveAccessibleName(
     'Testa Testsson, Skönsmons skola och 2 enheter till, inställningar',
   );
-  // The dialog the band's person opens names every unit, where the band says how many more.
+  // The settings under the band's person name every unit, where the band says how many more.
   await personButton(page).click();
   const dialog = page.getByRole('dialog', { name: 'Testa Testsson', exact: true });
   await expect(dialog).toContainText('Skönsmons skola, Hagaskolan och Granlo förskola');
   await expectNoAxeViolations(page);
   await page.keyboard.press('Escape');
   await expect(personButton(page)).toBeFocused();
-  // So does the settings dialog reached from the person's own page.
-  await open(page, '/?settings=1');
-  await expect(page.getByRole('dialog', { name: 'Testa Testsson', exact: true })).toContainText(
-    'Skönsmons skola, Hagaskolan och Granlo förskola',
-  );
 });
 
 for (const viewport of [desktop, narrow])
@@ -105,6 +101,20 @@ for (const viewport of [desktop, narrow])
     await page.keyboard.press('Escape');
     await expect(settings).toBeHidden();
     await expect(person).toBeFocused();
+    // The whole of the person is one button: a press on the avatar at its start opens the settings too, and they
+    // open directly under the person, at the person's end of the band, never over the middle of the page.
+    const target = (await person.boundingBox())!;
+    await person.click({ position: { x: 14, y: target.height / 2 } });
+    await expect(settings).toBeVisible();
+    await expect(settings).toHaveCSS('opacity', '1');
+    const under = (await settings.boundingBox())!;
+    expect(under.y).toBeGreaterThanOrEqual(target.y + target.height);
+    expect(under.y - (target.y + target.height)).toBeLessThanOrEqual(16);
+    if (viewport === desktop)
+      expect(Math.abs(under.x + under.width - (target.x + target.width))).toBeLessThanOrEqual(8);
+    expect((await reflowProblems(page)).filter(problem => !problem.startsWith('clipped: '))).toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(settings).toBeHidden();
     // The person is not a page among the pages; Administration is, for a person who holds a section of it.
     const nav = await openNav(page);
     await expect(nav.getByRole('link', { name: 'Testa Testsson', exact: true })).toHaveCount(0);
@@ -112,27 +122,47 @@ for (const viewport of [desktop, narrow])
   });
 
 for (const viewport of [desktop, narrow])
-  test(`the settings open over the page from their address and close by keyboard at ${viewport.width}px`, async ({
+  test(`the settings open from the person on any page, change the appearance and close by keyboard at ${viewport.width}px`, async ({
     page,
     api: _,
   }) => {
     await page.setViewportSize(viewport);
-    // The person's own page links here (`?settings=1`, D39); closing replaces the address, so Back never opens them again.
-    await open(page, '/todo?settings=1');
-    const settings = page.getByRole('dialog', { name: 'Testa Testsson', exact: true });
-    await expect(settings).toBeVisible();
+    await open(page, '/todo');
+    const settings = await openSettings(page);
     await expect(settings.getByText('Skönsmons skola', { exact: true })).toBeVisible();
+    await expect(settings).toHaveCSS('opacity', '1');
+    // A control in them shows the keyboard's focus in the page's colours, not the band's (2.4.7, 1.4.11): on the band
+    // the ring is the band's text colour, white, which on the settings' own light ground is not seen.
+    const signOut = settings.getByRole('button', { name: 'Logga ut', exact: true });
+    await signOut.focus();
+    const ringOnGround = await signOut.evaluate(el => {
+      const channels = (colour: string) => (colour.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const luminance = (colour: string) =>
+        channels(colour)
+          .map(v => v / 255)
+          .map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+          .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i]!, 0);
+      const [ring, ground] = [
+        luminance(getComputedStyle(el).outlineColor),
+        luminance(getComputedStyle(el.closest('.astryx-popover, dialog')!).backgroundColor),
+      ];
+      return (Math.max(ring, ground) + 0.05) / (Math.min(ring, ground) + 0.05);
+    });
+    expect(ringOnGround).toBeGreaterThanOrEqual(3);
     await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
-    await expect(settings.getByRole('button', { name: 'Logga ut', exact: true })).toBeVisible();
+    // Choosing does not close them, and the ways on are still there.
+    await expect(signOut).toBeVisible();
     expect((await reflowProblems(page)).filter(problem => !problem.startsWith('clipped: '))).toEqual([]);
     await expectNoAxeViolations(page);
+    // They are not part of the address: Esc closes them where the person is, and the focus is back on the person.
     await page.keyboard.press('Escape');
     await expect(settings).not.toBeVisible();
     await expect(page).toHaveURL('/todo');
+    await expect(personButton(page)).toBeFocused();
   });
 
 for (const viewport of [desktop, narrow])
-  test(`from the person’s own page Inställningar opens the settings over it, and Esc gives the focus back to the button at ${viewport.width}px`, async ({
+  test(`the band’s person leads to their own page, which has no second way to the settings, at ${viewport.width}px`, async ({
     page,
     api: _,
   }) => {
@@ -152,32 +182,24 @@ for (const viewport of [desktop, narrow])
     );
     await page.setViewportSize(viewport);
     await open(page, '/');
-    // The band's person leads to the person's own page (D126 rule 10), where their settings are too (D39).
-    await personButton(page).click();
-    const fromBand = page.getByRole('dialog', { name: user.name, exact: true });
+    // The band's person leads to the person's own page (D126 rule 10).
+    const fromBand = await openSettings(page);
     await fromBand.getByRole('link', { name: 'Min sida', exact: true }).click();
     await expect(page).toHaveURL(`/people/${user.id}`);
     await expect(fromBand).toBeHidden();
     await expect(page.getByRole('heading', { level: 1, name: user.name })).toBeVisible();
+    // The settings have one way in, the person on the band, which stands on this page as on every other (D39,
+    // amended 2026-11-23): the page has no "Inställningar" of its own, and its buttons are drawn in full at 320 px.
     const main = page.getByRole('main');
-    const button = main
-      .getByRole('link', { name: 'Inställningar', exact: true })
-      .or(main.getByRole('button', { name: 'Inställningar', exact: true }));
-    await expect(button).toBeVisible();
+    await expect(main.getByText('Inställningar', { exact: true })).toHaveCount(0);
+    expect((await reflowProblems(page)).filter(problem => !problem.startsWith('clipped: '))).toEqual([]);
     await expectNoAxeViolations(page);
-    // By keyboard: the settings open over the page, the page's address with `settings` added.
-    await button.focus();
-    await page.keyboard.press('Enter');
-    const settings = page.getByRole('dialog', { name: user.name, exact: true });
-    await expect(settings).toBeVisible();
-    await expect(page).toHaveURL(`/people/${user.id}?settings=1`);
-    await expect(settings.getByRole('button', { name: 'Logga ut', exact: true })).toBeVisible();
-    await expectNoAxeViolations(page);
-    // Esc closes them, the page keeps its address without them, and the focus is back where they were opened (2.4.3).
+    const settings = await openSettings(page);
+    await expect(settings.getByRole('radiogroup', { name: 'Utseende' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(settings).toBeHidden();
     await expect(page).toHaveURL(`/people/${user.id}`);
-    await expect(button).toBeFocused();
+    await expect(personButton(page)).toBeFocused();
   });
 
 test('the phone bar holds the name, the search, the bell and the person, and "Meny" opens the pages in a drawer', async ({
@@ -196,6 +218,18 @@ test('the phone bar holds the name, the search, the bell and the person, and "Me
   const toggle = banner.getByRole('button', { name: 'Meny', exact: true });
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   expect(await reflowProblems(page, banner)).toEqual([]);
+  // One row at 320 px: the name and the four marks stand on one line, no mark under the name.
+  const row = await Promise.all(
+    [banner.getByRole('link', { name: /Startsidan/ }), searchButton(page), bell(page), personButton(page), toggle].map(
+      async control => (await control.boundingBox())!,
+    ),
+  );
+  const [name, ...marks] = row;
+  for (const mark of marks) expect(mark.y).toBeLessThan(name!.y + name!.height);
+  // The four marks are one size on one line.
+  expect(new Set(marks.map(mark => Math.round(mark.y))).size).toBe(1);
+  expect(new Set(marks.map(mark => `${Math.round(mark.width)}x${Math.round(mark.height)}`)).size).toBe(1);
+  expect(Math.max(...row.map(box => box.x + box.width))).toBeLessThanOrEqual(narrow.width);
   await toggle.focus();
   await page.keyboard.press('Enter');
   const drawer = page.getByRole('dialog', { name: 'Startsidan', exact: true });
@@ -325,6 +359,8 @@ test.describe('on a touch phone', () => {
     const sheet = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
     await expect(sheet).toBeVisible();
     await expect(sheet.and(page.locator('dialog'))).toBeVisible();
+    // A finger has a button that closes it, not only the grab bar.
+    await expect(sheet.getByRole('button', { name: 'Stäng', exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page, sheet)).toEqual([]);
     await sheet.getByRole('link', { name: /Ledighetsansökan/ }).click();
@@ -333,6 +369,40 @@ test.describe('on a touch phone', () => {
     await expect(sheet).not.toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: /^Ledighetsansökan från Johan Byström/ })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
+  });
+
+  test('the person’s settings rise as a sheet no taller than what it holds, with its ways on as rows and a visible "Stäng"', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/calendar');
+    const settings = await openSettings(page);
+    await expect(settings.and(page.locator('dialog'))).toBeVisible();
+    await expect(settings.getByRole('radiogroup', { name: 'Utseende' })).toBeVisible();
+    // The ways on and the close are rows as wide as the sheet, one under the other, each a 44 px target.
+    const rows = await Promise.all(
+      ['Min sida', 'Logga ut', 'Stäng'].map(
+        async name =>
+          (await settings
+            .getByRole('link', { name, exact: true })
+            .or(settings.getByRole('button', { name, exact: true }))
+            .boundingBox())!,
+      ),
+    );
+    for (const row of rows) {
+      expect(row.width).toBeGreaterThan(narrow.width - 48);
+      // Rounded: the sheet may still be settling, and a row then measures a hair under its 44 px.
+      expect(Math.round(row.height)).toBeGreaterThanOrEqual(44);
+    }
+    expect(rows[0]!.y).toBeLessThan(rows[1]!.y);
+    expect(rows[1]!.y).toBeLessThan(rows[2]!.y);
+    // The close is the sheet's last thing: nothing but its padding between it and the window's foot.
+    expect(narrow.height - (rows[2]!.y + rows[2]!.height)).toBeLessThanOrEqual(48);
+    await expectNoAxeViolations(page);
+    expect(await reflowProblems(page, settings)).toEqual([]);
+    await settings.getByRole('button', { name: 'Stäng', exact: true }).click();
+    await expect(settings).toBeHidden();
+    await expect(personButton(page)).toBeFocused();
   });
 });
 
@@ -374,7 +444,8 @@ test('a blocked browser preference stays usable without claiming it was saved', 
       },
     });
   });
-  await open(page, '/?settings=1');
+  await open(page, '/');
+  await openSettings(page);
   await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
   await expect(page.getByRole('dialog').getByText(/Webbläsaren tillåter inte att valet sparas/)).toBeVisible();
   await expect(page.getByRole('radio', { name: 'Mörkt', exact: true })).toBeChecked();
@@ -382,15 +453,16 @@ test('a blocked browser preference stays usable without claiming it was saved', 
 
 test('logout reports failure, then ends the session after a successful retry', async ({ page, api }) => {
   await page.route('**/api/auth/logout', route => route.fulfill({ status: 503 }));
-  await open(page, '/?settings=1');
+  await open(page, '/');
   const account = personButton(page);
   await expect(account).toBeVisible();
+  await openSettings(page);
   await page.getByRole('button', { name: 'Logga ut', exact: true }).click();
   await expect
     .poll(() => announcements(page))
     .toContainEqual(expect.stringContaining('Utloggningen kunde inte bekräftas. Försök igen.'));
-  // The dialog closed with the attempt; the retry opens it again from its address.
-  await open(page, '/?settings=1');
+  // The settings closed with the attempt; the retry opens them again from the person.
+  await openSettings(page);
   await page.unroute('**/api/auth/logout');
   await page.route('**/api/auth/logout', route => {
     expect(route.request().headers()['x-csrf-token']).toBe('test');
@@ -509,7 +581,7 @@ test.describe('the pages under the band', () => {
 
 /**
  * The floating way to the assistant (D130 item 14): "Fråga AI" in the lower corner of every page but a conversation's,
- * which has its own box. On Hem it leads to Hem's line; elsewhere it starts a new question about the page the person is
+ * which has its own box; the mark alone on a phone. On Hem it leads to Hem's line; elsewhere it starts a new question about the page the person is
  * on. It stands over the page, so it moves to the other corner while the keyboard is on a control it would hide
  * (2.4.11), and it comes after the page's content in the keyboard's order.
  */
@@ -537,8 +609,11 @@ test.describe('the floating way to the assistant', () => {
         if (!active || active === document.body) return null;
         if (active.dataset.walked) return 'again';
         active.dataset.walked = '1';
+        // Named "Fråga AI …" on every width; on a phone it is the mark alone, with no text of its own.
         const control = [...document.querySelectorAll<HTMLElement>('a, button')].find(
-          el => el.textContent?.trim() === 'Fråga AI' && getComputedStyle(el.parentElement!).position === 'fixed',
+          el =>
+            (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().startsWith('Fråga AI') &&
+            getComputedStyle(el.parentElement!).position === 'fixed',
         );
         if (!control) return 'no corner';
         if (control === active) return '';
@@ -570,7 +645,9 @@ test.describe('the floating way to the assistant', () => {
       const button = corner(page);
       await expect(button).toBeInViewport({ ratio: 1 });
       // What is drawn is "Fråga AI", and the name starts with it (2.5.3); the line's own button keeps the short name.
-      await expect(button).toHaveText('Fråga AI');
+      // On a phone it is the mark alone, a round 48 px target, so it lies over a third of what its label did.
+      await expect(button).toHaveText(viewport === narrow ? '' : 'Fråga AI');
+      if (viewport === narrow) expect((await button.boundingBox())!.width).toBeLessThanOrEqual(56);
       await expect(page.getByRole('main').getByRole('button', { name: 'Fråga AI', exact: true })).toHaveCount(1);
       await button.focus();
       await page.keyboard.press('Enter');

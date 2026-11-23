@@ -92,9 +92,14 @@ for (const [layout, viewport] of [
     });
 
     test('every work item opened has no axe violations', async ({ page, api: _ }) => {
-      // A pile is a tab of Att göra (D126 rule 2, the `table-inbox` template): Väntar på andra is a table of what waits.
+      // A pile is a tab of Att göra (D126 rule 2, the `table-inbox` template): Väntar på andra is a table of what waits,
+      // and on a phone a list of rows (D130 item 19, amended 2026-11-23).
       await open(page, '/todo?tab=waiting');
-      await expect(page.getByRole('table', { name: 'Väntar på andra' })).toBeVisible();
+      await expect(
+        page
+          .getByRole('main')
+          .getByRole(layout === 'phone' ? 'list' : 'table', { name: 'Väntar på andra', exact: true }),
+      ).toBeVisible();
       await expectNoAxeViolations(page);
       // A work item opened from its row: in the reading pane on a desktop, as its page alone on a phone (D112 items 3
       // and 12; the calendar's proposals keep their own card). One of each kind, and the item's own page.

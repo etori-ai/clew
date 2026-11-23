@@ -14,16 +14,12 @@ import {
   Link,
   List,
   ListItem,
-  Popover,
+  Flyout,
   Spinner,
   Text,
-  Theme,
   Timestamp,
   VStack,
-  useAppearance,
 } from '@clew/ui';
-import { createClewTheme } from '@clew/ui/theme';
-import { useBranding } from '../../branding';
 import { threadsQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { activeReminders } from '../../stream';
@@ -39,20 +35,15 @@ function useReminders() {
 }
 
 /**
- * The reminders' list (D39) in its popover: an anchored Popover on a screen with a pointer, Astryx's BottomSheet on a
- * touch phone (`presentation="adaptive"`). A reminder opens its work item where a work item opens from the page the
- * person is on (D126 rules 1 and 2): Att göra's reading pane in the queue, else its own page.
- *
- * In the header's band (D88), whose theme turns text white for the band's dark ground, the popover's content would be
- * drawn inside the theme of its trigger (Astryx 0.7.12): it is wrapped in the page's theme again, a nested `Theme` as
- * the band itself is.
+ * The reminders' list (D39) under the bell: a `Flyout`, so an anchored popover on a screen with a pointer and a low
+ * sheet with a visible "Stäng" on a touch phone. A reminder opens its work item where a work item opens from the page
+ * the person is on (D126 rules 1 and 2): Att göra's reading pane in the queue, else its own page. What opens from the
+ * band is drawn as the page by the band's own theme (`createHeaderBandTheme`), so nothing here wraps itself in one.
  */
 function RemindersPopover({
   trigger,
-  placement,
 }: {
-  trigger: (count: number, name: string) => ReactNode;
-  placement: 'below' | 'end';
+  trigger: (count: number, name: string, press: (() => void) | undefined) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -60,95 +51,86 @@ function RemindersPopover({
   useEffect(() => {
     setOpen(false);
   }, [location.key]);
-  const pageTheme = createClewTheme(useBranding());
-  const { mode } = useAppearance();
   return (
-    <Popover
+    <Flyout
       isOpen={open}
       onOpenChange={setOpen}
       label="Påminnelser"
-      closeButtonLabel="Stäng påminnelser"
-      presentation="adaptive"
-      placement={placement}
-      alignment="start"
+      closeLabel="Stäng påminnelser"
       width={380}
-      padding={0}
       content={
-        <Theme theme={pageTheme} mode={mode}>
-          <VStack>
-            <HStack padding={3}>
-              <Heading level={3} accessibilityLevel={2}>
-                Påminnelser
-              </Heading>
+        <VStack>
+          <HStack padding={3}>
+            <Heading level={3} accessibilityLevel={2}>
+              Påminnelser
+            </Heading>
+          </HStack>
+          <Divider />
+          {threadsQ.isPending && (
+            <HStack padding={3} gap={2}>
+              <Spinner />
+              <Text role="status">Hämtar påminnelser …</Text>
             </HStack>
-            <Divider />
-            {threadsQ.isPending && (
-              <HStack padding={3} gap={2}>
-                <Spinner />
-                <Text role="status">Hämtar påminnelser …</Text>
-              </HStack>
-            )}
-            {threadsQ.isError && (
-              <VStack padding={3}>
-                <Banner
-                  collapsible={false}
-                  status="error"
-                  title={errorMessage(threadsQ.error, 'Påminnelserna kunde inte uppdateras.')}
-                  endContent={
-                    <Button
-                      label="Försök igen"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        void threadsQ.refetch();
-                      }}
-                    />
-                  }
-                />
-              </VStack>
-            )}
-            {threadsQ.data &&
-              (reminders.length === 0 ? (
-                <EmptyState
-                  isCompact
-                  headingLevel={3}
-                  icon={<Icon icon={BellIcon} size="lg" />}
-                  title="Inga aktuella påminnelser"
-                  description="När ett ärende kommer tillbaka vid tiden du valde visas det här."
-                />
-              ) : (
-                <List density="spacious" aria-label="Aktuella påminnelser">
-                  {reminders.map(thread => (
-                    <ListItem
-                      key={thread.id}
-                      label={
-                        <Text weight="semibold" maxLines={2}>
-                          {thread.title}
-                        </Text>
-                      }
-                      description={
-                        <Text type="supporting">
-                          {thread.trigger.source} ·{' '}
-                          <Timestamp value={thread.trigger.at} format="relative" hasTooltip={false} />
-                        </Text>
-                      }
-                      href={cardOverPage(location.pathname, location.search, thread.id)}
-                    />
-                  ))}
-                </List>
-              ))}
-            <Divider />
-            <HStack padding={3}>
-              <Link href="/todo" hasUnderline>
-                Öppna Att göra
-              </Link>
-            </HStack>
-          </VStack>
-        </Theme>
+          )}
+          {threadsQ.isError && (
+            <VStack padding={3}>
+              <Banner
+                collapsible={false}
+                status="error"
+                title={errorMessage(threadsQ.error, 'Påminnelserna kunde inte uppdateras.')}
+                endContent={
+                  <Button
+                    label="Försök igen"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void threadsQ.refetch();
+                    }}
+                  />
+                }
+              />
+            </VStack>
+          )}
+          {threadsQ.data &&
+            (reminders.length === 0 ? (
+              <EmptyState
+                isCompact
+                headingLevel={3}
+                icon={<Icon icon={BellIcon} size="lg" />}
+                title="Inga aktuella påminnelser"
+                description="När ett ärende kommer tillbaka vid tiden du valde visas det här."
+              />
+            ) : (
+              <List density="spacious" aria-label="Aktuella påminnelser">
+                {reminders.map(thread => (
+                  <ListItem
+                    key={thread.id}
+                    label={
+                      <Text weight="semibold" maxLines={2}>
+                        {thread.title}
+                      </Text>
+                    }
+                    description={
+                      <Text type="supporting">
+                        {thread.trigger.source} ·{' '}
+                        <Timestamp value={thread.trigger.at} format="relative" hasTooltip={false} />
+                      </Text>
+                    }
+                    href={cardOverPage(location.pathname, location.search, thread.id)}
+                  />
+                ))}
+              </List>
+            ))}
+          <Divider />
+          <HStack padding={3}>
+            <Link href="/todo" hasUnderline>
+              Öppna Att göra
+            </Link>
+          </HStack>
+        </VStack>
       }
-    >
-      {trigger(reminders.length, name)}
-    </Popover>
+      trigger={press => trigger(reminders.length, name, press)}
+    />
   );
 }
 
@@ -160,14 +142,13 @@ function RemindersPopover({
 export function ReminderBell() {
   return (
     <RemindersPopover
-      placement="below"
-      trigger={(count, name) =>
+      trigger={(count, name, press) =>
         count ? (
           <Button
             label={name}
+            onClick={press}
             icon={<Icon icon={BellIcon} size="sm" />}
             variant="ghost"
-            size="sm"
             tooltip="Påminnelser"
             endContent={<Badge variant="error" label={String(count)} />}
           >
@@ -176,10 +157,10 @@ export function ReminderBell() {
         ) : (
           <Button
             label={name}
+            onClick={press}
             isIconOnly
             icon={<Icon icon={BellIcon} size="sm" />}
             variant="ghost"
-            size="sm"
             tooltip="Påminnelser"
           />
         )

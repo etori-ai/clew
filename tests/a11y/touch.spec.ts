@@ -36,15 +36,37 @@ const shortTargets = (page: Page) =>
 test.describe('a finger reaches every control at 44 px (docs/history/handover.md §6)', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 
+  // D74, amended 2026-11-23: the title on a line of its own, then the controls as two rows, the steps with the view menu
+  // and Förslag with Ny bokning. It holds in each view (the view menu is widest in the month) and at 360 px, the
+  // narrowest of the common phones; at 320 px the controls may wrap to a third row, which the reflow specs cover.
   test("the calendar's head stays two rows at that size", async ({ page, api: _ }) => {
-    await open(page, '/calendar');
-    await expect(page.getByRole('button', { name: /^Förslag/ })).toBeVisible();
-    const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
-    // Measured from the shell's bar, not from the top of the screen: the bar is the shared header's heading row since
-    // D88 (61 px with the bell and the person at touch size), and its height is not the calendar's. Two rows of 44 px
-    // controls with their gaps and the head's padding are 137 px; a third row would make it 185.
-    const bar = await page.getByRole('banner').boundingBox();
-    expect(list!.y - (bar!.y + bar!.height)).toBeLessThan(140);
+    for (const width of [phone.width, 360])
+      for (const [path, calendar] of [
+        ['/calendar', /^Vecka 45/],
+        ['/calendar?view=day', 'Onsdag 4 november'],
+        ['/calendar?view=month', 'November 2026'],
+      ] as const) {
+        const where = `${path} at ${width} px`;
+        await page.setViewportSize({ ...phone, width });
+        await open(page, path);
+        const controls = [
+          page.getByRole('group', { name: /^Byt / }),
+          page.getByRole('button', { name: /^Vy: / }),
+          page.getByRole('button', { name: /^Förslag/ }),
+          page.getByRole('button', { name: 'Ny bokning' }),
+        ];
+        for (const control of controls) await expect(control, where).toBeVisible();
+        const tops = await Promise.all(controls.map(async control => Math.round((await control.boundingBox())!.y)));
+        expect([...new Set(tops)], where).toHaveLength(2);
+        // Measured from the shell's bar, not from the top of the screen: the bar is the shared header's heading row
+        // since D88 (61 px with the bell and the person at touch size), and its height is not the calendar's. The
+        // frame's inset (24 px), the trail (28 and 12 under it), the title (32 and 8), two rows of 44 px controls with
+        // the 8 px between them, the head's foot (24 and its rule) and the column's inset (24) are 249 px; a third row
+        // would make it 301.
+        const list = await page.getByRole('group', { name: calendar }).boundingBox();
+        const bar = await page.getByRole('banner').boundingBox();
+        expect(list!.y - (bar!.y + bar!.height), where).toBeLessThan(260);
+      }
   });
 
   for (const path of [

@@ -152,3 +152,45 @@ Read/unread and other notification kinds stay the open product question above. S
 back from Inte nu, so the empty state speaks of a chosen time and not of asking for a reminder. The shell cases cover the
 anchored surface and its position, the sheet on a touch phone, the empty state, a failed read and the path to the card,
 with axe and reflow at 320 px. Manual screen-reader validation remains necessary.
+
+**Amended 2026-11-23: the person is one button, the settings open under it, and it is the one way to them.** The
+product owner found two things wrong with the person on the band (D130): the settings opened as a dialog in the middle
+of the page, far from the control that was pressed, and the avatar stood beside the button, so a press on the picture
+did nothing and it was not clear where the control began. The review of the phone view the same day
+([review](../reviews/2026-11-23-the-mobile-view.md)) added what a finger meets there.
+
+*The control.* The person is one Astryx `Button`: the avatar is its `icon`, hidden from assistive technology, then the
+name over the unit and the chevron, so the hover, the focus ring and the target are the whole of it. Its name is
+unchanged ("<name>, <unit>, inställningar"); below the header's breakpoint it stays the account glyph alone, the size of
+the band's other marks.
+
+*The surface.* What a control on the band opens under itself, the reminders under the bell and the settings under the
+person, is one composition, `Flyout` in `@clew/ui`: Astryx's `Popover` under the trigger with a pointer, and on a touch
+phone Astryx's `BottomSheet` at the height of its content (`height="hug"`) with a visible "Stäng". `Popover`'s own
+`presentation="adaptive"` chooses the same two surfaces, and is what the amendment of 2026-11-05 used, but its sheet is
+always the tall one (92 % of the window for three lines of content, the ways on in the middle of an empty screen) and
+its close is hidden until a keyboard reaches it. Choosing the surface by a query is product policy in Astryx's own
+`DropdownMenuBottomSheet` block; `COMPACT_TOUCH_QUERY` is Clew's one line for it, the same line Astryx's adaptive
+presentations draw. In a sheet the settings' ways on, "Min sida" and "Logga ut", are rows as wide as the sheet.
+
+*The colours.* Astryx draws a popover and a sheet inside the theme of their trigger, which on the band is the band's.
+`createHeaderBandTheme` sets every token the band changes back on those two surfaces to what the page resolves it to,
+in both appearances and with or without a saved theme, so their ground, text and focus ring are the page's. Before,
+each content wrapped itself in the page's theme, which missed the tokens a theme does not set: with no theme saved the
+focus ring in both sheets was the band's white on a white ground (2.4.7).
+
+*One way in.* "Inställningar" on the person's own page, its address `?settings=1` and the shell's second copy of the
+dialog are gone. They dated from the rail, whose foot row led to the person's page; since D130 the person stands on the
+band of every page, that page included, so the button was a second way to the same thing on a different surface. This
+replaces "Settings is a `Dialog`" above.
+
+*The intranet.* `<site-header>` keeps a dialog (`surface="dialog"`): Astryx's `Popover` (0.7.16) finds the focus through
+`document.activeElement`, which in a shadow root is the host element, so there it opens with the focus on its surface,
+lets Tab leave it and drops the focus to the page's body when Esc closes it (2.4.3). A native `<dialog>` has none of
+that. The gap is Astryx's; no gap report is sent (product owner, 2026-11-04), and nothing custom is written around it.
+The one-button person is the same in both.
+
+The shell cases press the avatar and assert that the settings stand directly under the person and end where the person
+ends; that they open from any page, show a focus ring that reads on their own ground, and close back to the person;
+that the person's page has no second way in; and, on a touch phone, that the reminders and the settings rise as a sheet
+no taller than what it holds, with a visible "Stäng". Manual screen-reader validation remains necessary.

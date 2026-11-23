@@ -63,7 +63,9 @@ test.describe('1.4.10 reflow', () => {
     for (const tab of await tabs.getByRole('link').all()) await expect(tab).toBeInViewport({ ratio: 1 });
     await tabs.getByRole('link', { name: /^Väntar/ }).click();
     await expect(page).toHaveURL(/\/todo\?tab=waiting$/);
-    await expect(page.getByRole('table', { name: 'Väntar på andra' })).toBeVisible();
+    // On a phone the pile is a list of rows, not a table (D130 item 19, amended 2026-11-23).
+    await expect(page.getByRole('table')).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('list', { name: 'Väntar på andra', exact: true })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
     await page.getByRole('button', { name: 'Alla system' }).click();
     expect(await page.getByRole('menuitemradio').count()).toBeGreaterThanOrEqual(6);

@@ -21,7 +21,7 @@ import {
   useEntryAnimation,
   useMediaQuery,
 } from '@clew/ui';
-import { mobileQuery, shortQuery } from '../../media';
+import { mobileQuery, shortQuery, tightQuery } from '../../media';
 import { SHELL_WIDTH, SiteName } from './shell';
 import { useClearCorner } from './assistant-corner';
 import { useBranding } from '../../branding';
@@ -37,11 +37,6 @@ export const PAGE_WIDTH = SHELL_WIDTH;
 export const narrowPageQuery = '(max-width: 1024px)';
 /** The facts' end panel beside the column (board Person, board Ärende). */
 const FACTS_WIDTH = 340;
-/**
- * The boards keep the page's 24 px inset on a phone (Hem, Att göra and Ärende at 390 px); only the narrowest screens,
- * where 1.4.10 asks for 320 px, take the tighter 16 px.
- */
-const tightQuery = '(max-width: 359px)';
 
 export type EntryStyle = NonNullable<ReturnType<typeof useEntryAnimation>> | undefined;
 /** Where a page's way back leads, by the name of the place (D116): "Personal", "Att göra", "Alla verktyg". */
@@ -115,7 +110,6 @@ export function PageFrame({
   status,
   meta,
   actions,
-  actionsOnLine = false,
   below,
   tabs,
   plain = false,
@@ -152,8 +146,6 @@ export function PageFrame({
   meta?: ReactNode;
   /** At the end of the title's line (on a phone under it): a register's search and one primary action, a thing's actions. */
   actions?: ReactNode;
-  /** The actions stay at the end of the title's line on a phone too (Kalender's two rows of controls, 1.4.10). */
-  actionsOnLine?: boolean;
   /** Directly under the title, the header's width: a work item's decisions, Hem's box, a page's alert. */
   below?: ReactNode;
   /** The page's tabs (`ThingTabs`), at the foot of the header. */
@@ -270,7 +262,7 @@ export function PageFrame({
             {metaLine}
           </VStack>
         </StackItem>
-        {(!mobile || actionsOnLine) && actions}
+        {!mobile && actions}
       </HStack>
     ) : (
       metaLine
@@ -301,7 +293,7 @@ export function PageFrame({
           ) : (
             (wayLine ?? titleLine)
           )}
-          {mobile && !actionsOnLine && actions}
+          {mobile && actions}
           {below}
         </VStack>
         {tabs}

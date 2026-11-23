@@ -1564,7 +1564,7 @@
       "number": 130,
       "path": "docs/decisions/D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md",
       "title": "D130 · Clew's look and layout are the startsidan prototype's, built with Astryx",
-      "status": "provisional (Oliver Borgström, 2026-11-18; first chosen 2026-11-11 and built on the branch `prototype-look`, PR #40, which did not land; accepted once a manager outside the team has used it)",
+      "status": "provisional (Oliver Borgström, 2026-11-18; first chosen 2026-11-11 and built on the branch `prototype-look`, PR #40, which did not land; accepted once a manager outside the team has used it); item 19 amended 2026-11-23: on a phone Att göra's queue is a list of rows, not a table (see the amendment)",
       "date": "2026-11-18",
       "area": "ui, product"
     },
@@ -2430,7 +2430,9 @@
       "path": "docs/decisions/D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md",
       "title": "D130 · Clew's look and layout are the startsidan prototype's, built with Astryx",
       "category": "decision-history",
-      "headings": []
+      "headings": [
+        "Amendment, 2026-11-23: on a phone Att göra's queue is a list"
+      ]
     },
     {
       "path": "docs/decisions/D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md",
@@ -2872,7 +2874,8 @@
       "title": "D74 · One page header for every surface",
       "category": "decision-history",
       "headings": [
-        "Amendment, 2026-11-20: the calendar's steps are a row of their own"
+        "Amendment, 2026-11-20: the calendar's steps are a row of their own",
+        "Amendment, 2026-11-23: a phone's head is the title and two rows of controls"
       ]
     },
     {
@@ -4716,6 +4719,18 @@
         "Findings",
         "Outcome",
         "What this review does not establish"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-the-mobile-view.md",
+      "title": "The phone view, reviewed and refreshed",
+      "category": "review-history",
+      "headings": [
+        "What held",
+        "Findings",
+        "What was changed, and who owns it now",
+        "What was left, and why",
+        "Not verified"
       ]
     },
     {
