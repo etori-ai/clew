@@ -270,7 +270,7 @@ export function PanelBody({
           from={week.from}
           days={5}
           items={dayItems}
-          dayHeadingLevel={3}
+          dayHeadingLevel={inline ? 3 : 2}
           accessiblePath="Retur på en post öppnar den."
           onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined}
         />
