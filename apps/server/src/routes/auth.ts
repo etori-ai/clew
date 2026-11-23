@@ -7,8 +7,10 @@ import {
   AuthError,
   authSettings,
   beginLogin,
+  clearedCookie,
   completeLogin,
   cookieOptions,
+  cookiePrefix,
   devLogin,
   listDevAccounts,
   logout,
@@ -42,13 +44,13 @@ authRoutes.get('/login', async c => {
   }
 });
 authRoutes.get('/callback', async c => {
-  const cookie = getCookie(c, LOGIN_COOKIE);
-  deleteCookie(c, LOGIN_COOKIE, { path: '/' });
+  const cookie = getCookie(c, LOGIN_COOKIE, cookiePrefix());
+  deleteCookie(c, LOGIN_COOKIE, clearedCookie());
   c.header('Cache-Control', 'no-store');
   c.header('Referrer-Policy', 'no-referrer');
   try {
     const result = await completeLogin(new URL(c.req.url), cookie);
-    const old = getCookie(c, SESSION_COOKIE);
+    const old = getCookie(c, SESSION_COOKIE, cookiePrefix());
     if (old) await revokeSession(tokenDigest(old), 'replaced');
     setCookie(c, SESSION_COOKIE, result.cookie, { ...cookieOptions(), maxAge: 8 * 3600 });
     return c.redirect(result.returnTo, 303);
@@ -70,7 +72,7 @@ authRoutes.get('/dev/login', async c => {
   c.header('Cache-Control', 'no-store');
   try {
     const result = await devLogin(c.req.query('as') ?? '', c.req.query('returnTo') ?? null);
-    const old = getCookie(c, SESSION_COOKIE);
+    const old = getCookie(c, SESSION_COOKIE, cookiePrefix());
     if (old) await revokeSession(tokenDigest(old), 'replaced');
     setCookie(c, SESSION_COOKIE, result.cookie, { ...cookieOptions(), maxAge: 8 * 3600 });
     return c.redirect(result.returnTo, 303);
@@ -97,13 +99,13 @@ authRoutes.post('/activity', protectedRoute(), async c => {
 // Logout must not depend on refreshing an IdP token or retaining a local access grant.
 authRoutes.post('/logout', async c => {
   try {
-    const raw = getCookie(c, SESSION_COOKIE);
+    const raw = getCookie(c, SESSION_COOKIE, cookiePrefix());
     // Any listed front end may sign out (D67 item 6): the portal's "Logga ut" was refused when only PUBLIC_URL was.
     if (!authSettings().origins.includes(c.req.header('origin') ?? '')) throw new AuthError(403, 'invalid');
     const session = raw ? await readSession(tokenDigest(raw)) : undefined;
     if (session) verifyMutation(c.req.raw, session.csrf);
     const url = await logout(raw);
-    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    deleteCookie(c, SESSION_COOKIE, clearedCookie());
     return c.json({ url }, 200, privateHeaders);
   } catch (error) {
     return c.json(

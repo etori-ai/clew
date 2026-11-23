@@ -105,7 +105,9 @@ async function signInStarted() {
   return cookie;
 }
 const callback = (cookie: string) =>
-  authRoutes.request('/callback?code=code-1&state=state-' + suffix, { headers: { Cookie: 'clew-login=' + cookie } });
+  authRoutes.request('/callback?code=code-1&state=state-' + suffix, {
+    headers: { Cookie: '__Host-clew-login=' + cookie },
+  });
 
 describe('a callback the provider or its ID token refuses', () => {
   test('a refused code says the OAuth error and its status, never the description that names the account', async () => {

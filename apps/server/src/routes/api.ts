@@ -55,7 +55,7 @@ import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/co
 import { changesFor } from '../composition/changes';
 import { personKeys } from '../composition/person-keys';
 import { capabilityRoutes } from './capabilities';
-import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
+import { authenticate, AuthError, cookiePrefix, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
 import { readDocument, reviewDocuments } from '../composition/documents';
 import { logger } from '../logging';
@@ -189,7 +189,7 @@ api.use('*', async (_c, next) => {
 /** Payload-free, authenticated invalidation. Browser reads stay in TanStack Query; no browser polling. */
 api.get('/changes', c =>
   streamSSE(c, async stream => {
-    const cookie = getCookie(c, SESSION_COOKIE);
+    const cookie = getCookie(c, SESSION_COOKIE, cookiePrefix());
     let previous = '',
       heartbeat = 0,
       stopped = false;

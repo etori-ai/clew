@@ -82,8 +82,11 @@ and can be downloaded as a file afterwards.
 A PNG or an SVG of at most 256 kB, with the name a screen reader reads in its place, and optionally a variant for
 dark ground. Use the original file from the organisation's graphic profile. Both the app and the embedded header
 choose the logo for the colour of the bar. On a dark bar, a logo with only a light-ground variant gets a light plate.
-An SVG that carries script, event attributes,
-embedded foreign content or a reference out of the file is refused. Clew serves the logo from its own origin.
+An SVG is read as XML and held to what a drawing needs: shapes, text, groups, gradients, clips, masks, filters and
+styles, with references only inside the file and embedded PNG or JPEG images. Anything else is refused: script, event
+attributes, embedded foreign content, animation, links, a document type, a reference out of the file, and a stylesheet
+that escapes a character or imports another. A drawing tool's own metadata, such as Inkscape's, is kept. Clew serves
+the logo from its own origin.
 
 The header shows the active header connector's logo when it supplies one. The connector supplies its mark for dark
 ground, such as Sundsvall's white dragon. A pale band gives that mark a dark plate. The installation's own logo

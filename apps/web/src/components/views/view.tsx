@@ -59,6 +59,7 @@ import { useLocation } from 'react-router';
 import { entityHref, recordSubject } from '../../person-address';
 import { withCard } from '../../panel-address';
 import { ASSISTANT_PARAM } from '../../conversation-about';
+import { isWebAddress } from '../../web-address';
 
 /**
  * A declared view (D38): the connector says what the output holds (a table, a list, one record, a text, and which
@@ -261,7 +262,6 @@ const dial = (value: string) => {
   return n.replace(/\D/g, '').length >= 3 ? n : null;
 };
 const isMail = (value: string) => /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(value);
-const isWeb = (value: string) => /^https?:\/\/[^\s]+$/i.test(value);
 const linked = (field: ViewField) => field.format === 'phone' || field.format === 'email' || field.format === 'link';
 /** A field drawn wherever the whole row is, compact or not: the title that names a row (D97). */
 const drawnWhole = ({ compact: _compact, ...field }: ViewField): ViewField => field;
@@ -344,7 +344,7 @@ function Value({
         words(raw)
       );
     case 'link':
-      return isWeb(raw) ? (
+      return isWebAddress(raw) ? (
         <Link href={raw} isExternalLink>
           {field.label}
         </Link>
@@ -921,7 +921,7 @@ export function DeclaredView({
     const record = output && typeof output === 'object' && !Array.isArray(output) ? (output as Row) : {};
     // The whole record (D97): the compact field is left out, and a fact beside another shares its line and its label.
     const shown = wholeRow(view.fields).filter(
-      f => !empty(record[f.key]) && (f.format !== 'link' || isWeb(String(record[f.key]))),
+      f => !empty(record[f.key]) && (f.format !== 'link' || isWebAddress(String(record[f.key]))),
     );
     const facts = shown.filter(f => f.format !== 'link'),
       out = shown.filter(f => f.format === 'link');

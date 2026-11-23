@@ -68,6 +68,7 @@ import {
   useReviewDraft,
 } from '../../review-session';
 import { entityHref } from '../../person-address';
+import { isWebAddress } from '../../web-address';
 
 /**
  * What a work item can do (D112 item 4), shared by every place one is drawn (`work-item.tsx`) and by its review's page
@@ -482,8 +483,8 @@ export function useCardAction({
       if (action.target === 'link') {
         await run(async () => {
           const result = await api.act(thread.id, action.id, chosen);
-          if (result.kind === 'read' && typeof (result.output as { url?: string }).url === 'string')
-            window.open((result.output as { url: string }).url, '_blank', 'noopener');
+          const url = result.kind === 'read' ? (result.output as { url?: unknown }).url : undefined;
+          if (typeof url === 'string' && isWebAddress(url)) window.open(url, '_blank', 'noopener');
         });
         return true;
       }

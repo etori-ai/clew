@@ -2734,16 +2734,33 @@ function recordAnnouncements() {
   }).observe(document, { subtree: true, childList: true, characterData: true });
 }
 
+/**
+ * Reports each violation of the page's content security policy (D145) to the test, from every frame: the build is
+ * served under the web image's headers (`security-headers.ts`), so whatever the policy refuses fails the spec.
+ */
+function recordPolicyViolations() {
+  document.addEventListener('securitypolicyviolation', event => {
+    const report = (window as unknown as { reportPolicyViolation?: (text: string) => void }).reportPolicyViolation;
+    report?.(
+      `${event.effectiveDirective} refused ${event.blockedURI || 'inline'} in ${event.sourceFile || event.documentURI}`,
+    );
+  });
+}
+
 export const test = base.extend<{ api: MockApi }>({
   api: async ({ page }, use) => {
     const api = new MockApi();
     api.page = page;
+    const violations: string[] = [];
+    await page.exposeFunction('reportPolicyViolation', (text: string) => violations.push(text));
     await page.clock.setFixedTime(new Date(NOW));
     await page.addInitScript(recordAnnouncements);
     await page.addInitScript(recordChangeStreams);
+    await page.addInitScript(recordPolicyViolations);
     await page.route('**/api/**', route => api.handle(route));
     await use(api);
     expect(api.unmocked).toEqual([]);
+    expect(violations).toEqual([]);
   },
 });
 export { expect };

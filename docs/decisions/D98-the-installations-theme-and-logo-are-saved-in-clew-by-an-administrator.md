@@ -30,7 +30,8 @@ the `sundsvall` and `custom` profiles as code. An installation nobody has config
 5. **The logo is stored, not addressed.** A PNG or an SVG of at most 256 kB, an optional variant for dark ground and
    a required accessible name. Clew serves it from `/api/appearance/logo/:variant` on its own origin. An SVG that
    carries script, event attributes, foreign content, a document type or a reference out of the file is refused whole
-   (`modules/appearance/domain.ts`); the route also serves it under `Content-Security-Policy: default-src 'none'; …
+   (`modules/appearance/domain.ts`; since D145, read as XML and held to a list of what a drawing needs, so a namespace
+   prefix, a character reference or a CSS escape no longer hides any of it); the route also serves it under `Content-Security-Policy: default-src 'none'; …
    sandbox`, and the header draws it through `img`, where an SVG cannot run. The header connector's logo still wins
    when a connector gives one (D88).
 6. **Module and audit.** `apps/server/src/modules/appearance/` is a core module with a port and two adapters (D20,

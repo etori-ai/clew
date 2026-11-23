@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { routePath } from 'hono/route';
-import { AuthError, authenticate, verifyMutation, SESSION_COOKIE, type Session } from './auth';
+import { AuthError, authenticate, cookiePrefix, verifyMutation, SESSION_COOKIE, type Session } from './auth';
 import { CalendarError } from '@clew/calendar/model';
 import { ExecutionError } from './modules/executions/model';
 import { JobError } from './modules/jobs/contracts';
@@ -27,7 +27,7 @@ export class ForbiddenError extends Error {
 export function protectedRoute(): MiddlewareHandler<Env> {
   return async (c, next) => {
     try {
-      const session = await authenticate(getCookie(c, SESSION_COOKIE));
+      const session = await authenticate(getCookie(c, SESSION_COOKIE, cookiePrefix()));
       if (c.req.method !== 'GET' && c.req.method !== 'HEAD') verifyMutation(c.req.raw, session.csrfToken);
       c.set('session', session);
       await next();

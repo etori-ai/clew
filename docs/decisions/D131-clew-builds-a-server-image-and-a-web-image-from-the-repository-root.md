@@ -1,6 +1,6 @@
 # D131 · Clew builds a server image and a web image from the repository root
 
-**Status:** provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them; the note that the repository has no licence file replaced by [D143](D143-clew-is-licensed-under-the-agpl-as-eneo-is.md) on 2026-11-23, which licenses Clew under the AGPL v3) · **Date:** 2026-11-17 · **Area:** platform
+**Status:** provisional (asked for by Oliver Borgström on 2026-11-17, to run a test installation on a container platform; both images were built with Docker and with buildah and run on a workstation as an arbitrary user, and since 2026-11-18 a pipeline outside the repository builds them and they run on an OpenShift test cluster on made-up data; accepted once a person has done a day's work in an installation that runs on them; the note that the repository has no licence file replaced by [D143](D143-clew-is-licensed-under-the-agpl-as-eneo-is.md) on 2026-11-23, which licenses Clew under the AGPL v3; item 4 amended by D145 on 2026-11-23: the web image sends the security headers) · **Date:** 2026-11-17 · **Area:** platform
 
 **Decision.**
 
@@ -20,7 +20,9 @@
 4. **The web image is the one address.** `nginxinc/nginx-unprivileged` serves the built files, answers a path that
    is not a file with `index.html`, and passes `/api/` and `/scim/` on to the server named by `CLEW_SERVER_URL`,
    unbuffered. It is the reverse proxy of the hosting guide, built. The build carries no setting and no branding
-   (D98), so one image serves every environment.
+   (D98), so one image serves every environment. Since
+   [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) it
+   serves every page and file with the security headers of `apps/web/security-headers.conf`.
 5. **`scripts/images.txt` is the list of what the repository builds**: a name, a Dockerfile and a context per line,
    the connectors' included. `scripts/images-build.sh` builds what it lists with Docker. A pipeline reads the same
    list, so adding a connector's image is a line here and no change to a pipeline.
