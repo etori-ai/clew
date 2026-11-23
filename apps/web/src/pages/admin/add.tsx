@@ -81,11 +81,14 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
       setResult(await api.admin.add({ id, url, secret }));
       setStep(1);
     });
+  // Checking again takes what the service serves now, as the first check did: the draft is not live, and the summary
+  // shows what it reads and whose token it gets before it is switched on (D144).
   const retry = () =>
     run(async () => {
       if (!result) return;
       const report = await api.admin.test(result.connector.id);
-      const connector = await api.admin.connector(result.connector.id);
+      let connector = await api.admin.connector(result.connector.id);
+      if (connector.offered) connector = (await api.admin.refresh(connector.id, true, connector.offered.at)).connector;
       setResult({ connector, report });
     });
   const finish = (state: 'draft' | 'enabled') =>
@@ -99,7 +102,8 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
       });
       close(true);
     });
-  const fetched = !!result?.connector.counts.capabilities;
+  // A connector is switched on only with an approved manifest (D144).
+  const fetched = !!result?.connector.manifestAt;
   // Astryx's form-wizard-dialog: the title and the stepper pinned, the step scrolling, the buttons pinned in the footer.
   const header = (
     <>
@@ -235,7 +239,7 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
                             status: 'warning',
                             title: 'Tjänsten svarade inte.',
                             description:
-                              'Utkastet är sparat utan manifest. Starta tjänsten och kontrollera igen, eller slå på senare.',
+                              'Utkastet är sparat utan beskrivning från systemet och kan inte slås på. Starta tjänsten och försök igen, eller spara utkastet och läs in beskrivningen senare på anslutningens sida.',
                           }
                     }
                   />
@@ -266,6 +270,13 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
               <MetadataListItem label="Id">{result.connector.id}</MetadataListItem>
               <MetadataListItem label="Adress">{result.connector.url}</MetadataListItem>
               <MetadataListItem label="Funktioner">{`${result.connector.counts.capabilities}\u00a0· ${result.connector.counts.execute} utför`}</MetadataListItem>
+              {/* What adding it approves (D144): the other systems it reads through Clew as the person, and whose token it gets. */}
+              <MetadataListItem label="Läser andra system">
+                {result.connector.uses.length ? result.connector.uses.join(', ') : 'Nej'}
+              </MetadataListItem>
+              <MetadataListItem label="Får personens inloggning">
+                {result.connector.delegation ? `Ja, för ${result.connector.delegation}` : 'Nej'}
+              </MetadataListItem>
               <MetadataListItem label="Vem ser det">{audienceLabel(audience)}</MetadataListItem>
               <MetadataListItem label="Skickar ärenden">{scan ? 'Ja' : 'Nej'}</MetadataListItem>
               <MetadataListItem label="Erbjuder assistenten">{tools ? 'Ja' : 'Nej'}</MetadataListItem>

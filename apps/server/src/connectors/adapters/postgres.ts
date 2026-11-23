@@ -1,6 +1,6 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
-import { nextConnectorOrdinal, recordDescription, recordHealth } from '@clew/db/connectors';
+import { approveOffer, nextConnectorOrdinal, recordCheck, recordDescription } from '@clew/db/connectors';
 import type {
   ConnectorPatch,
   ConnectorRecord,
@@ -82,6 +82,8 @@ const txOf = (tx: Transaction): ConnectorTx => ({
       .where(eq(connectors.id, id));
     return true;
   },
+  approveOffer: (id, offer, manifest, by, at) =>
+    approveOffer(tx, id, { at: new Date(offer.at), manifest: offer.manifest }, manifest, by, new Date(at)),
   async remove(id) {
     await tx.delete(connectors).where(eq(connectors.id, id));
   },
@@ -112,8 +114,12 @@ export function postgresConnectorStore(): ConnectorStore {
       const [row] = await database().select().from(connectors).where(eq(connectors.id, id));
       return row ? toRecord(row) : undefined;
     },
-    async recordHealth(id, health, offered, at) {
-      await recordHealth(id, health, offered, new Date(at ?? health.at));
+    async recordCheck(id, { health, served, at }) {
+      await recordCheck(id, {
+        ...(health ? { health } : {}),
+        ...(served !== undefined ? { served } : {}),
+        at: new Date(at),
+      });
     },
     async recordDescription(id, manifest, at) {
       await recordDescription(id, manifest, new Date(at));

@@ -16,7 +16,7 @@ import {
 import { fetchManifest, parseManifest } from '../packages/connectors/src/remote';
 import { sealSecret } from '../apps/server/src/auth-crypto';
 import { secretPurpose } from '../apps/server/src/connectors/remote';
-import { sameManifest } from '../apps/server/src/connectors/manifests';
+import { diffDetails, isManifest, manifestDiff, sameManifest } from '../apps/server/src/connectors/manifests';
 import { internalIds } from '../apps/server/src/connectors/registry';
 
 const requireManaged = (id: string) => {
@@ -86,16 +86,33 @@ export async function registerConnector(options: {
       subject: 'connector:' + id,
       details: existing ? { url } : { url, ...approved },
     });
+    // The same row the administration page writes when an offer is approved: the whole diff, from what was approved.
     if (existing && !sameManifest(existing.manifest, manifest))
-      await writeAudit(tx, { actor, action: 'connector.manifest', subject: 'connector:' + id, details: approved });
+      await writeAudit(tx, {
+        actor,
+        action: 'connector.manifest',
+        subject: 'connector:' + id,
+        details: {
+          ...approved,
+          ...diffDetails(manifestDiff(isManifest(existing.manifest) ? existing.manifest : undefined, manifest)),
+        },
+      });
     if (state === 'enabled') await writeAudit(tx, { actor, action: 'connector.enabled', subject: 'connector:' + id });
   });
   return { manifest, existing: !!existing, state };
 }
 
-/** Enable or disable a registered connector. Answers false when there is no such row. */
+/**
+ * Enable or disable a registered connector. Answers false when there is no such row. A remote row is enabled only with
+ * an approved manifest (D144), as on the administration page.
+ */
 export async function setConnectorState(id: string, state: 'enabled' | 'disabled') {
   requireManaged(id);
+  const row = await readConnector(id);
+  if (state === 'enabled' && row && !row.bundled && !row.manifest)
+    throw new Error(
+      `Connector ${id} has no approved manifest. Register it with its url and --secret, which fetches and approves what the service serves, or read it in and approve it on Administration › Anslutna system.`,
+    );
   return database().transaction(async tx => {
     const done = await updateConnector(tx, id, actor, { state });
     if (done) await writeAudit(tx, { actor, action: 'connector.' + state, subject: 'connector:' + id });

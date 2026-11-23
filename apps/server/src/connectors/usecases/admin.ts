@@ -28,7 +28,7 @@ import {
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { parseManifest } from '@clew/connectors/remote';
 import { ForbiddenError, InputError } from '../../context';
-import { manifestDiff, offerOf } from '../manifests';
+import { diffDetails, isManifest, manifestDiff, pendingOffer } from '../manifests';
 import { describeBundled } from '../describe';
 import type {
   ConnectorRecord,
@@ -74,8 +74,6 @@ export const governanceOf = (
   ...(r.ordinal ? { ordinal: r.ordinal } : {}),
   ...(r.header ? { header: true } : {}),
 });
-const isManifest = (value: unknown): value is ConnectorManifest =>
-  !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
 /** A name that cannot be a person: the structural preview's actor. */
 const previewActor = (role: Role, unitId: string | null): Actor => ({
   id: 'preview',
@@ -228,14 +226,14 @@ export function connectorUsecases(deps: AdminDeps) {
   }
   async function detail(row: ConnectorRecord): Promise<ConnectorDetail> {
     const m = manifestOf(row);
-    const offered = isManifest(row.offered) && row.offeredAt ? row.offered : undefined;
+    const offer = pendingOffer(row);
     return {
       ...summary(row),
       protocol: m?.protocol ?? null,
       scan: m?.scan ?? false,
       uses: [...(m?.uses ?? [])],
       delegation: m?.delegation?.audience ?? null,
-      offered: offered ? { at: row.offeredAt!, diff: manifestDiff(m, offered) } : null,
+      offered: offer ? { at: offer.at, diff: manifestDiff(m, offer.manifest) } : null,
       headerCapability: m?.header?.capability ?? registry.connector(row.id)?.header ?? null,
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
@@ -560,9 +558,13 @@ export function connectorUsecases(deps: AdminDeps) {
   }
   /**
    * "Testa anslutning": the conformance check against the service. The health is recorded, and a manifest that differs
-   * from the approved one is recorded as offered; nothing live changes (D144).
+   * from the approved one is recorded as offered; nothing live changes (D144). `offered` says whether a change waits
+   * for the administrator now, so the page can say so.
    */
-  async function test(persona: AuthenticatedContext, id: string): Promise<CheckReport & { health: ConnectorHealth }> {
+  async function test(
+    persona: AuthenticatedContext,
+    id: string,
+  ): Promise<CheckReport & { health: ConnectorHealth; offered: boolean }> {
     requireAdmin(persona);
     const row = await must(id),
       at = clock().toISOString();
@@ -573,17 +575,20 @@ export function connectorUsecases(deps: AdminDeps) {
           { level: 'ok', group: 'connection', label: 'Inbyggd anslutning', description: 'Körs i Clews egen process.' },
         ],
         health: { status: 'ok', at },
+        offered: false,
       };
     const report = await transport.check({ ...remote(row), id });
     const health = healthFrom(report, at);
-    await store.recordHealth(id, health, offerOf(row.manifest, report.manifest), at);
-    return { ok: report.ok, items: report.items, health };
+    await store.recordCheck(id, { health, ...(report.manifest ? { served: report.manifest } : {}), at });
+    const after = await store.read(id);
+    return { ok: report.ok, items: report.items, health, offered: !!after && !!pendingOffer(after) };
   }
   /**
    * "Läs in igen från systemet" (D144). Without `apply`: the service's manifest is fetched, recorded as offered when it
-   * differs from the approved one, and the difference returned; nothing live changes. With `apply`: the offer the
-   * administrator reviewed, named by when it was first seen, becomes the approved manifest with its audit row. The
-   * stored offer is applied, never a new fetch, so what goes live is what was shown.
+   * differs from the approved one, and the difference returned; nothing live changes, the health included, since a
+   * manifest is not a check. With `apply`: the offer the administrator reviewed, named by when it was first seen,
+   * becomes the approved manifest with its audit row, in one write that holds only while it is still the stored offer.
+   * The stored offer is applied, never a new fetch, so what goes live is what was shown.
    */
   async function refreshManifest(
     persona: AuthenticatedContext,
@@ -596,46 +601,38 @@ export function connectorUsecases(deps: AdminDeps) {
       const row = await must(id);
       const { url } = remote(row);
       const fetched = await transport.fetchManifest(url, id);
-      const at = clock().toISOString();
-      await store.recordHealth(id, { status: 'ok', at }, offerOf(row.manifest, fetched), at);
-      return { diff: manifestDiff(manifestOf(row), fetched), connector: await detail((await store.read(id))!) };
+      await store.recordCheck(id, { served: fetched, at: clock().toISOString() });
+      const seen = (await store.read(id))!;
+      return { diff: manifestDiff(manifestOf(seen), fetched), connector: await detail(seen) };
     }
     const { by, at } = await mutating(persona);
     const row = await must(id);
     remote(row);
-    if (!isManifest(row.offered) || !row.offeredAt)
-      throw new InputError('Systemet erbjuder ingen ändring att godkänna. Läs in det igen.');
-    if (input.offered !== row.offeredAt)
-      throw new InputError('Systemet har ändrats igen sedan du granskade det. Läs in det igen och granska ändringen.');
+    const offer = pendingOffer(row);
+    if (!offer) throw new InputError('Systemet erbjuder ingen ändring att godkänna. Läs in det igen.');
+    const changedAgain = 'Systemet har ändrats igen sedan du granskade det. Läs in det igen och granska ändringen.';
+    if (input.offered !== offer.at) throw new InputError(changedAgain);
     // The offer is loaded as the loader would load it, so a manifest this Clew cannot register is never approved.
     let offered: ConnectorManifest;
     try {
-      offered = parseManifest(row.offered, id);
+      offered = parseManifest(offer.manifest, id);
     } catch (error) {
       throw new InputError('Beskrivningen från systemet kan inte användas: ' + (error as Error).message);
     }
     const diff = manifestDiff(manifestOf(row), offered);
-    await store.transaction(async tx => {
-      await tx.update(id, { manifest: offered, manifestAt: at, offered: null, offeredAt: null }, by, at);
+    const approved = await store.transaction(async tx => {
+      // Only while it is still the stored offer: a check that recorded another in between makes this false.
+      if (!(await tx.approveOffer(id, { at: offer.at, manifest: row.offered }, offered, by, at))) return false;
       await tx.writeAudit({
         actor: by,
         action: 'connector.manifest',
         subject: 'connector:' + id,
         at,
-        details: {
-          offeredAt: row.offeredAt,
-          added: diff.added,
-          removed: diff.removed,
-          changed: diff.changed,
-          areasAdded: diff.areasAdded,
-          areasRemoved: diff.areasRemoved,
-          usesAdded: diff.usesAdded,
-          usesRemoved: diff.usesRemoved,
-          ...(diff.delegation ? { delegation: diff.delegation } : {}),
-          fields: diff.fields,
-        },
+        details: { offeredAt: offer.at, ...diffDetails(diff) },
       });
+      return true;
     });
+    if (!approved) throw new InputError(changedAgain);
     const updated = (await store.read(id))!;
     applyLive(updated, offered);
     return { diff, connector: await detail(updated) };

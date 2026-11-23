@@ -15,25 +15,33 @@ administrator does, after seeing the change.
    moves with the build.
 2. **A changed manifest is offered, never live.** When the service serves a manifest that differs from the approved
    one, at a boot, on "Testa anslutning" or on "Läs in igen från systemet", Clew stores it beside the approved one as
-   offered, with the instant it was first seen, and changes nothing live. The same offer seen again keeps its instant;
-   a service that serves the approved manifest again takes the offer away. A change that only narrows waits too: one
+   offered, with the instant it was first seen, and changes nothing live. The served manifest is compared with the
+   approved one in the same write that stores it, so an approval made meanwhile is seen. The same offer seen again
+   keeps its instant; a service that serves the approved manifest again takes the offer away. Clew reads the manifest
+   at those moments only and polls no service. A change that only narrows waits too: one
    rule, and every manifest that was live is in the history. Meanwhile a capability the service has removed answers
    as unavailable.
 3. **The connector's page says so and shows what matters.** A banner on the connector's page says a change waits and
-   opens its review. The review lists, beside the capabilities and areas added, removed and changed, the reads of
+   opens its review, and "Testa anslutning" says it where the administrator is. The review lists, beside the
+   capabilities and areas added and removed, each one changed with the fields that changed in it (a widened `scope` or
+   area `roles` is named), the reads of
    other systems the connector would now or would no longer call back as the person, the audience whose token it would
    be handed before and after, and every other field of the manifest that changed, by name. The page's Översikt shows
    what the approved manifest reads through Clew and whose token it is handed today. The audit row of an approval,
    `connector.manifest`, records the same; the row of an addition records what was approved with it.
 4. **Approving is bound to what was shown.** "Använd det nya" names the offer it showed by the instant it was first
-   seen. Clew applies the stored offer, never a new fetch, and refuses when another offer has taken its place or none
-   is left. The session is checked again before the write, as for every administration change.
-5. **A draft without a manifest is not enabled.** Enabling approves nothing: an administrator reads the manifest in
-   from the system and approves it first.
+   seen. Clew applies the stored offer, never a new fetch, in one write that holds only while that offer, the same
+   instant and the same content, is still the stored one, and refuses when another has taken its place or none is
+   left. The session is checked again before the write, as for every administration change.
+5. **A draft without a manifest is not enabled.** Enabling approves nothing, on the page or from
+   `connector-add.ts --enable`: an administrator reads the manifest in from the system and approves it first. Adding
+   approves what the service serves then, and so does checking again while adding, since the draft is not live; the
+   wizard's summary names what it reads and whose token it gets before it is switched on.
 6. **A source's assistant reads nothing back.** A question handed to another system's assistant
    ([D125](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md))
-   carries no callback grant, whatever the connector's `uses` say, so nothing is read back through Clew while it is
-   answered. The connector's reads still call back exactly the approved `uses`.
+   carries no callback grant, whatever the connector's `uses` say, and nor does the read that lists the assistants,
+   which Clew makes before a question is sent and again for each question; so nothing is read back through Clew
+   while it is answered. The connector's other reads still call back exactly the approved `uses`.
 
 **Why.** The review of 2026-11-23 found that a connector's own service decided what it may read through Clew and
 whose token it gets: a manifest served at boot, on "Testa anslutning" or when a draft was enabled was stored and live

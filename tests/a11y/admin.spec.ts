@@ -343,6 +343,9 @@ test.describe('administration', () => {
       await dialog.getByRole('button', { name: 'Nästa' }).click();
       await expect(dialog.getByRole('heading', { level: 3, name: 'Aktivera' })).toBeFocused();
       await expect(dialog.getByText('Chefer')).toBeVisible();
+      // What adding it approves (D144): the other systems it reads as the person, and whose token it gets.
+      await expect(dialog.getByText('Läser andra system')).toBeVisible();
+      await expect(dialog.getByText('Får personens inloggning')).toBeVisible();
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Slå på' }).click();
       await expect(dialog).toHaveCount(0);
@@ -378,21 +381,27 @@ test.describe('administration', () => {
       api.admin = true;
       await page.setViewportSize({ width: 1280, height: 560 });
       const names = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `hello.${prefix}${i + 1}`);
+      const diff = {
+        added: names('ny', 12),
+        removed: names('gammal', 8),
+        changed: names('andrad', 4).map(name => ({ name, fields: ['scope'] })),
+        areasAdded: [],
+        areasRemoved: [],
+        areasChanged: [],
+        usesAdded: [],
+        usesRemoved: [],
+        fields: [],
+        same: false,
+      };
+      // The review is the offer the server stored, read back with the connector (D144).
       await page.route('**/api/admin/connectors/hello/refresh', route =>
         route.fulfill({
           json: {
-            diff: {
-              added: names('ny', 12),
-              removed: names('gammal', 8),
-              changed: names('andrad', 4),
-              areasAdded: [],
-              areasRemoved: [],
-              usesAdded: [],
-              usesRemoved: [],
-              fields: [],
-              same: false,
+            diff,
+            connector: {
+              ...connectorDetail(api.connectors.find(c => c.id === 'hello')!),
+              offered: { at: '2026-11-04T07:00:00.000Z', diff },
             },
-            connector: connectorDetail(api.connectors.find(c => c.id === 'hello')!),
           },
         }),
       );
@@ -424,9 +433,10 @@ test.describe('administration', () => {
       const diff = {
         added: [],
         removed: [],
-        changed: [],
+        changed: [{ name: 'hello.greeting', fields: ['scope'] }],
         areasAdded: [],
         areasRemoved: [],
+        areasChanged: [{ id: 'hello', fields: ['figure', 'roles'] }],
         usesAdded: ['finance.invoices'],
         usesRemoved: [],
         delegation: { from: null, to: 'hr-api' },
@@ -453,10 +463,29 @@ test.describe('administration', () => {
       await expect(dialog.getByText('Läser som personen: finance.invoices')).toBeVisible();
       await expect(dialog.getByText('Får personens inloggning för hr-api')).toBeVisible();
       await expect(dialog.getByText('Ändrat: systemets namn')).toBeVisible();
+      // A change inside a capability or an area says which of its fields changed.
+      await expect(dialog.getByText('Ändrat: vem som får använda den.')).toBeVisible();
+      await expect(dialog.getByText('Ändrat område: hello')).toBeVisible();
+      await expect(dialog.getByText('Ändrat: nyckeltal och vem som ser området.')).toBeVisible();
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Använd det nya' }).click();
       await expect(dialog).toHaveCount(0);
       expect(applied).toEqual([{ apply: true, offered: offered.at }]);
+      // A check that finds a change says so where the administrator is (4.1.3).
+      await page.route('**/api/admin/connectors/hello/test', route =>
+        route.fulfill({
+          json: {
+            ok: true,
+            items: [{ level: 'ok', group: 'connection', label: 'Svarar' }],
+            health: { status: 'ok', at: offered.at },
+            offered: true,
+          },
+        }),
+      );
+      await page.getByRole('button', { name: 'Testa anslutning' }).click();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Systemet erbjuder en ändring som väntar på ditt godkännande'));
     });
     test('a connector page is titled, the health is a sentence, and the tabs follow the tabs pattern', async ({
       page,

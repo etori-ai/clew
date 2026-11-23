@@ -29,8 +29,8 @@ assistant's knowledge without the assistant, never lets its own model speak to o
    the source no longer lists for them cannot be asked by its old key. The governance and the authority are read again
    before the final event is released, so a turn whose permission ended while it was answered stores nothing.
 4. **What leaves Clew.** The person's text, as typed, and nothing else of the conversation: no earlier turn, no read
-   result, no card, no row, no chip. Nor does anything leave by the other door: the question carries no callback grant,
-   so the source cannot read back through Clew while it answers ([D144](D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md) item 6). Clew's own model is not asked in a handed-over turn at all, so nothing is
+   result, no card, no row, no chip. Nor does anything leave by the other door: the question, and the read that lists
+   the assistants it is checked against, carry no callback grant, so the source cannot read back through Clew while it answers ([D144](D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md) item 6). Clew's own model is not asked in a handed-over turn at all, so nothing is
    rewritten on the way out or on the way back. The turn works with no model configured
    ([D8](D08-every-action-works-without-the-model.md)).
 5. **Sticky and visible.** Whom the box talks to is a button above the field that names the recipient ("Till: Clew",

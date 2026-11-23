@@ -8,12 +8,12 @@ import {
   type AssertionBinding,
   type FetchLike,
 } from '@clew/connectors/remote';
-import { enabledConnectors, recordHealth, type ConnectorHealth, type ConnectorRow } from '@clew/db/connectors';
+import { enabledConnectors, recordCheck, type ConnectorHealth, type ConnectorRow } from '@clew/db/connectors';
 import { openSecret } from '../auth-crypto';
 import { signingAuthority } from './signing';
 import type { ConnectorAuthority } from './authority';
 import { logPort } from '../logging';
-import { offerOf } from './manifests';
+import { sameManifest } from './manifests';
 export { AssertionError } from './authority';
 
 /**
@@ -52,8 +52,11 @@ export const sourceOf = (row: ConnectorRow): ConnectorSource => ({
 });
 export interface LoadOptions {
   rows?: () => Promise<ConnectorSource[]>;
-  /** Records a check: the health, and the served manifest as offered when it differs from the approved one (D144). */
-  record?: (id: string, health: ConnectorHealth, offered?: unknown) => Promise<void>;
+  /**
+   * Records a check: the health, and the manifest the service serves, which the store keeps as offered while it differs
+   * from the approved one (D144).
+   */
+  record?: (id: string, seen: { health: ConnectorHealth; served?: unknown; at: Date }) => Promise<void>;
   fetch?: FetchLike;
   attempts?: number;
   delayMs?: number;
@@ -99,7 +102,11 @@ export function unregisterConnector(registry: Registry, id: string) {
  * it live (D144). A row without an approved manifest is not registered at all.
  */
 export async function loadConnectors(registry: Registry, options: LoadOptions = {}) {
-  const { attempts = 20, delayMs = 3000, log = logPort('connectors'), record = recordHealth } = options;
+  const { attempts = 20, delayMs = 3000, log = logPort('connectors'), record = recordCheck } = options;
+  const health = (h: Omit<ConnectorHealth, 'at'>) => {
+    const at = new Date();
+    return { health: { ...h, at: at.toISOString() } as ConnectorHealth, at };
+  };
   const rows = await (options.rows ?? (async () => (await enabledConnectors()).map(sourceOf)))();
   const loaded: string[] = [];
   await Promise.all(
@@ -116,9 +123,8 @@ export async function loadConnectors(registry: Registry, options: LoadOptions = 
       for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
           const manifest = await fetchManifest(source.url, source.id, options.fetch);
-          const offered = offerOf(source.manifest, manifest);
-          await record(source.id, { status: 'ok', at: new Date().toISOString() }, offered);
-          if (offered)
+          await record(source.id, { ...health({ status: 'ok' }), served: manifest });
+          if (!sameManifest(source.manifest, manifest))
             log(
               `Connector "${source.id}" (${manifest.source}) at ${source.url} serves a changed manifest; it waits for an administrator${stored ? ', and the approved one is served meanwhile' : ''}.`,
             );
@@ -131,12 +137,12 @@ export async function loadConnectors(registry: Registry, options: LoadOptions = 
         } catch (error) {
           const message = (error as Error).message;
           if (error instanceof ManifestError && !/answered \d+/.test(message)) {
-            await record(source.id, { status: 'manifest-invalid', at: new Date().toISOString(), detail: message });
+            await record(source.id, health({ status: 'manifest-invalid', detail: message }));
             log(`Connector "${source.id}": ${message}`);
             return;
           }
           if (attempt === attempts) {
-            await record(source.id, { status: 'unreachable', at: new Date().toISOString(), detail: message });
+            await record(source.id, health({ status: 'unreachable', detail: message }));
             log(
               `Connector "${source.id}": ${source.url} did not answer after ${attempts} attempts${stored ? '; serving the stored manifest' : ''}.`,
             );

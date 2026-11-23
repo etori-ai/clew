@@ -503,7 +503,13 @@ describe('the administrator chooses, view by view', () => {
     // The service starts naming its rows: the refetched manifest lists the capabilities as changed, and the chosen view takes the name.
     served.manifest = base;
     const review = await admin.refreshManifest(mikael, 'phonebook', {});
-    expect(review.diff).toMatchObject({ same: false, changed: ['phonebook.directory', 'phonebook.team'] });
+    expect(review.diff).toMatchObject({
+      same: false,
+      changed: [
+        { name: 'phonebook.directory', fields: expect.any(Array) },
+        { name: 'phonebook.team', fields: expect.any(Array) },
+      ],
+    });
     await admin.refreshManifest(mikael, 'phonebook', { apply: true, offered: review.connector.offered!.at });
     expect(registry.menu(audiencedActorOf(hassan))).toEqual([team as never]);
   });

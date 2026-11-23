@@ -24,16 +24,17 @@ export function memoryConnectorStore(): MemoryConnectorStore {
       const r = rows.get(id);
       return r ? structuredClone(r) : undefined;
     },
-    async recordHealth(id, health, offered, at) {
+    async recordCheck(id, { health, served, at }) {
       const r = rows.get(id);
       if (!r) return;
-      r.health = structuredClone(health);
-      if (offered === null) {
+      if (health) r.health = structuredClone(health);
+      if (served === undefined) return;
+      if (r.manifest !== null && sameManifest(r.manifest, served)) {
         r.offered = null;
         r.offeredAt = null;
-      } else if (offered !== undefined && !(r.offered !== null && sameManifest(r.offered, offered))) {
-        r.offered = structuredClone(offered);
-        r.offeredAt = at ?? health.at;
+      } else if (!(r.offered !== null && sameManifest(r.offered, served))) {
+        r.offered = structuredClone(served);
+        r.offeredAt = at;
       }
     },
     async recordDescription(id, manifest, at) {
@@ -85,6 +86,21 @@ export function memoryConnectorStore(): MemoryConnectorStore {
           const r = rows.get(id);
           if (!r) return false;
           Object.assign(r, structuredClone(patch), { updatedBy: by, updatedAt: at, version: r.version + 1 });
+          return true;
+        },
+        async approveOffer(id, offer, manifest, by, at) {
+          const r = rows.get(id);
+          if (!r || r.offered === null || r.offeredAt !== offer.at || !sameManifest(r.offered, offer.manifest))
+            return false;
+          Object.assign(r, {
+            manifest: structuredClone(manifest),
+            manifestAt: at,
+            offered: null,
+            offeredAt: null,
+            updatedBy: by,
+            updatedAt: at,
+            version: r.version + 1,
+          });
           return true;
         },
         async remove(id) {

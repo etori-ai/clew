@@ -115,7 +115,7 @@ function world(
 const asks = (w: ReturnType<typeof world>) => w.sent.filter(s => s.path === '/clew/ask').map(s => s.body.ask);
 
 describe('nothing is read back through Clew while a source assistant answers (D125 item 4, D144)', () => {
-  test("the question carries no callback grant, though the same connector's reads carry the one its manifest uses", async () => {
+  test("the question and the listing it is checked against carry no callback grant, though the same connector's other reads carry the one its manifest uses", async () => {
     const authority = await testAuthority();
     const hello = createConnector({ jwks: testJwks, secret, clewUrl: 'http://clew' });
     const bearers: Record<string, string> = {};
@@ -139,6 +139,11 @@ describe('nothing is read back through Clew while a source assistant answers (D1
     expect(events.at(-1)).toMatchObject({ type: 'done' });
     expect(typeof decodeJwt(bearers['/clew/capabilities/hello.greeting']!).callback).toBe('string');
     expect(decodeJwt(bearers['/clew/ask']!).callback).toBeUndefined();
+    // The listing was read for the question, as the person, and reads nothing back either.
+    expect(decodeJwt(bearers['/clew/capabilities/hello.assistants']!).callback).toBeUndefined();
+    const listed = await registry.assistantsFor(actor);
+    expect(listed.length).toBeGreaterThan(0);
+    expect(decodeJwt(bearers['/clew/capabilities/hello.assistants']!).callback).toBeUndefined();
   });
 });
 

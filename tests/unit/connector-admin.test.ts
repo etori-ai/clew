@@ -356,6 +356,8 @@ describe('adding and governing a remote connector', () => {
     expect(report.ok).toBe(false);
     expect(report.health.status).toBe('secret-rejected');
     expect((await store.read('hello'))!.health.status).toBe('secret-rejected');
+    // Reading the manifest in is no check: the health the check recorded stays.
+    expect((await admin.refreshManifest(mikael, 'hello', {})).connector.health.status).toBe('secret-rejected');
     await admin.rotateSecret(mikael, 'hello', { secret: SECRET });
     expect((await admin.test(mikael, 'hello')).health.status).toBe('ok');
     const { diff } = await admin.refreshManifest(mikael, 'hello', {});
@@ -417,7 +419,8 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
     const approved = (await store.read('hello'))!;
     const registered = live.registered.length;
     serving(transport, widened);
-    await admin.test(mikael, 'hello');
+    // The check says a change waits, so the page can say so where the administrator is.
+    expect((await admin.test(mikael, 'hello')).offered).toBe(true);
     await applyAllRows(reconcile);
     const row = (await store.read('hello'))!;
     expect(row.manifest).toEqual(approved.manifest);
@@ -438,6 +441,7 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
         changed: [],
         areasAdded: [],
         areasRemoved: [],
+        areasChanged: [],
         usesAdded: ['finance.invoices'],
         usesRemoved: [],
         delegation: { from: null, to: 'hr-api' },
@@ -493,6 +497,63 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
       'ändrats igen',
     );
     expect(await store.read('hello')).toEqual(before);
+    expect(actions(store, 'hello')).toEqual(['connector.added']);
+  });
+  test('a change inside a capability or an area is named with its fields, in the review and the audit row', async () => {
+    const { admin, store, transport } = world();
+    // What was approved: the area for managers only, without a figure, and the greeting for managers.
+    const { fetchManifest, check } = transport;
+    serving(transport, m => ({
+      ...m,
+      areas: m.areas.map(({ figure: _figure, ...a }) => ({ ...a, roles: ['manager'] })),
+      capabilities: m.capabilities.map(c =>
+        c.name === 'hello.greeting' ? { ...c, scope: { roles: ['manager'] } } : c,
+      ),
+    }));
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    // The service now shows the area to everyone with a figure, and greets everyone.
+    Object.assign(transport, { fetchManifest, check });
+    expect((await admin.test(mikael, 'hello')).offered).toBe(true);
+    const offer = (await admin.read(mikael, 'hello')).offered!;
+    expect(offer.diff).toMatchObject({
+      added: [],
+      removed: [],
+      changed: [{ name: 'hello.greeting', fields: ['scope'] }],
+      areasAdded: [],
+      areasRemoved: [],
+      areasChanged: [{ id: 'hello', fields: ['figure', 'roles'] }],
+      fields: [],
+      same: false,
+    });
+    await admin.refreshManifest(mikael, 'hello', { apply: true, offered: offer.at });
+    expect(store.audit.at(-1)).toMatchObject({
+      action: 'connector.manifest',
+      details: {
+        changed: [{ name: 'hello.greeting', fields: ['scope'] }],
+        areasChanged: [{ id: 'hello', fields: ['figure', 'roles'] }],
+      },
+    });
+  });
+  test('a check that records another offer while the approval is written leaves the approved manifest as it was', async () => {
+    const { admin, store, transport, advance } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    serving(transport, widened);
+    const shown = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!.at;
+    const approved = (await store.read('hello'))!.manifest as ConnectorManifest;
+    // Between the approval's read and its write, a check stores a newer offer.
+    advance(60_000);
+    const transaction = store.transaction;
+    store.transaction = (async (fn: Parameters<typeof transaction>[0]) => {
+      store.transaction = transaction;
+      await store.recordCheck('hello', { served: { ...approved, source: 'Hello 3' }, at: '2026-11-04T07:02:00.000Z' });
+      return transaction(fn);
+    }) as typeof transaction;
+    await expect(admin.refreshManifest(mikael, 'hello', { apply: true, offered: shown })).rejects.toThrow(
+      'ändrats igen',
+    );
+    const row = (await store.read('hello'))!;
+    expect(row.manifest).toEqual(approved);
+    expect((row.offered as ConnectorManifest).source).toBe('Hello 3');
     expect(actions(store, 'hello')).toEqual(['connector.added']);
   });
   test('the service serving the approved manifest again takes the offer away', async () => {

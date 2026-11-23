@@ -1,9 +1,8 @@
 import { deniedGovernance, openGovernance, type Connector, type Registry } from '@clew/connectors';
-import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { parseManifest } from '@clew/connectors/remote';
 import { describeBundled } from './describe';
 import type { ConnectorRecord, ConnectorStore, LiveRegistration, Secrets } from './model';
-import { canonical } from './manifests';
+import { canonical, isManifest } from './manifests';
 import { governanceOf } from './usecases/admin';
 import { logPort } from '../logging';
 
@@ -38,8 +37,6 @@ function stateFor(deps: ReconcileDeps) {
   if (!state) states.set(deps, (state = { descriptors: new Map() }));
   return state;
 }
-const isManifest = (value: unknown): value is ConnectorManifest =>
-  !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
 
 /**
  * A row for every bundled connector: inserted when missing, enabled for everyone until an administrator says otherwise.

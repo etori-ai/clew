@@ -52,8 +52,11 @@ import { CheckResult } from './check-result';
 import {
   actionLabel,
   actorLabel,
+  areaFieldLabel,
   audienceLabel,
+  capabilityFieldLabel,
   capabilityKindLabel,
+  fieldList,
   healthLabel,
   manifestFieldLabel,
   kindLabel,
@@ -139,7 +142,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const [tab, setTab] = useState<TabId>('oversikt');
   const [report, setReport] = useState<CheckReport | null>(null);
   // The change under review and when the service first offered it, which approving names so nothing else goes live (D144).
-  const [review, setReview] = useState<{ diff: ManifestDiff; offered: string | null } | null>(null);
+  const [review, setReview] = useState<{ diff: ManifestDiff; offered: string } | null>(null);
   const [secretOpen, setSecretOpen] = useState(false);
   const [secret, setSecret] = useState('');
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -259,8 +262,8 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         label={c.state === 'enabled' ? 'På' : 'Av'}
         labelPosition="start"
         value={c.state === 'enabled'}
-        isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)}
-        disabledMessage="Utkastet är inte kontrollerat: kontrollera anslutningen först."
+        isDisabled={busy || (c.state !== 'enabled' && !c.manifestAt)}
+        disabledMessage="Anslutningen har ingen godkänd beskrivning: läs in den från systemet och godkänn den först."
         changeAction={on =>
           run(async () => {
             await api.admin.update(id, { state: on ? 'enabled' : 'disabled' });
@@ -278,7 +281,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
               run(async () => {
                 const r = await api.admin.test(id);
                 setReport(r);
-                return r.ok ? 'Kontrollen gick bra.' : 'Kontrollen hittade fel, se listan.';
+                // A change the check found waits in the banner; it is spoken here, where the person is (4.1.3).
+                const offered = r.offered ? ' Systemet erbjuder en ändring som väntar på ditt godkännande.' : '';
+                return (r.ok ? 'Kontrollen gick bra.' : 'Kontrollen hittade fel, se listan.') + offered;
               })
             }
           />
@@ -288,9 +293,10 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
             isDisabled={busy}
             clickAction={() =>
               run(async () => {
-                const r = await api.admin.refresh(id, false);
-                if (r.diff.same) return 'Inget har ändrats i systemet.';
-                setReview({ diff: r.diff, offered: r.connector.offered?.at ?? null });
+                // The review is the stored offer, its diff and its instant from one read, so approving names what was shown.
+                const offer = (await api.admin.refresh(id, false)).connector.offered;
+                if (!offer) return 'Inget har ändrats i systemet.';
+                setReview({ diff: offer.diff, offered: offer.at });
               })
             }
           />
@@ -872,7 +878,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
               isDisabled={busy || !review}
               clickAction={() =>
                 run(async () => {
-                  await api.admin.refresh(id, true, review?.offered ?? undefined);
+                  if (review) await api.admin.refresh(id, true, review.offered);
                   setReview(null);
                   return 'Uppdaterat från systemet.';
                 })
@@ -898,11 +904,12 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   description={<Text type="supporting">Ärenden som pekar på den slutar fungera.</Text>}
                 />
               ))}
-              {review.diff.changed.map(n => (
+              {review.diff.changed.map(c => (
                 <ListItem
-                  key={'c' + n}
+                  key={'c' + c.name}
                   startContent={<StatusDot variant="warning" label="Ändrad" aria-hidden />}
-                  label={<Text>Ändrad funktion: {n}</Text>}
+                  label={<Text>Ändrad funktion: {c.name}</Text>}
+                  description={<Text type="supporting">Ändrat: {fieldList(c.fields, capabilityFieldLabel)}.</Text>}
                 />
               ))}
               {review.diff.areasAdded.map(n => (
@@ -917,6 +924,14 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   key={'ar' + n}
                   startContent={<StatusDot variant="error" label="Borttaget" aria-hidden />}
                   label={<Text>Borttaget område: {n}</Text>}
+                />
+              ))}
+              {review.diff.areasChanged.map(a => (
+                <ListItem
+                  key={'ac' + a.id}
+                  startContent={<StatusDot variant="warning" label="Ändrat" aria-hidden />}
+                  label={<Text>Ändrat område: {a.id}</Text>}
+                  description={<Text type="supporting">Ändrat: {fieldList(a.fields, areaFieldLabel)}.</Text>}
                 />
               ))}
               {/* What the connector reads through Clew as the person, and whose token it gets (D144): what an administrator weighs. */}

@@ -78,7 +78,7 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts phonebook http
 docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts --list
 ```
 
-Use the administration UI to narrow the audience before enabling a real integration. `connector-add.ts <id> --enable` enables an existing registration; the CLI does not run the entire conformance suite. Registration lives in PostgreSQL, with a sealed transport secret and audit; the running server reconciles it without a rebuild or restart. A connector missing governance is not callable.
+Use the administration UI to narrow the audience before enabling a real integration. `connector-add.ts <id> --enable` enables an existing registration that has an approved manifest; registering with the address and `--secret` approves what the service serves then ([D144](../decisions/D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md)). The CLI does not run the entire conformance suite. Registration lives in PostgreSQL, with a sealed transport secret and audit; the running server reconciles it without a rebuild or restart. A connector missing governance is not callable.
 
 A connector that follows a fact kind (D55, `follows` on a `propose`) runs nothing until an administrator binds it. Until the administration page has bindings, the CLI is the way: one row per fact kind and follower with its audit row, default deny. The `--fixtures` form binds the development fixture connectors' followers of `hr:absence` with a short payroll window so a watch can be seen expiring in development; `scripts/jobs-check.ts` on the host then runs the scenario end to end as the manager.
 
@@ -95,13 +95,13 @@ Ship an independently runnable image with documented configuration and a health/
 
 Pin the deployed image version, keep secrets outside the image and test source connectivity and identity mappings before enabling access. The examples' Dockerfiles are starting points. The repository's current development compose stack is not a published production installation recipe.
 
-On manifest changes, restart/deploy the connector. Clew keeps serving the manifest an administrator approved and stores yours as offered ([D144](../decisions/D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md)); the connector's page under Administration › Anslutna system says a change waits, and nothing of it is live until the administrator reviews and approves it. The review names added, removed and changed capabilities, the reads you call back as the person (`uses`) and the audience you are handed a token for (`delegation`), so say why in your release notes. Test dependent calls after the approval. There is no automatic semantic compatibility guarantee or supported manifest `deprecated` field. Preserve old capability behavior while stored cards and callers still depend on it.
+On manifest changes, restart/deploy the connector. Clew reads your manifest when Clew starts, when an administrator presses "Testa anslutning" or "Läs in igen från systemet" and when it is registered from the command line; it does not poll, so tell the administrator. Clew keeps serving the manifest an administrator approved and stores yours as offered ([D144](../decisions/D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md)); the connector's page under Administration › Anslutna system says a change waits, and nothing of it is live until the administrator reviews and approves it. The review names added, removed and changed capabilities, the reads you call back as the person (`uses`) and the audience you are handed a token for (`delegation`), so say why in your release notes. Test dependent calls after the approval. There is no automatic semantic compatibility guarantee or supported manifest `deprecated` field. Preserve old capability behavior while stored cards and callers still depend on it.
 
 ## Troubleshoot the boundary that failed
 
 | Symptom | Check |
 |---|---|
-| Manifest rejected | Post the document to `/api/protocol/manifest?id=<id>`: it lists every problem. Protocol is 2; configured id matches; no unsupported fields; schemas, views and standing names agree. |
+| Manifest rejected | Post the document to `/api/protocol/manifest?id=<id>`: it lists every problem. Protocol is 1; configured id matches; no unsupported fields; schemas, views and standing names agree. |
 | HTTP 401 on every POST | Transport key, pinned Clew URL, public-key reachability, `kid`, audience and clocks. Never fix this by trusting the body actor. |
 | Connector absent for a person | Enabled state, audience, capability toggles, scope and current local grants. An audience of a group matches only a member of a provisioned group with exactly that external id, read at each request; the connector is never told the groups. |
 | Callback denied | Separate callback grant, exact `uses` target, actor's current assignment and target scope; no executes or cycles. |

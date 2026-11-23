@@ -3041,7 +3041,7 @@ Example:
 
 #### `assistants.list`
 
-One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both.
+One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both. Clew reads it before and while a question is answered, so its assertion carries no `callback` grant whatever `uses` says: nothing is read back through Clew then (D144).
 
 - Type: string
 - required

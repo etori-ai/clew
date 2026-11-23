@@ -4548,9 +4548,12 @@ export interface ConnectorPreview {
 export interface ManifestDiff {
   added: string[];
   removed: string[];
-  changed: string[];
+  /** Capabilities in both, with the fields of each that changed, by their names in the protocol (`scope`, `output`). */
+  changed: Array<{ name: string; fields: string[] }>;
   areasAdded: string[];
   areasRemoved: string[];
+  /** Areas in both, with the fields of each that changed (`roles`, `figure`). */
+  areasChanged: Array<{ id: string; fields: string[] }>;
   /** Other systems' reads the connector would now call back through Clew as the person (`uses`), and those it no longer would. */
   usesAdded: string[];
   usesRemoved: string[];

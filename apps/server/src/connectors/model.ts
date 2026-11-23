@@ -91,6 +91,17 @@ export interface ConnectorTx {
   insert(record: NewConnector): Promise<boolean>;
   /** Bumps the version; false when the row does not exist. */
   update(id: string, patch: ConnectorPatch, by: string, at: string): Promise<boolean>;
+  /**
+   * The offer an administrator reviewed, named by the instant it was first seen and by its content, becomes the
+   * approved `manifest`, the offer cleared and the version bumped (D144); false when it is no longer the stored offer.
+   */
+  approveOffer(
+    id: string,
+    offer: { at: string; manifest: unknown },
+    manifest: unknown,
+    by: string,
+    at: string,
+  ): Promise<boolean>;
   remove(id: string): Promise<void>;
   /** Dismiss every open card this connector pushed, at this instant; returns how many. */
   dismissOpenThreadsOf(connectorId: string, at: string): Promise<number>;
@@ -100,11 +111,12 @@ export interface ConnectorStore {
   list(): Promise<ConnectorRecord[]>;
   read(id: string): Promise<ConnectorRecord | undefined>;
   /**
-   * A check's result is not administration: no version bump, no audit, and the approved manifest is never touched
-   * (D144). `offered` is what the service serves when it differs from the approved one, `null` when it does not, and is
-   * left alone when omitted; the same offer seen again keeps the instant `at` it was first seen.
+   * What a check or "Läs in igen" saw (D144). It is not administration: no version bump, no audit, and the approved
+   * manifest is never touched. `health`, when given, is recorded. `served`, when given, is compared with the approved
+   * manifest in the same write, so an approval made meanwhile is seen: the approved one clears the offer, any other is
+   * the offer, and the same offer seen again keeps the instant `at` it was first seen.
    */
-  recordHealth(id: string, health: ConnectorHealth, offered?: unknown, at?: string): Promise<void>;
+  recordCheck(id: string, seen: { health?: ConnectorHealth; served?: unknown; at: string }): Promise<void>;
   /** A bundled connector's description is its code and moves with the build; a remote row is never changed here. */
   recordDescription(id: string, manifest: unknown, at: string): Promise<void>;
   /** The audit rows about one connector, oldest first. */
