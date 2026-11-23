@@ -37,11 +37,15 @@ administrator does, after seeing the change.
    `connector-add.ts --enable`: an administrator reads the manifest in from the system and approves it first. Adding
    approves what the service serves then, and so does checking again while adding, since the draft is not live; the
    wizard's summary names what it reads and whose token it gets before it is switched on.
-6. **A source's assistant reads nothing back.** A question handed to another system's assistant
+6. **A question gives a source's assistant nothing to read back with.** A question handed to another system's
+   assistant
    ([D125](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md))
    carries no callback grant, whatever the connector's `uses` say, and nor does the read that lists the assistants,
-   which Clew makes before a question is sent and again for each question; so nothing is read back through Clew
-   while it is answered. The connector's other reads still call back exactly the approved `uses`.
+   which Clew makes before a question is sent and again for each question. The grants of the connector's other calls
+   (a figure, a scan, a view) still reach exactly the approved `uses`, each for the two minutes it is valid, and Clew
+   does not withdraw one while a question is answered: what a source can read back as the person is bounded by the
+   `uses` an administrator approved (items 3 and 4), not by whether it is answering. A connector may offer assistants
+   and declare `uses` both, as `hello` does.
 
 **Why.** The review of 2026-11-23 found that a connector's own service decided what it may read through Clew and
 whose token it gets: a manifest served at boot, on "Testa anslutning" or when a draft was enabled was stored and live

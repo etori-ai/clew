@@ -89,6 +89,8 @@ export const manifestFieldLabel: Record<string, string> = {
   documents: 'dokument',
   assistants: 'assistenter',
   header: 'sidhuvudet',
+  capabilities: 'funktionernas ordning',
+  areas: 'områdenas ordning',
 };
 /** A capability's fields as the review of a changed manifest names them (D144); a field not listed is named by its key. */
 export const capabilityFieldLabel: Record<string, string> = {

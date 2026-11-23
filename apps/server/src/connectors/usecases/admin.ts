@@ -31,6 +31,7 @@ import { ForbiddenError, InputError } from '../../context';
 import { diffDetails, isManifest, manifestDiff, pendingOffer } from '../manifests';
 import { describeBundled } from '../describe';
 import type {
+  ConnectorPatch,
   ConnectorRecord,
   ConnectorStore,
   ConnectorTx,
@@ -298,17 +299,21 @@ export function connectorUsecases(deps: AdminDeps) {
     const report = await transport.check({ url, id: input.id, secret: input.secret });
     const health = healthFrom(report, at);
     await store.transaction(async tx => {
-      await tx.insert({
-        id: input.id,
-        bundled: false,
-        url,
-        secret: secrets.seal(input.secret, input.id),
-        state: 'draft',
-        manifest: report.manifest ?? null,
-        health,
-        createdBy: by,
-        at,
-      });
+      // Another administrator's add of the same id that landed since the check above: nothing of this one is stored.
+      if (
+        !(await tx.insert({
+          id: input.id,
+          bundled: false,
+          url,
+          secret: secrets.seal(input.secret, input.id),
+          state: 'draft',
+          manifest: report.manifest ?? null,
+          health,
+          createdBy: by,
+          at,
+        }))
+      )
+        throw new InputError('Anslutningen finns redan.');
       await tx.writeAudit({
         actor: by,
         action: 'connector.added',
@@ -378,7 +383,7 @@ export function connectorUsecases(deps: AdminDeps) {
         'Anslutningen har ingen godkänd beskrivning. Läs in den från systemet och godkänn den innan du slår på anslutningen.',
       );
     const changes: Array<{ action: string; details: Record<string, unknown> }> = [];
-    const next: Partial<ConnectorRecord> = {};
+    const next: ConnectorPatch = {};
     if (patch.state !== undefined && patch.state !== row.state) {
       next.state = patch.state;
       changes.push({ action: 'connector.' + patch.state, details: { from: row.state } });
@@ -515,6 +520,11 @@ export function connectorUsecases(deps: AdminDeps) {
       const url = patch.url.replace(/\/+$/, '');
       if (url !== row.url) {
         next.url = url;
+        // An offer is what the old address served (D144): what is approved after the move is what the new one serves.
+        if (row.offered !== null || row.offeredAt !== null) {
+          next.offered = null;
+          next.offeredAt = null;
+        }
         changes.push({ action: 'connector.url', details: { from: row.url, to: url } });
       }
     }
