@@ -545,18 +545,21 @@ test('a meeting moved or cancelled on the calendar page is found by its event’
   try {
     await send();
     const event = w.provider.events[0]!;
-    // The person moves the meeting on Clew's calendar page: a decision of its own, through the ledger.
+    // The person moves the meeting on Clew's calendar page: a decision of its own, through the ledger. The page writes
+    // an instant without milliseconds (`localInstant`), and the proposal reads back with them.
+    const start = '2098-11-13T12:00:00Z',
+      end = '2098-11-13T13:00:00Z';
     const moved = await w.decisions.rescheduleEvent(w.actor, {
       decisionId: randomUUID(),
       ref: event.ref,
       revision: event.revision,
-      start: '2098-11-13T12:00:00.000Z',
-      end: '2098-11-13T13:00:00.000Z',
+      start,
+      end,
     });
     // Approved, not yet carried out: the talk is where it was.
     expect((await talk())!.bookedStart?.toISOString()).toBe('2098-11-11T09:00:00.000Z');
     await w.uc.progress(moved.execution!.id);
-    expect(w.provider.events[0]).toMatchObject({ start: '2098-11-13T12:00:00.000Z', end: '2098-11-13T13:00:00.000Z' });
+    expect(w.provider.events[0]).toMatchObject({ start, end });
     const proposal = async () => (await w.proposals.readThread(w.id, card))!.proposals[0]!;
     expect(await proposal()).toMatchObject({
       status: 'confirmed',
@@ -590,8 +593,8 @@ test('a meeting moved or cancelled on the calendar page is found by its event’
     expect(planning.filter(a => a.action === 'proposals.moved').map(a => a.details)).toEqual([
       {
         proposal: card + ':shared',
-        start: '2098-11-13T12:00:00.000Z',
-        end: '2098-11-13T13:00:00.000Z',
+        start,
+        end,
         by: 'decision',
         executionId: moved.execution!.id,
       },

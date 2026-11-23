@@ -29,6 +29,7 @@ import {
   StackItem,
   Text,
   Timestamp,
+  UntrustedMarkdown,
   VStack,
   VisuallyHidden,
   XMarkIcon,
@@ -38,7 +39,6 @@ import { useMarks } from '../../marks';
 import { sideMessages } from '../../conversation-about';
 import { DOT } from '../../dot';
 import { useConversation } from './conversation-context';
-import { AssistantMarkdown } from './assistant-markdown';
 import { AssistantMark, StreamingAnswer, keepLines } from './conversation';
 
 /**
@@ -218,7 +218,7 @@ export function AssistantPane({
       <ChatMessage key={`side-${i}`} sender="assistant" name={theirs}>
         <ChatMessageBubble variant="ghost" width="100%" metadata={time(m.createdAt)}>
           <VStack gap={3}>
-            <AssistantMarkdown headingLevelStart={3}>{keepLines(m.body)}</AssistantMarkdown>
+            <UntrustedMarkdown headingLevelStart={3}>{keepLines(m.body)}</UntrustedMarkdown>
             {cites.length > 0 && (
               <HStack gap={2} wrap="wrap">
                 <Text type="supporting">{cites.length === 1 ? 'Källa' : 'Källor'}</Text>
