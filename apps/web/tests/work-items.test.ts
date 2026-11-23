@@ -77,19 +77,32 @@ describe('a notice (D112, amended 2026-11-12)', () => {
 
 describe('whether the rows say anything (D112, amended 2026-11-12)', () => {
   const title = 'Ny rutin vid hot och våld';
+  const undecided = { title, receipt: null };
+  test('a one-row receipt shows its source detail even when the item had no informative rows', () => {
+    const receipt = {
+      at: '2026-11-23T10:00:00Z',
+      headline: 'Felanmälan är skickad',
+      undoCapability: null,
+      undoUntil: null,
+      rows: [{ ref: 'pob:123', label: title, outcome: 'done' as const, detail: 'Ärende 123 är skapat.' }],
+    };
+    expect(rowsSaySomething({ title, items: [], receipt })).toBe(true);
+    expect(rowsSaySomething({ title, items: [row()], receipt })).toBe(true);
+    expect(rowsSaySomething({ title, items: [], receipt: { ...receipt, rows: [] } })).toBe(false);
+  });
   test('one row that is the item itself only repeats its title', () => {
-    expect(rowsSaySomething({ title, items: [row()] })).toBe(false);
-    expect(rowsSaySomething({ title, items: [row({ label: ' ny rutin vid  hot och våld ' })] })).toBe(false);
+    expect(rowsSaySomething({ ...undecided, items: [row()] })).toBe(false);
+    expect(rowsSaySomething({ ...undecided, items: [row({ label: ' ny rutin vid  hot och våld ' })] })).toBe(false);
   });
   test('a row with a fact of its own is drawn: a detail, a person or unit, a choice, another label', () => {
-    expect(rowsSaySomething({ title, items: [row({ detail: 'kräver läskvitto' })] })).toBe(true);
-    expect(rowsSaySomething({ title, items: [row({ subject: { entity: 'person', key: 'anna' } })] })).toBe(true);
-    expect(rowsSaySomething({ title, items: [row({ selectable: true })] })).toBe(true);
-    expect(rowsSaySomething({ title, items: [row({ label: 'Bilaga 1' })] })).toBe(true);
+    expect(rowsSaySomething({ ...undecided, items: [row({ detail: 'kräver läskvitto' })] })).toBe(true);
+    expect(rowsSaySomething({ ...undecided, items: [row({ subject: { entity: 'person', key: 'anna' } })] })).toBe(true);
+    expect(rowsSaySomething({ ...undecided, items: [row({ selectable: true })] })).toBe(true);
+    expect(rowsSaySomething({ ...undecided, items: [row({ label: 'Bilaga 1' })] })).toBe(true);
   });
   test('two rows or more are drawn, no rows are not', () => {
-    expect(rowsSaySomething({ title, items: [row(), row({ ref: 'communication:notice:2' })] })).toBe(true);
-    expect(rowsSaySomething({ title, items: [] })).toBe(false);
+    expect(rowsSaySomething({ ...undecided, items: [row(), row({ ref: 'communication:notice:2' })] })).toBe(true);
+    expect(rowsSaySomething({ ...undecided, items: [] })).toBe(false);
   });
 });
 

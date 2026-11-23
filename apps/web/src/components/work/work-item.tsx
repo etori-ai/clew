@@ -132,10 +132,7 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void) {
   const omit = notice?.out ? [notice.out.id] : undefined;
   const own = fromClewItself(thread, areas?.systems);
   const here = pathname + search;
-  // Where the rows stand: the receipt's, read back, once there is one; else the item's own (`rowsSaySomething`).
-  // The rows say something (`rowsSaySomething`), or the receipt read back more than one: a notice's one row, which is
-  // the notice itself, is never a section of its own.
-  const rowsShown = rowsSaySomething(thread) || (thread.receipt?.rows.length ?? 0) > 1;
+  const rowsShown = rowsSaySomething(thread);
   // Each row has a document behind it, read on the review's page (D70, D73 amended 2026-11-12).
   const documents = !!reviewedAction(thread)?.preview && thread.items.some(i => i.selectable);
   return { title, actions, mark, systems, own, from: here, readHref, notice, omit, rowsShown, documents };

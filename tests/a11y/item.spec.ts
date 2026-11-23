@@ -132,6 +132,25 @@ test.describe('the work item as a page', () => {
     await expectNoAxeViolations(page);
   });
 
+  test('a single receipt row on an item with no input rows shows the source case number', async ({ page, api }) => {
+    const item = api.threads.find(t => t.id === 'attest')!;
+    item.items = [];
+    item.receipt = {
+      at: NOW,
+      headline: 'Felanmälan är skickad',
+      undoCapability: null,
+      undoUntil: null,
+      rows: [
+        { ref: 'pob:123', label: 'Felanmälan', outcome: 'done', detail: 'Ärende 123 är skapat hos IT-supporten.' },
+      ],
+    };
+    await open(page, '/items/attest');
+    const rows = page.getByRole('list', { name: 'Kvitto, rad för rad' });
+    await expect(rows.getByRole('listitem')).toHaveCount(1);
+    await expect(rows).toContainText('Ärende 123 är skapat hos IT-supporten.');
+    await expectNoAxeViolations(page);
+  });
+
   test('a decided item shows its receipt row by row, and its Händelser read the decision back', async ({
     page,
     api: _,
