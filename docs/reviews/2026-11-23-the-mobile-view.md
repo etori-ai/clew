@@ -36,13 +36,13 @@ the product's own, but the phone composition was the wide page stacked.
 | 5 | "Behöver dig" stood a screen and a half down on Hem | Its top at y = 1234 of an 812 px window, under the news and 642 px of key figures | Hierarchy | Fixed |
 | 6 | The floating "Fråga AI" lay over content in the thumb's corner | 139 × 48 px over a row's "Öppna", a figure's value, a heading, row menus on Personal | Obstruction | Reduced: the mark alone, 48 px |
 | 7 | The person's own page had a second way to the settings, on another surface, and its buttons were cut at 320 px | "Inställnin…" and "Fråga assisten…"; a centred dialog with the content of the header's sheet | Consistency, 1.4.10 | Fixed: one way to the settings, and with one button fewer "Fråga assistenten" is drawn in full at 320 px (seen in the browser) |
-| 8 | Att göra is a two-column table on a phone | Title column 157 px, a status column of 120 px that is empty in four rows of six; rows 119 to 155 px; the first at y = 538 | Layout | Left |
+| 8 | Att göra is a two-column table on a phone | Title column 157 px, a status column of 120 px that is empty in four rows of six; rows 119 to 155 px; the first at y = 538 | Layout | Fixed in a change of its own, the same day: a list of rows below 768 px (D130 item 19, amended) |
 | 9 | A work item's "Godkänn" and "Avslå" look the same, 8 px apart, at the top of the page | Both secondary, at y = 228 | Error prevention, reach | Left |
 | 10 | Three names for one place (Start, Hem, Startsidan), and "Samtal" means two things | | Language | Left |
 | 11 | Heading levels skip on Kalender (h1 to h5) and on the person's page (h1 to h3) | | Structure | Left |
 | 12 | "Försenad" is drawn three ways (a red badge, an ochre dot with lowercase text, an amber count) | | Consistency | Left |
 | 13 | A text field's border is 1.48:1 against its ground, and a sheet's grab bar 1.20:1 | Astryx's defaults | 1.4.11, arguable | Left |
-| 14 | Kalender's head is three rows of controls on a phone, and nothing under it scrolls into them | 345 px that do not scroll at 375 px, 42 % of the window; 361 px, 56 %, at 320 px | Layout | Left; `touch.spec.ts` "the calendar's head stays two rows" fails on `main` since the steps became a row of their own (D74, 2026-11-20) |
+| 14 | Kalender's head is three rows of controls on a phone, and nothing under it scrolls into them | 345 px that do not scroll at 375 px, 42 % of the window; 361 px, 56 %, at 320 px | Layout | Fixed in a change of its own, the same day: the title and two rows of controls from 360 px (D74, amended); `touch.spec.ts`'s case, red on `main` since 2026-11-20, passes |
 
 ## What was changed, and who owns it now
 
@@ -68,14 +68,14 @@ The decisions that record them: [D39](../decisions/D39-compact-header-profile-an
 
 ## What was left, and why
 
-- **Att göra as a list on a phone (8) and the decision buttons of a work item (9)** are redesigns of the queue and of
-  how a decision is made, each with its own decision records and canvases; they are not a refresh. Whether "Godkänn"
-  may be drawn as the primary choice is a product question: the two are equal today so that Clew does not lean on a
-  decision.
+Att göra as a table (8) and Kalender's head (14) were first left here as redesigns of their own, and were then done as
+two changes of their own on the same day, each with its decision's amendment; they land together with this one.
+
+- **The decision buttons of a work item (9)** are how a decision is made, with decision records and canvases of their
+  own; that is not a refresh. Whether "Godkänn" may be drawn as the primary choice is a product question: the two are
+  equal today so that Clew does not lean on a decision.
 - **Names (10) and "Försenad" (12)** run through every width, not the phone alone.
 - **Heading levels (11)** are real markup faults, small, and on pages this change did not otherwise touch.
-- **Kalender's head (14)** was changed on purpose three days before this review; whether a phone gets a shorter head
-  or the spec a new measure is that change's to settle. The spec is red on `main` without this change.
 - **The field border and the grab bar (13)** are Astryx's defaults; a sheet now has a button that closes it, so the
   grab bar is no longer the only visible way out.
 - **The floating button still stands over the page** (6): a third of what it covered, not nothing. Hem still shows it
@@ -83,8 +83,11 @@ The decisions that record them: [D39](../decisions/D39-compact-header-profile-an
 
 ## Not verified
 
-The specs this change touches pass (`shell`, `header`, `site-header`, `appearance`, `branding`, `hem`, `person`,
-`staff`, `unit`, `new-question`, `boarding-list`, `touch` but for finding 14); the whole suite was not run. One case of
+The specs the three changes touch were run together, 388 cases in twenty spec files; the whole suite was not. Two
+cases fail, and fail the same way on `main` without these changes: `reflow.spec.ts` "the row keeps what needs the
+person readable on a short screen" and `undo.spec.ts` "sending the invitations keeps the row with the receipt". A
+third that was red on `main`, `card-actions.spec.ts` "the calendar on a phone", measured the calendar's head from the
+top of the screen as it was before the page frame; it now holds the amended head (D74) and passes. One case of
 `admin-appearance.spec.ts` failed once on a race between a field's status and its live region, and passed six times of
 six when repeated; it passes on `main`.
 

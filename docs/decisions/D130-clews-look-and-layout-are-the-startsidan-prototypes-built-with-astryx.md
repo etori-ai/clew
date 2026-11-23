@@ -166,7 +166,6 @@ of [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) a
 in [D46](D46-astryx-neutral-is-the-default-theme.md); "typography, motion, radii" staying Astryx's in
 [D38](D38-municipal-branding-uses-astryx-themes.md), for typography and radii.
 
-
 **Amended 2026-11-23: what a phone changes.** The reference is drawn for a wide window; the review of the phone view
 ([review](../reviews/2026-11-23-the-mobile-view.md)) found four places where following it there worked against the
 person, and the product owner asked for them to be put right.
