@@ -212,6 +212,7 @@ export { FigureLine, FigureTile, FigureTileSkeleton } from './components/figure'
 export { BoardCard } from './components/board-card';
 export { KeyFigure } from './components/key-figure';
 export { StatusRow, type RowStatus } from './components/status-row';
+export { UntrustedMarkdown } from './components/untrusted-markdown';
 export { CARD_GAP, FIGURES_IN_A_ROW, FigureRow, PersonAvatar, SECTION_GAP, registerTable } from './components/measures';
 export {
   figureItems,
