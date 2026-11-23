@@ -13,7 +13,7 @@ weakness seen from several areas, and how far to trust them.
 
 | Area | Review | High | Medium | Low | Total |
 |---|---|---|---|---|---|
-| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 3 | 6 | 9 |
+| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 2 | 6 | 8 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 1 | 6 | 6 | 13 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 6 | 6 | 12 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 1 | 9 | 16 | 26 |
@@ -23,7 +23,7 @@ weakness seen from several areas, and how far to trust them.
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 5 | 13 | 18 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
-| | **Total** | **3** | **41** | **80** | **124** |
+| | **Total** | **3** | **40** | **80** | **123** |
 
 ## High
 
@@ -40,7 +40,6 @@ points, and it carries a section on the earlier SCIM reviews.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| ID-2 | Medium | `localReturnTo` tests the text before the parser removes dot segments, so a return address such as `/.//evil.example/login` leaves the installation after sign-in. | `apps/server/src/auth-crypto.ts:112` |
 | ID-3 | Medium | `followedUnits` builds the signed `units` from every assignment, so a unit a manager is only placed on is told to a source as one they follow up. | `apps/server/src/composition/people.ts:116` |
 | ID-4 | Medium | The web image and the hosting guide's proxy example send no content security policy, framing rule, `Strict-Transport-Security` or `Referrer-Policy`. Same as `BL-10`. | `apps/web/nginx.conf.template` |
 | ID-5 | Low | The session cookie is named `clew-session`, not `__Host-clew-session`, so a sibling host can shadow it with a cookie set for the parent domain. | `apps/server/src/auth.ts:56` |
