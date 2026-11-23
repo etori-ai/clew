@@ -224,6 +224,35 @@ test('an invitation Clew’s own check refuses before sending was never sent: th
     expect(w.provider.events.filter(x => x.uid.startsWith('clew-exec-'))).toEqual([]);
   }
 });
+test('the own calendar is checked by instant: a meeting at the same time written with another offset is seen', async () => {
+  const w = world();
+  // The calendar answers in UTC; the approved booking is 08:00–09:00 UTC written with an offset, as the contract allows.
+  w.provider.events.push(
+    occurrence(
+      { uid: 'other', title: 'Ledning', start: '2026-11-10T08:15:00.000Z', end: '2026-11-10T08:45:00.000Z' },
+      w.provider.account,
+    ),
+  );
+  const item = command().items[0]!;
+  const e = await w.approve({
+    items: [
+      {
+        ...item,
+        personId: 'guest',
+        action: 'create',
+        input: { ...input, start: '2026-11-10T09:00:00+01:00', end: '2026-11-10T10:00:00+01:00' },
+      },
+    ],
+  });
+  await w.uc.progress(e.id);
+  expect(w.provider.events.filter(x => x.uid.startsWith('clew-exec-'))).toEqual([]);
+  expect(await w.uc.read(person, e.id)).toMatchObject({
+    state: 'failed',
+    result: {
+      rows: [{ ref: 'p1', outcome: 'skipped', detail: 'Inget skickades: tiden kunde inte bekräftas som ledig.' }],
+    },
+  });
+});
 test('an approved invitation is skipped if the address no longer identifies its invitee when sent', async () => {
   const renamed = { ...guest, ref: 'guest-new', email: 'guest.new@clew.test' };
   const replacement = { ...guest, personId: 'somebody-else' };
