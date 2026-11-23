@@ -17,6 +17,8 @@ export function nearestWeekday(date: string, weekday: string) {
 }
 export const dayStart = (date: string) =>
   Temporal.PlainDate.from(date).toZonedDateTime(timeZone).toInstant().toString();
+/** Calendar providers may return the same instant with a different offset or fractional precision. */
+export const sameInstant = (a: string, b: string) => Temporal.Instant.compare(a, b) === 0;
 /** Explicit local clock time and UTC offset for consumers that cannot infer display time. */
 export const stockholmTimestamp = (instant: string) =>
   Temporal.Instant.from(instant)

@@ -99,14 +99,27 @@ test('approval and audit are durable before any invitation is sent; duplicate ap
     result: { rows: [{ ref: 'p1', outcome: 'done' }] },
   });
 });
-test('a reply lost after commit is read back with its exact cancellation revision', async () => {
+test('a booking is confirmed from equivalent provider timestamps and retains its exact cancellation revision', async () => {
   const w = world(),
     create = w.provider.create.bind(w.provider);
   w.provider.create = async (uid, value) => {
-    await create(uid, value);
+    await create(uid, { ...value, start: new Date(value.start).toISOString(), end: new Date(value.end).toISOString() });
     throw new Error('lost');
   };
-  const e = await w.approve();
+  const e = await w.approve({
+    items: [
+      {
+        id: 'p1',
+        label: 'Guest',
+        action: 'create',
+        input: {
+          ...input,
+          start: '2026-11-10T10:00:00Z',
+          end: '2026-11-10T12:00:00+01:00',
+        },
+      },
+    ],
+  });
   await w.uc.progress(e.id);
   expect(await w.uc.read(person, e.id)).toMatchObject({
     state: 'succeeded',
@@ -462,8 +475,8 @@ test('a lost move response is investigated, and a cancel is confirmed only by ab
   const event = occurrence({ uid: 'old', title: input.title, start: input.start, end: input.end }, w.provider.account);
   w.provider.events.push(event);
   const move = w.provider.reschedule.bind(w.provider);
-  w.provider.reschedule = async (...args) => {
-    await move(...args);
+  w.provider.reschedule = async (ref, revision, start, end) => {
+    await move(ref, revision, new Date(start).toISOString(), new Date(end).toISOString());
     throw new Error('lost');
   };
   const e = await w.uc.approve(person, {
@@ -477,8 +490,8 @@ test('a lost move response is investigated, and a cancel is confirmed only by ab
           action: 'move',
           ref: event.ref,
           revision: event.revision,
-          start: '2026-11-10T12:00:00.000Z',
-          end: '2026-11-10T13:00:00.000Z',
+          start: '2026-11-10T12:00:00Z',
+          end: '2026-11-10T14:00:00+01:00',
           before: { start: input.start, end: input.end },
         },
       ],
