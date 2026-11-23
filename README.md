@@ -61,4 +61,4 @@ Clew is a developing proof of concept. The development connectors use synthetic 
 
 ## Licence
 
-Clew is licensed under the [GNU Affero General Public License v3.0](LICENSE), as Eneo is ([D143](docs/decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md)). The repository-root `LICENSE` is the source of truth for Clew's own code, including files without a licence header. The dependencies keep their own licences, recorded in the [licence record](docs/reference/licences.md), and the web app's build carries their notices in `third-party-notices.txt`.
+Clew is licensed under the [GNU Affero General Public License v3.0](LICENSE), as Eneo is ([D143](docs/decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md)). The repository-root `LICENSE` is the source of truth for Clew's own code, including files without a licence header. The dependencies keep their own licences, recorded in the [licence record](docs/reference/licences.md). Every browser build (the web app, the header embed and the documentation site) writes their notices to `third-party-notices.txt` and Clew's licence to `LICENSE.txt` beside its files, and every connector image holds `LICENSE`.
