@@ -1,0 +1,251 @@
+# Open findings
+
+These are the findings of the review of the whole repository on 2026-11-23, at `9fd4c962`, one review per area,
+linked below. By the product owner's decision of 2026-11-23 they are recorded and not fixed for now. A row is removed
+in the change that fixes it; a finding it is decided not to fix is removed with that decision named in the commit
+message. The severity is the review's own. The reviews were made by automated reviewers, the coordinating session
+checked the high findings of the first five reviews against the code, and no person has reviewed any of them. Each
+review's own sections "Not established" and "Seen outside this area" hold more that is not listed here.
+[The overview](../reviews/2026-11-23-review-of-the-whole-repository.md) says what was reviewed, which findings are one
+weakness seen from several areas, and how far to trust them.
+
+## Counts
+
+| Area | Review | High | Medium | Low | Total |
+|---|---|---|---|---|---|
+| ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 1 | 3 | 6 | 10 |
+| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 1 | 6 | 6 | 13 |
+| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 1 | 6 | 6 | 13 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 2 | 9 | 16 | 27 |
+| BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 1 | 3 | 10 | 14 |
+| CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
+| BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 6 | 8 |
+| WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
+| WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 5 | 13 | 18 |
+| CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
+| | **Total** | **6** | **41** | **81** | **128** |
+
+## High
+
+| Id | Finding | Where |
+|---|---|---|
+| ID-1 | A SCIM write of a group mapped to Kompetenssökning derives none of its members, so a person removed from the group keeps the registrar relation. | `apps/server/src/modules/people/usecases.ts:324` |
+| CB-1 | A connector's own manifest decides which reads it may call back as the person and which audience its token is exchanged for, and no administrator sees or decides either. Same as `DE-H1`. | `packages/connectors/src/protocol.ts:457-464` |
+| AM-1 | An answer is drawn with Astryx's `Markdown`, which loads images from any address, and nothing on the page stops the request. | `apps/web/src/components/conversation/conversation.tsx:513` |
+| DE-H1 | A connector's manifest is replaced and goes live at every boot, at "Testa anslutning" and when a draft is enabled, with no audit row and no administrator's act. Same as `CB-1`. | `apps/server/src/connectors/remote.ts:98-117` |
+| DE-H2 | A booking or move made from the calendar page is written and never confirmed, because the read-back compares instants as text with and without milliseconds. | `apps/server/src/modules/calendar/usecases/decisions.ts:480-487` |
+| BL-1 | The accessibility suite is red on `main`: twelve tests fail, eight of them stale tests that hide two faults in the product. | `tests/a11y/action-dialog.spec.ts:61` |
+
+## Identity, sessions and authorization
+
+[The review](../reviews/2026-11-23-review-identity-sessions-and-authorization.md); its "Not established" holds five
+points, and it carries a section on the earlier SCIM reviews.
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| ID-1 | High | A SCIM write of a group mapped to Kompetenssökning derives none of its members, because `givesAuthority` is never handed the relation rows. | `apps/server/src/modules/people/usecases.ts:324` |
+| ID-2 | Medium | `localReturnTo` tests the text before the parser removes dot segments, so a return address such as `/.//evil.example/login` leaves the installation after sign-in. | `apps/server/src/auth-crypto.ts:112` |
+| ID-3 | Medium | `followedUnits` builds the signed `units` from every assignment, so a unit a manager is only placed on is told to a source as one they follow up. | `apps/server/src/composition/people.ts:116` |
+| ID-4 | Medium | The web image and the hosting guide's proxy example send no content security policy, framing rule, `Strict-Transport-Security` or `Referrer-Policy`. Same as `BL-10`. | `apps/web/nginx.conf.template` |
+| ID-5 | Low | The session cookie is named `clew-session`, not `__Host-clew-session`, so a sibling host can shadow it with a cookie set for the parent domain. | `apps/server/src/auth.ts:56` |
+| ID-6 | Low | The logo's SVG check is a list of text patterns that lets through namespaced elements, CSS escapes and character references it says it refuses. | `apps/server/src/modules/appearance/domain.ts:11` |
+| ID-7 | Low | The mapping to Kompetenssökning is not held as a capability mapping is: decided before the group is held, a NUL answers 503, and some stale rows cannot be removed. | `apps/server/src/modules/people/usecases.ts:1126` |
+| ID-8 | Low | The back-channel logout address refetches the provider's keys for every unknown `kid` and reads the whole body before measuring it. | `apps/server/src/auth.ts:449` |
+| ID-9 | Low | No test covers a sign-in that succeeds, a second sign-in replacing the first, the mutation guard, `access-revoked`, sign-out or `localReturnTo`. | `tests/unit/auth-*.test.ts` |
+| ID-10 | Low | A path-less SCIM patch is not held to the nesting limit, so a deeply nested value overflows the stack and answers 500. | `apps/server/src/modules/people/domain.ts:570` |
+
+## The connector boundary in the core
+
+[The review](../reviews/2026-11-23-review-connector-boundary-in-the-core.md); its "Not established" holds six points.
+It carries no tables of its own.
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| CB-1 | High | A connector's manifest declares what it may read through Clew (`uses`) and whose token it is handed (`delegation.audience`), and no administrator sees or decides it. Same as `DE-H1`. | `packages/connectors/src/protocol.ts:457-464` |
+| CB-2 | Medium | "Hämta manifest igen" fetches the service and answers an existing id differently from a missing one before it checks that the caller is an administrator. | `apps/server/src/connectors/usecases/admin.ts:575-608` |
+| CB-3 | Medium | "Testa anslutning" overwrites the stored manifest, which the reconciler puts live, with no audit row or step-up, and the reviewed refresh path shows none of what matters. Same as `DE-H1`. | `apps/server/src/connectors/usecases/admin.ts:557-573` |
+| CB-4 | Medium | The transport follows redirects on capability calls, scans, figures and manifest reads, sending the transport key and the person's token, and shows the other host's words. | `packages/connectors/src/remote.ts:218-230` |
+| CB-5 | Medium | A connector's answer to a capability call, scan, figure or manifest is read into memory whatever its size. | `packages/connectors/src/remote.ts:236` |
+| CB-6 | Medium | The public manifest dry run compiles every capability's schema into one module-wide `Ajv` that keeps them all, so memory grows without bound. | `apps/server/src/routes/protocol.ts:21` |
+| CB-7 | Medium | A job proposal names a connector, with its id, name and capability, to a person outside its audience. | `packages/connectors/src/index.ts:1517-1527` |
+| CB-8 | Low | Four link fields from a source (`SearchHit.link`, `ErrandRow.link`, `SourceCitation.link`, `clew.openSource`'s `url`) carry no scheme rule. | `packages/contracts/src/index.ts:1080` |
+| CB-9 | Low | Adding or testing a connector whose service does not answer ends in "Något gick fel", and `unreachable` is never recorded. | `apps/server/src/composition/index.ts:403-405` |
+| CB-10 | Low | Several connector administration audit rows and the signing key's rows have no scenario test that asserts them. | `apps/server/src/connectors/usecases/admin.ts:609-618` |
+| CB-11 | Low | The registration script sets a re-registered connector to draft under one `connector.secret` row and writes state and removal rows for changes that did not happen. | `scripts/connector-registry.ts:48-77` |
+| CB-12 | Low | Current documentation still names protocols 2 and 3, though the loader refuses any number but 1. | `docs/reference/connector-protocol.md:183` |
+| CB-13 | Low | Without `--id`, the check script signs request, callback and installation assertions for whatever audience an unregistered service's manifest names. | `scripts/connector-check.ts:81-87` |
+
+## The assistant and the model boundary
+
+[The review](../reviews/2026-11-23-review-assistant-and-model-boundary.md); its "Not established" holds six points,
+and it carries a table of what reaches the model and a table of the tools.
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| AM-1 | High | An answer's Markdown, Clew's or another system's assistant's, loads images from any address with no click, and no content security policy stops it. | `apps/web/src/components/conversation/conversation.tsx:513` |
+| AM-2 | Medium | Source text is written into the system prompt beside Clew's rules, with no rule that it is data and no line rule on its fields. | `apps/server/src/assistant/model.ts:136-213` |
+| AM-3 | Medium | The live server binds the assistant's `people` port with the person's Clew id and the prompt calls it their user name, which the registry refuses. | `apps/server/src/composition/index.ts:359-363` |
+| AM-4 | Medium | A decision on a card carries no version, so the server approves the card as it is on arrival, not as the person was shown it. Same as `DE-M9`. | `packages/contracts/src/index.ts:4716-4722` |
+| AM-5 | Medium | One failed turn marks the provider down for everyone, and turns fail for reasons unrelated to the endpoint: an 8-second budget, no text after tool calls, no token limit. | `apps/server/src/assistant/index.ts:734` |
+| AM-6 | Medium | A model call that does not end in the model's answer leaves no record of which model was called or what it read. | `apps/server/src/assistant/index.ts:727` |
+| AM-7 | Medium | D115's guard is applied to the turn's prompt but not to the conversation's history, which is sent unchecked. | `apps/server/src/assistant/context.ts:92` |
+| AM-8 | Low | A failed tool's error message, a connector's own or any other error's, is handed to the model as it is. | `apps/server/src/assistant/model.ts:54-56` |
+| AM-9 | Low | The administrator's "Assistent" switch closes tools only; chips, matched cards and the router's answers from a closed connector still reach the model. | `packages/connectors/src/index.ts:1891-1894` |
+| AM-10 | Low | Changing a provider's address keeps its sealed key, which is then sent to the new address. | `apps/server/src/assistant/usecases/models.ts:229-256` |
+| AM-11 | Low | What a source's assistant may read back through Clew while it answers is set by the manifest's `uses`, not by D125, and the profile does not refuse it. | `packages/connectors/src/remote.ts:452-470` |
+| AM-12 | Low | The system prompt tells the model it serves Sundsvalls kommun's Startsidan in every installation. | `apps/server/src/assistant/model.ts:137` |
+| AM-13 | Low | Several model administration audit rows have no test, the assistant's function ports have no contract case, and nothing tests what a stopped turn or a model-started item leaves. | `apps/server/src/assistant/usecases/models.ts` |
+
+## Decisions, durable execution, audit and the database
+
+[The review](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md); its "Not established"
+holds nine points, and it carries the audit sweep of every mutating use case (tables A, B and C) and a table of
+ports with no contract under M7.
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| DE-H1 | High | Three paths store a manifest fetched from the connector's service through `recordHealth`, so it goes live with no audit row and no administrator's act. Same as `CB-1` and `CB-3`. | `apps/server/src/connectors/remote.ts:98-117` |
+| DE-H2 | High | The calendar read-back compares the dialog's instants with the adapters' by `===`, `…08:00:00Z` against `…08:00:00.000Z`, so a booking or move stays unknown. | `apps/server/src/modules/calendar/usecases/decisions.ts:480-487` |
+| DE-M1 | Medium | A work item whose execution settled failed or partial reuses its decision id, so it can never be decided again. | `apps/server/src/threads/usecases/decisions.ts:135-152` |
+| DE-M2 | Medium | A calendar write whose read-back finds nothing stays unknown for good, and while it does the manager's planning card can be neither confirmed, redrawn nor dismissed. | `apps/server/src/modules/calendar/usecases/decisions.ts:464-491` |
+| DE-M3 | Medium | When recording a source's result fails inside `progress`, the catch meant for the source stores it as the source not answering, and nothing is logged. | `apps/server/src/modules/executions/usecases.ts:690-697` |
+| DE-M4 | Medium | The card projection, the owned domains' timer fences and the follow-up's writes are SQL in the composition root with no memory twin, so the unit suite tests a copy. | `apps/server/src/composition/execution-projection.ts:30-247` |
+| DE-M5 | Medium | Connector administration merges and writes from a row read before its transaction, with no version compared, and nothing keeps `header_holder` to one row. | `apps/server/src/connectors/usecases/admin.ts:331` |
+| DE-M6 | Medium | No erasure clears an invitee's `participant_name` and `participant_email` from `proposal`. | `packages/db/src/schema.ts:433-435` |
+| DE-M7 | Medium | Ten ports or groups of ports have behaviour that no contract case holds both adapters to. | `tests/` (the store contracts) |
+| DE-M8 | Medium | The CalDAV adapter builds a person's address as `<login>@clew.test` and reads an appointment with no organiser as someone else's. | `packages/calendar/src/nextcloud.ts:68` |
+| DE-M9 | Medium | `POST /api/threads/:id/act` carries nothing of the version shown, so the version check guards only the server's own read against its commit. Same as `AM-4`. | `packages/contracts/src/index.ts:4716-4722` |
+| DE-L1 | Low | A workflow that ends in ERROR leaves its execution or follow-up with no way forward except an operator's script. | `apps/server/src/dbos/workflows.ts:62-70` |
+| DE-L2 | Low | The heartbeat sweep deletes a dead executor's row before its workflows are adopted, so a failed adoption leaves them stranded. | `apps/server/src/dbos/heartbeat.ts:36-43` |
+| DE-L3 | Low | `scanInto`, the first scan implementation, is unreachable in the server, and its tests still stand as evidence. | `apps/server/src/threads/usecases/cards.ts:110-203` |
+| DE-L4 | Low | The projection's job inserts, an approved undo's end of the follow-up plan and a connector removal's cascade leave no audit row of their own. | `apps/server/src/composition/execution-projection.ts:227-236` |
+| DE-L5 | Low | The approval endpoint never checks whether an original is already compensated, so one confirmed effect can be undone twice. | `apps/server/src/routes/api.ts:82-92` |
+| DE-L6 | Low | On PostgreSQL the planner's `replan` accepts any open card of the manager and rewrites it. | `apps/server/src/modules/calendar/usecases/samtal.ts:502-547` |
+| DE-L7 | Low | A connector's `observedAt` is compared with the stored one as a string, so an offset changes which is newer. | `apps/server/src/threads/usecases/refresh.ts:117` |
+| DE-L8 | Low | `activeByUserName` in the competence store folds a user name's case with a plain `lower`, not ICU, and cannot use the index. | `apps/server/src/modules/competence/adapters/postgres.ts:710-726` |
+| DE-L9 | Low | One open card per topic is enforced on insert only by the memory adapter, and a reopen can violate the PostgreSQL index. | `apps/server/src/threads/adapters/memory.ts:111-118` |
+| DE-L10 | Low | The change-signal triggers miss columns and tables the browser shows, and are hand-written SQL that `schema.ts` does not name. | `packages/db/migrations/0018_black_zarek.sql:46-57` |
+| DE-L11 | Low | A reminder or snooze whose timer is blocked leaves its card parked where the timer would have moved it from. | `apps/server/src/threads/usecases/reminders.ts:218-232` |
+| DE-L12 | Low | Several queries run per page load have no index to serve them. | `apps/server/src/threads/adapters/refresh-postgres.ts:111-113` |
+| DE-L13 | Low | `bun run db:init` applies only migrations newer than the last recorded one, so a skipped migration goes unnoticed. | `scripts/db-init.ts:10-13` |
+| DE-L14 | Low | The CalDAV adapter mishandles time zones in events other clients wrote: a process-wide zone registry, floating times read in the server's zone, and invalid `TZID` with UTC. | `packages/calendar/src/nextcloud.ts:148-151` |
+| DE-L15 | Low | A meeting made all-day and then adopted books the talk from midnight UTC. | `apps/server/src/modules/calendar/usecases/invitations.ts:53-54` |
+| DE-L16 | Low | A nonexistent date gives a 500 in the calendar's reads, and an availability check for eight participants and a room is refused by both adapters. | `apps/server/src/modules/calendar/usecases/events.ts:81-84` |
+
+## Baseline, build and supply chain
+
+[The review](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md); its "Not established" holds six points,
+and it carries the baseline table of every suite, the failing-test table under finding 1 and a table of the eight
+`proposed` records.
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| BL-1 | High | The accessibility suite is red on `main`: of twelve failing tests, eight are left behind by interface changes and hide two faults in the product. | `tests/a11y/action-dialog.spec.ts:61` |
+| BL-2 | Medium | The repository is public and has no licence file and no `license` field in any `package.json`. | The repository and its GitHub settings |
+| BL-3 | Medium | `main` has no branch protection or ruleset, so no check is required before a change lands. | GitHub settings of the repository |
+| BL-4 | Medium | The local development guide starts a Keycloak container that nothing in the repository creates, pins or describes. | `docs/maintainers/local-development.md:16` |
+| BL-5 | Low | Seven connector images set a SQLite path under `/data`, which the image lacks and `node` cannot write, so they do not start as built. | `connectors/hr/Dockerfile:5` |
+| BL-6 | Low | `.dockerignore` does not exclude `.auth-test.env`, so the development stack's credentials reach a server image built from a developer's checkout. | `.dockerignore:16-17` |
+| BL-7 | Low | `caniuse-lite`, under CC-BY-4.0, is missing from the licence record and ships in the server image, and four `@types` packages are unrecorded. | `docs/reference/licences.md` |
+| BL-8 | Low | The web image serves bundled third-party code and the Raleway typeface without their licence notices. | The built web image's served files |
+| BL-9 | Low | The web image serves Sundsvall's trademarked dragon from `apps/web/public/branding/`, though the build is said to carry no branding. | `apps/web/Dockerfile:7` |
+| BL-10 | Low | The web image's nginx template sets no security headers beyond `Cache-Control`, and the hosting guide's proxy example has the same gap. Same as `ID-4`. | `apps/web/nginx.conf.template` |
+| BL-11 | Low | The documentation site's lockfile pins `vite` and `esbuild` with known advisories, and no workflow runs `bun audit`. | `site/package.json` |
+| BL-12 | Low | Connector base images are pinned by tag only and named without a registry, and `bun` is installed globally without integrity. | `connectors/*/Dockerfile` |
+| BL-13 | Low | `bun run deps` does not cruise `apps/web`, where one violation of `clew-does-not-import-connectors` stands in a test. | `package.json` |
+| BL-14 | Low | Documents that span areas state things the repository no longer holds: duplicate decision numbers, protocol 2, Astryx and FullCalendar commands, ports and the trailing slash. | `docs/reference/status.md:29` |
+
+## The competence domain
+
+[The review](../reviews/2026-11-23-review-competence.md); its "Not established" holds five points, and it carries a
+table of verdicts per question and a table of what erasure and export reach per competence table.
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| CO-M1 | Medium | The share-target guard compares targets on one unit only, so a manager of two nested units can compare their figures to learn one person's holding. | `apps/server/src/modules/competence/usecases.ts:803` |
+| CO-L1 | Low | The validity preview gives an administrator exact counts for any rule, deactivated people included, which can reveal one holder's issue month. | `apps/server/src/modules/competence/usecases.ts:1761-1781` |
+
+## Introduction and leaving, the follow-up dialogue and talks
+
+[The review](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md); its "Not established" holds four points,
+and it carries tables of who reads and writes what, of erasure per table, of the talk booking stack's ten findings,
+of the audit rows added to the decisions review's table B, and of test gaps under L6.
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| BD-M1 | Medium | The documented procedure for erasing one person runs no boarding export or erasure, and D123, the status page and the scripts' headers leave it out too. | `docs/maintainers/reliability-operations.md:199` |
+| BD-M2 | Medium | `boarding.erasePerson` refuses neither an unknown id nor an active person, and its script parses arguments its own way and reaches for the durable engine. | `apps/server/src/modules/boarding/usecases.ts:952-969` |
+| BD-L1 | Low | A plan item owned by a manager who has been deactivated waits for nobody, since it is handed back only when its owner is erased. | `apps/server/src/modules/boarding/domain.ts:328-329` |
+| BD-L2 | Low | `activityFor` admits a dialogue activity's former owner to every write, so they can rewrite and remove it, not only mark it done. | `apps/server/src/modules/dialogue/usecases.ts:102-112` |
+| BD-L3 | Low | Two scan cards of Clew's own put the person's user name in their action input, which no erasure reaches. | `apps/server/src/modules/boarding/capabilities.ts:197` |
+| BD-L4 | Low | `currentRound` takes a write lock on the organisation's one open round on every talks read, so every reader queues on one row. | `apps/server/src/modules/talks/adapters/postgres.ts:79-86` |
+| BD-L5 | Low | Dialogue's own copy of the card-removal helper audits every card an erasure removes as an activity removed by hand. | `apps/server/src/composition/dialogue-work-items.ts:26` |
+| BD-L6 | Low | Several boarding and dialogue work-item audit rows, `DialogueTx.lockPersonForErasure` and boarding's erasure refusals have no test or contract case. | `apps/server/src/composition/boarding-work-items.ts:153-289` |
+
+## The web app's data, state and errors
+
+[The review](../reviews/2026-11-23-review-web-data-state-and-errors.md); its "Not established" holds five points, and
+it carries its follow-ups from wave 1 (a content security policy, binding a decision to what was shown, the change
+stream's cost) with a table of statements per tick.
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| WD-M1 | Medium | The session boundary ends the session, in every tab, on any non-2xx answer or network error, so a transient failure reads as a sign-out. | `packages/ui/src/session.tsx:98` |
+| WD-M2 | Medium | The change stream's `EventSource` has no `onerror`, so after one reconnect answered with an HTTP error it stays closed. | `apps/web/src/main.tsx:126-130` |
+| WD-M3 | Medium | A link opened signed out loses its query on the way through sign-in, and "Logga in igen" loses the whole address. | `apps/web/src/main.tsx:195` |
+| WD-M4 | Medium | Typed text and user names are sent as query strings in four places, where nginx's default access log and the browser history keep them. | `apps/web/src/components/conversation/composer.tsx:187` |
+| WD-L1 | Low | Alla samtal shows at most 50 conversations, shared with recently handled work items and ordered by when they began. | `packages/db/src/threads.ts:116-138` |
+| WD-L2 | Low | Toasts with live buttons and the tab's title stay on screen after the session ends. | `apps/web/src/main.tsx:486` |
+| WD-L3 | Low | A turn the page reports as stopped or failed may already have written a work item or the answer, and a retry then asks twice. | `apps/server/src/assistant/index.ts:235-246` |
+| WD-L4 | Low | Session storage keeps what a conversation showed, view inputs included, after the session ends. | `apps/web/src/conversation-shown.ts:52-76` |
+| WD-L5 | Low | A question to another system's assistant cannot be stopped and, when answered, can pull the person back or draw one conversation under another's address. | `apps/web/src/components/conversation/conversation-context.tsx:863-912` |
+| WD-L6 | Low | The open conversation is a copy in component state that no change notice refreshes. | `apps/web/src/components/conversation/conversation-context.tsx:328` |
+| WD-L7 | Low | A refused prediction is not taken back from the list once another write has landed on it. | `apps/web/src/thread-cache.ts:61-62` |
+| WD-L8 | Low | A correction's status and a competence source's import are polled, against D33 and D46. | `apps/web/src/components/work/review-recovery.tsx:33` |
+| WD-L9 | Low | The first load asks for the session twice, in a chain, before the page's first read. | `apps/web/src/main.tsx:82-119` |
+
+## The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA
+
+[The review](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md); its "Not established"
+holds seven points, and it carries the accessibility coverage map (routes, view kinds, states drawn without axe, mock
+fixtures the server cannot produce).
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| WA-M1 | Medium | The theme check does not test the focus ring, marks, icons or success and information text against the card's ground. | `packages/contracts/src/theme-file.ts:143-169` |
+| WA-M2 | Medium | A calendar entry is a button wherever it is drawn, and in four places pressing it does nothing, while the spoken summary says Enter opens it. | `packages/ui/src/calendar.tsx:168` |
+| WA-M3 | Medium | A receipt's single row, with the detail the source read back, is shown nowhere when the work item has no rows of its own. | `apps/web/src/components/work/work-item.tsx:138` |
+| WA-M4 | Medium | The suite's mock answers a decision final at once, so the pending state and the receipt's later arrival are never drawn, and two fixtures show unreachable states. | `tests/a11y/support.ts:1787-1834` |
+| WA-M5 | Medium | Most pages' read failures, several empty states and loading surfaces have no spec, and twelve drawn states run no axe check. | `tests/a11y/` (the coverage map) |
+| WA-L1 | Low | Three work items in the fixtures could not be decided on the server, and a catch-all answers any unknown read. | `tests/a11y/data.ts:196-244` |
+| WA-L2 | Low | A spec asserts a person's link by user name, an address D122 answers with 404. | `tests/a11y/answer.spec.ts:180` |
+| WA-L3 | Low | The mock sends error answers the routes never send, and a calendar decision card the server never makes. | `tests/a11y/support.ts:1765` |
+| WA-L4 | Low | An entry in the pane beside a conversation opens a dialog over the conversation page, against D126 rule 3. | `apps/web/src/pages/conversation.tsx:173` |
+| WA-L5 | Low | `agendaItems` recognises a talk's meeting by its title, which D133 forbids. | `packages/ui/src/agenda-items.ts:26` |
+| WA-L6 | Low | "Startsidan" is hard-coded in tab titles, the sign-in and error pages and several sentences, where the installation's site name belongs. | `apps/web/src/page-title.ts:7` |
+| WA-L7 | Low | Sundsvall's colours are the examples on Administration › Utseende and in the theme parser's message. | `apps/web/src/pages/admin/appearance.tsx:147` |
+| WA-L8 | Low | The calendar theme sizes and offsets several things in pixels where D27 asks for tokens. | `packages/ui/src/calendar-theme.css:155` |
+| WA-L9 | Low | Six admin pages decide a phone at 720 px while the rest of the app uses 767 px. | `apps/web/src/pages/admin/models.tsx:49` |
+| WA-L10 | Low | The interface spaces document still lists "Visa detaljer" as a dialog of a page, though the control is gone. | `docs/reference/interface-spaces.md:17` |
+| WA-L11 | Low | Astryx's English fallbacks reach a Swedish reader in dialogs, date and number fields and on a phone. | `packages/ui/src/locale.ts` |
+| WA-L12 | Low | Raw technical and browser messages, such as "Failed to fetch" and JSON details, are shown as they come. | `apps/web/src/components/shell/shell.tsx:218-223` |
+| WA-L13 | Low | The English protocol pages render Astryx's own words and some model sentences in Swedish without marking them `lang="sv"`. | `apps/web/src/pages/protocol.tsx:96` |
+
+## The connector services
+
+[The review](../reviews/2026-11-23-review-connector-services.md); its "Not established" holds five points, and it
+carries tables of acting as the person, the conformance check per connector, `model: true` capabilities, the manifest
+fields an administrator never sees, writes and their deduplication, and error messages per connector.
+
+| Id | Severity | Finding | Where |
+|---|---|---|---|
+| CS-M1 | Medium | Eight connectors' HTTP wrappers read any body whole and turn a malformed request into an unhandled rejection that ends the process, with no key needed. | `connectors/hello/server.mjs:10` |
+| CS-M2 | Medium | Five undo writes and `timesheet.markAbsence` in the HR, finance and time fixtures act on records outside the caller's unit. | `connectors/hr/connector.mjs:438` |
+| CS-L1 | Low | The verifier never records `jti` and the operation id is outside the binding, so a captured write sent under a new operation id runs again in five connectors. | `connectors/*/verification.mjs:62` |
+| CS-L2 | Low | Fifteen connectors run a capability on a path the verifier does not bind to a capability, so D117's capability binding does not hold. | `connectors/*/verification.mjs:12-34` |
+| CS-L3 | Low | The phonebook's HTTP adapter sends its API key across a redirect to another host, and neither it nor Eneo requires https. | `connectors/phonebook/directory.mjs:55-66` |
+| CS-L4 | Low | The supportmanagement and pob compose files give a `CLEW_URL` over `http:` that the verifier refuses to fetch keys from. | `connectors/supportmanagement/compose.yaml:4` |
+| CS-L5 | Low | `reference` answers 401 to an employee, which Clew reads as the source unavailable, and fails the conformance check. | `connectors/reference/connector.mjs:98` |
+| CS-L6 | Low | `hello` puts the underlying error's text in its answer. | `connectors/hello/connector.mjs:295` |
+| CS-L7 | Low | Five real-system connectors serve made-up fixture data when the adapter is left unset. | `connectors/supportmanagement/server.mjs:37` |
+| CS-L8 | Low | `connectors/README.md` counts four reads for communication, whose manifest has five. | `connectors/README.md:49` |
