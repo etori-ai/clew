@@ -21,7 +21,7 @@ import {
   useEntryAnimation,
   useMediaQuery,
 } from '@clew/ui';
-import { mobileQuery, shortQuery } from '../../media';
+import { mobileQuery, shortQuery, tightQuery } from '../../media';
 import { SHELL_WIDTH, SiteName } from './shell';
 import { useClearCorner } from './assistant-corner';
 import { useBranding } from '../../branding';
@@ -37,11 +37,6 @@ export const PAGE_WIDTH = SHELL_WIDTH;
 export const narrowPageQuery = '(max-width: 1024px)';
 /** The facts' end panel beside the column (board Person, board Ärende). */
 const FACTS_WIDTH = 340;
-/**
- * The boards keep the page's 24 px inset on a phone (Hem, Att göra and Ärende at 390 px); only the narrowest screens,
- * where 1.4.10 asks for 320 px, take the tighter 16 px.
- */
-const tightQuery = '(max-width: 359px)';
 
 export type EntryStyle = NonNullable<ReturnType<typeof useEntryAnimation>> | undefined;
 /** Where a page's way back leads, by the name of the place (D116): "Personal", "Att göra", "Alla verktyg". */
