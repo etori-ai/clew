@@ -484,7 +484,9 @@ export function useCardAction({
         await run(async () => {
           const result = await api.act(thread.id, action.id, chosen);
           const url = result.kind === 'read' ? (result.output as { url?: unknown }).url : undefined;
-          if (typeof url === 'string' && isWebAddress(url)) window.open(url, '_blank', 'noopener');
+          // The server holds a link read's address to http(s); one that is not is the source's fault, and said.
+          if (typeof url !== 'string' || !isWebAddress(url)) throw new Error('Källans länk är ogiltig.');
+          window.open(url, '_blank', 'noopener');
         });
         return true;
       }

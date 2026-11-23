@@ -16,7 +16,7 @@ import {
 import { previewManifest } from '../../packages/connectors/src/preview';
 import { HOLDINGS_EXAMPLE, RULES, manifestReference } from '../../packages/connectors/src/reference';
 import { ManifestError, manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
-import { protocolRoutes } from '../../apps/server/src/routes/protocol';
+import { PROTOCOL_PAGE_HEADERS, protocolRoutes } from '../../apps/server/src/routes/protocol';
 import { MAX_MANIFEST_BYTES } from '../../packages/connectors/src/protocol';
 import { MANIFEST_MAX } from '../../apps/web/src/pages/protocol-preview-model';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
@@ -301,16 +301,35 @@ describe('the served protocol routes', () => {
     Bun.gc(true);
     expect((process.memoryUsage().heapUsed - before) / 1e6).toBeLessThan(16);
   });
-  test('the viewer page and its script come from the image, not a CDN', async () => {
+  test('the viewer page and its scripts come from the image, not a CDN, under a policy of the page’s own', async () => {
     const page = await protocolRoutes.request('http://clew.local/');
     expect(page.status).toBe(200);
     const html = await page.text();
-    expect(html).toContain('src="/api/protocol/scalar.js"');
-    expect(html).toContain('Scalar.createApiReference');
-    expect(html).toContain("url: '/api/protocol/openapi.json'");
-    expect(html).toContain('withDefaultFonts: false');
-    expect(html).toContain('hideTestRequestButton: true');
+    expect([...html.matchAll(/<script\b[^>]*>/g)].map(([tag]) => tag)).toEqual([
+      '<script src="/api/protocol/scalar.js">',
+      '<script src="/api/protocol/viewer.js">',
+    ]);
+    expect(html).not.toMatch(/<script[^>]*>[^<]/);
     expect(html).not.toMatch(/https?:\/\//);
+    // The web image's headers never reach an address Clew's server answers (D145): the page sends its own.
+    const policy = page.headers.get('content-security-policy')!;
+    expect(policy).toBe(PROTOCOL_PAGE_HEADERS['Content-Security-Policy']);
+    expect(policy).toContain("script-src 'self';");
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).not.toMatch(/unsafe-eval|\*|https?:/);
+    expect(policy.split(';').filter(part => part.includes('unsafe-inline'))).toEqual([
+      " style-src 'self' 'unsafe-inline'",
+    ]);
+    expect(page.headers.get('x-frame-options')).toBe('DENY');
+    expect(page.headers.get('referrer-policy')).toBe('same-origin');
+    const start = await protocolRoutes.request('http://clew.local/viewer.js');
+    expect(start.status).toBe(200);
+    expect(start.headers.get('content-type')).toContain('javascript');
+    const text = await start.text();
+    expect(text).toContain('Scalar.createApiReference');
+    expect(text).toContain("url: '/api/protocol/openapi.json'");
+    expect(text).toContain('withDefaultFonts: false');
+    expect(text).toContain('hideTestRequestButton: true');
     const script = await protocolRoutes.request('http://clew.local/scalar.js');
     expect(script.status).toBe(200);
     expect(script.headers.get('content-type')).toContain('javascript');

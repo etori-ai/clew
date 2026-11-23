@@ -33,29 +33,43 @@ const page = `<!doctype html>
 <body>
 <div id="reference"></div>
 <script src="/api/protocol/scalar.js"></script>
-<script>
-  Scalar.createApiReference('#reference', {
-    url: '/api/protocol/openapi.json',
-    withDefaultFonts: false,
-    hideTestRequestButton: true,
-    hideClientButton: true,
-    showDeveloperTools: 'never',
-    agent: { disabled: true },
-  });
-</script>
+<script src="/api/protocol/viewer.js"></script>
 </body>
 </html>
 `;
+/** Starts the viewer once its script has loaded: a file of its own, so the page's policy runs no inline script. */
+const start = `Scalar.createApiReference('#reference', {
+  url: '/api/protocol/openapi.json',
+  withDefaultFonts: false,
+  hideTestRequestButton: true,
+  hideClientButton: true,
+  showDeveloperTools: 'never',
+  agent: { disabled: true },
+});
+`;
+/**
+ * The page's own security headers (D145). The web image's headers are never sent with an address Clew's server answers,
+ * so this page, public and without a session, sends its own, as strict as the web app's: scripts and connections from
+ * this origin only and nothing inline but styles, which the viewer writes as it draws; no page may frame it. The
+ * viewer's validation library asks once whether it may compile code from a string; the policy says no, the browser's
+ * console says so, and the library validates without.
+ */
+export const PROTOCOL_PAGE_HEADERS = {
+  'Content-Security-Policy':
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'same-origin',
+};
+const script = { ...cached, 'Content-Type': 'text/javascript; charset=utf-8' };
 
 /** The manifest field by field, with examples from the repository's two example connectors: public data, never a registered connector's. */
 const reference = manifestReference([parseManifest(phonebook, 'phonebook'), parseManifest(hello, 'hello')]);
-protocolRoutes.get('/', c => c.html(page, 200, cached));
+protocolRoutes.get('/', c => c.html(page, 200, { ...cached, ...PROTOCOL_PAGE_HEADERS }));
 protocolRoutes.get('/manifest-reference.json', c => c.json(reference, 200, cached));
 // The page itself is the web app's, drawn with Astryx at /protocol/manifest; the same origin serves both (D60).
 protocolRoutes.get('/manifest-reference', c => c.redirect('/protocol/manifest', 302));
-protocolRoutes.get('/scalar.js', async c =>
-  c.body(await readFile(viewer), 200, { ...cached, 'Content-Type': 'text/javascript; charset=utf-8' }),
-);
+protocolRoutes.get('/scalar.js', async c => c.body(await readFile(viewer), 200, script));
+protocolRoutes.get('/viewer.js', c => c.body(start, 200, script));
 protocolRoutes.get('/openapi.json', c => c.json(openApiDocument({ clewUrl: clewUrl(c.req.url) }), 200, cached));
 protocolRoutes.get('/connector-protocol.schema.json', c => c.json(protocolSchema(), 200, cached));
 protocolRoutes.options('/manifest', c =>

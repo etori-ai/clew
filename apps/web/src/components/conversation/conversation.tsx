@@ -68,6 +68,7 @@ import { answerCard, figureBelongs, type AnswerCard, type ViewRows } from '../..
 import { isSide, sentWords, sideCount, suggestedWords } from '../../conversation-about';
 import { DOT } from '../../dot';
 import { itemPageHref, rowFacts, rowLine } from '../../work-items';
+import { isWebAddress } from '../../web-address';
 
 /** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
 export type ActionDraftRef = Draft & { kind: 'action'; actionId: string };
@@ -410,7 +411,7 @@ function AssistantAnswer({
             <MetadataListItem label={cites.length === 1 ? 'Källa' : 'Källor'}>
               <HStack gap={2} wrap="wrap">
                 {cites.map((c, i) =>
-                  c.link ? (
+                  c.link && isWebAddress(c.link) ? (
                     <Link key={i} href={c.link} target="_blank" rel="noreferrer">
                       {c.label}
                     </Link>
@@ -425,7 +426,7 @@ function AssistantAnswer({
           </MetadataList>
         )}
         {handover.cut && <Text type="supporting">Svaret var längre än det som visas här.</Text>}
-        {handover.link && (
+        {handover.link && isWebAddress(handover.link) && (
           <Link href={handover.link} target="_blank" rel="noreferrer">
             {`Fortsätt samtalet i ${handover.source}`}
           </Link>
@@ -471,7 +472,9 @@ function Sources({ sources }: { sources: SourceCitation[] }) {
 const answerFooter = (meta: MessageMeta | undefined) =>
   (meta?.model ? `Svar från ${meta.model.title}` : undefined) || undefined;
 const citationSources = (sources: SourceCitation[]) =>
-  Object.fromEntries(sources.map(s => [String(s.n), { title: s.label, ...(s.link ? { url: s.link } : {}) }]));
+  Object.fromEntries(
+    sources.map(s => [String(s.n), { title: s.label, ...(s.link && isWebAddress(s.link) ? { url: s.link } : {}) }]),
+  );
 
 const EMPTY_EVENTS: CalendarEvent[] = [];
 /** How long a read took, as H1 writes it: "0,8 s"; a read faster than a tenth is "< 0,1 s", never "0 s". */

@@ -40,6 +40,7 @@ import { sideMessages } from '../../conversation-about';
 import { DOT } from '../../dot';
 import { useConversation } from './conversation-context';
 import { AssistantMark, StreamingAnswer, keepLines } from './conversation';
+import { isWebAddress } from '../../web-address';
 
 /**
  * The way to any assistant of another system from a conversation, in the page's header and always there: the ones this
@@ -223,7 +224,7 @@ export function AssistantPane({
               <HStack gap={2} wrap="wrap">
                 <Text type="supporting">{cites.length === 1 ? 'Källa' : 'Källor'}</Text>
                 {cites.map((c, n) =>
-                  c.link ? (
+                  c.link && isWebAddress(c.link) ? (
                     <Link key={n} href={c.link} target="_blank" rel="noreferrer">
                       {c.label}
                     </Link>
@@ -267,7 +268,7 @@ export function AssistantPane({
           </VStack>
         </HStack>
         <HStack gap={2} vAlign="center">
-          {kept?.link && (
+          {kept?.link && isWebAddress(kept.link) && (
             <Link href={kept.link} target="_blank" rel="noreferrer">
               {`Öppna i ${who.source}`}
             </Link>

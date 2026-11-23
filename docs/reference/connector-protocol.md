@@ -8,7 +8,7 @@ A running Clew serves the protocol it speaks under `/api/protocol`, public, with
 
 | Route | What it answers |
 |---|---|
-| `GET /api/protocol` | A page that draws the OpenAPI document (Scalar, served from the image; nothing is fetched outside the installation). |
+| `GET /api/protocol` | A page that draws the OpenAPI document (Scalar, served from the image; nothing is fetched outside the installation). It sends a content security policy of its own, as strict as the web app's ([D145](../decisions/D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md)): no inline script, so the viewer starts from `/api/protocol/viewer.js`. |
 | `GET /protocol/manifest` | The manifest field by field: what each field does, type, presence, constraints, an example and the rules between fields, with three recipes. Drawn by the web app from `GET /api/protocol/manifest-reference.json`; committed as [manifest-reference.md](../generated/manifest-reference.md). |
 | `GET /api/protocol/openapi.json` | The OpenAPI 3.1 document: the routes a connector serves (tag Connector) and the routes Clew serves (tag Clew), with `components.schemas` equal to the bundle's `$defs` and `x-clew-protocol` naming the versions this instance loads. |
 | `GET /api/protocol/connector-protocol.schema.json` | The JSON Schema bundle. |

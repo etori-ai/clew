@@ -201,13 +201,17 @@ export function createConnector({
   async function blob(token, id) {
     return eneo(token, `/info-blobs/${encodeURIComponent(id)}/`);
   }
+  // A document's link: an https address the protocol takes (SourceLinkSchema: at most 1000 characters), else no link;
+  // a document whose address is something else is still a hit, and a source still a source.
+  const linkOf = url =>
+    typeof url === 'string' && url.length <= 1000 && /^https:\/\/\S+$/.test(url) ? { link: url } : {};
   const hitOf = (b, text, extra = {}) => ({
     ref: String(b.id),
     kind: 'document',
     label: b.metadata?.title || 'Dokument utan titel',
     snippet: clip(text, SNIPPET_LIMIT),
     source: 'Eneo',
-    ...(b.metadata?.url ? { link: b.metadata.url } : {}),
+    ...linkOf(b.metadata?.url),
     ...(b.updated_at ? { updatedAt: b.updated_at } : {}),
     ...extra,
   });
@@ -278,7 +282,7 @@ export function createConnector({
             const url = p.providerMetadata?.eneo?.metadata?.url;
             sources.set(String(p.sourceId), {
               label: clip(p.title || 'Dokument utan titel', 300),
-              ...(typeof url === 'string' && /^https:\/\/\S+$/.test(url) && url.length <= 2000 ? { link: url } : {}),
+              ...linkOf(url),
             });
           } else if (p.type === 'data-mcp-tool-references') {
             for (const ref of p.data?.mcp_tool_references ?? []) {
@@ -286,7 +290,7 @@ export function createConnector({
               if (!ref.id) continue;
               sources.set(String(ref.id), {
                 label: clip(ref.meta?.title || 'Dokument utan titel', 300),
-                ...(typeof url === 'string' && /^https:\/\/\S+$/.test(url) && url.length <= 2000 ? { link: url } : {}),
+                ...linkOf(url),
               });
             }
           } else if (p.type === 'error') throw new EneoError('unavailable', 'Eneo svarar inte just nu.');

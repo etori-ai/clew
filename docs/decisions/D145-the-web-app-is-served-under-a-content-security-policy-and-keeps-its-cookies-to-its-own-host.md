@@ -10,15 +10,19 @@ source hands it are held to the same line.
    nginx includes it in every location that serves the built files (`/assets/` and `/`), and an installation that
    serves the files from a proxy of its own includes the same file there (the hosting guide). The server's own
    answers under `/api/` and `/scim/` do not carry it: the front-channel logout must stay loadable in the identity
-   provider's frame ([D121](D121-a-sign-in-follows-the-identity-providers-session.md)).
+   provider's frame ([D121](D121-a-sign-in-follows-the-identity-providers-session.md)). The one page the server
+   answers, the protocol's viewer at `/api/protocol`, sends a policy of its own that is as strict: scripts, connections
+   and everything else from its own origin only, no inline script, styles inline for the viewer, no framing.
 2. **The policy.**
    - `default-src`, `script-src`, `connect-src`, `worker-src` and `frame-src` are `'self'`: no inline script, no code
      built from a string, no script, request, worker or frame from another address.
-   - `style-src 'self' 'unsafe-inline'`: the Word preview draws into a frame that inherits the page's policy and writes
-     its own `<style>` elements (`packages/ui/src/document.tsx`). A style cannot run code.
+   - `style-src 'self' 'unsafe-inline'`: Astryx writes `<style>` elements of its own while the page runs (its layers'
+     rules and the like), React and Astryx set `style` attributes, and the Word preview draws into a frame that
+     inherits the page's policy and writes its own `<style>` (`packages/ui/src/document.tsx`). A style cannot run code.
    - `img-src 'self' data: blob: https:`: a document's preview is `data:` or `blob:`, and the shared header's logo is
      the intranet's own https address ([D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)).
-   - `font-src 'self' data:`, for the fonts the Word preview embeds.
+   - `font-src 'self' data:`: pdf.js, which draws a PDF's preview, loads a font the PDF embeds as a `data:` address
+     where the browser's font loading API is not used. A font cannot run code.
    - `object-src 'none'`, `base-uri 'none'`, `form-action 'self'`, `frame-ancestors 'none'`.
 3. **The other headers.** `X-Frame-Options: DENY` for a browser that reads no `frame-ancestors`;
    `X-Content-Type-Options: nosniff`; `Referrer-Policy: same-origin`, since an address in Clew names a person, a work
@@ -33,8 +37,10 @@ source hands it are held to the same line.
    answer's citation, `clew.openSource`) is an absolute http(s) address, and an answer with another is out of shape.
    The page checks it again before it opens one.
 6. **The suite draws every page under the policy.** The accessibility suite serves its build with the same file and
-   fails a test on any violation the page or a frame in it reports; a unit test holds what the policy must keep and
-   that every location that serves the files includes it. A change that loads or runs something the policy refuses
+   fails a test on any violation reported by the page, a frame in it, a popup it opens or a worker it starts (from
+   the moment the worker's first run is over); a spec shows the guard hearing each and failing a test. A unit test
+   holds what the policy must keep and that every location of the image's nginx that is not Clew's server includes
+   it. A change that loads or runs something the policy refuses
    changes the file in the same change, and widening a source is a decision, recorded here or in a record that amends
    this one.
 
@@ -52,9 +58,8 @@ policy, a script injected by any later fault runs with nothing to hold it. The s
 hand Clew a link of any scheme to open (`CB-8`). The logo's check was a list of text patterns that let through what it
 said it refused (`ID-6`).
 
-Inline styles are allowed rather than the Word preview moved to a frame of its own origin: a frame's `srcdoc` and a
-`blob:` frame both inherit the page's policy, a separate origin would be a second address for an installation to
-publish, and a style injected without script cannot run code. Images from any https address are allowed rather than
+Inline styles are allowed because the component system writes its own at run time, which no narrower source
+allows, and a style injected without script cannot run code. Images from any https address are allowed rather than
 the header's logo fetched and served by Clew: the logo is the intranet's to change, and an image cannot run code
 either. An installation whose header logo is on its own origin can narrow `img-src` in its copy of the file.
 
