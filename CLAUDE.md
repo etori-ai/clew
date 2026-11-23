@@ -8,7 +8,7 @@ Decision numbers D37–D39, D44–D46, D85, D96, D99–D101 and D116–D124 each
 
 ## Open source, always
 
-Clew is an open source system that will be shared with other municipalities and governments to use as they will.
+Clew is an open source system that will be shared with other municipalities and governments to use as they will. Its own code is licensed under the AGPL v3, as Eneo is (`LICENSE`, D143).
 
 - Never add a closed-source dependency: no proprietary npm packages, SDKs, fonts, icon sets, container images or hosted services that the code cannot run without. Every dependency must carry an OSI-approved licence (MIT, Apache-2.0, BSD, ISC, MPL-2.0, AGPL/GPL for infrastructure components that stay separate processes).
 - Check the licence before pinning anything: `npm view <package>@<version> license`, and the image or project licence for Docker services. Record the result at the top of `docs/reference/licences.md`.

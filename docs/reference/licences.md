@@ -1,6 +1,6 @@
 # Licence record
 
-Clew is open source and is shared with other municipalities and governments, so nothing it needs to build, run or test may be closed. The rule is in [CLAUDE.md](../../CLAUDE.md) under "Open source, always": every dependency carries an OSI-approved licence, and the licence is checked before a version is pinned.
+Clew is open source and is shared with other municipalities and governments, so nothing it needs to build, run or test may be closed. The rule is in [CLAUDE.md](../../CLAUDE.md) under "Open source, always": every dependency carries an OSI-approved licence, and the licence is checked before a version is pinned. Clew itself is licensed under the AGPL v3 ([LICENSE](../../LICENSE), [D143](../decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md)), so a dependency must also be one the AGPL may be combined with.
 
 ## How to add an entry
 
@@ -11,6 +11,8 @@ Clew is open source and is shared with other municipalities and governments, so 
 ## Record
 
 Newest first. Entries up to 2026-11-11 were moved here unchanged from section 3 of the handover file ([history](../history/README.md)); a version named in an old entry may since have been upgraded or removed by a later one.
+
+Clew's licence and the record's gaps, 2026-11-23 (D143; findings `BL-2`, `BL-7` and `BL-8` of the baseline review): no dependency added. Clew's own code is under the AGPL v3, the text identical to Eneo's `LICENSE`. Five packages that were installed but not recorded, read from their installed `package.json`: `@types/bun` 1.4.4, `@types/node` 26.6.6, `@types/react` 19.3.0 and `@types/react-dom` 19.3.0 are MIT, direct development dependencies at the root; `caniuse-lite` 1.0.30001820 is CC-BY-4.0, a licence the OSI has not approved. It is browser data that comes in through one path only, the root development dependency `@astryxdesign/cli` 0.7.13, then `@babel/core`, `@babel/helper-compilation-targets` and `browserslist`, and the server image carries it because the image installs the development dependencies (D131 item 2). It cannot be left out while the CLI that `CLAUDE.md` asks for is kept, unlike `mdn-data` in the entry of 2026-11-18, so whether it may stay waits for the product owner ([open questions](../maintainers/open-questions.md)). The web app's build now writes the notices of everything it bundles to `third-party-notices.txt` (`apps/web/third-party-notices.ts`, no new dependency): 33 packages, the typeface `@fontsource-variable/raleway` 5.3.0 under the OFL-1.1 among them; `@astryxdesign/core` and `@stylexjs/stylex` declare MIT and ship no licence file, which the notice says.
 
 Connector protocol viewer, 2026-11-19 (D60): `@scalar/api-reference` 1.81.0 replaces `rapidoc` 12.2.0 in the server. `npm view @scalar/api-reference@1.81.0 license` reports MIT. The upstream [copyright notice and licence](../../apps/server/licences/scalar-MIT.txt) ship with Clew. The 249 new package versions in the lockfile declare MIT (232), Apache-2.0 (9), ISC (3), BSD-3-Clause (3), BSD-2-Clause (1), and MIT OR CC0-1.0 (1, `type-fest` used under MIT). The browser loads Scalar's packaged standalone script from the instance.
 

@@ -58,3 +58,7 @@ docker exec -w /workspace clew-app-1 bun run docs:check
 That check validates generated references and local links, then runs a signed connector exchange without a database, identity provider, model or source system. Coding agents should start with [llms.txt](llms.txt) and the generated [context map](docs/context.json).
 
 Clew is a developing proof of concept. The development connectors use synthetic data, and a passing fixture does not establish readiness for a real-system pilot. The [support matrix](docs/reference/status.md) and [reliability acceptance](docs/reference/reliability-acceptance.md) state the limits.
+
+## Licence
+
+Clew is licensed under the [GNU Affero General Public License v3.0](LICENSE), as Eneo is ([D143](docs/decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md)). The repository-root `LICENSE` is the source of truth for Clew's own code, including files without a licence header. The dependencies keep their own licences, recorded in the [licence record](docs/reference/licences.md), and the web app's build carries their notices in `third-party-notices.txt`.

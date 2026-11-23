@@ -1612,6 +1612,15 @@
       "status": "provisional (Oliver Borgström, 2026-11-20; accepted once a real directory has pushed people with more than one assignment and one connector that was not written for Clew answers for each of them)",
       "date": "2026-11-20",
       "area": "identity, integrations"
+    },
+    {
+      "key": "D143-clew-is-licensed-under-the-agpl-as-eneo-is",
+      "number": 143,
+      "path": "docs/decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md",
+      "title": "D143 · Clew is licensed under the AGPL, as Eneo is",
+      "status": "provisional (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; accepted once the copyright holder is named in the licence notice)",
+      "date": "2026-11-23",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1633,7 +1642,8 @@
         "How it fits together",
         "Understand the platform",
         "Build a custom connector",
-        "Run and contribute"
+        "Run and contribute",
+        "Licence"
       ]
     },
     {
@@ -2467,6 +2477,12 @@
     {
       "path": "docs/decisions/D14-clew-stands-alone-eneo-enhances.md",
       "title": "D14 · Clew stands alone; Eneo enhances it through an optional module",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md",
+      "title": "D143 · Clew is licensed under the AGPL, as Eneo is",
       "category": "decision-history",
       "headings": []
     },

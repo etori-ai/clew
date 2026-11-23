@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**138 in force**: 98 accepted and 40 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**139 in force**: 98 accepted and 41 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -114,6 +114,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D105 · The repository explains itself without a handover file](D105-the-repository-explains-itself-without-a-handover-file.md) | 2026-11-11 | accepted |  |
 | [D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages](D106-the-documentation-site-is-vitepress-over-docs-as-it-is.md) | 2026-11-11 | provisional |  |
 | [D131 · Clew builds a server image and a web image from the repository root](D131-clew-builds-a-server-image-and-a-web-image-from-the-repository-root.md) | 2026-11-17 | provisional |  |
+| [D143 · Clew is licensed under the AGPL, as Eneo is](D143-clew-is-licensed-under-the-agpl-as-eneo-is.md) | 2026-11-23 | provisional |  |
 
 ## Interface
 
