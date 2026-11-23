@@ -102,8 +102,11 @@ test.describe('the three views', () => {
     await open(page, '/calendar');
     for (const day of ['mån 2 nov', 'tis 3 nov', 'ons 4 nov', 'tors 5 nov', 'fre 6 nov'])
       await expect(heading(page, 2, day)).toBeVisible();
-    // The view switch is an adaptive menu on a phone (D31 §5).
-    await page.getByRole('button', { name: 'Vy: Vecka' }).click();
+    // The view switch is an adaptive menu on a phone (D31 §5). Its button shows the view alone, so that it fits beside
+    // the steps (D74, amended 2026-11-23), and its name holds what it shows (2.5.3).
+    const viewMenu = page.getByRole('button', { name: 'Vy: Vecka' });
+    await expect(viewMenu).toHaveText('Vecka');
+    await viewMenu.click();
     await page.getByRole('menuitem', { name: 'Dag' }).click();
     await expect(heading(page, 2, 'ons 4 nov')).toBeVisible();
     await expect(page.getByText('Morgonmöte ledningsgrupp')).toHaveCount(1);

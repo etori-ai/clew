@@ -616,8 +616,10 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     search: viewSearch(rangeRead),
   };
 
+  // On a phone the steps stand edge to edge: each is its own 44 px target under a finger, and the 12 px their gaps
+  // took is what lets the widest view menu ("Månad") stand beside them at 360 px.
   const steps = (
-    <HStack gap={1} vAlign="center" role="group" aria-label={`Byt ${stepLabel}`}>
+    <HStack gap={mobile ? 0 : 1} vAlign="center" role="group" aria-label={`Byt ${stepLabel}`}>
       <IconButton
         label={view === 'day' ? 'Förra dagen' : view === 'month' ? 'Förra månaden' : 'Förra veckan'}
         icon={<Icon icon="chevronLeft" />}
@@ -668,31 +670,38 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const bookButton = (
     <Button variant="primary" size="sm" label="Ny bokning" onClick={() => setBooking(nextWholeHour(new Date()))} />
   );
-  // The one page header (D74): the title first, what can be done at the end of its line. A phone has two rows: the
-  // title with what can be done, and under it where in time with how it is shown, 44 px controls under a finger. The
-  // controls are Astryx's `sm`, as the toolbar that held them made them (28 px, under the heading's 32 px line). Both
-  // rows are full at 375 px, so "Fråga om veckan" is not on a phone's head (it would make a third row and push the week
-  // down); an entry opened on a phone still has "Fråga assistenten" among its buttons in the drawer.
-  // In the one page frame (D126): the title on the line every page's title stands on, the controls at its end.
+  // The one page header (D74), in the one page frame (D126): the title on the line every page's title stands on, the
+  // controls at its end. The controls are Astryx's `sm` (28 px under a mouse, 44 px under a finger).
+  //
+  // A phone (D74, amended 2026-11-23) has the title on a line of its own and the controls as one wrapping row under it,
+  // in the order they are reached: where in time, how it is shown, then what can be done. At 360 px and wider that is
+  // two rows of 44 px controls, the steps with the view menu and Förslag with Ny bokning. Nothing shares the title's
+  // line: its length changes as the person steps, and a control that wrapped with it would move the steps from under
+  // the finger that had just pressed one. "Fråga om veckan" is not on a phone's head (it would make a third row and
+  // push the week down); an entry opened on a phone still has "Fråga assistenten" among its buttons in the drawer.
   const head = mobile
     ? {
         title: shortTitle,
-        actions: (
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            {proposalsMenu}
-            {bookButton}
-          </HStack>
-        ),
+        actions: null,
         meta: (
           <VStack gap={2}>
-            <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+            <HStack vAlign="center" gap={2} wrap="wrap">
               {steps}
-              {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
+              {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the
+                  piles do (D31 §5). The button shows the view alone, which is what lets it stand beside the steps at
+                  360 px; its name still says what it chooses ("Vy: Vecka", Astryx's `label` under `children`). */}
               <DropdownMenu
                 presentation="adaptive"
-                button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }}
+                button={{
+                  label: `Vy: ${viewLabels[view]}`,
+                  children: viewLabels[view],
+                  size: 'sm',
+                  variant: 'secondary',
+                }}
                 items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))}
               />
+              {proposalsMenu}
+              {bookButton}
             </HStack>
             {silentHead}
           </VStack>
@@ -751,7 +760,6 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         titleId={TITLE_ID}
         meta={head.meta}
         actions={head.actions}
-        actionsOnLine
         below={head.below}
         end={pane}
       >

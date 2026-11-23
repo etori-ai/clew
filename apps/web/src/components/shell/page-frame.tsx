@@ -115,7 +115,6 @@ export function PageFrame({
   status,
   meta,
   actions,
-  actionsOnLine = false,
   below,
   tabs,
   plain = false,
@@ -152,8 +151,6 @@ export function PageFrame({
   meta?: ReactNode;
   /** At the end of the title's line (on a phone under it): a register's search and one primary action, a thing's actions. */
   actions?: ReactNode;
-  /** The actions stay at the end of the title's line on a phone too (Kalender's two rows of controls, 1.4.10). */
-  actionsOnLine?: boolean;
   /** Directly under the title, the header's width: a work item's decisions, Hem's box, a page's alert. */
   below?: ReactNode;
   /** The page's tabs (`ThingTabs`), at the foot of the header. */
@@ -270,7 +267,7 @@ export function PageFrame({
             {metaLine}
           </VStack>
         </StackItem>
-        {(!mobile || actionsOnLine) && actions}
+        {!mobile && actions}
       </HStack>
     ) : (
       metaLine
@@ -301,7 +298,7 @@ export function PageFrame({
           ) : (
             (wayLine ?? titleLine)
           )}
-          {mobile && !actionsOnLine && actions}
+          {mobile && actions}
           {below}
         </VStack>
         {tabs}
