@@ -1,4 +1,13 @@
-import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
+import {
+  test as base,
+  expect,
+  type BrowserContext,
+  type ConsoleMessage,
+  type Locator,
+  type Page,
+  type Route,
+  type Worker,
+} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type {
   EffectPreview,
@@ -2735,32 +2744,98 @@ function recordAnnouncements() {
 }
 
 /**
- * Reports each violation of the page's content security policy (D145) to the test, from every frame: the build is
- * served under the web image's headers (`security-headers.ts`), so whatever the policy refuses fails the spec.
+ * Keeps each violation of the document's content security policy (D145) in the window's own list, read when the test
+ * ends, and tells the test at once as well. Runs in every page and frame of the test's context; the build is served
+ * under the web image's headers (`security-headers.ts`), so whatever the policy refuses fails the spec. It listens on
+ * the window, not the document: a popup opened with an address starts as about:blank and keeps that window for the page
+ * it then loads, while the first document and anything listening on it are gone.
  */
 function recordPolicyViolations() {
-  document.addEventListener('securitypolicyviolation', event => {
-    const report = (window as unknown as { reportPolicyViolation?: (text: string) => void }).reportPolicyViolation;
-    report?.(
-      `${event.effectiveDirective} refused ${event.blockedURI || 'inline'} in ${event.sourceFile || event.documentURI}`,
-    );
+  const kept: string[] = [];
+  Object.assign(window, { policyViolations: kept });
+  window.addEventListener('securitypolicyviolation', event => {
+    const text = `${event.effectiveDirective} refused ${event.blockedURI || 'inline'} in ${event.sourceFile || event.documentURI}`;
+    kept.push(text);
+    (window as unknown as { reportPolicyViolation: (text: string) => void }).reportPolicyViolation(text);
   });
 }
 
-export const test = base.extend<{ api: MockApi }>({
+/** What the policy refused while the test ran, from every page, frame and worker of its context (D145). */
+export type PolicyGuard = {
+  /** Everything refused so far, as the documents kept it and as the browser said it. */
+  violations(): Promise<string[]>;
+  /** Forgets what was refused so far: for the spec that refuses on purpose to show the guard works. */
+  clear(): Promise<void>;
+};
+
+/** Every document's own list, from every frame of every page still open; a frame gone since is skipped. */
+async function eachKept<T>(context: BrowserContext, read: () => T): Promise<T[]> {
+  const frames = context.pages().flatMap(page => page.frames());
+  const lists = await Promise.all(frames.map(frame => frame.evaluate(read).catch(() => undefined)));
+  return lists.filter((list): list is Awaited<T> => list !== undefined) as T[];
+}
+
+export const test = base.extend<{ api: MockApi; policy: PolicyGuard }>({
+  // Automatic, so a spec that never asks for the mocked API is held to the policy as well; on the context, so a popup,
+  // a new tab and every frame of each are watched from their first script on.
+  policy: [
+    async ({ context }, use) => {
+      const reported = new Set<string>();
+      await context.exposeBinding('reportPolicyViolation', (_source, text: string) => void reported.add(text));
+      await context.addInitScript(recordPolicyViolations);
+      // The browser's own word for a refusal on a page's console is read as well.
+      const fromConsole = (message: ConsoleMessage) => {
+        if (/Content Security Policy/i.test(message.text())) reported.add(message.text());
+      };
+      // A worker runs no init script, and what the browser says there never reaches the test: the guard listens in each
+      // worker as it starts and says each refusal on the worker's console, which the test does read. A refusal in the
+      // worker's first run, before the listener is in, goes unheard.
+      const watchWorker = (worker: Worker) => {
+        worker.on('console', fromConsole);
+        void worker
+          .evaluate(() =>
+            self.addEventListener('securitypolicyviolation', event =>
+              console.error(
+                `Content Security Policy: ${event.effectiveDirective} refused ${event.blockedURI || 'inline'} in ${event.sourceFile || self.location.href}`,
+              ),
+            ),
+          )
+          .catch(() => undefined);
+      };
+      const watchPage = (page: Page) => page.on('worker', watchWorker);
+      context.on('console', fromConsole);
+      context.on('page', watchPage);
+      context.pages().forEach(watchPage);
+      const violations = async () => {
+        for (const list of await eachKept(
+          context,
+          () => (window as { policyViolations?: string[] }).policyViolations ?? [],
+        ))
+          for (const text of list) reported.add(text);
+        return [...reported];
+      };
+      await use({
+        violations,
+        clear: async () => {
+          await eachKept(context, () => (window as { policyViolations?: string[] }).policyViolations?.splice(0));
+          reported.clear();
+        },
+      });
+      expect(await violations()).toEqual([]);
+      context.off('console', fromConsole);
+      context.off('page', watchPage);
+    },
+    { auto: true },
+  ],
   api: async ({ page }, use) => {
     const api = new MockApi();
     api.page = page;
-    const violations: string[] = [];
-    await page.exposeFunction('reportPolicyViolation', (text: string) => violations.push(text));
     await page.clock.setFixedTime(new Date(NOW));
     await page.addInitScript(recordAnnouncements);
     await page.addInitScript(recordChangeStreams);
-    await page.addInitScript(recordPolicyViolations);
     await page.route('**/api/**', route => api.handle(route));
     await use(api);
     expect(api.unmocked).toEqual([]);
-    expect(violations).toEqual([]);
   },
 });
 export { expect };

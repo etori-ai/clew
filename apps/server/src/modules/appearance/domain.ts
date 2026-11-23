@@ -9,8 +9,10 @@ import type { LogoImage } from './ports';
  *
  * The check reads the file as XML, strictly, and holds it to what a drawing needs (`svgProblem`), so a spelling it does
  * not know is refused rather than let through: an element is known by its namespace, not by its prefix, a value is read
- * after its character references, and a stylesheet may not escape a character, import another or name a resource
- * outside the file. A file the browser would read differently is one this check refuses or one the browser cannot draw.
+ * after its character references, a stylesheet (a `style` element or attribute, or a presentation attribute that takes
+ * an address) may not escape a character, import another or name a resource outside the file, and the file is UTF-8
+ * and says so if it names an encoding. A file the browser would read differently is one this check refuses or one the
+ * browser cannot draw. An editor's own metadata, in its own namespace, is inert and kept as it is.
  */
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -24,21 +26,44 @@ const DRAWING = new Set(
     'linearGradient radialGradient stop pattern clipPath mask marker image style filter feBlend feColorMatrix ' +
     'feComponentTransfer feComposite feConvolveMatrix feDiffuseLighting feDisplacementMap feDistantLight ' +
     'feDropShadow feFlood feFuncA feFuncB feFuncG feFuncR feGaussianBlur feMerge feMergeNode feMorphology feOffset ' +
-    'fePointLight feSpecularLighting feSpotLight feTile feTurbulence'
+    'fePointLight feSpecularLighting feSpotLight feTile feTurbulence switch view ' +
+    // What Inkscape writes in SVG's namespace and a browser does not draw: flowed text, meshes, hatches, a solid colour.
+    'flowRoot flowRegion flowRegionExclude flowPara flowSpan flowDiv flowLine meshgradient meshrow meshpatch hatch ' +
+    'hatchpath solidcolor'
   ).split(' '),
 );
+/**
+ * The attributes a browser reads as CSS and that can name an address: `style` and the presentation attributes that take
+ * a `url()`. A CSS escape or an outside address in any of them is refused; any other attribute is not read as CSS.
+ */
+const CSS_ATTRIBUTES = new Set([
+  'style',
+  'fill',
+  'stroke',
+  'filter',
+  'clip-path',
+  'mask',
+  'marker',
+  'marker-start',
+  'marker-mid',
+  'marker-end',
+  'cursor',
+]);
 const EMBEDDING = new Set(['foreignobject', 'iframe', 'embed', 'object', 'audio', 'video', 'canvas', 'feimage']);
 const ANIMATION = new Set(['animate', 'animatemotion', 'animatetransform', 'set', 'mpath', 'discard']);
 const OUTSIDE = 'resurser utanför bilden';
 const INVALID = Symbol('invalid');
 const NOT_SVG = Symbol('not svg');
-type SvgProblem = string | typeof INVALID | typeof NOT_SVG;
+const NOT_UTF8 = Symbol('not utf-8');
+type SvgProblem = string | typeof INVALID | typeof NOT_SVG | typeof NOT_UTF8;
 const XML_SPACE = '[ \\t\\r\\n]';
-const NAME = '[A-Za-z_][\\w.-]*(?::[A-Za-z_][\\w.-]*)?';
-const START_TAG = new RegExp(`<(${NAME})`, 'y');
-const ATTRIBUTE = new RegExp(`${XML_SPACE}+(${NAME})${XML_SPACE}*=${XML_SPACE}*(?:"([^"<]*)"|'([^'<]*)')`, 'y');
-const TAG_CLOSE = new RegExp(`${XML_SPACE}*(/?)>`, 'y');
-const END_TAG = new RegExp(`</(${NAME})${XML_SPACE}*>`, 'y');
+/** An XML name with at most one prefix, letters of any script included, as an editor may write in its own namespace. */
+const NAME_PART = '[\\p{L}_][\\p{L}\\p{N}\\p{M}_.\\-\\u00B7]*';
+const NAME = `${NAME_PART}(?::${NAME_PART})?`;
+const START_TAG = new RegExp(`<(${NAME})`, 'yu');
+const ATTRIBUTE = new RegExp(`${XML_SPACE}+(${NAME})${XML_SPACE}*=${XML_SPACE}*(?:"([^"<]*)"|'([^'<]*)')`, 'yu');
+const TAG_CLOSE = new RegExp(`${XML_SPACE}*(/?)>`, 'yu');
+const END_TAG = new RegExp(`</(${NAME})${XML_SPACE}*>`, 'yu');
 const DECLARATION = /^﻿?<\?xml[ \t\r\n][^<>?]*\?>/;
 const REFERENCE = /&(?:#([0-9]{1,7})|#x([0-9a-fA-F]{1,6})|(lt|gt|amp|quot|apos));/y;
 const NAMED: Record<string, string> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
@@ -72,17 +97,20 @@ function cssProblem(css: string): string | undefined {
     if (!/^url\([ \t\r\n]*["']?[ \t\r\n]*#/i.test(css.slice(m.index))) return OUTSIDE;
   return undefined;
 }
-/** Why one attribute is refused: a handler, a script address, a link out of the image, or a resource elsewhere. */
-function attributeProblem(local: string, ns: string, value: string): string | undefined {
+/**
+ * Why one attribute of an element in namespace `element` is refused: a handler, a script address, a link out of the
+ * image, or a stylesheet that reaches outside it. A link may point into the file or hold a raster image of its own.
+ */
+function attributeProblem(local: string, ns: string, value: string, element: string): string | undefined {
   if (!ns && /^on/i.test(local)) return 'händelseattribut';
   const plain = value.replace(/[\t\n\r]/g, '');
   if (/(javascript|vbscript)[ ]*:/i.test(plain)) return 'skriptadresser';
   if (local === 'href' && (!ns || ns === XLINK_NS)) {
     const target = plain.replace(/^[\u0000- ]+|[\u0000- ]+$/g, '');
-    if (!/^#\S*$/.test(target) && !/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]*$/i.test(target))
+    if (!/^#\S*$/.test(target) && !/^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/= ]*$/i.test(target))
       return 'länkar ut ur bilden';
   }
-  return cssProblem(value);
+  return !ns && element === SVG_NS && CSS_ATTRIBUTES.has(local.toLowerCase()) ? cssProblem(value) : undefined;
 }
 /** Why one element in a namespace a browser draws is refused, or undefined for a part of a drawing. */
 function elementProblem(local: string, ns: string): string | undefined {
@@ -100,6 +128,9 @@ function elementProblem(local: string, ns: string): string | undefined {
  */
 function svgProblem(text: string): SvgProblem | undefined {
   const declaration = DECLARATION.exec(text);
+  // The bytes were read as UTF-8; a file that names another encoding is one a browser reads otherwise.
+  const encoding = declaration && /[ \t\r\n]encoding[ \t\r\n]*=[ \t\r\n]*(["'])([^"']*)\1/.exec(declaration[0]);
+  if (encoding && !/^utf-?8$/i.test(encoding[2]!)) return NOT_UTF8;
   let at = declaration ? declaration[0].length : text.startsWith('﻿') ? 1 : 0;
   const open: Array<{ name: string; scope: Map<string, string>; css?: string }> = [];
   let rooted = false;
@@ -194,7 +225,7 @@ function svgProblem(text: string): SvgProblem | undefined {
       if (n === 'xmlns' || n.startsWith('xmlns:')) continue;
       const attribute = qualified(n);
       if (!attribute) return INVALID;
-      const problem = attributeProblem(attribute[0], attribute[1], value);
+      const problem = attributeProblem(attribute[0], attribute[1], value, element[1]);
       if (problem) return problem;
     }
     const problem = elementProblem(...element);
@@ -231,6 +262,7 @@ export function logoImageOf(input: { mediaType: LogoMediaType; data: string }, l
     return { problem: `${label} är inte en SVG-bild i UTF-8.` };
   }
   const problem = svgProblem(text);
+  if (problem === NOT_UTF8) return { problem: `${label} är inte en SVG-bild i UTF-8.` };
   if (problem === NOT_SVG) return { problem: `${label} är inte en SVG-bild.` };
   if (problem === INVALID) return { problem: `${label} går inte att läsa som SVG-bild.` };
   if (problem) return { problem: `${label} innehåller ${problem}, vilket inte tillåts i en logotyp.` };
