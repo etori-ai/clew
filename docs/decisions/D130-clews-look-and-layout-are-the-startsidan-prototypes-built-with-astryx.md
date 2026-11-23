@@ -165,3 +165,18 @@ of [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) a
 [D48](D48-one-next-step-the-rest-one-step-away.md) (their three levels and one filled button stand); Neutral's Figtree
 in [D46](D46-astryx-neutral-is-the-default-theme.md); "typography, motion, radii" staying Astryx's in
 [D38](D38-municipal-branding-uses-astryx-themes.md), for typography and radii.
+
+
+**Amended 2026-11-23: what a phone changes.** The reference is drawn for a wide window; the review of the phone view
+([review](../reviews/2026-11-23-the-mobile-view.md)) found four places where following it there worked against the
+person, and the product owner asked for them to be put right.
+
+1. *The band is one row down to 320 px.* On a phone the band's controls, "Meny" included, are marks alone, each a
+   44 px target on a touch screen, standing edge to edge (item 6). With "Meny" labelled and gaps between them the row
+   needed exactly 375 px, so under that the controls fell to a second row.
+2. *Hem's work comes before Läget on a phone* (item 13). The reference has the key figures first; one under the other
+   they are a screen, which put "Behöver dig" a screen and a half down on the page that exists to show it.
+3. *A key figure has a row to itself under 480 px* (`FigureRow`). Two to a row, as the reference has them, left each a
+   154 px card: a value broke over two lines, and a label was clipped behind a scrollbar of the card's own (1.4.10).
+4. *The floating "Fråga AI" is the mark alone on a phone* (item 14): a round 48 px button named "Fråga AI". With its
+   label it was 139 px wide and lay over a row's "Öppna", a figure's value or a heading wherever the page stood.

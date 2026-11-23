@@ -2559,11 +2559,21 @@ export async function openTools(page: Page) {
 export const toolRow = async (page: Page, label: string) =>
   (await openTools(page)).getByRole('menuitem', { name: label, exact: true });
 /**
- * The signed-in person on the band (D87, D130): a button named by what it shows, the name and on a wide window the
- * unit, and by what it opens, the settings; in its dialog "Min sida" leads to the person's own page.
+ * The signed-in person on the band (D87, D130): one button for the avatar, the name and on a wide window the unit, named
+ * by what it shows and by what it opens, the settings under it, where "Min sida" leads to the person's own page.
  */
 export const personButton = (page: Page) =>
   page.getByRole('banner').getByRole('button', { name: /^Testa Testsson, (.+, )?inställningar$/ });
+/**
+ * The person's settings (D39), opened from the person on the band, the one way to them: under the person with a
+ * pointer, a low sheet on a touch phone, a dialog named by the person either way.
+ */
+export async function openSettings(page: Page) {
+  await personButton(page).click();
+  const settings = page.getByRole('dialog', { name: 'Testa Testsson', exact: true });
+  await expect(settings).toBeVisible();
+  return settings;
+}
 /** The reminders' bell on the band (D88): named by how many are due, or by that they could not be read. */
 export const bell = (page: Page) => page.getByRole('banner').getByRole('button', { name: /^Påminnelser/ });
 /** The search (D126's "Sök"): its button on the band, which opens the command palette over the page. */

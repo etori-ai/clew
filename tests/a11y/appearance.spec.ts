@@ -1,4 +1,4 @@
-import { expect, open, openNav, phone, test } from './support';
+import { expect, open, openSettings, phone, test } from './support';
 import type { Page } from '@playwright/test';
 
 const dark = (page: Page) =>
@@ -15,9 +15,8 @@ test.describe('appearance (D39)', () => {
   test('follows the computer until the person chooses, and the choice is kept', async ({ page, api: _ }) => {
     await open(page, '/');
     await expect.poll(() => dark(page)).toBe(true);
-    // Without a header connector the person's settings open over the page from their address, which their own page
-    // links to (D126: the person at the rail's foot is the link to that page).
-    await open(page, '/?settings=1');
+    // The person on the band is the way to the settings (D39).
+    await openSettings(page);
     await expect(page.getByRole('radio', { name: 'Samma som datorn', exact: true })).toBeChecked();
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();
     await expect.poll(() => dark(page)).toBe(false);

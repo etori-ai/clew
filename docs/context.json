@@ -4719,6 +4719,18 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-23-the-mobile-view.md",
+      "title": "The phone view, reviewed and refreshed",
+      "category": "review-history",
+      "headings": [
+        "What held",
+        "Findings",
+        "What was changed, and who owns it now",
+        "What was left, and why",
+        "Not verified"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",

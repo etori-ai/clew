@@ -39,7 +39,7 @@ import {
 import { TALK_PARAM } from '../talk-address';
 import { entitySubject } from '../conversation-about';
 import { useNav, type NavCurrent } from '../components/shell/nav';
-import { Shell, mobileQuery, settingsHref, shortQuery } from '../components/shell/shell';
+import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
 import { ContentSkeleton } from '../components/shell/loading';
 import { AskClew } from '../components/conversation/thing-panel';
 import { TalkTab } from '../components/people/talk-overlay';
@@ -502,23 +502,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         icon={<Avatar name={name} size={mobile ? 48 : 60} tooltip={false} aria-hidden />}
         title={name}
         subtitle={nameLine(detail)}
-        actions={
-          <EntityActions
-            detail={detail}
-            mobile={mobile}
-            ask={
-              own ? (
-                <>
-                  {ask}
-                  {/* The person's own settings (D39), which the rail's foot row opened before it led here (D126). */}
-                  <Button variant="secondary" label="Inställningar" href={settingsHref(pathname, here)} />
-                </>
-              ) : (
-                ask
-              )
-            }
-          />
-        }
+        actions={<EntityActions detail={detail} mobile={mobile} ask={ask} />}
         tabs={
           <ThingTabs
             label={`Om ${name}`}

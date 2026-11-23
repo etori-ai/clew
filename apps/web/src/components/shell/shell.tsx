@@ -2,27 +2,14 @@ import { createContext, useEffect, useLayoutEffect, useMemo, useRef, useState, t
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser, SiteHeaderView } from '@clew/contracts';
-import {
-  AppShell,
-  Button,
-  Dialog,
-  DialogHeader,
-  RadioList,
-  RadioListItem,
-  Text,
-  VStack,
-  signOut,
-  useAppearance,
-  useMediaQuery,
-  useToast,
-  HStack,
-} from '@clew/ui';
+import { AppShell, Button, signOut, useAppearance, useMediaQuery, useToast, HStack } from '@clew/ui';
 import type { HeaderLogo } from '@clew/ui/branding';
 import { createHeaderBandTheme, logoPlate } from '@clew/ui/theme';
 import {
   SiteHeader,
   SiteHeaderPerson,
   selectedItem,
+  useCompactSiteHeader,
   useDarkSiteHeader,
   type SiteHeaderLogo,
   type SiteMenu,
@@ -59,15 +46,6 @@ export const SiteName = createContext<string>(SITE_NAME);
 export const START_PAGE = { id: START_PAGE_ID, label: 'Start', href: '/' } as const;
 /** The width the header's rows and every page's column are bounded to (D130: the reference bounds both to 1280 px). */
 export const SHELL_WIDTH = 1280;
-/** The person's settings (D39) as part of the address, so a link can open them and Back never opens them again. */
-const SETTINGS_PARAM = 'settings';
-/** The page the person is on with their settings over it: the way to them from the person's own page (D126). */
-export function settingsHref(pathname: string, search: string): string {
-  const q = new URLSearchParams(search);
-  q.set(SETTINGS_PARAM, '1');
-  return `${pathname}?${q.toString()}`;
-}
-
 /** A connector supplies the mark for its dark band (D88), while an installation can supply a variant for each ground (D98). */
 export function headerLogo(shared: SiteHeaderView['logo'] | undefined, own: HeaderLogo | null): SiteHeaderLogo | null {
   return shared ? { ...shared, ground: 'dark' } : own;
@@ -127,14 +105,15 @@ type Props = {
  * header connector lists under them (D88), and under the band Clew's own pages, which `nav` carries. Where no
  * connector answers the band is the heading row alone, and Start stands first among Clew's pages. On a phone the header folds the places and those pages into its own "Meny".
  *
- * The person on the band opens their settings (D39: the appearance and the way out); the same settings open over any
- * page from the address (`?settings=1`, `settingsHref`), which the person's own page links to. Nothing opens over a
+ * The person on the band is the one way to their settings (D39, amended 2026-11-23: the appearance and the way out),
+ * which open under the person, a low sheet on a touch phone, on every page alike. Nothing opens over a
  * page otherwise (D126 rule 3): an address from before that opened a work item or a view over it (a saved link, a toast
  * in an older tab) is replaced by that thing's own page, with the page it lay over as the way back (`panelRedirect`),
  * before anything is painted.
  */
 export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const { mode, setMode, isPersistent } = useAppearance();
+  const compactHeader = useCompactSiteHeader();
   // D135: every unit of a person who holds more than one, the primary one first; their one unit otherwise.
   const units = unitsList(user);
   const toast = useToast();
@@ -172,14 +151,6 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   useLayoutEffect(() => {
     if (oldPanel) navigate(oldPanel, { replace: true });
   }, [oldPanel]);
-  const settingsOpen = new URLSearchParams(location.search).get(SETTINGS_PARAM) === '1';
-  // Closed by replacing the address, so Back never opens the settings again.
-  const closeSettings = () => {
-    const q = new URLSearchParams(location.search);
-    q.delete(SETTINGS_PARAM);
-    const rest = q.toString();
-    navigate({ search: rest ? `?${rest}` : '' }, { replace: true });
-  };
   const deliveryContext = useRef(threadsQ.data),
     deliveryMounted = useRef(false);
   deliveryContext.current = threadsQ.data;
@@ -275,12 +246,13 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
             pagesEnd={nav.end}
             pagesLabel="Mina sidor"
             end={
-              <HStack gap={2} vAlign="center">
+              // On a phone the band's marks stand edge to edge, each its own 44 px target (`SiteHeader`).
+              <HStack gap={compactHeader ? 0 : 2} vAlign="center">
                 {nav.search}
                 <ReminderBell />
                 <SiteHeaderPerson
                   name={user.name}
-                  // D135: the band says the first unit and how many more; its dialog names every one.
+                  // D135: the band says the first unit and how many more; the settings under it name every one.
                   description={unitsLine(user)}
                   detail={units}
                   onSignOut={() => void logout()}
@@ -299,50 +271,6 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
         </WithAssistantCorner>
       </AppShell>
       {nav.overlay}
-      {/* The settings (D39), the same composition as the band's person: the colour choice and the way out. */}
-      <Dialog
-        isOpen={settingsOpen}
-        onOpenChange={open => {
-          if (!open) closeSettings();
-        }}
-      >
-        <DialogHeader
-          title={user.name}
-          onOpenChange={open => {
-            if (!open) closeSettings();
-          }}
-        />
-        <VStack gap={4} padding={3}>
-          {units ? <Text type="supporting">{units}</Text> : null}
-          <RadioList
-            label="Utseende"
-            value={mode}
-            onChange={value => {
-              if (value === 'system' || value === 'light' || value === 'dark') setMode(value);
-            }}
-            description={
-              isPersistent === false
-                ? 'Webbläsaren tillåter inte att valet sparas. Det gäller tills du laddar om sidan.'
-                : 'Valet gäller startsidan och intranätet i den här webbläsaren.'
-            }
-          >
-            <RadioListItem value="system" label="Samma som datorn" />
-            <RadioListItem value="light" label="Ljust" />
-            <RadioListItem value="dark" label="Mörkt" />
-          </RadioList>
-          <HStack gap={2} hAlign="end" wrap="wrap">
-            <Button
-              label="Logga ut"
-              variant="secondary"
-              onClick={() => {
-                closeSettings();
-                void logout();
-              }}
-            />
-            <Button label="Stäng" variant="primary" onClick={closeSettings} />
-          </HStack>
-        </VStack>
-      </Dialog>
     </>
   );
 }

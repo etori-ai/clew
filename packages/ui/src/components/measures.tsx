@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Avatar } from '@astryxdesign/core/Avatar';
 import { Grid } from '@astryxdesign/core/Grid';
+import { useMediaQuery } from '@astryxdesign/core/hooks';
 
 /**
  * The measures pages share (D130, `docs/reference/layout-measures.md`), read in the running startsidan prototype. A
@@ -15,13 +16,19 @@ export const CARD_GAP = 5;
 /** How many key figures stand in a row at most, as the reference's row holds four. */
 export const FIGURES_IN_A_ROW = 4;
 
+/** Below this a key figure has a row to itself: two side by side leave each a 154 px card on a 375 px phone. */
+const FIGURES_STACK_QUERY = '(max-width: 479px)';
+
 /**
- * Key figures in their row: four to a row where they fit, and two on a phone as the reference has them, `CARD_GAP`
- * between them.
+ * Key figures in their row: four to a row where they fit, two on a narrow window, and one under the other on a phone,
+ * `CARD_GAP` between them. Two to a row on a phone, as the reference has them, broke a value like "−2,1 mnkr" over
+ * two lines, a word in the middle, and clipped a label behind a scrollbar of the card's own (1.4.10, review
+ * 2026-11-23); a figure is read at a glance only when its value stands on one line.
  */
 export function FigureRow({ children }: { children: ReactNode }) {
+  const stacked = useMediaQuery(FIGURES_STACK_QUERY);
   return (
-    <Grid columns={{ minWidth: 140, max: FIGURES_IN_A_ROW }} gap={CARD_GAP}>
+    <Grid columns={stacked ? 1 : { minWidth: 140, max: FIGURES_IN_A_ROW }} gap={CARD_GAP}>
       {children}
     </Grid>
   );
