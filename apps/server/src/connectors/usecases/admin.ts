@@ -577,6 +577,9 @@ export function connectorUsecases(deps: AdminDeps) {
     id: string,
     input: RefreshManifestInput,
   ): Promise<{ diff: ManifestDiff; connector: ConnectorDetail }> {
+    // Both paths require an administrator. Applying also rechecks the session before the first lookup or service call.
+    requireAdmin(persona);
+    if (input.apply) await persona.authorize();
     const row = await must(id);
     const { url } = remote(row);
     const fetched = await transport.fetchManifest(url, id);
@@ -601,10 +604,8 @@ export function connectorUsecases(deps: AdminDeps) {
       areasRemoved: [...areasBefore].filter(a => !areasAfter.has(a)),
       same: JSON.stringify(stored) === JSON.stringify(fetched),
     };
-    if (!input.apply) {
-      requireAdmin(persona);
-      return { diff, connector: await detail(row) };
-    }
+    if (!input.apply) return { diff, connector: await detail(row) };
+    // The fetch may outlive the session or its grant. Recheck at the write boundary.
     const { by, at } = await mutating(persona);
     await store.transaction(async tx => {
       await tx.update(id, { manifest: fetched, manifestAt: at, health: { status: 'ok', at } }, by, at);

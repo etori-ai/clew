@@ -14,7 +14,7 @@ weakness seen from several areas, and how far to trust them.
 | Area | Review | High | Medium | Low | Total |
 |---|---|---|---|---|---|
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 2 | 6 | 8 |
-| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 1 | 6 | 6 | 13 |
+| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 1 | 5 | 6 | 12 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 6 | 6 | 12 |
 | DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 1 | 9 | 16 | 26 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 1 | 3 | 9 | 13 |
@@ -23,7 +23,7 @@ weakness seen from several areas, and how far to trust them.
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 5 | 13 | 18 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
-| | **Total** | **3** | **40** | **80** | **123** |
+| | **Total** | **3** | **39** | **80** | **122** |
 
 ## High
 
@@ -57,7 +57,6 @@ It carries no tables of its own.
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | CB-1 | High | A connector's manifest declares what it may read through Clew (`uses`) and whose token it is handed (`delegation.audience`), and no administrator sees or decides it. Same as `DE-H1`. | `packages/connectors/src/protocol.ts:457-464` |
-| CB-2 | Medium | "Hämta manifest igen" fetches the service and answers an existing id differently from a missing one before it checks that the caller is an administrator. | `apps/server/src/connectors/usecases/admin.ts:575-608` |
 | CB-3 | Medium | "Testa anslutning" overwrites the stored manifest, which the reconciler puts live, with no audit row or step-up, and the reviewed refresh path shows none of what matters. Same as `DE-H1`. | `apps/server/src/connectors/usecases/admin.ts:557-573` |
 | CB-4 | Medium | The transport follows redirects on capability calls, scans, figures and manifest reads, sending the transport key and the person's token, and shows the other host's words. | `packages/connectors/src/remote.ts:218-230` |
 | CB-5 | Medium | A connector's answer to a capability call, scan, figure or manifest is read into memory whatever its size. | `packages/connectors/src/remote.ts:236` |
