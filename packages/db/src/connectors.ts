@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { database, type Transaction } from './index';
 import { nextOrdinal } from '@clew/contracts';
 import { connectors, type ConnectorAudience, type ConnectorHealth } from './schema';
@@ -68,6 +68,8 @@ export async function updateConnector(
       | 'capabilities'
       | 'manifest'
       | 'manifestAt'
+      | 'offered'
+      | 'offeredAt'
       | 'health'
     >
   >,
@@ -80,11 +82,33 @@ export async function updateConnector(
     .where(eq(connectors.id, id));
   return true;
 }
-/** Health and manifest refreshes are not administration: no actor, no version bump, no audit. */
-export async function recordHealth(id: string, health: ConnectorHealth, manifest?: unknown) {
+/**
+ * A check's result is not administration: no actor, no version bump, no audit. It never touches the approved manifest
+ * (D144): `offered` is what the service serves when it differs from it, `null` when it does not, and is left alone when
+ * omitted. The same offer seen again keeps the instant it was first seen, so a review an administrator has open stays
+ * bound to it.
+ */
+export async function recordHealth(id: string, health: ConnectorHealth, offered?: unknown, at: Date = new Date()) {
   await database()
     .update(connectors)
-    .set({ health, ...(manifest !== undefined ? { manifest, manifestAt: new Date() } : {}) })
+    .set({
+      health,
+      ...(offered === undefined
+        ? {}
+        : offered === null
+          ? { offered: null, offeredAt: null }
+          : {
+              offered,
+              offeredAt: sql`case when ${connectors.offered} is not distinct from ${JSON.stringify(offered)}::jsonb then ${connectors.offeredAt} else ${at.toISOString()}::timestamptz end`,
+            }),
+    })
     .where(eq(connectors.id, id));
+}
+/** A bundled connector's description is its code, reviewed with the code: it moves with the build (D144 item 1). */
+export async function recordDescription(id: string, manifest: unknown, at: Date = new Date()) {
+  await database()
+    .update(connectors)
+    .set({ manifest, manifestAt: at })
+    .where(and(eq(connectors.id, id), eq(connectors.bundled, true)));
 }
 export const deleteConnector = (tx: Transaction, id: string) => tx.delete(connectors).where(eq(connectors.id, id));

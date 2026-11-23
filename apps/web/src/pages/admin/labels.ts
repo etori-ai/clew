@@ -77,6 +77,19 @@ export const healthLabel: Record<ConnectorSummary['health']['status'], string> =
   'secret-rejected': 'Nyckeln avvisas',
   untested: 'Inte kontrollerad',
 };
+/** A changed manifest field as the review names it (D144); a field not named here is shown by its protocol name. */
+export const manifestFieldLabel: Record<string, string> = {
+  protocol: 'protokollversion',
+  kind: 'typ av anslutning',
+  source: 'systemets namn',
+  scan: 'skickar ärenden',
+  installation: 'läsningar utan någon person bakom',
+  facts: 'uppgifter som anslutningen skapar',
+  assignments: 'uppdrag',
+  documents: 'dokument',
+  assistants: 'assistenter',
+  header: 'sidhuvudet',
+};
 /** One line for the audience: "Alla", "Chefer", "Chefer · 2 enheter", "Ingen". */
 export function audienceLabel(a: ConnectorAudience): string {
   if (a.mode === 'all') return 'Alla';

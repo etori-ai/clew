@@ -16,6 +16,7 @@ import {
 import { fetchManifest, parseManifest } from '../packages/connectors/src/remote';
 import { sealSecret } from '../apps/server/src/auth-crypto';
 import { secretPurpose } from '../apps/server/src/connectors/remote';
+import { sameManifest } from '../apps/server/src/connectors/manifests';
 import { internalIds } from '../apps/server/src/connectors/registry';
 
 const requireManaged = (id: string) => {
@@ -57,6 +58,9 @@ export async function registerConnector(options: {
         state,
         manifest,
         manifestAt: new Date(),
+        // The operator who runs this approves what the service serves now (D144); an earlier offer is settled with it.
+        offered: null,
+        offeredAt: null,
         health: { status: 'ok', at: new Date().toISOString() },
       });
     else
@@ -69,12 +73,21 @@ export async function registerConnector(options: {
         manifest,
         health: { status: 'ok', at: new Date().toISOString() },
       });
+    // What is approved is in the history (D144): what the connector reads back as the person and whose token it gets.
+    const approved = {
+      source: manifest.source,
+      capabilities: manifest.capabilities.length,
+      uses: manifest.uses ?? [],
+      delegation: manifest.delegation?.audience ?? null,
+    };
     await writeAudit(tx, {
       actor,
       action: existing ? 'connector.secret' : 'connector.added',
       subject: 'connector:' + id,
-      details: { url, source: manifest.source, capabilities: manifest.capabilities.length },
+      details: existing ? { url } : { url, ...approved },
     });
+    if (existing && !sameManifest(existing.manifest, manifest))
+      await writeAudit(tx, { actor, action: 'connector.manifest', subject: 'connector:' + id, details: approved });
     if (state === 'enabled') await writeAudit(tx, { actor, action: 'connector.enabled', subject: 'connector:' + id });
   });
   return { manifest, existing: !!existing, state };

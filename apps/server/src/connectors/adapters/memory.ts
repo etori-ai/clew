@@ -1,5 +1,6 @@
 import { nextOrdinal } from '@clew/contracts';
 import type { AuditEntry, ConnectorRecord, ConnectorStore, ConnectorTx } from '../model';
+import { sameManifest } from '../manifests';
 
 /**
  * The connector store in memory: the unit tests' adapter (D25). Same contract as Postgres, held to it by
@@ -23,14 +24,23 @@ export function memoryConnectorStore(): MemoryConnectorStore {
       const r = rows.get(id);
       return r ? structuredClone(r) : undefined;
     },
-    async recordHealth(id, health, manifest, at) {
+    async recordHealth(id, health, offered, at) {
       const r = rows.get(id);
       if (!r) return;
       r.health = structuredClone(health);
-      if (manifest !== undefined) {
-        r.manifest = structuredClone(manifest);
-        r.manifestAt = at ?? health.at;
+      if (offered === null) {
+        r.offered = null;
+        r.offeredAt = null;
+      } else if (offered !== undefined && !(r.offered !== null && sameManifest(r.offered, offered))) {
+        r.offered = structuredClone(offered);
+        r.offeredAt = at ?? health.at;
       }
+    },
+    async recordDescription(id, manifest, at) {
+      const r = rows.get(id);
+      if (!r?.bundled) return;
+      r.manifest = structuredClone(manifest);
+      r.manifestAt = at;
     },
     async history(id) {
       return self.audit
@@ -59,6 +69,8 @@ export function memoryConnectorStore(): MemoryConnectorStore {
             areas: {},
             manifest: structuredClone(r.manifest),
             manifestAt: r.manifest ? r.at : null,
+            offered: null,
+            offeredAt: null,
             health: structuredClone(r.health),
             createdBy: r.createdBy,
             updatedBy: r.createdBy,

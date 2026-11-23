@@ -14,7 +14,8 @@ export interface ConnectorStoreHarness {
   cardState(threadId: string): Promise<string | undefined>;
 }
 const T0 = '2026-11-04T06:00:00.000Z',
-  T1 = '2026-11-04T06:05:00.000Z';
+  T1 = '2026-11-04T06:05:00.000Z',
+  T2 = '2026-11-04T06:10:00.000Z';
 export const remoteRow = (id: string, overrides: Partial<NewConnector> = {}): NewConnector => ({
   id,
   bundled: false,
@@ -131,24 +132,57 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       await store.transaction(tx => tx.update(id, { areas: {} }, 'person:mikael', T1));
       expect((await store.read(id))!.areas).toEqual({});
     });
-    test('recordHealth changes health and the manifest without a version bump', async () => {
+    test('recordHealth changes health and the offer, never the approved manifest, without a version bump (D144)', async () => {
       const { store, fresh } = await make();
       const id = fresh();
       await store.transaction(tx => tx.insert(remoteRow(id)));
+      const approved = (await store.read(id))!.manifest;
       await store.recordHealth(id, { status: 'unreachable', at: T1, detail: 'ECONNREFUSED' });
       expect(await store.read(id)).toMatchObject({
         health: { status: 'unreachable', at: T1, detail: 'ECONNREFUSED' },
         version: 1,
         manifestAt: T0,
+        offered: null,
+        offeredAt: null,
       });
-      await store.recordHealth(
+      const served = {
+        protocol: 1,
         id,
-        { status: 'ok', at: T1 },
-        { protocol: 1, id, kind: 'passthrough', source: 'Hello 2', areas: [], capabilities: [], scan: true },
-        T1,
-      );
-      expect(await store.read(id)).toMatchObject({ manifestAt: T1, version: 1 });
-      expect(((await store.read(id))!.manifest as { source: string }).source).toBe('Hello 2');
+        kind: 'passthrough',
+        source: 'Hello 2',
+        areas: [],
+        capabilities: [],
+        scan: true,
+      };
+      await store.recordHealth(id, { status: 'ok', at: T1 }, served, T1);
+      let row = (await store.read(id))!;
+      expect(row).toMatchObject({ manifest: approved, manifestAt: T0, offeredAt: T1, version: 1 });
+      expect((row.offered as { source: string }).source).toBe('Hello 2');
+      // The same offer seen again, its keys in another order, keeps the instant it was first seen.
+      await store.recordHealth(id, { status: 'ok', at: T2 }, JSON.parse(JSON.stringify(served)), T2);
+      expect((await store.read(id))!.offeredAt).toBe(T1);
+      await store.recordHealth(id, { status: 'ok', at: T2 }, { ...served, source: 'Hello 3' }, T2);
+      expect((await store.read(id))!.offeredAt).toBe(T2);
+      // The service serves the approved manifest again: the offer goes.
+      await store.recordHealth(id, { status: 'ok', at: T2 }, null, T2);
+      row = (await store.read(id))!;
+      expect(row).toMatchObject({ offered: null, offeredAt: null, manifest: approved, version: 1 });
+    });
+    test("recordDescription moves a bundled row's description and never a remote row's manifest", async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      const approved = (await store.read(id))!.manifest;
+      await store.recordDescription(id, { source: 'Somebody else' }, T1);
+      expect(await store.read(id)).toMatchObject({ manifest: approved, manifestAt: T0 });
+      const bundled = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(bundled, { bundled: true, url: null, secret: null })));
+      await store.recordDescription(bundled, { source: 'The new build' }, T1);
+      expect(await store.read(bundled)).toMatchObject({
+        manifest: { source: 'The new build' },
+        manifestAt: T1,
+        version: 1,
+      });
     });
     test('the audit row is written through the transaction and read back as history; a throw rolls everything back', async () => {
       const { store, fresh } = await make();

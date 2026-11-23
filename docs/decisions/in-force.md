@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**139 in force**: 98 accepted and 41 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**140 in force**: 98 accepted and 42 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -48,7 +48,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D11 · One calendar contract, CalDAV and Microsoft 365 as adapters](D11-one-calendar-contract-two-adapters.md) | 2026-11-03 | accepted | [D69](D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md) |
 | [D21 · Every integration is a module service behind the Clew module protocol](D21-integrations-are-module-services.md) | 2026-11-04 | accepted |  |
 | [D22 · Connectors, not modules: the word for an integration that a person, an operator or a vendor meets](D22-connectors-not-modules.md) | 2026-11-04 | accepted |  |
-| [D23 · Connectors are registered and governed in the database by an administrator, not by environment variables](D23-connectors-are-managed-in-the-database.md) | 2026-11-04 | accepted |  |
+| [D23 · Connectors are registered and governed in the database by an administrator, not by environment variables](D23-connectors-are-managed-in-the-database.md) | 2026-11-04 | accepted | [D144](D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md) |
 | [D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) | 2026-11-05 | accepted | [D89](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md), [D123](README.md) |
 | [D52 · The mocks are generic systems; nothing in the repository names a vendor](D52-the-mocks-are-generic-systems-without-vendor-names.md) | 2026-11-05 | accepted |  |
 | [D54 · Figures come from connectors, and Läget draws them](D54-figures-come-from-connectors-and-laget-draws-them.md) | 2026-11-06 | accepted | [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) |
@@ -65,6 +65,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) | 2026-11-13 | provisional |  |
 | [D127 · A read can say its rows are a read about people, asked for everyone, and then has one place](D127-a-read-can-say-its-rows-are-a-read-about-people-asked-for-everyone.md) | 2026-11-14 | provisional |  |
 | [D129 · The connector protocol is 1, and changes in place until the first release](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) | 2026-11-18 | accepted |  |
+| [D144 · A connector's manifest goes live only when an administrator approves it](D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md) | 2026-11-23 | provisional |  |
 
 ## Identity
 
@@ -175,7 +176,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
 | [D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it](D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md) | 2026-11-13 | provisional |  |
-| [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional | [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md), [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md) |
+| [D125 · A conversation can be handed to another system's assistant, and nothing of it follows the question](D125-a-conversation-can-be-handed-to-another-systems-assistant-and-nothing-follows-the-question.md) | 2026-11-14 | provisional | [D128](D128-another-systems-assistant-is-talked-to-beside-the-conversation-and-the-box-only-goes-to-clew.md), [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md), [D144](D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md) |
 
 ## Proposed, not decided
 
@@ -185,7 +186,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D18 · Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter](D18-errands-are-a-clew-owned-passthrough-domain.md) | integrations | 2026-11-04 | [D35](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md), [D89](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) |
 | [D19 · Change notification is a Clew-owned contract: payload-free CloudEvents over HTTP](D19-change-notification-is-a-clew-owned-contract.md) | integrations | 2026-11-04 |  |
 | [D26 · Questions answered from documents are a search fan-out with citations, not a knowledge module](D26-questions-over-documents-are-search-not-knowledge.md) | product | 2026-11-04 |  |
-| [D37 · Connectors declare the capabilities they use; a capability's name is its contract](D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract.md) | integrations | 2026-11-05 |  |
+| [D37 · Connectors declare the capabilities they use; a capability's name is its contract](D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract.md) | integrations | 2026-11-05 | [D144](D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md) |
 | [D55 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system](D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md) | integrations | 2026-11-06 |  |
 | [D82 · Sick-leave statistics come through an absence connector that reads only aggregates](D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md) | integrations | 2026-11-06 |  |
 | [D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element](D87-one-header-shared-by-the-portal-and-the-intranet.md) | ui | 2026-11-09 | [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) |

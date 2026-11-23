@@ -45,6 +45,21 @@ const mikael = persona('mikael', 'employee', ['admin.connectors']),
 const SECRET = 'test-secret-test-secret';
 const T0 = '2026-11-04T07:00:00.000Z';
 const sign = (secret: string, aud: string) => assertionFor(aud, secret);
+/** The service starts serving its manifest changed by `change`, as a new deployment of it would. */
+const serving = (transport: AdminDeps['transport'], change: (m: ConnectorManifest) => ConnectorManifest) => {
+  const fetch = transport.fetchManifest,
+    check = transport.check;
+  transport.fetchManifest = async (...args) => change(await fetch(...args));
+  transport.check = async input => {
+    const report = await check(input);
+    return report.manifest ? { ...report, manifest: change(report.manifest) } : report;
+  };
+};
+/** An administrator reads in what the service serves and approves the offer they were shown (D144). */
+const approveServed = async (admin: ReturnType<typeof connectorUsecases>, id: string) => {
+  const offered = (await admin.refreshManifest(mikael, id, {})).connector.offered?.at;
+  return admin.refreshManifest(mikael, id, { apply: true, ...(offered ? { offered } : {}) });
+};
 
 /** A bundled connector of this Clew, the economy system's shape in miniature: the governance rows treat it as they treat the core. */
 const bundledFinance = (): Connector => ({
@@ -192,25 +207,19 @@ describe('who may administer', () => {
     expect(fetchManifest).not.toHaveBeenCalled();
     expect(actions(store, 'hello')).toEqual(['connector.added']);
   });
-  test('a session ending during a manifest refresh prevents the update and its audit row', async () => {
+  test('a session ending between the review and the approval prevents the update and its audit row', async () => {
     const { admin, store, transport } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    serving(transport, m => ({ ...m, source: 'Hello 2' }));
+    const offered = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!.at;
     const before = await store.read('hello');
-    let active = true;
-    const fetch = transport.fetchManifest;
-    transport.fetchManifest = async (...args) => {
-      const result = await fetch(...args);
-      active = false;
-      return result;
-    };
     const session = {
       ...mikael,
       authorize: async () => {
-        if (!active) throw new Error('Session expired');
-        return { version: 'v1' };
+        throw new Error('Session expired');
       },
     };
-    await expect(admin.refreshManifest(session, 'hello', { apply: true })).rejects.toThrow('Session expired');
+    await expect(admin.refreshManifest(session, 'hello', { apply: true, offered })).rejects.toThrow('Session expired');
     expect(await store.read('hello')).toEqual(before);
     expect(actions(store, 'hello')).toEqual(['connector.added']);
   });
@@ -280,7 +289,8 @@ describe('adding and governing a remote connector', () => {
     expect(report.ok).toBe(false);
     expect(connector.health.status).toBe('unreachable');
     expect(connector.counts.capabilities).toBe(0);
-    await expect(admin.update(mikael, 'hello', { state: 'enabled' })).rejects.toThrow('svarar inte');
+    // Enabling approves no manifest (D144): a draft with none is read in and approved first.
+    await expect(admin.update(mikael, 'hello', { state: 'enabled' })).rejects.toThrow('ingen godkänd beskrivning');
   });
   test('enabling registers the connector live; the audience hides it from Hassan while Hillevi sees it; disabling hides it from both', async () => {
     const { admin, store, registry, live } = world();
@@ -384,10 +394,117 @@ describe('adding and governing a remote connector', () => {
     await admin.update(mikael, 'hello', { figures: { hello: false } });
     expect(live.registered.length).toBe(before);
     expect(registry.governance('hello')).toMatchObject({ state: 'disabled', toolsEnabled: false, scanEnabled: false });
-    // Its own refresh brings the service's manifest, which goes live and governed again.
-    await admin.refreshManifest(mikael, 'hello', { apply: true });
+    // Its own refresh brings the service's manifest; approved, it goes live and governed again.
+    await approveServed(admin, 'hello');
     expect(live.registered.length).toBe(before + 1);
     expect(registry.governance('hello').state).toBe('enabled');
+  });
+});
+
+describe('a manifest goes live only when an administrator approves it (D144)', () => {
+  /** A new deployment of hello: it reads the economy system back as the person, is handed the person's token and is renamed. */
+  const widened = (m: ConnectorManifest): ConnectorManifest => ({
+    ...m,
+    source: 'Hello 2',
+    uses: [...(m.uses ?? []), 'finance.invoices'],
+    delegation: { audience: 'hr-api' },
+  });
+  test('Testa anslutning, a boot and the watcher record the change as offered and put nothing of it live, with no audit row', async () => {
+    const { admin, store, registry, transport, reconcile, live } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    await admin.update(mikael, 'hello', { state: 'enabled' });
+    await applyAllRows(reconcile);
+    const approved = (await store.read('hello'))!;
+    const registered = live.registered.length;
+    serving(transport, widened);
+    await admin.test(mikael, 'hello');
+    await applyAllRows(reconcile);
+    const row = (await store.read('hello'))!;
+    expect(row.manifest).toEqual(approved.manifest);
+    expect(row.version).toBe(approved.version);
+    expect((row.offered as ConnectorManifest).source).toBe('Hello 2');
+    expect(row.offeredAt).toBe(T0);
+    expect(registry.connector('hello')!.source).toBe('Hello');
+    expect(live.registered.length).toBe(registered);
+    expect(actions(store, 'hello')).toEqual(['connector.added', 'connector.enabled']);
+    // The page names the waiting change, and the approved manifest's reads and token are on it today.
+    const detail = await admin.read(mikael, 'hello');
+    expect(detail).toMatchObject({ uses: ['calendar.today'], delegation: null });
+    expect(detail.offered).toEqual({
+      at: T0,
+      diff: {
+        added: [],
+        removed: [],
+        changed: [],
+        areasAdded: [],
+        areasRemoved: [],
+        usesAdded: ['finance.invoices'],
+        usesRemoved: [],
+        delegation: { from: null, to: 'hr-api' },
+        fields: ['source'],
+        same: false,
+      },
+    });
+  });
+  test('approving puts the offer shown live with one audit row naming what it reads and whose token it gets', async () => {
+    const { admin, store, registry, transport, advance } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    await admin.update(mikael, 'hello', { state: 'enabled' });
+    serving(transport, widened);
+    const review = await admin.refreshManifest(mikael, 'hello', {});
+    expect(review.diff).toMatchObject({ usesAdded: ['finance.invoices'], delegation: { from: null, to: 'hr-api' } });
+    advance(60_000);
+    const applied = await admin.refreshManifest(mikael, 'hello', {
+      apply: true,
+      offered: review.connector.offered!.at,
+    });
+    expect(applied.connector).toMatchObject({
+      uses: ['calendar.today', 'finance.invoices'],
+      delegation: 'hr-api',
+      offered: null,
+      source: 'Hello 2',
+    });
+    expect(registry.connector('hello')!.source).toBe('Hello 2');
+    expect(actions(store, 'hello')).toEqual(['connector.added', 'connector.enabled', 'connector.manifest']);
+    expect(store.audit.at(-1)).toMatchObject({
+      actor: 'person:mikael',
+      details: {
+        offeredAt: T0,
+        usesAdded: ['finance.invoices'],
+        delegation: { from: null, to: 'hr-api' },
+        fields: ['source'],
+      },
+    });
+  });
+  test('approving names the offer shown: a newer one is refused, and so is approving when nothing is offered', async () => {
+    const { admin, store, transport, advance } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    await expect(admin.refreshManifest(mikael, 'hello', { apply: true, offered: T0 })).rejects.toThrow(
+      'ingen ändring att godkänna',
+    );
+    serving(transport, widened);
+    const shown = (await admin.refreshManifest(mikael, 'hello', {})).connector.offered!.at;
+    // The service changes again before the administrator approves: the new offer replaces the one shown.
+    advance(60_000);
+    serving(transport, m => ({ ...m, uses: [...(m.uses ?? []), 'clew.work'] }));
+    await admin.test(mikael, 'hello');
+    const before = await store.read('hello');
+    await expect(admin.refreshManifest(mikael, 'hello', { apply: true, offered: shown })).rejects.toThrow(
+      'ändrats igen',
+    );
+    expect(await store.read('hello')).toEqual(before);
+    expect(actions(store, 'hello')).toEqual(['connector.added']);
+  });
+  test('the service serving the approved manifest again takes the offer away', async () => {
+    const { admin, store, transport } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    const { fetchManifest, check } = transport;
+    serving(transport, widened);
+    await admin.test(mikael, 'hello');
+    expect((await store.read('hello'))!.offered).not.toBeNull();
+    Object.assign(transport, { fetchManifest, check });
+    expect((await admin.refreshManifest(mikael, 'hello', {})).diff.same).toBe(true);
+    expect(await store.read('hello')).toMatchObject({ offered: null, offeredAt: null });
   });
 });
 
@@ -427,7 +544,7 @@ describe('bundled connectors are governed by the same rows', () => {
     const described = describeBundled(registry.connector('finance')!);
     const before = (await store.read('finance'))!;
     // An older build described the connector with one capability fewer; the row still carries that description.
-    await store.recordHealth('finance', before.health, { ...described, capabilities: [] }, T0);
+    await store.recordDescription('finance', { ...described, capabilities: [] }, T0);
     expect((await store.read('finance'))!.manifest).toMatchObject({ capabilities: [] });
     await syncBundledRows(reconcile);
     const after = (await store.read('finance'))!;
@@ -435,7 +552,7 @@ describe('bundled connectors are governed by the same rows', () => {
     expect(after.version).toBe(before.version);
     expect(store.audit).toEqual([]);
     // The same description in another key order is not a change.
-    await store.recordHealth('finance', after.health, JSON.parse(JSON.stringify(described)), T0);
+    await store.recordDescription('finance', JSON.parse(JSON.stringify(described)), T0);
     await syncBundledRows(reconcile);
     expect((await store.read('finance'))!.manifestAt).toBe(T0);
   });
@@ -578,8 +695,7 @@ describe('authoritative refresh without rebuilding unchanged connectors', () => 
     const row = (await w.store.read('hello'))!;
     const manifest = structuredClone(row.manifest) as ConnectorManifest;
     manifest.source = 'Changed source';
-    await w.store.recordHealth('hello', row.health, manifest, T0);
-    expect((await w.store.read('hello'))!.version).toBe(row.version);
+    await w.store.transaction(tx => tx.update('hello', { manifest }, 'test', T0));
     await applyAllRows(w.reconcile);
     expect(w.registry.connector('hello')).not.toBe(original);
     expect(w.registry.connector('hello')!.source).toBe('Changed source');

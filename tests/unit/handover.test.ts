@@ -14,7 +14,8 @@ import {
 } from '../../apps/server/src/assistant';
 import type { AssistantDeps, ManagedPerson } from '../../apps/server/src/assistant/ports';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
-import { assertionFor, testJwks } from '../connector-authority';
+import { assertionFor, testAuthority, testJwks } from '../connector-authority';
+import { decodeJwt } from 'jose';
 
 /**
  * A conversation handed to an assistant of another system (the assistants profile), end to end over the hello
@@ -112,6 +113,34 @@ function world(
   return { registry, store, sent, assistant: assistantUsecases(deps) };
 }
 const asks = (w: ReturnType<typeof world>) => w.sent.filter(s => s.path === '/clew/ask').map(s => s.body.ask);
+
+describe('nothing is read back through Clew while a source assistant answers (D125 item 4, D144)', () => {
+  test("the question carries no callback grant, though the same connector's reads carry the one its manifest uses", async () => {
+    const authority = await testAuthority();
+    const hello = createConnector({ jwks: testJwks, secret, clewUrl: 'http://clew' });
+    const bearers: Record<string, string> = {};
+    const registry = new Registry();
+    registry.register(
+      remoteConnector(parseManifest(helloManifest, 'hello'), {
+        url: 'http://hello',
+        key: secret,
+        assert: (actor, chain, binding) => authority.assert('hello', actor, ['calendar.today'], chain, binding),
+        fetch: (input, init) => {
+          bearers[new URL(String(input)).pathname] = new Headers(init?.headers).get('authorization')!.slice(7);
+          return hello.handle(new Request(input, init));
+        },
+      }),
+    );
+    const actor = audiencedActorOf(hillevi);
+    await registry.run(actor, 'hello.greeting', {});
+    const events: AssistantAskEvent[] = [];
+    for await (const e of registry.ask(actor, GUIDE, { question: 'Hej' }, { authorize: () => hillevi.authorize() }))
+      events.push(e);
+    expect(events.at(-1)).toMatchObject({ type: 'done' });
+    expect(typeof decodeJwt(bearers['/clew/capabilities/hello.greeting']!).callback).toBe('string');
+    expect(decodeJwt(bearers['/clew/ask']!).callback).toBeUndefined();
+  });
+});
 
 describe('the assistants a person may hand a conversation to', () => {
   test('are listed from every source that has the profile, named by the connector and the source', async () => {

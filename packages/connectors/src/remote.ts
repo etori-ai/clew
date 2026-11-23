@@ -69,6 +69,11 @@ export interface RemoteTransport {
 export interface AssertionBinding {
   body: string;
   capability?: string;
+  /**
+   * `false`: the assertion carries no callback grant, whatever the connector's `uses` say. A question to a source's
+   * assistant is sent so: only the person's text leaves Clew, and nothing is read back while it is answered (D125 item 4, D144).
+   */
+  callback?: false;
 }
 export class ManifestError extends Error {
   constructor(message: string) {
@@ -464,7 +469,8 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
                   headers: {
                     'content-type': 'application/json',
                     accept: 'text/event-stream',
-                    authorization: 'Bearer ' + (await transport.assert(actor, clew.chain, { body: text })),
+                    authorization:
+                      'Bearer ' + (await transport.assert(actor, clew.chain, { body: text, callback: false })),
                     ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
                     ...(manifest.delegation
                       ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }

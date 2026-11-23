@@ -387,6 +387,9 @@ test.describe('administration', () => {
               changed: names('andrad', 4),
               areasAdded: [],
               areasRemoved: [],
+              usesAdded: [],
+              usesRemoved: [],
+              fields: [],
               same: false,
             },
             connector: connectorDetail(api.connectors.find(c => c.id === 'hello')!),
@@ -412,6 +415,48 @@ test.describe('administration', () => {
       await dialog.getByRole('button', { name: 'Använd det nya' }).click();
       await expect(dialog).toHaveCount(0);
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Uppdaterat från systemet'));
+    });
+    test('a change the service offers waits in a banner; its review names what it reads and whose token it gets, and approving names the offer (D144)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      const diff = {
+        added: [],
+        removed: [],
+        changed: [],
+        areasAdded: [],
+        areasRemoved: [],
+        usesAdded: ['finance.invoices'],
+        usesRemoved: [],
+        delegation: { from: null, to: 'hr-api' },
+        fields: ['source'],
+        same: false,
+      };
+      const offered = { at: '2026-11-04T07:00:00.000Z', diff };
+      const detail = { ...connectorDetail(api.connectors.find(c => c.id === 'hello')!), offered };
+      await page.route('**/api/admin/connectors/hello', route =>
+        route.request().method() === 'GET' ? route.fulfill({ json: detail }) : route.fallback(),
+      );
+      const applied: unknown[] = [];
+      await page.route('**/api/admin/connectors/hello/refresh', route => {
+        applied.push(route.request().postDataJSON());
+        return route.fulfill({ json: { diff, connector: { ...detail, offered: null } } });
+      });
+      await open(page, '/admin/connectors/hello');
+      await expect(page.getByText('Hello: en ändring väntar på ditt godkännande')).toBeVisible();
+      // Översikt says what the approved manifest reads through Clew and whose token it gets.
+      await expect(page.getByText('calendar.today')).toBeVisible();
+      await expectNoAxeViolations(page);
+      await page.getByRole('button', { name: 'Granska ändringen' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Systemet har ändrats' });
+      await expect(dialog.getByText('Läser som personen: finance.invoices')).toBeVisible();
+      await expect(dialog.getByText('Får personens inloggning för hr-api')).toBeVisible();
+      await expect(dialog.getByText('Ändrat: systemets namn')).toBeVisible();
+      await expectNoAxeViolations(page);
+      await dialog.getByRole('button', { name: 'Använd det nya' }).click();
+      await expect(dialog).toHaveCount(0);
+      expect(applied).toEqual([{ apply: true, offered: offered.at }]);
     });
     test('a connector page is titled, the health is a sentence, and the tabs follow the tabs pattern', async ({
       page,

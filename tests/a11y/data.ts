@@ -1068,6 +1068,10 @@ export const connectorDetail = (
   scan: true,
   // The economy system declares a header capability in the suite, so its page offers the switch (D88).
   headerCapability: c.id === 'finance' ? 'finance.header' : null,
+  // hello reads the calendar back as the person, as its fixture does (D144: shown on Översikt).
+  uses: c.id === 'hello' ? ['calendar.today'] : [],
+  delegation: null,
+  offered: null,
   createdBy: 'person:mikael',
   updatedBy: 'person:mikael',
   capabilities: [

@@ -55,6 +55,7 @@ import {
   audienceLabel,
   capabilityKindLabel,
   healthLabel,
+  manifestFieldLabel,
   kindLabel,
   roleLabel,
   statusOf,
@@ -137,7 +138,8 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
       : null;
   const [tab, setTab] = useState<TabId>('oversikt');
   const [report, setReport] = useState<CheckReport | null>(null);
-  const [diff, setDiff] = useState<ManifestDiff | null>(null);
+  // The change under review and when the service first offered it, which approving names so nothing else goes live (D144).
+  const [review, setReview] = useState<{ diff: ManifestDiff; offered: string | null } | null>(null);
   const [secretOpen, setSecretOpen] = useState(false);
   const [secret, setSecret] = useState('');
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -288,7 +290,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
               run(async () => {
                 const r = await api.admin.refresh(id, false);
                 if (r.diff.same) return 'Inget har ändrats i systemet.';
-                setDiff(r.diff);
+                setReview({ diff: r.diff, offered: r.connector.offered?.at ?? null });
               })
             }
           />
@@ -336,6 +338,24 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           endContent={<Timestamp value={c.health.at} format="date_time" />}
         />
       )}
+      {c.offered && (
+        // A manifest the service serves that differs from the approved one is never live until an administrator approves it (D144).
+        <Banner
+          status="warning"
+          container="section"
+          collapsible={false}
+          title={`${c.source}: en ändring väntar på ditt godkännande`}
+          description="Systemet beskriver sig annorlunda än det du har godkänt. Ändringen används inte förrän du har granskat och godkänt den."
+          endContent={
+            <Button
+              variant="secondary"
+              size="sm"
+              label="Granska ändringen"
+              onClick={() => setReview({ diff: c.offered!.diff, offered: c.offered!.at })}
+            />
+          }
+        />
+      )}
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}
@@ -380,6 +400,12 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                       : tools.length
                         ? 'Ingen vy vald'
                         : 'Ingen vy kan ligga i menyn'}
+                  </MetadataListItem>
+                  <MetadataListItem label="Läser andra system">
+                    {c.uses.length ? c.uses.join(', ') : 'Nej'}
+                  </MetadataListItem>
+                  <MetadataListItem label="Får personens inloggning">
+                    {c.delegation ? `Ja, för ${c.delegation}` : 'Nej'}
                   </MetadataListItem>
                   <MetadataListItem label="Funktioner">{`${c.counts.capabilities}\u00a0· ${c.counts.execute} utför\u00a0· ${c.counts.tools} för assistenten`}</MetadataListItem>
                 </MetadataList>
@@ -821,9 +847,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
       {/* Astryx's form-wizard-dialog frame: a manifest with many changes scrolls its list, the two choices stay pinned in the
         footer. The frame and its DialogHeader are always rendered: the Dialog takes its name from a title present when it mounts. */}
       <Dialog
-        isOpen={!!diff}
+        isOpen={!!review}
         onOpenChange={open => {
-          if (!open) setDiff(null);
+          if (!open) setReview(null);
         }}
         width={520}
       >
@@ -833,38 +859,38 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           header={
             <DialogHeader
               title="Systemet har ändrats"
-              subtitle="Så här skiljer sig systemet från det Startsidan använder i dag."
-              onOpenChange={() => setDiff(null)}
+              subtitle="Så här skiljer sig systemet från det du har godkänt. Inget av det används förrän du godkänner det."
+              onOpenChange={() => setReview(null)}
               hasDivider={false}
             />
           }
-          secondary={<Button variant="ghost" label="Behåll det gamla" onClick={() => setDiff(null)} />}
+          secondary={<Button variant="ghost" label="Behåll det gamla" onClick={() => setReview(null)} />}
           primary={
             <Button
               variant="primary"
               label="Använd det nya"
-              isDisabled={busy || !diff}
+              isDisabled={busy || !review}
               clickAction={() =>
                 run(async () => {
-                  await api.admin.refresh(id, true);
-                  setDiff(null);
+                  await api.admin.refresh(id, true, review?.offered ?? undefined);
+                  setReview(null);
                   return 'Uppdaterat från systemet.';
                 })
               }
             />
           }
         >
-          {diff && (
+          {review && (
             // Each row begins with its dot's word ("Ny funktion: …"), so the dot is decoration and is heard once.
             <List density="compact" aria-label="Ändringar">
-              {diff.added.map(n => (
+              {review.diff.added.map(n => (
                 <ListItem
                   key={'a' + n}
                   startContent={<StatusDot variant="success" label="Ny" aria-hidden />}
                   label={<Text>Ny funktion: {n}</Text>}
                 />
               ))}
-              {diff.removed.map(n => (
+              {review.diff.removed.map(n => (
                 <ListItem
                   key={'r' + n}
                   startContent={<StatusDot variant="error" label="Borttagen" aria-hidden />}
@@ -872,25 +898,70 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   description={<Text type="supporting">Ärenden som pekar på den slutar fungera.</Text>}
                 />
               ))}
-              {diff.changed.map(n => (
+              {review.diff.changed.map(n => (
                 <ListItem
                   key={'c' + n}
                   startContent={<StatusDot variant="warning" label="Ändrad" aria-hidden />}
                   label={<Text>Ändrad funktion: {n}</Text>}
                 />
               ))}
-              {diff.areasAdded.map(n => (
+              {review.diff.areasAdded.map(n => (
                 <ListItem
                   key={'aa' + n}
                   startContent={<StatusDot variant="success" label="Nytt" aria-hidden />}
                   label={<Text>Nytt område: {n}</Text>}
                 />
               ))}
-              {diff.areasRemoved.map(n => (
+              {review.diff.areasRemoved.map(n => (
                 <ListItem
                   key={'ar' + n}
                   startContent={<StatusDot variant="error" label="Borttaget" aria-hidden />}
                   label={<Text>Borttaget område: {n}</Text>}
+                />
+              ))}
+              {/* What the connector reads through Clew as the person, and whose token it gets (D144): what an administrator weighs. */}
+              {review.diff.usesAdded.map(n => (
+                <ListItem
+                  key={'ua' + n}
+                  startContent={<StatusDot variant="warning" label="Läser" aria-hidden />}
+                  label={<Text>Läser som personen: {n}</Text>}
+                  description={
+                    <Text type="supporting">
+                      Anslutningen får läsa detta i ett annat system som den person den svarar.
+                    </Text>
+                  }
+                />
+              ))}
+              {review.diff.usesRemoved.map(n => (
+                <ListItem
+                  key={'ur' + n}
+                  startContent={<StatusDot variant="success" label="Läser inte" aria-hidden />}
+                  label={<Text>Läser inte längre: {n}</Text>}
+                />
+              ))}
+              {review.diff.delegation && (
+                <ListItem
+                  key="delegation"
+                  startContent={<StatusDot variant="warning" label="Inloggning" aria-hidden />}
+                  label={
+                    <Text>
+                      {review.diff.delegation.to
+                        ? `Får personens inloggning för ${review.diff.delegation.to}`
+                        : 'Får inte längre personens inloggning'}
+                    </Text>
+                  }
+                  description={
+                    review.diff.delegation.from && review.diff.delegation.to ? (
+                      <Text type="supporting">I dag: {review.diff.delegation.from}.</Text>
+                    ) : undefined
+                  }
+                />
+              )}
+              {review.diff.fields.map(f => (
+                <ListItem
+                  key={'f' + f}
+                  startContent={<StatusDot variant="warning" label="Ändrat" aria-hidden />}
+                  label={<Text>Ändrat: {manifestFieldLabel[f] ?? f}</Text>}
                 />
               ))}
             </List>

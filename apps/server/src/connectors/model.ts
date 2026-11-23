@@ -32,8 +32,12 @@ export interface ConnectorRecord {
   capabilities: Record<string, CapabilityOverride>;
   /** Per area of the manifest (D54): `figure: false` when its figure is switched off on Hem. */
   areas: Record<string, AreaOverride>;
+  /** The manifest an administrator approved: the only one the registry registers (D144). */
   manifest: unknown | null;
   manifestAt: string | null;
+  /** What the service serves when it differs from the approved manifest, and since when; never live (D144). */
+  offered: unknown | null;
+  offeredAt: string | null;
   health: ConnectorHealth;
   createdBy: string;
   updatedBy: string;
@@ -69,6 +73,8 @@ export type ConnectorPatch = Partial<
     | 'areas'
     | 'manifest'
     | 'manifestAt'
+    | 'offered'
+    | 'offeredAt'
     | 'health'
   >
 >;
@@ -93,8 +99,14 @@ export interface ConnectorTx {
 export interface ConnectorStore {
   list(): Promise<ConnectorRecord[]>;
   read(id: string): Promise<ConnectorRecord | undefined>;
-  /** Health and manifest refreshes are not administration: no version bump, no audit. */
-  recordHealth(id: string, health: ConnectorHealth, manifest?: unknown, at?: string): Promise<void>;
+  /**
+   * A check's result is not administration: no version bump, no audit, and the approved manifest is never touched
+   * (D144). `offered` is what the service serves when it differs from the approved one, `null` when it does not, and is
+   * left alone when omitted; the same offer seen again keeps the instant `at` it was first seen.
+   */
+  recordHealth(id: string, health: ConnectorHealth, offered?: unknown, at?: string): Promise<void>;
+  /** A bundled connector's description is its code and moves with the build; a remote row is never changed here. */
+  recordDescription(id: string, manifest: unknown, at: string): Promise<void>;
   /** The audit rows about one connector, oldest first. */
   history(id: string): Promise<AuditEntryView[]>;
   transaction<T>(fn: (tx: ConnectorTx) => Promise<T>): Promise<T>;

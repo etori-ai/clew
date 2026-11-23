@@ -4423,7 +4423,11 @@ export const ConnectorPatchInput = Type.Partial(
 export type ConnectorPatchInput = Static<typeof ConnectorPatchInput>;
 export const RotateSecretInput = object({ secret: connectorSecret });
 export type RotateSecretInput = Static<typeof RotateSecretInput>;
-export const RefreshManifestInput = object({ apply: Type.Optional(Type.Boolean()) });
+export const RefreshManifestInput = object({
+  apply: Type.Optional(Type.Boolean()),
+  /** With `apply`: when the offer the administrator reviewed was first seen, so another offer is never applied in its place (D144). */
+  offered: Type.Optional(Type.String({ maxLength: 40 })),
+});
 export type RefreshManifestInput = Static<typeof RefreshManifestInput>;
 export const PreviewQuery = object({
   role: RoleSchema,
@@ -4517,6 +4521,12 @@ export interface AuditEntryView {
 export interface ConnectorDetail extends ConnectorSummary {
   protocol: number | null;
   scan: boolean;
+  /** What the approved manifest lets the connector read back through Clew as the person (`uses`, D144). */
+  uses: string[];
+  /** The audience whose token the connector is handed (`delegation`), or null when it is handed none. */
+  delegation: string | null;
+  /** The manifest the service offers when it differs from the approved one: since when, and what it would change. Never live until approved. */
+  offered: { at: string; diff: ManifestDiff } | null;
   /** The read the manifest names as the header's source (D88), or null when the connector cannot give one. */
   headerCapability: string | null;
   createdBy: string;
@@ -4534,12 +4544,20 @@ export interface ConnectorPreview {
   tools: string[];
   /** The labels of the menu rows this person gets (D40). */ menu: string[];
 }
+/** What changed between the approved manifest and the one the service offers (D144), as the review and the audit row show it. */
 export interface ManifestDiff {
   added: string[];
   removed: string[];
   changed: string[];
   areasAdded: string[];
   areasRemoved: string[];
+  /** Other systems' reads the connector would now call back through Clew as the person (`uses`), and those it no longer would. */
+  usesAdded: string[];
+  usesRemoved: string[];
+  /** The audience whose token the connector is handed (`delegation`), before and after; absent when unchanged. */
+  delegation?: { from: string | null; to: string | null };
+  /** Every other top-level field of the manifest that changed, by its name in the protocol. */
+  fields: string[];
   same: boolean;
 }
 

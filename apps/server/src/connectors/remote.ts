@@ -13,6 +13,7 @@ import { openSecret } from '../auth-crypto';
 import { signingAuthority } from './signing';
 import type { ConnectorAuthority } from './authority';
 import { logPort } from '../logging';
+import { offerOf } from './manifests';
 export { AssertionError } from './authority';
 
 /**
@@ -51,7 +52,8 @@ export const sourceOf = (row: ConnectorRow): ConnectorSource => ({
 });
 export interface LoadOptions {
   rows?: () => Promise<ConnectorSource[]>;
-  record?: (id: string, health: ConnectorHealth, manifest?: unknown) => Promise<void>;
+  /** Records a check: the health, and the served manifest as offered when it differs from the approved one (D144). */
+  record?: (id: string, health: ConnectorHealth, offered?: unknown) => Promise<void>;
   fetch?: FetchLike;
   attempts?: number;
   delayMs?: number;
@@ -91,9 +93,10 @@ export function unregisterConnector(registry: Registry, id: string) {
   return registry.unregister(id);
 }
 /**
- * Boot: every enabled row goes into the registry. A row with a stored manifest is registered at once, so its areas show
- * (with the warning figure if the service is down, D8); then the manifest is refetched with retries, replaced if it
- * changed, and the health is recorded. A row without a stored manifest waits for the first successful fetch.
+ * Boot: every enabled row with an approved manifest goes into the registry at once, so its areas show (with the warning
+ * figure if the service is down, D8). Then the service is asked with retries and the health recorded. A manifest it
+ * serves that differs from the approved one is recorded as offered and never registered: only an administrator puts
+ * it live (D144). A row without an approved manifest is not registered at all.
  */
 export async function loadConnectors(registry: Registry, options: LoadOptions = {}) {
   const { attempts = 20, delayMs = 3000, log = logPort('connectors'), record = recordHealth } = options;
@@ -113,12 +116,16 @@ export async function loadConnectors(registry: Registry, options: LoadOptions = 
       for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
           const manifest = await fetchManifest(source.url, source.id, options.fetch);
-          if (JSON.stringify(manifest) !== JSON.stringify(stored))
-            registerConnector(registry, source, manifest, options.fetch, options.authority);
-          await record(source.id, { status: 'ok', at: new Date().toISOString() }, manifest);
-          log(
-            `Connector "${source.id}" (${manifest.source}) registered from ${source.url}: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas${manifest.scan ? ', scan' : ''}.`,
-          );
+          const offered = offerOf(source.manifest, manifest);
+          await record(source.id, { status: 'ok', at: new Date().toISOString() }, offered);
+          if (offered)
+            log(
+              `Connector "${source.id}" (${manifest.source}) at ${source.url} serves a changed manifest; it waits for an administrator${stored ? ', and the approved one is served meanwhile' : ''}.`,
+            );
+          else
+            log(
+              `Connector "${source.id}" (${manifest.source}) registered from ${source.url}: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas${manifest.scan ? ', scan' : ''}.`,
+            );
           loaded.push(source.id);
           return;
         } catch (error) {

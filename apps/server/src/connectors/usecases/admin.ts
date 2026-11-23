@@ -28,6 +28,7 @@ import {
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { parseManifest } from '@clew/connectors/remote';
 import { ForbiddenError, InputError } from '../../context';
+import { manifestDiff, offerOf } from '../manifests';
 import { describeBundled } from '../describe';
 import type {
   ConnectorRecord,
@@ -227,10 +228,14 @@ export function connectorUsecases(deps: AdminDeps) {
   }
   async function detail(row: ConnectorRecord): Promise<ConnectorDetail> {
     const m = manifestOf(row);
+    const offered = isManifest(row.offered) && row.offeredAt ? row.offered : undefined;
     return {
       ...summary(row),
       protocol: m?.protocol ?? null,
       scan: m?.scan ?? false,
+      uses: [...(m?.uses ?? [])],
+      delegation: m?.delegation?.audience ?? null,
+      offered: offered ? { at: row.offeredAt!, diff: manifestDiff(m, offered) } : null,
       headerCapability: m?.header?.capability ?? registry.connector(row.id)?.header ?? null,
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
@@ -315,6 +320,9 @@ export function connectorUsecases(deps: AdminDeps) {
           url,
           source: report.manifest?.source ?? null,
           capabilities: report.manifest?.capabilities.length ?? 0,
+          // What the administrator approves by adding it (D144): what it reads back as the person and whose token it gets.
+          uses: report.manifest?.uses ?? [],
+          delegation: report.manifest?.delegation?.audience ?? null,
           health: health.status,
         },
       });
@@ -365,15 +373,12 @@ export function connectorUsecases(deps: AdminDeps) {
       for (const area of Object.keys(patch.figures))
         if (!m?.areas.some(a => a.id === area && a.figure))
           throw new InputError('Området har inget nyckeltal: ' + area);
-    if (patch.state === 'enabled' && !row.bundled && !m) {
-      // A draft that never answered: try once more now, so enabling fails loudly instead of registering nothing.
-      try {
-        const fetched = await transport.fetchManifest(row.url!, row.id);
-        await store.recordHealth(id, { status: 'ok', at }, fetched, at);
-      } catch (error) {
-        throw new InputError('Anslutningen svarar inte, så den kan inte slås på: ' + (error as Error).message);
-      }
-    }
+    if (patch.state === 'enabled' && !row.bundled && !m)
+      // A draft that never answered has no approved manifest, and enabling approves none (D144): the administrator
+      // reads it in and approves what it declares first.
+      throw new InputError(
+        'Anslutningen har ingen godkänd beskrivning. Läs in den från systemet och godkänn den innan du slår på anslutningen.',
+      );
     const changes: Array<{ action: string; details: Record<string, unknown> }> = [];
     const next: Partial<ConnectorRecord> = {};
     if (patch.state !== undefined && patch.state !== row.state) {
@@ -553,7 +558,10 @@ export function connectorUsecases(deps: AdminDeps) {
     applyLive(updated);
     return detail(updated);
   }
-  /** "Testa anslutning": the conformance check against the service, health recorded, nothing else changed. */
+  /**
+   * "Testa anslutning": the conformance check against the service. The health is recorded, and a manifest that differs
+   * from the approved one is recorded as offered; nothing live changes (D144).
+   */
   async function test(persona: AuthenticatedContext, id: string): Promise<CheckReport & { health: ConnectorHealth }> {
     requireAdmin(persona);
     const row = await must(id),
@@ -568,57 +576,68 @@ export function connectorUsecases(deps: AdminDeps) {
       };
     const report = await transport.check({ ...remote(row), id });
     const health = healthFrom(report, at);
-    await store.recordHealth(id, health, report.manifest, at);
+    await store.recordHealth(id, health, offerOf(row.manifest, report.manifest), at);
     return { ok: report.ok, items: report.items, health };
   }
-  /** "Hämta manifest igen": what changed since the stored one; with `apply` the new manifest is stored and goes live. */
+  /**
+   * "Läs in igen från systemet" (D144). Without `apply`: the service's manifest is fetched, recorded as offered when it
+   * differs from the approved one, and the difference returned; nothing live changes. With `apply`: the offer the
+   * administrator reviewed, named by when it was first seen, becomes the approved manifest with its audit row. The
+   * stored offer is applied, never a new fetch, so what goes live is what was shown.
+   */
   async function refreshManifest(
     persona: AuthenticatedContext,
     id: string,
     input: RefreshManifestInput,
   ): Promise<{ diff: ManifestDiff; connector: ConnectorDetail }> {
-    // Both paths require an administrator. Applying also rechecks the session before the first lookup or service call.
+    // Both paths require an administrator before the first lookup; applying also rechecks the session (`mutating`).
     requireAdmin(persona);
-    if (input.apply) await persona.authorize();
-    const row = await must(id);
-    const { url } = remote(row);
-    const fetched = await transport.fetchManifest(url, id);
-    const stored = manifestOf(row);
-    const names = (m?: ConnectorManifest) => new Set((m?.capabilities ?? []).map(c => c.name));
-    const areas = (m?: ConnectorManifest) => new Set((m?.areas ?? []).map(a => a.id));
-    const before = names(stored),
-      after = names(fetched),
-      areasBefore = areas(stored),
-      areasAfter = areas(fetched);
-    const changed = [...after].filter(
-      n =>
-        before.has(n) &&
-        JSON.stringify(stored!.capabilities.find(c => c.name === n)) !==
-          JSON.stringify(fetched.capabilities.find(c => c.name === n)),
-    );
-    const diff: ManifestDiff = {
-      added: [...after].filter(n => !before.has(n)),
-      removed: [...before].filter(n => !after.has(n)),
-      changed,
-      areasAdded: [...areasAfter].filter(a => !areasBefore.has(a)),
-      areasRemoved: [...areasBefore].filter(a => !areasAfter.has(a)),
-      same: JSON.stringify(stored) === JSON.stringify(fetched),
-    };
-    if (!input.apply) return { diff, connector: await detail(row) };
-    // The fetch may outlive the session or its grant. Recheck at the write boundary.
+    if (!input.apply) {
+      const row = await must(id);
+      const { url } = remote(row);
+      const fetched = await transport.fetchManifest(url, id);
+      const at = clock().toISOString();
+      await store.recordHealth(id, { status: 'ok', at }, offerOf(row.manifest, fetched), at);
+      return { diff: manifestDiff(manifestOf(row), fetched), connector: await detail((await store.read(id))!) };
+    }
     const { by, at } = await mutating(persona);
+    const row = await must(id);
+    remote(row);
+    if (!isManifest(row.offered) || !row.offeredAt)
+      throw new InputError('Systemet erbjuder ingen ändring att godkänna. Läs in det igen.');
+    if (input.offered !== row.offeredAt)
+      throw new InputError('Systemet har ändrats igen sedan du granskade det. Läs in det igen och granska ändringen.');
+    // The offer is loaded as the loader would load it, so a manifest this Clew cannot register is never approved.
+    let offered: ConnectorManifest;
+    try {
+      offered = parseManifest(row.offered, id);
+    } catch (error) {
+      throw new InputError('Beskrivningen från systemet kan inte användas: ' + (error as Error).message);
+    }
+    const diff = manifestDiff(manifestOf(row), offered);
     await store.transaction(async tx => {
-      await tx.update(id, { manifest: fetched, manifestAt: at, health: { status: 'ok', at } }, by, at);
+      await tx.update(id, { manifest: offered, manifestAt: at, offered: null, offeredAt: null }, by, at);
       await tx.writeAudit({
         actor: by,
         action: 'connector.manifest',
         subject: 'connector:' + id,
         at,
-        details: { added: diff.added, removed: diff.removed, changed: diff.changed },
+        details: {
+          offeredAt: row.offeredAt,
+          added: diff.added,
+          removed: diff.removed,
+          changed: diff.changed,
+          areasAdded: diff.areasAdded,
+          areasRemoved: diff.areasRemoved,
+          usesAdded: diff.usesAdded,
+          usesRemoved: diff.usesRemoved,
+          ...(diff.delegation ? { delegation: diff.delegation } : {}),
+          fields: diff.fields,
+        },
       });
     });
     const updated = (await store.read(id))!;
-    applyLive(updated, fetched);
+    applyLive(updated, offered);
     return { diff, connector: await detail(updated) };
   }
   /** Remove a remote connector: its open cards close with the reason, the row goes, the registry forgets it. Receipts stay. */

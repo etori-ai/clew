@@ -589,6 +589,13 @@
       "when": 1795169119494,
       "tag": "0083_grant_assignments",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1795449635760,
+      "tag": "0084_manifest_offered",
+      "breakpoints": true
     }
   ]
 }

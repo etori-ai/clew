@@ -1,6 +1,6 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
-import { nextConnectorOrdinal } from '@clew/db/connectors';
+import { nextConnectorOrdinal, recordDescription, recordHealth } from '@clew/db/connectors';
 import type {
   ConnectorPatch,
   ConnectorRecord,
@@ -29,6 +29,8 @@ export const toRecord = (row: typeof connectors.$inferSelect): ConnectorRecord =
   areas: row.areas,
   manifest: row.manifest ?? null,
   manifestAt: iso(row.manifestAt),
+  offered: row.offered ?? null,
+  offeredAt: iso(row.offeredAt),
   health: row.health,
   createdBy: row.createdBy,
   updatedBy: row.updatedBy,
@@ -64,7 +66,7 @@ const txOf = (tx: Transaction): ConnectorTx => ({
   async update(id, patch: ConnectorPatch, by, at) {
     const [row] = await tx.select({ version: connectors.version }).from(connectors).where(eq(connectors.id, id));
     if (!row) return false;
-    const { secretChangedAt, manifestAt, header, ...rest } = patch;
+    const { secretChangedAt, manifestAt, offeredAt, header, ...rest } = patch;
     await tx
       .update(connectors)
       .set({
@@ -72,6 +74,7 @@ const txOf = (tx: Transaction): ConnectorTx => ({
         ...(header !== undefined ? { headerHolder: header } : {}),
         ...(secretChangedAt !== undefined ? { secretChangedAt: new Date(secretChangedAt!) } : {}),
         ...(manifestAt !== undefined ? { manifestAt: manifestAt ? new Date(manifestAt) : null } : {}),
+        ...(offeredAt !== undefined ? { offeredAt: offeredAt ? new Date(offeredAt) : null } : {}),
         updatedBy: by,
         updatedAt: new Date(at),
         version: row.version + 1,
@@ -109,11 +112,11 @@ export function postgresConnectorStore(): ConnectorStore {
       const [row] = await database().select().from(connectors).where(eq(connectors.id, id));
       return row ? toRecord(row) : undefined;
     },
-    async recordHealth(id, health, manifest, at) {
-      await database()
-        .update(connectors)
-        .set({ health, ...(manifest !== undefined ? { manifest, manifestAt: new Date(at ?? health.at) } : {}) })
-        .where(eq(connectors.id, id));
+    async recordHealth(id, health, offered, at) {
+      await recordHealth(id, health, offered, new Date(at ?? health.at));
+    },
+    async recordDescription(id, manifest, at) {
+      await recordDescription(id, manifest, new Date(at));
     },
     async history(id) {
       const rows = await database()
