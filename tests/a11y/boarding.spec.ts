@@ -485,7 +485,10 @@ test.describe('what an item is done with', () => {
     await expect(page).toHaveURL(
       `/items/entity-servicedesk-order-anna?from=${encodeURIComponent(`/boarding/${ANNA}`)}`,
     );
-    await expect(page.getByRole('main').getByText('Beställningen är lagd hos IT-servicedesken.')).toBeVisible();
+    // The source's answer, which the notice draws as its title without the full stop (`status-of.ts`).
+    await expect(
+      page.getByRole('main').getByText('Beställningen är lagd hos IT-servicedesken', { exact: true }),
+    ).toBeVisible();
     await expectNoAxeViolations(page);
     // Back leaves the work item for the plan as it was; the plan holds the item, never the order: it is not ticked by it.
     await page.goBack();

@@ -138,7 +138,7 @@ test.describe('Hem', () => {
     await expect(rows).toHaveCount(4);
     for (const i of [0, 1, 2, 3]) await expect(rows.nth(i).getByRole('link')).toHaveCount(1);
     // How many need the person in all, beside the heading, and the way to all of them in Att göra.
-    await expect(block.getByText(/^·\s*6\s*behöver dig$/)).toBeVisible();
+    await expect(block.getByText(/^·\s*7\s*behöver dig$/)).toBeVisible();
     await expect(block.getByRole('link', { name: 'Visa alla' })).toHaveAttribute('href', '/todo');
     const fakturor = block.getByRole('link', { name: /^Öppna Attestera 3 fakturor/ });
     await expect(fakturor).toHaveAttribute('href', '/items/fakturor?from=%2F');

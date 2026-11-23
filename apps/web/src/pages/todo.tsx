@@ -64,6 +64,7 @@ import {
   itemPageHref,
   needsYouOf,
   openDeadline,
+  queuedReminderOf,
   rowFacts,
   sourcesNotice,
   tabOf,
@@ -466,13 +467,14 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   /**
    * Under the name: whom it is about (board Att göra); in the other piles, and where it names nobody, why it is here,
    * what it waits on or what came of it ("Ledigheten är beviljad"). Where it stands is the Status column's word, the
-   * word its notice says in the pane (D126 item 13), so the line never says it again.
+   * word its notice says in the pane (D126 item 13), so the line never says it again. A reminder that waits to be
+   * scheduled is said either way (D64 item 2).
    */
   const aboutLine = (r: QueueRow, source?: string | null) => {
     const t = r.thread;
     const stale = t.state === 'open' && !!silent.of(t.connector);
     const about = aboutOf(t);
-    const why = tab !== 'needs-you' || !about ? r.facts.why : null;
+    const why = tab !== 'needs-you' || !about ? r.facts.why : queuedReminderOf(t, now);
     // D135: the unit the work item is about, for a person with several.
     const words = [source, workUnit(user, t), about, why].filter(Boolean).join(DOT);
     return stale ? (words ? staleWhy(words) : 'Kan vara gammal') : words;

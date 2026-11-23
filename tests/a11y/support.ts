@@ -2,6 +2,7 @@ import { test as base, expect, type Locator, type Page, type Route } from '@play
 import AxeBuilder from '@axe-core/playwright';
 import type {
   EffectPreview,
+  ExecutionSummary,
   ItemEvent,
   MenuEntry,
   PanelViewSpec,
@@ -118,7 +119,7 @@ import type {
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
-import { fixtureViews } from './view-catalogue';
+import { fixtureViews, manifestView } from './view-catalogue';
 import {
   attentionOutput,
   attentionSpec,
@@ -148,6 +149,21 @@ export const narrow = { width: 320, height: 640 };
 export const short = { width: 320, height: 256 };
 
 const session = { csrfToken: 'test', sessionKey: 'test', expiresAt: '2026-11-04T16:00:00.000Z', user };
+/** The authority the change stream says (D46); it never changes in the suite unless a spec sends its own. */
+const CHANGE_POLICY = '1:1';
+/** The system each fixture connector stands for, as its manifest names its `source`. */
+const SOURCES: Record<string, string> = {
+  hr: 'Personalsystemet',
+  communication: 'Kommunikation',
+  incidents: 'Avvikelsesystemet',
+  finance: 'Ekonomisystemet',
+};
+/** The routes' answer to a failure that is nobody's input (`apps/server/src/context.ts`). */
+const FAILED = 'Något gick fel. Försök igen.';
+/** The end of a decision's ten-minute way back, from the suite's now. */
+const UNDO_UNTIL = '2026-11-04T08:10:00.000Z';
+/** The n-th version of an item after the suite's now: a decision is a new version, and so is its source's answer. */
+const version = (n: number) => new Date(Date.parse(NOW) + n * 1000).toISOString();
 import type { ConnectorSummary } from '@clew/contracts';
 
 /**
@@ -156,8 +172,8 @@ import type { ConnectorSummary } from '@clew/contracts';
  */
 export function eventsOf(t: Thread): ItemEvent[] {
   const events: ItemEvent[] = [{ at: t.createdAt, by: 'clew', kind: 'created' }];
+  const action = t.actions.find(a => a.kind === 'execute' && a.role === 'primary');
   if (t.receipt) {
-    const action = t.actions.find(a => a.kind === 'execute' && a.role === 'primary');
     const failed = t.receipt.rows.some(r => r.outcome === 'failed'),
       unknown = t.receipt.rows.some(r => r.outcome === 'unknown');
     events.push(
@@ -169,7 +185,9 @@ export function eventsOf(t: Thread): ItemEvent[] {
         outcome: failed ? 'failed' : unknown ? 'unknown' : 'succeeded',
       },
     );
-  }
+  } else if (t.execution && !t.execution.compensates)
+    // Decided, and the source has not answered yet.
+    events.push({ at: t.updatedAt, by: 'you', kind: 'decided', ...(action ? { action: action.label } : {}) });
   if (t.state === 'open' && t.snoozedUntil)
     events.push({ at: t.updatedAt, by: 'you', kind: 'snoozed', until: t.snoozedUntil });
   if (t.state === 'dismissed' && t.handledAt) events.push({ at: t.handledAt, by: 'you', kind: 'dismissed' });
@@ -187,6 +205,46 @@ const talkTime = (instant: string) =>
     minute: '2-digit',
   }).format(new Date(instant));
 
+/**
+ * What a fixture connector answers for a read a spec opens, for the suite's manager on 4 November (the connectors'
+ * fixtures in `connectors/`): answered with the view the manifest declares (`manifestView`), as the registry passes it.
+ */
+const READS: Record<string, unknown> = {
+  'hr.absencePattern': {
+    name: 'Anna Lindqvist',
+    periods: [
+      { from: '2026-06-12', to: '2026-06-13', kind: 'sick' },
+      { from: '2026-09-03', to: '2026-09-04', kind: 'sick' },
+      { from: '2026-10-28', to: '2026-10-29', kind: 'sick' },
+    ],
+    rule: 'Rutin 4.2: samtal inom två veckor efter tredje korta frånvaron på sex månader.',
+  },
+  'finance.budget': {
+    label: 'Kostnadsställe KS-4410',
+    deviationPct: -1.9,
+    driver: 'vikarier −710 tkr',
+    budget: 37_400_000,
+    forecast: 38_110_000,
+  },
+  'incidents.deviations': {
+    rows: [
+      {
+        ref: 'incidents:dev:2026-1182',
+        title: 'Tillbud 2026-1182, halkolycka i duschen',
+        state: 'waiting-safety-rep',
+        waitingOn: 'skyddsombudets yttrande',
+        dueBy: '2026-11-06',
+      },
+      {
+        ref: 'incidents:dev:2026-1141',
+        title: 'Tillbud 2026-1141, trasig grind mot parkeringen',
+        state: 'investigating',
+        waitingOn: 'fastighetens åtgärd',
+        dueBy: '2026-11-08',
+      },
+    ],
+  },
+};
 /** The API as the browser sees it, held in memory per test. `/api/**` never leaves the page. */
 export class MockApi {
   threads = threads();
@@ -224,6 +282,20 @@ export class MockApi {
    */
   acted: Array<{ threadId: string; body: Record<string, unknown> }> = [];
   actRefusal: string | null = null;
+  /**
+   * A decision as the server makes one (D45, D47): `act`, `confirm`, `undo` and `undo-receipt` record it and answer with
+   * the item waiting on its source (`execution.state: 'pending'`, "källans besked"); the source's answer comes after, is
+   * written into the item the way `execution-projection.ts` writes it, and reaches the page as a notice on the change
+   * stream (D46). It comes `settleDelay` ms later, or, with `holdSettle`, only when the test calls `settle()`.
+   */
+  settleDelay = 100;
+  holdSettle = false;
+  private unsettled: Array<() => void> = [];
+  private decisions = 0;
+  /** The change stream's revision (D46): said first on every connection, and again with each notice. */
+  revision = 1;
+  /** The page the stream's notices go to; the fixture sets it. */
+  page?: Page;
   effectReads: Array<{ threadId: string; body: Record<string, unknown> }> = [];
   effectFails = false;
   effectDelay = 0;
@@ -572,8 +644,64 @@ export class MockApi {
     return release;
   }
   private update(id: string, change: Partial<Thread>) {
-    this.threads = this.threads.map(t => (t.id === id ? { ...t, ...change, updatedAt: NOW } : t));
+    this.threads = this.threads.map(t => (t.id === id ? { ...t, updatedAt: NOW, ...change } : t));
     return this.threads.find(t => t.id === id)!;
+  }
+  /**
+   * Records a decision as the server's projection does at its approval: the item waits on its source and is a new
+   * version, and nothing the source will answer is in it yet. `answer` is what the source's answer makes of the item,
+   * applied when the decision settles; a decision overtaken by another before then is not applied.
+   */
+  private approve(
+    id: string,
+    operation: string,
+    answer: (t: Thread) => Partial<Thread>,
+    compensates: string | null = null,
+    decisionId?: string,
+  ): Thread {
+    const n = ++this.decisions;
+    const execution: ExecutionSummary = {
+      id: `execution:${id}:${n}`,
+      decisionId: decisionId ?? (compensates ? `undo:${compensates}` : `card:${id}:${n}`),
+      operation,
+      state: 'pending',
+      reason: null,
+      compensates,
+    };
+    const approved = this.update(id, { execution, waitingOn: 'källans besked', updatedAt: version(2 * n - 1) });
+    this.revision++;
+    this.unsettled.push(() => {
+      const t = this.threads.find(t => t.id === id);
+      if (t?.execution?.id !== execution.id) return;
+      this.update(id, {
+        waitingOn: null,
+        ...answer(t),
+        execution: { ...execution, state: 'succeeded' },
+        updatedAt: version(2 * n),
+      });
+    });
+    if (!this.holdSettle) setTimeout(() => void this.settle(), this.settleDelay);
+    return approved;
+  }
+  /** Every source answers the decisions still waiting on it, and the change stream says so (D46). */
+  async settle() {
+    const answers = this.unsettled.splice(0);
+    if (!answers.length) return;
+    for (const answer of answers) answer();
+    this.revision++;
+    await this.notify();
+  }
+  /** A notice on the open change stream (D46), as the server sends one when something of the person's is committed. */
+  private async notify() {
+    const data = JSON.stringify({ revision: String(this.revision), policy: CHANGE_POLICY });
+    try {
+      await this.page?.evaluate(data => {
+        const open = (window as unknown as { changeStreams?: Set<EventSource> }).changeStreams;
+        for (const stream of open ?? []) stream.dispatchEvent(new MessageEvent('message', { data }));
+      }, data);
+    } catch {
+      // The page has closed or is between documents; its next connection starts from the current revision.
+    }
   }
   async handle(route: Route) {
     const request = route.request(),
@@ -593,8 +721,14 @@ export class MockApi {
       }
       return json(previewManifest(document, url.searchParams.get('id') ? { id: url.searchParams.get('id')! } : {}));
     }
+    // The change stream (D46): a connection starts by saying the current revision, as the server's does; what is
+    // committed later is a notice on the open stream (`notify`). The connection is answered at once, so a page is idle.
     if (path === '/changes')
-      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 60000\n\n' });
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `retry: 60000\n\ndata: ${JSON.stringify({ revision: String(this.revision), policy: CHANGE_POLICY })}\n\n`,
+      });
     if (path === `/threads/${id}/execution/check`) return json(this.threads.find(t => t.id === id));
     if (path === '/auth/session') {
       if (this.sessionDelay) await new Promise(resolve => setTimeout(resolve, this.sessionDelay));
@@ -1030,33 +1164,63 @@ export class MockApi {
         participants: [{ email: 'anna@clew.test', name: 'Anna Lindqvist', state: 'busy' }],
         room: { ref: 'room:a12', name: 'A12', state: 'free' },
       });
-    if (['/calendar/events', '/calendar/events/reschedule', '/calendar/events/cancel'].includes(path) && post) {
-      const b = request.postDataJSON() as { decisionId: string; title?: string };
-      const card: Thread = {
-        ...this.threads[0]!,
-        id: 'calendar:' + b.decisionId,
-        topic: 'calendar:' + b.decisionId,
-        connector: 'calendar',
-        area: 'calendar',
-        title: b.title ?? 'Kalenderändring',
-        summary: 'Beslutet är sparat.',
-        state: 'open',
-        items: [],
-        actions: [],
-        proposals: [],
-        receipt: null,
-        waitingOn: 'kalenderns besked',
-        execution: {
-          id: b.decisionId,
-          decisionId: b.decisionId,
-          operation: 'calendar.createEvent',
-          state: 'pending',
-          reason: null,
-          compensates: null,
-        },
-      };
-      this.threads.push(card);
-      return route.fulfill({ status: 202, json: card });
+    // A decision on the person's own calendar (D45), as `calendar/usecases/decisions.ts` queues it: a card of its own,
+    // named by what it does, waiting on the calendar, and handled once the calendar reads the change back. Moving or
+    // cancelling names the meeting as the calendar holds it.
+    const calendarDecision = (
+      {
+        '/calendar/events': ['calendar.createEvent', 'Boka'],
+        '/calendar/events/reschedule': ['calendar.rescheduleEvent', 'Flytta'],
+        '/calendar/events/cancel': ['calendar.cancelEvent', 'Ställ in'],
+      } as Record<string, [string, string]>
+    )[path];
+    if (calendarDecision && post) {
+      const [operation, verb] = calendarDecision;
+      const b = request.postDataJSON() as { decisionId: string; title?: string; ref?: string };
+      const known = b.ref ? events(WEEK).find(e => e.ref === b.ref)?.title : undefined;
+      const title = b.title?.trim() || known || 'Mötet';
+      const cardId = `calendar:${user.id}:${b.decisionId}`;
+      if (!this.threads.some(t => t.id === cardId))
+        this.threads.push({
+          ...this.threads[0]!,
+          id: cardId,
+          kind: 'pushed',
+          topic: `calendar-decision:${b.decisionId}`,
+          connector: 'calendar',
+          area: 'calendar',
+          title: `${verb}: ${title}`,
+          summary: 'Beslutet är sparat. Väntar på kalenderns besked.',
+          trigger: { reason: 'Du godkände en kalenderändring', source: 'Kalendern', at: NOW },
+          state: 'open',
+          handledAt: null,
+          items: [],
+          actions: [],
+          proposals: [],
+          messages: [],
+          receipt: null,
+          deadline: null,
+          snoozedUntil: null,
+          remindedAt: null,
+          execution: null,
+        });
+      const card = this.approve(
+        cardId,
+        operation,
+        () => ({
+          state: 'handled',
+          handledAt: NOW,
+          receipt: {
+            at: NOW,
+            headline: '1 av 1 kalenderändringar är bekräftade.',
+            undoUntil: null,
+            undoCapability: null,
+            rows: [{ ref: 'event', label: title, outcome: 'done', detail: 'Kontrollerat i kalendern.' }],
+          },
+        }),
+        null,
+        b.decisionId,
+      );
+      return route.fulfill({ status: path === '/calendar/events/cancel' ? 200 : 202, json: card });
     }
     if (/^\/threads\/[^/]+\/proposals\/[^/]+\/move$/.test(path) && post) {
       const b = request.postDataJSON() as { start: string; end: string };
@@ -1681,7 +1845,26 @@ export class MockApi {
       return route.fulfill({ status: answer.status, json: answer.body });
     }
     if (path === '/cap/clew.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
-    if (path.startsWith('/cap/')) return json({ output: this.output, source: 'Personalsystemet' });
+    // An employee's absence pattern is asked for one employee's ref (`hr:emp:<n>`, the HR manifest's input pattern).
+    if (path === '/cap/hr.absencePattern') {
+      const ref = (JSON.parse(url.searchParams.get('input') ?? '{}') as { ref?: string }).ref;
+      if (!ref || !/^hr:emp:[0-9]+$/.test(ref))
+        return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan till hr.absencePattern.' } });
+    }
+    // A read a spec opens, as its connector answers it, with the view its manifest declares.
+    const read = path.startsWith('/cap/') && !post ? path.slice('/cap/'.length) : null;
+    const view = read && read in READS ? manifestView(read) : undefined;
+    if (read && view) return json({ output: READS[read], source: view.source, view });
+    // A read the person may open that declares no view (D116, `views`), such as `hr.whoIsOn`: the registry answers it
+    // and its output is drawn as it is. The suite's `output` stands for what the source answers.
+    const listed = path.startsWith('/cap/') ? this.views.find(v => v.capability === path.slice(5)) : undefined;
+    if (listed && !listed.kind && !post)
+      return json({ output: this.output, source: SOURCES[listed.capability.split('.')[0]!] ?? 'Personalsystemet' });
+    // A capability the registry does not know (D23) is the route's 404; the suite fails on one it reads.
+    if (path.startsWith('/cap/')) {
+      this.unmocked.push(`${request.method()} ${path}`);
+      return route.fulfill({ status: 404, json: { error: 'Okänd förmåga.' } });
+    }
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
     // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
@@ -1765,7 +1948,7 @@ export class MockApi {
     if (path === '/snooze/presets') return json({ presets: snoozePresets });
     if (post && /^\/threads\/[^/]+\/(dismiss|snooze|reopen)$/.test(path)) {
       if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
-      if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+      if (this.mutationFails) return route.fulfill({ status: 503, json: { error: FAILED } });
     }
     if (path.endsWith('/snooze') && post) {
       const body = (request.postDataJSON() ?? {}) as { preset?: string; until?: string; text?: string };
@@ -1785,54 +1968,73 @@ export class MockApi {
     }
     if (path.endsWith('/reopen') && post)
       return json(this.update(id, { state: 'open', handledAt: null, snoozedUntil: null }));
-    // Confirming proposals (D70 amended): the calendar reads the invitations back, the card stays open and waits on the
-    // invitees, and its receipt carries the way back for ten minutes.
+    // Confirming proposals (D70 amended): the decision waits on the calendar; its answer reads the invitations back,
+    // the card stays open and waits on the invitees, and its receipt carries the way back for ten minutes.
     if (path.endsWith('/confirm') && post) {
       if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
-      if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
-      const body = (request.postDataJSON() ?? {}) as { proposalIds?: string[] };
-      const t = this.threads.find(t => t.id === id)!;
-      const ids = body.proposalIds ?? [];
-      const sent = t.proposals.filter(p => ids.includes(p.id));
+      if (this.mutationFails) return route.fulfill({ status: 503, json: { error: FAILED } });
+      const ids = ((request.postDataJSON() ?? {}) as { proposalIds?: string[] }).proposalIds ?? [];
       return json(
-        this.update(id, {
-          waitingOn: 'svar från medarbetarna',
-          proposals: t.proposals.map(p =>
-            ids.includes(p.id)
-              ? { ...p, status: 'confirmed', eventRef: `memory:${p.id}`, undoUntil: '2026-11-04T08:10:00.000Z' }
-              : p,
-          ),
-          receipt: {
-            at: NOW,
-            headline: `${sent.length} av ${sent.length} kalenderändringar är bekräftade.`,
-            undoUntil: '2026-11-04T08:10:00.000Z',
-            undoCapability: 'calendar.undoProposals',
-            rows: sent.map(p => ({
-              ref: p.id,
-              label: p.participant.name,
-              outcome: 'done',
-              detail: 'Kontrollerat i kalendern.',
-            })),
-          },
+        this.approve(id, 'calendar.confirmProposals', t => {
+          const sent = t.proposals.filter(p => ids.includes(p.id));
+          return {
+            waitingOn: 'svar från medarbetarna',
+            proposals: t.proposals.map(p =>
+              ids.includes(p.id) ? { ...p, status: 'confirmed', eventRef: `memory:${p.id}`, undoUntil: UNDO_UNTIL } : p,
+            ),
+            receipt: {
+              at: NOW,
+              headline: `${sent.length} av ${sent.length} kalenderändringar är bekräftade.`,
+              undoUntil: UNDO_UNTIL,
+              undoCapability: 'calendar.undoProposals',
+              undoInput: {
+                threadId: id,
+                items: sent.map(p => ({ id: p.id, proposalId: p.id, label: p.participant.name, action: 'cancel' })),
+              },
+              rows: sent.map(p => ({
+                ref: p.id,
+                label: p.participant.name,
+                outcome: 'done',
+                detail: 'Kontrollerat i kalendern.',
+              })),
+            },
+          };
         }),
       );
     }
-    // The receipt's way back (D70): the card is as it was before the decision, its proposals proposed again. A proposal
+    // The receipt's way back (D70), refused as the server refuses it: a window that has closed, a receipt with no
+    // decision behind it, or a decision whose answer is still to come. Undone, the card is open again with no receipt,
+    // and invitations that were sent are cancelled, so their proposals are undone (`execution-projection.ts`). A proposal
     // card's own "Ångra allt" (`/undo`) is the same way back, from the card rather than from its row.
     if ((path.endsWith('/undo-receipt') || path.endsWith('/undo')) && post) {
       if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
-      if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
-      const t = this.threads.find(t => t.id === id)!;
+      if (this.mutationFails) return route.fulfill({ status: 503, json: { error: FAILED } });
+      const t = this.threads.find(t => t.id === id)!,
+        r = t.receipt;
+      if (!r?.undoCapability || !r.undoUntil || r.undoUntil <= NOW)
+        return route.fulfill({ status: 400, json: { error: 'Ångerfönstret har gått ut.' } });
+      if (!t.execution)
+        return route.fulfill({
+          status: 400,
+          json: { error: 'Det äldre kvittot behöver kontrolleras i källsystemet innan det kan ångras.' },
+        });
+      if (['pending', 'running', 'unknown'].includes(t.execution.state) && !t.execution.compensates)
+        return route.fulfill({ status: 400, json: { error: 'Kontrollera källans besked innan åtgärden kan ångras.' } });
       return json(
-        this.update(id, {
-          state: 'open',
-          handledAt: null,
-          waitingOn: null,
-          receipt: null,
-          proposals: t.proposals.map(p =>
-            p.status === 'confirmed' ? { ...p, status: 'proposed', eventRef: null, undoUntil: null } : p,
-          ),
-        }),
+        this.approve(
+          id,
+          r.undoCapability,
+          t => ({
+            state: 'open',
+            handledAt: null,
+            waitingOn: null,
+            receipt: null,
+            proposals: t.proposals.map(p =>
+              p.status === 'confirmed' ? { ...p, status: 'undone', undoUntil: null } : p,
+            ),
+          }),
+          t.execution.compensates ?? t.execution.id,
+        ),
       );
     }
     // One item's document for the review flow (D70): an SVG the way the finance fixture draws one.
@@ -1852,7 +2054,9 @@ export class MockApi {
       const body = (request.postDataJSON() ?? {}) as { actionId?: string; values?: Record<string, string> };
       this.effectReads.push({ threadId: id, body });
       if (this.effectDelay) await new Promise(resolve => setTimeout(resolve, this.effectDelay));
-      if (this.effectFails) return route.fulfill({ status: 503, json: { error: 'Personalsystemet svarade inte.' } });
+      // The effect is the HR connector's read, so a silent system is the registry's 400, never retried (D33).
+      if (this.effectFails)
+        return route.fulfill({ status: 400, json: { error: 'Personalsystemet svarar inte just nu.' } });
       const values = body.values ?? {};
       const details = [values.when ? talkTime(values.when) : 'nästa lediga tid', values.place].filter(Boolean);
       return json({
@@ -1867,7 +2071,8 @@ export class MockApi {
       });
     }
     if (path.endsWith('/act') && post) {
-      // An execute answers with the card as the source read it back (D70): here at once, with the refs the person approved.
+      // An execute is recorded as the person's decision and answered with the item waiting on its source (D45); the
+      // receipt, read back with the refs the person approved, comes with the source's answer (`approve`).
       const body = (request.postDataJSON() ?? {}) as {
         actionId?: string;
         refs?: string[];
@@ -1878,12 +2083,16 @@ export class MockApi {
       if (t && action?.kind === 'execute') {
         this.acted.push({ threadId: id, body });
         if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
-        if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+        if (this.mutationFails) return route.fulfill({ status: 503, json: { error: FAILED } });
         // The answers are checked against the asks as the server checks them (`answersOf`), and a refusal is its sentence.
         const values = body.values ?? {};
         const missing = (action.path?.asks ?? []).find(a => a.required && !values[a.property]);
         const refusal =
           this.actRefusal ??
+          (t.state !== 'open' ? 'Ärendet är redan hanterat.' : undefined) ??
+          (t.execution && ['pending', 'running', 'unknown'].includes(t.execution.state)
+            ? 'Ett tidigare beslut väntar redan på besked.'
+            : undefined) ??
           (missing ? `${missing.label} behöver fyllas i.` : undefined) ??
           (Object.keys(values).some(k => !(action.path?.asks ?? []).some(a => a.property === k))
             ? 'Åtgärden frågar inte efter det värdet.'
@@ -1898,11 +2107,11 @@ export class MockApi {
               ? {
                   at: NOW,
                   headline: 'Samtalet är registrerat i personalsystemet.',
-                  undoUntil: '2026-11-04T08:10:00.000Z',
+                  undoUntil: UNDO_UNTIL,
                   undoCapability: 'hr.unbookTalk',
                   rows: [
                     {
-                      ref: 'hr:emp:anna',
+                      ref: refs[0] ?? 'hr:emp:1',
                       label: 'Omtankesamtal',
                       outcome: 'done',
                       detail: ['registrerat i personalsystemet', values.when && talkTime(values.when), values.place]
@@ -1915,11 +2124,11 @@ export class MockApi {
                 ? {
                     at: NOW,
                     headline: 'Ansökan är godkänd.',
-                    undoUntil: '2026-11-04T08:10:00.000Z',
+                    undoUntil: UNDO_UNTIL,
                     undoCapability: 'hr.undecideLeave',
                     rows: [
                       {
-                        ref: 'hr:leave:1',
+                        ref: refs[0] ?? 'hr:leave:1',
                         label: 'Ansökan 21–22 dec',
                         outcome: 'done',
                         detail: 'godkänd i personalsystemet, medarbetaren meddelad',
@@ -1943,7 +2152,7 @@ export class MockApi {
                   : {
                       at: NOW,
                       headline: `${refs.length} ${refs.length === 1 ? 'faktura attesterad' : 'fakturor attesterade'}`,
-                      undoUntil: '2026-11-04T08:10:00.000Z',
+                      undoUntil: UNDO_UNTIL,
                       undoCapability: 'finance.unapprove',
                       rows: refs.map(ref => ({
                         ref,
@@ -1952,13 +2161,15 @@ export class MockApi {
                         detail: 'Läst tillbaka från ekonomisystemet',
                       })),
                     };
-        const decided = this.update(id, { state: 'handled', handledAt: NOW, receipt });
-        // A decision through the dialog is a new version of the item, so its Händelser are read again (D112 item 4).
-        if (action.path) decided.updatedAt = '2026-11-04T08:00:01.000Z';
+        // A decision is a new version of the item, so its Händelser are read again (D112 item 4).
+        const decided = this.approve(id, action.capability, () => ({ state: 'handled', handledAt: NOW, receipt }));
         return json({ kind: 'execute', thread: decided });
       }
       if (this.cardReadDelay) await new Promise(resolve => setTimeout(resolve, this.cardReadDelay));
-      if (this.cardReadFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+      if (this.cardReadFails) {
+        const source = this.threads.find(t => t.id === id)?.trigger.source ?? 'Källan';
+        return route.fulfill({ status: 400, json: { error: `${source} svarar inte just nu.` } });
+      }
       const read = body.actionId ? this.cardReads[body.actionId] : undefined;
       return json(read ? { kind: 'read', ...read } : { kind: 'read', output: this.output });
     }
@@ -1966,7 +2177,8 @@ export class MockApi {
     if (/^\/threads\/[^/]+\/events$/.test(path) && !post) {
       const t = this.threads.find(t => t.id === id);
       if (!t) return route.fulfill({ status: 404, json: { error: 'Ärendet finns inte.' } });
-      if (this.itemEventsFail) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+      // The history is Clew's own audit rows, so a failure is the routes' own sentence, never a source's.
+      if (this.itemEventsFail) return route.fulfill({ status: 503, json: { error: FAILED } });
       return json({ events: this.itemEvents[id] ?? eventsOf(t) });
     }
     if (path.startsWith('/threads/') && !post) {
@@ -2029,51 +2241,69 @@ export class MockApi {
     if (refusal) return route.fulfill({ status: 400, json: { error: refusal } });
     const id = `entity-${capability.replace(/\W/g, '-')}-${detail.entity.key}`;
     if (sub === 'decide') {
-      // The decision is made with the work item, and the source's answer read back onto it (D45, D70).
-      const decided: Thread = {
-        ...this.threads[0]!,
-        id,
-        topic: id,
-        connector: action.connector,
-        area: 'personal',
-        title: `${action.title}: ${detail.entity.name}`,
-        trigger: {
-          ...this.threads[0]!.trigger,
-          reason: `Du valde ${action.title} för ${detail.entity.name}`,
-          source: action.source,
+      // The work item is made with one row naming who it acts on (`entities/actions.ts`, D97 item 6) and decided at
+      // once: it waits on its source, and the source's answer is read back onto it (D45, D70).
+      const receipt: Thread['receipt'] =
+        capability === 'servicedesk.order'
+          ? orderReceipt(values.item)
+          : {
+              at: NOW,
+              headline: `${action.title} är gjort i ${action.source.toLocaleLowerCase('sv-SE')}.`,
+              undoUntil: null,
+              undoCapability: null,
+              rows: [
+                {
+                  ref: `person:${detail.entity.id ?? detail.entity.key}`,
+                  label: action.title,
+                  outcome: 'done',
+                  detail: [`registrerat för ${detail.entity.name}`, values.when && talkTime(values.when), values.place]
+                    .filter(Boolean)
+                    .join(', '),
+                },
+              ],
+            };
+      this.threads = [
+        ...this.threads.filter(t => t.id !== id),
+        {
+          ...this.threads[0]!,
+          id,
+          topic: id,
+          connector: action.connector,
+          area: 'personal',
+          title: `${action.title}: ${detail.entity.name}`,
+          trigger: { reason: `Du valde ${action.title} för ${detail.entity.name}`, source: action.source, at: NOW },
+          summary: `${action.title} för ${detail.entity.name}.`,
+          state: 'open',
+          handledAt: null,
+          items: [
+            {
+              ref: `${kind}:${detail.entity.id ?? detail.entity.key}`,
+              label: detail.entity.name,
+              detail: detail.entity.detail ?? '',
+              selectable: false,
+              selected: true,
+              subject: { entity: kind as 'person', key: detail.entity.key },
+            },
+          ],
+          actions: [
+            {
+              id: 'decide',
+              label: action.title,
+              capability: action.capability,
+              kind: 'execute',
+              role: 'primary',
+              input: { [action.param]: detail.entity.key },
+              ...(action.path ? { path: action.path } : {}),
+            },
+          ],
+          proposals: [],
+          receipt: null,
+          execution: null,
+          waitingOn: null,
+          deadline: null,
         },
-        summary: `${action.title} för ${detail.entity.name}.`,
-        state: 'handled',
-        handledAt: NOW,
-        items: [],
-        actions: [],
-        proposals: [],
-        receipt:
-          capability === 'servicedesk.order'
-            ? orderReceipt(values.item)
-            : {
-                at: NOW,
-                headline: `${action.title} är gjort i ${action.source.toLocaleLowerCase('sv-SE')}.`,
-                undoUntil: null,
-                undoCapability: null,
-                rows: [
-                  {
-                    ref: `${action.connector}:${detail.entity.key}`,
-                    label: action.title,
-                    outcome: 'done',
-                    detail: [
-                      `registrerat för ${detail.entity.name}`,
-                      values.when && talkTime(values.when),
-                      values.place,
-                    ]
-                      .filter(Boolean)
-                      .join(', '),
-                  },
-                ],
-              },
-        deadline: null,
-      };
-      this.threads = [...this.threads.filter(t => t.id !== id), decided];
+      ];
+      this.approve(id, action.capability, () => ({ state: 'handled', handledAt: NOW, receipt }));
       return route.fulfill({ json: { threadId: id } });
     }
     if (!this.threads.some(t => t.id === id))
@@ -2157,9 +2387,14 @@ export class MockApi {
       method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
     const fail = (status: number, error: string) => route.fulfill({ status, json: { error } });
+    // A write the talks routes refuse (`routes/talks.ts`): a 403 with the route's sentence and `code: 'denied'`.
+    const denied = (error: string) => route.fulfill({ status: 403, json: { error, code: 'denied' } });
+    const NOT_WRITABLE = 'Utvecklingssamtalen hålls i ett annat system, så de kan inte ändras här.';
     const empty = () => route.fulfill({ status: 204, body: '' });
-    // The registry's own refusal for a capability outside the person's scope: a 400 with its sentence and no code.
-    if (!this.talksOffered) return fail(path.startsWith('/cap/') ? 400 : 403, 'Du saknar behörighet för åtgärden.');
+    // The registry's own refusal for a capability outside the person's scope: a 400 with its sentence and no code. A
+    // write while no system answers the talks profile in Clew is the routes' own refusal.
+    if (!this.talksOffered)
+      return path.startsWith('/cap/') ? fail(400, 'Du saknar behörighet för åtgärden.') : denied(NOT_WRITABLE);
     if (path === '/cap/clew.talks') {
       const result = talksResult({
         round: this.talksRound,
@@ -2182,11 +2417,11 @@ export class MockApi {
     }
     const body = method === 'POST' || method === 'PUT' ? (request.postDataJSON() ?? {}) : null;
     this.talkWrites.push({ method, path, body });
-    if (!this.talksWritable) return fail(403, 'Du saknar behörighet för åtgärden.');
+    if (!this.talksWritable) return denied(NOT_WRITABLE);
     const done = /^\/talks\/commitments\/([^/]+)\/done$/.exec(path);
     // The owner of an action point marks it done and opens it again whatever their role (D96 item 4); someone who
-    // manages nobody may do nothing else here.
-    if (this.employee && !done) return fail(403, 'Du saknar behörighet för åtgärden.');
+    // manages nobody may do nothing else here, and the talks module says so (`talks/usecases.ts`).
+    if (this.employee && !done) return denied('Utvecklingssamtalen är för den som är chef för en enhet.');
     if (this.talksFail) {
       this.talksFail = false;
       return fail(400, TALKS_FAIL_ERROR);
@@ -2422,6 +2657,25 @@ export class MockApi {
   }
 }
 
+/**
+ * Keeps the page's change streams (D46) where the mock can reach them, so a notice is a message on the stream the page
+ * opened, as the server sends it. A spec that puts its own EventSource in place replaces this one and sends its own.
+ */
+function recordChangeStreams() {
+  const Native = window.EventSource;
+  const open = new Set<EventSource>();
+  Object.assign(window, { changeStreams: open });
+  window.EventSource = class extends Native {
+    constructor(url: string | URL, init?: EventSourceInit) {
+      super(url, init);
+      open.add(this);
+    }
+    close() {
+      open.delete(this);
+      super.close();
+    }
+  };
+}
 /** Records text that changes inside a live region. A region mounted together with its text is not announced, so it is not recorded. */
 function recordAnnouncements() {
   const log: string[] = [];
@@ -2440,8 +2694,10 @@ function recordAnnouncements() {
 export const test = base.extend<{ api: MockApi }>({
   api: async ({ page }, use) => {
     const api = new MockApi();
+    api.page = page;
     await page.clock.setFixedTime(new Date(NOW));
     await page.addInitScript(recordAnnouncements);
+    await page.addInitScript(recordChangeStreams);
     await page.route('**/api/**', route => api.handle(route));
     await use(api);
     expect(api.unmocked).toEqual([]);
@@ -2581,10 +2837,14 @@ export async function openSettings(page: Page) {
 export const bell = (page: Page) => page.getByRole('banner').getByRole('button', { name: /^Påminnelser/ });
 /** The search (D126's "Sök"): its button on the band, which opens the command palette over the page. */
 export const searchButton = (page: Page) => page.getByRole('button', { name: 'Sök', exact: true });
-/** The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow. */
+/**
+ * The surface that docks the page's question box (`composer`: Hem's line or a conversation's box): ChatLayout's sticky
+ * wrapper (D31), or null when the box is in the page flow. The box must be on the page, so a page without one fails
+ * here rather than passing for the search palette's input in its closed dialog.
+ */
 const dockOf = (page: Page) =>
-  page.evaluate(() => {
-    let el = document.querySelector('[role="combobox"]')?.parentElement ?? null;
+  composer(page).evaluate(box => {
+    let el = box.parentElement;
     while (el && !['sticky', 'fixed'].includes(getComputedStyle(el).position)) el = el.parentElement;
     return el ? (el.getBoundingClientRect().toJSON() as DOMRect) : null;
   });

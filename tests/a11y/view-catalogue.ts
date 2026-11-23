@@ -1,4 +1,4 @@
-import type { View, ViewEntry } from '@clew/contracts';
+import type { PanelViewSpec, View, ViewEntry } from '@clew/contracts';
 import { manifest as hr } from '../../connectors/hr/connector.mjs';
 import { manifest as communication } from '../../connectors/communication/connector.mjs';
 import { manifest as incidents } from '../../connectors/incidents/connector.mjs';
@@ -7,7 +7,11 @@ import { manifest as phonebook } from '../../connectors/phonebook/connector.mjs'
 import { manifest as qlik } from '../../connectors/qlik/connector.mjs';
 import { createManifest as supportmanagement } from '../../connectors/supportmanagement/connector.mjs';
 
-type Manifest = { capabilities: Array<{ name: string; kind: string; title: string; view?: { kind: View['kind'] } }> };
+type Manifest = {
+  id: string;
+  source: string;
+  capabilities: Array<{ name: string; kind: string; title: string; view?: { kind: View['kind'] } }>;
+};
 const reads = (m: Manifest): ViewEntry[] =>
   m.capabilities
     .filter(c => c.kind === 'read')
@@ -45,3 +49,16 @@ export const fixtureViews = (): ViewEntry[] => [
   },
   { capability: 'competence.holdings', title: 'Mina kompetenser', kind: 'list' },
 ];
+
+/**
+ * The view a fixture connector's manifest declares for a read, as the read's answer carries it (D38): the manifest's
+ * own view with the capability, the connector and the system named. A read without a declared view has none.
+ */
+export function manifestView(capability: string): PanelViewSpec | undefined {
+  for (const m of [hr, communication, incidents, finance] as unknown as Manifest[]) {
+    const read = m.capabilities.find(c => c.name === capability && c.kind === 'read');
+    if (read?.view)
+      return { ...(read.view as View), capability, connector: m.id, source: m.source, chip: false } as PanelViewSpec;
+  }
+  return undefined;
+}

@@ -239,7 +239,7 @@ test('the phone bar holds the name, the search, the bell and the person, and "Me
   await expect(pages).toHaveText([/^Start$/, /^Att göra/, /^Kalender$/, /^Personal$/, /^Läget$/, /^Samtal$/]);
   await expect(drawer.getByRole('link', { name: 'Start', exact: true })).toHaveAttribute('aria-current', 'page');
   // How much needs the person is said with the page's name.
-  await expect(drawer.getByRole('link', { name: /^Att göra/ })).toHaveAccessibleName(/^Att göra\s*6\s*behöver dig$/);
+  await expect(drawer.getByRole('link', { name: /^Att göra/ })).toHaveAccessibleName(/^Att göra\s*7\s*behöver dig$/);
   // No header connector, no places of the header's in the drawer.
   await expect(drawer.getByRole('group', { name: 'Huvudmeny' })).toHaveCount(0);
   await expectNoAxeViolations(page);
@@ -523,7 +523,7 @@ test.describe('the pages under the band', () => {
     for (const row of rows) await expect(row).toBeVisible();
     await expect(rows[0]!).toHaveAttribute('aria-current', 'page');
     // The count is a badge, and what it counts is said with the page's name.
-    await expect(rows[1]!).toHaveAccessibleName(/^Att göra\s*6\s*behöver dig$/);
+    await expect(rows[1]!).toHaveAccessibleName(/^Att göra\s*7\s*behöver dig$/);
     // The keyboard goes from one page to the next, in the row's order.
     await rows[0]!.focus();
     for (const row of rows.slice(1)) {

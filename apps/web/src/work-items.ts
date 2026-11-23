@@ -235,11 +235,19 @@ export function whyOf(thread: Thread, now: string): string {
           ? `${WAITS_ON} ${thread.waitingOn}`
           : thread.trigger.reason.trim().replace(/\.$/, '')
   ).trim();
+  return [base, queuedReminderOf(thread, now)].filter(Boolean).join(DOT);
+}
+
+/**
+ * "påminnelsen väntar på schemaläggning" while a reminder waits to be scheduled and none is stopped, outside the settle
+ * window of the person's own action (D64 item 2); else nothing. A line that leaves the reason out still says it.
+ */
+export function queuedReminderOf(thread: Thread, now: string): string | null {
   const queued =
     !thread.timers?.some(t => t.state === 'blocked') &&
     !!thread.timers?.some(t => t.state === 'queued') &&
     settlingUntil(thread.id) <= Date.parse(now);
-  return [base, queued ? 'påminnelsen väntar på schemaläggning' : ''].filter(Boolean).join(DOT);
+  return queued ? 'påminnelsen väntar på schemaläggning' : null;
 }
 
 /**

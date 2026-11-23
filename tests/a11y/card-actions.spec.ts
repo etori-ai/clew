@@ -29,12 +29,20 @@ test.describe('a row is one link; the steps are on the open work item', () => {
     await expect(card.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
     // Att göra has no question box, so the card offers no way into one (D111 rule 6).
     await expect(card.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    // The item's reads and Inte nu are under ⋯ (D126, board Att göra): a read is a link to its own page.
+    // The item's reads and Inte nu are under ⋯ (D126, board Att göra): a read is a link to its own page. The pane puts
+    // the focus on the item's heading once it is drawn and its Händelser arrive after it, so the menu is reached once
+    // the item has settled, and its rows with the arrows, as a person does (`keyboard.spec.ts`).
+    await expect(card.locator(':focus')).toHaveCount(1);
+    await expect(card.getByRole('button', { name: /^Händelser/ })).toBeVisible();
     await card.getByRole('button', { name: 'Fler åtgärder' }).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('menuitem', { name: 'Se mönstret' })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
-    await page.getByRole('menuitem', { name: 'Inte nu' }).focus();
+    const menu = page.getByRole('menu', { name: 'Fler åtgärder' });
+    await expect(menu.getByRole('menuitem', { name: 'Se mönstret' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
+    const later = menu.getByRole('menuitem', { name: 'Inte nu' });
+    for (let i = 0; i < 10 && !(await later.evaluate(el => el === document.activeElement)); i++)
+      await page.keyboard.press('ArrowDown');
+    await expect(later).toBeFocused();
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await page.keyboard.press('Escape');
@@ -370,12 +378,20 @@ test.describe('Klart', () => {
   }) => {
     await open(page, '/todo?tab=done');
     const done = page.getByRole('table', { name: 'Klart' });
-    await expect(done.getByRole('row')).toHaveCount(3);
-    // Each in the status vocabulary's word (D126 item 13): a decision with a row in doubt is unconfirmed, a dismissal is
-    // done and says so.
-    await expect(done.locator('#work-attest')).toContainText('Obekräftat\u00a0· 1 av 2');
+    await expect(done.getByRole('row')).toHaveCount(2);
+    // Each in the status vocabulary's word (D126 item 13): a dismissal is done and says so.
     await expect(done.locator('#work-avfardad')).toContainText('Klart\u00a0· avfärdat');
     await expect(done).not.toContainText('Vem är på plats i dag?');
+    // A decision with a row in doubt is not done: the server keeps it open until the person has checked it (D45), so it
+    // is under Behöver dig, unconfirmed.
+    await expect(done.locator('#work-attest')).toHaveCount(0);
+    await page
+      .getByRole('navigation', { name: 'Urval' })
+      .getByRole('link', { name: /^Behöver dig/ })
+      .click();
+    await expect(page.getByRole('table', { name: 'Behöver dig' }).locator('#work-attest')).toContainText(
+      'Obekräftat\u00a0· 1 av 2',
+    );
   });
 });
 

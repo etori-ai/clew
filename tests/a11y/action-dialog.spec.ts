@@ -113,20 +113,25 @@ test.describe('the action dialog on a work item', () => {
       actionId: 'book',
       values: { when: '2026-11-05T12:15:00.000Z', place: 'Bergsåkers skola, rum 12' },
     });
-    // The receipt on the work item, each row read back, Ångra with the minutes left, and the decision under Händelser.
+    // The decision waits on the source first, then the receipt is on the work item when it answers (D45): each row
+    // read back, Ångra with the minutes left, and the decision under Händelser. The notice draws the headline bare.
     const item = page.locator('#card-omtanke');
-    await expect(item.getByText('Samtalet är registrerat i personalsystemet.')).toBeVisible();
+    await expect(item.getByText('Samtalet är registrerat i personalsystemet', { exact: true })).toBeVisible();
     await expect(item.getByRole('list', { name: 'Kvitto, rad för rad' })).toContainText(
       'registrerat i personalsystemet, torsdag 5 november kl. 13:15, Bergsåkers skola, rum 12',
     );
+    // Händelser arrive folded (D126 item 13): their section's button opens them. The receipt's toast, which stays until
+    // it is closed, lies over the foot of the pane, so the button is reached from the keyboard.
+    await item.getByRole('button', { name: /^Händelser/ }).focus();
+    await page.keyboard.press('Enter');
     await expect(item.getByRole('list', { name: 'Händelser, de senaste först' })).toContainText(
       'beslutade: Boka samtalet',
     );
     await expectNoAxeViolations(page);
-    // Ångra while the source allows it: the item is open again with its button, which asks again.
+    // Ångra while the source allows it: once the source has undone it, the item is open again with its button.
     await item.getByRole('button', { name: 'Ångra · 10 min kvar' }).click();
     await expect(item.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
-    await expect(item.getByText('Samtalet är registrerat i personalsystemet.')).toHaveCount(0);
+    await expect(item.getByText('Samtalet är registrerat i personalsystemet', { exact: true })).toHaveCount(0);
   });
 
   test('by keyboard alone: a time chosen with the arrows, the values kept when Esc closes it, and nothing sent', async ({
@@ -274,9 +279,9 @@ test.describe('the action dialog on a work item', () => {
     await pane(page).getByRole('button', { name: 'Boka samtalet' }).click();
     const dialog = dialogOf(page);
     await dialog.getByRole('button', { name: 'Nästa' }).click();
-    await expect(dialog.getByText('Personalsystemet svarade inte.')).toBeVisible();
+    await expect(dialog.getByText('Personalsystemet svarar inte just nu.')).toBeVisible();
     await expect
-      .poll(async () => (await announcements(page)).some(a => a.includes('Personalsystemet svarade inte.')))
+      .poll(async () => (await announcements(page)).some(a => a.includes('Personalsystemet svarar inte just nu.')))
       .toBe(true);
     const send = dialog.getByRole('button', { name: 'Boka samtalet' });
     await expect(send).toHaveAttribute('aria-disabled', 'true');
@@ -341,7 +346,7 @@ test.describe('the action dialog on a work item', () => {
     await dialog.getByRole('button', { name: 'Godkänn', exact: true }).click();
     await expect.poll(() => sent.length).toBe(1);
     expect(sent[0]).toEqual({ actionId: 'decide', values: { comment: 'Trevlig jul!' } });
-    await expect(page.locator('#card-ledighet').getByText('Ansökan är godkänd.')).toBeVisible();
+    await expect(page.locator('#card-ledighet').getByText('Ansökan är godkänd', { exact: true })).toBeVisible();
   });
 
   test('Godkänn without a comment: the button, then Godkänn in the dialog', async ({ page, api: _ }) => {
@@ -743,10 +748,10 @@ test.describe('an action on a work item whose system does not answer', () => {
         : t,
     );
     await open(page, '/todo?item=omtanke');
+    // The notice says what (it is saved) and then since when the system is silent and that it is queued (D116).
+    await expect(pane(page).getByText('Ditt beslut är sparat', { exact: true })).toBeVisible();
     await expect(
-      pane(page).getByText('Ditt beslut är sparat. Det du skickar köas och läses tillbaka när systemet svarar.', {
-        exact: true,
-      }),
+      pane(page).getByText(/\. Det du skickar köas och läses tillbaka när systemet svarar\.$/),
     ).toBeVisible();
     await expectNoAxeViolations(page);
   });

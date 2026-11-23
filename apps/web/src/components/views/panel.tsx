@@ -242,7 +242,7 @@ export function PanelBody({
           <DayStrip
             date={day.from}
             items={dayItems}
-            dayHeadingLevel={3}
+            dayHeadingLevel={inline ? 3 : 2}
             accessiblePath="Retur på en post öppnar den."
             onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined}
           />
@@ -254,7 +254,7 @@ export function PanelBody({
           <DayStrip
             date={todayView.date}
             items={dayItems}
-            dayHeadingLevel={3}
+            dayHeadingLevel={inline ? 3 : 2}
             accessiblePath="Retur på en post öppnar den."
             onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined}
           />

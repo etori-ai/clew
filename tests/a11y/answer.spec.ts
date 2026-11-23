@@ -177,7 +177,7 @@ test.describe('the cards in a conversation', () => {
     const log = page.getByRole('log');
     // The latest card: Maria's row alone, though it is the fourth of the read, and her name is the way to her page.
     const maria = log.getByRole('link', { name: 'Maria Källström', exact: true });
-    await expect(maria).toHaveAttribute('href', /^\/people\/maria\.kallstrom\?from=%2Fconversations%2Fkompetens/);
+    await expect(maria).toHaveAttribute('href', /^\/people\/maria\?from=%2Fconversations%2Fkompetens/);
     await expect(log.getByText('Anna Lindqvist')).toHaveCount(0);
     await expect(log.getByText(/^1 av 4 rader\./)).toBeVisible();
     // What the turn read is its call (board SamtalVerktyg); the answer's text carries no system and no time.

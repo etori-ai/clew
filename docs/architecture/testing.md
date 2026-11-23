@@ -126,6 +126,17 @@ script or a manual pass.
 **Accessibility.** `tests/a11y` is the browser suite. A new route,
 view or state gets a test there (`CLAUDE.md`).
 
+Its mocked API (`tests/a11y/support.ts`) answers as the routes do, so a test draws only states the server can make:
+a decision (`act`, `confirm`, `undo`, `undo-receipt`, an entity's decision, a calendar change) is answered pending,
+waiting on its source, and the source's answer is written into the item the way the execution projection writes it
+and reaches the page as a notice on the change stream (D46), a moment later or, with `api.holdSettle`, when the test
+calls `api.settle()`. A failure that is nobody's input is the routes' 503 "Något gick fel. Försök igen.", a source
+that does not answer is the registry's 400 "<källa> svarar inte just nu.", and a capability the mock does not know is
+a 404 that fails the test. A read a test opens answers with its fixture connector's output (`READS`) and the view the
+connector's manifest declares (`manifestView` in `tests/a11y/view-catalogue.ts`); a read the person may open that
+declares no view answers with the suite's `output`. A fixture has what the connector it stands for would send: rows
+with `usesItems`, a read's `input`, and a decision only together with its execution.
+
 The browser suite has an explicit ESM boundary and an isolated Vite configuration with no installation
 environment files. The theme and the logo are answers of the suite's mocked API (D98), so one build serves every
 saved appearance; typed fixtures (`tests/a11y/branding-fixtures.ts`) name three. CI runs the suite on Neutral, then

@@ -116,11 +116,13 @@ for (const [layout, viewport] of [
   });
 
 /**
- * Once the person has decided, the item's buttons give way to its status notice (D126 item 13): what came of it, why
- * and since when, and the one move the state calls for. The button that had the focus is gone, so the focus goes to the
- * item's title, which the notice stands under, and the notice is said aloud, since a Banner is no live region.
+ * Once the person has decided, the item's buttons give way to its status notice (D126 item 13). The server records the
+ * decision and queues it (D45), and the source's answer reaches the page as a notice on the change stream (D46). While
+ * it is on its way the pressed button shows it for a while (`SETTLE_MS`); a source that answers within that replaces
+ * the button with the receipt. The button that had the focus is gone, so the focus goes to the item's title, which the
+ * notice stands under, and the notice is said aloud, since a Banner is no live region (4.1.3).
  */
-test('a decision replaced by its notice: the focus goes to the item’s title and the notice is announced', async ({
+test('a decision the source answers at once: the receipt replaces the button, the focus goes to the item’s title and the receipt is announced', async ({
   page,
   api: _,
 }) => {
@@ -137,6 +139,50 @@ test('a decision replaced by its notice: the focus goes to the item’s title an
   await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 fakturor attesterade'));
   // The row says the same word as the notice.
   await expect(page.locator('#work-fakturor')).toContainText('Klart');
+  await expectNoAxeViolations(page);
+});
+
+/**
+ * A source slower than the button's window: the first notice says that the decision waits on the source, and the
+ * receipt replaces it when the source answers, with nobody touching anything. The focus stays on the title while the
+ * notice changes, each notice is said, and Ångra, which comes with the receipt, is reached from the title.
+ */
+test('a decision the source answers later: the waiting notice, then the receipt, each announced, the focus kept on the title, and Ångra reached from it', async ({
+  page,
+  api,
+}) => {
+  await page.setViewportSize(desktop);
+  api.holdSettle = true;
+  await open(page, '/todo?item=fakturor');
+  const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+  const title = pane.getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 48 200 kr' });
+  const decide = pane.getByRole('button', { name: 'Attestera 2 valda' });
+  await decide.focus();
+  await page.keyboard.press('Enter');
+  // Approved and queued: once the button's window has passed (`SETTLE_MS`, 4 s), the notice says so, the button is
+  // gone, and the focus is on the title.
+  const waiting = pane.getByText('Skickar ditt beslut till Ekonomisystemet', { exact: true });
+  await expect(waiting).toBeVisible({ timeout: 10_000 });
+  await expect(decide).toHaveCount(0);
+  await expect(title).toBeFocused();
+  await expect
+    .poll(() => announcements(page))
+    .toContainEqual(expect.stringContaining('Skickar ditt beslut till Ekonomisystemet'));
+  await expect(pane.getByRole('button', { name: /^Ångra/ })).toHaveCount(0);
+  await expectNoAxeViolations(page);
+  // The source answers: the receipt replaces the notice and is said as it arrives, and the focus has not moved.
+  await api.settle();
+  await expect(pane.getByText('2 fakturor attesterade', { exact: true })).toBeVisible();
+  await expect(waiting).toHaveCount(0);
+  await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 fakturor attesterade'));
+  await expect(title).toBeFocused();
+  await expect(page.locator('#work-fakturor')).toContainText('Klart');
+  // Ångra came with the receipt, under the title, where Tab reaches it.
+  const undo = pane.getByRole('button', { name: /^Ångra · / });
+  await expect(undo).toBeVisible();
+  for (let i = 0; i < 10 && !(await undo.evaluate(el => el === document.activeElement)); i++)
+    await page.keyboard.press('Tab');
+  await expect(undo).toBeFocused();
   await expectNoAxeViolations(page);
 });
 

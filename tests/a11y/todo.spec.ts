@@ -10,6 +10,8 @@ import {
   test,
 } from './support';
 import { menuRow } from './phonebook';
+/** The rule the absence pattern's detail view states (`hr.absencePattern`, as the HR connector answers it). */
+const RULE = 'Rutin 4.2: samtal inom två veckor efter tredje korta frånvaron på sex månader.';
 
 /** Wide enough for a pane to stand beside the queue or the conversation (D126 rule 2). */
 const wide = { width: 1440, height: 900 };
@@ -120,8 +122,9 @@ test.describe('the panes beside the queue and the conversation', () => {
     await read.click();
     // The read's own page: its title, its rows, the queue with the item as its way back, and nothing over it.
     await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.absencePattern\?/);
-    await expect(heading(page, 1, 'Se mönstret')).toBeVisible();
-    await expect(page.getByRole('main').getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    // A `detail` view's page is headed by its record's title (D116), here the employee the pattern is about.
+    await expect(heading(page, 1, 'Anna Lindqvist')).toBeVisible();
+    await expect(page.getByRole('main').getByText(RULE, { exact: true })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(
       page
@@ -142,17 +145,19 @@ test.describe('the panes beside the queue and the conversation', () => {
   }) => {
     let fails = true;
     await page.route('**/api/cap/hr.absencePattern*', route =>
-      fails ? route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } }) : route.fallback(),
+      fails
+        ? route.fulfill({ status: 400, json: { error: 'Personalsystemet svarar inte just nu.' } })
+        : route.fallback(),
     );
     // An address from before D126 (`open-card`, `open-action`) is the read's page in its place: never a decision.
     await open(page, '/todo?item=omtanke&open-card=omtanke&open-action=pattern');
     await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.absencePattern\?/);
     const main = page.getByRole('main');
-    await expect(main.getByText('Källan svarade inte.')).toBeVisible();
+    await expect(main.getByText('Personalsystemet svarar inte just nu.')).toBeVisible();
     await expectNoAxeViolations(page);
     fails = false;
     await main.getByRole('button', { name: 'Försök igen' }).click();
-    await expect(main.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    await expect(main.getByText(RULE, { exact: true })).toBeVisible();
     // A read declared as a link out (`target: 'link'`) says on its row that it leaves Clew, in the words Astryx's own
     // link out says (D111 rule 8).
     await open(page, '/todo?item=fakturor');
