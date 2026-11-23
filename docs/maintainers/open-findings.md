@@ -31,7 +31,7 @@ weakness seen from several areas, and how far to trust them.
 |---|---|---|
 | CB-1 | A connector's own manifest decides which reads it may call back as the person and which audience its token is exchanged for, and no administrator sees or decides either. Same as `DE-H1`. | `packages/connectors/src/protocol.ts:457-464` |
 | DE-H1 | A connector's manifest is replaced and goes live at every boot, at "Testa anslutning" and when a draft is enabled, with no audit row and no administrator's act. Same as `CB-1`. | `apps/server/src/connectors/remote.ts:98-117` |
-| BL-1 | Reconcile the eight stale test expectations and two intermittent cases flagged at baseline, then rerun the accessibility suite. The mobile boarding focus and week-page headings have been fixed. | `tests/a11y/action-dialog.spec.ts:61` |
+| BL-1 | The accessibility suite is red on `main`: seven tests left behind by interface changes fail, and two more fail by race under the load of a whole run, so the suite cannot tell a new fault from a stale test. | `tests/a11y/action-dialog.spec.ts:61` |
 
 ## Identity, sessions and authorization
 
@@ -132,7 +132,7 @@ and it carries the baseline table of every suite, the failing-test table under f
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| BL-1 | High | Reconcile the eight stale test expectations and two intermittent cases flagged at baseline, then rerun the accessibility suite. The mobile boarding focus and week-page headings have been fixed. | `tests/a11y/action-dialog.spec.ts:61` |
+| BL-1 | High | The accessibility suite is red on `main`: seven tests left behind by interface changes fail, and two more fail by race under the load of a whole run, so the suite cannot tell a new fault from a stale test. | `tests/a11y/action-dialog.spec.ts:61` |
 | BL-2 | Medium | The repository is public and has no licence file and no `license` field in any `package.json`. | The repository and its GitHub settings |
 | BL-3 | Medium | `main` has no branch protection or ruleset, so no check is required before a change lands. | GitHub settings of the repository |
 | BL-4 | Medium | The local development guide starts a Keycloak container that nothing in the repository creates, pins or describes. | `docs/maintainers/local-development.md:16` |
