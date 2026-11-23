@@ -220,11 +220,11 @@ test.describe('the work item as a page', () => {
     const card = api.threads.find(t => t.id === 'ledighet')!;
     card.deadline = null;
     card.remindedAt = NOW;
-    // The row: what its source's row is about (`aboutOf`, the row's own words), and in its Status column what the state
-    // concerns, the reminder; under Behöver dig the state's word is the tab's, said by the dot's name.
+    // The row: in its Status column what the state concerns, the reminder; under Behöver dig the state's word is the
+    // tab's, said by the dot's name. Whom the row names it is about is left out here: today it takes the source row's
+    // label, "Ansökan", which is the register's WA-L14 and not what the row should say.
     await open(page, '/todo');
     const row = page.getByRole('main').locator('#work-ledighet');
-    await expect(row).toContainText('Ansökan');
     await expect(row).toContainText('påminnelse');
     await expect(row.getByRole('img', { name: 'Behöver dig, påminnelse' })).toBeVisible();
     // The page: a plain to-do, so no notice, and no badge that says the word beside the title.

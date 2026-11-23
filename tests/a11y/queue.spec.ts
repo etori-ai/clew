@@ -11,6 +11,7 @@ import {
   reflowProblems,
   silentSaidIn,
   test,
+  FAILED,
 } from './support';
 import { NOTICE_REASON, NOTICE_TEXT, asNotice } from './data';
 
@@ -87,7 +88,7 @@ test.describe('Att göra: the piles', () => {
   });
 
   test('a failed first read cannot report zero work', async ({ page, api: _ }) => {
-    await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: 'Tillfälligt fel' } }));
+    await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: FAILED } }));
     await open(page, '/todo');
     await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
     await expect(page.getByRole('link', { name: /^Försenade:/ })).toHaveCount(0);

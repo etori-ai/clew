@@ -158,12 +158,12 @@ const SOURCES: Record<string, string> = {
   incidents: 'Avvikelsesystemet',
   finance: 'Ekonomisystemet',
 };
+/** The reads of the development stack's connectors and Clew's own, as `/api/areas` lists them (`fixtureViews`). */
+const CATALOGUED = new Set(fixtureViews().map(v => v.capability));
 /** The routes' answer to a failure that is nobody's input (`apps/server/src/context.ts`). */
-const FAILED = 'Något gick fel. Försök igen.';
+export const FAILED = 'Något gick fel. Försök igen.';
 /** The end of a decision's ten-minute way back, from the suite's now. */
 const UNDO_UNTIL = '2026-11-04T08:10:00.000Z';
-/** The n-th version of an item after the suite's now: a decision is a new version, and so is its source's answer. */
-const version = (n: number) => new Date(Date.parse(NOW) + n * 1000).toISOString();
 import type { ConnectorSummary } from '@clew/contracts';
 
 /**
@@ -290,8 +290,15 @@ export class MockApi {
    */
   settleDelay = 100;
   holdSettle = false;
+  /**
+   * The source answers without a certain result: a decision's receipt comes with every row in doubt and its execution
+   * `unknown`, and the item stays open, as `execution-projection.ts` leaves it.
+   */
+  sourceInDoubt = false;
   private unsettled: Array<() => void> = [];
   private decisions = 0;
+  /** The latest version the suite has given an item, in seconds after its now. */
+  private versions = 0;
   /** The change stream's revision (D46): said first on every connection, and again with each notice. */
   revision = 1;
   /** The page the stream's notices go to; the fixture sets it. */
@@ -643,8 +650,17 @@ export class MockApi {
     });
     return release;
   }
+  /**
+   * A change to an item, committed as the server commits one: the item is a new version, later than the one it had and
+   * than every version the suite has given out, so a version never goes back.
+   */
   private update(id: string, change: Partial<Thread>) {
-    this.threads = this.threads.map(t => (t.id === id ? { ...t, updatedAt: NOW, ...change } : t));
+    this.threads = this.threads.map(t => {
+      if (t.id !== id) return t;
+      const at = Math.max(Date.parse(t.updatedAt), Date.parse(NOW) + this.versions * 1000) + 1000;
+      this.versions = (at - Date.parse(NOW)) / 1000;
+      return { ...t, ...change, updatedAt: new Date(at).toISOString() };
+    });
     return this.threads.find(t => t.id === id)!;
   }
   /**
@@ -668,17 +684,29 @@ export class MockApi {
       reason: null,
       compensates,
     };
-    const approved = this.update(id, { execution, waitingOn: 'källans besked', updatedAt: version(2 * n - 1) });
+    const approved = this.update(id, { execution, waitingOn: 'källans besked' });
     this.revision++;
     this.unsettled.push(() => {
       const t = this.threads.find(t => t.id === id);
       if (t?.execution?.id !== execution.id) return;
-      this.update(id, {
-        waitingOn: null,
-        ...answer(t),
-        execution: { ...execution, state: 'succeeded' },
-        updatedAt: version(2 * n),
-      });
+      const answered = answer(t);
+      this.update(
+        id,
+        this.sourceInDoubt && answered.receipt
+          ? {
+              waitingOn: null,
+              receipt: {
+                ...answered.receipt,
+                rows: answered.receipt.rows.map(row => ({
+                  ...row,
+                  outcome: 'unknown' as const,
+                  detail: `Väntar på svar från ${t.trigger.source.toLocaleLowerCase('sv-SE')}`,
+                })),
+              },
+              execution: { ...execution, state: 'unknown' },
+            }
+          : { waitingOn: null, ...answered, execution: { ...execution, state: 'succeeded' } },
+      );
     });
     if (!this.holdSettle) setTimeout(() => void this.settle(), this.settleDelay);
     return approved;
@@ -1855,10 +1883,12 @@ export class MockApi {
     const read = path.startsWith('/cap/') && !post ? path.slice('/cap/'.length) : null;
     const view = read && read in READS ? manifestView(read) : undefined;
     if (read && view) return json({ output: READS[read], source: view.source, view });
-    // A read the person may open that declares no view (D116, `views`), such as `hr.whoIsOn`: the registry answers it
-    // and its output is drawn as it is. The suite's `output` stands for what the source answers.
+    // A read the person may open that declares no view (D116, `views`), drawn as it is: `hr.whoIsOn`, whose answer is
+    // the suite's `output`, and a read a test adds to `views` itself to stand for one. Every other read of the fixture
+    // connectors answers its own shape, so it is in `READS` or fails the test as unmocked.
     const listed = path.startsWith('/cap/') ? this.views.find(v => v.capability === path.slice(5)) : undefined;
-    if (listed && !listed.kind && !post)
+    const standIn = !!listed && (listed.capability === 'hr.whoIsOn' || !CATALOGUED.has(listed.capability));
+    if (listed && standIn && !listed.kind && !post)
       return json({ output: this.output, source: SOURCES[listed.capability.split('.')[0]!] ?? 'Personalsystemet' });
     // A capability the registry does not know (D23) is the route's 404; the suite fails on one it reads.
     if (path.startsWith('/cap/')) {
@@ -2002,24 +2032,31 @@ export class MockApi {
         }),
       );
     }
-    // The receipt's way back (D70), refused as the server refuses it: a window that has closed, a receipt with no
-    // decision behind it, or a decision whose answer is still to come. Undone, the card is open again with no receipt,
-    // and invitations that were sent are cancelled, so their proposals are undone (`execution-projection.ts`). A proposal
-    // card's own "Ångra allt" (`/undo`) is the same way back, from the card rather than from its row.
+    // The receipt's way back (D70), refused as the server refuses it. From the receipt's row (`/undo-receipt`,
+    // `undoReceipt`): a window that has closed, a receipt with no decision behind it, or a decision whose answer is still
+    // to come. From a proposal card's own "Ångra allt" (`/undo`, the calendar's `undo`): a window that has closed or a
+    // receipt without the calendar's input or decision, and then the ledger's refusal of an original that has not
+    // succeeded, wholly or in part (`undoable`). An undo already on its way is the same decision again, which the ledger replays: the item as it is.
+    // Undone, the card is open again with no receipt, and invitations that were sent are cancelled, so their proposals
+    // are undone (`execution-projection.ts`).
     if ((path.endsWith('/undo-receipt') || path.endsWith('/undo')) && post) {
       if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
       if (this.mutationFails) return route.fulfill({ status: 503, json: { error: FAILED } });
       const t = this.threads.find(t => t.id === id)!,
-        r = t.receipt;
-      if (!r?.undoCapability || !r.undoUntil || r.undoUntil <= NOW)
-        return route.fulfill({ status: 400, json: { error: 'Ångerfönstret har gått ut.' } });
-      if (!t.execution)
-        return route.fulfill({
-          status: 400,
-          json: { error: 'Det äldre kvittot behöver kontrolleras i källsystemet innan det kan ångras.' },
-        });
-      if (['pending', 'running', 'unknown'].includes(t.execution.state) && !t.execution.compensates)
-        return route.fulfill({ status: 400, json: { error: 'Kontrollera källans besked innan åtgärden kan ångras.' } });
+        r = t.receipt,
+        refuse = (error: string) => route.fulfill({ status: 400, json: { error } });
+      if (path.endsWith('/undo')) {
+        if (!r?.undoInput || !r.undoCapability || !r.undoUntil || r.undoUntil < NOW || !t.execution)
+          return refuse('Ångerfönstret har gått ut.');
+        if (!t.execution.compensates && !['succeeded', 'partial'].includes(t.execution.state))
+          return refuse('Åtgärden kan inte ångras.');
+      } else {
+        if (!r?.undoCapability || !r.undoUntil || r.undoUntil <= NOW) return refuse('Ångerfönstret har gått ut.');
+        if (!t.execution) return refuse('Det äldre kvittot behöver kontrolleras i källsystemet innan det kan ångras.');
+        if (['pending', 'running', 'unknown'].includes(t.execution.state) && !t.execution.compensates)
+          return refuse('Kontrollera källans besked innan åtgärden kan ångras.');
+      }
+      if (t.execution.compensates) return json(t);
       return json(
         this.approve(
           id,
@@ -2084,21 +2121,27 @@ export class MockApi {
         this.acted.push({ threadId: id, body });
         if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
         if (this.mutationFails) return route.fulfill({ status: 503, json: { error: FAILED } });
-        // The answers are checked against the asks as the server checks them (`answersOf`), and a refusal is its sentence.
+        // Refused as the server's `act` refuses, in its order: the answers against the asks (`answersOf`), then an item
+        // that is no longer open, then an earlier decision of another action. The same action decided again is the same
+        // decision, which the ledger replays: the item as it is, nothing new (`threads/usecases/decisions.ts`). A decision
+        // that dispatch refused because its user name moved to someone else (`SUBJECT_CHANGED`, D122) is decided anew.
         const values = body.values ?? {};
         const missing = (action.path?.asks ?? []).find(a => a.required && !values[a.property]);
+        const refused = t.execution?.state === 'failed' && t.execution.reason === 'subject-changed';
+        const previous = t.execution && !t.execution.compensates && !refused ? t.execution : undefined;
         const refusal =
           this.actRefusal ??
-          (t.state !== 'open' ? 'Ärendet är redan hanterat.' : undefined) ??
-          (t.execution && ['pending', 'running', 'unknown'].includes(t.execution.state)
-            ? 'Ett tidigare beslut väntar redan på besked.'
-            : undefined) ??
           (missing ? `${missing.label} behöver fyllas i.` : undefined) ??
           (Object.keys(values).some(k => !(action.path?.asks ?? []).some(a => a.property === k))
             ? 'Åtgärden frågar inte efter det värdet.'
+            : undefined) ??
+          (!previous && t.state !== 'open' ? 'Ärendet är redan hanterat.' : undefined) ??
+          (previous && previous.operation !== action.capability
+            ? 'Ett tidigare beslut väntar redan på besked.'
             : undefined);
         this.actRefusal = null;
         if (refusal) return route.fulfill({ status: 400, json: { error: refusal } });
+        if (previous) return json({ kind: 'execute', thread: t });
         const refs = body.refs ?? t.items.filter(i => i.selected).map(i => i.ref);
         const receipt: Thread['receipt'] =
           action.capability === 'servicedesk.order'

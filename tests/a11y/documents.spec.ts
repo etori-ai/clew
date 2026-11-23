@@ -292,10 +292,14 @@ test.describe('the shared document and semantic catalogue', () => {
     await expectNoAxeViolations(page);
     api.threads.find(t => t.id === 'fakturor')!.items[0]!.revision = 'new-source-revision';
     await page.route('**/api/threads/fakturor/preview?*', route =>
-      route.fulfill({ status: 409, json: { error: 'Underlaget har ändrats. Läs in ärendet igen.' } }),
+      // The route's refusal of a row whose source revision moved since the item was made (`decisions.ts`, `preview`).
+      route.fulfill({
+        status: 400,
+        json: { error: 'Underlaget har ändrats sedan ärendet skapades. Läs in ärendet igen.' },
+      }),
     );
     await emit(4);
-    await expect(review.getByText('Underlaget har ändrats. Läs in ärendet igen.')).toBeVisible();
+    await expect(review.getByText('Underlaget har ändrats sedan ärendet skapades. Läs in ärendet igen.')).toBeVisible();
     await expect(approve).toBeDisabled();
     await expect(review.locator('canvas')).toHaveCount(0);
   });

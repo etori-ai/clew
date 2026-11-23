@@ -24,8 +24,8 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await expect.poll(() => api.threads.find(t => t.id === 'samtal')!.receipt).toBeNull();
     const card = page.locator('#card-samtal');
     await expect(card.getByText('2 av 2 kalenderändringar är bekräftade')).toHaveCount(0);
-    // The cancelled invitations' proposals are undone, as the server leaves them, so nothing is offered to send again.
-    await expect(card.getByRole('button', { name: /^Skicka / })).toHaveCount(0);
+    // What the card then offers is left out here: with its proposals undone it has neither "Skicka" nor "Vecka N i
+    // stället", which is the register's DE-L17 and not what it should offer.
   });
 
   test('the receipt’s toast stays when the person moves on, and its Visa leads to the item’s page with the page they are on as the way back (D126 rule 1)', async ({

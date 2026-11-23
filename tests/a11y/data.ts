@@ -190,6 +190,8 @@ export const threads = (): Thread[] => [
         kind: 'read',
         role: 'secondary',
         target: 'link',
+        // As the finance connector sends it: the first invoice's ref, the read's required input.
+        input: { ref: 'finance:inv:1' },
       },
     ],
   }),
@@ -344,6 +346,13 @@ export const threads = (): Thread[] => [
       headline: '2 av 2 kalenderändringar är bekräftade.',
       undoUntil: '2026-11-02T08:10:00.000Z',
       undoCapability: 'calendar.undoProposals',
+      undoInput: {
+        threadId: 'samtal-svar',
+        items: [
+          { id: 'p3', proposalId: 'p3', label: 'Maria Källström', action: 'cancel' },
+          { id: 'p4', proposalId: 'p4', label: 'Johan Byström', action: 'cancel' },
+        ],
+      },
       rows: [
         { ref: 'p3', label: 'Maria Källström', outcome: 'done', detail: 'Kontrollerat i kalendern.' },
         { ref: 'p4', label: 'Johan Byström', outcome: 'done', detail: 'Kontrollerat i kalendern.' },

@@ -51,14 +51,22 @@ export const fixtureViews = (): ViewEntry[] => [
 ];
 
 /**
- * The view a fixture connector's manifest declares for a read, as the read's answer carries it (D38): the manifest's
- * own view with the capability, the connector and the system named. A read without a declared view has none.
+ * The view a fixture connector's manifest declares for a read, as the registry's `viewFor` passes it (D38): the
+ * manifest's own view with the capability, the connector and the system named, `external` since the data lives in that
+ * system (D3), and no chip, since none of these systems is a search source. A read without a declared view has none.
  */
 export function manifestView(capability: string): PanelViewSpec | undefined {
   for (const m of [hr, communication, incidents, finance] as unknown as Manifest[]) {
     const read = m.capabilities.find(c => c.name === capability && c.kind === 'read');
     if (read?.view)
-      return { ...(read.view as View), capability, connector: m.id, source: m.source, chip: false } as PanelViewSpec;
+      return {
+        ...(read.view as View),
+        capability,
+        connector: m.id,
+        source: m.source,
+        chip: false,
+        external: true,
+      } as PanelViewSpec;
   }
   return undefined;
 }
