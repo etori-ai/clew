@@ -25,6 +25,8 @@ import {
   FigureResponseSchema,
   ConnectorManifestSchema,
   INSTALLATION_ROUTE,
+  MAX_ANSWER_BYTES,
+  MAX_MANIFEST_BYTES,
   PROTOCOL_ACCEPTED,
   ScanResponseSchema,
   type ConnectorManifest,
@@ -115,6 +117,50 @@ export function parseManifest(document: unknown, expectedId?: string): Connector
       : 'Invalid connector manifest: ' + problems.join('; '),
   );
 }
+/** An answer read past `limit` bytes: stopped there, and the connector counts as failing. */
+class TooLarge extends Error {}
+/**
+ * A JSON answer, read no further than `limit` bytes (CB-5): a declared length above it is refused before anything is
+ * read, and a body sent in pieces is read a piece at a time and given up as soon as it passes the limit. Throws
+ * `TooLarge` for a body over the limit and a `SyntaxError` for one that is not JSON.
+ */
+export async function boundedJson(response: Response, limit: number): Promise<unknown> {
+  const declared = response.headers.get('content-length');
+  if (declared !== null && Number(declared) > limit) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new TooLarge();
+  }
+  if (!response.body) return JSON.parse('');
+  const reader = response.body.getReader();
+  const pieces: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new TooLarge();
+      pieces.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const piece of pieces) {
+    bytes.set(piece, at);
+    at += piece.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+/**
+ * The manifest a service serves. Read at the registered address only (CB-4): a redirect is refused, so the address an
+ * administrator registered is the one Clew reads, and the refusal never names another host's answer. At most
+ * `MAX_MANIFEST_BYTES` of it is read.
+ */
 export async function fetchManifest(
   url: string,
   expectedId?: string,
@@ -122,10 +168,22 @@ export async function fetchManifest(
 ): Promise<ConnectorManifest> {
   const response = await fetchImpl(url + '/clew/manifest', {
     headers: { accept: 'application/json' },
+    redirect: 'error',
     signal: AbortSignal.timeout(5000),
   });
-  if (!response.ok) throw new ManifestError(`GET ${url}/clew/manifest answered ${response.status}.`);
-  return parseManifest(await response.json(), expectedId);
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new ManifestError(`GET ${url}/clew/manifest answered ${response.status}.`);
+  }
+  let document: unknown;
+  try {
+    document = await boundedJson(response, MAX_MANIFEST_BYTES);
+  } catch (error) {
+    if (error instanceof TooLarge)
+      throw new ManifestError(`GET ${url}/clew/manifest answered more than ${MAX_MANIFEST_BYTES} bytes.`);
+    throw error;
+  }
+  return parseManifest(document, expectedId);
 }
 
 function unavailable(source: string) {
@@ -225,6 +283,9 @@ async function post(
   try {
     response = await fetchImpl(transport.url + path, {
       method: 'POST',
+      // The registered address only (CB-4): a redirect would carry the key, the person's token and the body to a host
+      // nobody registered, and put that host's words in front of the person. It is the connector failing.
+      redirect: 'error',
       headers: {
         'content-type': 'application/json',
         accept: 'application/json',
@@ -241,7 +302,7 @@ async function post(
   }
   let json: unknown;
   try {
-    json = await response.json();
+    json = await boundedJson(response, MAX_ANSWER_BYTES);
   } catch {
     throw unavailable(source);
   }
@@ -308,8 +369,9 @@ function installationRead(
       }
       let json: unknown;
       try {
-        json = await response.json();
-      } catch {
+        json = await boundedJson(response, MAX_ANSWER_BYTES);
+      } catch (error) {
+        if (error instanceof TooLarge) throw down();
         if (response.status === 401) throw new InstallationReadError('denied', installationReadText('denied', source));
         throw down();
       }
@@ -492,7 +554,7 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
                 // A refusal before the answer starts: the protocol's error body with its status, as a capability's.
                 let json: unknown;
                 try {
-                  json = await response.json();
+                  json = await boundedJson(response, MAX_ANSWER_BYTES);
                 } catch {
                   throw unavailable(source);
                 }

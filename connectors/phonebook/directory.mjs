@@ -54,12 +54,19 @@ export function toPerson(raw, baseUrl = '') {
  */
 export function createHttpDirectory({ url, apiKey, fetch: fetchImpl = globalThis.fetch, timeoutMs = 5000 }) {
   if (!url) throw new Error('PHONEBOOK_URL is required for the http adapter.');
+  // The integration key crosses the network with every call: https only, outside local development, as the other
+  // real-system adapters require.
+  const address = new URL(url);
+  if (address.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(address.hostname))
+    throw new Error('PHONEBOOK_URL must be https outside local development.');
   const base = url.replace(/\/+$/, '');
   async function get(path) {
     let response;
     try {
       response = await fetchImpl(base + path, {
         headers: { accept: 'application/json', ...(apiKey ? { 'x-api-key': apiKey } : {}) },
+        // The phone book's own address only: a redirect would carry the key to a host nobody configured.
+        redirect: 'error',
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {

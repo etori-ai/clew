@@ -17,6 +17,8 @@ import { previewManifest } from '../../packages/connectors/src/preview';
 import { HOLDINGS_EXAMPLE, RULES, manifestReference } from '../../packages/connectors/src/reference';
 import { ManifestError, manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
 import { protocolRoutes } from '../../apps/server/src/routes/protocol';
+import { MAX_MANIFEST_BYTES } from '../../packages/connectors/src/protocol';
+import { MANIFEST_MAX } from '../../apps/web/src/pages/protocol-preview-model';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
 import { manifest as phonebook } from '../../connectors/phonebook/connector.mjs';
 
@@ -228,6 +230,9 @@ describe('the served protocol routes', () => {
       delete process.env.PUBLIC_URL;
     }
   });
+  test('the dry run page sends no more than the route and the loader take', () => {
+    expect(MANIFEST_MAX).toBe(MAX_MANIFEST_BYTES);
+  });
   test('the dry run answers a manifest, refuses what is not JSON, and takes the id from the query', async () => {
     const post = (body: string, query = '') =>
       protocolRoutes.request('http://clew.local/manifest' + query, {
@@ -244,11 +249,57 @@ describe('the served protocol routes', () => {
     );
     expect((await post('{not json')).status).toBe(400);
     expect((await post('x'.repeat(500_001))).status).toBe(413);
+    // The limit is the loader's, in bytes: fewer characters than that may still be more bytes.
+    expect((await post('"' + 'ö'.repeat(250_001) + '"')).status).toBe(413);
+    // A body that declares no length is stopped at the limit as it is read, not read whole first (CB-6).
+    let pieces = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pieces++;
+        controller.enqueue(new TextEncoder().encode(' '.repeat(64 * 1024)));
+      },
+    });
+    const chunked = await protocolRoutes.request(
+      new Request('http://clew.local/manifest', { method: 'POST', body: endless, duplex: 'half' } as RequestInit),
+    );
+    expect(chunked.status).toBe(413);
+    expect(pieces).toBeLessThanOrEqual(Math.ceil(MAX_MANIFEST_BYTES / (64 * 1024)) + 2);
     expect(
       (await protocolRoutes.request('http://clew.local/manifest', { method: 'OPTIONS' })).headers.get(
         'access-control-allow-methods',
       ),
     ).toContain('POST');
+  });
+  test('the dry run keeps nothing of a request once it is answered (CB-6)', async () => {
+    // One compiler for the module kept every schema it compiled, and each request brings new ones: forty requests of a
+    // manifest with a hundred capabilities once left some 30 MB behind for good.
+    const person = (phonebook as { capabilities: Array<{ name: string; input: unknown }> }).capabilities.find(
+      c => c.name === 'phonebook.person',
+    )!;
+    const many = {
+      ...(phonebook as object),
+      capabilities: [
+        ...(phonebook as { capabilities: unknown[] }).capabilities,
+        ...Array.from({ length: 100 }, (_, i) => ({
+          ...person,
+          name: `phonebook.person${i}`,
+          input: structuredClone(person.input),
+        })),
+      ],
+    };
+    const body = JSON.stringify(many);
+    const post = () =>
+      protocolRoutes.request('http://clew.local/manifest', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      });
+    expect((await (await post()).json()).ok).toBe(true);
+    Bun.gc(true);
+    const before = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 40; i++) await (await post()).text();
+    Bun.gc(true);
+    expect((process.memoryUsage().heapUsed - before) / 1e6).toBeLessThan(16);
   });
   test('the viewer page and its script come from the image, not a CDN', async () => {
     const page = await protocolRoutes.request('http://clew.local/');

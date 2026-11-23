@@ -22,6 +22,7 @@ import {
 } from '@clew/contracts';
 import { failure, ForbiddenError, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { BoardingUsecases } from '../modules/boarding/usecases';
+import { textOfAtMost } from './bounded-body';
 
 /**
  * The boarding module's own routes (D124): a manager's plans and a person's plans, the preview and the start of a plan,
@@ -85,39 +86,11 @@ const IMPORT_ROW_MAX =
  * is computed from the limits, so the two cannot drift apart. The contract and the row rule bound every field again.
  */
 export const IMPORT_BODY_MAX = Math.ceil((BOARDING_IMPORT_ROWS_MAX * IMPORT_ROW_MAX + 64) * 1.1);
-/** A character of a body is at most three bytes in UTF-8. */
-const BYTES_PER_CHARACTER = 3;
 const TOO_LARGE = 'För stor förfrågan.';
-/** The body's text, never more of it than `bound` bytes: a declared length above it is refused before anything is read. */
-async function boundedText(request: Request, bound: number): Promise<string> {
-  const declared = request.headers.get('content-length');
-  if (declared !== null && (!/^\d{1,15}$/.test(declared) || Number(declared) > bound)) throw new InputError(TOO_LARGE);
-  if (!request.body) return '';
-  const reader = request.body.getReader();
-  const pieces: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > bound) {
-      await reader.cancel().catch(() => undefined);
-      throw new InputError(TOO_LARGE);
-    }
-    pieces.push(value);
-  }
-  const bytes = new Uint8Array(size);
-  let at = 0;
-  for (const piece of pieces) {
-    bytes.set(piece, at);
-    at += piece.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
-}
 /** A JSON body of at most `max` characters, checked against its contract. */
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 2000): Promise<T> {
-  const text = await boundedText(request, max * BYTES_PER_CHARACTER);
-  if (text.length > max) throw new InputError(TOO_LARGE);
+  const text = await textOfAtMost(request, max);
+  if (text === undefined) throw new InputError(TOO_LARGE);
   let value: unknown;
   try {
     value = JSON.parse(text);

@@ -134,6 +134,13 @@ export function createConnector({
   askTotalMs = ASK_TOTAL_MS,
 } = {}) {
   const verify = createVerifier({ secret, jwks, clewUrl: process.env.CLEW_URL ?? '' }, CONNECTOR);
+  // The person's own token goes to Eneo with every call: https only, outside local development, as the other
+  // real-system adapters require.
+  if (eneoUrl) {
+    const address = new URL(eneoUrl);
+    if (address.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(address.hostname))
+      throw new Error('ENEO_URL must be https outside local development.');
+  }
   const base = eneoUrl.replace(/\/+$/, '') + '/api/v1';
   const json = (body, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -158,6 +165,8 @@ export function createConnector({
           accept: 'application/json',
           ...(init.body ? { 'content-type': 'application/json' } : {}),
         },
+        // Eneo's own address only, as for every call that carries the person's token.
+        redirect: 'error',
         signal: AbortSignal.timeout(perCallMs),
       });
     } catch {
@@ -222,6 +231,7 @@ export function createConnector({
         try {
           upstream = await fetchImpl(base + '/conversations/?version=3', {
             method: 'POST',
+            redirect: 'error',
             headers: {
               authorization: 'Bearer ' + token,
               accept: 'text/event-stream',

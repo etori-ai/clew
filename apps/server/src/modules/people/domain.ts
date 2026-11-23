@@ -573,8 +573,22 @@ const GROUP_NAMES: Names = { schemas: true, id: true, externalId: true, displayN
 const PATCH_NAMES: Names = { schemas: true, Operations: { op: true, path: true, value: true } };
 /** Deeper than any resource this server reads; a body nested past it is a mistake or an attempt on the stack. */
 const MAX_DEPTH = 8;
+const tooDeep = () => new ScimError(400, 'The request body is nested too deeply.', 'invalidSyntax');
+/**
+ * Whether a value nests deeper than `MAX_DEPTH`, counted as `plain` counts a body and without recursing, so a value of
+ * any depth is measured without running out of stack.
+ */
+function nestsTooDeep(value: unknown): boolean {
+  const open: Array<[unknown, number]> = [[value, 0]];
+  for (let next = open.pop(); next; next = open.pop()) {
+    const [item, depth] = next;
+    if (depth > MAX_DEPTH) return true;
+    if (item && typeof item === 'object') for (const inner of Object.values(item)) open.push([inner, depth + 1]);
+  }
+  return false;
+}
 function plain(body: unknown, names: Names, nulls: 'dropped' | 'kept', depth = 0): unknown {
-  if (depth > MAX_DEPTH) throw new ScimError(400, 'The request body is nested too deeply.', 'invalidSyntax');
+  if (depth > MAX_DEPTH) throw tooDeep();
   if (Array.isArray(body))
     return body.filter(item => nulls === 'kept' || item !== null).map(item => plain(item, names, nulls, depth + 1));
   if (!body || typeof body !== 'object') return body;
@@ -1217,6 +1231,9 @@ export function patchOperations(body: unknown): ScimPatchOperation[] {
     if (typeof op !== 'string') throw new ScimError(400, 'A patch operation needs an op.', 'invalidSyntax');
     if (path !== undefined && path !== null && typeof path !== 'string')
       throw new ScimError(400, 'A patch path is a string.', 'invalidPath');
+    // The envelope's names stop at `value`, so `plain` never looks into it, and applying a path-less value recurses
+    // once for every level that nests the core schema's URN. A value is held to the depth of a resource (ID-10).
+    if (nestsTooDeep(value)) throw tooDeep();
     return { op, ...(typeof path === 'string' && path.trim() ? { path } : {}), value };
   });
 }

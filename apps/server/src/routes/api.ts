@@ -59,6 +59,7 @@ import { authenticate, AuthError, cookiePrefix, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
 import { readDocument, reviewDocuments } from '../composition/documents';
 import { logger } from '../logging';
+import { textOfAtMost } from './bounded-body';
 
 const {
   act,
@@ -168,8 +169,8 @@ const validators = {
   availability: ajv.compile(AvailabilityInput),
 };
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 4000): Promise<T> {
-  const text = await request.text();
-  if (text.length > max) throw new InputError('För stor förfrågan.');
+  const text = await textOfAtMost(request, max);
+  if (text === undefined) throw new InputError('För stor förfrågan.');
   let value: unknown;
   try {
     value = JSON.parse(text);

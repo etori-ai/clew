@@ -20,6 +20,7 @@ import {
 } from '@clew/contracts';
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { DialogueUsecases } from '../modules/dialogue/usecases';
+import { textOfAtMost } from './bounded-body';
 
 /**
  * The follow-up dialogue (D118): one unit's dialogue to read, and its writes: an assessment, an activity added, changed,
@@ -57,8 +58,8 @@ const validators = {
   noteEdit: ajv.compile<DialogueNoteEditBody>(DialogueNoteEditBodySchema),
 };
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 12000): Promise<T> {
-  const text = await request.text();
-  if (text.length > max) throw new InputError('För stor förfrågan.');
+  const text = await textOfAtMost(request, max);
+  if (text === undefined) throw new InputError('För stor förfrågan.');
   let value: unknown;
   try {
     value = text ? JSON.parse(text) : {};

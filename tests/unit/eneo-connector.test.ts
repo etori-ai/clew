@@ -91,8 +91,11 @@ const eneoFixtures: Record<string, unknown> = {
 };
 function stack(options: { token?: string | undefined; fixtures?: Record<string, unknown>; status?: number } = {}) {
   const calls: Array<{ key: string; headers: Record<string, string>; body?: unknown }> = [];
+  /** How each call to Eneo treats a redirect. */
+  const redirects: Array<RequestRedirect | undefined> = [];
   const fixtures = options.fixtures ?? eneoFixtures;
   const eneoFetch: FetchLike = async (input, init) => {
+    redirects.push(init?.redirect);
     const url = new URL(String(input));
     const key = `${init?.method ?? 'GET'} ${url.pathname}${url.search}`;
     calls.push({
@@ -125,6 +128,7 @@ function stack(options: { token?: string | undefined; fixtures?: Record<string, 
   return {
     registry,
     calls,
+    redirects,
     context,
   };
 }
@@ -188,6 +192,18 @@ describe('the Eneo connector', () => {
         c.body ? ['accept', 'authorization', 'content-type'] : ['accept', 'authorization'],
       );
     }
+  });
+  test('every call to Eneo follows no redirect, and an address that is not https outside local development is refused (CS-L3)', async () => {
+    const { registry, redirects, context } = stack();
+    await registry.run(hassan, 'eneo.search', { query: 'fall' }, context);
+    await registry.run(hassan, 'eneo.fetch', { ref: 'blob-fall' }, context);
+    expect(redirects.length).toBeGreaterThan(2);
+    expect(new Set(redirects)).toEqual(new Set(['error']));
+    expect(() => createConnector({ jwks: testJwks, secret, eneoUrl: 'http://eneo.example' })).toThrow(
+      'ENEO_URL must be https outside local development.',
+    );
+    for (const local of ['http://localhost:8123', 'http://127.0.0.1:8123'])
+      expect(() => createConnector({ jwks: testJwks, secret, eneoUrl: local })).not.toThrow();
   });
   test('rechecks spaces and documents on every search', async () => {
     const { registry, calls, context } = stack();

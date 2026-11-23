@@ -10,7 +10,8 @@ the connector says what its output holds and Clew draws it. The walkthrough is
 | `manifest.mjs` | The contract: shared schemas, one named block per capability with its input/output and view, and the area |
 | `connector.mjs` | Read operations, response mapping, the assertion check and HTTP error handling; also exports the manifest |
 | `directory.mjs` | The phone book behind a port: the HTTP adapter, the mapping `toPerson`, and a made-up organisation |
-| `server.mjs` | Serves it over HTTP and reads the configuration |
+| `http.mjs` | The HTTP listener: reads a request within a size limit and answers whatever it holds, so nothing sent to the port ends the process |
+| `server.mjs` | Reads the configuration and serves the connector with that listener |
 
 To change how the directory is shown, start with `directoryCapability` in `manifest.mjs`. Its `view.kind: 'table'`
 chooses a table, `view.fields` chooses the columns, and `view.input` declares the search and unit controls. The team
@@ -41,7 +42,7 @@ team" for the team list. Everything works without a model. With a model, the vie
 | `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks` for protocol verification. Required; HTTPS outside the explicit local development allowlist |
 | `PORT` | Default 4020 |
 | `PHONEBOOK_ADAPTER` | `fixture` (default, the made-up organisation) or `http` |
-| `PHONEBOOK_URL`, `PHONEBOOK_API_KEY` | The phone book API and its integration key, for `http`. The key comes from a secrets store and stays in this container; Clew never sees it |
+| `PHONEBOOK_URL`, `PHONEBOOK_API_KEY` | The phone book API and its integration key, for `http`. The key comes from a secrets store and stays in this container; Clew never sees it. The address is https outside local development, and the adapter follows no redirect from it, so the key goes nowhere else |
 | `PHONEBOOK_UNIT_MAP` | Optional JSON object, Clew unit id to the phone book's unit id, where they differ |
 
 ## The phone book API

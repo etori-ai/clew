@@ -39,6 +39,7 @@ import {
 } from '@clew/contracts';
 import { failure, ForbiddenError, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { CompetenceUsecases } from '../modules/competence/usecases';
+import { textOfAtMost } from './bounded-body';
 
 /**
  * The competence module's own routes (D108): the catalogue an administrator keeps, with its import from a file, a merge
@@ -127,42 +128,11 @@ const validators = {
  * of name, area and address, with room for the rest of each row. The contract bounds every field again.
  */
 const IMPORT_BODY_MAX = 1_000_000;
-/** A character of a body is at most three bytes in UTF-8 (one outside the first plane is two characters of four). */
-const BYTES_PER_CHARACTER = 3;
 const TOO_LARGE = 'För stor förfrågan.';
-/**
- * The body's text, never more of it than `bound` bytes: a declared length above it is refused before anything is read,
- * and a body without one (sent in pieces) is read a piece at a time and refused as soon as it passes the bound.
- */
-async function boundedText(request: Request, bound: number): Promise<string> {
-  const declared = request.headers.get('content-length');
-  if (declared !== null && (!/^\d{1,15}$/.test(declared) || Number(declared) > bound)) throw new InputError(TOO_LARGE);
-  if (!request.body) return '';
-  const reader = request.body.getReader();
-  const pieces: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > bound) {
-      await reader.cancel().catch(() => undefined);
-      throw new InputError(TOO_LARGE);
-    }
-    pieces.push(value);
-  }
-  const bytes = new Uint8Array(size);
-  let at = 0;
-  for (const piece of pieces) {
-    bytes.set(piece, at);
-    at += piece.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
-}
 /** A JSON body of at most `max` characters, checked against its contract; read no further than the bound allows. */
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 2000): Promise<T> {
-  const text = await boundedText(request, max * BYTES_PER_CHARACTER);
-  if (text.length > max) throw new InputError(TOO_LARGE);
+  const text = await textOfAtMost(request, max);
+  if (text === undefined) throw new InputError(TOO_LARGE);
   let value: unknown;
   try {
     value = JSON.parse(text);

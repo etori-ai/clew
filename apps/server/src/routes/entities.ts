@@ -10,6 +10,7 @@ import {
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { EntityUsecases } from '../modules/entities/usecases';
 import type { EntityActions } from '../modules/entities/actions';
+import { textOfAtMost } from './bounded-body';
 
 /**
  * Entities (D97): a person or a unit and what the sources about it say, for the web. Four reads, each parsing the
@@ -36,10 +37,10 @@ function capabilityOf(value: string | undefined) {
 }
 /** The body of a start, a decision or an effect: `{ capability }`, with the person's answers to its asks in `values` (D112), and nothing else. */
 async function actionInput(request: Request): Promise<EntityActionInput> {
-  const text = await request.text();
+  const text = await textOfAtMost(request, 32_000);
   let value: unknown;
   try {
-    value = text.length <= 32_000 ? JSON.parse(text) : undefined;
+    value = text !== undefined ? JSON.parse(text) : undefined;
   } catch {
     value = undefined;
   }

@@ -11,6 +11,7 @@ import {
 import { InputError, failure, privateHeaders, type Env } from '../context';
 import type { UsersAdminUsecases } from '../modules/people/usecases';
 import { scimAddress } from './scim';
+import { textOfAtMost } from './bounded-body';
 
 /**
  * The provisioners' keys (D107), mounted under `/api/admin/users/provisioners` behind the administration's session
@@ -31,8 +32,8 @@ const provisionerId = (id: string) => {
   return id;
 };
 async function body<T>(request: Request, validate: (value: unknown) => boolean): Promise<T> {
-  const text = await request.text();
-  if (text.length > 2000) throw new InputError('För stor förfrågan.');
+  const text = await textOfAtMost(request, 2000);
+  if (text === undefined) throw new InputError('För stor förfrågan.');
   let value: unknown;
   try {
     value = text ? JSON.parse(text) : {};

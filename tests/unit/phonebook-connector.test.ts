@@ -279,10 +279,14 @@ describe('the phone book API behind the port', () => {
       manager: { name: 'Bo Ek' },
     },
   };
-  const calls: Array<{ url: string; key: string | null }> = [];
+  const calls: Array<{ url: string; key: string | null; redirect?: RequestRedirect }> = [];
   const fetchApi: FetchLike = async (input, init) => {
     const url = new URL(input);
-    calls.push({ url: url.pathname + url.search, key: new Headers(init?.headers).get('x-api-key') });
+    calls.push({
+      url: url.pathname + url.search,
+      key: new Headers(init?.headers).get('x-api-key'),
+      redirect: init?.redirect,
+    });
     const body = api[url.pathname + url.search];
     return body ? Response.json(body) : new Response('', { status: url.pathname === '/persons/500' ? 500 : 404 });
   };
@@ -299,11 +303,19 @@ describe('the phone book API behind the port', () => {
         link: 'https://phonebook.example/personer/17',
       },
     ]);
-    expect(calls[0]).toEqual({ url: '/persons?q=anna&limit=50', key: 'k' });
+    // The key goes to the phone book's own address only: no redirect is followed (CS-L3).
+    expect(calls[0]).toEqual({ url: '/persons?q=anna&limit=50', key: 'k', redirect: 'error' });
     expect(await directory.person('17')).toMatchObject({ name: 'Anna Lind', manager: 'Bo Ek' });
     expect(await directory.person('404')).toBeNull();
     expect(toPerson({ id: '1', name: 'X', protected: true })).toBeNull();
     expect(toPerson({ id: 'a b', name: 'X' })).toBeNull();
+  });
+  test('an address that is not https outside local development is refused, before any key is sent (CS-L3)', () => {
+    expect(() => createHttpDirectory({ url: 'http://phonebook.example', apiKey: 'k', fetch: fetchApi })).toThrow(
+      'PHONEBOOK_URL must be https outside local development.',
+    );
+    for (const local of ['http://localhost:8080', 'http://127.0.0.1:8080'])
+      expect(() => createHttpDirectory({ url: local, apiKey: 'k', fetch: fetchApi })).not.toThrow();
   });
   test('an API that fails is "unavailable" in Swedish, without the system\'s own words', async () => {
     const service = createConnector({ jwks: testJwks, secret, directory });
