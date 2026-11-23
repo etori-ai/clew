@@ -32,7 +32,6 @@ import {
   Link,
   List,
   ListItem,
-  Markdown,
   MetadataList,
   MetadataListItem,
   Skeleton,
@@ -51,6 +50,7 @@ import {
   type ChatToolCallItem,
   useMediaQuery,
 } from '@clew/ui';
+import { AssistantMarkdown } from './assistant-markdown';
 import { mobileQuery } from '../../media';
 import { weekNumber } from '@clew/calendar/dates';
 import { areasQuery, calendarWeekQuery, entityDetailQuery, threadQuery, viewQuery } from '../../queries';
@@ -510,9 +510,9 @@ export function StreamingAnswer({ text }: { text: string }) {
   // Astryx parses what has arrived so far and fades each piece in, so a list or bold text half written is drawn as
   // what it is becoming, not as stray asterisks.
   return (
-    <Markdown density="compact" headingLevelStart={2} isStreaming>
+    <AssistantMarkdown headingLevelStart={2} isStreaming>
       {shown}
-    </Markdown>
+    </AssistantMarkdown>
   );
 }
 /** The proposals' week in the transcript (D32): the week's meetings with the drawn times among them, as a list in a ghost bubble, after the `ai-chat` template's card-in-a-bubble. */
@@ -949,9 +949,7 @@ export function Transcript({
           metadata={time}
         >
           <AssistantAnswer handover={other}>
-            <Markdown density="compact" headingLevelStart={2}>
-              {keepLines(m.body)}
-            </Markdown>
+            <AssistantMarkdown headingLevelStart={2}>{keepLines(m.body)}</AssistantMarkdown>
           </AssistantAnswer>
           {asideHref && (
             <HStack gap={3} vAlign="center" wrap="wrap">
@@ -984,15 +982,14 @@ export function Transcript({
         {calls.length > 0 && <ChatToolCalls calls={calls} />}
         <ChatMessageBubble variant="ghost" width="100%" metadata={time}>
           <VStack gap={3}>
-            <Markdown
-              density="compact"
+            <AssistantMarkdown
               headingLevelStart={2}
               {...(m.meta?.sources?.length
                 ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const }
                 : {})}
             >
               {m.body}
-            </Markdown>
+            </AssistantMarkdown>
             {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
             {cards.length > 1 || (cards.length > 0 && m.meta?.cardsAs === 'rows') ? (
               <TurnCardRows
