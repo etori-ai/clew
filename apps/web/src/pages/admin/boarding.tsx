@@ -57,6 +57,7 @@ export function AdminBoardingPage({ user }: { user: SessionUser }) {
       user={user}
       section="introduktion"
       title="Introduktion och avslut"
+      scrollTabStop={mobile}
       meta={
         <Text as="p" type="supporting" color="secondary">
           Lagren som en chefs plan byggs av när en introduktion eller ett avslut startas. Varje lager är en lista med

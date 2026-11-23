@@ -186,6 +186,13 @@ test.describe('Administration › Introduktion och avslut on small screens', () 
     await page.setViewportSize(phone);
     await open(page, '/admin/boarding');
     await expect(page.getByRole('list', { name: 'Lager för introduktion' })).toBeVisible();
+    const layers = page.getByRole('group', { name: 'Introduktion och avslut', exact: true });
+    await expect(layers).toHaveAttribute('tabindex', '0');
+    await page.getByRole('link', { name: 'Importera från fil' }).focus();
+    await page.keyboard.press('Tab');
+    await expect(layers).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => layers.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
     await expectNoAxeViolations(page);
     await page.setViewportSize(narrow);
     expect(await reflowProblems(page)).toEqual([]);

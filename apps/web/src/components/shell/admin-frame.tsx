@@ -140,6 +140,7 @@ export function AdminFrame({
   action,
   thing,
   label,
+  scrollTabStop = false,
   children,
 }: {
   section: AdminSection;
@@ -152,6 +153,8 @@ export function AdminFrame({
   thing?: AdminThing | undefined;
   /** What the content is named while it scrolls: the page's title. */
   label: string;
+  /** Make an overflowing read-only column reachable from the keyboard. */
+  scrollTabStop?: boolean;
   children: ReactNode;
 }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -186,6 +189,7 @@ export function AdminFrame({
         ) : undefined
       }
       label={label}
+      scrollTabStop={scrollTabStop}
       start={mobile ? undefined : <SectionsPanel current={section} />}
     >
       {children}

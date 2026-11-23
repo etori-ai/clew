@@ -34,6 +34,7 @@ export function AdminShell({
   action,
   thing,
   pending = false,
+  scrollTabStop = false,
   children,
 }: {
   user: SessionUser;
@@ -45,6 +46,7 @@ export function AdminShell({
   /** A thing's page in the section: where it stands, its mark and state, its actions; the way back is its section's. */
   thing?: AdminThing;
   pending?: boolean;
+  scrollTabStop?: boolean;
   children: ReactNode;
 }) {
   // Only an administrator reaches this shell: `main.tsx` draws NotAdmin for anyone else.
@@ -59,6 +61,7 @@ export function AdminShell({
         action={action}
         thing={thing}
         label={title ?? own.label}
+        scrollTabStop={scrollTabStop}
       >
         <AsyncContent pending={pending} fallback={<ContentSkeleton heading={false} />} gap={5}>
           {children}
