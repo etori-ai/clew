@@ -95,8 +95,8 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
         !p ||
         p.status !== 'proposed' ||
         item.action !== 'create' ||
-        p.start.toISOString() !== item.input.start ||
-        p.end.toISOString() !== item.input.end ||
+        p.start.getTime() !== Date.parse(item.input.start) ||
+        p.end.getTime() !== Date.parse(item.input.end) ||
         p.participantId !== item.personId ||
         p.participantEmail.toLowerCase() !== item.input.participants[0]?.toLowerCase()
       )
@@ -276,8 +276,14 @@ async function followOwnEvents(
       )
       .for('update');
     if (!p) continue;
-    // A check of the same execution reads the result again: what is already as decided is left as it is.
-    if (item.action === 'move' && p.start.toISOString() === item.start && p.end.toISOString() === item.end) continue;
+    // A check of the same execution reads the result again: what is already as decided is left as it is. Compared as
+    // instants, since the calendar page writes a time without milliseconds and the proposal reads back with them.
+    if (
+      item.action === 'move' &&
+      p.start.getTime() === Date.parse(item.start) &&
+      p.end.getTime() === Date.parse(item.end)
+    )
+      continue;
     if (item.action === 'move') {
       await tx
         .update(schema.proposals)
