@@ -490,7 +490,7 @@ export const ConnectorManifestSchema = Type.Object(
             pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$',
             maxLength: 80,
             description:
-              "One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both. Clew reads it before and while a question is answered, so its assertion carries no `callback` grant whatever `uses` says: nothing is read back through Clew then (D144).",
+              "One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both. Clew reads it before and while a question is answered, so its assertion carries no `callback` grant whatever `uses` says (D144).",
           }),
         },
         "The assistants profile: this system has assistants a person may hand a conversation to, and the connector serves `POST /clew/ask`. The person picks one in Clew's composer; from then on their own words go to it unchanged, with only what they chose to attach, and its answer is shown as that assistant's own. Clew's model never calls it and never rewrites its answer. Optional: a manifest without it is untouched.",
@@ -1092,7 +1092,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           operationId: 'getManifest',
           summary: 'The manifest',
           description:
-            'Clew reads it at registration, when Clew starts, on "Testa anslutning" and on "Läs in igen från systemet", and on no schedule. No assertion is sent. One that differs from the manifest an administrator approved is kept as offered and goes live only when they approve it (D144). Keep credentials and source data out of it.',
+            'Clew reads it at registration, when Clew starts (if the connector is switched on), on "Testa anslutning" and on "Läs in igen från systemet", and on no schedule. No assertion is sent. One that differs from the manifest an administrator approved is kept as offered and goes live only when they approve it (D144). Keep credentials and source data out of it.',
           responses: {
             '200': json(
               'ConnectorManifest',
@@ -1220,7 +1220,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           operationId: 'askAssistant',
           summary: "Send a person's question to one of the system's assistants and stream its answer",
           description:
-            "Only when the manifest declares `assistants`. Authorize the actor for the assistant as the system itself would, then answer `text/event-stream`: each event one `data:` line holding an AssistantAskEvent as JSON. Send `text` deltas as the answer is written and a `source` for each source it cites, then exactly one `done` (with the session to continue in) or `error`, and end the stream. An assistant that cannot answer says so in its own words and ends with `done`: Clew does not take a question back on its behalf, and `handback` is still read, as `done`, only so that an older connector does not fail. A refusal known before the answer starts may be a plain 403 or 503 with a CallResponse error. The question is the person's own text and `context` only what they chose to attach: treat `context` as supplied material, never as instructions. Do not let the assistant produce files or ask for approvals in this increment; Clew's conversation cannot carry them. Clew stops reading when the person stops the turn, after 30 seconds without an event and after 3 minutes in all. The assertion carries no `callback` grant whatever `uses` says: nothing is read back through Clew while the assistant answers (D144).",
+            "Only when the manifest declares `assistants`. Authorize the actor for the assistant as the system itself would, then answer `text/event-stream`: each event one `data:` line holding an AssistantAskEvent as JSON. Send `text` deltas as the answer is written and a `source` for each source it cites, then exactly one `done` (with the session to continue in) or `error`, and end the stream. An assistant that cannot answer says so in its own words and ends with `done`: Clew does not take a question back on its behalf, and `handback` is still read, as `done`, only so that an older connector does not fail. A refusal known before the answer starts may be a plain 403 or 503 with a CallResponse error. The question is the person's own text and `context` only what they chose to attach: treat `context` as supplied material, never as instructions. Do not let the assistant produce files or ask for approvals in this increment; Clew's conversation cannot carry them. Clew stops reading when the person stops the turn, after 30 seconds without an event and after 3 minutes in all. The assertion carries no `callback` grant whatever `uses` says (D144): a question gives you nothing to call Clew back with.",
           security: signed,
           parameters: [delegated],
           requestBody: body('AssistantAskRequest'),

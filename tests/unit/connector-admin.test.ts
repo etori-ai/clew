@@ -55,6 +55,19 @@ const serving = (transport: AdminDeps['transport'], change: (m: ConnectorManifes
     return report.manifest ? { ...report, manifest: change(report.manifest) } : report;
   };
 };
+/**
+ * Another instance's administrator approved this manifest (D144): the store records it as offered, then approves that
+ * offer, the only way an approved manifest changes.
+ */
+const approvedElsewhere = async (store: ReturnType<typeof memoryConnectorStore>, id: string, manifest: unknown) => {
+  await store.recordCheck(id, { served: manifest, at: T0 });
+  const row = (await store.read(id))!;
+  expect(
+    await store.transaction(tx =>
+      tx.approveOffer(id, { at: row.offeredAt!, manifest: row.offered }, manifest, 'test', T0),
+    ),
+  ).toBe(true);
+};
 /** An administrator reads in what the service serves and approves the offer they were shown (D144). */
 const approveServed = async (admin: ReturnType<typeof connectorUsecases>, id: string) => {
   const offered = (await admin.refreshManifest(mikael, id, {})).connector.offered?.at;
@@ -391,7 +404,7 @@ describe('adding and governing a remote connector', () => {
     expect(registry.governance('hello').state).toBe('enabled');
     // A row written under another protocol number: the service has moved on, the stored copy has not.
     const stored = (await store.read('hello'))!.manifest as ConnectorManifest;
-    await store.transaction(tx => tx.update('hello', { manifest: { ...stored, protocol: 2 } as never }, 'test', T0));
+    await approvedElsewhere(store, 'hello', { ...stored, protocol: 2 });
     const before = live.registered.length;
     await admin.update(mikael, 'hello', { figures: { hello: false } });
     expect(live.registered.length).toBe(before);
@@ -533,6 +546,50 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
         areasChanged: [{ id: 'hello', fields: ['figure', 'roles'] }],
       },
     });
+  });
+  test('`uses` in another order is no change; capabilities in another order are, and the review says so', async () => {
+    const { admin, transport } = world();
+    const { fetchManifest, check } = transport;
+    serving(transport, m => ({ ...m, uses: ['calendar.today', 'hr.whoIsOn'] }));
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    Object.assign(transport, { fetchManifest, check });
+    serving(transport, m => ({ ...m, uses: ['hr.whoIsOn', 'calendar.today'] }));
+    expect((await admin.test(mikael, 'hello')).offered).toBe(false);
+    expect((await admin.read(mikael, 'hello')).offered).toBeNull();
+    serving(transport, m => ({ ...m, capabilities: [...m.capabilities].reverse() }));
+    expect((await admin.test(mikael, 'hello')).offered).toBe(true);
+    expect((await admin.read(mikael, 'hello')).offered!.diff).toMatchObject({
+      added: [],
+      removed: [],
+      changed: [],
+      usesAdded: [],
+      usesRemoved: [],
+      fields: ['capabilities'],
+      same: false,
+    });
+  });
+  test('a second add of the same id at once writes no row saying it was added', async () => {
+    const { admin, store } = world();
+    const transaction = store.transaction;
+    // The other administrator's add lands between this one's check that the id is free and its insert.
+    store.transaction = async run =>
+      transaction(async tx => {
+        tx.insert = async () => false;
+        return run(tx);
+      });
+    await expect(admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET })).rejects.toThrow(
+      'Anslutningen finns redan.',
+    );
+    expect(actions(store, 'hello')).toEqual([]);
+  });
+  test('a new address drops the offer the old one served, so what is approved is what the new one serves', async () => {
+    const { admin, store, transport } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    serving(transport, widened);
+    expect((await admin.test(mikael, 'hello')).offered).toBe(true);
+    await admin.update(mikael, 'hello', { url: 'http://hello-2' });
+    expect(await store.read('hello')).toMatchObject({ url: 'http://hello-2', offered: null, offeredAt: null });
+    expect((await admin.read(mikael, 'hello')).offered).toBeNull();
   });
   test('a check that records another offer while the approval is written leaves the approved manifest as it was', async () => {
     const { admin, store, transport, advance } = world();
@@ -756,7 +813,7 @@ describe('authoritative refresh without rebuilding unchanged connectors', () => 
     const row = (await w.store.read('hello'))!;
     const manifest = structuredClone(row.manifest) as ConnectorManifest;
     manifest.source = 'Changed source';
-    await w.store.transaction(tx => tx.update('hello', { manifest }, 'test', T0));
+    await approvedElsewhere(w.store, 'hello', manifest);
     await applyAllRows(w.reconcile);
     expect(w.registry.connector('hello')).not.toBe(original);
     expect(w.registry.connector('hello')!.source).toBe('Changed source');

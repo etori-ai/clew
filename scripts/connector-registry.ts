@@ -86,16 +86,14 @@ export async function registerConnector(options: {
       subject: 'connector:' + id,
       details: existing ? { url } : { url, ...approved },
     });
-    // The same row the administration page writes when an offer is approved: the whole diff, from what was approved.
+    // The row the administration page writes when an offer is approved, the whole diff from what was approved, without
+    // the offer's instant: the operator approves what the service serves now.
     if (existing && !sameManifest(existing.manifest, manifest))
       await writeAudit(tx, {
         actor,
         action: 'connector.manifest',
         subject: 'connector:' + id,
-        details: {
-          ...approved,
-          ...diffDetails(manifestDiff(isManifest(existing.manifest) ? existing.manifest : undefined, manifest)),
-        },
+        details: diffDetails(manifestDiff(isManifest(existing.manifest) ? existing.manifest : undefined, manifest)),
       });
     if (state === 'enabled') await writeAudit(tx, { actor, action: 'connector.enabled', subject: 'connector:' + id });
   });

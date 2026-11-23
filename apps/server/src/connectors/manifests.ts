@@ -16,7 +16,12 @@ export const canonical = (value: unknown): string =>
       : v,
   );
 
-export const sameManifest = (a: unknown, b: unknown) => canonical(a ?? null) === canonical(b ?? null);
+/** A manifest's `uses` is a set, so its order is no change; the order of capabilities and areas is (`manifestDiff`). */
+const comparable = (value: unknown): unknown =>
+  isManifest(value) && Array.isArray(value.uses) ? { ...value, uses: [...value.uses].sort() } : value;
+
+export const sameManifest = (a: unknown, b: unknown) =>
+  canonical(comparable(a ?? null)) === canonical(comparable(b ?? null));
 
 export const isManifest = (value: unknown): value is ConnectorManifest =>
   !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
@@ -88,7 +93,25 @@ export function manifestDiff(approved: ConnectorManifest | undefined, offered: C
     usesAfter = new Set(offered.uses ?? []);
   const from = approved?.delegation?.audience ?? null,
     to = offered.delegation?.audience ?? null;
-  const fields = changedKeys(approved, offered, NAMED);
+  // The capabilities and areas both manifests have, in another order: a change of what is drawn in which order, which
+  // the review names, so an offer is never a review with nothing in it.
+  const reordered = (a: string[], b: string[]) => a.join('\n') !== b.join('\n');
+  const kept = <T>(list: T[], key: (x: T) => string, other: Set<string>) => list.map(key).filter(k => other.has(k));
+  const fields = [
+    ...changedKeys(approved, offered, NAMED),
+    ...(reordered(
+      kept(approved?.capabilities ?? [], c => c.name, after),
+      kept(offered.capabilities, c => c.name, before),
+    )
+      ? ['capabilities']
+      : []),
+    ...(reordered(
+      kept(approved?.areas ?? [], a => a.id, areasAfter),
+      kept(offered.areas ?? [], a => a.id, areasBefore),
+    )
+      ? ['areas']
+      : []),
+  ].sort();
   return {
     added: minus(after, before),
     removed: minus(before, after),

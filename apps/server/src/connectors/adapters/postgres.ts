@@ -66,15 +66,14 @@ const txOf = (tx: Transaction): ConnectorTx => ({
   async update(id, patch: ConnectorPatch, by, at) {
     const [row] = await tx.select({ version: connectors.version }).from(connectors).where(eq(connectors.id, id));
     if (!row) return false;
-    const { secretChangedAt, manifestAt, offeredAt, header, ...rest } = patch;
+    const { secretChangedAt, offeredAt, header, ...rest } = patch;
     await tx
       .update(connectors)
       .set({
         ...rest,
         ...(header !== undefined ? { headerHolder: header } : {}),
         ...(secretChangedAt !== undefined ? { secretChangedAt: new Date(secretChangedAt!) } : {}),
-        ...(manifestAt !== undefined ? { manifestAt: manifestAt ? new Date(manifestAt) : null } : {}),
-        ...(offeredAt !== undefined ? { offeredAt: offeredAt ? new Date(offeredAt) : null } : {}),
+        ...(offeredAt !== undefined ? { offeredAt: null } : {}),
         updatedBy: by,
         updatedAt: new Date(at),
         version: row.version + 1,

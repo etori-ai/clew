@@ -71,13 +71,16 @@ export type ConnectorPatch = Partial<
     | 'header'
     | 'capabilities'
     | 'areas'
-    | 'manifest'
-    | 'manifestAt'
-    | 'offered'
-    | 'offeredAt'
     | 'health'
   >
->;
+> & {
+  /**
+   * An offer is only ever dropped through a patch. The approved manifest is written by `insert` and `approveOffer`
+   * alone, so nothing puts a manifest live without the offer an administrator reviewed (D144).
+   */
+  offered?: null;
+  offeredAt?: null;
+};
 export interface AuditEntry {
   actor: string;
   action: string;
