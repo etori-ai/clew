@@ -77,18 +77,30 @@ describe('a notice (D112, amended 2026-11-12)', () => {
 
 describe('whether the rows say anything (D112, amended 2026-11-12)', () => {
   const title = 'Ny rutin vid hot och våld';
-  const undecided = { title, receipt: null };
+  const undecided = { title, receipt: null, actions: [] };
+  const receipt = {
+    at: '2026-11-23T10:00:00Z',
+    headline: 'Felanmälan är skickad',
+    undoCapability: null,
+    undoUntil: null,
+    rows: [{ ref: 'pob:123', label: title, outcome: 'done' as const, detail: 'Ärende 123 är skapat.' }],
+  };
   test('a one-row receipt shows its source detail even when the item had no informative rows', () => {
-    const receipt = {
-      at: '2026-11-23T10:00:00Z',
-      headline: 'Felanmälan är skickad',
-      undoCapability: null,
-      undoUntil: null,
-      rows: [{ ref: 'pob:123', label: title, outcome: 'done' as const, detail: 'Ärende 123 är skapat.' }],
-    };
-    expect(rowsSaySomething({ title, items: [], receipt })).toBe(true);
-    expect(rowsSaySomething({ title, items: [row()], receipt })).toBe(true);
-    expect(rowsSaySomething({ title, items: [], receipt: { ...receipt, rows: [] } })).toBe(false);
+    expect(rowsSaySomething({ title, items: [], actions: [], receipt })).toBe(true);
+    expect(rowsSaySomething({ title, items: [row()], actions: [], receipt })).toBe(true);
+    expect(rowsSaySomething({ title, items: [], actions: [], receipt: { ...receipt, rows: [] } })).toBe(false);
+  });
+  test('a notice’s one receipt row is its read receipt, which the receipt’s notice already says', () => {
+    const read = { ...receipt, rows: [{ ...receipt.rows[0]!, ref: row().ref, detail: 'kvitterat 09:41' }] };
+    expect(rowsSaySomething({ title, items: [row()], actions: [ack], receipt: read })).toBe(false);
+    expect(
+      rowsSaySomething({
+        title,
+        items: [row()],
+        actions: [ack],
+        receipt: { ...read, rows: [...read.rows, { ...read.rows[0]!, ref: 'communication:notice:2' }] },
+      }),
+    ).toBe(true);
   });
   test('one row that is the item itself only repeats its title', () => {
     expect(rowsSaySomething({ ...undecided, items: [row()] })).toBe(false);
