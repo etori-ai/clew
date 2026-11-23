@@ -16,7 +16,10 @@
    notice files, then the runtime dependencies those packages carry, since a package built ahead of time can hold
    them inside its own files. A package that ships no licence file has its upstream text kept in `licences/`; a build
    that bundles a package with neither fails, unless its licence asks for no notice (CC0-1.0, 0BSD, MIT-0, the
-   Unlicense). The server image is built from the whole repository and holds `LICENSE` and its dependencies' own
+   Unlicense). A typeface a package ships beside its code, as VitePress ships Inter, is under a licence of its own,
+   kept in `licences/` too, and a build whose stylesheets bring a typeface with no typeface licence fails. So does a
+   build with a bundled module that cannot be traced to a named package, or a dependency that resolves nowhere: a
+   notice with a package left out is not whole. The server image is built from the whole repository and holds `LICENSE` and its dependencies' own
    files; Scalar's notice ships as `apps/server/licences/scalar-MIT.txt` (D60).
 4. **Dependencies may be combined with the AGPL.** A dependency carries an OSI-approved licence that may be combined
    with the AGPL v3 (MIT, Apache-2.0, BSD, ISC, MPL-2.0, the OFL for a typeface), recorded in

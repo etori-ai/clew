@@ -1,8 +1,15 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collect, noticesText, packageRoot, thirdPartyNotices, unnoticed } from '../../scripts/third-party-notices';
+import {
+  collect,
+  noticesText,
+  packageRoot,
+  thirdPartyNotices,
+  typefaceUnnoticed,
+  unnoticed,
+} from '../../scripts/third-party-notices';
 
 /**
  * A repository in miniature, laid out as Bun installs it: every package in `node_modules/.bun/<name>@<version>/`, its
@@ -32,13 +39,35 @@ const reuse = pkg('reuse@2.0.0', 'reuse', '2.0.0', {
   'index.js': '',
 });
 const font = pkg('@fontsource-variable+raleway@5.3.0', '@fontsource-variable/raleway', '5.3.0', {
-  'OFL.txt': 'SIL Open Font License',
-  'index.css': '',
+  'OFL.txt': 'This Font Software is licensed under the SIL Open Font License',
+  'index.css': "@font-face { src: url(./files/raleway.woff2) format('woff2'); }",
 });
+// A package whose code is MIT and whose theme ships a typeface under a licence of its own, as VitePress ships Inter.
+const theme = pkg('theme@1.0.0', 'theme', '1.0.0', {
+  LICENSE: 'MIT License, Copyright (c) Theme',
+  'styles/fonts.css': "@font-face { src: url('../fonts/sans.woff2') format('woff2'); }",
+});
+// A script named like a licence, and an empty licence file, are no notice.
+const script = pkg('script@1.0.0', 'script', '1.0.0', { 'license-update.mjs': 'export {}', LICENSE: '\n' });
+// A folder with a package.json that names no package, and a package whose dependency resolves nowhere.
+const nameless = join(store, 'nameless@1.0.0', 'node_modules', 'nameless');
+mkdirSync(nameless, { recursive: true });
+writeFileSync(join(nameless, 'package.json'), JSON.stringify({ version: '1.0.0', type: 'module' }));
+pkg('lonely@1.0.0', 'lonely', '1.0.0', { LICENSE: 'lonely licence' }, ['ghost']);
+const lonely = join(store, 'lonely@1.0.0', 'node_modules', 'lonely');
+// A workspace's node_modules links to the store, as Bun installs it.
+mkdirSync(join(base, 'apps', 'web', 'node_modules'), { recursive: true });
+const linked = join(base, 'apps', 'web', 'node_modules', 'jszip');
+symlinkSync(jszip, linked);
 mkdirSync(join(base, 'licences'));
 writeFileSync(join(base, 'licences', 'acme.txt'), 'MIT License\n\nCopyright (c) Acme');
+writeFileSync(
+  join(base, 'licences', 'sans-OFL.txt'),
+  'Copyright Sans Authors. This Font Software is licensed under the OFL.',
+);
 writeFileSync(join(base, 'LICENSE'), 'GNU AFFERO GENERAL PUBLIC LICENSE');
 const vendored = { '@acme/widgets': 'licences/acme.txt' };
+const typefaces = { theme: { typeface: 'Sans', text: 'licences/sans-OFL.txt' } };
 
 describe("the third-party notices of Clew's browser builds (D143 item 3)", () => {
   test('a bundled file is traced to its package through Bun’s store, scoped or not, with a query or a Windows path', () => {
@@ -52,7 +81,7 @@ describe("the third-party notices of Clew's browser builds (D143 item 3)", () =>
     expect(packageRoot('/app/node_modules/react')).toBeUndefined();
   });
   test('a dependency a package carries inside its own build is credited, and a kept upstream text stands in for a missing file', () => {
-    const found = collect([jszip, scoped, reuse], vendored, base);
+    const found = collect([jszip, scoped, reuse], { vendored, base });
     expect(found.bundled.map(p => p.name)).toEqual(['@acme/widgets', 'jszip', 'reuse']);
     expect(found.carried.map(p => p.name)).toEqual(['pako']);
     expect(found.bundled[0]!.notices).toEqual([
@@ -64,7 +93,7 @@ describe("the third-party notices of Clew's browser builds (D143 item 3)", () =>
     // A REUSE folder is no file to read; the suffixed name is.
     expect(found.bundled[2]!.notices).toEqual([{ file: 'MIT-LICENSE', text: 'reuse licence' }]);
     expect(unnoticed(found)).toEqual([]);
-    expect(unnoticed(collect([scoped], {}, base))).toEqual(['@acme/widgets 1.0.0 (MIT)']);
+    expect(unnoticed(collect([scoped], { vendored: {}, base }))).toEqual(['@acme/widgets 1.0.0 (MIT)']);
     const text = noticesText(found);
     expect(text).toContain('GNU Affero General Public License v3.0, in LICENSE.txt');
     expect(text).toContain('https://github.com/etori-ai/clew');
@@ -120,6 +149,90 @@ describe("the third-party notices of Clew's browser builds (D143 item 3)", () =>
     );
     const odd = thirdPartyNotices({ vendored, base });
     call(odd.plugin.buildStart, context([]));
-    expect(() => call(odd.plugin.generateBundle, context(['/app/node_modules/react']))).toThrow('could be traced');
+    expect(() => call(odd.plugin.generateBundle, context(['/app/node_modules/react']))).toThrow(
+      'could not be traced to a package: /app/node_modules/react',
+    );
+    // A virtual module that wraps a package's file is traced as that file, which is a module of its own.
+    call(odd.plugin.buildStart, context([]));
+    call(
+      odd.plugin.generateBundle,
+      context([join(jszip, 'dist/jszip.min.js'), `\0${join(jszip, 'dist/jszip.min.js')}?commonjs-module`]),
+    );
+    // One untraced module among traced ones is a notice with a package missing, and fails too.
+    call(odd.plugin.buildStart, context([]));
+    expect(() =>
+      call(odd.plugin.generateBundle, context([join(jszip, 'dist/jszip.min.js'), '/app/node_modules/react'])),
+    ).toThrow('could not be traced');
+    // A folder whose package.json names no package, and a dependency that resolves nowhere, leave the notice short.
+    call(odd.plugin.buildStart, context([]));
+    expect(() => call(odd.plugin.generateBundle, context([join(nameless, 'index.js')]))).toThrow(
+      'no named package.json for',
+    );
+    expect(collect([lonely], { vendored, base }).unread).toEqual(['ghost (a dependency of lonely 1.0.0)']);
+  });
+  test('a script named like a licence, or an empty licence file, is no notice', () => {
+    const found = collect([script], { vendored: {}, base });
+    expect(found.bundled[0]!.notices).toEqual([]);
+    expect(unnoticed(found)).toEqual(['script 1.0.0 (MIT)']);
+  });
+  test('a package reached through a link is its real folder: its dependencies resolve from the store, and it is listed once', () => {
+    const found = collect([linked, jszip], { vendored, base });
+    expect(found.bundled.map(p => [p.name, p.root])).toEqual([['jszip', realpathSync(jszip)]]);
+    expect(found.carried.map(p => p.name)).toEqual(['pako']);
+    expect(found.unread).toEqual([]);
+  });
+  test("a typeface a package's stylesheet brings needs the typeface's own licence, kept beside the package's", async () => {
+    const run = async (kept: { typefaces: Record<string, { typeface: string; text: string }> }) => {
+      const { plugin } = thirdPartyNotices({ vendored, base, ...kept });
+      const emitted: Record<string, string> = {};
+      const context = (ids: string[]) => ({
+        getModuleIds: () => ids.values(),
+        emitFile: (f: { fileName: string; source: string }) => {
+          emitted[f.fileName] = f.source;
+        },
+        error: (message: string) => {
+          throw new Error(message);
+        },
+        resolve: async () => null,
+      });
+      const call = (hook: unknown, self: unknown, ...args: unknown[]) =>
+        (hook as (...a: unknown[]) => unknown).call(self, ...args);
+      call(plugin.buildStart, context([]));
+      const fonts = join(theme, 'styles/fonts.css');
+      await call(plugin.transform, context([]), readFileSync(fonts, 'utf8'), fonts);
+      call(plugin.generateBundle, context([fonts]));
+      return emitted['third-party-notices.txt']!;
+    };
+    await expect(run({ typefaces: {} })).rejects.toThrow('theme 1.0.0 brings a typeface with no typeface licence');
+    const text = await run({ typefaces });
+    expect(text).toContain(
+      "--- the Sans typeface the package ships (upstream licence, kept in Clew's repository as licences/sans-OFL.txt)",
+    );
+    expect(text).toContain('This Font Software is licensed under the OFL.');
+    // A font package's own licence is a typeface's licence.
+    const raleway = collect([font], { vendored, base }).bundled;
+    expect(typefaceUnnoticed(raleway, new Set([realpathSync(font)]))).toEqual([]);
+  });
+});
+
+// The names of a configuration's plugins; Vite takes nested lists and `false` for a plugin left out.
+const pluginNames = (plugins: unknown[]) =>
+  plugins.flat(Infinity).flatMap(p => (p && typeof p === 'object' && 'name' in p ? [String(p.name)] : []));
+
+describe('every browser build Clew publishes writes the notices (D143 item 3)', () => {
+  test('the web app, with its workers', async () => {
+    const { webConfig } = await import('../../apps/web/vite.config');
+    const config = webConfig();
+    expect(pluginNames(config.plugins)).toContain('clew-third-party-notices');
+    expect(config.worker.plugins().map(p => p.name)).toEqual(['clew-third-party-notices:worker']);
+  });
+  test('the header embed', async () => {
+    const config = (await import('../../packages/site-header/vite.config')).default as { plugins: unknown[] };
+    expect(pluginNames(config.plugins)).toContain('clew-third-party-notices');
+  });
+  test('the documentation site, whose VitePress is installed on its own', () => {
+    // The site's packages are not installed with the repository's, so its configuration is read rather than loaded.
+    const source = readFileSync(join(import.meta.dirname, '../../site/.vitepress/config.ts'), 'utf8');
+    expect(source).toMatch(/vite:\s*\{[\s\S]*plugins:\s*\[[\s\S]*thirdPartyNotices\(\)\.plugin/);
   });
 });
