@@ -488,7 +488,7 @@ export interface UnitCoverage {
   requirements: RequirementCoverage[];
   targets: TargetCoverage[];
 }
-/** A share target on another unit the reader manages, with the people who hold its position on that unit's branch. */
+/** A share target with the people who hold its position on its unit's branch: the people its figure counts. */
 export interface ComparedTarget {
   target: ShareTargetRecord;
   holders: readonly string[];
@@ -496,6 +496,46 @@ export interface ComparedTarget {
 /** The people among these who hold a position: a share target's denominator over a branch (D108 item 6). */
 export const positionHolders = (people: readonly Placed[], positionCode: string): string[] =>
   people.filter(p => p.positionCodes.includes(positionCode)).map(p => p.personId);
+/**
+ * The share targets a reader may not be given a figure of (D108 item 8): of each type, the targets on the unit read
+ * (`here`) and the ones on the other units the reader manages (`elsewhere`, each over its own branch), whose figures the
+ * reader can set side by side. Their people fall into the cells of a Venn diagram, a cell being the people counted by
+ * exactly the same targets. A sum or difference of the targets' figures adds and takes away whole cells and never splits
+ * one, so a cell is the least the reader can single out, however many targets they combine: every target that counts a
+ * cell of one to four people the reader does not know (`showable`) is withheld. A cell of the targets still given is a
+ * union of cells of them all, each with none or at least `COVERAGE_MIN_GROUP` such people, so one pass is enough. Two
+ * targets at a time are not: for X with Z and Z′ below it, every pair can be safe while X less Z less Z′ is one person.
+ * Answers the ids withheld, of either list.
+ */
+export function withheldByCells(
+  here: readonly ComparedTarget[],
+  elsewhere: readonly ComparedTarget[],
+  known: (personId: string) => boolean,
+): Set<string> {
+  const byType = new Map<string, Map<string, readonly string[]>>();
+  for (const { target, holders } of [...here, ...elsewhere]) {
+    const targets = byType.get(target.typeId) ?? new Map<string, readonly string[]>();
+    if (!targets.has(target.id)) targets.set(target.id, holders);
+    byType.set(target.typeId, targets);
+  }
+  const withheld = new Set<string>();
+  for (const targets of byType.values()) {
+    // Each person with the targets that count them, in one order, so that the same targets make the same cell.
+    const counting = new Map<string, string[]>();
+    for (const id of [...targets.keys()].sort())
+      for (const personId of new Set(targets.get(id)!)) counting.set(personId, [...(counting.get(personId) ?? []), id]);
+    const cells = new Map<string, { targets: string[]; people: string[] }>();
+    for (const [personId, ids] of counting) {
+      const key = ids.join('\n');
+      const cell = cells.get(key) ?? { targets: ids, people: [] };
+      cell.people.push(personId);
+      cells.set(key, cell);
+    }
+    for (const cell of cells.values())
+      if (!showable(cell.people, known)) for (const id of cell.targets) withheld.add(id);
+  }
+  return withheld;
+}
 /** The share of `holders` who meet a type, rounded down, and whether it reaches a least share; none of nobody. */
 const shareOf = (meeting: number, holders: number, minShare: number) => ({
   share: holders ? Math.floor((meeting * 100) / holders) : null,
@@ -508,12 +548,11 @@ const shareOf = (meeting: number, holders: number, minShare: number) => ({
  * enters only the share targets set on the unit, each measured once over the whole branch (`people`: its active people,
  * the reader included where they hold the position), and given only when the people in its denominator whom the reader
  * does not know (neither a report nor the reader) are none or at least `COVERAGE_MIN_GROUP`. Set against a requirement
- * row of the same type, a target row then gives away at most a figure over that many. Two targets of the same type whose
- * denominators overlap could be set against each other: where the part of one that is not in the other holds one to four
- * people the reader does not know, both are withheld. That holds as well against the targets the reader reads on the
- * other units they manage (`against`, each with the people who hold its position on its own branch), since the reader
- * can set the figures of two nested units side by side: a target here is withheld where the part of either outside the
- * other is not safe to count, and the read of that unit withholds the other by the same rule.
+ * row of the same type, a target row then gives away at most a figure over that many. Targets of the same type whose
+ * denominators overlap could be set against each other, on this unit and against the ones the reader reads on the other
+ * units they manage (`against`, each with the people who hold its position on its own branch), such as a unit and the
+ * units below it: a target here is withheld where it counts a cell of one to four people the reader does not know
+ * (`withheldByCells`), and the read of each other unit withholds its own targets by the same cells.
  *
  * Each person comes with every unit and position of theirs (a requirement on a unit outside the branch still applies to
  * a person in it); `standings` are the holdings that decide for them (`deciding`). A requirement or a target whose type
@@ -527,7 +566,7 @@ export function coverageOf(input: {
   reports: ReadonlySet<string>;
   requirements: readonly RequirementRecord[];
   targets: readonly ShareTargetRecord[];
-  /** The share targets on the reader's other units, each with the people who hold its position on that unit's branch. */
+  /** The share targets on the other units the reader manages, each with the people who hold its position on its branch. */
   against?: readonly ComparedTarget[];
   types: ReadonlyMap<string, TypeRecord>;
   standings: readonly Standing[];
@@ -569,39 +608,8 @@ export function coverageOf(input: {
     const holders = positionHolders(input.people, target.positionCode);
     return [{ target, type, holders, withheld: !showable(holders, known) }];
   });
-  // Two targets of one type over overlapping denominators: the part of either outside the other must be safe to count.
-  for (const a of measured)
-    for (const b of measured) {
-      if (a === b || a.target.typeId !== b.target.typeId) continue;
-      const inB = new Set(b.holders);
-      if (!a.holders.some(id => inB.has(id))) continue;
-      if (
-        !showable(
-          a.holders.filter(id => !inB.has(id)),
-          known,
-        )
-      )
-        a.withheld = b.withheld = true;
-    }
-  // And against the targets of the reader's other units, in both directions, as the read of either unit judges the pair.
-  for (const a of measured)
-    for (const b of input.against ?? []) {
-      if (a.target.id === b.target.id || a.target.typeId !== b.target.typeId) continue;
-      const inA = new Set(a.holders),
-        inB = new Set(b.holders);
-      if (!a.holders.some(id => inB.has(id))) continue;
-      if (
-        !showable(
-          a.holders.filter(id => !inB.has(id)),
-          known,
-        ) ||
-        !showable(
-          b.holders.filter(id => !inA.has(id)),
-          known,
-        )
-      )
-        a.withheld = true;
-    }
+  for (const id of withheldByCells(measured, input.against ?? [], known))
+    for (const m of measured) if (m.target.id === id) m.withheld = true;
   const targets = measured.map(({ target, type, holders, withheld }): TargetCoverage => {
     if (withheld) return { target, type, holders: 0, meeting: 0, share: null, met: null, withheld };
     const meeting = holders.filter(id => meetsType(id, target.typeId)).length;
@@ -999,18 +1007,19 @@ export function mergePlan(input: {
 /** A count of people or of what they hold as an administrator is shown it (D118): exact at 0 and from the least group. */
 export const shownCount = (n: number): CompetenceShownCount => (n === 0 || n >= COVERAGE_MIN_GROUP ? n : 'few');
 /**
- * What a merge moves as its administrator may be shown it (D108 item 2, D118, as the Krav page and the figures keep
- * from them what is about one person): the holdings of active people that count or did, never a registration of a
- * person's own that waits or was rejected; the requirements on positions and units, never one a manager set on one
- * person (which moves all the same); the share targets and mappings; and, for each count of people or holdings, the
- * number only at 0 or from `COVERAGE_MIN_GROUP`. Whether a registration waits for both is a yes or a no.
+ * How many holdings a new validity changes, as an administrator is shown it (D108 item 3, D118): none, `few` for one to
+ * four, else rounded down to a multiple of `COVERAGE_MIN_GROUP`, which the page reads as "at least". Stepping the rule
+ * a year at a time then moves a figure only when five more holdings change, never when one does.
  */
+export const changedCount = (n: number): CompetenceShownCount =>
+  n === 0 ? 0 : n < COVERAGE_MIN_GROUP ? 'few' : Math.floor(n / COVERAGE_MIN_GROUP) * COVERAGE_MIN_GROUP;
 /**
  * What a new validity would do to a type's holdings that end by the rule (D108 item 3), as an administrator may see it
  * (D118), as `mergeFigures` counts: `ruled` are active people's holdings with no date of the issuer's, `before` and
- * `after` the validity in months now and asked. How many turn expired today, and how many valid again, is said only
- * when the holdings are of at least `COMPETENCE_GROUP_MIN` people: for fewer, asking month after month would tell
- * when their holdings were issued.
+ * `after` the validity in months now and asked, each whole years (`isCompetenceValidity`). How many turn expired today,
+ * and how many valid again, is said only when the holdings are of at least `COMPETENCE_GROUP_MIN` people, however many
+ * holdings each has: for fewer, asking rule after rule would tell when their holdings were issued. Said, each count is
+ * `changedCount`.
  */
 export function validityFigures(input: {
   ruled: readonly HoldingRecord[];
@@ -1024,10 +1033,17 @@ export function validityFigures(input: {
     statusOn(endOf(h, { validityMonths: months }), input.today) === 'expired';
   return {
     holdings,
-    turnExpired: shownCount(input.ruled.filter(h => !expired(h, input.before) && expired(h, input.after)).length),
-    turnValid: shownCount(input.ruled.filter(h => expired(h, input.before) && !expired(h, input.after)).length),
+    turnExpired: changedCount(input.ruled.filter(h => !expired(h, input.before) && expired(h, input.after)).length),
+    turnValid: changedCount(input.ruled.filter(h => expired(h, input.before) && !expired(h, input.after)).length),
   };
 }
+/**
+ * What a merge moves as its administrator may be shown it (D108 item 2, D118, as the Krav page and the figures keep
+ * from them what is about one person): the holdings of active people that count or did, never a registration of a
+ * person's own that waits or was rejected; the requirements on positions and units, never one a manager set on one
+ * person (which moves all the same); the share targets and mappings; and, for each count of people or holdings, the
+ * number only at 0 or from `COVERAGE_MIN_GROUP`. Whether a registration waits for both is a yes or a no.
+ */
 export function mergeFigures(input: {
   plan: MergePlan;
   fromHoldings: readonly HoldingRecord[];

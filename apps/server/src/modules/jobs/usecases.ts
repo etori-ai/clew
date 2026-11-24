@@ -17,10 +17,11 @@ import { DEFAULT_BUDGET, type JobCall, type JobDeps } from './model';
 export const ADMIN_CAPABILITY = 'admin.connectors';
 const TIMEOUT = Symbol('timeout');
 /**
- * Jobs (D55). `assemble` is the composite that replaces per-flow code: for one fact it asks every follower an administrator
- * bound to the fact's kind, all at once under a budget, as the person, and merges the step drafts into one proposal that
- * names every bound system and its outcome. `approve` hands the proposal to the ledger as one decision. `bind` and `unbind`
- * are the administrator's composition layer: a binding is governance (D23), not a process.
+ * Jobs (D55). `assemble` is the composite that replaces per-flow code: for one fact it takes every binding of the fact's
+ * kind that the person is inside the audience of, and of its connector (`applies`), asks those followers all at once
+ * under a budget, as the person, and merges the step drafts into one proposal that names each of those bindings and its
+ * outcome, a connector switched off as degraded. `approve` hands the proposal to the ledger as one decision. `bind` and
+ * `unbind` are the administrator's composition layer: a binding is governance (D23), not a process.
  */
 export function jobUsecases(deps: JobDeps) {
   const budget = { ...DEFAULT_BUDGET, ...deps.budget };
@@ -35,7 +36,7 @@ export function jobUsecases(deps: JobDeps) {
   };
   /** The bindings of a fact kind that are there for this person (`applies`); the rest are not named to them. */
   const bindingsFor = async (actor: AudiencedActor, kind: string) =>
-    (await deps.bindings.list(kind)).filter(b => applies(b, actor, id => deps.visible(actor, id)));
+    (await deps.bindings.list(kind)).filter(b => applies(b, actor, id => deps.inConnectorAudience(actor, id)));
   const requireAdmin = (persona: AuthenticatedContext) => {
     if (!persona.capabilities.includes(ADMIN_CAPABILITY)) throw new JobError('Du saknar behörighet.');
   };

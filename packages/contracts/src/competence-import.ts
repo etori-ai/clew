@@ -36,6 +36,20 @@ export const COMPETENCE_URI_MAX = 300;
 export const COMPETENCE_IMPORT_NAME_MAX = 120;
 export const COMPETENCE_IMPORT_AREA_MAX = 80;
 export const COMPETENCE_IMPORT_VALIDITY_MAX = 600;
+/**
+ * A validity rule is whole years (D108 item 3, amended 2026-11-24): a number of months that is a multiple of this, from
+ * one year to `COMPETENCE_IMPORT_VALIDITY_MAX` months, wherever a rule is set or its effect asked for. A rule, or its
+ * preview, stepped one month at a time would date a single person's holding.
+ */
+export const COMPETENCE_VALIDITY_STEP = 12;
+/** Whether a number of months is a validity rule: whole years, from one to `COMPETENCE_IMPORT_VALIDITY_MAX` months. */
+export const isCompetenceValidity = (months: number) =>
+  Number.isInteger(months) &&
+  months >= COMPETENCE_VALIDITY_STEP &&
+  months <= COMPETENCE_IMPORT_VALIDITY_MAX &&
+  months % COMPETENCE_VALIDITY_STEP === 0;
+/** The refusal of any other number, in the words the page and an import's row show. */
+export const COMPETENCE_VALIDITY_PROBLEM = `Giltighetstiden ska vara hela år, 1 till ${COMPETENCE_IMPORT_VALIDITY_MAX / COMPETENCE_VALIDITY_STEP} år: 12, 24, 36 och så vidare upp till ${COMPETENCE_IMPORT_VALIDITY_MAX} månader.`;
 
 /**
  * The catalogue's kinds as this file knows them: the same closed list as `COMPETENCE_KINDS` in `@clew/contracts`,
@@ -161,7 +175,6 @@ function uriProblem(uri: string): string | null {
     return 'Adressen ska börja med http://, https:// eller urn:, till exempel http://data.europa.eu/esco/skill/….';
   return null;
 }
-const validityProblem = `Giltighetstiden ska vara ett heltal från 1 till ${COMPETENCE_IMPORT_VALIDITY_MAX} månader.`;
 
 /**
  * What is wrong with one row the server is sent, in the words the page shows, or null when it holds: the same rules
@@ -175,12 +188,7 @@ export function competenceImportRowProblem(row: CompetenceImportCandidate): stri
     nameProblem(name) ??
     areaProblem(area) ??
     (!kind || kind !== row.kind ? `Typen finns inte. ${KIND_HELP}` : null) ??
-    (row.validityMonths !== null &&
-    (!Number.isInteger(row.validityMonths) ||
-      row.validityMonths < 1 ||
-      row.validityMonths > COMPETENCE_IMPORT_VALIDITY_MAX)
-      ? validityProblem
-      : null) ??
+    (row.validityMonths !== null && !isCompetenceValidity(row.validityMonths) ? COMPETENCE_VALIDITY_PROBLEM : null) ??
     (kind === 'skill' && row.validityMonths !== null ? 'En färdighet har ingen giltighetstid.' : null) ??
     (row.uri !== null ? uriProblem(row.uri) : null)
   );
@@ -398,7 +406,7 @@ export function parseCompetenceImport(input: string): CompetenceImportResult {
             ? `Typen ”${[...kindText.trim()].slice(0, 40).join('')}” finns inte. ${KIND_HELP}`
             : `Typ saknas. ${KIND_HELP}`
           : null) ??
-        (months !== null && !(months >= 1 && months <= COMPETENCE_IMPORT_VALIDITY_MAX) ? validityProblem : null) ??
+        (months !== null && !isCompetenceValidity(months) ? COMPETENCE_VALIDITY_PROBLEM : null) ??
         (kind === 'skill' && months !== null ? 'En färdighet har ingen giltighetstid.' : null) ??
         (uriText ? uriProblem(uriText) : null);
       if (wrong || !kind) {

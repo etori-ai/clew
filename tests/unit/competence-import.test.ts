@@ -110,6 +110,7 @@ describe('the format is recognised by the first row (D120 item 7)', () => {
 });
 
 describe('what is wrong is a problem with its row, and the rest is read (D120 item 7)', () => {
+  const YEARS = 'Giltighetstiden ska vara hela år, 1 till 50 år: 12, 24, 36 och så vidare upp till 600 månader.';
   test("every rule of Clew's format, in Swedish, and a row with a problem is not among the rows", () => {
     const read = parseCompetenceImport(
       [
@@ -130,6 +131,7 @@ describe('what is wrong is a problem with its row, and the rest is read (D120 it
         'L,X,course,,https://example.org/k', // 15
         'M,X,course,"12"x,', // 16
         'N\u0007,X,course,,', // 17
+        'O,X,course,18,', // 18
       ].join('\n'),
     );
     expect(read.rows.map(r => r.name)).toEqual(['Bra', 'K']);
@@ -146,8 +148,8 @@ describe('what is wrong is a problem with its row, and the rest is read (D120 it
         message:
           'Typ saknas. Använd certificate, degree, course, authorisation, skill eller Certifikat, Examen, Kurs, Behörighet, Färdighet.',
       },
-      { row: 6, message: 'Giltighetstiden ska vara ett heltal från 1 till 600 månader.' },
-      { row: 7, message: 'Giltighetstiden ska vara ett heltal från 1 till 600 månader.' },
+      { row: 6, message: YEARS },
+      { row: 7, message: YEARS },
       { row: 8, message: 'En färdighet har ingen giltighetstid.' },
       {
         row: 9,
@@ -160,8 +162,10 @@ describe('what is wrong is a problem with its row, and the rest is read (D120 it
       { row: 15, message: 'Samma adress som rad 14.' },
       { row: 16, message: 'Raden har ett citattecken på fel ställe.' },
       { row: 17, message: 'Namnet innehåller tecken som inte kan sparas.' },
+      // A rule is whole years (D108 item 3, amended 2026-11-24).
+      { row: 18, message: YEARS },
     ]);
-    expect(read.problemCount).toBe(14);
+    expect(read.problemCount).toBe(15);
   });
   test('an ESCO row without a label or an address is a problem; a draft one is left out without one', () => {
     const read = parseCompetenceImport(
@@ -273,9 +277,12 @@ describe('the server checks a row with the same rules (D120 item 7)', () => {
     expect(competenceImportRowProblem({ ...row, name: '  ' })).toBe('Namn saknas.');
     expect(competenceImportRowProblem({ ...row, kind: 'Kurs' })).toStartWith('Typen finns inte.');
     expect(competenceImportRowProblem({ ...row, kind: 'skill' })).toBe('En färdighet har ingen giltighetstid.');
-    expect(competenceImportRowProblem({ ...row, validityMonths: 2.5 })).toBe(
-      'Giltighetstiden ska vara ett heltal från 1 till 600 månader.',
-    );
+    // A validity rule is whole years (D108 item 3, amended 2026-11-24): months a multiple of 12, up to 600.
+    for (const validityMonths of [2.5, 1, 18, 0, 612])
+      expect(competenceImportRowProblem({ ...row, validityMonths })).toBe(
+        'Giltighetstiden ska vara hela år, 1 till 50 år: 12, 24, 36 och så vidare upp till 600 månader.',
+      );
+    for (const validityMonths of [12, 600]) expect(competenceImportRowProblem({ ...row, validityMonths })).toBeNull();
     expect(competenceImportRowProblem({ ...row, uri: 'javascript alert' })).toStartWith('Adressen ska börja med');
     for (const uri of [
       'javascript:alert(1)',

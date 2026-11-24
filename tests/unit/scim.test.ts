@@ -1510,15 +1510,7 @@ scimStoreContract('memory', async () => {
     async signInActor(id) {
       return store.state.authenticationAudit[id]?.actor;
     },
-    async invite(_managerId, participantId, name, email) {
-      const id = 'proposal-' + store.state.invitations.length;
-      store.state.invitations.push({ id, participantId, name, email });
-      return id;
-    },
-    async invitation(id) {
-      const row = store.state.invitations.find(i => i.id === id);
-      return row && { participantId: row.participantId, name: row.name, email: row.email };
-    },
     withLeavers: (leavers, leaverFailed) => memoryProvisionStore({ leavers, leaverFailed }),
+    withErasure: erasure => memoryProvisionStore({ erasure }),
   };
 });

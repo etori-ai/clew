@@ -27,6 +27,12 @@ const SAMTAL = 'Utvecklingssamtal';
 const live = new Set<Proposal['status']>(['proposed', 'confirmed', 'final', 'accepted']);
 /** The assistant's mark (D71, artboard 6): before a proposal's title on every calendar surface, never before a meeting's. */
 export const PROPOSAL_MARK = '✦';
+/**
+ * Who a proposal invites, as every surface draws them: the name it was drawn with, or "Okänd" once an erasure cleared it
+ * (D123), the word the calendar already draws for an organiser it holds no name for, so no row, label or avatar is
+ * drawn without a name.
+ */
+export const inviteeName = (participant: Pick<Proposal['participant'], 'name'>) => participant.name || 'Okänd';
 /** The id of the time a person is choosing among a day's items (`agendaItems`' `chosen`). */
 export const CHOSEN_ID = 'chosen';
 /** What the longest free gap of the day says under its row: the assistant books nothing there without asking. */
@@ -101,11 +107,11 @@ export function agendaItems(
         id: p.id,
         title: SAMTAL,
         short: 'Samtal',
-        subtitle: p.participant.name,
+        subtitle: inviteeName(p.participant),
         ...span,
         kind: drawn ? ('proposal' as const) : ('booked' as const),
         ...(drawn ? { marker: PROPOSAL_MARK } : {}),
-        meta: meta(span, p.participant.name),
+        meta: meta(span, inviteeName(p.participant)),
         proposal: p,
       };
     }),

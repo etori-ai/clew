@@ -42,11 +42,23 @@ export function createConnector({
   const personKey = actor => unitOf(actor) + ':' + personOf(actor);
   /** The days marked as absence through Clew, keyed by the operation that marked them. */
   const marked = () => state.get('absences', {});
-  /** Whether the person is on the staff of the manager's unit, as the time system registers it. */
-  const inUnit = (actor, person) => (staffOf[unitOf(actor)] ?? []).includes(person);
-  /** The person's shift on a day in the manager's unit; a shift in another unit is not theirs to see. */
+  // A person with several assignments (D135): Clew sends every one, each unit with the role the person has there, and
+  // `unitId` and `role` are the primary one. The roster, the figure and the unit rule of the writes cover every unit
+  // they manage, as the HR fixture's do, and never one where they are an employee. Without the list, the primary unit
+  // alone, as before.
+  const several = actor => Array.isArray(actor.assignments) && actor.assignments.length > 1;
+  const managedUnits = actor =>
+    several(actor)
+      ? actor.assignments.filter(a => a.role === 'manager').map(a => unitMap[a.unitId] ?? a.unitId)
+      : actor.role === 'manager'
+        ? [unitOf(actor)]
+        : [];
+  /** Whether the person is on the staff of a unit the actor manages, as the time system registers it. */
+  const inUnit = (actor, person) => managedUnits(actor).some(unit => (staffOf[unit] ?? []).includes(person));
+  /** The person's shift on a day in a unit the actor manages; a shift in another unit is not theirs to see. */
   const shiftOf = (actor, person, date) => {
-    const s = shifts().find(s => s.employee === person && s.date === date && s.unitId === unitOf(actor));
+    const units = managedUnits(actor);
+    const s = shifts().find(s => s.employee === person && s.date === date && units.includes(s.unitId));
     return s ? `${s.start}–${s.end} på ${s.ward}` : null;
   };
   const receipt = row => ({
@@ -67,10 +79,11 @@ export function createConnector({
     'timesheet.today': actor => {
       const date = today();
       const away = Object.values(marked());
+      const units = managedUnits(actor);
       return {
         date,
         rows: shifts()
-          .filter(s => s.date === date && s.unitId === unitOf(actor))
+          .filter(s => s.date === date && units.includes(s.unitId))
           .map(s => ({
             ref: `timesheet:shift:${s.employee.split(':').pop()}:${s.date}`,
             person: s.employee,
@@ -107,7 +120,7 @@ export function createConnector({
   };
 
   const writes = {
-    // A write answers for the manager's own unit, as the roster does: someone outside it is a failed row, no shift told.
+    // A write answers for the units the actor manages: someone outside them is a failed row, no shift told.
     'timesheet.markAbsence': (actor, input, operationId) => {
       const failed = (headline, detail) => ({
         headline,
@@ -175,14 +188,15 @@ export function createConnector({
 
   // The figure (D54): today's booked substitutes, and whether a shift marked absent is still without a person.
   function figure(actor, area) {
-    if (area !== 'staffing' || actor.role !== 'manager') return null;
+    const units = managedUnits(actor);
+    if (area !== 'staffing' || !units.length) return null;
     const date = today();
-    const mine = shifts().filter(s => s.date === date && s.unitId === unitOf(actor));
+    const mine = shifts().filter(s => s.date === date && units.includes(s.unitId));
     if (!mine.length) return { label: 'Inga pass i dag.', tone: 'none' };
     const open = Object.values(marked()).filter(a => a.date === date && mine.some(s => s.employee === a.person)).length;
     return {
       label: 'Vikarier i dag',
-      value: String(substitutesOf[unitOf(actor)] ?? 0),
+      value: String(units.reduce((sum, unit) => sum + (substitutesOf[unit] ?? 0), 0)),
       comparison: open ? (open === 1 ? '1 pass obemannat' : `${open} pass obemannade`) : 'alla pass bemannade',
       tone: open ? 'warn' : 'ok',
     };

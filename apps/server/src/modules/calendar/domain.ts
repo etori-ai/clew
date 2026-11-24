@@ -1,7 +1,25 @@
-import type { StaffOverview } from '@clew/contracts';
+import type { StaffOverview, ThreadItem } from '@clew/contracts';
 import type { UnitMember } from './model';
 
 /** Pure helpers of the calendar module (D20): no I/O, no clock, no runtime library. */
+
+/** A planning card's row of a drawn time (D12): the proposal by its id. */
+export const proposalRow = (proposalId: string) => 'proposal:' + proposalId;
+/** A planning card's row of someone the planner could not place (D30): the person by Clew's id (N3). */
+export const unplacedRow = (personId: string) => 'unplaced:' + personId;
+/**
+ * A card's rows without the ones that name a person (D123): the row of each of their proposals and their row without
+ * one. Found by the ref alone, which holds the proposal's or the person's id, never by the label, which holds the name.
+ */
+export function withoutInvitee(
+  items: readonly ThreadItem[],
+  proposalIds: ReadonlySet<string>,
+  personId: string,
+): ThreadItem[] {
+  const refs = new Set([...proposalIds].map(proposalRow));
+  refs.add(unplacedRow(personId));
+  return items.filter(i => !refs.has(i.ref));
+}
 
 /**
  * The manager's team from the Personal overview (D94, D96 item 3): everyone on the units the manager manages except the

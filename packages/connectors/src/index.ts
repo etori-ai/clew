@@ -328,9 +328,8 @@ export interface Capability<I = unknown, O = unknown> {
    * Clew's own connectors may add `ids`: the caller themself or a report may then be named by Clew's own id, as the
    * talks domain names a person without a user name and Clew's own cards name anyone (D122), and the capability is
    * given the user name where the person has one; a manifest cannot carry it, since Clew's id is never sent to a
-   * connector. Only they may admit
-   * `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a manifest cannot carry it either,
-   * and a connector is never told it.
+   * connector. Only they may admit `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a
+   * manifest cannot carry it either, and a connector is never told it.
    */
   person?: Omit<PersonAccess, 'admits'> & { admits?: PersonRelation[]; ids?: true };
   /** On a capability about a unit (D117): the relations a caller may have to the unit, `manages` when absent. */
@@ -941,6 +940,14 @@ export class Registry implements HoldingsReader {
     if (!this.connectors.has(connectorId)) return false;
     const g = this.governance(connectorId);
     return g.state === 'enabled' && inAudience(g.audience, actor);
+  }
+  /**
+   * Whether the person is inside a connector's audience (D23), whatever its state: a connector switched off, or no
+   * longer registered, is one they may be told is unavailable, where `visible` says it is there for them now. A
+   * connector with no governance has the denied default's audience, everyone, as nothing narrows it.
+   */
+  inAudienceOf(actor: AudiencedActor, connectorId: string) {
+    return inAudience(this.governance(connectorId).audience, actor);
   }
   /**
    * Lookup by name for one person: the capability when it exists for them, its connector visible to them and the
@@ -1565,10 +1572,11 @@ export class Registry implements HoldingsReader {
     };
   }
   /**
-   * Every registered `propose` that follows a fact kind (D55) on a connector that exists for this person (`visible`),
-   * whether or not they may call it: the job assembler classifies an administrator's binding against it, so a follower
-   * out of scope or switched off is named, never silently skipped. A follower of a connector hidden from the person is
-   * not answered, so its id, name and capability never reach them (D23).
+   * Every registered `propose` that follows a fact kind (D55) on a connector whose audience the person is inside
+   * (`inAudienceOf`), whether or not they may call it now: the job assembler classifies an administrator's binding
+   * against it, so a follower out of scope, switched off or on a connector switched off is named as unavailable, never
+   * silently skipped. A follower of a connector whose audience leaves the person out is not answered, so its id, name
+   * and capability never reach them (D23).
    */
   followers(actor: AudiencedActor, kind: string): FollowerRef[] {
     return [...this.capabilities.values()]
@@ -1576,7 +1584,7 @@ export class Registry implements HoldingsReader {
         c =>
           c.capability.kind === 'propose' &&
           c.capability.follows?.includes(kind) &&
-          this.visible(actor, c.connector.id),
+          this.inAudienceOf(actor, c.connector.id),
       )
       .map(c => ({
         name: c.capability.name,
