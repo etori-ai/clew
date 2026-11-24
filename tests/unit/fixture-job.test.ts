@@ -98,6 +98,7 @@ function world() {
   const jobs = jobUsecases({
     bindings,
     followers: (a, k) => registry.followers(a, k),
+    inConnectorAudience: (a, id) => registry.inAudienceOf(a, id),
     offered: k => registry.offered(k),
     refresh: () => registry.refreshGovernance(),
     digest: JSON.stringify,
@@ -298,7 +299,8 @@ test('a binding for one provisioned group only is assembled and approved for its
     proposal: p,
   })) as Awaited<ReturnType<typeof w.ledger.approveJob>>;
   expect((await settle(w, approved.id)).steps.map(s => s.state)).toEqual(['succeeded']);
+  // To anyone else the binding is not there: nothing is named, nothing asked.
   const outside = await w.jobs.assemble(audiencedActorOf({ ...manager, groups: ['S-1-5-21-annan'] }), fact, w.call);
-  expect(outside.sources.map(s => [s.capability, s.status])).toEqual([['hr.proposeAbsence', 'disabled']]);
+  expect(outside.sources).toEqual([]);
   expect(outside.steps).toEqual([]);
 });

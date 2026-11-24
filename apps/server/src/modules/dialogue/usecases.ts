@@ -122,17 +122,24 @@ export function dialogueUsecases(deps: DialogueDeps) {
     return value;
   }
   /**
-   * An activity the persona may change: the unit is one they follow up, or they own it. Locked for the transaction.
-   * Refused alike when it does not exist, so an id tells nobody anything.
+   * An activity the persona may change: the unit is one they follow up. Its owner may also mark it done after the unit
+   * is no longer one they follow up (`ownerMay`, D118 item 5), and nothing else: changing it, opening it again and
+   * removing it are for those who follow the unit up now. Locked for the transaction. Refused alike when it does not
+   * exist, so an id tells nobody anything.
    */
   async function activityFor(
     tx: DialogueTx,
     persona: AuthenticatedContext,
     units: Map<string, FollowedUnit>,
     id: string,
+    ownerMay = false,
   ) {
     const a = await tx.activity(id);
-    if (!a || a.organisationId !== persona.organisationId || (!units.has(a.unitId) && a.ownerId !== persona.id))
+    if (
+      !a ||
+      a.organisationId !== persona.organisationId ||
+      (!units.has(a.unitId) && !(ownerMay && a.ownerId === persona.id))
+    )
       throw new ForbiddenError(NOT_ALLOWED);
     return a;
   }
@@ -152,7 +159,7 @@ export function dialogueUsecases(deps: DialogueDeps) {
     const doneNote = done ? optionalText(note, DIALOGUE_TEXT_MAX.note) : null;
     const at = now().toISOString();
     await deps.store.transaction(async tx => {
-      const a = await activityFor(tx, persona, units, id);
+      const a = await activityFor(tx, persona, units, id, done);
       if ((a.doneAt !== null) === done) return;
       if (done) {
         await tx.updateActivity(id, { doneAt: at, doneBy: persona.id, doneNote, updatedAt: at });

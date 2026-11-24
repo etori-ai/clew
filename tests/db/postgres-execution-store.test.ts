@@ -353,6 +353,7 @@ test('job approval retries survive adapter restart with one schedule, and receip
       digest: JSON.stringify,
       refresh: async () => {},
       offered: () => true,
+      inConnectorAudience: () => true,
       followers: () => [
         {
           name: 'reference.follow',

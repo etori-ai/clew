@@ -232,9 +232,16 @@ describe('the competence wiring (D108 item 13)', () => {
     );
 
     const impact = await w.call(mikael, 'GET', `/types/${typeId}/validity?months=12`);
-    expect(await impact.json()).toEqual({ holdings: 1, expiredBefore: 0, expiredAfter: 1 });
+    // One holder is too few to say how many change (CO-L1).
+    expect(await impact.json()).toEqual({ holdings: 'few' });
     expect((await w.call(mikael, 'GET', `/types/${typeId}/validity?months=none`)).status).toBe(200);
     expect((await w.call(mikael, 'GET', `/types/${typeId}/validity?months=0`)).status).toBe(400);
+    // A rule and its preview are whole years: anything else is refused in Swedish (CO-L1).
+    const YEARS = 'Giltighetstiden ska vara hela år, 1 till 50 år: 12, 24, 36 och så vidare upp till 600 månader.';
+    const stepped = await w.call(mikael, 'GET', `/types/${typeId}/validity?months=13`);
+    expect([stepped.status, await stepped.json()]).toEqual([400, expect.objectContaining({ error: YEARS })]);
+    const saved = await w.call(mikael, 'PATCH', `/types/${typeId}`, { validityMonths: 18 });
+    expect([saved.status, await saved.json()]).toEqual([400, expect.objectContaining({ error: YEARS })]);
     expect((await w.call(mikael, 'PATCH', `/types/${typeId}`, { validityMonths: 12 })).status).toBe(204);
     expect(w.store.state.types.get(typeId)?.validityMonths).toBe(12);
 

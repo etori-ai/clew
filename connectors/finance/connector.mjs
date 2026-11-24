@@ -332,19 +332,19 @@ export function createConnector({
         undoInput: { refs: rows.filter(r => r.outcome === 'done').map(r => r.ref) },
       };
     },
-    'finance.unapprove': (_actor, input) => {
+    // The undo answers for the manager's cost centre as the attest it takes back does: another one's invoice is a failed row.
+    'finance.unapprove': (actor, input) => {
       const done = approved();
-      for (const ref of input.refs) delete done[ref];
+      const cc = costCentre(actor);
+      const rows = input.refs.map(ref => {
+        if (!records().invoices.some(i => i.ref === ref && i.costCentre === cc))
+          return { ref, label: 'Faktura', outcome: 'failed', detail: 'finns inte i ekonomisystemet' };
+        delete done[ref];
+        return { ref, label: 'Faktura', outcome: 'done', detail: 'väntar igen i ekonomisystemet' };
+      });
       state.set('approved', done);
-      return {
-        headline: 'Attesten är återtagen.',
-        rows: input.refs.map(ref => ({
-          ref,
-          label: 'Faktura',
-          outcome: 'done',
-          detail: 'väntar igen i ekonomisystemet',
-        })),
-      };
+      const any = rows.some(r => r.outcome === 'done');
+      return { headline: any ? 'Attesten är återtagen.' : 'Attesten kunde inte återtas.', rows };
     },
     'finance.correct': (actor, input) => {
       const inv = invoice(actor, input.ref);
