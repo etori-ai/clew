@@ -16,15 +16,16 @@ export async function phonebook(
   name: string,
   input: unknown,
 ): Promise<{ status: number; body: { output: unknown; view?: PanelViewSpec } | { error: string } }> {
-  // The protocol (D117): the assertion is bound to the body, serialised once, and to the capability it is sent to.
+  // The protocol (D117): the assertion is bound to the body, serialised once, and to the route it is sent to.
   const body = JSON.stringify({ actor: user, input });
+  const path = `/clew/capabilities/${name}`;
   const response = await service.handle(
-    new Request(`http://phonebook/clew/capabilities/${name}`, {
+    new Request(`http://phonebook${path}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         'X-Clew-Connector-Key': secret,
-        authorization: 'Bearer ' + (await assertion(user, [], { body, capability: name })),
+        authorization: 'Bearer ' + (await assertion(user, [], { path, body })),
       },
       body,
     }),

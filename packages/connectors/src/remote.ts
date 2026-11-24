@@ -47,14 +47,16 @@ export interface RemoteTransport {
   key?: string;
   /**
    * The assertion Clew sends as the bearer token: who is acting, signed for this connector and bound to the one request
-   * it was issued for (D117): the exact body it is sent with and, on a capability's route, the capability's name.
+   * it was issued for (D117): the route it is posted to, the exact body it is sent with and, on a capability's route,
+   * the capability's name.
    */
   assert: (actor: Actor, chain?: string[], binding?: AssertionBinding) => Promise<string>;
   /**
    * The installation's own assertion for a read it makes itself (D119): no actor, subject `clew:installation`, bound to
-   * the request like every assertion. Without it the connector's installation reads answer `denied` and are never sent.
+   * the request like every assertion, on `/clew/installation/{name}` only. Without it the connector's installation
+   * reads answer `denied` and are never sent.
    */
-  installation?: (binding: AssertionBinding & { capability: string }) => Promise<string>;
+  installation?: (binding: AssertionBinding) => Promise<string>;
   fetch?: FetchLike;
   /** Milliseconds before a call counts as unavailable. */
   timeoutMs?: number;
@@ -63,14 +65,19 @@ export interface RemoteTransport {
   askTotalMs?: number;
 }
 /**
- * What an assertion is bound to (D117): `body`, the exact request body it is sent with, which the signer digests
- * (SHA-256, base64url, the `body` claim), and on `/clew/capabilities/{name}` the capability's `name` (the `capability`
- * claim). A connector's verifier recomputes both from the request it received, so neither the input nor the `about` it
- * carries can be changed and the assertion cannot be replayed on another capability.
+ * What an assertion is bound to (D117): `path`, the route the request is posted to as the connector serves it (the
+ * `path` claim: `/clew/scan`, `/clew/capabilities/{name}` and so on, without the base URL's own path), `body`, the
+ * exact request body it is sent with, which the signer digests (SHA-256, base64url, the `body` claim), and on an
+ * approved write the `X-Clew-Operation-Id` it is sent with (the `operationId` claim). On `/clew/capabilities/{name}`
+ * and `/clew/installation/{name}` the signer also signs the name as the `capability` claim. A connector's verifier
+ * recomputes every one from the request it received, so neither the input nor the `about` it carries can be changed,
+ * and the assertion cannot be replayed on another route or capability or as another operation.
  */
 export interface AssertionBinding {
+  path: string;
   body: string;
-  capability?: string;
+  /** The operation id the request carries in `X-Clew-Operation-Id`, when it carries one. */
+  operationId?: string;
   /**
    * `false`: the assertion carries no callback grant, whatever the connector's `uses` say. A question to a source's
    * assistant, and the read that lists the assistants, are sent so: only the person's text leaves Clew, and nothing is
@@ -239,6 +246,7 @@ async function delegated(
   }
 }
 const CAPABILITY_ROUTE = '/clew/capabilities/';
+const DOCUMENTS_ROUTE = '/clew/documents';
 /** How long a source's assistant may be silent, and how long one answer may take in all, before it counts as unavailable. */
 export const ASK_IDLE_MS = 30_000;
 export const ASK_TOTAL_MS = 180_000;
@@ -305,13 +313,12 @@ async function post(
   callback?: false,
 ) {
   const fetchImpl = transport.fetch ?? fetch;
-  // The body is serialised once: the assertion is bound to exactly these bytes (D117).
+  // The body is serialised once: the assertion is bound to exactly these bytes, on this route (D117).
   const text = JSON.stringify(body);
   const binding: AssertionBinding = {
+    path,
     body: text,
-    ...(path.startsWith(CAPABILITY_ROUTE)
-      ? { capability: decodeURIComponent(path.slice(CAPABILITY_ROUTE.length)) }
-      : {}),
+    ...(operationId ? { operationId } : {}),
     ...(callback === false ? { callback } : {}),
   };
   let response: Response;
@@ -360,10 +367,10 @@ function failWith(json: unknown, status: number, source: string): never {
 const ERROR_CODES: readonly SourceErrorCode[] = ['invalid', 'denied', 'not-found', 'unavailable', 'unknown'];
 /**
  * A read Clew makes as the installation (D119): posted to `/clew/installation/{name}` with the input alone and the
- * installation's assertion, bound to the body and the name. Every failure keeps the protocol's error kind, so the
- * register that copies the pages can tell a cursor the source no longer knows (`invalid`) from a source that is down
- * (`unavailable`) or one that refuses (`denied`): a connector that answers 401 without the protocol's error body has
- * refused Clew's assertion, which is `denied` too.
+ * installation's assertion, bound to the route, the body and the name. Every failure keeps the protocol's error kind,
+ * so the register that copies the pages can tell a cursor the source no longer knows (`invalid`) from a source that is
+ * down (`unavailable`) or one that refuses (`denied`): a connector that answers 401 without the protocol's error body
+ * has refused Clew's assertion, which is `denied` too.
  */
 function installationRead(
   manifest: ConnectorManifest,
@@ -380,25 +387,23 @@ function installationRead(
     output: declared.output as never,
     run: async (input, { signal }) => {
       if (!transport.installation) throw new InstallationReadError('denied', installationReadText('denied', source));
-      // The body is serialised once: the assertion is bound to exactly these bytes and this name (D117, D119).
+      // The body is serialised once: the assertion is bound to exactly these bytes on this route (D117, D119).
       const text = JSON.stringify({ input });
+      const path = INSTALLATION_ROUTE + encodeURIComponent(declared.name);
       let response: Response;
       try {
-        response = await (transport.fetch ?? fetch)(
-          transport.url + INSTALLATION_ROUTE + encodeURIComponent(declared.name),
-          {
-            method: 'POST',
-            redirect: 'error',
-            headers: {
-              'content-type': 'application/json',
-              accept: 'application/json',
-              authorization: 'Bearer ' + (await transport.installation({ body: text, capability: declared.name })),
-              ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
-            },
-            body: text,
-            signal: AbortSignal.any([AbortSignal.timeout(transport.timeoutMs ?? 10_000), ...(signal ? [signal] : [])]),
+        response = await (transport.fetch ?? fetch)(transport.url + path, {
+          method: 'POST',
+          redirect: 'error',
+          headers: {
+            'content-type': 'application/json',
+            accept: 'application/json',
+            authorization: 'Bearer ' + (await transport.installation({ path, body: text })),
+            ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
           },
-        );
+          body: text,
+          signal: AbortSignal.any([AbortSignal.timeout(transport.timeoutMs ?? 10_000), ...(signal ? [signal] : [])]),
+        });
       } catch {
         throw down();
       }
@@ -490,13 +495,14 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
             clew: Clew,
           ): Promise<DocumentContent> => {
             const text = JSON.stringify({ actor: published(actor), request, ...told(clew) });
-            const response = await (transport.fetch ?? fetch)(transport.url + '/clew/documents', {
+            const response = await (transport.fetch ?? fetch)(transport.url + DOCUMENTS_ROUTE, {
               redirect: 'error',
               method: 'POST',
               headers: {
                 'content-type': 'application/json',
                 accept: 'application/octet-stream',
-                authorization: 'Bearer ' + (await transport.assert(actor, clew.chain, { body: text })),
+                authorization:
+                  'Bearer ' + (await transport.assert(actor, clew.chain, { path: DOCUMENTS_ROUTE, body: text })),
                 ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
                 ...(manifest.delegation
                   ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }
@@ -557,7 +563,7 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
           assistants: {
             list: manifest.assistants.list,
             ask: async function* (actor: Actor, ask: AssistantAsk, clew: Clew): AsyncGenerator<AssistantAskEvent> {
-              // The body is serialised once: the assertion is bound to exactly these bytes (D117).
+              // The body is serialised once: the assertion is bound to exactly these bytes on this route (D117).
               const text = JSON.stringify({ actor: published(actor), ask });
               const signal = AbortSignal.any([
                 AbortSignal.timeout(transport.askTotalMs ?? ASK_TOTAL_MS),
@@ -572,7 +578,8 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
                     'content-type': 'application/json',
                     accept: 'text/event-stream',
                     authorization:
-                      'Bearer ' + (await transport.assert(actor, clew.chain, { body: text, callback: false })),
+                      'Bearer ' +
+                      (await transport.assert(actor, clew.chain, { path: ASK_ROUTE, body: text, callback: false })),
                     ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
                     ...(manifest.delegation
                       ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }

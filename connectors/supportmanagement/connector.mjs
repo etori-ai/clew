@@ -30,6 +30,31 @@ export const defaultStatusKinds = {
 };
 export const STATUS_KINDS = ['new', 'open', 'waiting-reporter', 'waiting-other', 'closed'];
 
+/**
+ * The adapter `SM_ADAPTER` names, read before anything is served: `api`, SupportManagement, or `fixture`, the made-up
+ * errands of errands.mjs, for development and tests only. There is no default: the stand-in answers with made-up errands
+ * under the system's name and reads the person's token without checking its signature, so a deployment that names no
+ * adapter does not start, and neither does one that names `fixture` beside `SM_URL`. Each error names the variable to
+ * change; what `api` needs besides, its adapter checks.
+ */
+export function adapterOf(env) {
+  const set = value => typeof value === 'string' && value.trim() !== '';
+  const adapter = set(env.SM_ADAPTER) ? env.SM_ADAPTER.trim() : '';
+  if (!adapter)
+    throw new Error(
+      'SM_ADAPTER is not set. Set it to "api" to read SupportManagement (with SM_URL and SM_MUNICIPALITY_ID), or to ' +
+        '"fixture" for the made-up errands in errands.mjs: development and tests only.',
+    );
+  if (adapter !== 'api' && adapter !== 'fixture')
+    throw new Error(`Unknown SM_ADAPTER "${adapter}". Known: api, fixture.`);
+  if (adapter === 'fixture' && set(env.SM_URL))
+    throw new Error(
+      'SM_ADAPTER is "fixture" but SM_URL is set. The stand-in reads no SupportManagement and answers with made-up ' +
+        'errands: set SM_ADAPTER=api to read it, or remove SM_URL to run the stand-in.',
+    );
+  return adapter;
+}
+
 const refPattern = new RegExp(
   `^errand:sm:(${errandRefParts.municipalityId}):(${errandRefParts.namespace}):(${errandRefParts.id})$`,
 );
