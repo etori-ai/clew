@@ -9,6 +9,14 @@ import { createServer } from 'node:http';
 import { listener } from './http.mjs';
 import { adapterOf, createConnector } from './connector.mjs';
 import { createFixtureDirectory, createHttpDirectory } from './directory.mjs';
+import { keysAddress } from './verification.mjs';
+
+// CLEW_URL is where Clew's public keys are fetched on the first call: one they cannot be fetched from is refused here.
+if (!keysAddress(process.env.CLEW_URL))
+  throw new Error(
+    "CLEW_URL must be Clew's base URL, where its public keys are fetched: https, or plain http only on a host of the " +
+      'development stack.',
+  );
 
 const adapter = adapterOf(process.env);
 const directory =

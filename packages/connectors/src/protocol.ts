@@ -65,13 +65,14 @@ import {
  *   POST /clew/figure                   FigureRequest -> FigureResponse     (only for areas with figure: true)
  * Every POST carries an installation-signed RS256 bearer assertion and X-Clew-Connector-Key (transport only).
  * Verify public keys at the configured Clew URL, issuer, audience, subject/actor and bounded lifetime (D44), and that
- * the assertion was issued for this request: its `body` claim the SHA-256 of the exact body, its `capability` claim the
- * capability of the route and its `operationId` claim the request's X-Clew-Operation-Id (D117), and take each `jti` once.
+ * the assertion was issued for this request: its `path` claim the path of the route it was posted to, its `body` claim
+ * the SHA-256 of the exact body, its `capability` claim the capability of the route and its `operationId` claim the
+ * request's X-Clew-Operation-Id (D117), and take each `jti` once.
  * When the input names people or units, Clew has already left out every key the caller may not ask about, and the body's
  * `about` says how the caller stands to each key sent (`CallAbout`).
  * On `/clew/installation/{name}` no person is behind the call (D119): the assertion carries no `actor`, its subject is
- * `clew:installation` and its `caller` claim `installation`, bound to the body and the name as every call is. Answer it
- * only to that assertion, and never answer a person's assertion there.
+ * `clew:installation` and its `caller` claim `installation`, bound to the route, the body and the name as every call
+ * is. Answer it only to that assertion, and never answer a person's assertion there.
  * A callback uses the separate signed `callback` claim, never the request assertion, and only targets declared
  * in `uses`. See docs/guides/authorization.md and docs/reference/connector-protocol.md.
  */
@@ -439,7 +440,7 @@ export const ManifestInstallationReadSchema = object(
       "JSON Schema of the output, which must fit the profile's (for `<id>.holdings`: HoldingsOutput, the same fields or fewer of the optional ones, constraints as tight or tighter). Clew validates every answer against it and against the profile.",
     ),
   },
-  'A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied.',
+  'A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the route, the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied.',
 );
 export const ConnectorManifestSchema = Type.Object(
   {
@@ -1096,7 +1097,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
       {
         name: 'Connector',
         description:
-          "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117). On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119). Answer at the registered address itself: Clew follows no redirect, and a 3xx answer is the connector failing. Clew reads at most " +
+          "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion was issued for this request: its `path` claim the path received, its `body` claim the SHA-256 of the body received (D117), and each `jti` taken once. On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119). Answer at the registered address itself: Clew follows no redirect, and a 3xx answer is the connector failing. Clew reads at most " +
           MAX_MANIFEST_BYTES +
           ' bytes of a manifest and ' +
           MAX_ANSWER_BYTES +
@@ -1162,7 +1163,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           operationId: 'readAsInstallation',
           summary: 'A read Clew makes as the installation, with no person behind it',
           description:
-            "Only for a read the manifest declares under `installation` (D119), today `<id>.holdings`. No actor: the assertion's subject is `clew:installation`, its `caller` claim `installation`, and it carries no `actor` and no `callback`; it is bound to the body and to `{name}` as every request is. Answer only that assertion here: a person's assertion, whoever they are, is refused with 401, and the installation's assertion is never valid on `/clew/capabilities/{name}`. Clew never reaches this route on a person's behalf: the read is not a capability, so neither a page, a card, the model nor another connector's callback can name it.",
+            "Only for a read the manifest declares under `installation` (D119), today `<id>.holdings`. No actor: the assertion's subject is `clew:installation`, its `caller` claim `installation`, and it carries no `actor` and no `callback`; it is bound to the route, the body and `{name}` as every request is. Answer only that assertion here: a person's assertion, whoever they are, is refused with 401, and the installation's assertion is never valid on `/clew/capabilities/{name}`. Clew never reaches this route on a person's behalf: the read is not a capability, so neither a page, a card, the model nor another connector's callback can name it.",
           security: [{ installationAssertion: [], connectorKey: [] }],
           parameters: [
             {
@@ -1391,14 +1392,14 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           scheme: 'bearer',
           bearerFormat: 'JWT',
           description:
-            "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `body` is the SHA-256 of the exact request body, base64url, on `/clew/capabilities/{name}` `capability` is that name, and on an approved write `operationId` is its `X-Clew-Operation-Id`. Verify against `/api/connectors/jwks`, recompute all three from the request received, and accept an assertion without `capability` only on `/clew/scan`, `/clew/figure`, `/clew/documents` and `/clew/ask`; the body's `input` and `about` (`CallAbout`) are then Clew's. Clew signs one for every request, so take each `jti` once and refuse it again until it expires.",
+            "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `path` is the path of the route it is posted to, as the connector serves it (`/clew/scan`, `/clew/capabilities/{name}`; without the registered address's own path), `body` is the SHA-256 of the exact request body, base64url, on `/clew/capabilities/{name}` `capability` is that name, and on an approved write `operationId` is its `X-Clew-Operation-Id`. Verify against `/api/connectors/jwks` and recompute each from the request received: an assertion holds on the one route it was signed for, so a scan's is refused on `/clew/figure`. The body's `input` and `about` (`CallAbout`) are then Clew's. Clew signs one for every request, so take each `jti` once and refuse it again until it expires.",
         },
         installationAssertion: {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
           description:
-            "RS256 assertion signed by the installation for a read it makes itself (D119): `sub` is `clew:installation`, `caller` is `installation`, there is no `actor` and no `callback`, for this connector only and for at most two minutes, and it is bound to one request as every assertion is: `body` is the SHA-256 of the exact request body, base64url, and `capability` the name on `/clew/installation/{name}`. Verify against `/api/connectors/jwks`. A person's assertion never verifies as this one, and this one never verifies as a person's.",
+            "RS256 assertion signed by the installation for a read it makes itself (D119): `sub` is `clew:installation`, `caller` is `installation`, there is no `actor` and no `callback`, for this connector only and for at most two minutes, and it is bound to one request as every assertion is: `path` is `/clew/installation/{name}`, `body` the SHA-256 of the exact request body, base64url, and `capability` the name. Verify against `/api/connectors/jwks` and recompute each from the request received. Clew signs one for every read, so take each `jti` once and refuse it again until it expires. A person's assertion never verifies as this one, and this one never verifies as a person's.",
         },
         connectorKey: {
           type: 'apiKey',

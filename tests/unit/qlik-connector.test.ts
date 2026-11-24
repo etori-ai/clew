@@ -228,7 +228,8 @@ describe('the qlik connector', () => {
       method: 'POST',
       headers: {
         authorization:
-          'Bearer ' + (await assertionFor('qlik', secret)(hassan, [], { body, capability: 'qlik.sickLeaveByUnit' })),
+          'Bearer ' +
+          (await assertionFor('qlik', secret)(hassan, [], { path: '/clew/capabilities/qlik.sickLeaveByUnit', body })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },
@@ -290,7 +291,7 @@ describe('the qlik connector', () => {
     const response = await connectorFetch('http://qlik/clew/figure', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hillevi, [], { body })),
+        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hillevi, [], { path: '/clew/figure', body })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },

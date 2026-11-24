@@ -112,17 +112,14 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
   };
   /** A request straight to the service, signed for `actor`, as Clew sends it. */
   const post = async (actor: Actor, path: string, body: object, headers: Record<string, string> = {}) => {
-    // Bound to this body and, on a capability's route, to the capability (D117), as Clew signs it.
+    // Bound to this body and to this route, so on a capability's route to the capability (D117), as Clew signs it.
     const text = JSON.stringify({ actor, ...body });
-    const capability = path.startsWith('/clew/capabilities/') ? path.slice('/clew/capabilities/'.length) : undefined;
     return service.handle(
       new Request('http://nextcloud-approval' + path, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization:
-            'Bearer ' +
-            (await assertionFor(ID, secret)(actor, [], { body: text, ...(capability ? { capability } : {}) })),
+          authorization: 'Bearer ' + (await assertionFor(ID, secret)(actor, [], { path, body: text })),
           'x-clew-connector-key': secret,
           ...headers,
         },

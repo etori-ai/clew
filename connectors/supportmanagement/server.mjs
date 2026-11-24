@@ -14,6 +14,14 @@ import { STATUS_KINDS, adapterOf, createConnector } from './connector.mjs';
 import { createFixtureErrands } from './errands.mjs';
 import { createSupportManagementErrands } from './supportmanagement.mjs';
 import { listener } from './http.mjs';
+import { keysAddress } from './verification.mjs';
+
+// CLEW_URL is where Clew's public keys are fetched on the first call: one they cannot be fetched from is refused here.
+if (!keysAddress(process.env.CLEW_URL))
+  throw new Error(
+    "CLEW_URL must be Clew's base URL, where its public keys are fetched: https, or plain http only on a host of the " +
+      'development stack.',
+  );
 
 /** A JSON object of strings from the environment, or `{}` when the variable is unset. */
 const strings = name => {
