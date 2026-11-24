@@ -117,6 +117,7 @@ export const threads = {
     clock,
     documentPreview: reviewDocuments.preview,
     people: personKeys,
+    done: executions.doneOn,
   }),
   // A card the person starts without the model (D8, D97): a propose's draft, or an execute behind its decision.
   ...startedCards({

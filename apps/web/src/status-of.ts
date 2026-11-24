@@ -163,14 +163,18 @@ function executionNotice(thread: Thread, kind: StatusKind, ctx: StatusContext): 
       [execution.state === 'failed' ? decideAgain(thread) : CHECK],
     );
   }
-  // Let go by the person, who saw in the source that it did not go through: decided again from here (DE-M1, DE-M2).
+  // Let go by the person, who saw in the source that it did not go through: decided again from here (DE-M1, DE-M2). The
+  // rows the source had confirmed went through (`partial`): they are left out of the new decision and can be undone.
   if (execution.reason === RELEASED_BY_PERSON)
     return withMoves(
       {
         title: 'Markerat som inte genomfört',
-        description: `Clew väntar inte längre på besked från ${source}. Fatta beslutet igen om det behövs.`,
+        description:
+          execution.state === 'partial'
+            ? `Clew väntar inte längre på besked från ${source} om de rader som inte bekräftades. Fatta beslutet igen för dem om det behövs.`
+            : `Clew väntar inte längre på besked från ${source}. Fatta beslutet igen om det behövs.`,
       },
-      [decideAgain(thread)],
+      [decideAgain(thread), execution.state === 'partial' ? undoMove(thread, ctx) : undefined],
     );
   const reason = execution.reason;
   const sending = execution.state === 'pending' || execution.state === 'running';
@@ -187,17 +191,17 @@ function executionNotice(thread: Thread, kind: StatusKind, ctx: StatusContext): 
   if (reason === 'needs-session')
     return withMoves(
       { title: 'Kan inte skickas än', description: `${source} kräver en aktiv inloggning. Åtgärden väntar.` },
-      [CHECK],
+      [CHECK, release(thread)],
     );
   if (reason === 'authority-revoked')
     return withMoves(
       { title: 'Kan inte skickas än', description: 'Behörigheten har ändrats. Åtgärden väntar på kontroll.' },
-      [CHECK],
+      [CHECK, release(thread)],
     );
   if (reason === 'source-contract-changed')
     return withMoves(
       { title: 'Kan inte skickas än', description: 'Källans villkor har ändrats. Åtgärden väntar på kontroll.' },
-      [CHECK],
+      [CHECK, release(thread)],
     );
   if (execution.state === 'unknown') {
     if (execution.compensates)

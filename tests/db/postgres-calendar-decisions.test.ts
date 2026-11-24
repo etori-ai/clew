@@ -837,6 +837,42 @@ test('an invitation whose result is unknown holds the person for its approval’
   const next = await cardFor(later.b, later.shared, '2098-12-10T09:00:00.000Z');
   expect((await later.b.decisions.confirm(later.b.actor, next, [next + ':shared'])).execution?.state).toBe('pending');
 });
+test('an invitation in doubt that its manager lets go is sent again as a new decision, named after the one let go (DE-M1, DE-M2)', async () => {
+  const pair = await sharedPair(),
+    { a, shared, cards } = pair;
+  const create = a.provider.create.bind(a.provider);
+  a.provider.create = async () => {
+    throw new Error('offline');
+  };
+  const first = (await pair.confirmA()).execution!.id;
+  await a.uc.progress(first);
+  expect(await a.store.read(first)).toMatchObject({ state: 'unknown' });
+  // While it is in doubt the card's send is the same decision, replayed: nothing new is approved.
+  expect((await pair.confirmA()).execution?.id).toBe(first);
+  // The manager has seen in the calendar that it was not sent, and lets it go in their name; nothing is sent.
+  await a.uc.release(a.actor, first);
+  expect(await a.store.read(first)).toMatchObject({ state: 'failed', reason: 'released-by-person' });
+  const audited = async (id: string) =>
+    (
+      await database()
+        .select()
+        .from(schema.audit)
+        .where(eq(schema.audit.subject, 'execution:' + id))
+    ).map(r => [r.action, r.actor]);
+  expect(await audited(first)).toContainEqual(['execution.released', 'person:' + a.id]);
+  // The card sends the time again as a new decision, named after the one let go, and it reaches the calendar once.
+  a.provider.create = create;
+  const card = (await a.proposals.readThread(a.id, cards[0]))!.thread;
+  const again = (await pair.confirmA()).execution!;
+  expect(again).toMatchObject({
+    state: 'pending',
+    decisionId: `calendar:${cards[0]}:${card.updatedAt}:after:${first}`,
+  });
+  expect(again.id).not.toBe(first);
+  expect((await audited(again.id)).map(([action]) => action)).toContain('execution.approved');
+  await a.uc.progress(again.id);
+  expect(sentTo(a)).toEqual([[shared.email]]);
+});
 test('concurrent approvals sharing invitee locks finish even when they outnumber the database connections', async () => {
   const refusal = 'Delad Medarbetare bjuds redan in till ett utvecklingssamtal av en annan chef.';
   async function onItsWay() {

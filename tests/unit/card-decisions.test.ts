@@ -14,7 +14,9 @@ async function world(
   const store = memoryThreadStore(),
     t = draft(persona.id),
     approvals: Array<unknown> = [],
-    calls: string[] = [];
+    calls: string[] = [],
+    // What the ledger says the item's decisions carried out (DE-M1), as a test sets it.
+    carried: string[] = [];
   await store.transaction(tx => tx.insertThread(t));
   const reads = ['finance.open', 'finance.preview'];
   const registry = {
@@ -36,8 +38,9 @@ async function world(
     },
     clock: () => new Date('2026-11-04T06:00:00.000Z'),
     ...(options.people ? { people: options.people } : {}),
+    done: async (_p, id) => (id === t.id ? carried : []),
   });
-  return { store, t, uc, approvals, calls };
+  return { store, t, uc, approvals, calls, carried };
 }
 test('a stored execute action always becomes an approval, even if the card labels it a read', async () => {
   const w = await world();
@@ -120,7 +123,8 @@ test('a decision that ended without its effect, or with part of it, is decided a
   const settled = (
     state: 'failed' | 'partial' | 'unknown',
     updatedAt: string,
-    rows: [string, 'done' | 'failed'][] = [],
+    rows: [string, 'done' | 'failed' | 'unknown'][] = [],
+    reason: string | null = null,
   ) =>
     w.store.transaction(tx =>
       tx.updateThread(w.t.id, {
@@ -131,7 +135,7 @@ test('a decision that ended without its effect, or with part of it, is decided a
           decisionId: `card:${w.t.id}:approve:1`,
           operation: 'finance.approve',
           state,
-          reason: null,
+          reason,
           compensates: null,
         },
         receipt: {
@@ -173,7 +177,33 @@ test('a decision that ended without its effect, or with part of it, is decided a
   await settled('unknown', '2026-11-04T06:30:00.000Z');
   await w.uc.act(persona, w.t.id, 'approve', ['finance:inv:2']);
   expect(w.approvals[2]).toMatchObject({ decisionId: `card:${w.t.id}:approve:1` });
-  expect(w.approvals).toHaveLength(3);
+  // Let go by the person after the source had confirmed one row (DE-M2): it ended in part, so that row is not sent again.
+  await settled(
+    'partial',
+    '2026-11-04T06:40:00.000Z',
+    [
+      ['finance:inv:1', 'done'],
+      ['finance:inv:2', 'unknown'],
+    ],
+    'released-by-person',
+  );
+  await expect(w.uc.act(persona, w.t.id, 'approve', ['finance:inv:1', 'finance:inv:2'])).rejects.toThrow(
+    'En del av raderna är redan genomförda.',
+  );
+  await w.uc.act(persona, w.t.id, 'approve', ['finance:inv:2']);
+  expect(w.approvals[3]).toMatchObject({
+    decisionId: `card:${w.t.id}:approve:${Date.parse('2026-11-04T06:40:00.000Z')}:after:e1`,
+    payload: { refs: ['finance:inv:2'] },
+  });
+  expect(w.approvals).toHaveLength(4);
+  // A part, then a decision on the rest that the source refused: the item's latest receipt no longer names the row done
+  // first, but the ledger does, so the default selection is refused and the rest is sent (DE-M1).
+  w.carried.push('finance:inv:1');
+  await settled('failed', '2026-11-04T06:50:00.000Z', [['finance:inv:2', 'failed']]);
+  await expect(w.uc.act(persona, w.t.id, 'approve')).rejects.toThrow('En del av raderna är redan genomförda.');
+  await w.uc.act(persona, w.t.id, 'approve', ['finance:inv:2']);
+  expect(w.approvals[4]).toMatchObject({ payload: { refs: ['finance:inv:2'] } });
+  expect(w.approvals).toHaveLength(5);
 });
 test('foreign actions, stale selections and another owner cannot approve effects', async () => {
   const w = await world();
