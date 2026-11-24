@@ -18,7 +18,8 @@
  * title, and takes the user name and the source key away: the record then reads as its id, as one without a user name
  * does, the source can push the same name and key again as a new person, and no name resolves to the erased person, so
  * a card started about them can no longer be decided. It clears the name and the e-mail address of every invitation a
- * manager sent them (the calendar's proposals that invite them), whose rows stay and name them by their id. In the
+ * manager sent them (the calendar's proposals that invite them), whose rows stay and name them by their id, takes the
+ * rows that named them off their managers' planning cards and withdraws the times drawn for them and never sent. In the
  * audit trail it replaces the user names, source keys, claims and sign-in subjects that name the person with "[erased]"
  * and keeps every event, and it writes one `person.erased` row (actor `operator:cli`, about `person:<person id>`,
  * counts only). The row, its id, its organisation and its deactivation stay, so every record that points at the id
@@ -46,7 +47,7 @@ if (!args) {
 const { personId, confirmed } = args;
 if (!confirmed) {
   console.error(
-    `Erasing person "${personId}" clears their name, e-mail address, phone numbers, employments, title, user name and source key, removes their groups, placements, grant, sign-in bindings and sessions, clears their name and address from the invitations sent to them, and replaces their identifiers in the audit trail, and cannot be undone. Run again with --confirm to erase.`,
+    `Erasing person "${personId}" clears their name, e-mail address, phone numbers, employments, title, user name and source key, removes their groups, placements, grant, sign-in bindings and sessions, clears their name and address from the invitations sent to them, takes their rows off their managers' planning cards and withdraws the times drawn for them and never sent, and replaces their identifiers in the audit trail, and cannot be undone. Run again with --confirm to erase.`,
   );
   console.error(USAGE);
   process.exit(2);
@@ -64,7 +65,7 @@ try {
     const e = result.erased;
     console.log(
       Object.values(e).some(count => count > 0)
-        ? `Erased person "${personId}": ${e.fields} personal fields cleared; ${e.memberships} memberships, ${e.assignments} placements, ${e.grants} grants, ${e.bindings} sign-in bindings and ${e.sessions} sessions removed; ${e.invitations} invitations cleared of their name and address; ${e.auditRows} audit rows and ${e.signInRows} sign-in log rows cleared of their identifiers. Audited as person:${personId}.`
+        ? `Erased person "${personId}": ${e.fields} personal fields cleared; ${e.memberships} memberships, ${e.assignments} placements, ${e.grants} grants, ${e.bindings} sign-in bindings and ${e.sessions} sessions removed; ${e.invitations} invitations cleared of their name and address; ${e.planningRows} planning card rows removed and ${e.drafts} unsent times withdrawn; ${e.auditRows} audit rows and ${e.signInRows} sign-in log rows cleared of their identifiers. Audited as person:${personId}.`
         : `Person "${personId}" holds nothing more to erase: nothing was changed. Audited as person:${personId}.`,
     );
   }

@@ -15,6 +15,8 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { followedUnits } from '../modules/entities/domain';
 import { boardingTx, postgresBoardingDirectory } from '../modules/boarding/adapters/postgres';
 import { boardingLeavers } from '../modules/boarding/usecases';
+import { proposalTx } from '../modules/calendar/adapters/postgres';
+import { inviteeErasure } from '../modules/calendar/usecases/erasure';
 import { combineLeavers } from '../modules/people/leavers';
 import type { LeaverChange, LeaversTx } from '../modules/people/ports';
 import type { Transaction } from '@clew/db';
@@ -100,8 +102,16 @@ export const provisionerKeys = provisionerKeyUsecases({
   token: randomToken,
   digest: tokenDigest,
 });
-/** D123: `scripts/person-erase.ts` erases a deactivated person through this, in one transaction with its audit row. */
-export const personErasure = personErasureUsecases({ store: postgresProvisionStore(), clock });
+/**
+ * D123: `scripts/person-erase.ts` erases a deactivated person through this, in one transaction with its audit row. The
+ * erasure port is the calendar's (DE-M6): the invitations to the person and the rows of their managers' planning cards,
+ * cleared on the erasure's own transaction. It schedules no job and tells the talks module nothing, so a script that
+ * loads this starts no engine.
+ */
+export const personErasure = personErasureUsecases({
+  store: postgresProvisionStore({ erasure: tx => inviteeErasure(proposalTx(tx, ledger)) }),
+  clock,
+});
 /** Administration › Organisation (D99): the organisation tree as the provisioner pushed it, read only. */
 export const organisation = organisationUsecases({ store: postgresProvisionStore() });
 /** Personal (D94, D99): the signed-in manager's reports, read only. */
