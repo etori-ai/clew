@@ -1,0 +1,30 @@
+import type { Message, SourceErrand } from './connector.mjs';
+type Owner = { username: string; email?: string; eService?: boolean };
+export declare const CHANNELS: Array<Message['channel']>;
+export declare function owns(record: { owner: Owner | null } | null | undefined, account: string): boolean;
+export declare function toOwner(message: Message, owner: Owner | null): boolean;
+export declare function shownTo(messages: Message[], owner: Owner | null): Message[];
+export declare function byOwner(message: Message, owner: Owner | null): boolean;
+export declare function toTheOwner(message: Message, owner: Owner | null): boolean;
+export declare function lastFromDrake(shown: Message[], owner: Owner | null): Message | undefined;
+export declare function channelOf(shown: Message[], owner: Owner | null): Message['channel'] | null;
+export declare function waitsOnOwner(shown: Message[], owner: Owner | null): boolean;
+export declare function requestState(options: {
+  kind: string;
+  read: boolean;
+  shown?: Message[];
+  owner?: Owner | null;
+}): 'waiting-on-me' | 'new' | 'active' | 'closed';
+export declare function isAddress(value: unknown): boolean;
+export declare function mailSubject(errandNumber: string): string;
+export declare function mailLink(address: string | undefined, errandNumber: string): string | undefined;
+export declare function escapeMarkdown(text: string): string;
+export declare function ownWords(text: string): string;
+export declare function threadMarkdown(options: {
+  errand: SourceErrand & { created?: string };
+  area: string;
+  owner: Owner | null;
+  shown: Message[];
+  closed: boolean;
+  replyAddress?: string;
+}): string;
