@@ -69,7 +69,14 @@ export function followupFixture(id: string): FollowupSnapshot {
     ],
   };
 }
-type Harness = { id: string; store: FollowupStore; deliveries(): Promise<number>; audits(): Promise<string[]> };
+type Harness = {
+  id: string;
+  store: FollowupStore;
+  deliveries(): Promise<number>;
+  audits(): Promise<string[]>;
+  /** The details of the thread's audit rows of one action, oldest first. */
+  details(action: string): Promise<unknown[]>;
+};
 export function followupContract(name: string, make: () => Promise<Harness>) {
   const build = (
     h: Harness,
@@ -176,7 +183,9 @@ export function followupContract(name: string, make: () => Promise<Harness>) {
       await build(h, 'v1', followupAt, undefined, { replies: true, team: true }).uc.fire(h.id, 1);
       expect(await h.deliveries()).toBe(0);
       expect((await h.store.read(h.id))?.timer).toMatchObject({ generation: 2, state: 'active' });
-      expect((await h.audits()).filter(x => x === 'obligation.checked')).toHaveLength(1);
+      expect(await h.details('obligation.checked')).toEqual([
+        expect.objectContaining({ generation: 1, delivered: [], unread: ['replies', 'team'] }),
+      ]);
       // The replies cannot be read at the policy's end either: the thread still comes back to the manager.
       await build(h, 'v1', '2026-12-02T09:00:00.000Z', undefined, { replies: true }).uc.fire(h.id, 2);
       expect((await h.store.read(h.id))?.policy).toMatchObject({ state: 'finished', reason: 'expired' });

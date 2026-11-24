@@ -185,8 +185,15 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
   const [releasing, setReleasing] = useState(false);
   const question = releaseQuestion(thread.trigger.source),
     asked = confirmParts(question);
+  // An undo the calendar refused leaves the invitations it would take back standing, and pressing Ångra again would be
+  // that refusal replayed (the undo is the decision `undo:<original>`, DE-L5): it is not offered again.
+  const undoRefused = !!thread.execution?.compensates && thread.execution.state === 'failed';
   const undoOpen =
-    !deciding && !!undoUntil && Date.parse(undoUntil) > now && thread.proposals.some(p => p.status === 'confirmed');
+    !deciding &&
+    !undoRefused &&
+    !!undoUntil &&
+    Date.parse(undoUntil) > now &&
+    thread.proposals.some(p => p.status === 'confirmed');
   useEffect(() => {
     if (!undoOpen) return;
     const t = setInterval(() => setNow(Date.now()), 1000);

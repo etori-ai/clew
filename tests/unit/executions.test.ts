@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { SUBJECT_CHANGED, type AuthenticatedContext } from '../../packages/contracts/src/index';
 import type { ExecuteResult } from '../../packages/connectors/src/index';
-import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
+import { executionUsecases, RECORDING_ATTEMPTS } from '../../apps/server/src/modules/executions/usecases';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import type { ExecutionSource, WriteSafety } from '../../apps/server/src/modules/executions/model';
 
@@ -219,17 +219,40 @@ describe('approved source execution', () => {
       result: { rows: [{ outcome: 'done' }, { outcome: 'unknown' }] },
     });
   });
-  test('a requested reconciliation starts a second workflow under its own stable id; the approval keeps its own (D86)', async () => {
+  test('a requested reconciliation starts a workflow of its own per request; the approval keeps its own (D86, DE-L1)', async () => {
     const w = world();
     const e = await w.approve();
     w.loseReply();
     await w.uc.progress(e.id);
+    // The same request twice at one instant is one workflow; a later one is another, so a request whose workflow ended
+    // in error before it claimed anything never swallows the next.
     await w.uc.reconcile(persona, e.id);
     await w.uc.reconcile(persona, e.id);
+    w.advance(1_000);
+    await w.uc.reconcile(persona, e.id);
+    const at = Date.parse(w.clock().toISOString());
     expect(w.store.enqueued().map(s => [s.id, s.input])).toEqual([
       ['execution:' + e.id, e.id],
-      ['reconcile:' + e.id + ':1', e.id],
+      [`reconcile:${e.id}:1:${at - 1_000}`, e.id],
+      [`reconcile:${e.id}:1:${at}`, e.id],
     ]);
+  });
+  test('a decision still waiting to be sent is started again by a check, and a settled one is left as it is (DE-L1)', async () => {
+    const w = world();
+    const e = await w.approve();
+    const before = w.store.audit().length;
+    await w.uc.reconcile(persona, e.id);
+    expect(w.store.enqueued().filter(s => s.id.startsWith('reconcile:'))).toHaveLength(1);
+    expect(w.store.audit().slice(before)).toEqual([
+      expect.objectContaining({ action: 'execution.reconciliation_requested', subject: 'execution:' + e.id }),
+    ]);
+    expect(await w.uc.progress(e.id)).toBe('done');
+    expect(w.writes()).toBe(1);
+    const settled = w.store.audit().length;
+    w.advance(1_000);
+    await w.uc.reconcile(persona, e.id);
+    expect(w.store.enqueued().filter(s => s.id.startsWith('reconcile:'))).toHaveLength(1);
+    expect(w.store.audit()).toHaveLength(settled);
   });
 
   test('source retirement retains an unknown outcome but fences queued progress and reconciliation', async () => {
@@ -322,7 +345,7 @@ test('a decision in doubt is let go by its own person only: it fails in their na
       const row = (await tx.lock(e.id))!;
       await tx.update({ ...row, state, leaseUntil });
     });
-  // Being read back right now: left to that check.
+  // Being read back right now: left to that check. A check whose lease has passed holds nothing.
   await lease('running', '2099-01-01T00:00:00.000Z');
   await expect(w.uc.release(persona, e.id)).rejects.toThrow('Beslutet kontrolleras just nu.');
   await lease('unknown', null);
@@ -352,6 +375,31 @@ test('a decision in doubt is let go by its own person only: it fails in their na
   expect(w.store.audit().slice(before)).toHaveLength(1);
   // Let go once.
   await expect(w.uc.release(persona, e.id)).rejects.toThrow('Beslutet väntar inte längre på besked.');
+});
+test('a decision in doubt whose source confirmed some rows is let go as partial: those rows went through (DE-M2)', async () => {
+  const w = world();
+  const e = await w.approve();
+  w.loseReply();
+  await w.uc.progress(e.id);
+  await w.store.transaction(async tx => {
+    const row = (await tx.lock(e.id))!;
+    await tx.update({
+      ...row,
+      result: {
+        ...result,
+        rows: [
+          { ...result.rows[0]!, outcome: 'done' },
+          { ...result.rows[0]!, ref: 'second', outcome: 'unknown' },
+        ],
+      } as never,
+    });
+  });
+  expect(await w.uc.release(persona, e.id)).toMatchObject({ state: 'partial', reason: 'released-by-person' });
+  expect(w.store.audit().at(-1)).toMatchObject({
+    action: 'execution.released',
+    details: { outcomes: ['done', 'unknown'] },
+  });
+  expect(w.writes()).toBe(1);
 });
 test('an undo in doubt is not let go: the original receipt stands whatever became of it (DE-M2)', async () => {
   const w = world();
@@ -433,7 +481,10 @@ test("a failure of Clew's own while the source's answer is recorded is logged an
   expect(w.writes()).toBe(1);
   expect(await w.store.read(e.id)).toMatchObject({ state: 'running', reason: null });
   expect(logged).toEqual([
-    ['execution: the answer could not be recorded', { execution: e.id, operation: 'test.do', error: 'Error' }],
+    [
+      'execution: the answer could not be recorded',
+      { execution: e.id, operation: 'test.do', attempt: 1, error: 'Error' },
+    ],
   ]);
   // The workflow tries again: inside the lease the step is busy; after it, the source is read back and recorded.
   expect(await uc.progress(e.id)).toBe('busy');
@@ -444,11 +495,85 @@ test("a failure of Clew's own while the source's answer is recorded is logged an
   expect(started()).toEqual([]);
   w.advance(121_000);
   await uc.reconcile(persona, e.id);
-  expect(started()).toEqual([{ workflow: 'approvedExecution', id: `reconcile:${e.id}:1`, input: e.id }]);
+  expect(started()).toEqual([
+    { workflow: 'approvedExecution', id: `reconcile:${e.id}:1:${Date.parse(w.clock().toISOString())}`, input: e.id },
+  ]);
   failing = false;
   expect(await uc.progress(e.id)).toBe('done');
   expect(await w.store.read(e.id)).toMatchObject({ state: 'succeeded', reason: null });
   expect(w.writes()).toBe(1);
+});
+
+test('a recording that fails at every claim stops at the bound, and its person may then let it go (DE-M3)', async () => {
+  const w = world();
+  const logged: unknown[][] = [];
+  const store: typeof w.store = {
+    ...w.store,
+    transaction: fn =>
+      w.store.transaction(tx =>
+        fn({
+          ...tx,
+          update: async e => {
+            if (e.state === 'succeeded') throw new Error('duplicate key value');
+            await tx.update(e);
+          },
+        }),
+      ),
+  };
+  const uc = executionUsecases({
+    store,
+    source: w.source,
+    clock: w.clock,
+    ids: () => 'e1',
+    digest: input => JSON.stringify(input),
+    log: (...line) => void logged.push(line),
+  });
+  const e = await uc.approve(persona, { decisionId: 'decision', operation: 'test.do', payload: { revision: 'r1' } });
+  // Each claim after a lease reads the source back and fails to record it again, until the bound: then the step ends.
+  let thrown = 0,
+    ended = false;
+  for (let claim = 0; claim < 3 * RECORDING_ATTEMPTS && !ended; claim++) {
+    try {
+      ended = (await uc.progress(e.id)) === 'done';
+    } catch {
+      thrown++;
+    }
+    w.advance(121_000);
+  }
+  expect(ended).toBe(true);
+  expect(thrown).toBe(RECORDING_ATTEMPTS - 1);
+  expect(await w.store.read(e.id)).toMatchObject({ state: 'running', attempt: RECORDING_ATTEMPTS });
+  expect(logged.at(-1)?.[0]).toBe(
+    'execution: the answer could not be recorded, and is not tried again until it is checked',
+  );
+  expect(w.writes()).toBe(1);
+  // Its lease has passed and nobody holds it: the person who has seen the source may let it go.
+  expect(await uc.release(persona, e.id)).toMatchObject({ state: 'failed', reason: 'released-by-person' });
+  expect(w.writes()).toBe(1);
+});
+
+test('the rows a work item’s decisions carried out are what no undo took back, across every decision on it (DE-M1)', async () => {
+  const { doneOnCard } = await import('../../apps/server/src/modules/executions/domain');
+  const row = (ref: string, outcome: 'done' | 'failed' | 'unknown') => ({ ref, label: ref, outcome, detail: '' });
+  const e = (id: string, state: string, rows: ReturnType<typeof row>[], compensates: string | null = null) =>
+    ({ id, state, compensates, result: { headline: '', rows } }) as never;
+  expect(
+    doneOnCard([
+      // A part, then a refusal of the rest: the first row stays done.
+      e('a', 'partial', [row('inv:1', 'done'), row('inv:2', 'failed')]),
+      e('b', 'failed', [row('inv:2', 'failed')]),
+      // Released in doubt with one row confirmed: that row is done.
+      e('c', 'partial', [row('inv:3', 'done'), row('inv:4', 'unknown')]),
+      // Done, then undone in part, then that undo's rest refused: only what the undo confirmed is taken back.
+      e('d', 'succeeded', [row('inv:5', 'done'), row('inv:6', 'done')]),
+      e('u1', 'partial', [row('inv:5', 'done'), row('inv:6', 'failed')], 'd'),
+      // Done and undone as a whole; an undo that was refused takes nothing back.
+      e('f', 'succeeded', [row('inv:7', 'done')]),
+      e('u2', 'succeeded', [row('inv:7', 'done')], 'f'),
+      e('g', 'succeeded', [row('inv:8', 'done')]),
+      e('u3', 'failed', [row('inv:8', 'failed')], 'g'),
+    ]),
+  ).toEqual(['inv:1', 'inv:3', 'inv:6', 'inv:8']);
 });
 
 describe('an approved action about a person (D122)', () => {

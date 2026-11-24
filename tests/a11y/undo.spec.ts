@@ -112,4 +112,30 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await back.getByRole('link', { name: 'Planera utvecklingssamtal' }).click();
     await expect(pane.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
   });
+
+  test('an undo the calendar refused is not offered again: pressing Ångra once more would replay the refusal', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/todo?item=samtal');
+    const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+    await pane.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
+    await expect(pane.locator('#card-samtal').getByRole('button', { name: /^Ångra allt · / })).toBeVisible();
+    // The undo is the decision `undo:<original>`, and the calendar refused it: the invitations stand, the window is
+    // still open, and the same undo again would be that refusal again.
+    const card = api.threads.find(t => t.id === 'samtal')!;
+    card.execution = {
+      id: 'undo-execution',
+      decisionId: `undo:${card.execution!.id}`,
+      operation: card.receipt!.undoCapability!,
+      state: 'failed',
+      reason: null,
+      compensates: card.execution!.id,
+    };
+    await open(page, '/todo?item=samtal');
+    const again = page.getByRole('complementary', { name: 'Valt ärende' }).locator('#card-samtal');
+    await expect(again).toBeVisible();
+    await expect(again.getByRole('button', { name: /^Ångra/ })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
 });

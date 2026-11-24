@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import type { Execution, ExecutionStore, Job, WatchCard, WatchIntent } from '../model';
@@ -84,6 +84,15 @@ export function postgresExecutionStore(
     async read(id) {
       const [r] = await database().select().from(table).where(eq(table.id, id));
       return r ? fromRow(r) : undefined;
+    },
+    async readCard(personId, threadId) {
+      return (
+        await database()
+          .select()
+          .from(table)
+          .where(and(eq(table.personId, personId), sql`${table.presentation}->>'threadId' = ${threadId}`))
+          .orderBy(asc(table.createdAt), asc(table.id))
+      ).map(fromRow);
     },
     async readJob(id) {
       const [r] = await database().select().from(jobs).where(eq(jobs.id, id));

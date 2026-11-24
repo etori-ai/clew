@@ -47,6 +47,11 @@ export interface CardDecisionsDeps {
   ): Promise<unknown>;
   clock: () => Date;
   /**
+   * The rows of the item that its decisions carried out and no undo took back, from the ledger (DE-M1): a decision made
+   * again leaves them out. Absent: only the latest receipt after a part is known.
+   */
+  done?(persona: AuthenticatedContext, threadId: string): Promise<string[]>;
+  /**
    * Whose a source's key is (D122): a started action's person from Clew's key to the user name now, and the people a
    * read's records name to their ids. Absent: a started action about a person cannot be decided, and a record names nobody.
    */
@@ -54,7 +59,16 @@ export interface CardDecisionsDeps {
 }
 
 /** Human card decisions enter the durable execution boundary. Reads remain immediate. */
-export function cardDecisions({ read, registry, run, approve, clock, documentPreview, people }: CardDecisionsDeps) {
+export function cardDecisions({
+  read,
+  registry,
+  run,
+  approve,
+  clock,
+  documentPreview,
+  people,
+  done,
+}: CardDecisionsDeps) {
   const required = async (persona: AuthenticatedContext, id: string) => {
     const t = await read(persona, id);
     if (!t) throw new InputError('Ärendet finns inte.');
@@ -144,10 +158,17 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     // never reached the source. A started action refused because its user name had moved (D122) is one of them.
     const ended = !!t.execution && ['failed', 'partial'].includes(t.execution.state);
     const previous = t.execution && !t.execution.compensates && !ended ? t.execution : undefined;
-    // After a partial answer, what the source got done is not sent again: the person decides on the rows that remain.
-    if (!previous && t.execution?.state === 'partial' && action.usesItems) {
-      const done = new Set(t.receipt?.rows.filter(row => row.outcome === 'done').map(row => row.ref));
-      if (selected.some(ref => done.has(ref)))
+    // What the source got done is not sent again: the person decides on the rows that remain. The ledger says it across
+    // every decision on the item, so a part followed by a refusal, a release or a refused undo still leaves them out;
+    // the latest receipt after a part says it too.
+    if (!previous && action.usesItems) {
+      const carried = new Set([
+        ...(done ? await done(persona, id) : []),
+        ...(t.execution?.state === 'partial'
+          ? (t.receipt?.rows.filter(row => row.outcome === 'done').map(row => row.ref) ?? [])
+          : []),
+      ]);
+      if (selected.some(ref => carried.has(ref)))
         throw new InputError('En del av raderna är redan genomförda. Välj bara de som återstår.');
     }
     if (
