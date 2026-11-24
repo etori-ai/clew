@@ -27,7 +27,8 @@ import { calendarConnector } from '../../apps/server/src/modules/calendar/connec
 import { workCapabilities } from '../../apps/server/src/modules/work/capabilities';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { assistantUsecases, type AssistantDeps } from '../../apps/server/src/assistant';
-import type { ModelGenerate } from '../../apps/server/src/assistant/model';
+import { TOOL_REFUSED, type ModelGenerate } from '../../apps/server/src/assistant/model';
+import { managedPeople } from '../../apps/server/src/assistant/people';
 import { CARD_MARKS_MAX, cardRows, namedItems } from '../../apps/server/src/assistant/card';
 import { fixtureConnectors } from '../fixture-connectors';
 
@@ -286,14 +287,9 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
     log: (...args) => {
       logged.push(args);
     },
-    // Composition's binding (D115): the people Personal lists for the asker, co-managers included.
-    people: async persona =>
-      (await d.staff.reach(persona)).managed.flatMap(unit =>
-        unit.people.flatMap(p => {
-          const key = personKey(p);
-          return key ? [{ key, name: p.name, unit: unit.unitLabel }] : [];
-        }),
-      ),
+    // Composition's binding (D115): the people Personal lists for the asker, co-managers included, by Clew's key and
+    // the user name a read takes.
+    people: async persona => managedPeople((await d.staff.reach(persona)).managed, personKey),
   };
   const assistant = assistantUsecases(deps);
   /** One question as this person, in a conversation of its own or one going on; the turn, its audit row and its message. */
@@ -317,11 +313,12 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
       body: turn.thread.messages.at(-1)!.body,
     };
   };
-  return { d, registry, competence, store, ask, model, logged, freeAsked };
+  return { d, deps, registry, competence, store, ask, model, logged, freeAsked };
 }
 
 const competenceTools = (offered: string[]) => offered.filter(t => t.startsWith('competence__')).sort();
-const UNKNOWN = { error: 'Okänd förmåga.' };
+/** What the model is told of a read the registry refused: Clew's words, never the refusal's (`toolFailure`). */
+const UNKNOWN = { error: TOOL_REFUSED };
 
 describe('which of Clew’s own reads the model is offered (D122 item 3)', () => {
   test('a manager is offered their own and their reports’ holdings, what needs doing and a unit’s coverage, and free times', async () => {
@@ -457,6 +454,26 @@ describe('the assistant reads as the person who asks, never more (D122 item 5)',
       ['hillevi', 'managed', 'assistant', 'person', 'anna', 1],
     ]);
     expect(turn.assistant).toBe('model');
+  });
+  test('a report whose user name is not their id: the prompt and the lookup give the user name, and a read with it answers', async () => {
+    const w = await world([
+      ['clew__findPerson', { name: 'Erik' }],
+      ['competence__holdings', { person: 'Erik.S' }],
+    ]);
+    // The people port is bound as the server binds it: Clew's key is Erik's id, the user name is what a read takes.
+    expect((await w.deps.people!(w.d.persona('hillevi'))).find(p => p.name === 'Erik Sandström')).toEqual({
+      key: 'erik',
+      userName: 'Erik.S',
+      name: 'Erik Sandström',
+      unit: 'Bergsåkers skola',
+    });
+    const { handed, audit } = await w.ask('hillevi', 'Vilken kompetens har Erik?');
+    expect(w.model.systems.at(-1)).toContain('"Erik" är Erik Sandström på Bergsåkers skola, användarnamn Erik.S.');
+    expect(w.model.systems.at(-1)).not.toContain('användarnamn erik');
+    expect(handed[0]).toMatchObject({ found: 'one', name: 'Erik Sandström', userName: 'Erik.S' });
+    expect(handed[1]).toMatchObject({ antal: 1, rader: [{ Kompetens: 'HLR', Status: 'går ut snart' }] });
+    expect((audit.details as { reads: unknown[] }).reads).toEqual([{ capability: 'competence.holdings', rows: 1 }]);
+    expect(w.store.readLog().map(r => [r.caller, r.personId])).toEqual([['assistant', 'erik']]);
   });
   test('the person themself: their own holdings, unlogged whoever reads them; a colleague’s is refused and reaches nobody', async () => {
     const w = await world([

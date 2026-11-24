@@ -20,8 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 8 | Erasure reaches everything | `DE-M6`, `BD-M1`, `BD-M2`, `BD-L1`, `BD-L3`, `BD-L5` | |
-| 10 | The assistant's prompt, tools, provider and record | `AM-2`, `AM-3`, `AM-5`, `AM-6`, `AM-7`, `AM-8`, `AM-9`, `AM-10` | |
 | 12 | The session and the change stream in the browser | `WD-M1`, `WD-M2`, `WD-M3`, `WD-M4`, `WD-L2`, `WD-L4`, `WD-L9` | |
 | 13 | The conversation's state | `WD-L1`, `WD-L3`, `WD-L5`, `WD-L6`, `WD-L7`, `WD-L8` | |
 | 14 | The calendar's time zones, entries and talk meetings | `DE-M8`, `DE-L14`, `DE-L15`, `DE-L16`, `WA-M2`, `WA-L5` | |
@@ -38,15 +36,15 @@ no batch.
 |---|---|---|---|---|---|
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 0 | 1 | 1 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 0 | 0 |
-| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 5 | 5 | 10 |
-| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 4 | 11 | 15 |
+| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 0 | 2 | 2 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 3 | 11 | 14 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
-| BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 5 | 7 |
+| BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 2 | 2 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 7 | 7 |
-| | **Total** | **0** | **20** | **56** | **76** |
+| | **Total** | **0** | **12** | **50** | **62** |
 
 ## High
 
@@ -75,14 +73,6 @@ and it carries a table of what reaches the model and a table of the tools.
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| AM-2 | Medium | Source text is written into the system prompt beside Clew's rules, with no rule that it is data and no line rule on its fields. | `apps/server/src/assistant/model.ts:136-213` |
-| AM-3 | Medium | The live server binds the assistant's `people` port with the person's Clew id and the prompt calls it their user name, which the registry refuses. | `apps/server/src/composition/index.ts:359-363` |
-| AM-5 | Medium | One failed turn marks the provider down for everyone, and turns fail for reasons unrelated to the endpoint: an 8-second budget, no text after tool calls, no token limit. | `apps/server/src/assistant/index.ts:734` |
-| AM-6 | Medium | A model call that does not end in the model's answer leaves no record of which model was called or what it read. | `apps/server/src/assistant/index.ts:727` |
-| AM-7 | Medium | D115's guard is applied to the turn's prompt but not to the conversation's history, which is sent unchecked. | `apps/server/src/assistant/context.ts:92` |
-| AM-8 | Low | A failed tool's error message, a connector's own or any other error's, is handed to the model as it is. | `apps/server/src/assistant/model.ts:54-56` |
-| AM-9 | Low | The administrator's "Assistent" switch closes tools only; chips, matched cards and the router's answers from a closed connector still reach the model. | `packages/connectors/src/index.ts:1891-1894` |
-| AM-10 | Low | Changing a provider's address keeps its sealed key, which is then sent to the new address. | `apps/server/src/assistant/usecases/models.ts:229-256` |
 | AM-12 | Low | The system prompt tells the model it serves Sundsvalls kommun's Startsidan in every installation. | `apps/server/src/assistant/model.ts:137` |
 | AM-13 | Low | Several model administration audit rows have no test, the assistant's function ports have no contract case, and nothing tests what a stopped turn or a model-started item leaves. | `apps/server/src/assistant/usecases/models.ts` |
 
@@ -95,7 +85,6 @@ ports with no contract under M7.
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | DE-M4 | Medium | The card projection, the owned domains' timer fences and the follow-up's writes are SQL in the composition root with no memory twin, so the unit suite tests a copy. | `apps/server/src/composition/execution-projection.ts:30-247` |
-| DE-M6 | Medium | No erasure clears an invitee's `participant_name` and `participant_email` from `proposal`. | `packages/db/src/schema.ts:433-435` |
 | DE-M7 | Medium | Ten ports or groups of ports have behaviour that no contract case holds both adapters to. | `tests/` (the store contracts) |
 | DE-M8 | Medium | The CalDAV adapter builds a person's address as `<login>@clew.test` and reads an appointment with no organiser as someone else's. | `packages/calendar/src/nextcloud.ts:68` |
 | DE-L3 | Low | `scanInto`, the first scan implementation, is unreachable in the server, and its tests still stand as evidence. | `apps/server/src/threads/usecases/cards.ts:110-203` |
@@ -143,12 +132,7 @@ of the audit rows added to the decisions review's table B, and of test gaps unde
 
 | Id | Severity | Finding | Where |
 |---|---|---|---|
-| BD-M1 | Medium | The documented procedure for erasing one person runs no boarding export or erasure, and D123, the status page and the scripts' headers leave it out too. | `docs/maintainers/reliability-operations.md:199` |
-| BD-M2 | Medium | `boarding.erasePerson` refuses neither an unknown id nor an active person, and its script parses arguments its own way and reaches for the durable engine. | `apps/server/src/modules/boarding/usecases.ts:952-969` |
-| BD-L1 | Low | A plan item owned by a manager who has been deactivated waits for nobody, since it is handed back only when its owner is erased. | `apps/server/src/modules/boarding/domain.ts:328-329` |
-| BD-L3 | Low | Two scan cards of Clew's own put the person's user name in their action input, which no erasure reaches. | `apps/server/src/modules/boarding/capabilities.ts:197` |
 | BD-L4 | Low | `currentRound` takes a write lock on the organisation's one open round on every talks read, so every reader queues on one row. | `apps/server/src/modules/talks/adapters/postgres.ts:79-86` |
-| BD-L5 | Low | Dialogue's own copy of the card-removal helper audits every card an erasure removes as an activity removed by hand. | `apps/server/src/composition/dialogue-work-items.ts:26` |
 | BD-L6 | Low | Several boarding and dialogue work-item audit rows, `DialogueTx.lockPersonForErasure` and boarding's erasure refusals have no test or contract case. | `apps/server/src/composition/boarding-work-items.ts:153-289` |
 
 ## The web app's data, state and errors

@@ -146,8 +146,11 @@ export interface DialogueWorkItems {
    * the card back to the top of the owner's stream and return true; otherwise change nothing and return false.
    */
   fire(threadId: string, generation: number, at: string): Promise<boolean>;
-  /** The cards gone with their messages, deliveries and timers. */
-  remove(threadIds: readonly string[]): Promise<void>;
+  /**
+   * The cards gone with their messages, deliveries and timers. `why` is what each card's `thread.removed` row says: a
+   * removed activity, or an erasure of the person who owned them.
+   */
+  remove(threadIds: readonly string[], why: 'activity-removed' | 'erasure'): Promise<void>;
 }
 
 /** Everything a dialogue use case reads and writes in one transaction. Reads that a write follows take a row lock. */

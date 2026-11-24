@@ -3394,8 +3394,9 @@ export const VerbSchema = object({
 });
 export type Verb = Static<typeof VerbSchema>;
 /**
- * What one model turn cost and where its trace is (D91): the provider, the wall time, the steps, the tokens, how the
- * model stopped and the OpenTelemetry trace id when the turn was traced. Metadata only: never the prompt or the answer.
+ * What one model call cost and where its trace is (D91): the provider, the wall time, the steps, the tokens, how the
+ * model stopped and the OpenTelemetry trace id when the turn was traced. A call that failed or was stopped has what is
+ * known of it: the provider, the wall time and the trace. Metadata only: never the prompt or the answer.
  */
 export const ModelCallSchema = object({
   providerId: Type.String({ maxLength: 60 }),
@@ -3471,8 +3472,27 @@ export const MessageMetaSchema = object({
   cardsAs: Type.Optional(Type.Literal('rows')),
   /** The model that wrote this answer (D24); absent when the router answered. */
   model: Type.Optional(ModelRefSchema),
-  /** The model turn's cost and trace (D91); absent when the router answered. */
+  /**
+   * The model call's cost and trace (D91): of the call that wrote the answer, or, when the router answered after the
+   * model failed, of the call that failed (with what is known of it); absent when no model was called. The audit row
+   * names the model by id beside it.
+   */
   modelCall: Type.Optional(ModelCallSchema),
+  /**
+   * What the answer's text was written from besides its `reads` (D115, D122 item 4): `items`, the work items whose own
+   * text beyond their title (a summary, rows, a receipt, why now) it was given or quotes; `connectors`, every connector
+   * whose data it was given or quotes; and `capabilities`, the reads of the earlier answers it was handed. An answer
+   * written from an earlier answer carries that answer's too. Before an answer is handed to a model again as history, a
+   * later turn checks them: an answer about an item that is about a person the conversation names, or from a connector
+   * or read the administrator has closed to the assistant since, is not handed over. Ids only, never text.
+   */
+  basis: Type.Optional(
+    object({
+      items: Type.Optional(Type.Array(id, { maxItems: 100 })),
+      connectors: Type.Optional(Type.Array(Type.String({ maxLength: 60 }), { maxItems: 100 })),
+      capabilities: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 100 })),
+    }),
+  ),
   /** Why the router answered although a model is configured (D8): the failure in the wire's own words, cut short. */
   fallbackReason: Type.Optional(Type.String({ maxLength: 200 })),
   /**

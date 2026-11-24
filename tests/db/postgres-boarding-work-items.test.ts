@@ -315,6 +315,12 @@ describe('the card of a plan’s item (D124)', () => {
     expect((await rows(first)).thread).toBeUndefined();
     expect((await rows(first)).timer).toBeUndefined();
     expect(cancelled.slice(before)).toEqual([`${boardingTimerId(first)}:v2:1`]);
+    // Only an erasure removes a boarding card, and its audit row says so.
+    expect((await rows(first)).audit.at(-1)).toMatchObject({
+      actor: 'boarding:item',
+      action: 'thread.removed',
+      details: { reason: 'erasure' },
+    });
     expect((await rows(kept)).thread).toBeDefined();
   });
 });
@@ -479,6 +485,10 @@ describe('the use cases end to end on the composed store (D124)', () => {
     expect(visible).not.toContain('journalen');
     for (const name of Object.values(w.names)) expect(visible).not.toContain(name);
 
+    // Only a person the source has deactivated is erased (D123 item 3).
+    expect(await boarding.erasePerson('operator:test', w.hire)).toEqual({ refused: 'active' });
+    expect(await store.transaction(tx => tx.plan(id))).toBeDefined();
+    await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, w.hire));
     const erased = await boarding.erasePerson('operator:test', w.hire);
     expect(erased).toMatchObject({ plans: 1, items: 4, cards: 4 });
     expect(await store.transaction(tx => tx.plan(id))).toBeUndefined();

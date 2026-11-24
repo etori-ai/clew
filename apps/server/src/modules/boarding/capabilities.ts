@@ -161,8 +161,9 @@ export function boardingConnector(
     scope: () => true,
     // The plan's page for the person, by Clew's id: their plans, or starting one.
     about: { entity: 'person', page: { title: 'Öppna planen', href: '/boarding/{id}' } },
-    // A manager's reports (D99): nobody else is asked about (D117).
-    person: { admits: ['managed'] },
+    // A manager's reports (D99): nobody else is asked about (D117). The suggestion's card names the person by Clew's id
+    // (D122), which the registry gives the read as the user name.
+    person: { admits: ['managed'], ids: true },
     run: async (actor, input) => ({
       rows: (await boarding.aboutPeople(await persona(actor), input.keys)).map(personRow),
     }),
@@ -184,8 +185,10 @@ export function boardingConnector(
     /**
      * Clew suggests, the manager starts (D124): one card for each report whose employment starts within the
      * suggestion window with no introduction that covers it. The card names nobody, in its title, summary, reason or
-     * row ("Ny medarbetare"); the person is the row's subject, by user name, and the read's input. Its read opens the person's place in boarding, where the manager starts the plan on
-     * a day they confirm. Every card is one occurrence per person and start, so a card whose cause is gone (a plan was
+     * row ("Ny medarbetare"); the person is the row's subject, by user name, which the stream keeps as their id
+     * (`keyedDrafts`), and the read's input, by Clew's id (D122): Clew is the source, and the read's page opens the
+     * person's page by it. Its read opens the person's place in boarding, where the manager starts the plan on a day
+     * they confirm. Every card is one occurrence per person and start, so a card whose cause is gone (a plan was
      * started, the date passed or moved) is resolved at the next scan and a new start is a new card. The observation is
      * complete: it is the whole of the reader's reports, read now, and a read that fails throws, so the scan is never a
      * complete observation of nothing.
@@ -223,7 +226,7 @@ export function boardingConnector(
                   kind: 'read' as const,
                   role: 'primary' as const,
                   target: 'panel' as const,
-                  input: { keys: [key] },
+                  input: { keys: [s.personId] },
                 },
               ]
             : [],

@@ -408,6 +408,10 @@ describe('activities', () => {
     await dialogue.removeActivity(ingrid, id);
     expect(store.state.activities.has(id)).toBe(false);
     expect(store.state.cards.has(threadId)).toBe(false);
+    // The card's removal is the activity's, not an erasure.
+    expect(store.calls().filter(c => c.op === 'remove')).toEqual([
+      { op: 'remove', threadIds: [threadId], why: 'activity-removed' },
+    ]);
     expect(
       store
         .audit()
@@ -643,6 +647,10 @@ describe('erasure and export', () => {
     expect([...store.state.notes.keys()]).toEqual([kept]);
     expect(store.state.activities.get(id)).toMatchObject({ ownerId: null, threadId: null, createdBy: 'ingrid' });
     expect(store.state.cards.has(threadId)).toBe(false);
+    // The cards go as an erasure's, which is what each card's `thread.removed` row says.
+    expect(store.calls().filter(c => c.op === 'remove')).toEqual([
+      { op: 'remove', threadIds: [threadId], why: 'erasure' },
+    ]);
     expect([...store.state.assessments.values()].map(a => a.authorId)).toEqual([null]);
     expect(store.audit().at(-1)).toEqual({
       actor: 'operator:cli',
