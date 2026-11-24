@@ -134,6 +134,11 @@ export interface ThreadTx {
    * written, when another open pushed thread of the person holds its topic, as an insert is refused (DE-L9).
    */
   reopenThread(id: string, patch: Omit<ThreadPatch, 'state' | 'items'>): Promise<boolean>;
+  /**
+   * The id of the other open pushed thread of this thread's person on its topic, which a reopen of it is refused for
+   * (DE-L9); undefined when none holds it.
+   */
+  topicHolder(id: string): Promise<string | undefined>;
   addMessage(threadId: string, message: NewMessage): Promise<void>;
   writeAudit(entry: AuditEntry): Promise<void>;
   /** Idempotent by job id. */

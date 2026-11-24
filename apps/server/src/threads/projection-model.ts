@@ -46,10 +46,21 @@ export interface ProposalProjectionTx {
   savePolicy(policy: FollowupPolicy): Promise<void>;
 }
 export interface ProjectionTx {
-  /** The card, its obligation timer with its workflow start, and the audit rows: the stream's own port, in this transaction. */
+  /**
+   * The card, its obligation timer with its workflow start, and the audit rows: the stream's own port, in this
+   * transaction. A card opened again goes through `reopenThread`, as every reopen does (DE-L9).
+   */
   cards: Pick<
     ThreadTx,
-    'insertThread' | 'lockThread' | 'updateThread' | 'scheduleTimer' | 'cancelTimer' | 'enqueue' | 'writeAudit'
+    | 'insertThread'
+    | 'lockThread'
+    | 'updateThread'
+    | 'reopenThread'
+    | 'topicHolder'
+    | 'scheduleTimer'
+    | 'cancelTimer'
+    | 'enqueue'
+    | 'writeAudit'
   >;
   proposals: ProposalProjectionTx;
   /** A job row with its workflow start, once by id; true when this call inserted it. The use case writes its `job.scheduled` row. */

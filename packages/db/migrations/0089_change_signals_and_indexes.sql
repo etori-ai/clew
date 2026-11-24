@@ -11,7 +11,44 @@ CREATE INDEX "delivery_batch" ON "attention_delivery" USING btree ("batch","stat
 CREATE INDEX "auth_group_organisation_key" ON "auth_group" USING btree ("organisation_id","external_id" text_pattern_ops);--> statement-breakpoint
 CREATE INDEX "refresh_person" ON "refresh_request" USING btree ("person_id","connector");--> statement-breakpoint
 CREATE INDEX "thread_unresolved" ON "thread" USING btree ("person_id","created_at") WHERE "thread"."kind" = 'pushed' AND ("thread"."state" = 'open' OR coalesce("thread"."execution"->>'state' IN ('pending','running','unknown','partial','failed'), false));--> statement-breakpoint
+-- The old name indexes folded with the database's own `lower`, which under the locale C folds only A to Z, so such a
+-- database may hold two names that differ only in Å, Ä or Ö case. ICU's index refuses the pair: each is looked for
+-- first and named, so the operator can rename one (the runbook's preflight finds them before the upgrade); nothing is
+-- renamed here.
+DO $$
+DECLARE
+  clash text;
+BEGIN
+  SELECT string_agg(format('%s in %s (%s)', names, organisation_id, event), '; ') INTO clash FROM (
+    SELECT organisation_id, event, string_agg(quote_literal(name), ' and ' ORDER BY name) AS names
+    FROM boarding_layer
+    GROUP BY organisation_id, event, lower(name COLLATE "und-x-icu")
+    HAVING count(*) > 1
+  ) same;
+  IF clash IS NOT NULL THEN
+    RAISE EXCEPTION 'Migration 0089 cannot fold the names of boarding_layer by ICU: these layers of one organisation and event differ only in case: %', clash
+      USING ERRCODE = 'unique_violation',
+        HINT = 'Rename one layer of each pair on Administration › Introduktion, then run bun run db:init again.';
+  END IF;
+END $$;--> statement-breakpoint
 CREATE UNIQUE INDEX "boarding_layer_name" ON "boarding_layer" USING btree ("organisation_id","event",lower("name" collate "und-x-icu"));--> statement-breakpoint
+DO $$
+DECLARE
+  clash text;
+BEGIN
+  SELECT string_agg(format('%s in %s', names, organisation_id), '; ') INTO clash FROM (
+    SELECT organisation_id, string_agg(quote_literal(name), ' and ' ORDER BY name) AS names
+    FROM competence_type
+    WHERE archived_at IS NULL
+    GROUP BY organisation_id, lower(name COLLATE "und-x-icu")
+    HAVING count(*) > 1
+  ) same;
+  IF clash IS NOT NULL THEN
+    RAISE EXCEPTION 'Migration 0089 cannot fold the names of competence_type by ICU: these active types of one organisation differ only in case: %', clash
+      USING ERRCODE = 'unique_violation',
+        HINT = 'Rename one type of each pair, or merge it into the other, on Administration › Kompetens, then run bun run db:init again.';
+  END IF;
+END $$;--> statement-breakpoint
 CREATE UNIQUE INDEX "competence_type_name" ON "competence_type" USING btree ("organisation_id",lower("name" collate "und-x-icu")) WHERE "competence_type"."archived_at" IS NULL;--> statement-breakpoint
 -- The people a row names, by the columns its trigger's arguments name: each person's content counter, the old row's and
 -- the new row's, in id order so two transactions take their counter locks in the same order. It replaces 0043's

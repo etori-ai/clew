@@ -174,7 +174,7 @@ test.describe('the person as a page', () => {
     await expect(page).toHaveURL('/items/entity-hr-registerAbsence-johan?from=%2Fpeople%2Fjohan');
   });
 
-  test('a source that refuses an action says why under the buttons, once aloud, and the page stays', async ({
+  test('a source that refuses an action says why in the dialog, once and aloud, the page nowhere, and the page stays', async ({
     page,
     api,
   }) => {
@@ -184,13 +184,21 @@ test.describe('the person as a page', () => {
     const here = `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`;
     await open(page, here);
     const main = page.getByRole('main');
-    await main.getByRole('button', { name: 'Registrera frånvaro', exact: true }).click();
+    const button = main.getByRole('button', { name: 'Registrera frånvaro', exact: true });
+    await button.click();
     const dialog = page.getByRole('dialog', { name: 'Registrera frånvaro' });
     await dialog.getByRole('button', { name: 'Registrera frånvaro' }).click();
-    // The dialog places the refusal; the page does not say it a second time.
+    // The dialog places the refusal; the page does not say it a second time, neither under the buttons nor aloud.
     await expect(dialog.getByText(refusal)).toBeVisible();
+    await expect.poll(() => said(page, refusal)).toBe(1);
     await expect(page).toHaveURL(here);
     await expectNoAxeViolations(page);
+    await expect(page.getByText(refusal).filter({ visible: true })).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(button).toBeFocused();
+    await expect(page.getByText(refusal).filter({ visible: true })).toHaveCount(0);
+    expect(await said(page, refusal)).toBe(1);
   });
 
   test('the talk is the person’s talk tab, and an address that laid it over the page leads there (D126 rule 3)', async ({

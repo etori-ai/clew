@@ -800,13 +800,6 @@ export const policyChanges = pgTable('policy_change', {
   id: text('id').primaryKey(),
   revision: bigint('revision', { mode: 'number' }).notNull().default(0),
 });
-// Installation-wide content counters, one row per kind of content the browser shows that is no one person's: the
-// change stream folds a row into the revision of those who may see it (`composition/changes.ts`). Each is moved by the
-// change signals that name it in `changeSignals` below.
-export const contentChanges = pgTable('content_change', {
-  id: text('id').primaryKey(),
-  revision: bigint('revision', { mode: 'number' }).notNull().default(0),
-});
 /**
  * The change signals (D46): deferred constraint triggers, hand-written in migrations, which a generated migration knows
  * nothing of, so a migration that recreates a table here must make its trigger again. A table the browser draws has one,
@@ -820,9 +813,14 @@ export const contentChanges = pgTable('content_change', {
  *   row's own owner and who marked it done.
  * - `clew_person_policy_changed`: the person's policy counter, which makes the browser read everything again.
  * - `clew_connector_policy_changed`: the installation's policy counter, unless only the columns its arguments name changed.
- * - `clew_shared_changed`: the installation-wide content counter its first argument names (`content_change`), at most
- *   once a transaction, unless only the columns its further arguments name changed. `composition/changes.ts` says whose
- *   revision folds each counter in.
+ * - `clew_shared_changed`: the installation-wide content counter its first argument names, at most once a transaction,
+ *   unless only the columns its further arguments name changed. A counter is a sequence of its own,
+ *   `content_change_<id>` (migration 0090, hand-written as these triggers are), moved by `nextval`, which no transaction
+ *   holds a lock on, so a provisioner's parallel requests never queue on it. `SHARED_CONTENT` in
+ *   `apps/server/src/shared-content.ts` says whose revision folds each counter in.
+ * - `clew_aimed_changed`: a row aimed at one person, by the column its second argument names, moves that person's
+ *   content counter, the old row's and the new row's; a row aimed at no one person moves the installation counter its
+ *   first argument names, as `clew_shared_changed` does.
  *
  * A column added later counts unless it is named as not drawn, so most columns need no change here; a new column naming
  * a person who should see the row is added to its table's arguments.
@@ -893,19 +891,36 @@ export const changeSignals: ReadonlyArray<{ table: string; trigger: string; fn: 
   },
   // Everyone's revision folds these in.
   { table: 'talk_round', trigger: 'talk_round_changed', fn: 'clew_shared_changed', args: ['talk-round'] },
-  { table: 'model_provider', trigger: 'model_provider_changed', fn: 'clew_shared_changed', args: ['models'] },
-  { table: 'model', trigger: 'model_changed', fn: 'clew_shared_changed', args: ['models'] },
+  // What a person's own model menu draws (its name, description, state, audience and the default): not the model the
+  // provider runs, its tools or reasoning, or who changed it when. A provider draws nothing there; its models do.
+  {
+    table: 'model',
+    trigger: 'model_menu_changed',
+    fn: 'clew_shared_changed',
+    args: [
+      'model-menu',
+      'model',
+      'tools',
+      'reasoning',
+      'created_by',
+      'updated_by',
+      'created_at',
+      'updated_at',
+      'version',
+    ],
+  },
   {
     table: 'competence_type',
     trigger: 'competence_type_changed',
     fn: 'clew_shared_changed',
     args: ['competence-catalogue'],
   },
+  // A requirement of a position or a unit is the catalogue's; one of a single person reaches that person alone.
   {
     table: 'competence_requirement',
     trigger: 'competence_requirement_changed',
-    fn: 'clew_shared_changed',
-    args: ['competence-catalogue'],
+    fn: 'clew_aimed_changed',
+    args: ['competence-catalogue', 'person_id'],
   },
   {
     table: 'competence_share_target',
@@ -920,6 +935,10 @@ export const changeSignals: ReadonlyArray<{ table: string; trigger: string; fn: 
     fn: 'clew_shared_changed',
     args: ['dialogue-setup'],
   },
+  // Those who hold `admin.connectors`: Administration › Modeller, every change to a provider or a model, a key, a test's
+  // health and who changed it included.
+  { table: 'model_provider', trigger: 'model_provider_changed', fn: 'clew_shared_changed', args: ['models'] },
+  { table: 'model', trigger: 'model_changed', fn: 'clew_shared_changed', args: ['models'] },
   // Those who hold `admin.connectors`: a check's health and an offered manifest, besides what the policy counter moves.
   { table: 'connector', trigger: 'connector_changed', fn: 'clew_shared_changed', args: ['connectors'] },
   { table: 'follow_binding', trigger: 'follow_binding_changed', fn: 'clew_shared_changed', args: ['connectors'] },
@@ -951,8 +970,10 @@ export const changeSignals: ReadonlyArray<{ table: string; trigger: string; fn: 
     fn: 'clew_shared_changed',
     args: ['appearance'],
   },
-  // Those who hold `admin.users`: the organisation as provisioned and mapped, once a push however many rows it writes.
-  // A person's own access moves with their grant, and a provisioner's last request draws nothing new.
+  // Those who hold `admin.users`: the organisation as provisioned and mapped, once a transaction however many rows it
+  // writes. SCIM has no bulk request, so a push of ten thousand people is ten thousand transactions and as many moves,
+  // which take no lock that one of them holds to its commit. A person's own access moves with their grant, and a
+  // provisioner's last request draws nothing new.
   {
     table: 'auth_person',
     trigger: 'auth_person_changed',
@@ -1020,8 +1041,14 @@ export const unsignalledTables: Readonly<Record<string, string>> = {
   connector_signing_key: 'key material, never drawn',
   person_change: 'a change counter',
   policy_change: 'a change counter',
-  content_change: 'a change counter',
 };
+type ChangeSignal = (typeof changeSignals)[number];
+/** The installation counter a signal moves, by its first argument; undefined for a signal that moves none. */
+export const sharedCounterOf = (signal: ChangeSignal) =>
+  signal.fn === 'clew_shared_changed' || signal.fn === 'clew_aimed_changed' ? signal.args?.[0] : undefined;
+/** The columns a signal's arguments name: every argument after the counter, if it moves one. */
+export const signalColumns = (signal: ChangeSignal) =>
+  (sharedCounterOf(signal) === undefined ? (signal.args ?? []) : (signal.args ?? []).slice(1)) as readonly string[];
 // Desired timer state is also its coalesced outbox: acknowledgement is fenced by
 // generation, state and delivery attempt. No source payload enters a workflow.
 export const timerIntents = pgTable(

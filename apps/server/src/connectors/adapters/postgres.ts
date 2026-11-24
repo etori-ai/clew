@@ -1,6 +1,7 @@
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { approveOffer, nextConnectorOrdinal, recordCheck, recordDescription } from '@clew/db/connectors';
+import { forgetCompetenceSource } from '@clew/db/competence';
 import type {
   ConnectorPatch,
   ConnectorRecord,
@@ -12,7 +13,7 @@ import type {
 } from '../model';
 
 /** The connector store the server runs (D23, D25): the port over Drizzle and Postgres. Held to the memory adapter by `tests/connector-store-contract.ts`. */
-const { connectors, threads, audit, units, competenceSources, competenceHoldings, competenceSourceMappings } = schema;
+const { connectors, threads, audit, units } = schema;
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 export const toRecord = (row: typeof connectors.$inferSelect): ConnectorRecord => ({
   id: row.id,
@@ -92,24 +93,12 @@ const txOf = (tx: Transaction): ConnectorTx => ({
   approveOffer: (id, offer, manifest, by, at) =>
     approveOffer(tx, id, { at: new Date(offer.at), manifest: offer.manifest }, manifest, by, new Date(at)),
   async remove(id) {
-    // What the competence register copied from the connector goes with its row (D108 item 9), counted as it goes (DE-L4):
-    // the source's row first, as the copy's write and a mapping take it, so neither can deadlock with this; then the
-    // holdings and the mappings, then the row, whose cascade finds nothing of them left.
-    const [source] = await tx
-      .select({ id: competenceSources.connectorId })
-      .from(competenceSources)
-      .where(eq(competenceSources.connectorId, id))
-      .for('update');
-    const holdings = await tx
-      .delete(competenceHoldings)
-      .where(eq(competenceHoldings.connectorId, id))
-      .returning({ id: competenceHoldings.id });
-    const mappings = await tx
-      .delete(competenceSourceMappings)
-      .where(eq(competenceSourceMappings.connectorId, id))
-      .returning({ type: competenceSourceMappings.sourceType });
+    // What the competence register copied from the connector goes with its row (D108 item 9), counted as it goes (DE-L4),
+    // in the lock order an operator's forgetting of the source shares (`@clew/db/competence`); then the row, whose
+    // cascade finds nothing of them left.
+    const copied = await forgetCompetenceSource(tx, id);
     await tx.delete(connectors).where(eq(connectors.id, id));
-    return { source: source !== undefined, holdings: holdings.length, mappings: mappings.length };
+    return copied;
   },
   async dismissOpenThreadsOf(connectorId, at) {
     const rows = await tx

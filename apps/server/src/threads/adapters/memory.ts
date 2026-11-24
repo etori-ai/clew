@@ -62,16 +62,18 @@ export function memoryThreadStore(): MemoryThreadStore {
     const row = threads.get(id);
     return row && row.personId === personId ? row : undefined;
   };
-  /** One open pushed thread a person and topic (`thread_open_topic`): whether one other than `except` holds it. */
-  const topicHeld = (personId: string, topic: string, except?: string) =>
-    [...threads.values()].some(
+  /** One open pushed thread a person and topic (`thread_open_topic`): the one other than `except` that holds it. */
+  const holderOf = (personId: string, topic: string, except?: string) =>
+    [...threads.values()].find(
       r =>
         r.personId === personId &&
         r.thread.id !== except &&
         r.thread.topic === topic &&
         r.thread.state === 'open' &&
         r.thread.kind === 'pushed',
-    );
+    )?.thread.id;
+  const topicHeld = (personId: string, topic: string, except?: string) =>
+    holderOf(personId, topic, except) !== undefined;
   /** Whether opening this row would make it a second open pushed thread on its topic. */
   const reopensHeldTopic = (row: { personId: string; thread: Thread }, state: Thread['state'] | undefined) =>
     state === 'open' &&
@@ -166,6 +168,10 @@ export function memoryThreadStore(): MemoryThreadStore {
       if (!row || reopensHeldTopic(row, 'open')) return false;
       row.thread = { ...row.thread, ...copy(patch), state: 'open' };
       return true;
+    },
+    async topicHolder(id) {
+      const row = threads.get(id);
+      return row?.thread.kind === 'pushed' ? holderOf(row.personId, row.thread.topic, id) : undefined;
     },
     async addMessage(threadId, message) {
       const row = threads.get(threadId);

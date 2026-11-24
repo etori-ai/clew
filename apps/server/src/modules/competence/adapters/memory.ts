@@ -1,7 +1,7 @@
 import { COMPETENCE_SEARCH_STATUSES, COMPETENCE_SEARCH_WINDOWS, type Subject } from '@clew/contracts';
 import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import { PendingTaken, RequirementTaken, ShareTargetTaken, SkillTaken, TypeNameTaken, TypeUriTaken } from '../model';
-import { erasureDue } from '../domain';
+import { erasureDue, foldedUserName } from '../domain';
 import type {
   ApprovalOutcome,
   ApprovalWorkItemTx,
@@ -713,10 +713,9 @@ export function memoryCompetenceStore(seed: { persons?: SeedPerson[]; ownCards?:
     },
     async activeByUserName(userNames) {
       // As the Postgres adapter compares: composed (NFC) and without regard to case, on both sides.
-      const folded = (name: string) => name.normalize('NFC').toLowerCase();
-      const wanted = new Set(userNames.map(folded));
+      const wanted = new Set(userNames.map(foldedUserName));
       return [...state.persons.values()]
-        .filter(p => p.userName !== null && wanted.has(folded(p.userName)) && p.enabled)
+        .filter(p => p.userName !== null && wanted.has(foldedUserName(p.userName)) && p.enabled)
         .map(p => ({ ...p }));
     },
     async activeIds(personIds) {

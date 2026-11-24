@@ -103,7 +103,28 @@ export async function projectOntoCard(tx: ProjectionTx, e: Execution, stage: Pro
       ? { state: 'open' as const, handledAt: null, waitingOn: 'svar från medarbetarna' }
       : {}),
   };
-  await cards.updateThread(thread.id, patch);
+  const { state, ...rest } = patch;
+  if (state === 'open' && thread.state !== 'open') {
+    // A card opened again goes through the port that says when another open card holds its topic (DE-L9): a refresh
+    // makes a new card on the topic of a handled one whose work the source still lists. That card is where the person
+    // finds the work, so this one stays handled, without the receipt of an effect that no longer stands, and the
+    // execution is recorded as usual.
+    if (!(await cards.reopenThread(thread.id, rest))) {
+      await cards.updateThread(thread.id, { ...rest, handledAt: thread.handledAt });
+      await cards.writeAudit({
+        actor: EXECUTION_ACTOR,
+        action: 'thread.reopen_skipped',
+        subject: 'thread:' + thread.id,
+        at: e.updatedAt,
+        details: {
+          executionId: e.id,
+          compensates: e.compensates,
+          reason: 'topic-open',
+          heldBy: (await cards.topicHolder(thread.id)) ?? null,
+        },
+      });
+    }
+  } else await cards.updateThread(thread.id, patch);
   if (!e.compensates && projectedReceipt?.undoUntil && e.state !== 'running')
     for (const kind of ['receipt-final', ...(command?.threadId ? ['undo-expiry'] : [])]) {
       const id = `${kind}:${e.id}`,

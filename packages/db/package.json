@@ -11,6 +11,7 @@
     "./jobs": "./src/jobs.ts",
     "./durable": "./src/durable.ts",
     "./connectors": "./src/connectors.ts",
+    "./competence": "./src/competence.ts",
     "./migrations": "./src/migrations.ts"
   },
   "dependencies": {

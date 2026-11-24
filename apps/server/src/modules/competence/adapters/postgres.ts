@@ -16,6 +16,7 @@ import {
 } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
+import { forgetCompetenceSource } from '@clew/db/competence';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { RETENTION_GRACE_MS } from '../domain';
 import {
@@ -588,22 +589,9 @@ export function competenceTx(
         .onConflictDoUpdate({ target: sources.connectorId, set });
     },
     async forgetSource(connectorId) {
-      // The source's row first, as the copy's write and a mapping take it: the two wait for each other, never deadlock.
-      await tx
-        .select({ id: sources.connectorId })
-        .from(sources)
-        .where(eq(sources.connectorId, connectorId))
-        .for('update');
-      const removed = await tx
-        .delete(holdings)
-        .where(eq(holdings.connectorId, connectorId))
-        .returning({ id: holdings.id });
-      const unmapped = await tx
-        .delete(mappings)
-        .where(eq(mappings.connectorId, connectorId))
-        .returning({ id: mappings.sourceType });
-      await tx.delete(sources).where(eq(sources.connectorId, connectorId));
-      return { holdings: removed.length, mappings: unmapped.length };
+      // In the lock order a connector's removal shares (`@clew/db/competence`).
+      const { holdings, mappings } = await forgetCompetenceSource(tx, connectorId);
+      return { holdings, mappings };
     },
     enqueue: start => enqueueWorkflow(tx, durable, start),
     async lockRetention(organisationId) {

@@ -178,6 +178,17 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
       throw error;
     }
   },
+  async topicHolder(id) {
+    // A statement of its own, so after a reopen refused for a race it sees the card the other transaction committed.
+    const [holder] = await tx.execute<{ id: string }>(
+      sql`select other.id from thread other join thread own on other.person_id = own.person_id
+            and other.topic = own.topic
+          where own.id = ${id} and own.kind = 'pushed' and other.id <> own.id
+            and other.state = 'open' and other.kind = 'pushed'
+          limit 1`,
+    );
+    return holder?.id;
+  },
   async eraseSubject(subject) {
     const erased = { cards: 0, rows: 0, cardSubjects: 0 };
     const where = and(eq(threadSubjects.entity, subject.entity), eq(threadSubjects.key, subject.key));

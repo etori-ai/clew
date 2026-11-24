@@ -631,6 +631,13 @@
       "when": 1795497440085,
       "tag": "0089_change_signals_and_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1795500581238,
+      "tag": "0090_shared_counters_as_sequences",
+      "breakpoints": true
     }
   ]
 }

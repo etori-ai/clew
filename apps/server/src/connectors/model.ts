@@ -88,13 +88,13 @@ export interface AuditEntry {
   at: string;
   details?: Record<string, unknown>;
 }
-/** Writes inside one transaction: the audit row commits or rolls back with the rest. */
 /** What the competence register held from a connector when it was removed (D108 item 9): whether it was a source, and counts. */
 export interface CopiedFrom {
   source: boolean;
   holdings: number;
   mappings: number;
 }
+/** Writes inside one transaction: the audit row commits or rolls back with the rest. */
 export interface ConnectorTx {
   /** False when the id is taken. */
   insert(record: NewConnector): Promise<boolean>;

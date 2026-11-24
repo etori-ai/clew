@@ -510,16 +510,15 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
  * åtgärder", grouped by the system they act in, as the row menu on Personal is (artboard A3). On a phone one button,
  * "Åtgärder", the width of the column, holds them all, with "Fråga assistenten" under it. A propose opens the action dialog,
  * and nothing is created before its last button; an execute opens its work item with the decision over it
- * (`entity-actions.ts`). A source's refusal is said aloud and stands under the buttons until the next action. They hold
+ * (`entity-actions.ts`). A source's refusal is said in that dialog, on the field it concerns, and nowhere else. They hold
  * what can be done about the entity, never a choice of where Clew shows it, and never a way into a source's page, which
  * is a link in its section.
  */
 export function EntityActions({ detail, mobile, ask }: { detail: EntityDetail; mobile: boolean; ask?: ReactNode }) {
-  const { start, error, dialog } = useEntityAction();
+  const { start, dialog } = useEntityAction();
   const { kind, key, name } = detail.entity;
   const actions = detail.actions;
   const run = (a: EntityAction) => start(a, { kind, key, name });
-  const refusal = error ? <Text as="p">{error}</Text> : null;
   if (mobile)
     return (
       <VStack gap={2}>
@@ -539,13 +538,11 @@ export function EntityActions({ detail, mobile, ask }: { detail: EntityDetail; m
           />
         )}
         {ask && <HStack>{ask}</HStack>}
-        {refusal}
         {dialog}
       </VStack>
     );
   const [first, second] = actions;
   const rest = actions.slice(2);
-  // One shape with or without a refusal, so the button that was pressed keeps the focus when the refusal appears.
   return (
     <VStack gap={2} hAlign="end">
       <HStack gap={2} wrap="wrap" vAlign="center">
@@ -561,7 +558,6 @@ export function EntityActions({ detail, mobile, ask }: { detail: EntityDetail; m
           />
         )}
       </HStack>
-      {refusal}
       {dialog}
     </VStack>
   );

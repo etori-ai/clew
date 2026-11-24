@@ -25,8 +25,14 @@ export interface ProjectionHarness {
   /** Every id the harness writes starts with it. */
   prefix: string;
   store: ExecutionStore;
-  /** A card as a scan or the planner left it. */
-  seedCard(card: { id: string; personId: string; connector: string; state?: Thread['state'] }): Promise<void>;
+  /** A card as a scan or the planner left it, a pushed one on its own id as its topic unless one is given. */
+  seedCard(card: {
+    id: string;
+    personId: string;
+    connector: string;
+    state?: Thread['state'];
+    topic?: string;
+  }): Promise<void>;
   /** A proposal as the planner stored it, taken by an approved execution or not. */
   seedProposal(proposal: ProposalRecord, executionId?: string | null): Promise<void>;
   card(id: string): Promise<Thread | undefined>;
@@ -201,6 +207,60 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
       });
       // An undo writes no receipt job of its own.
       expect(await h.jobs(`receipt-final:${undo.id}`)).toEqual([]);
+    });
+
+    test('a confirmed undo on a card whose topic another open card holds leaves it handled without its receipt, says so in a row and records the undo (DE-L9)', async () => {
+      const h = await make(),
+        card = `${h.prefix}-card`,
+        topic = `${h.prefix}-topic`;
+      await h.seedCard({ id: card, personId: h.personId, connector: 'reference', topic });
+      const e = on(h, card);
+      await approve(h, e);
+      await settle(h, e, { state: 'succeeded', dispatchedAt: dispatched, result: done('item:1') });
+      const handled = (await h.card(card))!;
+      expect(handled).toMatchObject({ state: 'handled', handledAt: later });
+      expect(handled.receipt).not.toBeNull();
+      // The source still lists the work, so a refresh made a new card on the same topic.
+      const again = `${h.prefix}-again`;
+      await h.seedCard({ id: again, personId: h.personId, connector: 'reference', topic });
+      const undo = on(h, card, { version: handled.updatedAt, compensates: e.id, operation: 'reference.undo' });
+      await approve(h, undo);
+      const undone = '2099-11-05T10:07:00.000Z';
+      await h.store.transaction(tx =>
+        tx.update({
+          ...undo,
+          state: 'succeeded',
+          dispatchedAt: dispatched,
+          result: done('item:1'),
+          updatedAt: undone,
+        }),
+      );
+      // The undo is recorded, and the card stays handled since the work is on the open card.
+      expect((await h.store.read(undo.id))?.state).toBe('succeeded');
+      expect(await h.card(card)).toMatchObject({
+        state: 'handled',
+        handledAt: later,
+        waitingOn: null,
+        receipt: null,
+        updatedAt: undone,
+        execution: { id: undo.id, state: 'succeeded', compensates: e.id },
+      });
+      expect((await h.audit('thread:' + card)).slice(-2)).toEqual([
+        {
+          actor: 'system:execution',
+          action: 'thread.reopen_skipped',
+          details: { executionId: undo.id, compensates: e.id, reason: 'topic-open', heldBy: again },
+        },
+        {
+          actor: 'system:execution',
+          action: 'thread.execution_succeeded',
+          details: { executionId: undo.id, operation: undo.operation, compensates: e.id },
+        },
+      ]);
+      // The open card is as the refresh made it.
+      expect(await h.card(again)).toMatchObject({ state: 'open', receipt: null });
+      expect((await h.card(again))?.execution ?? null).toBeNull();
+      expect(await h.audit('thread:' + again)).toEqual([]);
     });
 
     /** A planning card with two drawn times, one to each invitee. */

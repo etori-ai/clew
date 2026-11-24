@@ -147,6 +147,21 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
       expect((await w.store.transaction(tx => tx.currentRound(w.org)))?.id).toBe(w.p + '-r2b');
     });
 
+    test('each hold reads the open round as a read does; none is read once the round is closed', async () => {
+      const w = await world();
+      const read = await w.store.transaction(tx => tx.currentRound(w.org));
+      expect(read?.id).toBe(w.round);
+      for (const hold of ['write', 'close'] as const) {
+        expect(await w.store.transaction(tx => tx.currentRound(w.org, 'development', hold))).toEqual(read);
+        expect(
+          await w.store.transaction(tx => tx.currentRound(w.org + '-elsewhere', 'development', hold)),
+        ).toBeUndefined();
+      }
+      await w.store.transaction(tx => tx.closeRound(w.round, '2026-11-11T08:00:00.000Z'));
+      for (const hold of [undefined, 'write', 'close'] as const)
+        expect(await w.store.transaction(tx => tx.currentRound(w.org, 'development', hold))).toBeUndefined();
+    });
+
     test('a talk is held and the hold undone by one row per round and employee, which keeps its own id', async () => {
       const w = await world();
       await w.store.transaction(tx =>

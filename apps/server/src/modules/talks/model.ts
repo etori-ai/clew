@@ -188,7 +188,10 @@ export interface TalkTx {
    * page and every manager's scan reads the round beside the others (BD-L4). `hold: 'write'` holds it against being
    * closed until the transaction ends, as a write in the round takes it (a talk, a booking, an action point), while
    * other writes in the round go on beside this one; `hold: 'close'` holds it against every other write too, as closing
-   * it takes it.
+   * it takes it. In Postgres these are `FOR SHARE` and `FOR UPDATE` on the round's row. A row lock does not queue
+   * behind a waiter: while a close waits for the writes that hold the round, a new write still takes its share beside
+   * them, so a stream of writes that never pauses could keep a close waiting. Writes in a round are a person's own
+   * actions, each a short transaction, so the close is let through at the first gap; nothing has been seen to starve.
    */
   currentRound(organisationId: string, kind?: RoundKind, hold?: RoundHold): Promise<RoundRecord | undefined>;
   /** Insert a round. At most one per organisation and kind may be open: close the last one first. */

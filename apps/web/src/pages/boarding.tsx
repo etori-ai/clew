@@ -589,7 +589,6 @@ function Plan({
           </HStack>
           {meta}
           {tickError && <Banner status="error" title={tickError} collapsible={false} />}
-          {entityAction.error && <Banner status="error" title={entityAction.error} collapsible={false} />}
           {sections.length ? sections.map(s => <Fragment key={s.key}>{s.node}</Fragment>) : empty}
           {details}
         </VStack>
@@ -603,7 +602,6 @@ function Plan({
             <>
               {meta}
               {tickError && <Banner status="error" title={tickError} collapsible={false} />}
-              {entityAction.error && <Banner status="error" title={entityAction.error} collapsible={false} />}
             </>
           }
           sections={sections}

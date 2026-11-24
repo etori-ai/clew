@@ -291,7 +291,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await store.openThread(a, first.topic)).toBeUndefined();
       expect(await store.transaction(tx => tx.insertThread(draft(a, { topic: first.topic })))).toBe(true);
     });
-    test('one open pushed thread per person and topic holds on a reopen too: refused while another holds the topic (DE-L9)', async () => {
+    test('one open pushed thread per person and topic holds on a reopen too: refused while another holds the topic, which is named (DE-L9)', async () => {
       const {
         store,
         people: [a, b],
@@ -311,6 +311,9 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
         await store.transaction(tx => tx.reopenThread(first.id, { handledAt: null, updatedAt: plus(T0, 2000) })),
       ).toBe(false);
       expect(await store.readThread(a, first.id)).toMatchObject({ state: 'dismissed', handledAt: dismissedAt });
+      // The card that holds the topic is the person's own, never the other person's on the same topic.
+      expect(await store.transaction(tx => tx.topicHolder(first.id))).toBe(again.id);
+      expect(await store.transaction(tx => tx.topicHolder(again.id))).toBeUndefined();
       // The same as a plain update is refused as the unique index refuses it, and the transaction with it.
       const refused = await store
         .transaction(tx => tx.updateThread(first.id, { state: 'open', handledAt: null, updatedAt: plus(T0, 2000) }))
@@ -331,6 +334,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(tx =>
         tx.updateThread(again.id, { state: 'handled', handledAt: plus(T0, 3000), updatedAt: plus(T0, 3000) }),
       );
+      expect(await store.transaction(tx => tx.topicHolder(first.id))).toBeUndefined();
       expect(
         await store.transaction(tx => tx.reopenThread(first.id, { handledAt: null, updatedAt: plus(T0, 4000) })),
       ).toBe(true);
