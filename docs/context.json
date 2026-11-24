@@ -1877,6 +1877,7 @@
         "What a person gets",
         "What SupportManagement has to provide",
         "How a status becomes a state",
+        "An errand's owner",
         "Configuration",
         "The fixture",
         "Run and check",
@@ -4785,6 +4786,26 @@
         "Findings",
         "Outcome",
         "What this review does not establish"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-23-an-errand-owner-answers-supportmanagement-from-clew.md",
+      "title": "Implementation plan: an errand's owner reads and answers its messages from Clew · 2026-11-23",
+      "category": "review-history",
+      "headings": [
+        "What it rests on",
+        "Design",
+        "Architecture",
+        "Phase 0 · Verify",
+        "Phase 1 · Identity and the owner rule",
+        "Phase 2 · The list of what I own",
+        "Phase 3 · The errand, its messages and the mail link",
+        "Phase 4 · An answer Clew does not keep",
+        "Phase 5 · The card and the Open-E answer",
+        "Phase 6 · Tests, documentation and the try-out",
+        "Not covered",
+        "Later, and asked of other teams",
+        "Questions this leaves, and who they wait for"
       ]
     },
     {
