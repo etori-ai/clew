@@ -4627,7 +4627,35 @@ export type ModelState = Static<typeof ModelStateSchema>;
  */
 export type ModelReasoning = 'provider-default' | 'none';
 const adminSlug = Type.String({ pattern: '^[a-z][a-z0-9-]*$', minLength: 1, maxLength: 60 });
-const endpointUrl = Type.String({ pattern: '^https?://[^\\s]+$', minLength: 8, maxLength: 500 });
+/**
+ * A provider's address: http or https, and no user name or password before the host (`https://user:key@host`), which
+ * would keep a secret unsealed in the row, in the audit trail and on the page. `providerAddressProblem` says what is
+ * wrong in the words the page and the API show.
+ */
+const endpointUrl = Type.String({ pattern: '^https?://[^\\s/?#@]+([/?#][^\\s]*)?$', minLength: 8, maxLength: 500 });
+/** What the page and the API say about an address that is not an http or https address. */
+export const PROVIDER_ADDRESS_FORM =
+  'En adress som börjar med http:// eller https://, till exempel https://modeller.kommunen.se/v1.';
+/** What the page and the API say about an address with a user name or a password in it. */
+export const PROVIDER_ADDRESS_USERINFO =
+  'Adressen får inte innehålla användarnamn eller lösenord. En nyckel sparas förseglad för sig, aldrig i adressen.';
+/**
+ * What is wrong with a provider's address as an administrator wrote it (D24), or undefined when nothing is: the same
+ * check on the page, which shows it at the field, and in the use case, which refuses with it. An address that does not
+ * parse is refused here, not found out when the key is about to be sent.
+ */
+export function providerAddressProblem(url: string): string | undefined {
+  const text = url.trim();
+  if (!/^https?:\/\/\S+$/.test(text)) return PROVIDER_ADDRESS_FORM;
+  try {
+    new URL(text);
+  } catch {
+    return PROVIDER_ADDRESS_FORM;
+  }
+  // `https://@host` has an empty user name the URL parser drops: any `@` before the path is refused.
+  if (/^https?:\/\/[^/?#]*@/.test(text)) return PROVIDER_ADDRESS_USERINFO;
+  return undefined;
+}
 /** Empty means no key: a local endpoint may need none. */
 const providerKey = Type.String({ maxLength: 1000 });
 const adminTitle = Type.String({ minLength: 1, maxLength: 80, pattern: '^[^\\r\\n]+$' });
@@ -4643,7 +4671,11 @@ export const AddProviderInput = object({
 export type AddProviderInput = Static<typeof AddProviderInput>;
 export const ProviderPatchInput = Type.Partial(object({ title: adminTitle, baseUrl: endpointUrl }), closed);
 export type ProviderPatchInput = Static<typeof ProviderPatchInput>;
-export const ProviderKeyInput = object({ apiKey: providerKey });
+/**
+ * A new key, and the address the administrator saw when they gave it (`baseUrl`): the key is for that host, so the
+ * server refuses it when the provider has moved to another host since the page was read (D24).
+ */
+export const ProviderKeyInput = object({ apiKey: providerKey, baseUrl: endpointUrl });
 export type ProviderKeyInput = Static<typeof ProviderKeyInput>;
 /**
  * A model added under a provider. `mayProcessPersonalData` is the administrator's statement, required and only ever

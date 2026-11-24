@@ -1,4 +1,4 @@
-import type { Actor } from '@clew/connectors';
+import type { Actor, SourceOptions } from '@clew/connectors';
 import type { ViewOpen } from '@clew/contracts';
 
 /**
@@ -13,7 +13,11 @@ export interface NewsSourceRef {
   source: string;
   open?: ViewOpen;
 }
-export type NewsSources = (actor: Actor) => NewsSourceRef[];
+/**
+ * The sources the person may use now; with `forModel` (the model's own read, D122 item 4) only those the administrator
+ * has not closed to the assistant.
+ */
+export type NewsSources = (actor: Actor, options?: SourceOptions) => NewsSourceRef[];
 export type NewsCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface NewsBudget {
   /** Milliseconds one news source gets before it contributes nothing. */

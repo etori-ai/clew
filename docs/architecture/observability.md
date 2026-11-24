@@ -149,9 +149,11 @@ log) records that the assistant made it for the person. When a configured model 
 `details.model` names the model the turn was sent to. A work item a model's propose started is named in the turn's
 row (`details.started`), and its own `thread.started` row says the assistant started it (`by: 'assistant'`) and with
 which model. A turn that ends without an answer saves no conversation, but when it called a model, read anything or
-started a work item it writes one row, `conversation.stopped` (the person pressed Stoppa) or `conversation.offered`
-(the model suggested another system's assistant), about the conversation or, before there is one, about the person,
-with the model, `modelCall`, the reads, the item and the assistant offered. A read that failed is told to the model in
+started a work item it writes one row, `conversation.stopped` (the person pressed Stoppa), `conversation.offered`
+(the model suggested another system's assistant) or `conversation.failed` (the turn threw, with the error's class
+name as `failure`, never its message), about the conversation or, before there is one, about the person, with the
+model, `modelCall`, the reads, the item and the assistant offered. A failure stays its own action, so a count of
+`conversation.stopped` is a count of Stoppa. A read that failed is told to the model in
 Clew's words by the protocol's code of the failure, never in the error's own words, which may be a connector's text or
 name the values a statement was given. Never the text of the prompt or the answer: the message body holds the answer,
 nothing else does.

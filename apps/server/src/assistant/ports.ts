@@ -85,6 +85,13 @@ export interface AuditEntry {
 }
 /** Writes inside one transaction: the audit row commits or rolls back with the rest. */
 export interface ModelTx {
+  /**
+   * The provider as it is now, its row held until the transaction ends: another transaction that locks the same row
+   * waits until this one commits or rolls back, and then reads what it wrote. A change decided from the row (whether a
+   * new address takes the key, whether a key is for the address the administrator saw) is decided from this read, so
+   * two administrators saving at once cannot leave a key with a host it was not given for. Undefined when there is none.
+   */
+  lockProvider(id: string): Promise<ProviderRecord | undefined>;
   /** False when the id is taken. */
   insertProvider(record: NewProvider): Promise<boolean>;
   /** Bumps the version; false when the row does not exist. */
@@ -120,7 +127,10 @@ export interface Endpoint {
   baseUrl: string;
   apiKey?: string;
 }
-/** How a call to an endpoint failed: no answer (network, timeout, 5xx), the key refused (401, 403), or an answer that is not what was asked for. */
+/**
+ * How a call to an endpoint failed: no answer (network, timeout, 5xx), the key refused (401, 403), or an answer that is
+ * not what was asked for. A turn's own requests are classed more narrowly (`turnError` in the live wire).
+ */
 export class WireError extends Error {
   constructor(
     readonly kind: 'unreachable' | 'key-rejected' | 'unsupported',
@@ -186,13 +196,17 @@ export interface AssistantDeps {
   /**
    * Run a read through the registry as the person, on the assistant's behalf: every call the assistant makes says so
    * (`caller: 'assistant'`, D122 item 6), so a source that logs reads of people records who made it, and none is the
-   * person's own direct read (D121, D122 item 5). `runCapability` in the server.
+   * person's own direct read (D121, D122 item 5). A read of a turn says too that its answer is the model's, now or
+   * later in the conversation (`forModel`, D122 item 4): the registry refuses it a read the administrator has closed to
+   * the assistant, nested reads included, and a list of other systems' sources (the composite search, errands,
+   * requests, news, the person's work items) leaves the closed ones out. A chip the person pointed at is resolved
+   * without it: what the model may not have of it is said to be there (`closedLine`). `runCapability` in the server.
    */
   run: <O = unknown>(
     persona: AuthenticatedContext,
     name: string,
     input: unknown,
-    context: { caller: 'assistant' },
+    context: { caller: 'assistant'; forModel?: boolean },
   ) => Promise<O>;
   calendar: Pick<CalendarUsecases, 'listWeek' | 'readToday' | 'samtalStatus' | 'ensureProposalThread' | 'replan'>;
   models: ModelResolver;

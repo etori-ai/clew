@@ -1,5 +1,5 @@
 import { Value } from 'typebox/value';
-import { openRef, type Actor } from '@clew/connectors';
+import { openRef, type Actor, type SourceOptions } from '@clew/connectors';
 import { SearchHitSchema, SearchOutputSchema, type SearchHit, type SearchResult } from '@clew/contracts';
 import { hitNames, keyedHits, merge, sourceReport, type SourceOutcome } from './domain';
 import { DEFAULT_BUDGET, type SearchCall, type SearchDeps, type SearchSourceRef } from './model';
@@ -30,10 +30,20 @@ export function searchUsecases(deps: SearchDeps) {
       return { ...base, status: 'unavailable' };
     }
   }
-  /** Search as the actor: `call` is the registry handle for this run, so every source's scope applies to the same person. */
-  async function search(actor: Actor, input: SearchInput, call: SearchCall): Promise<SearchResult> {
+  /**
+   * Search as the actor: `call` is the registry handle for this run, so every source's scope applies to the same person.
+   * `options.forModel` asks only the sources a model may have (D122 item 4).
+   */
+  async function search(
+    actor: Actor,
+    input: SearchInput,
+    call: SearchCall,
+    options: SourceOptions = {},
+  ): Promise<SearchResult> {
     const wanted = input.kinds;
-    const sources = deps.sources(actor).filter(s => !wanted || !s.kinds || s.kinds.some(k => wanted.includes(k)));
+    const sources = deps
+      .sources(actor, options)
+      .filter(s => !wanted || !s.kinds || s.kinds.some(k => wanted.includes(k)));
     const pending = sources.map(s => askSource(s, input.query, call));
     const settled = await withinBudget(Promise.all(pending), budget.totalMs);
     let outcomes: SourceOutcome[];
@@ -65,8 +75,9 @@ export function searchUsecases(deps: SearchDeps) {
     connectorId: string,
     input: FetchInput,
     call: SearchCall,
+    options: SourceOptions = {},
   ): Promise<SearchHit | undefined> {
-    if (!deps.sources(actor).some(s => s.connectorId === connectorId)) return undefined;
+    if (!deps.sources(actor, options).some(s => s.connectorId === connectorId)) return undefined;
     try {
       const answer = await call(connectorId + '.fetch', { ref: input.ref });
       return Value.Check(SearchHitSchema, answer) ? answer : undefined;

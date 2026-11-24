@@ -130,7 +130,7 @@ function newsSource(
 }
 function world(connectors: Connector[], budget = { perSourceMs: 40, totalMs: 80 }) {
   const registry = new Registry();
-  const news = newsUsecases({ sources: a => registry.newsSources(a), budget });
+  const news = newsUsecases({ sources: (a, o) => registry.newsSources(a, o), budget });
   for (const c of connectors) registry.register(c);
   registry.register({
     id: SEARCH_CONNECTOR,
@@ -146,6 +146,24 @@ const list = (registry: Registry, actor: AudiencedActor, context = {}) =>
   registry.run<NewsResult>(actor, 'clew.news', {}, context);
 
 describe('clew.news', () => {
+  test('the model’s call leaves out a news source the administrator closed to the assistant, and none left offers no list; the person and the router get every one (D122 item 4)', async () => {
+    const registry = world([
+      newsSource('intranet', 'Intranätet', [row('intranet', 4)]),
+      newsSource('newsroom', 'Nyhetsrummet', [row('newsroom', 1)]),
+    ]);
+    registry.govern('newsroom', { ...openGovernance(), toolsEnabled: false });
+    const forModel = await list(registry, mikael, { caller: 'assistant', forModel: true });
+    expect(forModel.rows.map(r => r.connector)).toEqual(['intranet']);
+    expect(JSON.stringify(forModel)).not.toContain('Nyhetsrummet');
+    for (const context of [{}, { caller: 'assistant' }])
+      expect((await list(registry, mikael, context)).rows.map(r => r.connector).sort()).toEqual([
+        'intranet',
+        'newsroom',
+      ]);
+    expect(registry.tools(mikael).map(t => t.name)).toContain('clew.news');
+    registry.govern('intranet', { ...openGovernance(), toolsEnabled: false });
+    expect(registry.tools(mikael).map(t => t.name)).not.toContain('clew.news');
+  });
   test('asks every news source at once with nothing, and answers one list newest first, each row opening in its own source', async () => {
     const calls: unknown[] = [];
     const registry = world([

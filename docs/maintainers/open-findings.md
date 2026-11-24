@@ -81,7 +81,7 @@ and it carries a table of what reaches the model and a table of the tools.
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | AM-12 | Low | The system prompt tells the model it serves Sundsvalls kommun's Startsidan in every installation. | `apps/server/src/assistant/model.ts:137` |
-| AM-13 | Low | Several model administration audit rows have no test, the assistant's function ports have no contract case, and nothing tests what a stopped turn or a model-started item leaves. | `apps/server/src/assistant/usecases/models.ts` |
+| AM-13 | Low | The audit rows of a model's renamed fields (`model.title`, `model.model`, `model.description`), `model.audience`, `model.tools` and `model.removed` have no test, and the assistant's function ports (`run`, `start`, `people`, `handover`) have no contract case, so a test may bind them to something the server does not. | `apps/server/src/assistant/usecases/models.ts`, `apps/server/src/assistant/ports.ts` |
 
 ## Decisions, durable execution, audit and the database
 

@@ -256,7 +256,12 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
           kind: 'core',
           source: 'Startsidan',
           areas: [],
-          ...workCapabilities({ list: async () => options.work!, clock: () => new Date(T) }),
+          // As composition binds it: the systems the model may have, asked of the registry on every call.
+          ...workCapabilities({
+            list: async () => options.work!,
+            clock: () => new Date(T),
+            forModel: connectorId => registry.forModel(connectorId),
+          }),
         } as Connector,
       ]
     : [];
@@ -898,6 +903,29 @@ describe('the work items an answer names among the rows it draws', () => {
     const w = await world([['clew__work', {}]], { work: items });
     w.model.turn.text = 'Inget av dina ärenden är försenat.';
     expect((await w.ask('hillevi', 'Vilka är försenade?')).meta.viewItems).toBeUndefined();
+  });
+  test('the model is handed none of the items of a system closed to the assistant, only how many there are, and an answer from the list is withheld once its system is closed (D122 item 4)', async () => {
+    const rehab = {
+      ...workItem('t-rehab', 'Rehabplan för Anna Lindqvist'),
+      connector: 'hr',
+      trigger: { reason: 'Kom', source: 'Personalsystemet', at: T },
+    } as Thread;
+    const w = await world([['clew__work', {}]], { work: [...items, rehab] });
+    w.registry.govern('hr', { ...openGovernance(), toolsEnabled: false });
+    const first = await w.ask('hillevi', 'Vad har jag att göra?');
+    expect(w.model.handed[0]).toMatchObject({ total: 4, withheld: 1 });
+    expect(JSON.stringify(w.model.handed)).not.toContain('Rehabplan');
+    expect(JSON.stringify(first.meta)).not.toContain('t-rehab');
+    // The answer was written from the economy system's items.
+    expect(first.meta.basis).toEqual({ connectors: ['finance'] });
+    // The person's own read of Att göra lists all five.
+    expect((await w.registry.run<{ total: number }>(actorOf(w.d.persona('hillevi')), 'clew.work', {})).total).toBe(5);
+    w.registry.govern('finance', { ...openGovernance(), toolsEnabled: false });
+    w.model.turn.script = [];
+    await w.ask('hillevi', 'Och sedan?', first.turn.conversationId);
+    const heard = JSON.stringify(w.model.told.at(-1));
+    expect(heard).toContain('Ett tidigare svar som inte lämnas till dig');
+    expect(heard).not.toContain('Svar.');
   });
 });
 
