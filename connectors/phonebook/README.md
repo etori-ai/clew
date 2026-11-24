@@ -42,7 +42,8 @@ team" for the team list. Everything works without a model. With a model, the vie
 | `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks` for protocol verification. Required; HTTPS outside the explicit local development allowlist |
 | `PORT` | Default 4020 |
 | `PHONEBOOK_ADAPTER` | `fixture` (default, the made-up organisation) or `http` |
-| `PHONEBOOK_URL`, `PHONEBOOK_API_KEY` | The phone book API and its integration key, for `http`. The key comes from a secrets store and stays in this container; Clew never sees it. The address is https outside local development, and the adapter follows no redirect from it, so the key goes nowhere else |
+| `PHONEBOOK_URL`, `PHONEBOOK_API_KEY` | The phone book API and its integration key, for `http`. The key comes from a secrets store and stays in this container; Clew never sees it. The address is https outside local development, and the adapter follows no redirect from it, so the key goes nowhere else. It reads at most 4 MiB of an answer, a piece at a time, and takes a larger one as the phone book not answering |
+| `PHONEBOOK_ALLOW_HTTP` | `true` lets `PHONEBOOK_URL` be plain http on a private development network (`http://phonebook-api`); without it only `localhost` and `127.0.0.1` may be plain http, and no other scheme is taken |
 | `PHONEBOOK_UNIT_MAP` | Optional JSON object, Clew unit id to the phone book's unit id, where they differ |
 
 ## The phone book API

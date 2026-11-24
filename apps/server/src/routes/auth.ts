@@ -24,7 +24,7 @@ import { tokenDigest } from '../auth-crypto';
 import { failureDetails } from '../auth-refresh';
 import { protectedRoute, privateHeaders, sessionCookie, type Env } from '../context';
 import { logger } from '../logging';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * Sign-in and logout. A sign-in or logout that fails is answered as the person or the provider needs it, and said in

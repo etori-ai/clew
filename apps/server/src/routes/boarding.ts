@@ -22,7 +22,7 @@ import {
 } from '@clew/contracts';
 import { failure, ForbiddenError, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { BoardingUsecases } from '../modules/boarding/usecases';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * The boarding module's own routes (D124): a manager's plans and a person's plans, the preview and the start of a plan,

@@ -62,6 +62,7 @@ import {
 } from '@clew/contracts';
 import { Value } from 'typebox/value';
 import { connectorProblems } from './validation';
+export { schemaCompiler, type SchemaValidator } from './validation';
 import { namedInputs, type NamedInputs } from './named';
 import { pathOf, unfilledInput } from './asks';
 export {

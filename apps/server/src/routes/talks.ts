@@ -15,7 +15,7 @@ import {
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { TalkUsecases } from '../modules/talks/usecases';
 import type { InvitationUsecases } from '../modules/calendar/usecases/invitations';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * The talks module's writes (D96 items 2 and 4, D132 item 4): mark a talk held or undo it, register the time of a talk

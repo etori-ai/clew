@@ -41,7 +41,7 @@ import { operations } from '../composition/operations';
 import { appearance } from '../composition/appearance';
 import { ThemeFileError } from '../modules/appearance/usecases';
 import { provisionerKeyRoutes } from './provisioner-keys';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * Administration (D23, D24): thin routes over `connectorAdmin` and `models`. The use cases check the grant capability

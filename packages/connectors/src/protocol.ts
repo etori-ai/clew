@@ -92,6 +92,12 @@ export const INSTALLATION_PROFILES = ['holdings'] as const;
  */
 export const MAX_MANIFEST_BYTES = 500_000;
 /**
+ * The most capabilities one manifest declares. Every input schema is compiled when a manifest is loaded or tried in the
+ * public dry run, so the count bounds the work one document can ask of Clew (the largest connector in the repository
+ * declares 19).
+ */
+export const MAX_CAPABILITIES = 200;
+/**
  * The most bytes Clew reads of any other JSON answer: a capability's output, a scan, a figure, an installation read and
  * the error that refuses a question. A larger answer is the connector failing, and Clew stops reading it there, so one
  * answer can never fill the server's memory. A document has its own limit (`MAX_DOCUMENT_BYTES`), and so has the
@@ -456,8 +462,9 @@ export const ConnectorManifestSchema = Type.Object(
         "The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions.",
     }),
     capabilities: Type.Array(ManifestCapabilitySchema, {
+      maxItems: MAX_CAPABILITIES,
       description:
-        'What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one.',
+        'What the connector can do, one entry per operation, at most 200. The name is the contract (D37): a break is a new name, never a changed one.',
     }),
     installation: Type.Optional(
       Type.Array(ManifestInstallationReadSchema, {

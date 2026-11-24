@@ -1,5 +1,6 @@
 import { createGenerator } from '../model';
 import { WireError, type Endpoint, type ModelWire } from '../ports';
+import { boundedText } from '../../bounded-body';
 
 /**
  * The live OpenAI-compatible wire (D24): the only protocol, so an open-weight model on a self-hosted endpoint is a
@@ -10,6 +11,8 @@ import { WireError, type Endpoint, type ModelWire } from '../ports';
  * which older servers do not know), and a limit a reasoning model spends on thinking can leave no answer at all.
  * Every failure becomes a `WireError`: no answer (network, timeout, 5xx), a refused key (401, 403), or anything else.
  */
+/** The most of a probe's answer read: a model list of thousands of models is well under it. */
+const ANSWER_BYTES = 4 * 1024 * 1024;
 const headers = (e: Endpoint): Record<string, string> => ({
   'content-type': 'application/json',
   ...(e.apiKey ? { authorization: `Bearer ${e.apiKey}` } : {}),
@@ -23,18 +26,26 @@ async function call(
 ): Promise<unknown> {
   let response: Response;
   try {
+    // The provider's key goes to the address the administrator saved and nowhere else: a redirect is not followed.
     response = await fetchImpl(e.baseUrl.replace(/\/+$/, '') + path, {
       ...init,
       headers: headers(e),
+      redirect: 'error',
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     throw new WireError('unreachable', error instanceof Error ? error.message : String(error));
   }
-  if (response.status === 401 || response.status === 403)
-    throw new WireError('key-rejected', `HTTP ${response.status}`);
-  if (response.status >= 500) throw new WireError('unreachable', `HTTP ${response.status}`);
-  const text = await response.text();
+  if (response.status === 401 || response.status === 403 || response.status >= 500) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new WireError(response.status >= 500 ? 'unreachable' : 'key-rejected', `HTTP ${response.status}`);
+  }
+  // A model list or a one-word answer: read no further than ANSWER_BYTES, whatever the provider sends.
+  const text = await boundedText(response, ANSWER_BYTES);
+  if (text === undefined) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new WireError('unsupported', 'svaret är för stort');
+  }
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try {
@@ -89,7 +100,10 @@ export function openAICompatibleWire(
         fetchImpl,
       );
     },
+    // A turn's requests follow no redirect either: the key is sent with every one of them.
     generator: (e, model, reasoning) =>
-      createGenerator(e, model, fetchImpl, reasoning, { recordContent: options.recordModelContent === true }),
+      createGenerator(e, model, (input, init) => fetchImpl(input, { ...init, redirect: 'error' }), reasoning, {
+        recordContent: options.recordModelContent === true,
+      }),
   };
 }

@@ -6,7 +6,8 @@ Hello demonstrates a manifest, reads, a scan, a figure, a callback and toy execu
 - [Protocol reference](../../docs/reference/connector-protocol.md) and [generated manifest](../../docs/generated/hello.manifest.json).
 - [connector.mjs](connector.mjs): declarations and handlers.
 - [verification.mjs](verification.mjs): required companion verifier; protocol 1 RS256 assertions bound to their request and the separate transport secret.
-- [server.mjs](server.mjs): Node HTTP service.
+- [http.mjs](http.mjs): the HTTP listener: reads a request within a size limit and answers whatever it holds, so nothing sent to the port ends the process.
+- [server.mjs](server.mjs): reads the configuration and serves the connector with that listener.
 
 ## Run locally
 
