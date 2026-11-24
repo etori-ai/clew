@@ -561,7 +561,31 @@ describe('adding and governing a remote connector', () => {
     expect(await store.read('hello')).toBeUndefined();
     expect(registry.connector('hello')).toBeUndefined();
     expect(store.audit.at(-1)).toMatchObject({ action: 'connector.removed', details: { closedCards: 1 } });
+    // Nothing of it was in the competence register, so no row says anything went from there.
+    expect(store.audit.filter(a => a.action === 'competence.source_forgotten')).toEqual([]);
     await expect(admin.read(mikael, 'hello')).rejects.toThrow('finns inte');
+  });
+  test('removing a connector the competence register copied from audits what went with it, as forgetting the source does (DE-L4)', async () => {
+    const { admin, store } = world();
+    await admin.add(mikael, { id: 'lms', url: 'http://lms', secret: SECRET });
+    store.copied.push(
+      { connector: 'lms', kind: 'source' },
+      { connector: 'lms', kind: 'holding' },
+      { connector: 'lms', kind: 'holding' },
+      { connector: 'lms', kind: 'holding' },
+      { connector: 'lms', kind: 'mapping' },
+    );
+    expect(await admin.remove(mikael, 'lms')).toEqual({ closedCards: 0 });
+    expect(store.copied).toEqual([]);
+    expect(store.audit.slice(-2)).toMatchObject([
+      { actor: 'person:mikael', action: 'connector.removed', subject: 'connector:lms', details: { closedCards: 0 } },
+      {
+        actor: 'person:mikael',
+        action: 'competence.source_forgotten',
+        subject: 'connector:lms',
+        details: { holdings: 3, mappings: 1 },
+      },
+    ]);
   });
   test('a stored manifest the loader refuses, on a number this Clew does not load (D129), is never put live by a change to its row', async () => {
     const { admin, store, registry, live } = world();

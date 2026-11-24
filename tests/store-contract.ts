@@ -291,6 +291,57 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await store.openThread(a, first.topic)).toBeUndefined();
       expect(await store.transaction(tx => tx.insertThread(draft(a, { topic: first.topic })))).toBe(true);
     });
+    test('one open pushed thread per person and topic holds on a reopen too: refused while another holds the topic (DE-L9)', async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const first = draft(a),
+        dismissedAt = plus(T0, 1000);
+      await store.transaction(tx => tx.insertThread(first));
+      await store.transaction(tx =>
+        tx.updateThread(first.id, { state: 'dismissed', handledAt: dismissedAt, updatedAt: dismissedAt }),
+      );
+      // Made again on the same topic, and another person's card on it too.
+      const again = draft(a, { topic: first.topic });
+      expect(await store.transaction(tx => tx.insertThread(again))).toBe(true);
+      expect(await store.transaction(tx => tx.insertThread(draft(b, { topic: first.topic })))).toBe(true);
+      // A reopen of the first is refused, and nothing of its patch is written.
+      expect(
+        await store.transaction(tx => tx.reopenThread(first.id, { handledAt: null, updatedAt: plus(T0, 2000) })),
+      ).toBe(false);
+      expect(await store.readThread(a, first.id)).toMatchObject({ state: 'dismissed', handledAt: dismissedAt });
+      // The same as a plain update is refused as the unique index refuses it, and the transaction with it.
+      const refused = await store
+        .transaction(tx => tx.updateThread(first.id, { state: 'open', handledAt: null, updatedAt: plus(T0, 2000) }))
+        .then(
+          () => undefined,
+          (error: {
+            code?: string;
+            constraint_name?: string;
+            cause?: { code?: string; constraint_name?: string };
+          }) => ({
+            code: error.code ?? error.cause?.code,
+            constraint: error.constraint_name ?? error.cause?.constraint_name,
+          }),
+        );
+      expect(refused).toEqual({ code: '23505', constraint: 'thread_open_topic' });
+      expect((await store.openThread(a, first.topic))?.id).toBe(again.id);
+      // Once the topic is free again, the reopen takes its patch, and a card already open takes it as it stands.
+      await store.transaction(tx =>
+        tx.updateThread(again.id, { state: 'handled', handledAt: plus(T0, 3000), updatedAt: plus(T0, 3000) }),
+      );
+      expect(
+        await store.transaction(tx => tx.reopenThread(first.id, { handledAt: null, updatedAt: plus(T0, 4000) })),
+      ).toBe(true);
+      expect(await store.readThread(a, first.id)).toMatchObject({
+        state: 'open',
+        handledAt: null,
+        updatedAt: plus(T0, 4000),
+      });
+      expect(await store.transaction(tx => tx.reopenThread(first.id, { updatedAt: plus(T0, 5000) }))).toBe(true);
+      expect((await store.openThread(a, first.topic))?.id).toBe(first.id);
+    });
     test('messages keep their order and move updatedAt; a patch changes only what it names', async () => {
       const {
         store,

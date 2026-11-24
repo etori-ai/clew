@@ -12,6 +12,11 @@ export interface ConnectorStoreHarness {
   /** Put an open card from this connector where `dismissOpenThreadsOf` will find it; returns its id. */
   openCardFrom(connectorId: string): Promise<string>;
   cardState(threadId: string): Promise<string | undefined>;
+  /**
+   * Put what the competence register copies from this connector where `remove` will take it: its record as a source,
+   * two holdings copied from it and one type mapping.
+   */
+  copiedFrom(connectorId: string): Promise<void>;
 }
 const T0 = '2026-11-04T06:00:00.000Z',
   T1 = '2026-11-04T06:05:00.000Z',
@@ -445,6 +450,26 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       expect(closed).toBe(1);
       expect(await cardState(card)).toBe('dismissed');
       expect(await store.read(id)).toBeUndefined();
+    });
+    test('remove takes with the row what the competence register copied from the connector, and says how much (DE-L4)', async () => {
+      const { store, fresh, copiedFrom } = await make();
+      const copied = fresh(),
+        plain = fresh();
+      await store.transaction(async tx => {
+        await tx.insert(remoteRow(copied));
+        await tx.insert(remoteRow(plain));
+      });
+      await copiedFrom(copied);
+      // Rolled back with its transaction, it takes nothing.
+      await expect(
+        store.transaction(async tx => {
+          expect(await tx.remove(copied)).toEqual({ source: true, holdings: 2, mappings: 1 });
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect(await store.transaction(tx => tx.remove(copied))).toEqual({ source: true, holdings: 2, mappings: 1 });
+      expect(await store.transaction(tx => tx.remove(plain))).toEqual({ source: false, holdings: 0, mappings: 0 });
+      expect(await store.read(copied)).toBeUndefined();
     });
   });
 }

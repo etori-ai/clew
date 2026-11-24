@@ -365,13 +365,16 @@ export function threadUsecases(deps: ThreadDeps) {
       if (!current || current.updatedAt !== t.updatedAt)
         throw new InputError('Ärendet har ändrats. Läs tillbaka det först.');
       if (snoozed) await tx.cancelTimer(`snooze:${threadId}`, at);
-      await tx.updateThread(threadId, {
-        state: 'open',
-        handledAt: null,
-        snoozedUntil: null,
-        ...(dismissed ? { waitingOn: null } : {}),
-        updatedAt: at,
-      });
+      // A card made again on the same topic since it was dismissed holds the topic now: one open card a topic (DE-L9).
+      if (
+        !(await tx.reopenThread(threadId, {
+          handledAt: null,
+          snoozedUntil: null,
+          ...(dismissed ? { waitingOn: null } : {}),
+          updatedAt: at,
+        }))
+      )
+        throw new InputError('Det finns redan ett öppet ärende om samma sak. Fortsätt i det.');
       await tx.addMessage(threadId, { role: 'user', body: 'Ångra', at });
       await tx.writeAudit({
         actor: persona.principal.id,

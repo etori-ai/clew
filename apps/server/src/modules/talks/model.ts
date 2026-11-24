@@ -16,6 +16,8 @@ import type { AuthenticatedContext, CommitmentOwner, StaffOverview, Subject } fr
 
 /** The only kind of round there is so far (D96 item 1). */
 export type RoundKind = 'development';
+/** How a write holds the open round it reads (`TalkTx.currentRound`): against closing it, or against every other write. */
+export type RoundHold = 'write' | 'close';
 /** A round of talks for one organisation (D96 item 1): open while `closedAt` is null, at most one open per organisation and kind. */
 export interface RoundRecord {
   id: string;
@@ -181,8 +183,14 @@ export interface WorkItemTx {
 /** Everything a talks use case reads and writes in one transaction. Reads that a write follows take a row lock. */
 export interface TalkTx {
   // Rounds.
-  /** The organisation's open round of this kind, locked, or undefined when none is open. */
-  currentRound(organisationId: string, kind?: RoundKind): Promise<RoundRecord | undefined>;
+  /**
+   * The organisation's open round of this kind, or undefined when none is open. A read takes no lock, so every talks
+   * page and every manager's scan reads the round beside the others (BD-L4). `hold: 'write'` holds it against being
+   * closed until the transaction ends, as a write in the round takes it (a talk, a booking, an action point), while
+   * other writes in the round go on beside this one; `hold: 'close'` holds it against every other write too, as closing
+   * it takes it.
+   */
+  currentRound(organisationId: string, kind?: RoundKind, hold?: RoundHold): Promise<RoundRecord | undefined>;
   /** Insert a round. At most one per organisation and kind may be open: close the last one first. */
   insertRound(round: RoundRecord): Promise<void>;
   closeRound(id: string, at: string): Promise<void>;

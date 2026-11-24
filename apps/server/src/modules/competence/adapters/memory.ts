@@ -712,9 +712,11 @@ export function memoryCompetenceStore(seed: { persons?: SeedPerson[]; ownCards?:
       return ids.flatMap(id => (state.persons.has(id) ? [{ ...state.persons.get(id)! }] : []));
     },
     async activeByUserName(userNames) {
-      const wanted = new Set(userNames.map(n => n.toLowerCase()));
+      // As the Postgres adapter compares: composed (NFC) and without regard to case, on both sides.
+      const folded = (name: string) => name.normalize('NFC').toLowerCase();
+      const wanted = new Set(userNames.map(folded));
       return [...state.persons.values()]
-        .filter(p => p.userName !== null && wanted.has(p.userName.toLowerCase()) && p.enabled)
+        .filter(p => p.userName !== null && wanted.has(folded(p.userName)) && p.enabled)
         .map(p => ({ ...p }));
     },
     async activeIds(personIds) {

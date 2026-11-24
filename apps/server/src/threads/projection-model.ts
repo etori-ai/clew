@@ -52,7 +52,7 @@ export interface ProjectionTx {
     'insertThread' | 'lockThread' | 'updateThread' | 'scheduleTimer' | 'cancelTimer' | 'enqueue' | 'writeAudit'
   >;
   proposals: ProposalProjectionTx;
-  /** A job row with its workflow start, once by id; true when this call inserted it. It writes no `job.scheduled` row. */
+  /** A job row with its workflow start, once by id; true when this call inserted it. The use case writes its `job.scheduled` row. */
   insertJob(job: ProjectionJob): Promise<boolean>;
   /** The talks domain, told when an invitation is established, moved or ended (D132 item 3). */
   invitations: InvitationsTx;

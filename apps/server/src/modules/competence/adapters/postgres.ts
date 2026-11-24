@@ -1,4 +1,19 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, ne, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  ne,
+  or,
+  sql,
+  type SQL,
+  type SQLWrapper,
+} from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
@@ -56,6 +71,8 @@ const SLICE = 1000;
 const slices = <T>(rows: readonly T[]) =>
   Array.from({ length: Math.ceil(rows.length / SLICE) }, (_, i) => rows.slice(i * SLICE, (i + 1) * SLICE));
 
+/** A user name as the index `auth_person_user_name_nfc` holds it: composed (NFC), and folded by ICU's root locale. */
+const userNameFolded = (value: SQLWrapper) => sql`lower(normalize(${value}, NFC) collate "und-x-icu")`;
 /** The unique index `competence_type_name` fired; the driver may wrap the error once. */
 function nameTaken(error: unknown) {
   const e = error as { code?: string; constraint_name?: string; cause?: { code?: string; constraint_name?: string } };
@@ -248,8 +265,8 @@ export function competenceTx(
       await named(() => tx.update(types).set(set).where(eq(types.id, id)));
     },
     async insertTypes(rows) {
-      // `ON CONFLICT DO NOTHING` without a target: a row the name index (its `lower()` under the database's collation)
-      // or the address index would refuse, an earlier row of the statement included, is left out, never an error.
+      // `ON CONFLICT DO NOTHING` without a target: a row the name index (its `lower()` by ICU's root locale) or the
+      // address index would refuse, an earlier row of the statement included, is left out, never an error.
       const inserted: string[] = [];
       for (const slice of slices(rows))
         for (const r of await tx
@@ -708,8 +725,11 @@ export function competenceTx(
       return found;
     },
     async activeByUserName(userNames) {
+      // Each side in the composed form (NFC) and folded by ICU's root locale, as the people module compares a user name:
+      // the expression of the index `auth_person_user_name_nfc`, which serves the lookup. A plain `lower` folds only A to
+      // Z on a database created with the locale C, so `Åsa.Öberg` was nobody there (DE-L8).
       const found = [];
-      for (const slice of slices([...new Set(userNames.map(n => n.toLowerCase()))]))
+      for (const slice of slices([...new Set(userNames)].filter(n => !n.includes('\u0000'))))
         found.push(
           ...(await tx
             .select({
@@ -720,7 +740,15 @@ export function competenceTx(
               enabled: people.enabled,
             })
             .from(people)
-            .where(and(eq(people.enabled, true), inArray(sql`lower(${people.userName})`, slice)))),
+            .where(
+              and(
+                eq(people.enabled, true),
+                inArray(
+                  userNameFolded(people.userName),
+                  slice.map(n => userNameFolded(sql`${n}::text`)),
+                ),
+              ),
+            )),
         );
       return found;
     },

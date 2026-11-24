@@ -1,8 +1,17 @@
 import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
+import { changeSignals, unsignalledTables } from '../../packages/db/src/schema';
 import { changesFor } from '../../apps/server/src/composition/changes';
+
+/** A person's own content counter: the first part of the revision, before the installation-wide counters they see. */
+const own = (revision: string) => Number(revision.split(':')[0]);
+/** An installation-wide content counter as it stands. */
+const counter = async (id: string) => {
+  const [row] = await database().select().from(schema.contentChanges).where(eq(schema.contentChanges.id, id));
+  return row?.revision ?? 0;
+};
 
 test('change revisions commit with the business mutation, survive rollback and distinguish authority changes', async () => {
   const id = 'changes-test-' + randomUUID(),
@@ -32,7 +41,7 @@ test('change revisions commit with the business mutation, survive rollback and d
     expect(await changesFor({ id, capabilities: [] })).toEqual(before);
     await database().update(schema.threads).set({ title: 'Committed' }).where(eq(schema.threads.id, thread));
     const changed = await changesFor({ id, capabilities: [] });
-    expect(Number(changed.revision)).toBe(Number(before.revision) + 1);
+    expect(own(changed.revision)).toBe(own(before.revision) + 1);
     expect(changed.policy).toBe(before.policy);
     await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, id));
     expect((await changesFor({ id, capabilities: [] })).policy).not.toBe(before.policy);
@@ -73,11 +82,12 @@ test('a talk and an action point bump the change revision of every person they c
     employee = base + '-employee',
     manager = base + '-manager',
     other = base + '-other',
+    booker = base + '-booker',
     round = base + '-round',
     talk = base + '-talk',
     commitment = base + '-commitment',
-    people = [employee, manager, other];
-  const revision = async (id: string) => Number((await changesFor({ id, capabilities: [] })).revision);
+    people = [employee, manager, other, booker];
+  const revision = async (id: string) => own((await changesFor({ id, capabilities: [] })).revision);
   const revisions = async () => Object.fromEntries(await Promise.all(people.map(async p => [p, await revision(p)])));
   const bumped = async (before: Record<string, number>, expected: string[]) => {
     const after = await revisions();
@@ -106,6 +116,20 @@ test('a talk and an action point bump the change revision of every person they c
       .set({ heldOn: '2026-11-10', heldBy: manager })
       .where(eq(schema.talks.id, talk));
     await bumped(before, [employee, manager]);
+    // The manager who books it sees the booking, and sees it go when it is taken off (DE-L10: 0043 named no booker).
+    before = await revisions();
+    const start = new Date('2026-11-20T09:00:00Z');
+    await database()
+      .update(schema.talks)
+      .set({ bookedStart: start, bookedEnd: new Date(start.getTime() + 3_600_000), bookedAt: start, bookedBy: booker })
+      .where(eq(schema.talks.id, talk));
+    await bumped(before, [employee, manager, booker]);
+    before = await revisions();
+    await database()
+      .update(schema.talks)
+      .set({ bookedStart: null, bookedEnd: null, bookedAt: null, bookedBy: null })
+      .where(eq(schema.talks.id, talk));
+    await bumped(before, [employee, manager, booker]);
     before = await revisions();
     await database().delete(schema.talks).where(eq(schema.talks.id, talk));
     await bumped(before, [employee, manager]);
@@ -210,5 +234,215 @@ test('a competence source read moves the revision of those who may see Källor, 
   } finally {
     await database().delete(schema.competenceSources).where(where);
     await database().delete(schema.connectors).where(eq(schema.connectors.id, connector));
+  }
+});
+
+test('every table has a change signal or a reason it has none, and the database holds the triggers schema.ts declares (DE-L10)', async () => {
+  const tables = await database().execute<{ name: string }>(
+    sql`select table_name as name from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE'`,
+  );
+  const signalled = new Set(changeSignals.map(s => s.table));
+  const unsignalled = Object.keys(unsignalledTables);
+  expect(unsignalled.filter(t => signalled.has(t))).toEqual([]);
+  expect(tables.map(t => t.name).sort()).toEqual([...new Set([...signalled, ...unsignalled])].sort());
+  const triggers = await database().execute<{
+    table: string;
+    trigger: string;
+    fn: string;
+    args: string[];
+    deferred: boolean;
+    type: number;
+  }>(sql`
+    select c.relname as table, t.tgname as trigger, p.proname as fn,
+      array_remove(string_to_array(encode(t.tgargs, 'escape'), '\\000'), '') as args,
+      t.tgdeferrable and t.tginitdeferred as deferred, t.tgtype::int as type
+    from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
+      join pg_proc p on p.oid = t.tgfoid
+    where not t.tgisinternal and n.nspname = 'public' and p.proname like 'clew\\_%changed'`);
+  const key = (s: { table: string; trigger: string }) => s.table + '.' + s.trigger;
+  expect(
+    triggers
+      .map(t => ({ table: t.table, trigger: t.trigger, fn: t.fn, args: t.args }))
+      .sort((a, b) => key(a).localeCompare(key(b))),
+  ).toEqual(
+    changeSignals
+      .map(s => ({ table: s.table, trigger: s.trigger, fn: s.fn, args: [...(s.args ?? [])] }))
+      .sort((a, b) => key(a).localeCompare(key(b))),
+  );
+  // Every one is deferred to the commit, after each row inserted, changed or removed (tgtype: row 1, insert 4, delete 8, update 16).
+  expect(triggers.filter(t => !t.deferred || t.type !== 1 + 4 + 8 + 16).map(key)).toEqual([]);
+  // An argument that names a column names one the table has: a person column misspelt would move nobody's counter.
+  const columns = await database().execute<{ table: string; column: string }>(
+    sql`select table_name as table, column_name as column from information_schema.columns where table_schema = 'public'`,
+  );
+  const has = new Set(columns.map(c => c.table + '.' + c.column));
+  const named = changeSignals.flatMap(s =>
+    (s.fn === 'clew_shared_changed' ? (s.args ?? []).slice(1) : (s.args ?? [])).map(column => s.table + '.' + column),
+  );
+  expect(named.filter(c => !has.has(c))).toEqual([]);
+});
+
+test("a connector's rail moves everyone's policy, a check only its administrators' revision (DE-L10)", async () => {
+  const connector = 'changes-connector-' + randomUUID(),
+    admin = { id: 'changes-admin-' + randomUUID(), capabilities: ['admin.connectors'] },
+    person = { id: 'changes-person-' + randomUUID(), capabilities: [] as string[] };
+  const where = eq(schema.connectors.id, connector);
+  const policy = async () => (await changesFor(person)).policy;
+  await database()
+    .insert(schema.connectors)
+    .values({ id: connector, bundled: true, createdBy: 'test', updatedBy: 'test' });
+  try {
+    for (const set of [{ areas: { cases: {} } }, { ordinal: 3 }, { headerHolder: true }]) {
+      const before = await policy();
+      await database().update(schema.connectors).set(set).where(where);
+      expect([Object.keys(set)[0], await policy()]).not.toEqual([Object.keys(set)[0], before]);
+    }
+    const before = { policy: await policy(), admin: await changesFor(admin), person: await changesFor(person) };
+    await database()
+      .update(schema.connectors)
+      .set({ health: { status: 'ok', at: new Date().toISOString() } })
+      .where(where);
+    expect(await policy()).toBe(before.policy);
+    expect((await changesFor(admin)).revision).not.toBe(before.admin.revision);
+    expect((await changesFor(person)).revision).toBe(before.person.revision);
+  } finally {
+    await database().delete(schema.connectors).where(where);
+  }
+});
+
+test("a talk round moves everyone's revision; a push of the organisation moves its administrators' once (DE-L10)", async () => {
+  const base = 'changes-shared-' + randomUUID(),
+    users = { id: base + '-users', capabilities: ['admin.users'] },
+    person = { id: base + '-person', capabilities: [] as string[] };
+  try {
+    const before = { users: await changesFor(users), person: await changesFor(person) };
+    await database()
+      .insert(schema.talkRounds)
+      .values({
+        id: base + '-round',
+        organisationId: base,
+        kind: 'development',
+        label: 'Utvecklingssamtal 2027',
+        opensOn: '2027-11-01',
+        dueOn: '2027-11-28',
+        createdBy: 'operator:test',
+      });
+    const rounded = { users: await changesFor(users), person: await changesFor(person) };
+    expect(rounded.person.revision).not.toBe(before.person.revision);
+    expect(rounded.users.revision).not.toBe(before.users.revision);
+    // One push of a unit, three groups and their members: the counter moves once, for those who administer users only.
+    const organisation = await counter('organisation');
+    await database().transaction(async tx => {
+      await tx.insert(schema.units).values({ id: base + '-unit', organisationId: base, label: 'Enhet' });
+      await tx.insert(schema.people).values({ id: base + '-member', name: 'Synthetic member', organisationId: base });
+      for (const n of [1, 2, 3]) {
+        await tx.insert(schema.groups).values({ id: `${base}-group-${n}`, organisationId: base, label: 'Grupp ' + n });
+        await tx.insert(schema.groupMembers).values({ groupId: `${base}-group-${n}`, personId: base + '-member' });
+      }
+    });
+    expect(await counter('organisation')).toBe(organisation + 1);
+    expect((await changesFor(users)).revision).not.toBe(rounded.users.revision);
+    expect((await changesFor(person)).revision).toBe(rounded.person.revision);
+    // Touching a group's updated_at alone draws nothing new.
+    await database()
+      .update(schema.groups)
+      .set({ updatedAt: new Date() })
+      .where(eq(schema.groups.id, base + '-group-1'));
+    expect(await counter('organisation')).toBe(organisation + 1);
+  } finally {
+    await database().execute(sql`delete from auth_group_member where person_id = ${base + '-member'}`);
+    await database().execute(sql`delete from auth_group where organisation_id = ${base}`);
+    await database().execute(sql`delete from auth_unit where organisation_id = ${base}`);
+    await database().execute(sql`delete from talk_round where organisation_id = ${base}`);
+    await database().execute(sql`delete from auth_person where organisation_id = ${base}`);
+    await database().execute(sql`delete from person_change where person_id like ${base + '%'}`);
+  }
+});
+
+test('a boarding item and a competence holding reach the people they name and the plan they belong to (DE-L10)', async () => {
+  const base = 'changes-people-' + randomUUID(),
+    [newcomer, manager, buddy, owner, assessor] = ['newcomer', 'manager', 'buddy', 'owner', 'assessor'].map(
+      p => base + '-' + p,
+    ) as [string, string, string, string, string],
+    people = [newcomer, manager, buddy, owner, assessor];
+  const revisions = async () =>
+    Object.fromEntries(
+      await Promise.all(people.map(async p => [p, own((await changesFor({ id: p, capabilities: [] })).revision)])),
+    );
+  const bumped = async (before: Record<string, number>, expected: string[]) => {
+    const after = await revisions();
+    for (const p of people) expect([p, after[p]! > before[p]!]).toEqual([p, expected.includes(p)]);
+  };
+  await database()
+    .insert(schema.people)
+    .values(people.map(id => ({ id, name: 'Synthetic people change test', organisationId: base })));
+  try {
+    await database()
+      .insert(schema.boardingPlans)
+      .values({
+        id: base + '-plan',
+        organisationId: base,
+        personId: newcomer,
+        event: 'introduction',
+        anchorOn: '2026-12-01',
+        buddyId: buddy,
+        startedBy: manager,
+      });
+    let before = await revisions();
+    await database()
+      .insert(schema.boardingItems)
+      .values({
+        id: base + '-item',
+        planId: base + '-plan',
+        position: 1,
+        title: 'Nycklar',
+        kind: 'todo',
+        ownerRole: 'manager',
+        ownerId: owner,
+        dueOn: '2026-12-01',
+      });
+    await bumped(before, [newcomer, manager, buddy, owner]);
+    before = await revisions();
+    await database()
+      .update(schema.boardingItems)
+      .set({ doneAt: new Date(), doneBy: assessor })
+      .where(eq(schema.boardingItems.id, base + '-item'));
+    await bumped(before, [newcomer, manager, buddy, owner, assessor]);
+
+    await database()
+      .insert(schema.competenceTypes)
+      .values({
+        id: base + '-type',
+        organisationId: base,
+        name: 'Hjärt-lungräddning',
+        area: 'Vård',
+        kind: 'certificate',
+        createdBy: 'operator:test',
+      });
+    before = await revisions();
+    await database()
+      .insert(schema.competenceHoldings)
+      .values({
+        id: base + '-holding',
+        personId: newcomer,
+        typeId: base + '-type',
+        issuedOn: '2026-01-01',
+        evidence: 'manager',
+        state: 'valid',
+        registeredBy: manager,
+      });
+    await bumped(before, [newcomer, manager]);
+    before = await revisions();
+    await database()
+      .update(schema.competenceHoldings)
+      .set({ state: 'revoked', revokedAt: new Date(), revokedBy: assessor })
+      .where(eq(schema.competenceHoldings.id, base + '-holding'));
+    await bumped(before, [newcomer, manager, assessor]);
+  } finally {
+    await database().execute(sql`delete from competence_holding where person_id = ${newcomer}`);
+    await database().execute(sql`delete from competence_type where organisation_id = ${base}`);
+    await database().execute(sql`delete from boarding_plan where organisation_id = ${base}`);
+    await database().execute(sql`delete from auth_person where organisation_id = ${base}`);
+    await database().execute(sql`delete from person_change where person_id like ${base + '%'}`);
   }
 });

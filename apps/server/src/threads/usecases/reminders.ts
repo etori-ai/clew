@@ -149,8 +149,7 @@ export function reminderUsecases(deps: ReminderDeps) {
       if (row.remindedAt && Date.parse(row.remindedAt) >= fireAt) return 'skipped';
       const asked = clock(new Date(input.requestedAt));
       const waited = row.waitingOn && !isReminderWaiting(row.waitingOn) ? `Väntade på ${row.waitingOn} · ` : '';
-      await tx.updateThread(row.id, {
-        state: 'open',
+      const reopened = await tx.reopenThread(row.id, {
         handledAt: null,
         waitingOn: null,
         snoozedUntil: null,
@@ -162,6 +161,18 @@ export function reminderUsecases(deps: ReminderDeps) {
           at,
         },
       });
+      // The card was dismissed and made again on the same topic since: that card is open in the stream already, and
+      // one open card a topic (DE-L9). The timer has fired; this card stays as it is, and the row says why.
+      if (!reopened) {
+        await tx.writeAudit({
+          actor: 'assistant:reminder',
+          action: 'thread.reminder_skipped',
+          subject: 'thread:' + row.id,
+          at,
+          details: { reason: 'topic-open', requestedAt: input.requestedAt, wasState: row.state, owner: input.personId },
+        });
+        return 'skipped';
+      }
       await tx.addMessage(row.id, {
         role: 'assistant',
         body: `Påminnelse: du bad ${asked} om att få det här ärendet igen.`,

@@ -1,10 +1,12 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { eq, like, sql } from 'drizzle-orm';
-import { database, schema } from '../../packages/db/src/index';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { database, schema, type Transaction } from '../../packages/db/src/index';
 import type { DurableQueue } from '../../packages/db/src/durable';
 import { competenceStoreWithCards } from '../../apps/server/src/composition/competence';
-import { postgresCompetenceStore } from '../../apps/server/src/modules/competence/adapters/postgres';
+import { competenceTx, postgresCompetenceStore } from '../../apps/server/src/modules/competence/adapters/postgres';
+import { cLocaleDatabase } from './c-locale';
 import { competenceStoreContract, copiedRow, typeRow } from '../competence-store-contract';
 
 /**
@@ -247,3 +249,85 @@ test('a requirement and a share target outlive their position and unit rows, and
     [p + '-r1', p + '-r3'].sort(),
   );
 });
+
+/** A node of PostgreSQL's plan as `explain (format json)` gives it, with the fields read here. */
+interface PlanNode {
+  'Node Type': string;
+  'Relation Name'?: string;
+  'Index Name'?: string;
+  Plans?: PlanNode[];
+}
+const planNodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(planNodes)];
+
+/**
+ * DE-L8: the active people a source's rows name are found by user name as the people module compares one, in NFC and
+ * folded by ICU's root locale, so Å is å on a database created with the locale C too; and the lookup is served by the
+ * index on that expression, `auth_person_user_name_nfc`, never by reading every person. The statement is taken as the
+ * adapter sends it and explained on a database of the test's own, with two thousand people and its statistics taken.
+ */
+test('the active people are found by user name through the index on the folded name, on a database created with the C locale', async () => {
+  const c = await cLocaleDatabase();
+  const sent: Array<{ query: string; params: unknown[] }> = [];
+  const recorded = drizzle({
+    connection: { url: c.url, max: 1, onnotice: () => undefined },
+    logger: { logQuery: (query, params) => void sent.push({ query, params }) },
+  });
+  try {
+    await c.db.execute(sql`
+      insert into auth_person (id, organisation_id, name, user_name)
+      select 'person-' || n, 'organisation', 'Person ' || n, 'person.' || n from generate_series(1, 2000) as n
+      union all select 'asa', 'organisation', 'Åsa Öberg', 'Åsa.Öberg'`);
+    await c.db.execute(sql`analyze auth_person`);
+    const found = await recorded.transaction(tx =>
+      competenceTx(tx as unknown as Transaction, durable).activeByUserName(['åsa.öberg', 'ÅSA.ÖBERG'.normalize('NFD')]),
+    );
+    expect(found.map(p => p.id)).toEqual(['asa']);
+    const lookup = sent.find(s => s.query.includes('auth_person'))!;
+    const [row] = await c.db.$client.unsafe(
+      'explain (format json) ' + lookup.query,
+      lookup.params as Parameters<typeof c.db.$client.unsafe>[1],
+    );
+    const explained = row!['QUERY PLAN'];
+    const nodes = planNodes((typeof explained === 'string' ? JSON.parse(explained) : explained)[0].Plan as PlanNode);
+    expect({
+      everyPerson: nodes.some(n => n['Node Type'] === 'Seq Scan' && n['Relation Name'] === 'auth_person'),
+      byIndex: nodes.some(n => n['Index Name'] === 'auth_person_user_name_nfc'),
+    }).toEqual({ everyPerson: false, byIndex: true });
+  } finally {
+    await recorded.$client.end();
+    await c.drop();
+  }
+}, 30_000);
+
+/**
+ * DE-L8: a competence type's and a boarding layer's name are taken without regard to case by ICU's root locale, as a
+ * user name is, so a name that differs from one in use only in the case of Å, Ä or Ö is refused on a database created
+ * with the locale C too, where a plain `lower()` folds only A to Z.
+ */
+test('a name that differs only in the case of a Swedish letter is taken, on a database created with the C locale', async () => {
+  const c = await cLocaleDatabase();
+  const code = async (statement: ReturnType<typeof sql>) => {
+    try {
+      await c.db.execute(statement);
+      return 'written';
+    } catch (error) {
+      const e = error as { code?: string; cause?: { code?: string } };
+      return e.code ?? e.cause?.code;
+    }
+  };
+  try {
+    const type = (id: string, name: string) =>
+      sql`insert into competence_type (id, organisation_id, name, area, kind, created_by)
+        values (${id}, 'organisation', ${name}, 'Skydd', 'certificate', 'operator:test')`;
+    const layer = (id: string, name: string) =>
+      sql`insert into boarding_layer (id, organisation_id, event, name, condition_kind, created_by)
+        values (${id}, 'organisation', 'introduction', ${name}, 'all', 'operator:test')`;
+    expect([await code(type('t1', 'Ögonskydd')), await code(type('t2', 'ÖGONSKYDD'))]).toEqual(['written', '23505']);
+    expect([await code(layer('l1', 'Ålands kontor')), await code(layer('l2', 'ålands kontor'))]).toEqual([
+      'written',
+      '23505',
+    ]);
+  } finally {
+    await c.drop();
+  }
+}, 30_000);

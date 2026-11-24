@@ -679,14 +679,17 @@ export function connectorUsecases(deps: AdminDeps) {
     applyLive(updated, offered);
     return { diff, connector: await detail(updated) };
   }
-  /** Remove a remote connector: its open cards close with the reason, the row goes, the registry forgets it. Receipts stay. */
+  /**
+   * Remove a remote connector: its open cards close with the reason, the row goes with what the competence register
+   * copied from it, the registry forgets it. Receipts stay.
+   */
   async function remove(persona: AuthenticatedContext, id: string): Promise<{ closedCards: number }> {
     const { by, at } = await mutating(persona);
     const row = await must(id);
     if (row.bundled) throw new InputError('En inbyggd anslutning kan inte tas bort, bara stängas av.');
     const closedCards = await store.transaction(async (tx: ConnectorTx) => {
       const closed = await tx.dismissOpenThreadsOf(id, at);
-      await tx.remove(id);
+      const copied = await tx.remove(id);
       await tx.writeAudit({
         actor: by,
         action: 'connector.removed',
@@ -694,6 +697,16 @@ export function connectorUsecases(deps: AdminDeps) {
         at,
         details: { closedCards: closed },
       });
+      // What the competence register copied from it went with it (D108 item 9): the row the operator's way of
+      // forgetting a source writes, with its counts (DE-L4).
+      if (copied.source || copied.holdings || copied.mappings)
+        await tx.writeAudit({
+          actor: by,
+          action: 'competence.source_forgotten',
+          subject: 'connector:' + id,
+          at,
+          details: { holdings: copied.holdings, mappings: copied.mappings },
+        });
       return closed;
     });
     live.unregister(id);

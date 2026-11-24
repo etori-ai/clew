@@ -61,9 +61,23 @@ export async function projectOntoCard(tx: ProjectionTx, e: Execution, stage: Pro
   if (stage === 'approval' && command?.threadId && e.operation === 'calendar.confirmProposals')
     await approveInvitations(tx, e, thread.id, command);
   if (stage === 'approval' && command?.threadId && e.compensates) {
-    // An approved undo ends the follow-up the confirmation started.
+    // An approved undo ends the follow-up the confirmation started, with a row of its own (DE-L4).
     const policy = await tx.proposals.policy(thread.id);
-    if (policy) await tx.proposals.savePolicy({ ...policy, state: 'cancelled', reason: 'compensation-approved' });
+    if (policy) {
+      await tx.proposals.savePolicy({ ...policy, state: 'cancelled', reason: 'compensation-approved' });
+      await cards.writeAudit({
+        actor: e.principal,
+        action: 'obligation.policy_cancelled',
+        subject: `thread:${thread.id}`,
+        at: e.createdAt,
+        details: {
+          executionId: e.id,
+          compensates: e.compensates,
+          reason: 'compensation-approved',
+          was: policy.state,
+        },
+      });
+    }
     await cards.cancelTimer(`obligation:${thread.id}`, e.createdAt);
   }
   if (command?.threadId && result && e.state !== 'running')
@@ -91,13 +105,19 @@ export async function projectOntoCard(tx: ProjectionTx, e: Execution, stage: Pro
   };
   await cards.updateThread(thread.id, patch);
   if (!e.compensates && projectedReceipt?.undoUntil && e.state !== 'running')
-    for (const kind of ['receipt-final', ...(command?.threadId ? ['undo-expiry'] : [])])
-      await tx.insertJob({
-        id: `${kind}:${e.id}`,
-        kind,
-        runAt: projectedReceipt.undoUntil,
-        payload: { threadId: thread.id },
-      });
+    for (const kind of ['receipt-final', ...(command?.threadId ? ['undo-expiry'] : [])]) {
+      const id = `${kind}:${e.id}`,
+        runAt = projectedReceipt.undoUntil;
+      // Its `job.scheduled` row, as every other job has (DE-L4), once: a check that reads the result again inserts none.
+      if (await tx.insertJob({ id, kind, runAt, payload: { threadId: thread.id } }))
+        await cards.writeAudit({
+          actor: 'system:scheduler',
+          action: 'job.scheduled',
+          subject: `job:${id}`,
+          at: e.updatedAt,
+          details: { kind, runAt },
+        });
+    }
   if (stage === 'approval' || terminal || e.state === 'unknown')
     await cards.writeAudit({
       actor: stage === 'approval' ? e.principal : EXECUTION_ACTOR,

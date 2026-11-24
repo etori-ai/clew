@@ -62,6 +62,14 @@ migrations in `dbos.dbos_migrations` as it completes it. So if `DBOS.migrate` fa
 the `dbos` schema stops after the last DBOS migration that completed. Rerunning `bun run db:init` is safe in either
 case: Drizzle runs only what it has not recorded, and `DBOS.migrate` resumes after the last version it recorded.
 
+Drizzle runs only the migrations newer than the newest it has recorded, so a migration whose journal time is earlier
+than one already applied is never run: two branches taking turns on one database leave it so. After migrating,
+`bun run db:init` looks for every migration of the journal among those `drizzle.__drizzle_migrations` records (by the
+journal's `when`, which Drizzle stores as `created_at`; `migrationsNotApplied` in `packages/db/src/migrations.ts`). A
+database that lacks one is refused: the script names each missing migration, exits with status 1 and leaves the durable
+engine unmigrated. Recreate the database, or apply the missing migration's SQL by hand and record it in
+`drizzle.__drizzle_migrations` with its `when` as `created_at`; then run `bun run db:init` again.
+
 Migration 0053 ([D114](../decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md)) moves each
 person's `work_phone` and `mobile_phone` into `phone_numbers`, the work number first, and drops the two columns. Before
 its fix it could not upgrade a database at 0052 in which anyone held a number: `bun run db:init` failed with
@@ -73,16 +81,13 @@ the hash it recorded for 0053 (the row with `created_at` 1794478229566 holds `c1
 `4df0588b8e09…`) and nothing runs again. `tests/db/person-directory-upgrade.test.ts` checks both: the upgrade from 0052
 with numbers, and that a database which applied the old file runs nothing again.
 
-For maintainers writing a migration: these 14 tables carry change-signal constraint triggers that are `DEFERRABLE
-INITIALLY DEFERRED`:
+For maintainers writing a migration: the change signals (D46) are constraint triggers that are `DEFERRABLE INITIALLY
+DEFERRED`, one on every table the browser draws: `changeSignals` in `packages/db/src/schema.ts` lists the 46 of them,
+on 44 tables, with each one's function and arguments, and `unsignalledTables` beside it lists every other table and
+why it has none (0089 brought the list to this, DE-L10). `tests/db/postgres-changes.test.ts` holds the database to both
+lists, so a migration that adds a table classifies it, and one that recreates a table makes its trigger again.
 
-- `thread`, `execution`, `auth_person`, `auth_access_grant` and `connector` (0019);
-- `timer_intent` (0021);
-- `refresh_request`, `attention_delivery` and `followup_policy` (0025);
-- `talk` and `talk_commitment` (0043);
-- `dialogue_activity` and `dialogue_assessment` (0054), and `dialogue_note` (0055).
-
-A migration that writes any of them, directly or through `ON DELETE CASCADE` or `SET NULL`, runs
+A migration that writes any of those tables, directly or through `ON DELETE CASCADE` or `SET NULL`, runs
 `SET CONSTRAINTS ALL IMMEDIATE` as its first statement, which also fires anything an earlier migration of the same run
 left pending, and `SET CONSTRAINTS ALL DEFERRED` after its last write. Without that, an `ALTER TABLE`, `CREATE INDEX`,
 `DROP TABLE` or `TRUNCATE` of that table, or dropping a foreign key that references it, fails with 55006 later in the
@@ -94,7 +99,7 @@ DEFERRED`, and 0031's `DELETE` from `connector` has no guard; the events of both
 `SET CONSTRAINTS ALL IMMEDIATE` fires them, before its `ALTER` of `connector`. 0040's guard wraps only `ALTER`s of
 `auth_person` and is a precaution, since no migration before it leaves events pending there. The closing
 `SET CONSTRAINTS ALL DEFERRED` returns the rest of the run to each constraint's own mode only because every deferrable
-constraint is `INITIALLY DEFERRED`: `pg_constraint` lists exactly these 14 triggers as deferrable, in every schema
+constraint is `INITIALLY DEFERRED`: `pg_constraint` lists exactly these 46 triggers as deferrable, in every schema
 including `dbos`. A migration that adds a `DEFERRABLE INITIALLY IMMEDIATE` constraint names the constraints it sets
 instead of using `ALL`.
 

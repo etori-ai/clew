@@ -123,7 +123,17 @@ export interface ThreadTx {
   lockThread(personId: string, id: string): Promise<Thread | undefined>;
   /** False when an open pushed thread with the same topic already exists for the person: the scan is idempotent. */
   insertThread(thread: NewThread): Promise<boolean>;
+  /**
+   * The patch, as it is. A patch that opens a pushed thread again while another open pushed thread of the person holds
+   * its topic is refused, as a second insert is (one open card a topic, the unique index `thread_open_topic`): a
+   * reopen goes through `reopenThread`, which says so instead of throwing.
+   */
   updateThread(id: string, patch: ThreadPatch): Promise<void>;
+  /**
+   * Open the thread again with the patch (an undo of Avfärda, a reminder that brings it back); false, and nothing
+   * written, when another open pushed thread of the person holds its topic, as an insert is refused (DE-L9).
+   */
+  reopenThread(id: string, patch: Omit<ThreadPatch, 'state' | 'items'>): Promise<boolean>;
   addMessage(threadId: string, message: NewMessage): Promise<void>;
   writeAudit(entry: AuditEntry): Promise<void>;
   /** Idempotent by job id. */

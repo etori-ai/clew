@@ -62,6 +62,22 @@ export function memoryThreadStore(): MemoryThreadStore {
     const row = threads.get(id);
     return row && row.personId === personId ? row : undefined;
   };
+  /** One open pushed thread a person and topic (`thread_open_topic`): whether one other than `except` holds it. */
+  const topicHeld = (personId: string, topic: string, except?: string) =>
+    [...threads.values()].some(
+      r =>
+        r.personId === personId &&
+        r.thread.id !== except &&
+        r.thread.topic === topic &&
+        r.thread.state === 'open' &&
+        r.thread.kind === 'pushed',
+    );
+  /** Whether opening this row would make it a second open pushed thread on its topic. */
+  const reopensHeldTopic = (row: { personId: string; thread: Thread }, state: Thread['state'] | undefined) =>
+    state === 'open' &&
+    row.thread.state !== 'open' &&
+    row.thread.kind === 'pushed' &&
+    topicHeld(row.personId, row.thread.topic, row.thread.id);
   const tx: ThreadTx = {
     async admitDelivery(input) {
       if (deliveries.has(input.id)) return;
@@ -118,14 +134,7 @@ export function memoryThreadStore(): MemoryThreadStore {
     async insertThread(thread) {
       // A thread names no entity of its own unless it says so, as Postgres reads an empty column back (D97).
       const { personId, subjects, ...rest } = thread;
-      const clash = [...threads.values()].some(
-        r =>
-          r.personId === personId &&
-          r.thread.topic === rest.topic &&
-          r.thread.state === 'open' &&
-          r.thread.kind === 'pushed',
-      );
-      if (rest.kind === 'pushed' && rest.state === 'open' && clash) return false;
+      if (rest.kind === 'pushed' && rest.state === 'open' && topicHeld(personId, rest.topic)) return false;
       threads.set(rest.id, {
         personId,
         thread: {
@@ -144,7 +153,19 @@ export function memoryThreadStore(): MemoryThreadStore {
     async updateThread(id, patch) {
       const row = threads.get(id);
       if (!row) return;
+      // As the unique index `thread_open_topic` refuses it in Postgres (DE-L9).
+      if (reopensHeldTopic(row, patch.state))
+        throw Object.assign(new Error('duplicate key value violates unique constraint "thread_open_topic"'), {
+          code: '23505',
+          constraint_name: 'thread_open_topic',
+        });
       row.thread = { ...row.thread, ...copy(patch) };
+    },
+    async reopenThread(id, patch) {
+      const row = threads.get(id);
+      if (!row || reopensHeldTopic(row, 'open')) return false;
+      row.thread = { ...row.thread, ...copy(patch), state: 'open' };
+      return true;
     },
     async addMessage(threadId, message) {
       const row = threads.get(threadId);

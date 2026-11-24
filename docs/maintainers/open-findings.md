@@ -18,9 +18,7 @@ elsewhere is added here. A batch's line goes when its last finding does; a findi
 its id with it. `BL-3` (protecting `main`) waits for the run-up to the first release, by the same decision, and is in
 no batch.
 
-| # | Batch | Findings | Decided first |
-|---|---|---|---|
-| 18 | The database: audit gaps, comparisons, indexes and migrations | `DE-L4`, `DE-L7`, `DE-L8`, `DE-L9`, `DE-L10`, `DE-L12`, `DE-L13`, `BD-L4` | |
+No batch is open.
 
 ## Counts
 
@@ -29,14 +27,14 @@ no batch.
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 0 | 0 | 0 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 0 | 0 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 0 | 0 | 0 |
-| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 0 | 7 | 7 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 0 | 0 | 0 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 1 | 0 | 1 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
-| BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 1 | 1 |
+| BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 0 | 0 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 0 | 0 | 0 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 0 | 0 | 0 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 0 | 0 |
-| | **Total** | **0** | **1** | **8** | **9** |
+| | **Total** | **0** | **1** | **0** | **1** |
 
 ## High
 
@@ -69,15 +67,7 @@ No finding of this area is open.
 holds nine points, and it carries the audit sweep of every mutating use case (tables A, B and C) and a table of
 ports with no contract under M7.
 
-| Id | Severity | Finding | Where |
-|---|---|---|---|
-| DE-L4 | Low | The projection's job inserts, an approved undo's end of the follow-up plan and a connector removal's cascade leave no audit row of their own. | `apps/server/src/composition/execution-projection.ts:227-236` |
-| DE-L7 | Low | A connector's `observedAt` is compared with the stored one as a string, so an offset changes which is newer. | `apps/server/src/threads/usecases/refresh.ts:117` |
-| DE-L8 | Low | `activeByUserName` in the competence store folds a user name's case with a plain `lower`, not ICU, and cannot use the index. | `apps/server/src/modules/competence/adapters/postgres.ts:710-726` |
-| DE-L9 | Low | One open card per topic is enforced on insert only by the memory adapter, and a reopen can violate the PostgreSQL index. | `apps/server/src/threads/adapters/memory.ts:111-118` |
-| DE-L10 | Low | The change-signal triggers miss columns and tables the browser shows, and are hand-written SQL that `schema.ts` does not name. | `packages/db/migrations/0018_black_zarek.sql:46-57` |
-| DE-L12 | Low | Several queries run per page load have no index to serve them. | `apps/server/src/threads/adapters/refresh-postgres.ts:111-113` |
-| DE-L13 | Low | `bun run db:init` applies only migrations newer than the last recorded one, so a skipped migration goes unnoticed. | `scripts/db-init.ts:10-13` |
+No finding of this area is open.
 
 ## Baseline, build and supply chain
 
@@ -102,9 +92,7 @@ No finding of this area is open.
 and it carries tables of who reads and writes what, of erasure per table, of the talk booking stack's ten findings,
 of the audit rows added to the decisions review's table B, and of test gaps under L6.
 
-| Id | Severity | Finding | Where |
-|---|---|---|---|
-| BD-L4 | Low | `currentRound` takes a write lock on the organisation's one open round on every talks read, so every reader queues on one row. | `apps/server/src/modules/talks/adapters/postgres.ts:79-86` |
+No finding of this area is open.
 
 ## The web app's data, state and errors
 

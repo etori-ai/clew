@@ -132,6 +132,14 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
       expect(await h.jobs(`receipt-final:${e.id}`)).toEqual([
         { id: `receipt-final:${e.id}`, kind: 'receipt-final', runAt: undoUntil, payload: { threadId: card } },
       ]);
+      // The job's own row, as every scheduled job has, once (DE-L4).
+      expect(await h.audit(`job:receipt-final:${e.id}`)).toEqual([
+        {
+          actor: 'system:scheduler',
+          action: 'job.scheduled',
+          details: { kind: 'receipt-final', runAt: undoUntil },
+        },
+      ]);
       expect((await h.audit('thread:' + card)).map(a => [a.actor, a.action])).toEqual([
         [e.principal, 'thread.decision_approved'],
         ['system:execution', 'thread.execution_succeeded'],
@@ -340,6 +348,10 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
       expect((await h.jobs(`undo-expiry:${e.id}`)).map(j => [j.id, j.runAt])).toEqual([
         [`undo-expiry:${e.id}`, undoUntil],
       ]);
+      for (const kind of ['receipt-final', 'undo-expiry'])
+        expect(await h.audit(`job:${kind}:${e.id}`)).toEqual([
+          { actor: 'system:scheduler', action: 'job.scheduled', details: { kind, runAt: undoUntil } },
+        ]);
       expect(await h.told()).toEqual([
         {
           kind: 'established',
@@ -377,6 +389,19 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
       await approve(h, undo);
       expect(await h.policy(card)).toMatchObject({ state: 'cancelled', reason: 'compensation-approved' });
       expect(await h.timer('obligation:' + card)).toMatchObject({ state: 'cancelled', generation: 1 });
+      // The end of the approved plan has its own row, beside the approval of the undo (DE-L4).
+      expect((await h.audit('thread:' + card)).slice(-2)).toEqual([
+        {
+          actor: undo.principal,
+          action: 'obligation.policy_cancelled',
+          details: { executionId: undo.id, compensates: e.id, reason: 'compensation-approved', was: 'active' },
+        },
+        {
+          actor: undo.principal,
+          action: 'thread.decision_approved',
+          details: { executionId: undo.id, operation: undo.operation, compensates: e.id },
+        },
+      ]);
       await settle(h, undo, { state: 'succeeded', dispatchedAt: later, result: done('cancel:' + p1.id) });
       expect(await h.proposal(p1.id)).toMatchObject({
         status: 'proposed',
