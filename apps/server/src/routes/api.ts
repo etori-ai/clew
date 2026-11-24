@@ -60,6 +60,7 @@ import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/co
 import { changesFor } from '../composition/changes';
 import { personKeys } from '../composition/person-keys';
 import { capabilityRoutes } from './capabilities';
+import { objectsRoutes } from './objects';
 import { executionRoutes } from './executions';
 import { authenticate, AuthError } from '../auth';
 import { readDocument, reviewDocuments } from '../composition/documents';
@@ -293,7 +294,7 @@ api.get('/connectors', c => {
     tools: registry.tools(actor).map(t => t.name),
   });
 });
-/** Standing actions and panel views: run one capability directly. GET for reads (input as JSON in `input`), POST for the rest. */
+/** Standing actions and panel views: run one capability directly, a read too, as a POST with its input as the body (`capabilities.ts`). */
 api.route('/cap', capabilityRoutes({ registry, run: runCapability, people: personKeys, follow: withFollowedUnits }));
 api.post('/threads/:id/act', async c => {
   const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType, 64_000);
@@ -521,15 +522,8 @@ api.post('/conversations/:id/opened', async c => {
   const thread = await markOpened(c.get('session').context, c.req.param('id'));
   return thread ? c.json(thread) : c.json({ error: 'Samtalet finns inte.' }, 404);
 });
-/** What `@` can point at, in the box's context: `near` is a comma-separated list of the refs the person is looking at. */
-api.get('/objects', async c => {
-  const q = c.req.query('q') ?? '';
-  const near = (c.req.query('near') ?? '').split(',').filter(Boolean);
-  if (q.length > 80) throw new InputError('För lång sökning.');
-  if (near.length > 40 || near.some(r => r.length > 200 || !/^[a-z]+:[A-Za-z0-9:_.@-]+$/.test(r)))
-    throw new InputError('Ogiltigt sammanhang.');
-  return c.json({ objects: await listObjects(c.get('session').context, q, near) });
-});
+/** What `@` can point at (`POST /api/objects`), with what is typed in the body, never in the address (`objects.ts`). */
+api.route('/objects', objectsRoutes({ list: listObjects }));
 api.get('/threads/:id/verbs', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
   return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Ärendet finns inte.' }, 404);

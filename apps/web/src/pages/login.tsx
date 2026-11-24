@@ -1,5 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Avatar, Button, Card, Divider, Heading, Layout, LayoutContent, List, ListItem, Text, VStack } from '@clew/ui';
+import { usePageTitle } from '../page-title';
+import {
+  Avatar,
+  Button,
+  Card,
+  Divider,
+  Heading,
+  Layout,
+  LayoutContent,
+  List,
+  ListItem,
+  Text,
+  VStack,
+  signInHref,
+  signInTarget,
+} from '@clew/ui';
 const reasons: Record<string, string> = {
   expired: 'Din inloggning har gått ut.',
   denied: 'Kontot saknar behörighet till Startsidan.',
@@ -24,10 +39,16 @@ function useDevAccounts() {
   }, []);
   return accounts;
 }
+/**
+ * The sign-in page. `returnTo` is the whole address the person was on, its query included, so a link followed before
+ * signing in lands where it led (D116); one outside Clew's own paths is home (`signInTarget`, as the server's own check).
+ */
 export function LoginPage({ returnTo }: { returnTo: string }) {
   const reason = new URLSearchParams(window.location.search).get('reason');
-  const target = returnTo.startsWith('/') && !returnTo.startsWith('/login') ? returnTo : '/';
+  const target = signInTarget(returnTo);
   const accounts = useDevAccounts();
+  // The tab is named for this page, never for the page a session that has ended was on (2.4.2).
+  usePageTitle('Logga in', false);
   return (
     <Layout
       height="fill"
@@ -44,11 +65,7 @@ export function LoginPage({ returnTo }: { returnTo: string }) {
                     {reasons[reason]}
                   </Text>
                 )}
-                <Button
-                  variant="primary"
-                  label="Logga in"
-                  href={'/api/auth/login?returnTo=' + encodeURIComponent(target)}
-                />
+                <Button variant="primary" label="Logga in" href={signInHref(target)} />
                 {accounts.length > 0 && (
                   <>
                     <Divider />
