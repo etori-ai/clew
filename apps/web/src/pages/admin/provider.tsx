@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ProviderTestReport, SessionUser } from '@clew/contracts';
+import { providerAddressProblem } from '@clew/contracts';
 import {
   AlertDialog,
   Badge,
@@ -64,7 +65,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
     if (p) setDraft({ title: p.title, baseUrl: p.baseUrl });
   }, [p?.id, p?.updatedAt]);
   usePageTitle(p ? p.title : null);
-  const { run, busy, error: actionError } = useAdminAction({ toastId: 'provider:' + id });
+  const { run, busy, error: actionError, reset: resetAction } = useAdminAction({ toastId: 'provider:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.models], toastId: 'provider:' + id });
   const error = actionError ?? removal.error ?? readError;
   if (missing)
@@ -97,6 +98,8 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
   // After "Testa": the ids the endpoint lists that are not added yet, offered through the same dialog as "Lägg till modell".
   const notAdded = report ? report.models.filter(name => !models.some(m => m.model === name)) : [];
   const changed = draft.title !== p.title || draft.baseUrl !== p.baseUrl;
+  // The server's own check, at the field: an address it cannot read or with a user name or password in it (D24).
+  const addressProblem = draft.baseUrl !== p.baseUrl ? providerAddressProblem(draft.baseUrl) : undefined;
   const closeKey = () => {
     setKeyOpen(false);
     setKey('');
@@ -118,7 +121,15 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
           })
         }
       />
-      <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setKeyOpen(true)} />
+      <Button
+        variant="secondary"
+        label="Byt nyckel"
+        isDisabled={busy}
+        onClick={() => {
+          resetAction();
+          setKeyOpen(true);
+        }}
+      />
       <Button
         variant="destructive"
         label="Ta bort"
@@ -149,7 +160,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
           endContent={<Timestamp value={p.health.at} format="date_time" />}
         />
       )}
-      {error && (
+      {error && !keyOpen && (
         <Text as="p" role="alert" color="accent">
           {error}
         </Text>
@@ -271,9 +282,10 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
                 type="url"
                 value={draft.baseUrl}
                 onChange={baseUrl => setDraft({ ...draft, baseUrl })}
-                description="Basadressen, oftast slutar den på /v1. Byts servern tas nyckeln bort och läggs in på nytt."
+                description="Basadressen, oftast slutar den på /v1. Byts servern tas nyckeln bort, och du lägger in en ny med Byt nyckel."
                 isRequired
                 autoComplete="off"
+                status={addressProblem ? { type: 'error', message: addressProblem } : undefined}
               />
             </FormLayout>
           </VStack>
@@ -281,7 +293,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
             <Button
               variant="primary"
               label="Spara"
-              isDisabled={busy || !changed || !draft.title.trim() || !/^https?:\/\/\S+$/.test(draft.baseUrl)}
+              isDisabled={busy || !changed || !draft.title.trim() || !!addressProblem}
               clickAction={() =>
                 run(async () => {
                   const saved = await api.admin.updateProvider(id, draft);
@@ -323,6 +335,11 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
             subtitle="Den nya nyckeln används från nästa fråga. Den gamla raderas."
             onOpenChange={closeKey}
           />
+          {actionError && (
+            <Text as="p" role="alert" color="accent">
+              {actionError}
+            </Text>
+          )}
           <FormLayout>
             <TextInput
               label="Ny nyckel"
@@ -341,7 +358,8 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
               isDisabled={busy}
               clickAction={() =>
                 run(async () => {
-                  await api.admin.providerKey(id, key);
+                  // The address the page shows: the key is for that host, and the server refuses it if the provider moved.
+                  await api.admin.providerKey(id, key, p.baseUrl);
                   closeKey();
                   return key ? 'Nyckeln är bytt.' : 'Nyckeln är borttagen.';
                 })

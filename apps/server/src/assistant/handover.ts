@@ -13,7 +13,7 @@ import {
   handoversOf,
   withHandover,
 } from '@clew/contracts';
-import { CapabilityError } from '@clew/connectors';
+import { askRefusal, CapabilityError } from '@clew/connectors';
 import { InputError } from '../context';
 import { threadAccess } from '../threads/access';
 import { HandoverHeld, TurnStopped } from './domain';
@@ -78,8 +78,11 @@ export function handoverTool(
  * and tools, so nothing here reads its knowledge or rewrites what it said.
  *
  * A conversation is handed to at most one assistant, and keeps the source's key for the conversation there, so a
- * follow-up continues it. When the source refuses or does not answer, the turn says so in Clew's words and is marked
- * `failed`: Clew never answers in the assistant's name. The two messages, the conversation's state and the audit row
+ * follow-up continues it. When the source refuses or does not answer, the turn says so in Clew's words, by the kind of
+ * failure and never in the words of the error, which may be the connector's own (`askRefusal`), and is marked `failed`:
+ * Clew never answers in the assistant's name. The answer names its connector as what it was written from
+ * (`MessageMeta.basis`), so once the administrator closes that connector to the assistant, Clew's own model no longer
+ * hears it in the conversation (D122 item 4). The two messages, the conversation's state and the audit row
  * (`conversation.handed`: which assistant, new or continued, how many sources, never a word of either text) commit
  * together; a turn the person stops writes nothing here, though the source may already hold the question.
  */
@@ -188,16 +191,17 @@ export function handoverPath(deps: AssistantDeps) {
         }
       }
       // An answer without a word is no answer: the source failing, or an assistant that declined and wrote nothing.
-      if (!body.trim())
-        throw new CapabilityError(
-          silent ? `${listed.name} svarade inte på frågan.` : `${listed.source} svarar inte just nu.`,
-          'unavailable',
-        );
+      if (!body.trim()) throw new CapabilityError('no answer', 'unavailable');
     } catch (error) {
       if (observer.signal?.aborted) throw new TurnStopped();
       if (!(error instanceof CapabilityError)) throw error;
       failed = error.code ?? 'unavailable';
-      body = error.message;
+      // Clew's own words by the kind of failure: a refusal the connector worded itself (a listing it refused, an ask it
+      // failed with its own message) is never what the person reads or what Clew's model hears later.
+      const silently = silent && !body.trim();
+      body = silently
+        ? `${listed.name} svarade inte på frågan.`
+        : askRefusal(failed === 'invalid' ? 'unknown' : failed, listed.source);
       cut = false;
       cites.length = 0;
       emit({ type: 'text', delta: body, reset: true });
@@ -234,6 +238,8 @@ export function handoverPath(deps: AssistantDeps) {
         ...(cut ? { cut: true as const } : {}),
         ...(side ? { side: true as const } : {}),
       },
+      // What the answer was written from: the connector whose assistant answered (D122 item 4).
+      basis: { connectors: [connector] },
     };
     await store.transaction(async tx => {
       if (!existing) {

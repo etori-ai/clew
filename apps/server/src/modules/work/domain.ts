@@ -15,6 +15,11 @@ export interface WorkRow {
   ref: string;
   label: string;
   system: string;
+  /**
+   * The connector the item is from, for what an answer was written from (`MessageMeta.basis`); no field of the view
+   * draws it, so neither the page nor the model reads it.
+   */
+  connector: string;
   state: string;
   /** The last day, when the item has one. */
   deadline?: string;
@@ -27,6 +32,11 @@ export interface WorkResult {
   pile: string;
   total: number;
   rows: WorkRow[];
+  /**
+   * How many of the pile's items are not in it because their system is closed to the assistant (D122 item 4): only on
+   * the model's own read, so it can say there is more under Att göra than it was given.
+   */
+  withheld?: number;
 }
 
 const byDeadline = (a: Thread, b: Thread) =>
@@ -49,18 +59,30 @@ export function workRow(t: Thread, pile: Pile, today: string): WorkRow {
     ref: 'thread:' + t.id,
     label: t.title,
     system: t.trigger.source,
+    connector: t.connector,
     state: pile === 'waiting' && t.waitingOn ? `Väntar på ${t.waitingOn}` : PILE_WORDS[pile],
     ...(day ? { deadline: day } : {}),
     ...(day && day < today ? { late: 'försenad' } : {}),
     ...(!aboutSomeone(t) && t.summary ? { fact: t.summary } : {}),
   };
 }
-/** The pile as the read answers it. */
-export function workList(threads: Thread[], pile: Pile, now: string, today: string): WorkResult {
-  const items = pileOf(threads, pile, now);
+/**
+ * The pile as the read answers it. `open` says which items' systems the reader may have; an item it closes is left out
+ * and counted in `withheld` (the model's read, D122 item 4).
+ */
+export function workList(
+  threads: Thread[],
+  pile: Pile,
+  now: string,
+  today: string,
+  open: (t: Thread) => boolean = () => true,
+): WorkResult {
+  const all = pileOf(threads, pile, now);
+  const items = all.filter(open);
   return {
     pile: PILE_WORDS[pile],
     total: items.length,
     rows: items.slice(0, WORK_MAX).map(t => workRow(t, pile, today)),
+    ...(items.length < all.length ? { withheld: all.length - items.length } : {}),
   };
 }

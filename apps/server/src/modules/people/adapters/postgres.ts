@@ -1,23 +1,9 @@
-import {
-  and,
-  eq,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  like,
-  ne,
-  not,
-  or,
-  sql,
-  type SQL,
-  type SQLWrapper,
-} from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { ERASED, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
-import type { LeaverChange, LeaversTx, ProvisionStore, ProvisionTx, UserReads } from '../ports';
+import type { ErasureTx, LeaverChange, LeaversTx, ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
 /**
  * Read the local user and grant tables. The directory is not read here: it is `directoryUsecases` over the provisioning
@@ -234,6 +220,11 @@ export interface ProvisionStoreOptions {
   leavers?: (tx: Transaction) => LeaversTx;
   leaverFailed?: (error: unknown, change: LeaverChange, kind: keyof LeaversTx) => void;
   /**
+   * The erasure port (D123) on the transaction it is given: what other domains clear of a person an erasure erases, in
+   * that same transaction and with no savepoint, so a failure fails the erasure. Without it nothing is cleared.
+   */
+  erasure?: (tx: Transaction) => ErasureTx;
+  /**
    * What the store's transactions run on: the server's pool unless a test names another database, as the store contract
    * does with one created with the locale C (L13), or a transaction the caller holds and that may not wait for a second
    * connection (L1): each transaction of the store is then a savepoint in it, asked one at a time, and reads at that
@@ -241,6 +232,8 @@ export interface ProvisionStoreOptions {
    */
   db?: () => Runner;
 }
+/** The erasure port of a store built without a binding: nothing in another domain is cleared. */
+const clearsNothing: ErasureTx = { invitee: async () => ({ invitations: 0, planningRows: 0, drafts: 0 }) };
 /** The longest a leavers call may wait for a lock before it is given up and left to the domain's own reconciliation. */
 const LEAVERS_LOCK_TIMEOUT = '2s';
 /** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction (`options.db`). */
@@ -272,6 +265,7 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
   };
   const txOf = (tx: Transaction): ProvisionTx => ({
     leavers: leaversOf(tx),
+    erasure: options.erasure?.(tx) ?? clearsNothing,
     async lockPerson(id) {
       const [row] = await tx
         .select({ id: schema.people.id, organisationId: schema.people.organisationId })
@@ -980,19 +974,6 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
           ),
         )
         .returning({ id: schema.authenticationAudit.id });
-      return changed.length;
-    },
-    async eraseInvitations(personId) {
-      const changed = await tx
-        .update(schema.proposals)
-        .set({ participantName: '', participantEmail: '' })
-        .where(
-          and(
-            eq(schema.proposals.participantId, personId),
-            or(ne(schema.proposals.participantName, ''), ne(schema.proposals.participantEmail, '')),
-          ),
-        )
-        .returning({ id: schema.proposals.id });
       return changed.length;
     },
     async setGroupCapability(organisationId, groupExternalId, capability, present) {

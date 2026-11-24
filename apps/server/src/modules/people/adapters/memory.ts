@@ -11,7 +11,7 @@ import {
   type Placement,
   type UserRecord,
 } from '../domain';
-import type { LeaverChange, LeaversTx, Provisioner, ProvisionStore, ProvisionTx } from '../ports';
+import type { ErasureTx, LeaverChange, LeaversTx, Provisioner, ProvisionStore, ProvisionTx } from '../ports';
 
 /**
  * The provisioning store in memory: the unit tests' adapter (D25), held to Postgres by
@@ -50,8 +50,6 @@ export interface MemoryProvisionState {
   audit: Array<{ actor: string; action: string; subject: string; details: Record<string, unknown> }>;
   /** `auth_audit`, the authentication log. */
   authenticationAudit: Array<{ actor: string | null; action: string }>;
-  /** `proposal`, as far as an erasure reads it: whom each invitation invites, by id, name and address. */
-  invitations: Array<{ id: string; participantId: string; name: string; email: string }>;
   /** What the leavers port was told (D108 item 14), in order; a rollback takes it back with the rest. */
   leavers: Array<LeaverChange & { change: keyof LeaversTx }>;
 }
@@ -63,6 +61,11 @@ export interface MemoryProvisionState {
 export interface MemoryProvisionOptions {
   leavers?: () => LeaversTx;
   leaverFailed?: (error: unknown, change: LeaverChange, kind: keyof LeaversTx) => void;
+  /**
+   * The erasure port a test binds (the calendar's, on its own memory store, which commits on its own); without it an
+   * erasure clears nothing in another domain. A failure fails the erasure, as on Postgres.
+   */
+  erasure?: () => ErasureTx;
 }
 export const memberKey = (groupId: string, personId: string) => groupId + '\u0000' + personId;
 const splitKey = (key: string) => key.split('\u0000') as [string, string];
@@ -87,7 +90,6 @@ export function memoryProvisionStore(
     audit: [],
     leavers: [],
     authenticationAudit: [],
-    invitations: [],
   };
   const snapshot = () => structuredClone(state),
     restore = (s: MemoryProvisionState) => Object.assign(state, s);
@@ -149,6 +151,10 @@ export function memoryProvisionStore(
   };
   const tx: ProvisionTx = {
     leavers: { deactivated: tell('deactivated'), reactivated: tell('reactivated') },
+    erasure: {
+      invitee: input =>
+        options.erasure?.().invitee(input) ?? Promise.resolve({ invitations: 0, planningRows: 0, drafts: 0 }),
+    },
     async lockPerson(id) {
       const p = state.users.get(id);
       return p && { id: p.id, organisationId: p.organisationId };
@@ -530,16 +536,6 @@ export function memoryProvisionStore(
       for (const row of state.authenticationAudit)
         if (row.actor?.startsWith('claim:') && row.actor !== erased && held.has(fold(row.actor.slice(6)))) {
           row.actor = erased;
-          changed++;
-        }
-      return changed;
-    },
-    async eraseInvitations(personId) {
-      let changed = 0;
-      for (const row of state.invitations)
-        if (row.participantId === personId && (row.name !== '' || row.email !== '')) {
-          row.name = '';
-          row.email = '';
           changed++;
         }
       return changed;

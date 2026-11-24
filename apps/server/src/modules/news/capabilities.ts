@@ -43,7 +43,8 @@ export function newsCapabilities(
         { key: 'link', label: 'Läs i källan', format: 'link' },
       ],
     },
-    run: (actor, _input, clew) => news.list(actor, clew.call),
+    // The model's read lists only the sources it may have (D122 item 4).
+    run: (actor, _input, clew) => news.list(actor, clew.call, { forModel: clew.forModel === true }),
   };
   return { capabilities: [list as Capability] };
 }

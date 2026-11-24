@@ -24,8 +24,9 @@ export type { ManagedPerson };
  * The people port as the server binds it (D115, D122): Personal's list for the asker, every unit they manage, each
  * person by Clew's key (their id, which the cards about them and the index from entity to cards name them by) and by
  * the user name a read about them takes (`userNameOf`: the entities module's `personKey`, undefined for someone who
- * cannot be asked about, D97, who is left out). Composition and the tests bind the port with this one function, so a
- * test cannot hand the model another key than the running server does.
+ * cannot be asked about, D97, who is left out). Composition and the tests that build the list from Personal's units
+ * bind the port with this function, so they hand the model the keys the running server does; a test may still bind the
+ * port to a list of its own, and no contract case holds the port to this one (`AM-13`).
  */
 export function managedPeople<P extends { id: string; name: string }>(
   managed: ReadonlyArray<{ unitLabel: string; people: readonly P[] }>,

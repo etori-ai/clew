@@ -94,14 +94,21 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
   const finish = (state: 'draft' | 'enabled') =>
     run(async () => {
       if (!result) return;
-      // On the draft as the dialog showed it (DE-M5): another administrator's change to it since is refused.
-      await api.admin.update(result.connector.id, {
-        version: result.connector.version,
-        audience,
-        scanEnabled: scan,
-        toolsEnabled: tools,
-        ...(state === 'enabled' ? { state } : {}),
-      });
+      // On the draft as the dialog showed it (DE-M5): another administrator's change to it since is refused. The dialog
+      // then shows the draft as it now is under the refusal, so trying again is a choice made on that.
+      try {
+        await api.admin.update(result.connector.id, {
+          version: result.connector.version,
+          audience,
+          scanEnabled: scan,
+          toolsEnabled: tools,
+          ...(state === 'enabled' ? { state } : {}),
+        });
+      } catch (refused) {
+        const connector = await api.admin.connector(result.connector.id).catch(() => null);
+        if (connector) setResult({ ...result, connector });
+        throw refused;
+      }
       close(true);
     });
   // A connector is switched on only with an approved manifest (D144).

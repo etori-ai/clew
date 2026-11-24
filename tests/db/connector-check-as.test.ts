@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { schema } from '../../packages/db/src/index';
 import { upgradeDatabase, type UpgradeDatabase } from './upgrade';
 
@@ -231,4 +231,28 @@ test("without --as, the check signs nothing for a registered id at another addre
   others.push(fresh);
   expect((await check(fresh.base)).stdout).toContain(`Connector "check-fresh-${tag}"`);
   expect(fresh.seen.length).toBeGreaterThan(0);
+}, 60_000);
+
+test("one of Clew's own connectors is refused though it has no row: `people` never has one, `calendar` none before the first boot", async () => {
+  // This installation's database has never been booted, so neither id has a row here.
+  const rows = await installation.db
+    .select({ id: schema.connectors.id })
+    .from(schema.connectors)
+    .where(inArray(schema.connectors.id, ['people', 'calendar']));
+  expect(rows).toEqual([]);
+  for (const own of ['people', 'calendar']) {
+    const impostor = serve(own);
+    others.push(impostor);
+    const run = await check(impostor.base, '--keys', 'anna');
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr.trim()).toBe(
+      `The service at ${impostor.base} names the id ${own}, one of Clew's own connectors; the check signs nothing for it.`,
+    );
+    const asRun = await check(impostor.base, '--id', own, '--keys', 'anna', '--as', userName);
+    expect(asRun.exitCode).toBe(2);
+    expect(asRun.stderr.trim()).toBe(
+      `--id ${own} is one of Clew's own connectors, not a registered service; pass the id the service was registered under (bun scripts/connector-add.ts).`,
+    );
+    expect(impostor.seen).toEqual([]);
+  }
 }, 60_000);

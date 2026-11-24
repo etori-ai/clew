@@ -45,6 +45,7 @@ import {
 } from './data';
 import { newsItemOutput, newsItemSpec, newsSpec } from './data';
 import type { NewsResult } from '@clew/contracts';
+import { providerAddressProblem } from '@clew/contracts';
 import {
   assistantStatus,
   modelDetail,
@@ -449,8 +450,8 @@ export class MockApi {
   competenceTypes: CompetenceType[] | null = null;
   /** Every write to the catalogue, in order: the method, the path and the body. */
   catalogueWrites: Array<{ method: string; path: string; body?: unknown }> = [];
-  /** What the server answers a new validity would do. */
-  validityImpact: CompetenceValidityImpact = { holdings: 12, turnExpired: 7, turnValid: 0 };
+  /** What the server answers a new validity would do: a count of what changes is rounded down to five. */
+  validityImpact: CompetenceValidityImpact = { holdings: 12, turnExpired: 5, turnValid: 0 };
   /** The next write to the catalogue answers 400 with this sentence; it resets itself after that one. */
   catalogueFail: string | null = null;
   /** The catalogue cannot be read (a 503), while the rest of the module answers. */
@@ -1113,17 +1114,22 @@ export class MockApi {
           fields: [],
           same: false,
         };
-        // As the server answers (D144): reading in stores the offer the page reviews; approving it clears it.
+        // As the server answers (D144): reading in stores the offer the page reviews, without a new version; approving
+        // it clears it and makes the approved manifest a new version of the connector.
         const apply = !!(request.postDataJSON() as { apply?: boolean } | null)?.apply;
-        return json({ diff, connector: { ...connectorDetail(c), offered: apply ? null : { at: NOW, diff } } });
+        const now = apply ? { ...c, updatedAt: NOW, version: c.version + 1 } : c;
+        if (apply) this.connectors = this.connectors.map(x => (x.id === cid ? now : x));
+        return json({ diff, connector: { ...connectorDetail(now), offered: apply ? null : { at: NOW, diff } } });
       }
       if (path === `/admin/connectors/${cid}/preview`)
         return json(connectorPreview(url.searchParams.get('role') === 'employee' ? 'employee' : 'manager'));
       if (path === `/admin/connectors/${cid}/secret`) {
         const c = found();
-        return c
-          ? json(connectorDetail({ ...c, secretChangedAt: NOW }))
-          : route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
+        if (!c) return route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
+        // A new key is a change of the connector, so a page that showed it before is refused after it (DE-M5).
+        const next = { ...c, secretChangedAt: NOW, updatedAt: NOW, version: c.version + 1 };
+        this.connectors = this.connectors.map(x => (x.id === cid ? next : x));
+        return json(connectorDetail(next));
       }
       if (path === `/admin/connectors/${cid}`) {
         const c = found();
@@ -1133,13 +1139,40 @@ export class MockApi {
           return json({ closedCards: 1 });
         }
         if (method === 'PATCH') {
-          const patch = request.postDataJSON() as Partial<ConnectorSummary>;
-          // A change names the version the page showed (DE-M5); one saved since is refused, as the server refuses it.
+          const patch = request.postDataJSON() as Partial<ConnectorSummary> & {
+            capabilities?: unknown;
+            lens?: unknown;
+            column?: unknown;
+            menu?: Record<string, boolean>;
+            figures?: Record<string, boolean>;
+          };
+          // The server takes no change without the version the page showed (`ConnectorPatchInput`), and refuses one
+          // made on a version saved since (DE-M5), before it looks at what the change is.
+          if (typeof patch.version !== 'number')
+            return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
           if (patch.version !== c.version)
             return route.fulfill({
               status: 400,
               json: { error: 'Anslutningen har ändrats sedan du öppnade den. Se över den och gör ändringen igen.' },
             });
+          let menuOn = this.menuOn,
+            figuresOff = this.figuresOff;
+          for (const [name, on] of Object.entries(patch.menu ?? {}))
+            menuOn = on ? [...new Set([...menuOn, name])] : menuOn.filter(n => n !== name);
+          for (const [area, on] of Object.entries(patch.figures ?? {}))
+            figuresOff = on ? figuresOff.filter(a => a !== area) : [...new Set([...figuresOff, area])];
+          const differs = (key: 'state' | 'scanEnabled' | 'toolsEnabled' | 'header' | 'url') =>
+            key in patch && patch[key] !== c[key];
+          // A change that changes nothing writes nothing, so the version stays, as the server answers it.
+          const changed =
+            (['state', 'scanEnabled', 'toolsEnabled', 'header', 'url'] as const).some(differs) ||
+            ('audience' in patch && JSON.stringify(patch.audience) !== JSON.stringify(c.audience)) ||
+            'capabilities' in patch ||
+            'lens' in patch ||
+            'column' in patch ||
+            JSON.stringify([...menuOn].sort()) !== JSON.stringify([...this.menuOn].sort()) ||
+            JSON.stringify([...figuresOff].sort()) !== JSON.stringify([...this.figuresOff].sort());
+          if (!changed) return json(connectorDetail(c, this.menuOn, this.figuresOff));
           const next = {
             ...c,
             ...('state' in patch ? { state: patch.state! } : {}),
@@ -1147,6 +1180,7 @@ export class MockApi {
             ...('scanEnabled' in patch ? { scanEnabled: patch.scanEnabled! } : {}),
             ...('toolsEnabled' in patch ? { toolsEnabled: patch.toolsEnabled! } : {}),
             ...('header' in patch ? { header: patch.header! } : {}),
+            ...('url' in patch ? { url: patch.url! } : {}),
             updatedAt: NOW,
             version: c.version + 1,
           };
@@ -1155,12 +1189,8 @@ export class MockApi {
             this.connectors = this.connectors.map(x =>
               x.id === cid || !x.header ? x : { ...x, header: false, version: x.version + 1 },
             );
-          if ('menu' in patch)
-            for (const [name, on] of Object.entries((patch as { menu: Record<string, boolean> }).menu))
-              this.menuOn = on ? [...new Set([...this.menuOn, name])] : this.menuOn.filter(n => n !== name);
-          if ('figures' in patch)
-            for (const [area, on] of Object.entries((patch as { figures: Record<string, boolean> }).figures))
-              this.figuresOff = on ? this.figuresOff.filter(a => a !== area) : [...new Set([...this.figuresOff, area])];
+          this.menuOn = menuOn;
+          this.figuresOff = figuresOff;
           this.connectors = this.connectors.map(x => (x.id === cid ? next : x));
           return json(connectorDetail(next, this.menuOn, this.figuresOff));
         }
@@ -2755,6 +2785,8 @@ export class MockApi {
     }
     if (!id && method === 'POST') {
       const input = body() as { id: string; title: string; baseUrl: string; apiKey?: string };
+      const wrong = providerAddressProblem(input.baseUrl);
+      if (wrong) return route.fulfill({ status: 400, json: { error: wrong } });
       const p: ProviderSummary = {
         ...this.providers[0]!,
         id: input.id,
@@ -2770,8 +2802,26 @@ export class MockApi {
     const p = this.providers.find(x => x.id === id);
     if (!p) return missing('Leverantören');
     if (action === 'test') return json(providerReport);
+    // As the server does (D24): an address it cannot read, or with a user name or password in it, is refused, and so
+    // is a key given for a host the provider has left since the page was read.
+    const origin = (url: string) => {
+      try {
+        return new URL(url).origin;
+      } catch {
+        return undefined;
+      }
+    };
     if (action === 'key') {
-      const next = { ...p, hasKey: !!body().apiKey, keyChangedAt: NOW };
+      const input = body() as { apiKey: string; baseUrl?: string };
+      if (!input.baseUrl || !origin(input.baseUrl) || origin(input.baseUrl) !== origin(p.baseUrl))
+        return route.fulfill({
+          status: 400,
+          json: {
+            error:
+              'Leverantörens adress har ändrats sedan sidan lästes in. Läs in sidan igen och lägg in nyckeln för den nya adressen.',
+          },
+        });
+      const next = { ...p, hasKey: !!input.apiKey, keyChangedAt: NOW };
       this.providers = this.providers.map(x => (x.id === id ? next : x));
       return json(providerDetail(next));
     }
@@ -2781,8 +2831,9 @@ export class MockApi {
     }
     if (method === 'PATCH') {
       const patch = body() as Partial<ProviderSummary>;
+      const wrong = patch.baseUrl === undefined ? undefined : providerAddressProblem(patch.baseUrl);
+      if (wrong) return route.fulfill({ status: 400, json: { error: wrong } });
       // As the server does (D24): an address on another host takes the key with it.
-      const origin = (url: string) => new URL(url).origin;
       const moved = !!patch.baseUrl && p.hasKey && origin(patch.baseUrl) !== origin(p.baseUrl);
       const next = {
         ...p,

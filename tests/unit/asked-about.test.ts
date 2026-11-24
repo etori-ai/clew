@@ -528,6 +528,15 @@ describe('the rule, resolved from the directory', () => {
     expect(await people.relations.relate(erik, 'person', ['erik'], admits, { ids: true })).toEqual([
       { asked: 'erik', key: 'Erik.S', relation: 'self' },
     ]);
+    // ...but only for a read that admits himself: by id he is himself and nothing else, never a colleague or a report.
+    expect(await people.relations.relate(erik, 'person', ['erik'], ['managed', 'colleague'], { ids: true })).toEqual(
+      [],
+    );
+    // A co-manager, a manager above her who also manages the school and one placed on it as an employee who leads
+    // Förvaltningen are not her reports by id either, though each id is a person placed on the unit she manages.
+    expect(
+      await people.relations.relate(hillevi, 'person', ['cohead', 'director', 'boss'], ['managed'], { ids: true }),
+    ).toEqual([]);
     // Not someone else's report by id, a colleague by id or a deactivated report by id.
     const olle = actorOf(people.persona('olle'));
     expect(await people.relations.relate(olle, 'person', ['nameless', 'erik'], admits, { ids: true })).toEqual([]);
