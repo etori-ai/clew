@@ -4,10 +4,16 @@ import { join } from 'node:path';
 import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import { rebindIdentity, signIn } from '../../packages/db/src/auth';
+import { boardingStoreWithCards } from '../../apps/server/src/composition/boarding';
 import { competenceStoreWithCards } from '../../apps/server/src/composition/competence';
+import { dialogueStoreWithCards } from '../../apps/server/src/composition/dialogue';
+import { boardingUsecases } from '../../apps/server/src/modules/boarding/usecases';
 import { talkStoreWithCards } from '../../apps/server/src/composition/talks';
 import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
+import { dialogueUsecases } from '../../apps/server/src/modules/dialogue/usecases';
 import { SCIM } from '../../apps/server/src/modules/people/contracts';
+import { proposalTx } from '../../apps/server/src/modules/calendar/adapters/postgres';
+import { INVITEE_ERASED, inviteeErasure } from '../../apps/server/src/modules/calendar/usecases/erasure';
 import { postgresProvisionStore, postgresUserReads } from '../../apps/server/src/modules/people/adapters/postgres';
 import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
 import { personErasureUsecases, scimUsecases } from '../../apps/server/src/modules/people/usecases';
@@ -21,8 +27,10 @@ import { forgetTestWorkflows, testDurable } from './durable';
  * pushed through the SCIM use cases and signs in through `@clew/db/auth`, so every table and audit row the erasure must
  * reach is written by the code that writes it in production; then every one of them is read back, the audit trail and
  * the authentication log searched for every value that named the person. The source can push the freed name and key
- * again as a new person, the erasures of cards, talks and competence still find the person by id, and the script
- * answers as the runbook says. Run with `bun run test:db` inside the devcontainer.
+ * again as a new person, the other erasures of the runbook still find the person by id, and the script
+ * answers as the runbook says. The store is bound to the calendar's erasure port as `composition/people.ts` binds it,
+ * so the invitations and the planning cards are cleared on the erasure's own transaction; the script runs that
+ * composition itself. Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -53,7 +61,7 @@ const at = new Date('2026-11-13T08:00:00.000Z'),
 let seq = 0;
 const ids = () => prefix + '-' + ++seq,
   clock = () => at,
-  store = postgresProvisionStore(),
+  store = postgresProvisionStore({ erasure: tx => inviteeErasure(proposalTx(tx, testDurable)) }),
   scim = scimUsecases({ store, clock, ids, digest: token => 'digest:' + token }),
   erasure = personErasureUsecases({ store, clock: () => erasedAt }),
   db = database();
@@ -119,6 +127,64 @@ const openSession = (personId: string, digest: string) => {
     expiresAt: until,
   });
 };
+const drawnRow = (ref: string, label: string) => ({
+  ref,
+  label,
+  detail: 'fre 20 nov',
+  selectable: true,
+  selected: true,
+});
+const unplaced = (personId: string, label: string) => ({
+  ref: 'unplaced:' + personId,
+  label,
+  detail: 'Ingen gemensam tid',
+  selectable: false,
+  selected: false,
+});
+/**
+ * A manager's planning cards: `<prefix>-planning`, whose invitations are given, a row each, and an earlier round's
+ * `<prefix>-planning-earlier`, empty. Both are the calendar's, at the instant the source pushed.
+ */
+async function planningCards(
+  managerId: string,
+  invited: Array<{
+    n: number;
+    participantId: string;
+    name: string;
+    email: string;
+    status: 'proposed' | 'confirmed';
+  }>,
+  card = prefix + '-planning',
+) {
+  for (const id of [card, card + '-earlier'])
+    await db.insert(schema.threads).values({
+      id,
+      personId: managerId,
+      kind: 'pushed',
+      topic: 'utvecklingssamtal:' + id,
+      title: 'Planera utvecklingssamtal',
+      trigger: { reason: 'test', source: 'test', at: at.toISOString() },
+      updatedAt: at,
+    });
+  const hour = (h: number) => new Date(Date.UTC(2026, 10, 20, h));
+  await db.insert(schema.proposals).values(
+    invited.map(i => ({
+      id: prefix + '-proposal-' + i.n,
+      threadId: card,
+      personId: managerId,
+      status: i.status,
+      participantId: i.participantId,
+      participantName: i.name,
+      participantEmail: i.email,
+      start: hour(8 + i.n),
+      end: hour(9 + i.n),
+    })),
+  );
+  await db
+    .update(schema.threads)
+    .set({ items: invited.map(i => drawnRow('proposal:' + prefix + '-proposal-' + i.n, i.name)) })
+    .where(eq(schema.threads.id, card));
+}
 /** What the erasure may not write: the tables it reaches, as rows of this test. */
 const snapshot = async () => ({
   people: await db
@@ -156,6 +222,22 @@ const snapshot = async () => ({
     .orderBy(schema.sessions.digest),
   audit: await auditTrail(),
   signIns: await signInLog(),
+  invitations: await db
+    .select({
+      id: schema.proposals.id,
+      status: schema.proposals.status,
+      participantId: schema.proposals.participantId,
+      name: schema.proposals.participantName,
+      email: schema.proposals.participantEmail,
+    })
+    .from(schema.proposals)
+    .where(like(schema.proposals.id, prefix + '%'))
+    .orderBy(schema.proposals.id),
+  cards: await db
+    .select({ id: schema.threads.id, items: schema.threads.items, updatedAt: schema.threads.updatedAt })
+    .from(schema.threads)
+    .where(like(schema.threads.id, prefix + '-planning%'))
+    .orderBy(schema.threads.id),
 });
 
 afterAll(async () => {
@@ -170,9 +252,15 @@ afterAll(async () => {
   await db
     .delete(schema.audit)
     .where(
-      or(like(schema.audit.subject, 'person:' + prefix + '%'), like(schema.audit.subject, 'group:' + prefix + '%')),
+      or(
+        like(schema.audit.subject, 'person:' + prefix + '%'),
+        like(schema.audit.subject, 'group:' + prefix + '%'),
+        like(schema.audit.subject, 'thread:' + prefix + '%'),
+      ),
     );
   if (people.length) {
+    // The planning cards with their invitations, and the cards the other erasures were run over.
+    await db.delete(schema.threads).where(inArray(schema.threads.personId, people));
     await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, people));
     await db.delete(schema.sessions).where(inArray(schema.sessions.personId, people));
     await db.delete(schema.groupMembers).where(inArray(schema.groupMembers.personId, people));
@@ -231,6 +319,18 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     BASE,
   );
   const choir = await scim.createGroup(p, group('kor-' + prefix, 'Kören', [asa]), BASE);
+  // Bo's planning cards, as the planner draws them (D30): this round's sent her a time, drew another for her under her
+  // later name and address that was never sent, and drew one for Bo himself, each a row with the name it was drawn
+  // with; an earlier round could not place her, a row by her id alone without a proposal.
+  await planningCards(bo, [
+    { n: 1, participantId: asa, name: 'Åsa Berg', email, status: 'confirmed' },
+    { n: 2, participantId: asa, name: 'Åsa Lind', email: email.toUpperCase(), status: 'proposed' },
+    { n: 3, participantId: bo, name: 'Bo Ek', email: 'bo.' + prefix + '@sundsvall.test', status: 'proposed' },
+  ]);
+  await db
+    .update(schema.threads)
+    .set({ items: [unplaced(asa, 'Åsa Lind'), unplaced(bo, 'Bo Ek')] })
+    .where(eq(schema.threads.id, prefix + '-planning-earlier'));
 
   // As the sign-in writes it: Åsa binds under two issuers and Bo under one; Bo's claim arrives with Åsa's subject and
   // is refused naming her as the holder; a new account of Åsa's is refused; an operator rebinds her, and binds her
@@ -294,6 +394,11 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     // Created, patched, replaced and deactivated; the refusal about her and the three rebinds; Bo's refusal she held.
     auditRows: 9,
     signInRows: 2,
+    // The two invitations to her; Bo's is his.
+    invitations: 2,
+    // Her two rows on this round's card and her row on the earlier one; the time drawn for her and never sent.
+    planningRows: 3,
+    drafts: 1,
   };
   expect(await erasure.erasePerson(OPERATOR, asa)).toEqual({ erased: counts });
   const after = await snapshot();
@@ -331,11 +436,39 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
   expect(after.grants.map(g => g.personId)).toEqual([bo]);
   expect(after.bindings.map(b => [b.issuer, b.subject, b.personId])).toEqual([[issuerA, 'sub-bo-' + prefix, bo]]);
   expect(after.sessions).toEqual([{ digest: prefix + '-s3', personId: bo }]);
+  // Her invitations stay, the manager's history, and name her by her id alone: the one sent as it was, the one never
+  // sent withdrawn.
+  expect(after.invitations).toEqual([
+    { id: prefix + '-proposal-1', status: 'confirmed', participantId: asa, name: '', email: '' },
+    { id: prefix + '-proposal-2', status: 'superseded', participantId: asa, name: '', email: '' },
+    before.invitations.find(row => row.participantId === bo)!,
+  ]);
+  // Her rows leave both cards and Bo's stay; each card takes the erasure's time as its version.
+  expect(after.cards).toEqual([
+    { id: prefix + '-planning', items: [drawnRow('proposal:' + prefix + '-proposal-3', 'Bo Ek')], updatedAt: erasedAt },
+    { id: prefix + '-planning-earlier', items: [unplaced(bo, 'Bo Ek')], updatedAt: erasedAt },
+  ]);
 
-  // Every event is where it was, with the erasure's row last.
+  // Every event is where it was; the calendar's row for each card, in id order, and the erasure's row come last.
   expect(after.audit.map(row => [row.action, row.subject])).toEqual([
     ...before.audit.map(row => [row.action, row.subject]),
+    [INVITEE_ERASED, 'thread:' + prefix + '-planning'],
+    [INVITEE_ERASED, 'thread:' + prefix + '-planning-earlier'],
     ['person.erased', 'person:' + asa],
+  ]);
+  expect(after.audit.filter(row => row.action === INVITEE_ERASED)).toEqual([
+    {
+      actor: OPERATOR,
+      action: INVITEE_ERASED,
+      subject: 'thread:' + prefix + '-planning',
+      details: { person: asa, rows: 2, drafts: [prefix + '-proposal-2'] },
+    },
+    {
+      actor: OPERATOR,
+      action: INVITEE_ERASED,
+      subject: 'thread:' + prefix + '-planning-earlier',
+      details: { person: asa, rows: 1, drafts: [] },
+    },
   ]);
   expect(after.audit.at(-1)).toEqual({
     actor: OPERATOR,
@@ -371,7 +504,13 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     ]),
   );
   // The jsonb and the log searched as text, without regard to case, for every value that named her.
-  const kept = JSON.stringify([after.people.find(row => row.id === asa), after.audit, after.signIns]).toLowerCase();
+  const kept = JSON.stringify([
+    after.people.find(row => row.id === asa),
+    after.audit,
+    after.signIns,
+    after.invitations.filter(row => row.participantId === asa),
+    after.cards,
+  ]).toLowerCase();
   for (const value of [
     first.userName,
     first.externalId,
@@ -399,8 +538,12 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
       sessions: 0,
       auditRows: 0,
       signInRows: 0,
+      invitations: 0,
+      planningRows: 0,
+      drafts: 0,
     },
   });
+  expect((await snapshot()).cards).toEqual(after.cards);
 
   // A push the source sent before it stopped sending her lists her in the choir again. A second erasure takes her out,
   // and her resource no longer lists the group, so its time of change is that erasure's, as the choir's is (S13).
@@ -423,6 +566,9 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
       sessions: 0,
       auditRows: 0,
       signInRows: 0,
+      invitations: 0,
+      planningRows: 0,
+      drafts: 0,
     },
   });
   const erasedAgain = await snapshot();
@@ -444,7 +590,8 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
       .where(eq(schema.people.id, asa)),
   ).toEqual([{ userName: null, externalId: null }]);
 
-  // The erasures of cards, talks and competence, run first by the runbook, still find her by her id.
+  // The erasures of cards, talks, competence, the follow-up dialogue and introduction and leaving, run first by the
+  // runbook, still find her by her id.
   const options = { durable: testDurable, cancel: async () => {} };
   const subjectsErasure = subjectErasure({
     store: postgresThreadStore(options),
@@ -479,6 +626,20 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     approvals: 0,
     cards: 0,
   });
+  const dialogue = dialogueUsecases({
+    store: dialogueStoreWithCards(options, { clock }),
+    followed: async () => [],
+    clock,
+    ids,
+  });
+  expect(await dialogue.erasePerson(OPERATOR, asa)).toEqual({ cleared: 0, cards: 0 });
+  const boarding = boardingUsecases({
+    store: boardingStoreWithCards(options, { clock }),
+    staff: async () => ({ manages: false, reports: [], tree: [] }),
+    clock,
+    ids,
+  });
+  expect(await boarding.erasePerson(OPERATOR, asa)).toEqual({ plans: 0, items: 0, cleared: 0, cards: 0 });
 });
 
 test('overlapping erasures of the claimed person and the holder preserve both redactions on a shared conflict', async () => {
@@ -521,6 +682,68 @@ test('overlapping erasures of the claimed person and the holder preserve both re
   ).toEqual({ ...details, value: '[erased]', subject: '[erased]' });
 });
 
+test("the planning cards are cleared on the erasure's transaction: a write that fails after them takes them back", async () => {
+  const leaver = ids(),
+    manager = ids();
+  await db.insert(schema.people).values([
+    { id: leaver, organisationId: org, name: 'Dora', enabled: false },
+    { id: manager, organisationId: org, name: manager, enabled: true },
+  ]);
+  await planningCards(
+    manager,
+    [{ n: 21, participantId: leaver, name: 'Dora', email: 'd.' + prefix + '@sundsvall.test', status: 'proposed' }],
+    prefix + '-rollback-card',
+  );
+  const cards = () =>
+    db
+      .select({
+        items: schema.threads.items,
+        updatedAt: schema.threads.updatedAt,
+        status: schema.proposals.status,
+        name: schema.proposals.participantName,
+        email: schema.proposals.participantEmail,
+      })
+      .from(schema.proposals)
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.proposals.threadId))
+      .where(eq(schema.proposals.id, prefix + '-proposal-21'));
+  const held = await cards();
+  expect(held).toEqual([
+    {
+      items: [drawnRow('proposal:' + prefix + '-proposal-21', 'Dora')],
+      updatedAt: at,
+      status: 'proposed',
+      name: 'Dora',
+      email: 'd.' + prefix + '@sundsvall.test',
+    },
+  ]);
+  // The erasure's own audit row is its last write, after the calendar's: when it fails, the calendar's go with it.
+  const failing: ProvisionStore = {
+    transaction: run =>
+      store.transaction(tx =>
+        run({
+          ...tx,
+          audit: async () => {
+            throw new Error('the audit row could not be written');
+          },
+        }),
+      ),
+  };
+  await expect(
+    personErasureUsecases({ store: failing, clock: () => erasedAt }).erasePerson(OPERATOR, leaver),
+  ).rejects.toThrow('the audit row could not be written');
+  expect(await cards()).toEqual(held);
+  expect(
+    await db
+      .select({ action: schema.audit.action })
+      .from(schema.audit)
+      .where(eq(schema.audit.subject, 'thread:' + prefix + '-rollback-card')),
+  ).toEqual([]);
+  expect(await erasure.erasePerson(OPERATOR, leaver)).toMatchObject({
+    erased: { invitations: 1, planningRows: 1, drafts: 1 },
+  });
+  expect(await cards()).toEqual([{ items: [], updatedAt: erasedAt, status: 'superseded', name: '', email: '' }]);
+});
+
 // Four runs of the script, each loading the server's composition, which takes seconds apiece on a busy machine.
 test('the script refuses an unknown id and an active person, erases a deactivated one and says when nothing is left', async () => {
   const p = provisioner;
@@ -561,6 +784,14 @@ test('the script refuses an unknown id and an active person, erases a deactivate
       .where(eq(schema.audit.subject, 'person:' + id)),
   ).toEqual([{ action: 'scim.user.created' }]);
   await scim.deleteUser(p, id);
+  // A manager's card drew her a time that was never sent: the script's composition clears it with her.
+  const manager = ids();
+  await db.insert(schema.people).values({ id: manager, organisationId: org, name: manager, enabled: true });
+  await planningCards(
+    manager,
+    [{ n: 11, participantId: id, name: 'Cecilia', email: 'c.' + prefix + '@sundsvall.test', status: 'proposed' }],
+    prefix + '-script-card',
+  );
   // Someone else's user name that is her id in another case: the index folds it as it would the id, but the erased
   // record holds no user name, so nothing collides.
   const other = (
@@ -572,7 +803,7 @@ test('the script refuses an unknown id and an active person, erases a deactivate
   ).id;
   expect(run(id)).toEqual({
     code: 0,
-    out: `Erased person "${id}": 4 personal fields cleared; 0 memberships, 0 placements, 0 grants, 0 sign-in bindings and 0 sessions removed; 2 audit rows and 0 sign-in log rows cleared of their identifiers. Audited as person:${id}.`,
+    out: `Erased person "${id}": 4 personal fields cleared; 0 memberships, 0 placements, 0 grants, 0 sign-in bindings and 0 sessions removed; 1 invitations cleared of their name and address; 1 planning card rows removed and 1 unsent times withdrawn; 2 audit rows and 0 sign-in log rows cleared of their identifiers. Audited as person:${id}.`,
     err: '',
   });
   const names = await db
@@ -583,6 +814,13 @@ test('the script refuses an unknown id and an active person, erases a deactivate
     [id]: null,
     [other]: id.toUpperCase(),
   });
+  expect(
+    await db
+      .select({ items: schema.threads.items, status: schema.proposals.status, name: schema.proposals.participantName })
+      .from(schema.proposals)
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.proposals.threadId))
+      .where(eq(schema.proposals.id, prefix + '-proposal-11')),
+  ).toEqual([{ items: [], status: 'superseded', name: '' }]);
   expect(run(id)).toEqual({
     code: 0,
     out: `Person "${id}" holds nothing more to erase: nothing was changed. Audited as person:${id}.`,

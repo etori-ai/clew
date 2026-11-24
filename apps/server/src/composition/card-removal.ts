@@ -3,11 +3,19 @@ import { schema, type Transaction } from '@clew/db';
 import type { ThreadTx } from '../threads/model';
 
 /**
+ * Why a module removed its cards, as each card's `thread.removed` row says it: an erasure of one person (D96 item 10,
+ * D108 item 14, D123), or the follow-up dialogue's activity that its unit's manager removed (D118 item 4).
+ */
+export type CardRemovalReason = 'erasure' | 'activity-removed';
+
+/**
  * Remove the cards `which` selects, with everything that hangs on them, in the thread store's transaction: what an
- * erasure of one person removes from the stream (D96 item 10, D108 item 14). Every running wait ends after the commit, as
- * a replaced generation's does; messages, proposals, timers, deliveries and follow-up policies cascade with the card; a
- * work occurrence only loses its pointer, so it goes here; and each card gets one `thread.removed` row by `actor`.
- * Returns the ids removed, in id order. Cards are locked in id order, as every other write of several cards takes them.
+ * erasure of one person removes from the stream (D96 item 10, D108 item 14), and what a removed activity takes with it.
+ * The one helper every core module's cards are removed by (talks, competence, follow-up dialogue, introduction and
+ * leaving). Every running wait ends after the commit, as a replaced generation's does; messages, proposals, timers,
+ * deliveries and follow-up policies cascade with the card; a work occurrence only loses its pointer, so it goes here; and
+ * each card gets one `thread.removed` row by `actor` with `reason`. Returns the ids removed, in id order. Cards are
+ * locked in id order, as every other write of several cards takes them.
  */
 export async function removeCards(
   tx: Transaction,
@@ -15,6 +23,7 @@ export async function removeCards(
   which: SQL | undefined,
   actor: string,
   at: string,
+  reason: CardRemovalReason = 'erasure',
 ): Promise<string[]> {
   const cards = await tx
     .select({ id: schema.threads.id })
@@ -39,7 +48,7 @@ export async function removeCards(
       action: 'thread.removed',
       subject: `thread:${id}`,
       at,
-      details: { reason: 'erasure' },
+      details: { reason },
     });
   return ids;
 }

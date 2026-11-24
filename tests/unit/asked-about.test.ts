@@ -507,18 +507,40 @@ describe('the rule, resolved from the directory', () => {
     const olle = actorOf(people.persona('olle'));
     expect(await people.relations.relate(olle, 'unit', ['unit-skola'], ['manages', 'member', 'below'])).toEqual([]);
   });
-  test('a person without a user name is named by id only where a core capability takes ids, and only as a report', async () => {
+  test('a person is named by id only where a core capability takes ids, and only as themself or a report', async () => {
     const { people } = world();
     const hillevi = actorOf(people.persona('hillevi'));
     const admits = ['self', 'managed', 'colleague'] as const;
     expect(await people.relations.relate(hillevi, 'person', ['nameless', 'erik'], admits)).toEqual([]);
-    // By id only the report without a user name; Erik has one, so his id names nobody.
+    // By id: the report without a user name, answered by the id, and Erik, who has one, answered by it, the key the
+    // capability reads (a card of Clew's own names him by id, D122).
     expect(await people.relations.relate(hillevi, 'person', ['nameless', 'erik'], admits, { ids: true })).toEqual([
       { asked: 'nameless', key: 'nameless', relation: 'managed' },
+      { asked: 'erik', key: 'Erik.S', relation: 'managed' },
     ]);
-    // Not someone else's report by id either.
+    // His id and his user name are answered alike, so the registry keeps one of them (`narrow`).
+    expect(await people.relations.relate(hillevi, 'person', ['erik', 'erik.s'], ['managed'], { ids: true })).toEqual([
+      { asked: 'erik', key: 'Erik.S', relation: 'managed' },
+      { asked: 'erik.s', key: 'Erik.S', relation: 'managed' },
+    ]);
+    // Erik names himself by his id.
+    const erik = actorOf(people.persona('erik'));
+    expect(await people.relations.relate(erik, 'person', ['erik'], admits, { ids: true })).toEqual([
+      { asked: 'erik', key: 'Erik.S', relation: 'self' },
+    ]);
+    // ...but only for a read that admits himself: by id he is himself and nothing else, never a colleague or a report.
+    expect(await people.relations.relate(erik, 'person', ['erik'], ['managed', 'colleague'], { ids: true })).toEqual(
+      [],
+    );
+    // A co-manager, a manager above her who also manages the school and one placed on it as an employee who leads
+    // Förvaltningen are not her reports by id either, though each id is a person placed on the unit she manages.
+    expect(
+      await people.relations.relate(hillevi, 'person', ['cohead', 'director', 'boss'], ['managed'], { ids: true }),
+    ).toEqual([]);
+    // Not someone else's report by id, a colleague by id or a deactivated report by id.
     const olle = actorOf(people.persona('olle'));
-    expect(await people.relations.relate(olle, 'person', ['nameless'], admits, { ids: true })).toEqual([]);
+    expect(await people.relations.relate(olle, 'person', ['nameless', 'erik'], admits, { ids: true })).toEqual([]);
+    expect(await people.relations.relate(hillevi, 'person', ['bo'], admits, { ids: true })).toEqual([]);
   });
   test('a directory that cannot be read is an error, never an empty answer', async () => {
     const { people } = world();
@@ -776,17 +798,25 @@ describe('/api/cap: a read asked with keys the browser chose', () => {
       { entity: 'unit', relations: { 'unit-ekonomi': 'manages', 'unit-skola': 'member' } },
     ]);
   });
-  test('a core capability that takes ids answers a report without a user name; nothing else is reached by id', async () => {
+  test('a core capability that takes ids answers a report by id, given the user name where there is one; nothing else is reached by id', async () => {
     const w = world();
     expect(await w.cap('hillevi', 'core.points', { person: 'nameless' })).toEqual({ person: 'nameless' });
+    // Erik has a user name: a card of Clew's own names him by his id (D122), and the capability is given the user name.
+    expect(await w.cap('hillevi', 'core.points', { person: 'erik' })).toEqual({ person: 'Erik.S' });
     await expect(w.cap('hillevi', 'src.notes', { person: 'nameless' })).rejects.toThrow('Okänd förmåga.');
-    await expect(w.cap('hillevi', 'core.points', { person: 'erik' })).rejects.toThrow('Okänd förmåga.');
+    await expect(w.cap('hillevi', 'src.notes', { person: 'erik' })).rejects.toThrow('Okänd förmåga.');
     await expect(w.cap('olle', 'core.points', { person: 'nameless' })).rejects.toThrow('Okänd förmåga.');
+    await expect(w.cap('olle', 'core.points', { person: 'erik' })).rejects.toThrow('Okänd förmåga.');
     expect(w.asked('core.points')).toEqual([
       {
         name: 'core.points',
         input: { person: 'nameless' },
         about: { entity: 'person', relations: { nameless: 'managed' } },
+      },
+      {
+        name: 'core.points',
+        input: { person: 'Erik.S' },
+        about: { entity: 'person', relations: { 'Erik.S': 'managed' } },
       },
     ]);
   });
