@@ -12,7 +12,7 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { connectorDetail } from './data';
+import { checkReport, connectorDetail } from './data';
 
 /**
  * Administration (D23): the connectors list, the add dialog, one connector's tabs and the remove confirmation, as an
@@ -479,6 +479,16 @@ test.describe('administration', () => {
             : route.fallback(),
         );
         await page.route('**/api/admin/connectors/hello', route => route.fulfill({ json: current }));
+        await page.route('**/api/admin/connectors/hello/test', route =>
+          route.fulfill({
+            json: {
+              ok: true,
+              items: checkReport.items.filter(i => i.level === 'ok'),
+              health: current.health,
+              offered: true,
+            },
+          }),
+        );
         await page.route('**/api/admin/connectors/hello/refresh', route => {
           approvals.push(route.request().postDataJSON());
           return route.fulfill({ json: { diff, connector: { ...current, offered: null, version: 2 } } });
