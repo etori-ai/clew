@@ -32,8 +32,12 @@ export interface ConnectorRecord {
   capabilities: Record<string, CapabilityOverride>;
   /** Per area of the manifest (D54): `figure: false` when its figure is switched off on Hem. */
   areas: Record<string, AreaOverride>;
+  /** The manifest an administrator approved: the only one the registry registers (D144). */
   manifest: unknown | null;
   manifestAt: string | null;
+  /** What the service serves when it differs from the approved manifest, and since when; never live (D144). */
+  offered: unknown | null;
+  offeredAt: string | null;
   health: ConnectorHealth;
   createdBy: string;
   updatedBy: string;
@@ -67,11 +71,16 @@ export type ConnectorPatch = Partial<
     | 'header'
     | 'capabilities'
     | 'areas'
-    | 'manifest'
-    | 'manifestAt'
     | 'health'
   >
->;
+> & {
+  /**
+   * An offer is only ever dropped through a patch. The approved manifest is written by `insert` and `approveOffer`
+   * alone, so nothing puts a manifest live without the offer an administrator reviewed (D144).
+   */
+  offered?: null;
+  offeredAt?: null;
+};
 export interface AuditEntry {
   actor: string;
   action: string;
@@ -85,6 +94,17 @@ export interface ConnectorTx {
   insert(record: NewConnector): Promise<boolean>;
   /** Bumps the version; false when the row does not exist. */
   update(id: string, patch: ConnectorPatch, by: string, at: string): Promise<boolean>;
+  /**
+   * The offer an administrator reviewed, named by the instant it was first seen and by its content, becomes the
+   * approved `manifest`, the offer cleared and the version bumped (D144); false when it is no longer the stored offer.
+   */
+  approveOffer(
+    id: string,
+    offer: { at: string; manifest: unknown },
+    manifest: unknown,
+    by: string,
+    at: string,
+  ): Promise<boolean>;
   remove(id: string): Promise<void>;
   /** Dismiss every open card this connector pushed, at this instant; returns how many. */
   dismissOpenThreadsOf(connectorId: string, at: string): Promise<number>;
@@ -93,8 +113,15 @@ export interface ConnectorTx {
 export interface ConnectorStore {
   list(): Promise<ConnectorRecord[]>;
   read(id: string): Promise<ConnectorRecord | undefined>;
-  /** Health and manifest refreshes are not administration: no version bump, no audit. */
-  recordHealth(id: string, health: ConnectorHealth, manifest?: unknown, at?: string): Promise<void>;
+  /**
+   * What a check or "Läs in igen" saw (D144). It is not administration: no version bump, no audit, and the approved
+   * manifest is never touched. `health`, when given, is recorded. `served`, when given, is compared with the approved
+   * manifest in the same write, so an approval made meanwhile is seen: the approved one clears the offer, any other is
+   * the offer, and the same offer seen again keeps the instant `at` it was first seen.
+   */
+  recordCheck(id: string, seen: { health?: ConnectorHealth; served?: unknown; at: string }): Promise<void>;
+  /** A bundled connector's description is its code and moves with the build; a remote row is never changed here. */
+  recordDescription(id: string, manifest: unknown, at: string): Promise<void>;
   /** The audit rows about one connector, oldest first. */
   history(id: string): Promise<AuditEntryView[]>;
   transaction<T>(fn: (tx: ConnectorTx) => Promise<T>): Promise<T>;

@@ -63,7 +63,8 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
      * The request assertion for one call, bound to it (D117): `body` is the SHA-256 of the exact request body, base64url,
      * and `capability` the capability's name on its route. The body carries the input and, when it names people or
      * units, how the actor stands to each (`about`), so the binding covers both and the bearer stays the same size
-     * however many keys a call names. The callback grant is never bound and never carries `about`.
+     * however many keys a call names. The callback grant is never bound and never carries `about`; `callback: false`
+     * leaves it out.
      */
     async assert(
       connectorId: string,
@@ -72,9 +73,11 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
       chain: string[] = [],
       binding?: AssertionBinding,
     ) {
-      const callback = uses.length
-        ? await sign('clew:connector-callback', actor, { connectorId, uses, chain })
-        : undefined;
+      // No grant when the connector uses nothing, or when the call is one nothing may be read back during (D144).
+      const callback =
+        uses.length && binding?.callback !== false
+          ? await sign('clew:connector-callback', actor, { connectorId, uses, chain })
+          : undefined;
       return sign(
         connectorId,
         actor,

@@ -2352,7 +2352,7 @@
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
               "maxLength": 80,
-              "description": "One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both."
+              "description": "One of this manifest's read capabilities, taking no input, `model: false`, and answering a SourceAssistantsOutput: the assistants the person behind the call may ask now. Who may call it is who may ask: its scope, an administrator's switch on it and the connector's audience decide both. Clew reads it before and while a question is answered, so its assertion carries no `callback` grant whatever `uses` says (D144)."
             }
           },
           "additionalProperties": false,

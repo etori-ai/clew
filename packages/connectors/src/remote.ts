@@ -69,6 +69,12 @@ export interface RemoteTransport {
 export interface AssertionBinding {
   body: string;
   capability?: string;
+  /**
+   * `false`: the assertion carries no callback grant, whatever the connector's `uses` say. A question to a source's
+   * assistant, and the read that lists the assistants, are sent so: only the person's text leaves Clew, and nothing is
+   * read back while it is answered (D125 item 4, D144).
+   */
+  callback?: false;
 }
 export class ManifestError extends Error {
   constructor(message: string) {
@@ -203,6 +209,7 @@ async function post(
   chain?: string[],
   operationId?: string,
   signal?: AbortSignal,
+  callback?: false,
 ) {
   const fetchImpl = transport.fetch ?? fetch;
   // The body is serialised once: the assertion is bound to exactly these bytes (D117).
@@ -212,6 +219,7 @@ async function post(
     ...(path.startsWith(CAPABILITY_ROUTE)
       ? { capability: decodeURIComponent(path.slice(CAPABILITY_ROUTE.length)) }
       : {}),
+    ...(callback === false ? { callback } : {}),
   };
   let response: Response;
   try {
@@ -365,6 +373,8 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
         clew.chain,
         clew.operationId,
         clew.signal,
+        // The assistants listing is read before and while a question is answered: it reads nothing back (D125 item 4, D144).
+        c.name === manifest.assistants?.list ? false : undefined,
       );
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);
       if ('error' in json) failWith(json, status, source);
@@ -464,7 +474,8 @@ export function remoteConnector(manifest: ConnectorManifest, given: RemoteTransp
                   headers: {
                     'content-type': 'application/json',
                     accept: 'text/event-stream',
-                    authorization: 'Bearer ' + (await transport.assert(actor, clew.chain, { body: text })),
+                    authorization:
+                      'Bearer ' + (await transport.assert(actor, clew.chain, { body: text, callback: false })),
                     ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
                     ...(manifest.delegation
                       ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }

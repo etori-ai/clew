@@ -603,6 +603,13 @@
       "when": 1795184250212,
       "tag": "0085_thread_hand_on",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1795449635760,
+      "tag": "0086_manifest_offered",
+      "breakpoints": true
     }
   ]
 }

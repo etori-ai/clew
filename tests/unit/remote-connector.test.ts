@@ -562,24 +562,60 @@ describe('assertions and configuration', () => {
     await expect(authority.verify(forged)).rejects.toThrow(/Invalid callback/);
     await expect(authority.verify('nonsense')).rejects.toThrow(/Invalid callback/);
   });
-  test('the loader registers enabled rows, refreshes the manifest and records health', async () => {
+  test('the loader registers the approved manifest, and one the service changed waits as offered, never live (D144)', async () => {
     const { registry, connectorFetch } = stack();
-    const health: Array<[string, ConnectorHealth['status'], boolean]> = [];
-    const record = async (id: string, h: ConnectorHealth, manifest?: unknown) => {
-      health.push([id, h.status, manifest !== undefined]);
+    const records: Array<[string, ConnectorHealth['status'], unknown]> = [];
+    const record = async (id: string, seen: { health: ConnectorHealth; served?: unknown }) => {
+      records.push([id, seen.health.status, seen.served]);
     };
+    // What an administrator approved before the service began to read the calendar back as the person.
+    const approved = { ...(helloManifest as object), source: 'Hello förr', uses: [] };
     const loaded = await loadConnectors(registry, {
       authority: await testAuthority(),
-      rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }],
+      rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: approved }],
       record,
       fetch: connectorFetch,
       attempts: 1,
       log: () => undefined,
     });
     expect(loaded).toEqual(['hello']);
-    expect(health).toEqual([['hello', 'ok', true]]);
-    expect(registry.connector('hello')?.source).toBe('Hello');
+    expect(records).toEqual([['hello', 'ok', expect.objectContaining({ source: 'Hello', uses: ['calendar.today'] })]]);
+    expect(registry.connector('hello')?.source).toBe('Hello förr');
     expect(await registry.run(hassan, 'hello.greeting', {})).toMatchObject({ text: expect.stringContaining('Hassan') });
+  });
+  test('the loader hands the store what the service serves, which decides whether it is an offer; a row with none approved is never registered', async () => {
+    const { registry, connectorFetch } = stack();
+    const records: Array<[string, unknown]> = [];
+    await loadConnectors(registry, {
+      authority: await testAuthority(),
+      rows: async () => [
+        // A jsonb round trip reorders keys: still the same manifest.
+        { id: 'hello', url: 'http://hello', secret, manifest: JSON.parse(JSON.stringify(helloManifest)) },
+      ],
+      record: async (id, seen) => {
+        records.push([id, seen.served]);
+      },
+      fetch: connectorFetch,
+      attempts: 1,
+      log: () => undefined,
+    });
+    // The store compares it with the approved one in the same write (the store contract): here it is the same.
+    expect(records).toEqual([['hello', expect.objectContaining({ id: 'hello', source: 'Hello' })]]);
+    expect(registry.connector('hello')?.source).toBe('Hello');
+    const empty = new Registry();
+    const offers: unknown[] = [];
+    await loadConnectors(empty, {
+      authority: await testAuthority(),
+      rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }],
+      record: async (_id, seen) => {
+        offers.push(seen.served);
+      },
+      fetch: connectorFetch,
+      attempts: 1,
+      log: () => undefined,
+    });
+    expect(offers).toEqual([expect.objectContaining({ id: 'hello' })]);
+    expect(empty.connector('hello')).toBeUndefined();
   });
   test('a row with a stored manifest is served while its service is down, and the health says so', async () => {
     const registry = new Registry();
@@ -590,8 +626,8 @@ describe('assertions and configuration', () => {
     const loaded = await loadConnectors(registry, {
       authority: await testAuthority(),
       rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: helloManifest }],
-      record: async (_id, h) => {
-        health.push(h);
+      record: async (_id, seen) => {
+        health.push(seen.health);
       },
       fetch: down,
       attempts: 2,
@@ -614,8 +650,8 @@ describe('assertions and configuration', () => {
     await loadConnectors(registry, {
       authority: await testAuthority(),
       rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }],
-      record: async (_id, h) => {
-        health.push(h);
+      record: async (_id, seen) => {
+        health.push(seen.health);
       },
       fetch: bad,
       attempts: 5,
