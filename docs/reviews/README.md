@@ -81,4 +81,5 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [One pattern on Astryx, and the library question](2026-11-14-one-pattern-on-astryx-and-the-library-question.md)
 - [Follow-up review of the prototype shell and registers](2026-11-19-prototype-shell-follow-up.md)
 - [The talk booking stack, reviewed before it lands](2026-11-20-the-talk-booking-stack.md)
+- [Implementation plan: an errand's owner reads and answers its messages from Clew · 2026-11-23](2026-11-23-an-errand-owner-answers-supportmanagement-from-clew.md)
 - [The phone view, reviewed and refreshed](2026-11-23-the-mobile-view.md)
