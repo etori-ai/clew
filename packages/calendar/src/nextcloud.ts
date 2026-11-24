@@ -4,6 +4,7 @@ import { Temporal } from 'temporal-polyfill';
 import {
   CalendarError,
   FREE_BUSY_TARGETS,
+  UnreadableEventError,
   invitedParticipant,
   organisedBy,
   sameEmail,
@@ -61,32 +62,61 @@ function participantResponse(partstat: unknown): ParticipantResponse {
   }
 }
 const UNREADABLE_ZONE = 'Mötet har en tidszon som kalendern inte beskriver.';
+/** The account's address is not one the calendar server knows the account by (see `discover`). */
+const NOT_BOUND = 'Ditt konto har ingen kalender kopplad.';
+/** Whether a TZID names a zone of the IANA database, which every reader of the file resolves the same way. */
+function ianaZone(tzid: string) {
+  try {
+    Temporal.PlainDate.from('2000-01-01').toZonedDateTime(tzid);
+    return true;
+  } catch {
+    return false;
+  }
+}
+/** Whether a zone this file defines says when its offsets apply: a VTIMEZONE with a STANDARD or a DAYLIGHT rule. */
+const hasRules = (zone: ICAL.Timezone) =>
+  !!zone.component?.getAllSubcomponents().some(rule => rule.name === 'standard' || rule.name === 'daylight');
 /**
- * The instant, or for an all-day value the date, that an iCalendar DATE or DATE-TIME holds, for an event any client
- * wrote. ical.js reads a TZID with the VTIMEZONE of the same file, found in that file's own parsed tree, so one file's
- * definition never reaches another's. A floating time (no TZID, no Z) is wall-clock time in Clew's zone, never in the
- * server process's. A TZID the file does not define is the IANA zone of that name when there is one (a time zone by
- * reference, RFC 7809); any other is refused, so that no meeting is moved by a guess. A local time that does not exist
- * or occurs twice is read as RFC 5545 §3.3.5 says: with the offset before the change.
+ * The instant, or for an all-day value the date, that an iCalendar DATE or DATE-TIME holds, read as the calendar server
+ * reads it in its own expanded list, so that a meeting is at the same time in the week and when looked up by its id.
+ * A TZID that names an IANA zone is that zone, whatever the file's VTIMEZONE says about it, as Nextcloud (Sabre)
+ * resolves it; a VTIMEZONE without rules adds nothing to its name. Any other TZID is read with the VTIMEZONE of the same
+ * file when that one has rules, found in the file's own parsed tree so one file's definition never reaches another's;
+ * without one it is refused, so that no meeting is moved by a guess. A floating time (no TZID, no Z) is wall-clock time
+ * in Clew's zone, never in the server process's. A local time that does not exist or occurs twice is read as RFC 5545
+ * §3.3.5 says: with the offset before the change, and the first of the two.
  */
 function instantOf(time: ICAL.Time, tzid: string | null): string {
   if (time.isDate) return time.toString();
-  // UTC, or a zone this file defines.
-  if (time.zone !== ICAL.Timezone.localTimezone) return new Date(time.toUnixTime() * 1000).toISOString();
-  try {
-    const local = Temporal.PlainDateTime.from({
-      year: time.year,
-      month: time.month,
-      day: time.day,
-      hour: time.hour,
-      minute: time.minute,
-      second: time.second,
-    });
-    const at = local.toZonedDateTime(tzid ?? timeZone, { disambiguation: 'compatible' }).toInstant();
-    return new Date(at.epochMilliseconds).toISOString();
-  } catch {
-    throw new CalendarError(UNREADABLE_ZONE);
+  if (time.zone === ICAL.Timezone.utcTimezone || (tzid && !ianaZone(tzid))) {
+    // UTC, or a zone only this file names: its own definition, when it has one with rules.
+    const defined =
+      time.zone === ICAL.Timezone.utcTimezone || (time.zone !== ICAL.Timezone.localTimezone && hasRules(time.zone));
+    if (!defined) throw new UnreadableEventError(UNREADABLE_ZONE);
+    return new Date(time.toUnixTime() * 1000).toISOString();
   }
+  const local = Temporal.PlainDateTime.from({
+    year: time.year,
+    month: time.month,
+    day: time.day,
+    hour: time.hour,
+    minute: time.minute,
+    second: time.second,
+  });
+  const at = local.toZonedDateTime(tzid ?? timeZone, { disambiguation: 'compatible' }).toInstant();
+  return new Date(at.epochMilliseconds).toISOString();
+}
+/**
+ * The end of a VEVENT whose length is given as a DURATION, as RFC 5545 §3.3.6 counts it: weeks and days are nominal,
+ * the same clock time days later whatever the clock did in between, and hours, minutes and seconds are exact time, so an
+ * hour across the autumn change lasts an hour.
+ */
+function endOfDuration(start: ICAL.Time, zone: string | null, duration: ICAL.Duration): string {
+  const sign = duration.isNegative ? -1 : 1;
+  const nominal = start.clone();
+  nominal.adjust(sign * (duration.weeks * 7 + duration.days), 0, 0, 0);
+  const exact = sign * (duration.hours * 3600 + duration.minutes * 60 + duration.seconds);
+  return new Date(Date.parse(instantOf(nominal, zone)) + exact * 1000).toISOString();
 }
 const tzidOf = (property: ICAL.Property | null) => {
   const tzid = property?.getParameter('tzid');
@@ -133,17 +163,27 @@ export class NextcloudProvider implements CalendarProvider {
     const raw = await readLimited(response, 512000);
     return { status: response.status, body: raw, etag: response.headers.get('etag') ?? '' };
   }
+  /**
+   * The account's calendar, its outbox, and that the address Clew's directory holds for the person is one the calendar
+   * server knows the account by (`calendar-user-address-set`, RFC 6638 §2.4.1), compared without case. A server sends
+   * invitations only for an event whose organiser is one of the account's own addresses, and answers free-busy only for
+   * such an organiser: with another address a booking would be written and audited as sent while no invitee got it, and
+   * the planner would read everyone as unknown. Such an account is bound to no calendar.
+   */
   private async discover() {
     return (this.discovery ??= (async () => {
       const principal = `/remote.php/dav/principals/users/${encodeURIComponent(this.user)}/`;
       const response = await this.request(
         principal,
         'PROPFIND',
-        '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-home-set/><c:schedule-outbox-URL/></d:prop></d:propfind>',
+        '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-home-set/><c:schedule-outbox-URL/><c:calendar-user-address-set/></d:prop></d:propfind>',
         { Depth: '0' },
       );
       if (response.status !== 207) throw new CalendarError('Kalenderkontot är inte tillgängligt.');
       const props = responses(response.body)[0]?.props ?? {};
+      const own = `mailto:${this.account.email}`;
+      if (!array(object(props['calendar-user-address-set']).href).some(href => sameEmail(text(href), own)))
+        throw new CalendarError(NOT_BOUND);
       const home = text(object(props['calendar-home-set']).href),
         outbox = text(object(props['schedule-outbox-URL']).href);
       if (!home || !outbox) throw new CalendarError('Kalenderkontot saknar schemaläggning.');
@@ -184,58 +224,80 @@ export class NextcloudProvider implements CalendarProvider {
       throw new CalendarError('Du får inte läsa någon annans kalender.');
     return path;
   }
-  private events(body: string, path: string, revision: string): EventOccurrence[] {
+  /** The file's meetings, each still to be read: a cancelled one is none. */
+  private components(body: string) {
     // The file's VTIMEZONEs stay in this parse: nothing is registered with ical.js's zone service, which every file shares.
     const calendar = new ICAL.Component(ICAL.parse(body));
-    if (calendar.name !== 'vcalendar') throw new CalendarError('Kalenderkällan svarade med ogiltiga mötesuppgifter.');
-    const ref = reference(path);
+    if (calendar.name !== 'vcalendar')
+      throw new UnreadableEventError('Kalenderkällan svarade med ogiltiga mötesuppgifter.');
     return calendar
       .getAllSubcomponents('vevent')
-      .filter(component => component.getFirstPropertyValue('status') !== 'CANCELLED')
-      .map(component => {
-        const event = new ICAL.Event(component),
-          startZone = tzidOf(component.getFirstProperty('dtstart')),
-          // An end given as a duration is in the start's zone.
-          endZone = component.hasProperty('dtend') ? tzidOf(component.getFirstProperty('dtend')) : startZone,
-          start = event.startDate,
-          end = event.endDate;
-        const participants: Participant[] = component.getAllProperties('attendee').map(attendee => ({
-          email: mailto(attendee.getFirstValue()),
-          name: String(attendee.getParameter('cn') ?? ''),
-          resource: attendee.getParameter('cutype') === 'ROOM',
-          response: participantResponse(attendee.getParameter('partstat')),
-        }));
-        const room = participants.find(p => p.resource);
-        const organizerProperty = component.getFirstProperty('organizer');
-        const organizer = mailto(organizerProperty?.getFirstValue()),
-          organizerName = String(organizerProperty?.getParameter('cn') ?? '');
-        const recurring = component.hasProperty('rrule') || component.hasProperty('recurrence-id');
-        const pending = room && room.response !== 'accepted' && room.response !== 'declined';
-        return {
-          id: `${ref}:${component.getFirstPropertyValue('recurrence-id') ?? ''}`,
-          ref,
-          revision,
-          uid: event.uid,
-          title: event.summary || 'Möte',
-          start: instantOf(start, startZone),
-          end: instantOf(end, endZone),
-          allDay: start.isDate,
-          recurring,
-          organizer,
-          organizerName,
-          canCancel: !recurring && organisedBy({ organizer }, this.account),
-          room: room?.name || room?.email || '',
-          participants,
-          roomResponse:
-            room?.response === 'accepted'
-              ? 'accepted'
-              : room?.response === 'declined'
-                ? 'declined'
-                : pending
-                  ? 'pending'
-                  : 'none',
-        };
-      });
+      .filter(component => component.getFirstPropertyValue('status') !== 'CANCELLED');
+  }
+  /**
+   * The meeting a file holds, as one VEVENT of it says: the first one, the only one a lookup, a move or an answer reads,
+   * so a file whose other parts Clew cannot read is still the meeting its first part says (DE-L14).
+   */
+  private first(body: string, path: string, revision: string): EventOccurrence | null {
+    const [component] = this.components(body);
+    return component ? this.occurrence(component, reference(path), revision) : null;
+  }
+  /** Every occurrence a file holds: what an expanded list answers, one VEVENT per occurrence. */
+  private events(body: string, path: string, revision: string): EventOccurrence[] {
+    const ref = reference(path);
+    return this.components(body).map(component => this.occurrence(component, ref, revision));
+  }
+  private occurrence(component: ICAL.Component, ref: string, revision: string): EventOccurrence {
+    const event = new ICAL.Event(component),
+      startZone = tzidOf(component.getFirstProperty('dtstart')),
+      start = event.startDate;
+    // An end given as a length is counted from the start, in the start's zone.
+    const duration = component.getFirstPropertyValue('duration') as ICAL.Duration | null;
+    const end = component.hasProperty('dtend')
+      ? instantOf(event.endDate, tzidOf(component.getFirstProperty('dtend')))
+      : duration && !start.isDate
+        ? endOfDuration(start, startZone, duration)
+        : instantOf(event.endDate, startZone);
+    const participants: Participant[] = component.getAllProperties('attendee').map(attendee => ({
+      email: mailto(attendee.getFirstValue()),
+      name: String(attendee.getParameter('cn') ?? ''),
+      resource: attendee.getParameter('cutype') === 'ROOM',
+      response: participantResponse(attendee.getParameter('partstat')),
+    }));
+    const room = participants.find(p => p.resource);
+    const organizerProperty = component.getFirstProperty('organizer');
+    const organizer = mailto(organizerProperty?.getFirstValue()),
+      organizerName = String(organizerProperty?.getParameter('cn') ?? '');
+    // A meeting with extra dates (RDATE) is a series as much as one with a rule: no one of its dates is moved or
+    // cancelled as if it were the meeting.
+    const recurring = ['rrule', 'rdate', 'recurrence-id'].some(name => component.hasProperty(name));
+    const pending = room && room.response !== 'accepted' && room.response !== 'declined';
+    return {
+      id: `${ref}:${component.getFirstPropertyValue('recurrence-id') ?? ''}`,
+      ref,
+      revision,
+      uid: event.uid,
+      // Every copy of a CalDAV meeting carries its UID.
+      icalUid: event.uid,
+      title: event.summary || 'Möte',
+      start: instantOf(start, startZone),
+      end,
+      allDay: start.isDate,
+      recurring,
+      organizer,
+      organizerName,
+      canCancel: !recurring && organisedBy({ organizer, participants }, this.account),
+      room: room?.name || room?.email || '',
+      participants,
+      roomResponse:
+        room?.response === 'accepted'
+          ? 'accepted'
+          : room?.response === 'declined'
+            ? 'declined'
+            : pending
+              ? 'pending'
+              : 'none',
+    };
   }
   async list(start: string, end: string) {
     if (!validWindow(start, end)) throw new CalendarError('Välj en period på högst 32 dagar.');
@@ -254,7 +316,7 @@ export class NextcloudProvider implements CalendarProvider {
       response = await this.request(path, 'GET');
     if (response.status === 404) return null;
     if (response.status !== 200) throw new CalendarError('Mötet kunde inte hämtas.');
-    return this.events(response.body, path, response.etag)[0] ?? null;
+    return this.first(response.body, path, response.etag);
   }
   async resources(): Promise<Resource[]> {
     const response = await this.request(
@@ -421,7 +483,7 @@ export class NextcloudProvider implements CalendarProvider {
       response = await this.request(path, 'GET');
     if (response.status !== 200 || response.etag !== revision)
       throw new CalendarError('Mötet har ändrats. Be om ett nytt förslag.');
-    const event = this.events(response.body, path, response.etag)[0];
+    const event = this.first(response.body, path, response.etag);
     if (!event?.canCancel || event.recurring || event.allDay)
       throw new CalendarError('Du kan bara flytta egna enstaka möten med klockslag.');
     const calendar = new ICAL.Component(ICAL.parse(response.body));
@@ -463,7 +525,7 @@ export class NextcloudProvider implements CalendarProvider {
     const path = await this.path(ref),
       response = await this.request(path, 'GET');
     if (response.status !== 200) throw new CalendarError('Inbjudan kunde inte hämtas.');
-    const event = this.events(response.body, path, response.etag)[0];
+    const event = this.first(response.body, path, response.etag);
     if (!event || !invitedParticipant(event, this.account))
       throw new CalendarError('Du får bara svara på egna inbjudningar till enstaka möten.');
     if (response.etag !== revision) throw new CalendarError('Inbjudan har ändrats. Öppna mötet igen innan du svarar.');

@@ -1,6 +1,7 @@
 import {
   announcements,
   desktop,
+  entryStops,
   expect,
   expectNoAxeViolations,
   focused,
@@ -13,7 +14,7 @@ import {
   test,
 } from './support';
 import type { Page } from '@playwright/test';
-import { NEXT_WEEK, events } from './data';
+import { NEXT_WEEK, events, talkMeeting } from './data';
 
 /** Wide enough for the page's own pane to stand beside the grid (1340 px): an entry opens in the end slot. */
 const WIDE = { width: 1440, height: 900 };
@@ -127,6 +128,17 @@ test.describe('the levels and the mark (D71, artboard 6)', () => {
     const block = page.locator('.clew-cal-event').first();
     await expect(block).toHaveAccessibleName(/^Morgonmöte ledningsgrupp\s*08:15–08:45\s·\sA12\s*, bokat$/);
   });
+  test('the meeting of a talk Clew booked is a booked talk, seen and heard, by the server’s mark on it (D133)', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const block = page.locator('.clew-cal-event-booked');
+    await expect(block).toHaveCount(1);
+    await expect(block).toHaveAccessibleName(new RegExp(`^${talkMeeting.title}\\s*13:00–14:00\\s*, bokat samtal$`));
+    await expectNoAxeViolations(page);
+  });
   test('a proposal is the assistant’s: the ✦ is seen, the word förslag is heard', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
     await open(page, `/calendar?date=${NEXT_WEEK}`);
@@ -135,6 +147,23 @@ test.describe('the levels and the mark (D71, artboard 6)', () => {
     await expect(block).toHaveAccessibleName(
       /^Utvecklingssamtal\s*\d\d:\d\d–\d\d:\d\d\s·\sAnna Lindqvist\s*, förslag$/,
     );
+  });
+  test('an address with a date that is no day of the calendar opens on today, never on another day or an error', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(desktop);
+    const asked: string[] = [];
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (url.pathname === '/api/calendar') asked.push(url.searchParams.get('from') ?? '');
+    });
+    await open(page, '/calendar?date=2026-02-30');
+    await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
+    await expect(page.getByText('Morgonmöte ledningsgrupp').first()).toBeVisible();
+    await expect(page.getByText('Ogiltigt datum.')).toHaveCount(0);
+    expect(asked).not.toContain('2026-02-30');
+    await expectNoAxeViolations(page);
   });
   test('Förslag N in the header lists the proposals that wait; choosing one opens it in the panel with its decisions', async ({
     page,
@@ -465,6 +494,12 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     const dialog = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
     await expect(dialog.getByRole('region', { name: 'Ny tid' })).toBeVisible();
     await expect(dialog.getByText('behåller sin längd')).toBeVisible();
+    // The day above the details is a picture of the day around the entry: no entry in it is a tab stop, and it promises
+    // nothing on Enter (WA-M2).
+    const day = dialog.getByRole('group').filter({ hasText: 'Uppgifterna står under dagen.' }).last();
+    await expect(day).toBeVisible();
+    expect(await entryStops(day)).toBe(0);
+    await expect(dialog).not.toContainText('Retur på en post öppnar den.');
     await dialog.getByRole('button', { name: 'Spara' }).click();
     await expect(dialog).toBeHidden();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Förslaget ligger nu'));

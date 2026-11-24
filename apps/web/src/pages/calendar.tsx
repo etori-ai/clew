@@ -34,6 +34,7 @@ import {
   Text,
   VStack,
   agendaItems,
+  entryOf,
   inviteeName,
   useMediaQuery,
   type AgendaItem,
@@ -452,11 +453,13 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         : `${view === 'day' ? 'Dagvy' : 'Månadsvy'}, ${title}`,
   );
   const items = useMemo(() => agendaItems(events, proposals), [events, proposals]);
-  // The entry the pane holds (`entry`): looked up among the loaded weeks, and kept while another week is on screen.
+  // The entry the pane holds (`entry`): looked up among the loaded weeks, and kept while another week is on screen. An
+  // address that names a talk's meeting a proposal is drawn in the place of (a manager's own talk, from Dagens möten or
+  // Hela veckan) opens that proposal, as `agendaItems` maps it (`entryOf`).
   const entryId = params.get(ENTRY_PARAM);
   const seen = useRef(new Map<string, AgendaItem>());
-  for (const i of items) seen.current.set(i.id, i);
-  const entryItem = entryId ? (items.find(i => i.id === entryId) ?? seen.current.get(entryId) ?? null) : null;
+  for (const i of items) for (const id of [i.id, ...(i.covers ?? [])]) seen.current.set(id, i);
+  const entryItem = entryId ? (entryOf(items, entryId) ?? seen.current.get(entryId) ?? null) : null;
   const dayItems = useMemo(
     () => (acting ? items.filter(i => occursOn(i, displayDate(acting.item.start))) : []),
     [items, acting],
@@ -797,7 +800,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
                 label={capital(title)}
                 dayHeadingLevel={2}
                 accessiblePath={proposed.length ? 'Förslag i sidhuvudet leder till varje förslag.' : undefined}
-                selectedId={entryId ?? undefined}
+                selectedId={entryItem?.id ?? entryId ?? undefined}
                 onItemClick={item => navigate(withEntry(pathname, search, item.id))}
                 onMoveProposal={proposed.length ? moveProposal : undefined}
                 onSelectRange={mobile ? undefined : (start, end) => setBooking({ start, end })}

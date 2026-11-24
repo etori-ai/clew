@@ -27,10 +27,24 @@ const adapterFor = (user: string): CalendarAdapterKind => {
   if (forced === 'microsoft365' || forced === 'caldav') return forced;
   return user === 'mikael' ? 'microsoft365' : 'caldav';
 };
-/** The calendar sign-in for `user`, as `person`: their address and name as the directory holds them. */
+/**
+ * The address the development directory gives every synthetic person, for the seeds, and the login a synthetic person
+ * signs in to the fake of Graph with.
+ */
+const fixtureAddress = (user: string) => `${user}@clew.test`;
+/**
+ * The calendar sign-in for `user`, as `person`: their address and name as the directory holds them. The sign-in is the
+ * person's own login, never their address: the directory's address is not unique (`auth_person.email`), so a token
+ * minted from it could open another person's mailbox for someone given the same or a wrong address.
+ */
 const credential = (user: string, person: { email: string; name: string }): CalendarCredential =>
   adapterFor(user) === 'microsoft365'
-    ? { kind: 'microsoft365', url: graphUrl(), account: person, token: async () => fakeGraphToken(person.email) }
+    ? {
+        kind: 'microsoft365',
+        url: graphUrl(),
+        account: person,
+        token: async () => fakeGraphToken(fixtureAddress(user)),
+      }
     : { kind: 'caldav', url: calendarUrl(), user, password: `calendar-${user}-local-only`, account: person };
 /** The people with a calendar sign-in, the development directory's (`scripts/provisioner/directory.ts`). */
 const names: Record<string, string> = {
@@ -39,8 +53,6 @@ const names: Record<string, string> = {
   mikael: 'Mikael Lund',
   ingrid: 'Ingrid Holm',
 };
-/** The address the development directory gives every synthetic person, for the seeds and the fake of Graph. */
-const fixtureAddress = (user: string) => `${user}@clew.test`;
 /** Calendar accounts without a sign-in: Hillevi's school, as `.devcontainer/calendar/seed.php` creates them. */
 const colleagues: Record<string, string> = {
   anna: 'Anna Lindqvist',

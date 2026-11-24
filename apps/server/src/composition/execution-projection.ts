@@ -170,6 +170,7 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
               eventUid: evidence.uid,
               eventRef: evidence.ref,
               eventRevision: evidence.revision,
+              eventIcalUid: evidence.icalUid ?? null,
               confirmedAt: new Date(e.dispatchedAt ?? e.createdAt),
               undoUntil: projectedReceipt?.undoUntil ? new Date(projectedReceipt.undoUntil) : null,
             })
@@ -200,6 +201,7 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
                   eventUid: null,
                   eventRef: null,
                   eventRevision: null,
+                  eventIcalUid: null,
                   confirmedAt: null,
                 },
           )

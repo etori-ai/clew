@@ -28,6 +28,7 @@ export function occurrence(
     id: partial.uid,
     ref: 'memory:' + partial.uid,
     revision: 'r1',
+    icalUid: partial.uid,
     allDay: false,
     recurring: false,
     organizer: account.email,

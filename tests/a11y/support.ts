@@ -1258,7 +1258,14 @@ export class MockApi {
       this.currentModel = (request.postDataJSON() as { modelId: string }).modelId;
       return json(assistantStatus(this.modelChoices, this.currentModel));
     }
+    // A date that is no day of the calendar (2026-02-30) is refused as the server refuses it, never read as another day.
+    const invalidDate = (date: string | undefined | null) =>
+      date !== undefined && date !== null && !calendarDay(date)
+        ? route.fulfill({ status: 400, json: { error: 'Ogiltigt datum.' } })
+        : null;
     if (path === '/calendar') {
+      const refused = invalidDate(url.searchParams.get('from'));
+      if (refused) return refused;
       const from = url.searchParams.get('from') ?? '2026-11-02';
       return json({
         from,
@@ -1350,10 +1357,14 @@ export class MockApi {
     }
     if (path === '/cap/calendar.today') return json({ output: today });
     if (path === '/cap/calendar.week') {
+      const refused = invalidDate(input<{ from?: string }>().from);
+      if (refused) return refused;
       const from = input<{ from?: string }>().from ?? '2026-11-02';
       return json({ output: { from, events: events(from) } });
     }
     if (path === '/cap/calendar.day') {
+      const refused = invalidDate(input<{ date?: string }>().date);
+      if (refused) return refused;
       const date = input<{ date?: string }>().date ?? '2026-11-04';
       return json({
         output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] },
@@ -3388,6 +3399,37 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
   const unmarked = await page.evaluate(() => (window as unknown as { unmarked: string[] }).unmarked);
   return { hidden, unmarked, stops: [...seen] };
 }
+
+/** Whether a `YYYY-MM-DD` names a day of the calendar: 2026-02-30 does not, as `isCalendarDate` says on the server. */
+function calendarDay(date: string) {
+  const at = Date.parse(`${date}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(at) && new Date(at).toISOString().slice(0, 10) === date;
+}
+/**
+ * Presses Tab until `target` has the focus, as a person with a keyboard reaches it: fails when it is not in the tab order
+ * within `max` presses, where `focus()` would have reached it anyway.
+ */
+export async function tabTo(page: Page, target: Locator, max = 60) {
+  for (let i = 0; i < max; i++) {
+    await page.keyboard.press('Tab');
+    if (await target.evaluate(el => el === document.activeElement)) return;
+  }
+  throw new Error(`Tab did not reach the element in ${max} presses.`);
+}
+/**
+ * The calendar entries in `scope` a Tab stops on: none where pressing an entry does nothing (WA-M2), so a person is not
+ * walked through rows that are pictures of the day.
+ */
+export const entryStops = (scope: Locator) =>
+  scope
+    .locator('.clew-cal-event, .fc-event, .fc-list-event, a[href], button, [tabindex]:not([tabindex="-1"])')
+    .evaluateAll(
+      els =>
+        els.filter(el => {
+          const e = el as HTMLElement;
+          return e.tabIndex >= 0 && !e.hasAttribute('disabled') && e.getClientRects().length > 0;
+        }).length,
+    );
 
 /** The focused element, as a person using a screen reader would be told about it. `body` means focus was lost. */
 export const focused = (page: Page) =>

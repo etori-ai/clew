@@ -187,11 +187,14 @@ export class Microsoft365Provider implements CalendarProvider {
         ? room.response
         : 'pending';
     const allDay = Boolean(event.isAllDay);
+    const uid = clewUid ?? event.iCalUId ?? event.id;
     return {
       id: ref,
       ref,
       revision: event['@odata.etag'],
-      uid: clewUid ?? event.iCalUId ?? event.id,
+      uid,
+      // Exchange gives every copy of a meeting the same iCalUId; Clew's uid is on the organiser's copy alone.
+      icalUid: event.iCalUId ?? uid,
       title: event.subject || 'Möte',
       start: allDay ? allDayDate(event.start) : instant(event.start),
       end: allDay ? allDayDate(event.end) : instant(event.end),
@@ -199,7 +202,8 @@ export class Microsoft365Provider implements CalendarProvider {
       recurring,
       organizer,
       organizerName: event.organizer?.emailAddress?.name ?? '',
-      canCancel: !recurring && sameEmail(organizer, this.account.email),
+      // Graph says whose copy this is: the organiser's own, whatever address the directory holds for the person.
+      canCancel: !recurring && event.isOrganizer === true,
       // A room that said no is not the meeting's room. On CalDAV the attendee disappears, here it stays on the list.
       room: roomResponse === 'declined' ? '' : room?.name || room?.email || '',
       participants,
@@ -227,9 +231,12 @@ export class Microsoft365Provider implements CalendarProvider {
     );
     return found[0] ?? null;
   }
+  /** The event behind a reference, its Graph id and whether this mailbox organises it (`isOrganizer`). */
   private async read(ref: string) {
     const source = await this.source(ref);
-    return source && !source.isCancelled ? { id: source.id!, event: this.occurrence(source) } : null;
+    return source && !source.isCancelled
+      ? { id: source.id!, organizer: source.isOrganizer === true, event: this.occurrence(source) }
+      : null;
   }
   async primaryCalendar() {
     const reply = await this.send('/me/calendar', 'GET');
@@ -349,10 +356,11 @@ export class Microsoft365Provider implements CalendarProvider {
       if (reply.status !== 201)
         throw new CalendarError('Bokningsresultatet är osäkert. Kontrollera mötet innan du försöker igen.');
     }
-    const event = await this.lookup(ref);
-    if (!event || event.uid !== uid || !sameEmail(event.organizer, this.account.email))
+    // The booking is this mailbox's own when Graph says so, never by comparing addresses, which may be an alias.
+    const booked = await this.read(ref);
+    if (!booked || booked.event.uid !== uid || !booked.organizer)
       throw new CalendarError('Bokningsresultatet är osäkert.');
-    return event;
+    return booked.event;
   }
   async reschedule(ref: string, revision: string, start: string, end: string) {
     const current = await this.read(ref);

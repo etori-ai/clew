@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { memoryCalendar } from '../../packages/calendar/src/memory';
+import { UnreadableEventError } from '../../packages/calendar/src/model';
 import { memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
 import type { ProposalRecord, UnitMember } from '../../apps/server/src/modules/calendar/model';
 import { FOLLOW_MS, invitationUsecases } from '../../apps/server/src/modules/calendar/usecases/invitations';
@@ -115,6 +116,7 @@ function world() {
       eventUid: event.uid,
       eventRef: event.ref,
       eventRevision: event.revision,
+      eventIcalUid: event.icalUid,
       confirmedAt: now.toISOString(),
       undoUntil: null,
       reminders: 0,
@@ -448,6 +450,21 @@ describe('the manager settles what the calendar holds (D133)', () => {
     expect(await w.proposal(sent.id, sent.threadId)).toMatchObject({ status: 'confirmed', ...BOOKED });
     expect(await w.rowOf(boss, 'dan')).toMatchObject({ at: BOOKED.start, calendar: MOVED });
   });
+
+  test('a meeting the calendar holds but Clew cannot read is said so in the calendar’s own words, not as a calendar that did not answer', async () => {
+    const w = world();
+    await open(w);
+    const sent = await w.invite(dan);
+    await w.moveInCalendar(sent.ref);
+    await w.invitations.follow(boss);
+    const zone = 'Mötet har en tidszon som kalendern inte beskriver.';
+    w.calendar.lookup = async () => {
+      throw new UnreadableEventError(zone);
+    };
+    await expect(w.invitations.settle(boss, 'dan', 'adopt')).rejects.toThrow(zone);
+    expect(await w.proposal(sent.id, sent.threadId)).toMatchObject({ status: 'confirmed', ...BOOKED });
+    expect(w.proposals.audit).toEqual([]);
+  });
 });
 
 describe('a meeting made all-day or recurring in the calendar (DE-L15)', () => {
@@ -476,6 +493,24 @@ describe('a meeting made all-day or recurring in the calendar (DE-L15)', () => {
     w.calendar.events = w.calendar.events.map(e => (e.ref === sent.ref ? { ...e, allDay: false, ...MOVED } : e));
     await w.invitations.settle(boss, 'dan', 'adopt');
     expect(await w.proposal(sent.id, sent.threadId)).toMatchObject({ status: 'confirmed', ...MOVED });
+  });
+
+  test('an all-day meeting whose days are the very instants the talk was booked for still differs, and is not adopted', async () => {
+    const w = world();
+    await open(w);
+    // A talk booked from midnight UTC to midnight UTC: the instants an all-day date reads as when parsed as UTC.
+    const midnights = { start: '2026-11-23T00:00:00.000Z', end: '2026-11-24T00:00:00.000Z' };
+    const sent = await w.invite(dan, midnights);
+    w.calendar.events = w.calendar.events.map(e =>
+      e.ref === sent.ref ? { ...e, allDay: true, start: '2026-11-23', end: '2026-11-24', revision: 'r-all-day' } : e,
+    );
+    await w.invitations.follow(boss);
+    // Told as an all-day meeting to give a time, never as a meeting that agrees with the talk.
+    await expect(w.invitations.settle(boss, 'dan', 'adopt')).rejects.toThrow(
+      'Mötet i kalendern gäller hela dagen. Ge det en tid i kalendern innan samtalet flyttas dit.',
+    );
+    expect(await w.proposal(sent.id, sent.threadId)).toMatchObject({ status: 'confirmed', ...midnights });
+    expect(w.proposals.audit).toEqual([]);
   });
 
   test('a meeting made recurring has no one time to take, and is not adopted', async () => {
