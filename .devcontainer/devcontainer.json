@@ -3,6 +3,7 @@
   "dockerComposeFile": "compose.yaml",
   "service": "app",
   "workspaceFolder": "/workspace",
+  "initializeCommand": ["sh", "${localWorkspaceFolder}/scripts/compose.sh", "config", "--quiet"],
   "portsAttributes": { "5173": { "onAutoForward": "ignore" }, "3000": { "onAutoForward": "ignore" } },
   "shutdownAction": "stopCompose",
   "overrideCommand": false,

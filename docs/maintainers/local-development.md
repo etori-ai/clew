@@ -6,6 +6,8 @@ Host commands below start Docker infrastructure; application commands run inside
 
 ## Run it
 
+Opening the workspace in Dev Containers runs the same host-side setup before Compose reads its services. The first start generates the local Keycloak password. Reopening the workspace reuses it.
+
 Everything runs in Docker. Commands go through `docker exec` into the app container (Claude Code and most editors sit outside the devcontainer).
 
 ```sh
