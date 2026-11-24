@@ -28,9 +28,10 @@ export function relationUsecases(deps: RelationDeps) {
    * then the directory) only when `admits` lets one through, so a strict read costs one read of where the actor stands.
    * A reader who holds the grant `registrar` (D121, from their current access record) stands so to such a person
    * instead, but only for a read that admits it: to any other read they are the colleague they are, so the grant reaches
-   * nothing else and no source is told it unasked. With `ids` (a core capability of Clew's own domains), a person
-   * without a user name may also be named by Clew's id, as themself or as a report; never as a colleague or a
-   * registrar's, and never someone who has a user name.
+   * nothing else and no source is told it unasked. With `ids` (a core capability of Clew's own domains), a person may
+   * also be named by Clew's id, as themself or as a report; never as a colleague or a registrar's. Someone with a user
+   * name is answered by it in `key`, the key the capability reads, so Clew's own records may name them by id (D122, a
+   * card's action); someone without one is answered by the id.
    */
   async function relate(
     actor: Actor,
@@ -77,11 +78,15 @@ export function relationUsecases(deps: RelationDeps) {
         if (admits.includes(relation)) out.push({ asked, key, relation });
         continue;
       }
-      // Clew's own id, for a person without a user name, where a core capability takes one (D117).
+      // Clew's own id, where a core capability takes one (D117): the reader or a report, never anyone else.
       if (!options.ids) continue;
-      const relation: Relation | undefined =
-        asked === reader.id && !reader.userName ? 'self' : reportById(reach, asked) ? 'managed' : undefined;
-      if (relation && admits.includes(relation)) out.push({ asked, key: asked, relation });
+      const self = asked === reader.id;
+      const byId: DirectoryPerson | undefined = self
+        ? { id: reader.id, name: reader.name, userName: reader.userName ?? null, enabled: true }
+        : reportById(reach, asked);
+      const relation: Relation = self ? 'self' : 'managed';
+      const named = byId && (byId.userName === null ? asked : personKey(byId));
+      if (named && admits.includes(relation)) out.push({ asked, key: named, relation });
     }
     return out;
   }

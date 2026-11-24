@@ -50,6 +50,8 @@ export interface MemoryProvisionState {
   audit: Array<{ actor: string; action: string; subject: string; details: Record<string, unknown> }>;
   /** `auth_audit`, the authentication log. */
   authenticationAudit: Array<{ actor: string | null; action: string }>;
+  /** `proposal`, as far as an erasure reads it: whom each invitation invites, by id, name and address. */
+  invitations: Array<{ id: string; participantId: string; name: string; email: string }>;
   /** What the leavers port was told (D108 item 14), in order; a rollback takes it back with the rest. */
   leavers: Array<LeaverChange & { change: keyof LeaversTx }>;
 }
@@ -85,6 +87,7 @@ export function memoryProvisionStore(
     audit: [],
     leavers: [],
     authenticationAudit: [],
+    invitations: [],
   };
   const snapshot = () => structuredClone(state),
     restore = (s: MemoryProvisionState) => Object.assign(state, s);
@@ -527,6 +530,16 @@ export function memoryProvisionStore(
       for (const row of state.authenticationAudit)
         if (row.actor?.startsWith('claim:') && row.actor !== erased && held.has(fold(row.actor.slice(6)))) {
           row.actor = erased;
+          changed++;
+        }
+      return changed;
+    },
+    async eraseInvitations(personId) {
+      let changed = 0;
+      for (const row of state.invitations)
+        if (row.participantId === personId && (row.name !== '' || row.email !== '')) {
+          row.name = '';
+          row.email = '';
           changed++;
         }
       return changed;

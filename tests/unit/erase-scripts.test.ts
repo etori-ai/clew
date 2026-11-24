@@ -2,13 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 /**
- * The arguments of the operator's erasures of a leaver's talks, competence and follow-up dialogue (D122 item 7, D123 item 3), held as
- * `tests/unit/person-erase.test.ts` holds person-erase's: every malformed call is refused with exit code 2 and the usage
- * line before the database is asked anything, an option given twice and a stray argument among them, so that a copied
- * line cannot erase the wrong person. The database each script is given cannot be reached, so a call that got that far
- * would end with exit code 1 instead. A confirmed call does get that far, and each of the five erasures of the
- * runbook's steps 4 and 5 answers it alike: the error's own message and that nothing was written. What the scripts
- * answer from a database is `tests/db/erase-scripts.test.ts`.
+ * The arguments of the operator's erasures of a leaver's talks, competence, follow-up dialogue and introduction and
+ * leaving (D122 item 7, D123 item 3), held as `tests/unit/person-erase.test.ts` holds person-erase's: every malformed
+ * call is refused with exit code 2 and the usage line before the database is asked anything, an option given twice and
+ * a stray argument among them, so that a copied line cannot erase the wrong person. The database each script is given
+ * cannot be reached, so a call that got that far would end with exit code 1 instead. A confirmed call does get that
+ * far, and each of the six erasures of the runbook's steps 4 and 5 answers it alike: the error's own message and that
+ * nothing was written. What the scripts answer from a database is `tests/db/erase-scripts.test.ts`.
  */
 type Answer = { code: number; out: string; err: string };
 async function run(script: string, args: string[]): Promise<Answer> {
@@ -54,6 +54,11 @@ const SCRIPTS: Array<{ script: string; unconfirmed: string }> = [
     unconfirmed:
       'Erasing person "p1" from the competence domain removes every holding they have and their competence cards, and cannot be undone. Run again with --confirm to erase.',
   },
+  {
+    script: 'boarding-erase.ts',
+    unconfirmed:
+      'Erasing person "p1" from introduction and leaving removes every plan about them and the cards of its items and of the items they own, and cannot be undone. Run again with --confirm to erase.',
+  },
 ];
 for (const { script, unconfirmed } of SCRIPTS)
   describe(`scripts/${script} refuses, asking the database nothing,`, () => {
@@ -70,6 +75,7 @@ const CONFIRMED: Array<[string, string[]]> = [
   ['talks-erase.ts', ['--person', 'p1', '--confirm']],
   ['competence-erase.ts', ['--person', 'p1', '--confirm']],
   ['dialogue-erase.ts', ['--person', 'p1', '--confirm']],
+  ['boarding-erase.ts', ['--person', 'p1', '--confirm']],
   ['person-erase.ts', ['--person', 'p1', '--confirm']],
 ];
 describe('each erasure, when its database cannot be reached, says why in one line and that nothing was written:', () => {

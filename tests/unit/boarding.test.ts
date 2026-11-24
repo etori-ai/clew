@@ -1022,6 +1022,8 @@ describe('erasure and export', () => {
       buddyId: 'anna',
     });
     const cardsOfHers = itemsOf(hers.id).map(i => i.threadId);
+    // The source deactivates a person before an operator erases them (D123 item 3).
+    store.deactivate('anna');
     const erased = await boarding.erasePerson('operator:cli', 'anna');
     expect(erased).toEqual({ plans: 1, items: 6, cleared: 1, cards: 6 });
     expect(store.state.plans.has(hers.id)).toBe(false);
@@ -1038,6 +1040,32 @@ describe('erasure and export', () => {
       subject: 'person:anna',
       at: at(),
       details: { plans: 1, items: 6, cleared: 1, cards: 6 },
+    });
+  });
+
+  test('an unknown id and an active person are refused, with nothing erased and no audit row', async () => {
+    const { id } = await start();
+    const before = structuredClone(store.state),
+      audited = store.audit().length,
+      calls = store.calls().length;
+    // A user name is not an id: the people table holds no person `anna.a`.
+    expect(await boarding.erasePerson('operator:cli', 'anna.a')).toEqual({ refused: 'unknown' });
+    expect(await boarding.erasePerson('operator:cli', 'nobody')).toEqual({ refused: 'unknown' });
+    // Anna is still active.
+    expect(await boarding.erasePerson('operator:cli', 'anna')).toEqual({ refused: 'active' });
+    expect(store.audit().length).toBe(audited);
+    expect(store.calls().length).toBe(calls);
+    expect(store.state.plans.get(id)).toEqual(before.plans.get(id)!);
+    expect(itemsOf(id)).toHaveLength(6);
+    // Once deactivated, a person with nothing in the domain is still audited, with zero counts.
+    store.deactivate('cia');
+    expect(await boarding.erasePerson('operator:cli', 'cia')).toEqual({ plans: 0, items: 0, cleared: 0, cards: 0 });
+    expect(store.audit().at(-1)).toEqual({
+      actor: 'operator:cli',
+      action: 'boarding.person_erased',
+      subject: 'person:cia',
+      at: at(),
+      details: { plans: 0, items: 0, cleared: 0, cards: 0 },
     });
   });
 
@@ -1123,6 +1151,7 @@ describe('what the review asked for (D124, 2026-11-13)', () => {
   test('an item whose owner was erased is the manager’s: shown as theirs, ticked by them, and waits for them', async () => {
     const { id } = await start();
     const lunch = itemsOf(id).find(i => i.title === 'Lunch med faddern')!;
+    store.deactivate('bo');
     await boarding.erasePerson('operator:cli', 'bo');
     expect(store.state.items.get(lunch.id)).toMatchObject({ ownerId: null, threadId: null });
     // The erasure opened no card for anyone.
@@ -1141,6 +1170,67 @@ describe('what the review asked for (D124, 2026-11-13)', () => {
     await forbidden(boarding.setDone(asAnna, lunch.id), 'Du kan inte ändra den här uppgiften.');
     await boarding.setDone(karin, lunch.id);
     expect(store.state.items.get(lunch.id)?.doneBy).toBe('karin');
+  });
+
+  test('an item whose owner was deactivated is the current manager’s: shown as theirs, waits for them, and is ticked by them', async () => {
+    const { id } = await start();
+    const order = itemsOf(id).find(i => i.title === 'Beställ dator')!;
+    expect(order.ownerId).toBe('karin');
+    // Karin leaves and is deactivated; Olle takes over the team, Anna included.
+    store.deactivate('karin');
+    reaches.delete('karin');
+    reaches.set('olle', {
+      units: [{ unitId: 'u-team', unitLabel: 'Teamet', role: 'manager' }],
+      managed: [
+        {
+          unitId: 'u-team',
+          unitLabel: 'Teamet',
+          people: [reach('anna', 'Anna Andersson', 'anna.a'), reach('bo', 'Bo Berg', 'bo.b')],
+        },
+      ],
+      above: [],
+      lineReports: [],
+    });
+    const audited = store.audit().length,
+      calls = store.calls().length;
+    // Her two items (the order and the welcome meeting) are his now, and say "Chef", not her name.
+    const read = await boarding.plan(olle, id);
+    expect(read.plan.access).toBe('manager');
+    const row = read.rows.find(r => r.id === order.id)!;
+    expect(row).toMatchObject({ ownerRole: 'manager', ownerLabel: 'Chef', mine: true, canTick: true });
+    expect(row.owner).toBeUndefined();
+    expect(row.ownerId).toBeUndefined();
+    expect(read.rows.filter(r => r.mine).map(r => r.title)).toEqual(['Beställ dator', 'Välkomstsamtal']);
+    expect((await boarding.plans(olle)).rows.map(r => [r.id, r.waiting])).toEqual([[id, 2]]);
+    expect((await boarding.personPlans(olle, 'anna')).plans.map(p => p.waiting)).toEqual([2]);
+    expect((await boarding.aboutPeople(olle, ['anna.a']))[0]!.plan!.waiting).toBe(2);
+    // Anna reads them as the manager's, not hers.
+    expect((await boarding.plan(asAnna, id)).rows.find(r => r.id === order.id)).toMatchObject({
+      ownerLabel: 'Chef',
+      mine: false,
+      canTick: false,
+    });
+    // Reading changed nothing: no card was opened for Olle and no audit row was written; Karin's card waits for erasure.
+    expect(store.audit().length).toBe(audited);
+    expect(store.calls().length).toBe(calls);
+    expect(store.state.cards.get(order.threadId!)).toMatchObject({ personId: 'karin', state: 'open' });
+    await boarding.setDone(olle, order.id);
+    expect(store.state.items.get(order.id)).toMatchObject({ doneBy: 'olle' });
+    expect(store.audit().at(-1)).toEqual({
+      actor: 'person:olle',
+      action: 'boarding.item_done',
+      subject: 'item:' + order.id,
+      at: at(),
+      details: { planId: id, ownerRole: 'manager', by: 'manager' },
+    });
+    expect((await boarding.plans(olle)).rows[0]!.waiting).toBe(1);
+    // Active again, Karin owns what is left of hers, and it no longer waits for Olle.
+    store.addPerson({ id: 'karin', organisationId: ORG, name: 'Karin Chef', userName: 'karin.c', enabled: true });
+    expect((await boarding.plans(olle)).rows[0]!.waiting).toBe(0);
+    expect((await boarding.plan(olle, id)).rows.find(r => r.title === 'Välkomstsamtal')).toMatchObject({
+      owner: 'Karin Chef',
+      mine: false,
+    });
   });
 
   test('a layer on a unit names the unit in the preview and the administrator’s list; another layer names none', async () => {

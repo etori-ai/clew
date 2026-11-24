@@ -94,6 +94,12 @@ async function anna() {
     { digest: 'd2', personId: id },
     { digest: 'd3', personId: bo },
   );
+  // A manager's invitations: two to Anna, drawn with her name and address as they were then, and one to Bo.
+  store.state.invitations.push(
+    { id: 'proposal-1', participantId: id, name: 'Anna Berg', email: 'anna.berg@sundsvall.se' },
+    { id: 'proposal-2', participantId: id, name: 'Anna Berg', email: 'Anna.Berg@Sundsvall.se' },
+    { id: 'proposal-3', participantId: bo, name: 'Bo Ek', email: 'bo.ek@sundsvall.se' },
+  );
   store.state.authenticationAudit.push(
     { actor: 'claim:annber', action: 'identity-unmatched' },
     { actor: 'claim:ANNA.BERG', action: 'identity-unmatched' },
@@ -189,6 +195,7 @@ describe('erasing a person (D123)', () => {
       sessions: 2,
       auditRows: 10,
       signInRows: 3,
+      invitations: 2,
     };
     expect(erased).toEqual({ erased: counts });
     const at = store.state.users.get(id)!.updatedAt;
@@ -230,6 +237,12 @@ describe('erasing a person (D123)', () => {
     expect(store.state.grants.has(bo)).toBe(true);
     expect(store.state.bindings).toEqual([{ issuer: ISSUER, subject: 'sub-bo', personId: bo }]);
     expect(store.state.sessions).toEqual([{ digest: 'd3', personId: bo }]);
+    // Her invitations stay, the manager's history, by her id alone; Bo's keeps his name and address.
+    expect(store.state.invitations).toEqual([
+      { id: 'proposal-1', participantId: id, name: '', email: '' },
+      { id: 'proposal-2', participantId: id, name: '', email: '' },
+      { id: 'proposal-3', participantId: bo, name: 'Bo Ek', email: 'bo.ek@sundsvall.se' },
+    ]);
 
     // Every event stays where it was, and the erasure's own row comes last.
     expect(store.state.audit.map(row => [row.action, row.subject])).toEqual([
@@ -278,6 +291,7 @@ describe('erasing a person (D123)', () => {
       store.state.audit,
       store.state.authenticationAudit,
       store.state.bindings,
+      store.state.invitations.filter(i => i.participantId === id),
     ]).toLowerCase();
     for (const value of HER_VALUES) expect(kept).not.toContain(value.toLowerCase());
 
@@ -292,6 +306,7 @@ describe('erasing a person (D123)', () => {
         sessions: 0,
         auditRows: 0,
         signInRows: 0,
+        invitations: 0,
       },
     });
     expect(store.state.users.get(id)!.updatedAt).toBe(at);
@@ -323,6 +338,7 @@ describe('erasing a person (D123)', () => {
         sessions: 0,
         auditRows: 0,
         signInRows: 0,
+        invitations: 0,
       },
     });
     // Her resource no longer lists the group, so its time of change is the erasure's, as the group's is.
@@ -453,7 +469,7 @@ describe('scripts/person-erase.ts refuses, asking the database nothing,', () => 
       code: 2,
       out: '',
       err:
-        'Erasing person "p1" clears their name, e-mail address, phone numbers, employments, title, user name and source key, removes their groups, placements, grant, sign-in bindings and sessions, and replaces their identifiers in the audit trail, and cannot be undone. Run again with --confirm to erase.\n' +
+        'Erasing person "p1" clears their name, e-mail address, phone numbers, employments, title, user name and source key, removes their groups, placements, grant, sign-in bindings and sessions, clears their name and address from the invitations sent to them, and replaces their identifiers in the audit trail, and cannot be undone. Run again with --confirm to erase.\n' +
         usage,
     });
   });

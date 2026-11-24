@@ -1,4 +1,18 @@
-import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  ne,
+  not,
+  or,
+  sql,
+  type SQL,
+  type SQLWrapper,
+} from 'drizzle-orm';
 import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
@@ -966,6 +980,19 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
           ),
         )
         .returning({ id: schema.authenticationAudit.id });
+      return changed.length;
+    },
+    async eraseInvitations(personId) {
+      const changed = await tx
+        .update(schema.proposals)
+        .set({ participantName: '', participantEmail: '' })
+        .where(
+          and(
+            eq(schema.proposals.participantId, personId),
+            or(ne(schema.proposals.participantName, ''), ne(schema.proposals.participantEmail, '')),
+          ),
+        )
+        .returning({ id: schema.proposals.id });
       return changed.length;
     },
     async setGroupCapability(organisationId, groupExternalId, capability, present) {
