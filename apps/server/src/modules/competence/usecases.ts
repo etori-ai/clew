@@ -1,5 +1,6 @@
 import {
   COMPETENCE_CATALOGUE_MAX,
+  COMPETENCE_VALIDITY_PROBLEM,
   COMPETENCE_SEARCH_PAGE_SIZES,
   COMPETENCE_SEARCH_STATUSES,
   COMPETENCE_STATUSES,
@@ -15,6 +16,7 @@ import {
   type CompetenceTypeSearchBody,
   type CompetenceTypeSearchOutput,
   competenceImportRowProblem,
+  isCompetenceValidity,
   importText,
   isCompetenceLevel,
   type AuthenticatedContext,
@@ -230,6 +232,11 @@ const SKILL_ONLY = 'Bara en färdighet bedöms med en nivå.';
 const SKILL_NOT_DATED = 'En färdighet registreras med en nivå, inte med datum.';
 const BAD_LEVEL = 'Välj en nivå: Grundläggande, Självständig eller Expert.';
 const SKILL_NO_VALIDITY = 'En färdighet har ingen giltighetstid.';
+/** A validity rule, and a rule whose effect is asked, is whole years (D108 item 3, amended 2026-11-24). */
+const wholeYears = (months: number | null | undefined) => {
+  if (months !== null && months !== undefined && !isCompetenceValidity(months))
+    throw new CompetenceError(COMPETENCE_VALIDITY_PROBLEM);
+};
 const KIND_LOCKED =
   'Kompetensen har registrerade innehav eller krav och kan inte göras om till eller från en färdighet.';
 const KIND_MAPPED = 'Kompetensen är kopplad till en källa och kan inte göras om till eller från en färdighet.';
@@ -791,7 +798,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
    * this unit, each measured over this branch once. `reports` are the reader's own reports, whom they know; the rest of
    * the branch is counted only where it is large enough (`coverageOf`), also set against the targets of the same types
    * on the other units the reader manages (`managed`), each over its own branch, whose figures the reader reads too (a
-   * unit and a unit below it, CO-M1 of the review of 2026-11-23). Counts only.
+   * unit and the units below it, CO-M1 of the review of 2026-11-23): all of them cut into cells together, never two at
+   * a time (`withheldByCells`). Counts only.
    */
   async function coverageIn(
     tx: CompetenceTx,
@@ -1022,6 +1030,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
   async function insertType(actor: string, organisationId: string, body: CompetenceTypeBody): Promise<string> {
     const { name, area } = typeFields(body);
     if (isSkill(body) && (body.validityMonths ?? null) !== null) throw new CompetenceError(SKILL_NO_VALIDITY);
+    wholeYears(body.validityMonths);
     const at = now().toISOString(),
       id = deps.ids();
     try {
@@ -1775,7 +1784,10 @@ export function competenceUsecases(deps: CompetenceDeps) {
     /**
      * What a new validity would do to the holdings counted from this type's rule (D108 item 3): how many active people's
      * holdings there are and how many of them the new one turns expired today or valid again, as an administrator may
-     * see it (`validityFigures`, D118). Nothing is written.
+     * see it (`validityFigures`, D118). The validity asked is whole years, as a rule is. Nothing of the catalogue is
+     * written, but each preview is audited as `competence.validity_previewed` in the transaction that reads it, with
+     * the type, the rule and the validity asked and no count: what an administrator asked about whose holdings stays
+     * on record, so stepping the rule to date someone's holding would be seen.
      */
     async validityImpact(
       persona: AuthenticatedContext,
@@ -1783,13 +1795,26 @@ export function competenceUsecases(deps: CompetenceDeps) {
       validityMonths: number | null,
     ): Promise<CompetenceValidityImpact> {
       await admin(persona);
-      const today = swedishDay(now());
+      wholeYears(validityMonths);
+      const at = now();
+      const today = swedishDay(at);
       return deps.store.transaction(async tx => {
-        // A read: nothing is locked.
+        // A read with its audit row: nothing is locked.
         const [type] = await tx.typesById([typeId]);
         if (!type || type.organisationId !== persona.organisationId) throw new CompetenceError(NO_TYPE);
         const ruled = (await tx.holdingsOfType(typeId)).filter(h => counts(h) && h.expiresOn === null);
         const active = await tx.activeIds([...new Set(ruled.map(h => h.personId))]);
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'competence.validity_previewed',
+          subject: 'competence-type:' + typeId,
+          at: at.toISOString(),
+          details: {
+            organisationId: type.organisationId,
+            validityBefore: type.validityMonths,
+            validityAsked: validityMonths,
+          },
+        });
         return validityFigures({
           ruled: ruled.filter(h => active.has(h.personId)),
           before: type.validityMonths,
@@ -1808,6 +1833,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
      */
     async updateType(persona: AuthenticatedContext, typeId: string, body: CompetenceTypePatch): Promise<void> {
       await admin(persona);
+      wholeYears(body.validityMonths);
       const patch: Partial<TypeRecord> = { ...typeFields(body) };
       if (body.kind !== undefined) patch.kind = body.kind;
       if (body.validityMonths !== undefined) patch.validityMonths = body.validityMonths;

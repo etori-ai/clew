@@ -2,7 +2,13 @@ import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread, TurnEvent } from '../../packages/contracts/src/index';
 import { createHash } from 'node:crypto';
-import { audiencedActorOf, CapabilityError, openGovernance, type Connector } from '../../packages/connectors/src/index';
+import {
+  audiencedActorOf,
+  CapabilityError,
+  openGovernance,
+  type Connector,
+  type RunContext,
+} from '../../packages/connectors/src/index';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { fixtureConnectors } from '../fixture-connectors';
@@ -18,8 +24,16 @@ import { assistantUsecases, TurnStopped } from '../../apps/server/src/assistant'
 import { speaksOf } from '../../apps/server/src/assistant/people';
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
 import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
-import { TOOL_UNANSWERED, type ModelGenerate } from '../../apps/server/src/assistant/model';
+import {
+  HISTORY_MESSAGE_MAX,
+  TOOL_INVALID,
+  TOOL_UNANSWERED,
+  TURN_MS,
+  type ModelGenerate,
+} from '../../apps/server/src/assistant/model';
 import { WireError, type ManagedPerson } from '../../apps/server/src/assistant/ports';
+import { openAICompatibleWire } from '../../apps/server/src/assistant/adapters/openai-compatible';
+import { capabilityRunner } from '../../apps/server/src/connectors/run';
 import { DRAFT_TOOL, draftableActions, draftTool } from '../../apps/server/src/assistant/drafts';
 import { parseManifest, remoteConnector } from '../../packages/connectors/src/remote';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
@@ -85,8 +99,9 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     n = 0;
   const clock = () => new Date(time),
     ids = () => `id-${++n}`;
-  const run = <O>(p: AuthenticatedContext, name: string, input: unknown) =>
-    registry.run<O>(audiencedActorOf(p), name, input);
+  // As the server's `runCapability`: what the assistant says about a call (`caller`, `forModel`) goes with it.
+  const run = <O>(p: AuthenticatedContext, name: string, input: unknown, context?: RunContext) =>
+    registry.run<O>(audiencedActorOf(p), name, input, context);
   const calendar = calendarUsecases({
     store: proposals,
     bind: () => ({ provider: cal }),
@@ -207,6 +222,8 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
 }
 const audit = (store: ReturnType<typeof memoryThreadStore>, id: string) =>
   store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
+/** A tool as the model is handed it. */
+type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
 
 describe('a question without the model', () => {
   test('is answered by the router, kept as a question thread and audited; a reply continues the same thread', async () => {
@@ -290,7 +307,7 @@ describe('a question without the model', () => {
     };
     w.registry.register(docs);
     w.registry.register(
-      searchConnector(searchUsecases({ sources: a => w.registry.searchSources(a), clock: w.deps.clock })),
+      searchConnector(searchUsecases({ sources: (a, o) => w.registry.searchSources(a, o), clock: w.deps.clock })),
     );
     const r = await w.assistant.converse(hassan, { text: 'brukaren har ramlat men verkar oskadd, vad gör jag?' });
     expect(r).toMatchObject({
@@ -553,11 +570,45 @@ describe('with a model', () => {
     fail = new WireError('unsupported', 'HTTP 400: context length exceeded');
     expect((await w.assistant.converse(hillevi, { text: 'vem är på plats i dag?' })).assistant).toBe('unavailable');
     expect(await w.status(hillevi)).toMatchObject({ available: true });
+    // As the live wire names an endpoint's status (`turnError`): a 403 or a 500 one prompt can cause (a firewall, a
+    // moderation gateway, a request that broke the server) is the turn's, and the model stays for everyone.
+    const status = (code: number) =>
+      openAICompatibleWire(
+        (async () =>
+          new Response(JSON.stringify({ error: { message: 'nej' } }), {
+            status: code,
+            headers: { 'content-type': 'application/json' },
+          })) as unknown as typeof fetch,
+      )
+        .generator(
+          { baseUrl: 'http://llm.test/v1' },
+          'open-model',
+          'provider-default',
+        )({
+          system: 's',
+          messages: [{ role: 'user', content: 'Hej' }],
+          tools: {},
+          timeoutMs: 2_000,
+        })
+        .then(
+          () => undefined,
+          (e: unknown) => e as Error,
+        );
+    for (const code of [403, 500]) {
+      fail = await status(code);
+      expect(fail).toBeInstanceOf(WireError);
+      expect((await w.assistant.converse(hillevi, { text: 'vem är på plats i dag?' })).assistant).toBe('unavailable');
+      expect(await w.status(hillevi)).toMatchObject({ available: true });
+    }
+    fail = await status(502);
+    expect((await w.assistant.converse(hillevi, { text: 'vem är på plats i dag?' })).assistant).toBe('unavailable');
+    expect(await w.status(hillevi)).toMatchObject({ available: false });
+    w.health.mark('llm', true, T0);
     // An endpoint that does not answer, or refuses the key, is down until a probe or a test brings it back (D8).
     fail = new WireError('unreachable', 'connect ECONNREFUSED');
     expect((await w.assistant.converse(hillevi, { text: 'vem är på plats i dag?' })).assistant).toBe('unavailable');
     expect(await w.status(hillevi)).toMatchObject({ configured: true, available: false, model: 'Öppen modell' });
-    expect(w.logged).toHaveLength(3);
+    expect(w.logged).toHaveLength(6);
     w.health.mark('llm', true, T0);
     fail = new WireError('key-rejected', 'HTTP 401: invalid key');
     expect((await w.assistant.converse(hillevi, { text: 'vem är på plats i dag?' })).assistant).toBe('unavailable');
@@ -565,6 +616,139 @@ describe('with a model', () => {
     w.health.mark('llm', true, T0);
     fail = undefined;
     expect((await w.assistant.converse(hillevi, { text: 'vem är här?' })).assistant).toBe('model');
+  });
+  test('a turn is sent with its 60 seconds and the bounded history, and the cost of an empty answer stays with the router’s', async () => {
+    const seen: Array<{ timeoutMs?: number; messages: Array<{ role: string; content: unknown }> }> = [];
+    let empty = false;
+    const generate: ModelGenerate = async ({ timeoutMs, messages }) => {
+      seen.push({ timeoutMs, messages: messages as Array<{ role: string; content: unknown }> });
+      return empty
+        ? { text: '  ', toolCalls: [], usage: { inputTokens: 900, outputTokens: 0, finishReason: 'length', steps: 1 } }
+        : { text: 'å'.repeat(10_000), toolCalls: [] };
+    };
+    const w = world({ generate });
+    const first = await w.assistant.converse(hillevi, { text: 'Berätta allt om dagen' });
+    empty = true;
+    const second = await w.assistant.converse(hillevi, { text: 'Kortare', conversationId: first.conversationId });
+    expect(TURN_MS).toBe(60_000);
+    expect(seen.map(s => s.timeoutMs)).toEqual([60_000, 60_000]);
+    // The earlier answer reaches the model cut to its bound, and says it was cut.
+    const earlier = String(seen[1]!.messages.find(m => m.role === 'assistant')!.content);
+    expect([...earlier].length).toBeLessThanOrEqual(HISTORY_MESSAGE_MAX);
+    expect(earlier.endsWith(' … (förkortat)')).toBe(true);
+    // The model wrote nothing: the router answers, and what the call cost is the turn's record all the same.
+    expect(second.assistant).toBe('unavailable');
+    const call = {
+      providerId: 'llm',
+      durationMs: 0,
+      steps: 1,
+      inputTokens: 900,
+      outputTokens: 0,
+      finishReason: 'length',
+      traceId: '0af7651916cd43dd8448eb211c80319c',
+    };
+    expect(second.thread.messages.at(-1)!.meta?.modelCall).toEqual(call);
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'conversation.replied',
+      details: { assistant: 'unavailable', fallbackReason: 'empty answer', model: 'open-model', modelCall: call },
+    });
+  });
+  test('a turn that fails after the model was called writes conversation.failed with the model, the call and the reads, never the words (AM-6)', async () => {
+    const generate: ModelGenerate = async ({ tools }) => {
+      const output = await (tools['hr__whoIsOn'] as Callable).execute({}, {});
+      return {
+        text: 'Tre på plats.',
+        toolCalls: [{ capability: 'hr.whoIsOn', input: {}, output }],
+        usage: { inputTokens: 120, outputTokens: 18, finishReason: 'stop', steps: 2 },
+      };
+    };
+    const w = world({ generate });
+    // The conversation's own write fails once, as a database that drops a connection does.
+    const transaction = w.store.transaction.bind(w.store);
+    let broken = true;
+    w.store.transaction = (fn => {
+      if (!broken) return transaction(fn);
+      broken = false;
+      return Promise.reject(new Error('connection reset by peer while writing "vem är här?"'));
+    }) as typeof w.store.transaction;
+    await expect(w.assistant.converse(hillevi, { text: 'vem är här?' })).rejects.toThrow('connection reset');
+    expect(w.store.audit).toEqual([
+      {
+        actor: 'person:hillevi',
+        action: 'conversation.failed',
+        subject: 'person:hillevi',
+        at: T0,
+        details: {
+          chips: [],
+          reads: [{ capability: 'hr.whoIsOn' }],
+          model: 'open-model',
+          modelCall: {
+            providerId: 'llm',
+            durationMs: 0,
+            steps: 2,
+            inputTokens: 120,
+            outputTokens: 18,
+            finishReason: 'stop',
+            traceId: '0af7651916cd43dd8448eb211c80319c',
+          },
+          failure: 'Error',
+        },
+      },
+    ]);
+    // Neither the question, the answer nor the error's words are in the record.
+    for (const words of ['vem är här', 'Tre på plats', 'connection reset'])
+      expect(JSON.stringify(w.store.audit)).not.toContain(words);
+    // A turn that fails before the model is called or anything is read writes nothing.
+    const before = w.store.audit.length;
+    await expect(w.assistant.converse(hillevi, { text: 'Hej', conversationId: 'finns-inte' })).rejects.toThrow(
+      'Samtalet finns inte.',
+    );
+    expect(w.store.audit).toHaveLength(before);
+  });
+  test('a read the registry refuses reaches the model by its kind through the server’s runner: a wrong input as invalid, a source that did not answer as unanswered (D91)', async () => {
+    const told: unknown[] = [];
+    const payroll: Connector = {
+      id: 'payroll',
+      kind: 'passthrough',
+      source: 'Lönesystemet',
+      areas: [],
+      capabilities: [
+        {
+          name: 'payroll.slips',
+          kind: 'read',
+          title: 'Lönebesked',
+          description: 'x',
+          input: {
+            type: 'object',
+            properties: { month: { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}$' } },
+            required: ['month'],
+            additionalProperties: false,
+          } as never,
+          output: { type: 'object' } as never,
+          model: true,
+          scope: {},
+          run: async () => {
+            throw new CapabilityError('Lönesystemet: tabellen lon_2026 är låst', 'unavailable');
+          },
+        },
+      ],
+    };
+    const generate: ModelGenerate = async ({ tools }) => {
+      const slips = tools['payroll__slips'] as Callable;
+      told.push(await slips.execute({ month: 'november' }, {}));
+      told.push(await slips.execute({ month: '2026-11' }, {}));
+      return { text: 'Det gick inte att läsa.', toolCalls: [] };
+    };
+    const w = world({ generate, extra: [payroll] });
+    // The server's runner: a refusal becomes an InputError in the registry's words, with its code as the cause.
+    const assistant = assistantUsecases({ ...w.deps, run: capabilityRunner(w.registry) });
+    const turn = await assistant.converse(hillevi, { text: 'Visa mitt lönebesked' });
+    expect(told).toEqual([{ error: TOOL_INVALID }, { error: TOOL_UNANSWERED }]);
+    expect(JSON.stringify(told)).not.toContain('lon_2026');
+    expect(turn.thread.messages.at(-1)!.meta?.reads).toEqual([
+      { capability: 'payroll.slips', failed: true },
+      { capability: 'payroll.slips', failed: true },
+    ]);
   });
 });
 
@@ -791,7 +975,7 @@ describe('a question answered from documents, with the model (D26)', () => {
     const w = world({ generate });
     w.registry.register(docs);
     w.registry.register(
-      searchConnector(searchUsecases({ sources: a => w.registry.searchSources(a), clock: w.deps.clock })),
+      searchConnector(searchUsecases({ sources: (a, o) => w.registry.searchSources(a, o), clock: w.deps.clock })),
     );
     const r = await w.assistant.converse(hassan, { text: 'Brukaren har ramlat men verkar oskadd, vad gör jag?' });
     expect(r).toMatchObject({
@@ -1549,6 +1733,45 @@ describe('the assistant switch keeps a connector from the model, not only its to
     expect(model.systems[2]).not.toContain(card.summary);
     expect(model.systems[2]).not.toContain('Något ur Ekonomisystemet');
   });
+  test('an answer written while an answer from a connector was heard is withheld with it once the connector is closed', async () => {
+    const heard: string[] = [];
+    const texts = ['Tre fakturor väntar på attest.', 'Ja, alla tre ska attesteras.', 'Svar.'];
+    const generate: ModelGenerate = async ({ messages }) => {
+      heard.push(JSON.stringify(messages));
+      return { text: texts.shift()!, toolCalls: [] };
+    };
+    const w = world({ generate });
+    await w.threads.ensureThreads(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
+    const chip = { ref: 'thread:' + card.id, kind: 'thread' as const, label: card.title };
+    const first = await w.assistant.converse(hillevi, { text: 'Vad står det här?', chips: [chip] });
+    // The second answer read nothing and was pointed at nothing; it heard the first, so it was written from that too.
+    const second = await w.assistant.converse(hillevi, { text: 'Alla?', conversationId: first.conversationId });
+    expect(second.thread.messages.at(-1)!.meta?.basis).toEqual({ items: [card.id], connectors: ['finance'] });
+    w.registry.govern('finance', { ...openGovernance(), toolsEnabled: false });
+    await w.assistant.converse(hillevi, { text: 'Och nu?', conversationId: first.conversationId });
+    expect(heard[2]).not.toContain('Tre fakturor väntar');
+    expect(heard[2]).not.toContain('alla tre ska attesteras');
+    expect(heard[2]!.match(/Ett tidigare svar som inte lämnas till dig/g)).toHaveLength(2);
+  });
+  test('an answer the router wrote is heard by a later turn’s model as material quoted from other systems, on one line', async () => {
+    const heard: string[] = [];
+    const generate: ModelGenerate = async ({ messages }) => {
+      heard.push(JSON.stringify(messages));
+      return { text: 'Svar.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    w.health.mark('llm', false, T0);
+    const day = await w.assistant.converse(hillevi, { text: 'Vad har jag i dag?' });
+    // The model is down, so the router answers in its place.
+    expect(day.assistant).toBe('unavailable');
+    w.health.mark('llm', true, T0);
+    await w.assistant.converse(hillevi, { text: 'Och i morgon?', conversationId: day.conversationId });
+    const earlier = JSON.parse(heard[0]!).find((m: { role: string }) => m.role === 'assistant');
+    expect(earlier.content).toStartWith('(Startsidans eget svar, skrivet utan dig, med text ur andra system:) ');
+    expect(earlier.content).toContain('APT');
+    expect(earlier.content).not.toContain('\n');
+  });
   test('a router answer from a closed connector is not handed to the model later in the conversation', async () => {
     const model = reading();
     const w = world({ generate: model.generate });
@@ -1572,6 +1795,83 @@ describe('the assistant switch keeps a connector from the model, not only its to
       '- "Anna" är Anna Lindqvist på Skönsmons skola, användarnamn anna. Inga öppna ärenden om medarbetaren under Behöver dig.',
     );
     expect(model.offered[0]).not.toContain('clew__draftAction');
+  });
+  /** A source of the composite search: what it found is one passage, and it notes that it was asked. */
+  const searchSource = (id: string, source: string, asked: string[]): Connector => ({
+    id,
+    kind: 'passthrough',
+    source,
+    areas: [],
+    capabilities: [
+      {
+        name: id + '.search',
+        kind: 'read',
+        title: 'Sök',
+        description: 'x',
+        input: {} as never,
+        output: {} as never,
+        model: false,
+        scope: {},
+        run: async () => {
+          asked.push(id);
+          return {
+            rows: [{ ref: id + '-1', kind: 'document', label: 'Rutin ur ' + source, snippet: 'Lyft inte.', source }],
+          };
+        },
+      },
+    ],
+  });
+  test('a turn’s search, the model’s or the router’s, leaves out a source closed to the assistant, and an answer from hits is withheld once their source is closed (AM-9)', async () => {
+    const asked: string[] = [];
+    const heard: string[] = [];
+    const offered: string[][] = [];
+    const handed: unknown[] = [];
+    const generate: ModelGenerate = async ({ messages, tools }) => {
+      heard.push(JSON.stringify(messages));
+      offered.push(Object.keys(tools));
+      const search = tools['clew__search'] as Callable | undefined;
+      if (!search) return { text: 'Det kan jag inte söka i.', toolCalls: [] };
+      const output = await search.execute({ query: 'fall' }, {});
+      handed.push(output);
+      return {
+        text: 'Lyft inte själv [1].',
+        toolCalls: [{ capability: 'clew.search', input: { query: 'fall' }, output }],
+      };
+    };
+    const w = world({ generate });
+    w.registry.register(searchSource('intranet', 'Intranätet', asked));
+    w.registry.register(searchSource('wiki', 'Wikin', asked));
+    w.registry.register(
+      searchConnector(searchUsecases({ sources: (a, o) => w.registry.searchSources(a, o), clock: w.deps.clock })),
+    );
+    w.registry.govern('intranet', { ...openGovernance(), toolsEnabled: false });
+    // The router reads for the model too: what it answers, a later turn's model hears.
+    w.health.mark('llm', false, T0);
+    const routed = await w.assistant.converse(hassan, { text: 'brukaren har ramlat men verkar oskadd, vad gör jag?' });
+    expect(routed.view?.capability).toBe('clew.search');
+    expect(asked).toEqual(['wiki']);
+    expect(routed.thread.messages.at(-1)!.meta?.basis).toEqual({ connectors: ['wiki'] });
+    w.health.mark('llm', true, T0);
+    asked.length = 0;
+    const first = await w.assistant.converse(hassan, { text: 'Brukaren har ramlat, vad gör jag?' });
+    expect(asked).toEqual(['wiki']);
+    expect(JSON.stringify(handed)).not.toContain('Intranätet');
+    // The systems the hits came from are what the answer was written from.
+    expect(first.thread.messages.at(-1)!.meta?.basis).toEqual({ connectors: ['wiki'] });
+    // A read of the closed source the model asks for, through a composite or not, does not exist for it.
+    await expect(
+      w.registry.run(audiencedActorOf(hassan), 'intranet.search', {}, { caller: 'assistant', forModel: true }),
+    ).rejects.toMatchObject({ code: 'not-found' });
+    // With every source closed the search is not offered at all, and the answer written from the wiki is withheld.
+    w.registry.govern('wiki', { ...openGovernance(), toolsEnabled: false });
+    await w.assistant.converse(hassan, { text: 'Och om hon slagit i huvudet?', conversationId: first.conversationId });
+    expect(offered[1]).not.toContain('clew__search');
+    expect(heard[1]).not.toContain('Lyft inte själv');
+    expect(heard[1]).toContain('Ett tidigare svar som inte lämnas till dig');
+    // The person's own search reads every source they may: the switches are the assistant's alone.
+    asked.length = 0;
+    await w.registry.run(audiencedActorOf(hassan), 'clew.search', { query: 'fall' });
+    expect(asked.sort()).toEqual(['intranet', 'wiki']);
   });
 });
 
@@ -1628,7 +1928,7 @@ test('a question the search answers asks a source for one provisioned group only
   const w = world();
   w.registry.register(docs);
   w.registry.register(
-    searchConnector(searchUsecases({ sources: a => w.registry.searchSources(a), clock: w.deps.clock })),
+    searchConnector(searchUsecases({ sources: (a, o) => w.registry.searchSources(a, o), clock: w.deps.clock })),
   );
   w.registry.govern('docs', { ...openGovernance(), audience: { mode: 'selected', groups: ['S-1-5-21-omsorg'] } });
   // The router sends a question no read answers to the composite search, as the person with their groups.
@@ -1885,6 +2185,43 @@ describe('the assistant starts a work item from a propose, the person sends it',
     for (const id of [a.threadId, c.threadId, d.threadId]) expect(audit(w.store, id)).toEqual(['thread.started']);
   });
 
+  test('a turn stopped after its propose became an item writes conversation.stopped on the conversation, naming the item and the model (AM-6)', async () => {
+    const stop = new AbortController();
+    let proposing = false;
+    const generate: ModelGenerate = async ({ tools, signal }) => {
+      if (!proposing) return { text: 'Vad är det för fel på den?', toolCalls: [] };
+      await (tools['desk__reportFault'] as Callable).execute(said, {});
+      stop.abort();
+      if (signal?.aborted) throw new Error('aborted');
+      return { text: 'Klart.', toolCalls: [] };
+    };
+    const w = world({ generate, extra: [desk([])] });
+    const first = await w.assistant.converse(hassan, { text: 'Min dator krånglar' });
+    proposing = true;
+    await expect(
+      w.assistant.converse(
+        hassan,
+        { text: 'Felanmäl den', conversationId: first.conversationId },
+        { signal: stop.signal },
+      ),
+    ).rejects.toBeInstanceOf(TurnStopped);
+    const [card] = await deskCards(w);
+    // The item stays the person's, with its own row; the turn's row is about the conversation and names it.
+    expect(audit(w.store, card!.id)).toEqual(['thread.started']);
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'person:hassan',
+      action: 'conversation.stopped',
+      subject: 'thread:' + first.conversationId,
+      at: T0,
+      details: {
+        chips: [],
+        started: { thread: card!.id, capability: 'desk.reportFault' },
+        model: 'open-model',
+        modelCall: { providerId: 'llm', durationMs: 0, traceId: '0af7651916cd43dd8448eb211c80319c' },
+      },
+    });
+    expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('Felanmäl den');
+  });
   test('a model that fails after its propose became an item still answers with the item, and starts no second one', async () => {
     const failing: ModelGenerate = async ({ tools }) => {
       await (tools['desk__reportFault'] as Callable).execute(said, {});
@@ -1904,9 +2241,16 @@ describe('the assistant starts a work item from a propose, the person sends it',
         source: 'Servicedesken',
       },
     });
+    // The turn's row names the item the model's propose started and the model the turn was sent to (D91).
     expect(w.store.audit.at(-1)).toMatchObject({
       action: 'conversation.asked',
-      details: { assistant: 'unavailable', drafted: { thread: card!.id, action: 'send' } },
+      details: {
+        assistant: 'unavailable',
+        drafted: { thread: card!.id, action: 'send' },
+        started: { thread: card!.id, capability: 'desk.reportFault' },
+        model: 'open-model',
+        modelCall: { providerId: 'llm' },
+      },
     });
   });
 

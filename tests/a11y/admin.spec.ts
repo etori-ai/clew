@@ -128,6 +128,58 @@ test.describe('administration', () => {
       await expect(header).toBeFocused();
       await expectNoAxeViolations(page);
     });
+    test("a change refused because the connector was saved since says so in the list page's toast and leaves the switch as it now is (DE-M5)", async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/connectors');
+      const toggle = page.getByRole('switch', { name: 'Personalsystemet på' });
+      await expect(toggle).toBeChecked();
+      // Another administrator changes the connector meanwhile; this page still shows the version it read.
+      api.connectors = api.connectors.map(c => (c.id === 'hr' ? { ...c, version: c.version + 1 } : c));
+      await toggle.focus();
+      await page.keyboard.press('Space');
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Anslutningen har ändrats sedan du öppnade den.'));
+      await expect(toggle).toBeChecked();
+      expect(api.connectors.find(c => c.id === 'hr')!.state).toBe('enabled');
+      expect((await focused(page)).tag).toBe('input');
+      await expect(toggle).toBeFocused();
+    });
+    test('the add dialog says that the draft was changed since, shows it as it now is, and switches it on when tried again (DE-M5)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/connectors');
+      await page.getByRole('button', { name: 'Anslut system' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Anslut system' });
+      await dialog.getByRole('textbox', { name: /^Id/ }).fill('nytt');
+      await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://nytt:4010');
+      await dialog.getByLabel(/Delad nyckel/).fill('en-tillräckligt-lång-nyckel');
+      await dialog.getByRole('button', { name: 'Kontrollera' }).click();
+      await dialog.getByRole('button', { name: 'Nästa' }).click();
+      await dialog.getByRole('button', { name: 'Nästa' }).click();
+      await expect(dialog.getByRole('heading', { level: 3, name: 'Aktivera' })).toBeFocused();
+      // Another administrator changes the draft while this dialog is open.
+      api.connectors = api.connectors.map(c => (c.id === 'nytt' ? { ...c, version: c.version + 1 } : c));
+      const enable = dialog.getByRole('button', { name: 'Slå på' });
+      await enable.focus();
+      await page.keyboard.press('Enter');
+      await expect(
+        dialog.getByRole('alert').filter({ hasText: 'Anslutningen har ändrats sedan du öppnade den.' }),
+      ).toBeVisible();
+      expect(api.connectors.find(c => c.id === 'nytt')!.state).toBe('draft');
+      await expect(dialog).toBeVisible();
+      await expectNoAxeViolations(page);
+      // The dialog read the draft again, so trying again is made on the version it now shows.
+      await enable.focus();
+      await page.keyboard.press('Enter');
+      await expect(dialog).toHaveCount(0);
+      expect(api.connectors.find(c => c.id === 'nytt')!.state).toBe('enabled');
+    });
     test('a person without the grant sees no data and one way back', async ({ page, api: _ }) => {
       await page.goto('/admin/connectors');
       await expect(
@@ -235,10 +287,13 @@ test.describe('administration', () => {
       let lens = false;
       let column: string | null = null;
       let refuse = false;
+      // Every saved change is a new version of the connector (DE-M5), so the next change names the one it returned.
+      let version = 1;
       const detail = () => {
         const base = connectorDetail(api.connectors.find(c => c.id === 'hr')!);
         return {
           ...base,
+          version,
           capabilities: [
             ...base.capabilities,
             {
@@ -278,6 +333,7 @@ test.describe('administration', () => {
           });
         if (body.lens) lens = body.lens['hr.presence'] ?? lens;
         if (body.column) column = body.column['hr.presence'] ?? null;
+        version += 1;
         return route.fulfill({ json: detail() });
       });
       await open(page, '/admin/connectors/hr');
@@ -300,7 +356,8 @@ test.describe('administration', () => {
       await expect(select).toContainText('Ingen kolumn');
       await select.click();
       await page.getByRole('option', { name: 'Närvaro' }).click();
-      await expect.poll(() => patches).toContainEqual({ column: { 'hr.presence': 'today' }, version: 1 });
+      // Made on the version the switch's change returned, not on the one the page was opened with.
+      await expect.poll(() => patches).toContainEqual({ column: { 'hr.presence': 'today' }, version: 2 });
       await expect(select).toContainText('Närvaro');
       // The server's limit of three columns is said as the server says it.
       refuse = true;
@@ -309,6 +366,7 @@ test.describe('administration', () => {
       await expect(
         page.getByRole('alert').filter({ hasText: 'Högst 3 kolumner kan visas under Alla för personer.' }),
       ).toBeVisible();
+      expect(patches.at(-1)).toEqual({ column: { 'hr.presence': 'upcoming' }, version: 3 });
       await expectNoAxeViolations(page);
     });
     test('the list names each connector, its status in words and its audience', async ({ page, api }) => {
@@ -692,6 +750,25 @@ test.describe('administration', () => {
       await open(page, '/admin/connectors/finance');
       expect(await reflowProblems(page)).toEqual([]);
       await expect(await pickSection(page, 'Funktioner')).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+    });
+    test('at 320 px a change refused because the connector was saved since is an alert that reflows, and focus stays on the switch (DE-M5)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await page.setViewportSize(narrow);
+      await open(page, '/admin/connectors/finance');
+      const panel = await pickSection(page, 'Områden');
+      const header = panel.getByRole('switch', { name: 'Ger sidhuvudet', exact: true });
+      await expect(header).not.toBeChecked();
+      api.connectors = api.connectors.map(c => (c.id === 'finance' ? { ...c, version: c.version + 1 } : c));
+      await header.focus();
+      await page.keyboard.press('Space');
+      const alert = page.getByRole('alert').filter({ hasText: 'Anslutningen har ändrats sedan du öppnade den.' });
+      await expect(alert).toBeVisible();
+      await expect(header).not.toBeChecked();
+      await expect(header).toBeFocused();
       expect(await reflowProblems(page)).toEqual([]);
     });
     test('a check result reflows at 320 px', async ({ page, api }) => {

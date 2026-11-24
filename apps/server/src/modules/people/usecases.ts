@@ -1666,18 +1666,20 @@ export type OrganisationUsecases = ReturnType<typeof organisationUsecases>;
  * An operator's erasure of a person (Q7 of the 2026-11-12 users review, D123): `scripts/person-erase.ts` is its one
  * caller, run when the organisation's own retention decision says a leaver's record goes, after the source has stopped
  * sending the person and after the erasures of the person's cards, talks, competence, follow-up dialogue and
- * introduction and leaving, which find the person by this same id. Refused, writing nothing and no audit row, for an id the people table does not hold and for a person who is
- * still active: only a person the source has deactivated is erased (D68 item 1). In one transaction it takes the person
- * out of their groups, removes their placements, grant, sign-in bindings under every issuer and sessions, clears the
- * personal fields and takes the user name and the source key away (`erasedProfile`: the record then reads as its id),
- * so that a later push of the same name or key creates a new person and no key resolves to this one, which refuses a
- * started action about them (D122). It replaces the person's identifiers in the audit trail with `ERASED` and keeps
- * every event: the user names, source keys, claims and sign-in subjects the rows about them hold (`IDENTIFIERS_ABOUT`),
- * the subject a refused sign-in brought when the person held it (`IDENTIFIERS_AS_HOLDER`), and the claims of the
- * authentication log that named one of their user names or their e-mail address. It clears the name and the address
- * every invitation to them was drawn with (a manager's proposals that invite them), whose rows stay. The row, its id and
- * every reference to it stay, so the person's id keeps naming them in the records that point at it. One `person.erased`
- * row, counts only, says what went.
+ * introduction and leaving, which find the person by this same id. Refused, writing nothing and no audit row, for an id
+ * the people table does not hold and for a person who is still active: only a person the source has deactivated is
+ * erased (D68 item 1). In one transaction it takes the person out of their groups, removes their placements, grant,
+ * sign-in bindings under every issuer and sessions, clears the personal fields and takes the user name and the source
+ * key away (`erasedProfile`: the record then reads as its id), so that a later push of the same name or key creates a
+ * new person and no key resolves to this one, which refuses a started action about them (D122). It replaces the
+ * person's identifiers in the audit trail with `ERASED` and keeps every event: the user names, source keys, claims and
+ * sign-in subjects the rows about them hold (`IDENTIFIERS_ABOUT`), the subject a refused sign-in brought when the
+ * person held it (`IDENTIFIERS_AS_HOLDER`), and the claims of the authentication log that named one of their user
+ * names or their e-mail address. Through the erasure port, which composition binds to the calendar (`ErasureTx`), it
+ * clears the name and the address every invitation to them was drawn with, takes the rows that named them off their
+ * managers' planning cards and withdraws the times drawn for them and never sent; the invitations stay. The row, its
+ * id and every reference to it stay, so the person's id keeps naming them in the records that point at it. One
+ * `person.erased` row, counts only, says what went.
  */
 export const PERSON_ERASED = 'person.erased';
 export interface PersonErased {
@@ -1695,6 +1697,10 @@ export interface PersonErased {
   signInRows: number;
   /** Invitations to the person (the calendar's proposals) cleared of the name and the address they were drawn with. */
   invitations: number;
+  /** Rows that named the person on their managers' planning cards, taken off the cards. */
+  planningRows: number;
+  /** Times drawn for the person and never sent, withdrawn. */
+  drafts: number;
 }
 export type PersonErasure = { refused: 'unknown' | 'active' } | { erased: PersonErased };
 export function personErasureUsecases(deps: { store: ProvisionStore; clock: () => Date }) {
@@ -1733,9 +1739,9 @@ export function personErasureUsecases(deps: { store: ProvisionStore; clock: () =
           sessions = await tx.removeSessions(personId);
         const auditRows = await tx.redactAudit(redactions);
         const signInRows = await tx.eraseClaims(namesHeld(person, about), ERASED);
-        // Other people's records that hold the person's name and address: the invitations a manager sent them, which
-        // stay, by the person's id, as the manager's history and the round's count (D123).
-        const invitations = await tx.eraseInvitations(personId);
+        // Other people's records that name the person: the invitations a manager sent them, which stay, by the person's
+        // id, as the manager's history and the round's count, and the rows of the managers' planning cards (D123).
+        const { invitations, planningRows, drafts } = await tx.erasure.invitee({ actor, personId, at });
         // The resource a provisioner reads changes when a field is cleared or a group is no longer listed (S13): a
         // stale push that put the erased person back in a group is undone by a second erasure, which moves it too.
         if (fields || memberships) await tx.updateUser(personId, { ...erasedProfile(), updatedAt: at });
@@ -1749,6 +1755,8 @@ export function personErasureUsecases(deps: { store: ProvisionStore; clock: () =
           auditRows,
           signInRows,
           invitations,
+          planningRows,
+          drafts,
         };
         await tx.audit({ actor, action: PERSON_ERASED, subject, details: { ...erased } });
         return { erased };

@@ -14,7 +14,7 @@ export const jobs = jobUsecases({
   bindings: followBindings,
   followers: (actor, kind) => registry.followers(actor, kind),
   offered: kind => registry.offered(kind),
-  visible: (actor, connectorId) => registry.visible(actor, connectorId),
+  inConnectorAudience: (actor, connectorId) => registry.inAudienceOf(actor, connectorId),
   refresh: () => registry.refreshGovernance(),
   digest: value => createHash('sha256').update(JSON.stringify(value)).digest('hex'),
   ledger: executions,

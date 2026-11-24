@@ -25,7 +25,7 @@ import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dat
 import { InputError } from '../context';
 import { cardRows, namedItems, type CardRows } from './card';
 import { resolveChips, type ResolvedChips, type ResolvedObject } from './chips';
-import { serialiseContext } from './context';
+import { serialiseContext, sourceLine } from './context';
 import { routeFixed } from './fixed';
 import {
   headingFollowUps,
@@ -39,6 +39,8 @@ import {
   viewInput,
 } from './router';
 import {
+  FIXED_ANSWER,
+  HISTORY_MESSAGE_MAX,
   modelAnswer,
   ModelUnavailable,
   systemPrompt,
@@ -116,7 +118,8 @@ export interface TurnObserver {
   signal?: AbortSignal;
   /**
    * The caller can ask the person whether a question should go to another system's assistant (D125 item 11): only
-   * then is Clew's own model offered the choice, and a choice ends the turn as `HandoverOffered`, with nothing saved.
+   * then is Clew's own model offered the choice, and a choice ends the turn as `HandoverOffered`, with no conversation
+   * saved: its audit row (`conversation.offered`) says which model was sent what.
    */
   offers?: boolean;
 }
@@ -133,7 +136,11 @@ type TurnRead = { capability: string; rows?: number; failed?: true };
 interface Turn {
   emit: (event: TurnEvent) => void;
   signal: AbortSignal | undefined;
-  /** Run a capability for the turn; `model` names the model whose tool call it is, for a propose's audit row. */
+  /**
+   * Run a capability for the turn; `model` names the model whose tool call it is, and a propose's audit row says so.
+   * Every read of a turn, the router's as the model's, holds only what the assistant may have (`RunContext.forModel`):
+   * what it answers is the model's now or later in the conversation.
+   */
   run: <O = unknown>(name: string, input: unknown, by?: { model: string }) => Promise<O>;
   reads: TurnRead[];
   /** The work item a propose called in this turn became, and what the propose was given (`begin`). */
@@ -158,9 +165,28 @@ const isSearchResult = (v: unknown): v is SearchResult =>
 const EARLIER_MAX = 10;
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 /**
+ * The connectors the rows of a read's answer come from (`MessageMeta.basis`): a composite's hit or row names the
+ * connector it is from (`connector`; a search hit several sources found names each of them in `sources`), and so does
+ * a row of the person's work items. An answer written from such rows is theirs too, so closing one of those connectors
+ * to the assistant later withholds the answer from the history (D122 item 4), whichever read carried the rows.
+ */
+function rowConnectors(view: View | undefined, output: unknown): string[] {
+  const rows = view ? viewRows(view, output) : isRecord(output) ? output.rows : undefined;
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap(row => {
+    if (!isRecord(row)) return [];
+    const merged = Array.isArray(row.sources) ? row.sources : [];
+    return [row, ...merged].flatMap(r => (isRecord(r) && typeof r.connector === 'string' ? [r.connector] : []));
+  });
+}
+/**
  * An earlier turn as Clew's model hears it (D125): a question the person sent to another system's assistant, and what
  * that assistant answered, say so in their first words, so the model reads them as an exchange it listened to and
- * never as its own answer or its own read. A turn the other system failed to answer is Clew's own words already.
+ * never as its own answer or its own read. A turn the other system failed to answer is Clew's own words already. An
+ * answer Clew wrote without a model (the router, also when the model did not answer) quotes what other systems wrote:
+ * a work item's summary and why now, a meeting's title, a hit's label. It is heard as such material (D122): on one line
+ * (`sourceLine`), after `FIXED_ANSWER`, which the first rule of the prompt names, so a line a source planted in a
+ * summary is read as material and never as Clew's own words to the model.
  */
 export const heardBody = (m: Pick<Thread['messages'][number], 'role' | 'body' | 'meta'>): string => {
   // A question the person brought to Clew from the panel is a question to Clew.
@@ -170,6 +196,8 @@ export const heardBody = (m: Pick<Thread['messages'][number], 'role' | 'body' | 
   if (handover?.declined) return `(${handover.name} i ${handover.source} svarade inte på frågan.)`;
   if (handover && !handover.failed)
     return `(Det här svarade ${handover.name} i ${handover.source}, inte du. Det är inget du själv har läst.) ${m.body}`;
+  if (m.role === 'assistant' && (m.meta?.assistant === 'router' || m.meta?.assistant === 'unavailable'))
+    return `${FIXED_ANSWER} ${sourceLine(m.body, HISTORY_MESSAGE_MAX - FIXED_ANSWER.length - 1)}`;
   return m.body;
 };
 const whyLine = (t: Thread) =>
@@ -330,10 +358,13 @@ export function assistantUsecases(deps: AssistantDeps) {
       try {
         // A propose is never run as a read: asked for in a conversation it becomes a work item the person decides on,
         // through the same use case as an item the person starts themselves. What it was given is kept for the draft.
-        // Every read of the turn is the assistant's, made for the person (D122 items 5 and 6).
+        // Every read of the turn is the assistant's, made for the person (D122 items 5 and 6), and what it answers is
+        // the model's, now or when a later turn hears the answer: the registry keeps from it what the administrator has
+        // closed to the assistant (D122 item 4), the router's reads as the model's, as the router routes only to the
+        // reads `Registry.tools` offers.
         const output = proposed
           ? ((await begin(name, input, by)) as O)
-          : await deps.run<O>(persona, name, input, { caller: 'assistant' });
+          : await deps.run<O>(persona, name, input, { caller: 'assistant', forModel: true });
         emit({ type: 'step', step: { ...step, status: 'complete', ms: took() } });
         // A propose that became a work item is not a read: the item has its own audit row.
         if (proposed) return output;
@@ -574,6 +605,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         toolCalls: [{ capability: match.name, input, output }],
         ...(answer.view ? { view: answer.view } : {}),
         ...(answer.view && rows ? { viewRows: { count: rows.length, show: 'all' as const } } : {}),
+        basis: basisOf([], rowConnectors(match.view, output)),
       };
     }
     // The catch-all (D26): a question no capability answers goes to the composite search as typed, and the hits become a view the person reads.
@@ -592,6 +624,8 @@ export function assistantUsecases(deps: AssistantDeps) {
         toolCalls: [{ capability: SEARCH_TOOL, input, output }],
         sources: citationsOf(output),
         view: { capability: SEARCH_TOOL, input, title: 'Källor', source: searchTool.source },
+        // The hits' labels are in the sentence: the answer is written from their systems.
+        basis: basisOf([], rowConnectors(undefined, output)),
       };
     }
     const near = nearest(text, tools).map(t => t.title);
@@ -639,7 +673,9 @@ export function assistantUsecases(deps: AssistantDeps) {
    * streams to the turn's listener as it is written, the trailer held back (D36); when the router takes over, the
    * listener is told to start the text over. A stop is not a failure. What the call cost is the turn's record whatever
    * the outcome (`Turn.called`). Nothing the administrator has closed to the assistant reaches the model (D122 item 4):
-   * a read, a thing the person pointed at, a work item about a person, an earlier answer written from one.
+   * a read, nor through a read (a composite's source, a work item of a closed system in the person's pile: the model's
+   * reads say `forModel`), a thing the person pointed at, a work item about a person, an earlier answer written from
+   * one or from rows one answered.
    */
   async function modelPath(
     persona: AuthenticatedContext,
@@ -838,8 +874,8 @@ export function assistantUsecases(deps: AssistantDeps) {
       const shape: Produced['shape'] = draft || turn.started ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
       // What the answer was written from besides this turn's reads (`MessageMeta.basis`): the work items whose own text
       // the prompt carried (a guarded item's title and buttons are not its text), the systems of everything the person
-      // pointed at and of the work about the people the turn named or looked up, and what the earlier answers it heard
-      // were written from.
+      // pointed at, of the work about the people the turn named or looked up and of the rows its reads answered (a
+      // composite's hits and rows, the person's work items), and what the earlier answers it heard were written from.
       const pointedAt = chips.objects.filter(objectOpen);
       const basis = basisOf(
         [
@@ -849,6 +885,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         [
           ...pointedAt.map(o => originOf(o).connector),
           ...[...namedWork(told), ...[...lookedUp.values()].flatMap(p => told.work(p))].map(t => t.connector),
+          ...answered.flatMap(r => rowConnectors(registry.find(r.capability)?.capability.view, r.output)),
           ...inherited.connectors,
         ],
         inherited.capabilities,
@@ -903,8 +940,9 @@ export function assistantUsecases(deps: AssistantDeps) {
    * messages and its audit row are still written together once the answer is known, and a turn stopped before that
    * writes nothing of the conversation. A work item a propose became before the stop is not the turn's: it was
    * committed with its own audit row when it started, and stays as the person's open item. A turn that ends without an
-   * answer after it called a model, read anything or started a work item (stopped, or offered to another system's
-   * assistant) still writes its audit row (`unanswered`): which model was sent what is never lost (D91, D122 item 8).
+   * answer after it called a model, read anything or started a work item (stopped, offered to another system's
+   * assistant, or failed on the way) still writes its audit row (`unanswered`): which model was sent what is never lost
+   * (D91, D122 item 8).
    */
   async function converse(
     persona: AuthenticatedContext,
@@ -918,28 +956,41 @@ export function assistantUsecases(deps: AssistantDeps) {
     try {
       return await answerTurn(persona, input, observer, turn);
     } catch (e) {
-      if (e instanceof TurnStopped || e instanceof HandoverOffered) await unanswered(persona, input, turn, e);
+      try {
+        await unanswered(persona, input, turn, e);
+      } catch (failure) {
+        // The turn's own error is what the person is told; a record that could not be written is logged beside it.
+        deps.log(
+          'assistant: the audit row of a turn without an answer was not written:',
+          String(failure).slice(0, 200),
+        );
+      }
       throw e;
     }
   }
   /**
    * The audit row of a turn that ends without an answer: `conversation.stopped` when the person pressed Stoppa,
-   * `conversation.offered` when the model suggested another system's assistant and the person is asked first. It says
-   * which model the turn was sent to and what the call cost, every read the turn made with its count, the work item a
-   * propose became and the assistant offered; never a word of the question or of what was read. A turn that did none of
-   * that writes nothing. The subject is the conversation, or the person when the turn was to start one.
+   * `conversation.offered` when the model suggested another system's assistant and the person is asked first, and
+   * `conversation.failed` when anything else ended it (a read the router made that failed, a store that did not
+   * answer), with the error's kind (`failure`, its class name) and never its message, which may hold the source's words
+   * or a statement's values. It says which model the turn was sent to and what the call cost, every read the turn made
+   * with its count, the work item a propose became and the assistant offered; never a word of the question or of what
+   * was read. A turn that did none of that writes nothing. The subject is the conversation, or the person when the turn
+   * was to start one. A failure is its own action and not a stop with a reason, so a count of the stops the people
+   * pressed stays a count of those.
    */
-  async function unanswered(
-    persona: AuthenticatedContext,
-    input: ConversationInput,
-    turn: Turn,
-    ended: TurnStopped | HandoverOffered,
-  ) {
+  async function unanswered(persona: AuthenticatedContext, input: ConversationInput, turn: Turn, ended: unknown) {
     if (!turn.called && !turn.reads.length && !turn.started) return;
+    const action =
+      ended instanceof TurnStopped
+        ? 'conversation.stopped'
+        : ended instanceof HandoverOffered
+          ? 'conversation.offered'
+          : 'conversation.failed';
     await store.transaction(tx =>
       tx.writeAudit({
         actor: persona.principal.id,
-        action: ended instanceof TurnStopped ? 'conversation.stopped' : 'conversation.offered',
+        action,
         subject: input.conversationId ? 'thread:' + input.conversationId : 'person:' + persona.id,
         at: clock().toISOString(),
         details: {
@@ -948,6 +999,9 @@ export function assistantUsecases(deps: AssistantDeps) {
           ...(turn.started ? { started: { thread: turn.started.threadId, capability: turn.started.capability } } : {}),
           ...(turn.called ? { model: turn.called.model.id, modelCall: turn.called.call } : {}),
           ...(ended instanceof HandoverOffered ? { offered: ended.assistant.id } : {}),
+          ...(action === 'conversation.failed'
+            ? { failure: (ended instanceof Error ? ended.name : typeof ended).slice(0, 40) }
+            : {}),
         },
       }),
     );
@@ -1015,7 +1069,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           : [];
       const outcome = await modelPath(persona, input.text, history, context, model, turn, people, routable);
       // The model suggests an assistant of another system: the person is asked before anything leaves Clew, and the
-      // turn ends here with nothing saved, as a stopped one does.
+      // turn ends here with no conversation saved, as a stopped one does; its audit row is `unanswered`'s.
       if ('handTo' in outcome) {
         const suggested = routable.find(a => a.id === outcome.handTo);
         if (suggested) throw new HandoverOffered(suggested);

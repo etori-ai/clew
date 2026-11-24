@@ -1,4 +1,4 @@
-import type { Actor } from '@clew/connectors';
+import type { Actor, SourceOptions } from '@clew/connectors';
 import type { SearchKind, ViewOpen } from '@clew/contracts';
 
 /**
@@ -14,7 +14,11 @@ export interface SearchSourceRef {
   kinds?: SearchKind[];
   open?: ViewOpen;
 }
-export type SearchSources = (actor: Actor) => SearchSourceRef[];
+/**
+ * The sources the person may use now; with `forModel` (the model's own read, D122 item 4) only those the administrator
+ * has not closed to the assistant.
+ */
+export type SearchSources = (actor: Actor, options?: SourceOptions) => SearchSourceRef[];
 export type SearchCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface SearchBudget {
   /** Milliseconds one source gets before it counts as `timeout`. */

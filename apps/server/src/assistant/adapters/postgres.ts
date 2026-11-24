@@ -36,6 +36,10 @@ const modelOf = (row: typeof models.$inferSelect): ModelRecord => ({
   version: row.version,
 });
 const txOf = (tx: Transaction): ModelTx => ({
+  async lockProvider(id) {
+    const [row] = await tx.select().from(modelProviders).where(eq(modelProviders.id, id)).for('update');
+    return row ? providerOf(row) : undefined;
+  },
   async insertProvider(r) {
     const inserted = await tx
       .insert(modelProviders)

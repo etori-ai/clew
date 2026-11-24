@@ -6,7 +6,17 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
 import { changeNotices } from './thread-cache';
-import { LinkProvider, Providers, SessionBoundary, VisuallyHidden, type BrowserSession } from '@clew/ui';
+import {
+  LinkProvider,
+  Providers,
+  SessionBoundary,
+  SessionUnreachable,
+  VisuallyHidden,
+  readSession,
+  retryDelay,
+  type BrowserSession,
+  type SessionAnswer,
+} from '@clew/ui';
 import type { Capability, RelationGrant, SessionUser, SiteHeaderView } from '@clew/contracts';
 import { HeldCapabilities, HeldRelations, capabilitiesOf, relationsOf } from './capabilities';
 import { FirstLoad } from './components/shell/first-load';
@@ -18,6 +28,7 @@ import { ConversationProvider } from './components/conversation/conversation-con
 import { ReviewPage } from './pages/review';
 import { legacyReview, reviewPageFrom } from './review-address';
 import { clearDrafts } from './review-session';
+import { forgetShown } from './conversation-shown';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { ToolsPage } from './pages/tools';
@@ -60,6 +71,32 @@ type Shell = {
   /** D121: the relations to people held by grant: whether Kompetens offers its search. Never an admin flag. */
   relations: RelationGrant[];
 };
+/** `GET /api/auth/session` as the server answers it. */
+type SessionData = BrowserSession & { user: SessionUser; admin?: unknown; capabilities?: unknown; relations?: unknown };
+const shellOf = (data: SessionData): Shell => ({
+  session: { csrfToken: data.csrfToken, sessionKey: data.sessionKey, expiresAt: data.expiresAt },
+  user: data.user,
+  admin: data.admin === true,
+  capabilities: capabilitiesOf(data.capabilities),
+  relations: relationsOf(data.relations),
+});
+/**
+ * The shared header is public: it is read beside the session, so the first frame is the shell in its final shape
+ * (`FirstLoad`), with the band when a header connector answers and without it when none does, never first one and then
+ * the other (app critique, 2026-11-13). A failed read is no band, and the shell asks for it again.
+ */
+const readHeader = () =>
+  fetch('/api/header', { cache: 'no-store' })
+    .then(async response => (response.ok ? ((await response.json()) as SiteHeaderView) : null))
+    .catch(() => null);
+/**
+ * The first load's reads leave together: the session and the shared header beside the installation's appearance, which
+ * is read before anything is drawn, so the page's own reads leave one round trip after the first frame (L9 of the web
+ * review of 2026-11-23). The first `Protected` takes them; a page drawn without a session (`/login`, the protocol's
+ * pages) leaves them unread. Each is a promise of what was read, never of a response, so it can be taken twice.
+ */
+let firstSession: Promise<SessionAnswer<SessionData>> | null = readSession<SessionData>();
+let firstHeader: Promise<SiteHeaderView | null> | null = readHeader();
 /**
  * The cache inspector, development only and only when asked for (`VITE_QUERY_DEVTOOLS=true`): its floating button sits
  * over the page's bottom corner, where a box's send button is. The production bundle, the a11y suite and a deployment
@@ -76,58 +113,97 @@ const Devtools =
 function Protected({ children }: { children: (shell: Shell) => React.ReactNode }) {
   const [shell, setShell] = useState<Shell | 'loading' | 'anonymous'>('loading');
   const [header, setHeader] = useState<SiteHeaderView | null | undefined>(undefined);
+  // Clew did not answer the session's read: said in the page's place, and asked again (D46), never a sign-out.
+  const [unreachable, setUnreachable] = useState(false);
   const [client] = useState(createQueryClient);
   const policy = useRef<string | undefined>(undefined);
+  const headerRead = useRef<Promise<SiteHeaderView | null> | null>(null);
+  // "Försök igen" on the page in Clew's place: asks at once, and says whether Clew answered.
+  const askNow = useRef<() => Promise<boolean>>(async () => false);
+  // Stops the change stream: the session's end leaves nobody to tell.
+  const stopStream = useRef<() => void>(() => undefined);
   const location = useLocation();
   useEffect(() => {
     let cancelled = false;
-    // The shared header is public: it is read beside the session, so the first frame is the shell in its final shape
-    // (`FirstLoad`), with the band when a header connector answers and without it when none does, never first one and
-    // then the other (app critique, 2026-11-13). A failed read is no band, and the shell asks for it again.
-    const header = fetch('/api/header', { cache: 'no-store' })
-      .then(async response => (response.ok ? ((await response.json()) as SiteHeaderView) : null))
-      .catch(() => null)
-      .then(view => {
-        if (!cancelled) setHeader(view);
-        if (view) client.setQueryData(keys.header, view);
-        return view;
-      });
-    fetch('/api/auth/session', { cache: 'no-store' })
-      .then(async response => {
-        if (cancelled) return;
-        if (!response.ok) {
-          setShell('anonymous');
-          return;
-        }
-        const data = await response.json();
-        await header;
-        if (cancelled) return;
-        setShell({
-          session: { csrfToken: data.csrfToken, sessionKey: data.sessionKey, expiresAt: data.expiresAt },
-          user: data.user,
-          admin: data.admin === true,
-          capabilities: capabilitiesOf(data.capabilities),
-          relations: relationsOf(data.relations),
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setShell('anonymous');
-      });
+    const read = firstHeader ?? readHeader();
+    headerRead.current = read;
+    void read.then(view => {
+      if (cancelled) return;
+      firstHeader = null;
+      setHeader(view);
+      if (view) client.setQueryData(keys.header, view);
+    });
     return () => {
       cancelled = true;
     };
   }, [client]);
+  // The session, on the first load and again after a change to the person's access. Only an explicit denial is the
+  // sign-in page; Clew out of reach is said, and asked again with a wait that grows (`retryDelay`).
+  const loading = shell === 'loading';
+  useEffect(() => {
+    if (!loading) return;
+    let cancelled = false,
+      timer: number | undefined,
+      failures = 0;
+    const ask = (answer: Promise<SessionAnswer<SessionData>>): Promise<boolean> =>
+      answer.then(async result => {
+        if (cancelled) return false;
+        firstSession = null;
+        if (result.state === 'unreachable') {
+          setUnreachable(true);
+          window.clearTimeout(timer);
+          timer = window.setTimeout(() => void ask(readSession<SessionData>()), retryDelay(failures++));
+          return false;
+        }
+        window.clearTimeout(timer);
+        if (result.state === 'signed-out') {
+          setUnreachable(false);
+          setShell('anonymous');
+          return true;
+        }
+        await headerRead.current;
+        if (cancelled) return false;
+        setUnreachable(false);
+        setShell(shellOf(result.session));
+        return true;
+      });
+    askNow.current = () => {
+      window.clearTimeout(timer);
+      failures = 0;
+      return ask(readSession<SessionData>());
+    };
+    void ask(firstSession ?? readSession<SessionData>());
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [loading]);
   useEffect(() => {
     if (shell === 'loading' || shell === 'anonymous') return;
     let source: EventSource | undefined,
-      stopped = false;
+      stopped = false,
+      retry: number | undefined,
+      failures = 0;
     // A notice that arrives while the person's own request is on its way waits for its answer (D64).
     const notices = changeNotices(client);
     const connect = () => {
+      window.clearTimeout(retry);
       source?.close();
       if (document.visibilityState === 'hidden' || stopped) return;
-      source = new EventSource('/api/changes');
-      source.onmessage = event => {
+      const current = new EventSource('/api/changes');
+      source = current;
+      current.onopen = () => {
+        failures = 0;
+      };
+      // A dropped connection is reconnected by the browser itself (it is CONNECTING again), but a reconnect answered
+      // with an HTTP error, a 502 or a 503 while the server restarts, closes it for good (D46: "transient connection or
+      // database failure allows reconnection"). It is opened again after a wait that grows; the first message on the
+      // new connection is the current revision, so whatever was committed meanwhile is read again.
+      current.onerror = () => {
+        if (stopped || current !== source || current.readyState !== EventSource.CLOSED) return;
+        retry = window.setTimeout(connect, retryDelay(failures++));
+      };
+      current.onmessage = event => {
         let change: { ended?: boolean; revision?: string; policy?: string };
         try {
           change = JSON.parse(event.data);
@@ -135,7 +211,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
           return;
         }
         if (change.ended) {
-          source?.close();
+          stop();
           void client.cancelQueries();
           client.clear();
           setShell('anonymous');
@@ -146,53 +222,54 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
         policy.current = change.policy;
         if (revoked) {
           // Reset the protected tree too: chips, generated text and panel state can contain retained source snapshots.
-          source?.close();
+          // The session is read again as on the first load.
+          stop();
           void client.cancelQueries();
           client.clear();
           setShell('loading');
-          fetch('/api/auth/session', { cache: 'no-store' })
-            .then(async response => {
-              if (!response.ok) {
-                setShell('anonymous');
-                return;
-              }
-              const data = await response.json();
-              setShell({
-                session: { csrfToken: data.csrfToken, sessionKey: data.sessionKey, expiresAt: data.expiresAt },
-                user: data.user,
-                admin: data.admin === true,
-                capabilities: capabilitiesOf(data.capabilities),
-                relations: relationsOf(data.relations),
-              });
-            })
-            .catch(() => setShell('anonymous'));
         } else notices.arrived(change.revision);
       };
     };
-    connect();
-    document.addEventListener('visibilitychange', connect);
-    window.addEventListener('online', connect);
-    return () => {
+    const reconnect = () => {
+      failures = 0;
+      connect();
+    };
+    const stop = () => {
       stopped = true;
-      notices.stop();
+      window.clearTimeout(retry);
       source?.close();
-      document.removeEventListener('visibilitychange', connect);
-      window.removeEventListener('online', connect);
+    };
+    stopStream.current = stop;
+    connect();
+    document.addEventListener('visibilitychange', reconnect);
+    window.addEventListener('online', reconnect);
+    return () => {
+      stop();
+      notices.stop();
+      document.removeEventListener('visibilitychange', reconnect);
+      window.removeEventListener('online', reconnect);
     };
   }, [client, shell]);
-  // Nobody is signed in: no review's draft from a session before stays in this tab (`review-session.ts`).
+  // Nobody is signed in: nothing of a session before stays in this tab's storage, no review's draft
+  // (`review-session.ts`) and nothing a conversation showed (`conversation-shown.ts`).
   useEffect(() => {
-    if (shell === 'anonymous') clearDrafts();
+    if (shell === 'anonymous') {
+      clearDrafts();
+      forgetShown();
+    }
   }, [shell]);
   // Until the header has answered nothing is drawn, so the shell does not change shape when it does; then the shell's
   // shape stands until the session is known.
   if (shell === 'loading')
-    return header === undefined ? (
+    return unreachable ? (
+      <SessionUnreachable onRetry={() => askNow.current()} />
+    ) : header === undefined ? (
       <VisuallyHidden role="status">Hämtar sidan …</VisuallyHidden>
     ) : (
       <FirstLoad header={header} />
     );
-  if (shell === 'anonymous') return <LoginPage returnTo={location.pathname} />;
+  // The whole address, so a link followed before signing in lands where it led, its query included (D116).
+  if (shell === 'anonymous') return <LoginPage returnTo={location.pathname + location.search} />;
   // The review lay over a page in its own part of the address until 2026-11-12; such an address leads to its page.
   const reviewPage = reviewPageFrom(location.pathname, location.search);
   if (reviewPage) return <Navigate to={reviewPage} replace />;
@@ -200,8 +277,10 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
     <SessionBoundary
       session={shell.session}
       onEnded={() => {
+        stopStream.current();
         client.clear();
         clearDrafts();
+        forgetShown();
       }}
     >
       <QueryClientProvider client={client}>
@@ -233,9 +312,8 @@ const RouterLink = forwardRef<
 /**
  * Routes (D34, D50, D112): `/` is Hem, the box under one heading with what needs the person and the day under it;
  * `/conversations/:id` a conversation in the same column (`/conversations/new` while a question asked on another page
- * is being answered). `/todo` is Att göra, the queue, with the pile as `tab`, the system as `area`, the filter's words
- * as `filter` and the chosen work item as `item` (`work-items.ts`); Hem's addresses from before it (`/?card=`, `/?tab=`,
- * `/?area=`) lead there. What the panel holds is in the query of whichever page it is beside (`panel-address.ts`).
+ * is being answered). `/todo` is Att göra, the queue, with the pile as `tab`, the system as `area` and the chosen work
+ * item as `item` (`work-items.ts`); Hem's addresses from before it (`/?card=`, `/?tab=`, `/?area=`) lead there. What the panel holds is in the query of whichever page it is beside (`panel-address.ts`).
  * `/items/:threadId` is a work item as a page (D112 item 4), with `from` as the way back, and `/items/:threadId/review`
  * the review of its rows one at a time, a page too since 2026-11-12, with the step as `step` and the same `from`
  * (`review-address.ts`). `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell

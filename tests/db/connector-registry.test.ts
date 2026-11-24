@@ -26,8 +26,8 @@ beforeAll(async () => {
   await installation.migrate();
 }, 60_000);
 
-/** A service that serves a manifest under `id`, with the source it is given. */
-function serve(source: { name: string }) {
+/** A service that serves a manifest under `connector`, `id` unless another is given, with the source it is given. */
+function serve(source: { name: string }, connector = id) {
   const server = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
@@ -35,14 +35,14 @@ function serve(source: { name: string }) {
       new URL(request.url).pathname === '/clew/manifest'
         ? Response.json({
             protocol: 1,
-            id,
+            id: connector,
             kind: 'passthrough',
             source: source.name,
             areas: [],
             scan: false,
             capabilities: [
               {
-                name: id + '.items',
+                name: connector + '.items',
                 kind: 'read',
                 title: 'Saker',
                 description: 'Öppna saker.',
@@ -59,10 +59,13 @@ function serve(source: { name: string }) {
 }
 const source = { name: 'Registret' };
 const first = serve(source),
-  moved = serve(source);
+  moved = serve(source),
+  enabledId = 'registry-enabled-' + tag,
+  enabledAtOnce = serve({ name: 'Registret på' }, enabledId);
 afterAll(async () => {
   first.server.stop(true);
   moved.server.stop(true);
+  enabledAtOnce.server.stop(true);
   await installation?.drop();
 });
 
@@ -102,7 +105,7 @@ test('registering writes a row per change that happened, keeps the state, and wr
     {
       actor: 'bootstrap:connector',
       action: 'connector.added',
-      details: { url: first.base, source: 'Registret', capabilities: 1, uses: [], delegation: null },
+      details: { url: first.base, source: 'Registret', capabilities: 1, uses: [], delegation: null, health: 'ok' },
     },
   ]);
 
@@ -197,6 +200,35 @@ test('removing closes its open cards and audits it in one transaction; an id wit
       .from(schema.audit)
       .where(eq(schema.audit.subject, 'connector:' + ownId)),
   ).toEqual([]);
+}, 60_000);
+
+test('a new connector added with --enable writes what the page writes when it is added and switched on at once', async () => {
+  // The page: `connector.added` with the health the check recorded, then the switch's `connector.enabled` from the draft.
+  const added = await runCli('scripts/connector-add.ts', enabledId, enabledAtOnce.base, '--secret', secret, '--enable');
+  expect(added).toMatchObject({ exitCode: 0, stderr: '' });
+  expect(added.stdout).toBe(`Connector "${enabledId}" (Registret på) added as enabled: 1 capabilities, 0 areas.`);
+  const rows = await installation.db
+    .select()
+    .from(schema.audit)
+    .where(eq(schema.audit.subject, 'connector:' + enabledId))
+    .orderBy(asc(schema.audit.id));
+  expect(rows.map(row => ({ actor: row.actor, action: row.action, details: row.details }))).toEqual([
+    {
+      actor: 'bootstrap:connector',
+      action: 'connector.added',
+      details: {
+        url: enabledAtOnce.base,
+        source: 'Registret på',
+        capabilities: 1,
+        uses: [],
+        delegation: null,
+        health: 'ok',
+      },
+    },
+    { actor: 'bootstrap:connector', action: 'connector.enabled', details: { from: 'draft' } },
+  ]);
+  const [row] = await installation.db.select().from(schema.connectors).where(eq(schema.connectors.id, enabledId));
+  expect(row).toMatchObject({ state: 'enabled', url: enabledAtOnce.base, health: { status: 'ok' } });
 }, 60_000);
 
 test('the signing key is created with its audit row on first use, and a rotation audits the key it replaced and publishes it for three minutes', async () => {

@@ -61,7 +61,8 @@ export function requestCapabilities(
     },
     // The list in the order the shared state gives, each row's state then said in Clew's word for it.
     run: async (actor, _input, clew): Promise<RequestsResult> => {
-      const list = await requests.list(actor, clew.call);
+      // The model's read lists only the service desks it may have (D122 item 4).
+      const list = await requests.list(actor, clew.call, { forModel: clew.forModel === true });
       return { ...list, rows: list.rows.map(row => ({ ...row, state: REQUEST_STATE_WORDS[row.state] })) };
     },
   };

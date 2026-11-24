@@ -168,14 +168,15 @@ function aboutOf(thread: Thread): string | null {
 /**
  * Att göra (D126 rule 2, board Att göra, the `table-inbox` template): a queue that indexes a reading pane. The title
  * with how much needs the person and waits on others; the piles (Behöver dig, Väntar på andra, Klart) as tabs that are
- * links, so the address names the pile; a filter field and the system in the title's row narrow the rows. Astryx's
- * `Table`: the item's name is the row's link, in semibold while it is due now, with whom it is about under it; the
- * system as a token; when it is due as a badge, or for Klart when it was done. Choosing a row shows the work item in the
- * pane beside the list and puts it in the address as `item`, so Back, Forward and a reload show the same; the open row
- * is the current one (`aria-current`) with Astryx's row status in its gutter. The pane is the item at its narrow width
- * (`WorkItem`): the source line, its title as the link to its page and the buttons under it that never scroll away, then
- * the facts, "Varför ser jag detta?" and "Händelser". Where the pane does not fit beside the list (the template measures
- * the page's own box) there is no pane: a row leads to the item's page.
+ * links, so the address names the pile; a filter field and the system in the title's row narrow the rows (the filter's
+ * words are the page's own, never the address's). Astryx's `Table`: the item's name is the row's link, in semibold
+ * while it is due now, with whom it is about under it; the system as a token; when it is due as a badge, or for Klart
+ * when it was done. Choosing a row shows the work item in the pane beside the list and puts it in the address as
+ * `item`, so Back, Forward and a reload show the same; the open row is the current one (`aria-current`) with Astryx's
+ * row status in its gutter. The pane is the item at its narrow width (`WorkItem`): the source line, its title as the
+ * link to its page and the buttons under it that never scroll away, then the facts, "Varför ser jag detta?" and
+ * "Händelser". Where the pane does not fit beside the list (the template measures the page's own box) there is no
+ * pane: a row leads to the item's page.
  *
  * The responsive contract (D130 item 19, amended 2026-11-23), each line with what enforces it:
  *   from 900 px of column   the table, and the reading pane beside it once a row is chosen   (`single`, measured)
@@ -202,7 +203,9 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const loading = threadsQ.isPending && !threadsQ.isFetched;
   const itemId = search.get('item');
   const area = search.get('area');
-  const filter = search.get('filter') ?? '';
+  // What is typed into the filter stays with the page, never in its address, which an access log and the browser's
+  // history keep: the words are a person's name as often as not (D100 item 5). Leaving the page or a reload forgets them.
+  const [filter, setFilter] = useState('');
   const now = new Date().toISOString();
   const todayDate = today();
 
@@ -405,7 +408,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       value={filter}
       hasClear
       width={mobile ? '100%' : 240}
-      onChange={value => navigate(href({ filter: value || null }), { replace: true })}
+      onChange={setFilter}
     />
   );
   const systemMenu = (

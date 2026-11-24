@@ -1,4 +1,4 @@
-import { CapabilityError, type Actor } from '@clew/connectors';
+import { CapabilityError, type Actor, type SourceOptions } from '@clew/connectors';
 import { RequestsOutputSchema, checkContract, openRef } from '@clew/contracts';
 import { merge, systemReport, unanswered, type RequestList, type SystemOutcome } from './domain';
 import { DEFAULT_BUDGET, type RequestCall, type RequestDeps, type RequestSourceRef } from './model';
@@ -31,8 +31,8 @@ export function requestUsecases(deps: RequestDeps) {
     }
   }
   /** List as the actor: `call` is the registry handle for this run, so every system's scope applies to the same person. */
-  async function list(actor: Actor, call: RequestCall): Promise<RequestList> {
-    const sources = deps.sources(actor);
+  async function list(actor: Actor, call: RequestCall, options: SourceOptions = {}): Promise<RequestList> {
+    const sources = deps.sources(actor, options);
     const pending = sources.map(s => askSystem(s, call));
     const settled = await withinBudget(Promise.all(pending), budget.totalMs);
     let outcomes: SystemOutcome[];

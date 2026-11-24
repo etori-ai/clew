@@ -45,6 +45,7 @@ import {
 } from './data';
 import { newsItemOutput, newsItemSpec, newsSpec } from './data';
 import type { NewsResult } from '@clew/contracts';
+import { providerAddressProblem } from '@clew/contracts';
 import {
   assistantStatus,
   modelDetail,
@@ -449,8 +450,8 @@ export class MockApi {
   competenceTypes: CompetenceType[] | null = null;
   /** Every write to the catalogue, in order: the method, the path and the body. */
   catalogueWrites: Array<{ method: string; path: string; body?: unknown }> = [];
-  /** What the server answers a new validity would do. */
-  validityImpact: CompetenceValidityImpact = { holdings: 12, turnExpired: 7, turnValid: 0 };
+  /** What the server answers a new validity would do: a count of what changes is rounded down to five. */
+  validityImpact: CompetenceValidityImpact = { holdings: 12, turnExpired: 5, turnValid: 0 };
   /** The next write to the catalogue answers 400 with this sentence; it resets itself after that one. */
   catalogueFail: string | null = null;
   /** The catalogue cannot be read (a 503), while the rest of the module answers. */
@@ -755,6 +756,8 @@ export class MockApi {
       path = url.pathname.replace('/api', ''),
       post = request.method() === 'POST';
     const json = (body: unknown) => route.fulfill({ json: body });
+    // What a read is read with: its body, never its address (WD-M4: the address is in every access log on the way).
+    const input = <T = Record<string, unknown>>() => (request.postDataJSON() ?? {}) as T;
     const id = path.split('/')[2] ?? '';
     if (path === '/protocol/manifest-reference.json') return json(reference);
     // The manifest dry run (D60, D97) as the server runs it: the real preview over the posted document.
@@ -1111,17 +1114,22 @@ export class MockApi {
           fields: [],
           same: false,
         };
-        // As the server answers (D144): reading in stores the offer the page reviews; approving it clears it.
+        // As the server answers (D144): reading in stores the offer the page reviews, without a new version; approving
+        // it clears it and makes the approved manifest a new version of the connector.
         const apply = !!(request.postDataJSON() as { apply?: boolean } | null)?.apply;
-        return json({ diff, connector: { ...connectorDetail(c), offered: apply ? null : { at: NOW, diff } } });
+        const now = apply ? { ...c, updatedAt: NOW, version: c.version + 1 } : c;
+        if (apply) this.connectors = this.connectors.map(x => (x.id === cid ? now : x));
+        return json({ diff, connector: { ...connectorDetail(now), offered: apply ? null : { at: NOW, diff } } });
       }
       if (path === `/admin/connectors/${cid}/preview`)
         return json(connectorPreview(url.searchParams.get('role') === 'employee' ? 'employee' : 'manager'));
       if (path === `/admin/connectors/${cid}/secret`) {
         const c = found();
-        return c
-          ? json(connectorDetail({ ...c, secretChangedAt: NOW }))
-          : route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
+        if (!c) return route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
+        // A new key is a change of the connector, so a page that showed it before is refused after it (DE-M5).
+        const next = { ...c, secretChangedAt: NOW, updatedAt: NOW, version: c.version + 1 };
+        this.connectors = this.connectors.map(x => (x.id === cid ? next : x));
+        return json(connectorDetail(next));
       }
       if (path === `/admin/connectors/${cid}`) {
         const c = found();
@@ -1131,13 +1139,40 @@ export class MockApi {
           return json({ closedCards: 1 });
         }
         if (method === 'PATCH') {
-          const patch = request.postDataJSON() as Partial<ConnectorSummary>;
-          // A change names the version the page showed (DE-M5); one saved since is refused, as the server refuses it.
+          const patch = request.postDataJSON() as Partial<ConnectorSummary> & {
+            capabilities?: unknown;
+            lens?: unknown;
+            column?: unknown;
+            menu?: Record<string, boolean>;
+            figures?: Record<string, boolean>;
+          };
+          // The server takes no change without the version the page showed (`ConnectorPatchInput`), and refuses one
+          // made on a version saved since (DE-M5), before it looks at what the change is.
+          if (typeof patch.version !== 'number')
+            return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
           if (patch.version !== c.version)
             return route.fulfill({
               status: 400,
               json: { error: 'Anslutningen har ändrats sedan du öppnade den. Se över den och gör ändringen igen.' },
             });
+          let menuOn = this.menuOn,
+            figuresOff = this.figuresOff;
+          for (const [name, on] of Object.entries(patch.menu ?? {}))
+            menuOn = on ? [...new Set([...menuOn, name])] : menuOn.filter(n => n !== name);
+          for (const [area, on] of Object.entries(patch.figures ?? {}))
+            figuresOff = on ? figuresOff.filter(a => a !== area) : [...new Set([...figuresOff, area])];
+          const differs = (key: 'state' | 'scanEnabled' | 'toolsEnabled' | 'header' | 'url') =>
+            key in patch && patch[key] !== c[key];
+          // A change that changes nothing writes nothing, so the version stays, as the server answers it.
+          const changed =
+            (['state', 'scanEnabled', 'toolsEnabled', 'header', 'url'] as const).some(differs) ||
+            ('audience' in patch && JSON.stringify(patch.audience) !== JSON.stringify(c.audience)) ||
+            'capabilities' in patch ||
+            'lens' in patch ||
+            'column' in patch ||
+            JSON.stringify([...menuOn].sort()) !== JSON.stringify([...this.menuOn].sort()) ||
+            JSON.stringify([...figuresOff].sort()) !== JSON.stringify([...this.figuresOff].sort());
+          if (!changed) return json(connectorDetail(c, this.menuOn, this.figuresOff));
           const next = {
             ...c,
             ...('state' in patch ? { state: patch.state! } : {}),
@@ -1145,6 +1180,7 @@ export class MockApi {
             ...('scanEnabled' in patch ? { scanEnabled: patch.scanEnabled! } : {}),
             ...('toolsEnabled' in patch ? { toolsEnabled: patch.toolsEnabled! } : {}),
             ...('header' in patch ? { header: patch.header! } : {}),
+            ...('url' in patch ? { url: patch.url! } : {}),
             updatedAt: NOW,
             version: c.version + 1,
           };
@@ -1153,12 +1189,8 @@ export class MockApi {
             this.connectors = this.connectors.map(x =>
               x.id === cid || !x.header ? x : { ...x, header: false, version: x.version + 1 },
             );
-          if ('menu' in patch)
-            for (const [name, on] of Object.entries((patch as { menu: Record<string, boolean> }).menu))
-              this.menuOn = on ? [...new Set([...this.menuOn, name])] : this.menuOn.filter(n => n !== name);
-          if ('figures' in patch)
-            for (const [area, on] of Object.entries((patch as { figures: Record<string, boolean> }).figures))
-              this.figuresOff = on ? this.figuresOff.filter(a => a !== area) : [...new Set([...this.figuresOff, area])];
+          this.menuOn = menuOn;
+          this.figuresOff = figuresOff;
           this.connectors = this.connectors.map(x => (x.id === cid ? next : x));
           return json(connectorDetail(next, this.menuOn, this.figuresOff));
         }
@@ -1309,11 +1341,11 @@ export class MockApi {
     }
     if (path === '/cap/calendar.today') return json({ output: today });
     if (path === '/cap/calendar.week') {
-      const from = (JSON.parse(url.searchParams.get('input') ?? '{}') as { from?: string }).from ?? '2026-11-02';
+      const from = input<{ from?: string }>().from ?? '2026-11-02';
       return json({ output: { from, events: events(from) } });
     }
     if (path === '/cap/calendar.day') {
-      const date = (JSON.parse(url.searchParams.get('input') ?? '{}') as { date?: string }).date ?? '2026-11-04';
+      const date = input<{ date?: string }>().date ?? '2026-11-04';
       return json({
         output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] },
       });
@@ -1861,7 +1893,7 @@ export class MockApi {
       return route.fulfill({ status: 201, json: { id: 'holding-' + this.registered.length } });
     }
     // Kompetens (D108): one person's holdings, the view the person's section opens; refused while the module is off, as
-    // the registry refuses a read of a connector that is switched off: `GET /api/cap` answers it 404, as a name nobody
+    // the registry refuses a read of a connector that is switched off: `POST /api/cap` answers it 404, as a name nobody
     // registered.
     // What needs doing among a manager's reports, as the card under an answer reads it again.
     if (path === '/cap/competence.attention')
@@ -1885,11 +1917,12 @@ export class MockApi {
     if (path === '/cap/servicedesk.equipment') return json(equipmentAnswer);
     // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
     if (path === '/cap/clew.talks' || path === '/cap/clew.commitments' || path.startsWith('/talks/'))
-      return this.handleTalks(route, path, url);
+      return this.handleTalks(route, path);
     // `@` as the server answers it: with nothing typed only the context the box sends (`near`), with text everything open, the context first.
     if (path === '/objects') {
-      const q = (url.searchParams.get('q') ?? '').toLowerCase(),
-        near = (url.searchParams.get('near') ?? '').split(',');
+      const asked = input<{ q?: string; near?: string[] }>();
+      const q = (asked.q ?? '').toLowerCase(),
+        near = asked.near ?? [];
       const all = this.threads
         .filter(t => t.state === 'open' && t.kind === 'pushed')
         .flatMap(t => [
@@ -1915,21 +1948,21 @@ export class MockApi {
     }
     // A name finds a person (D38): the hit carries its contact card as a view. Anything else finds the routine.
     if (path === '/cap/clew.search')
-      return json({ output: /lindqvist/i.test(url.searchParams.get('input') ?? '') ? personSearch : searchOutput });
+      return json({ output: /lindqvist/i.test(JSON.stringify(input())) ? personSearch : searchOutput });
     // The phone book's declared views, answered by the connector itself.
     if (path.startsWith('/cap/phonebook.')) {
-      const answer = await phonebook(path.slice('/cap/'.length), JSON.parse(url.searchParams.get('input') ?? '{}'));
+      const answer = await phonebook(path.slice('/cap/'.length), input());
       return route.fulfill({ status: answer.status, json: answer.body });
     }
     if (path === '/cap/clew.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
     // An employee's absence pattern is asked for one employee's ref (`hr:emp:<n>`, the HR manifest's input pattern).
     if (path === '/cap/hr.absencePattern') {
-      const ref = (JSON.parse(url.searchParams.get('input') ?? '{}') as { ref?: string }).ref;
+      const ref = input<{ ref?: string }>().ref;
       if (!ref || !/^hr:emp:[0-9]+$/.test(ref))
         return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan till hr.absencePattern.' } });
     }
     // A read a spec opens, as its connector answers it, with the view its manifest declares.
-    const read = path.startsWith('/cap/') && !post ? path.slice('/cap/'.length) : null;
+    const read = path.startsWith('/cap/') ? path.slice('/cap/'.length) : null;
     const view = read && read in READS ? manifestView(read) : undefined;
     if (read && view) return json({ output: READS[read], source: view.source, view });
     // A read the person may open that declares no view (D116, `views`), drawn as it is: `hr.whoIsOn`, whose answer is
@@ -1937,7 +1970,7 @@ export class MockApi {
     // connectors answers its own shape, so it is in `READS` or fails the test as unmocked.
     const listed = path.startsWith('/cap/') ? this.views.find(v => v.capability === path.slice(5)) : undefined;
     const standIn = !!listed && (listed.capability === 'hr.whoIsOn' || !CATALOGUED.has(listed.capability));
-    if (listed && standIn && !listed.kind && !post)
+    if (listed && standIn && !listed.kind)
       return json({ output: this.output, source: SOURCES[listed.capability.split('.')[0]!] ?? 'Personalsystemet' });
     // A capability the registry does not know (D23) is the route's 404; the suite fails on one it reads.
     if (path.startsWith('/cap/')) {
@@ -2510,7 +2543,7 @@ export class MockApi {
    * without a talks system, read-only when another system answers), and the seven writes over the mock's own state, so a
    * spec sees the lists change on the next read.
    */
-  private handleTalks(route: Route, path: string, url: URL) {
+  private handleTalks(route: Route, path: string) {
     const request = route.request(),
       method = request.method();
     const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
@@ -2532,7 +2565,7 @@ export class MockApi {
       return json({ output: this.talksWritable ? result : readOnlyTalks(result), source: result.source });
     }
     if (path === '/cap/clew.commitments') {
-      const input = JSON.parse(url.searchParams.get('input') ?? '{}') as CommitmentsInput;
+      const input = (request.postDataJSON() ?? {}) as CommitmentsInput;
       // `person` is a user name (or an id for someone without one); an employee reads nobody's but their own.
       const about =
         this.staff.units.flatMap(u => u.people).find(p => (p.userName ?? p.id) === input.person)?.id ??
@@ -2752,6 +2785,8 @@ export class MockApi {
     }
     if (!id && method === 'POST') {
       const input = body() as { id: string; title: string; baseUrl: string; apiKey?: string };
+      const wrong = providerAddressProblem(input.baseUrl);
+      if (wrong) return route.fulfill({ status: 400, json: { error: wrong } });
       const p: ProviderSummary = {
         ...this.providers[0]!,
         id: input.id,
@@ -2767,8 +2802,26 @@ export class MockApi {
     const p = this.providers.find(x => x.id === id);
     if (!p) return missing('Leverantören');
     if (action === 'test') return json(providerReport);
+    // As the server does (D24): an address it cannot read, or with a user name or password in it, is refused, and so
+    // is a key given for a host the provider has left since the page was read.
+    const origin = (url: string) => {
+      try {
+        return new URL(url).origin;
+      } catch {
+        return undefined;
+      }
+    };
     if (action === 'key') {
-      const next = { ...p, hasKey: !!body().apiKey, keyChangedAt: NOW };
+      const input = body() as { apiKey: string; baseUrl?: string };
+      if (!input.baseUrl || !origin(input.baseUrl) || origin(input.baseUrl) !== origin(p.baseUrl))
+        return route.fulfill({
+          status: 400,
+          json: {
+            error:
+              'Leverantörens adress har ändrats sedan sidan lästes in. Läs in sidan igen och lägg in nyckeln för den nya adressen.',
+          },
+        });
+      const next = { ...p, hasKey: !!input.apiKey, keyChangedAt: NOW };
       this.providers = this.providers.map(x => (x.id === id ? next : x));
       return json(providerDetail(next));
     }
@@ -2778,8 +2831,9 @@ export class MockApi {
     }
     if (method === 'PATCH') {
       const patch = body() as Partial<ProviderSummary>;
+      const wrong = patch.baseUrl === undefined ? undefined : providerAddressProblem(patch.baseUrl);
+      if (wrong) return route.fulfill({ status: 400, json: { error: wrong } });
       // As the server does (D24): an address on another host takes the key with it.
-      const origin = (url: string) => new URL(url).origin;
       const moved = !!patch.baseUrl && p.hasKey && origin(patch.baseUrl) !== origin(p.baseUrl);
       const next = {
         ...p,

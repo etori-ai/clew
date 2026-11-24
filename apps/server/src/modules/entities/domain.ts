@@ -81,10 +81,13 @@ export function readerUnits(reach: Reach): DirectoryUnit[] {
 }
 /**
  * The units below the reader that they follow up (D117): the units led by the managers who report to a unit the reader
- * manages (D99's reporting line), each once, with the reader's unit it reports to; never one the reader belongs to.
+ * manages (D99's reporting line), each once, with the reader's unit it reports to; never one of `own`, by default every
+ * unit the reader manages or belongs to, as the entity list groups them.
  */
-export function unitsBelow(reach: Reach): Array<DirectoryUnit & { under: string }> {
-  const own = new Set(readerUnits(reach).map(u => u.unitId));
+export function unitsBelow(
+  reach: Reach,
+  own: ReadonlySet<string> = new Set(readerUnits(reach).map(u => u.unitId)),
+): Array<DirectoryUnit & { under: string }> {
   const found = new Map<string, DirectoryUnit & { under: string }>();
   for (const unit of reach.managed)
     for (const person of unit.people)
@@ -105,12 +108,14 @@ const listedUnits = (reach: Reach): DirectoryUnit[] => [...readerUnits(reach), .
 /**
  * Every unit the reader follows up (D117), the `units` a source is told: the ones they manage, then the ones below,
  * each once. Never a unit they are only placed on (D135 item 5): a source reads `units` as the units a manager may see
- * figures for, and an employee's unit is not one of them.
+ * figures for, and an employee's unit is not one of them. A unit below one they manage is followed up even where they
+ * are placed on it as well: the units below are found against the managed ones alone.
  */
-export const followedUnits = (reach: Reach): DirectoryUnit[] => [
-  ...readerUnits(reach).filter(u => manages(reach, u.unitId)),
-  ...below(reach),
-];
+export function followedUnits(reach: Reach): DirectoryUnit[] {
+  const managed = readerUnits(reach).filter(u => manages(reach, u.unitId));
+  const under = unitsBelow(reach, new Set(managed.map(u => u.unitId)));
+  return [...managed, ...under.map(({ unitId, unitLabel }) => ({ unitId, unitLabel }))];
+}
 /** The groups of `GET /api/entities/:kind`: for a person one per unit the reader manages (none for an employee), for a unit the reader's own and the ones below. */
 export function groupsOf(kind: EntityKind, reach: Reach): EntityList['groups'] {
   if (kind === 'unit') {

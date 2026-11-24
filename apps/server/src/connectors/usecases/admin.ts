@@ -51,6 +51,12 @@ import type {
 export const ADMIN_CAPABILITY = 'admin.connectors';
 /** A change made on a connector that has been saved since (DE-M5): the page reads it again and the administrator looks. */
 export const CHANGED_SINCE = 'Anslutningen har ändrats sedan du öppnade den. Se över den och gör ändringen igen.';
+/** A check whose connector got another address or secret while the service answered: its result is about neither. */
+export const CHANGED_WHILE_CHECKED =
+  'Anslutningens adress eller nyckel ändrades medan den testades. Resultatet sparades inte; testa den igen.';
+/** "Läs in igen" on a connector that moved while the service answered: what the old address served is not offered. */
+export const MOVED_WHILE_READ =
+  'Anslutningens adress ändrades medan systemet lästes in. Inget sparades; läs in det igen från den nya adressen.';
 /**
  * What `update` takes: the page's patch, whose `version` the route requires. A script of Clew's own acting on the row as
  * it stands leaves it out; the write still compares the version the change was made on.
@@ -517,10 +523,10 @@ export function connectorUsecases(deps: AdminDeps) {
       if (url !== row.url) {
         next.url = url;
         // An offer is what the old address served (D144): what is approved after the move is what the new one serves.
-        if (row.offered !== null || row.offeredAt !== null) {
-          next.offered = null;
-          next.offeredAt = null;
-        }
+        // Dropped whatever the row read held, since a check records an offer without raising the version: one recorded
+        // between this read and the write is from the old address too.
+        next.offered = null;
+        next.offeredAt = null;
         changes.push({ action: 'connector.url', details: { from: row.url, to: url } });
       }
     }
@@ -584,7 +590,9 @@ export function connectorUsecases(deps: AdminDeps) {
   /**
    * "Testa anslutning": the conformance check against the service. The health is recorded, and a manifest that differs
    * from the approved one is recorded as offered; nothing live changes (D144). `offered` says whether a change waits
-   * for the administrator now, so the page can say so.
+   * for the administrator now, so the page can say so. The result is recorded only on the connector as it was checked:
+   * one that another administrator moved or rekeyed while the service answered keeps nothing of it, and the
+   * administrator is asked to test it again, since the report is about an address or a secret it no longer has.
    */
   async function test(
     persona: AuthenticatedContext,
@@ -604,7 +612,14 @@ export function connectorUsecases(deps: AdminDeps) {
       };
     const report = await transport.check({ ...remote(row), id });
     const health = healthFrom(report, at);
-    await store.recordCheck(id, { health, ...(report.manifest ? { served: report.manifest } : {}), at });
+    const recorded = await store.recordCheck(id, {
+      url: row.url!,
+      secret: row.secret!,
+      health,
+      ...(report.manifest ? { served: report.manifest } : {}),
+      at,
+    });
+    if (!recorded) throw new InputError(CHANGED_WHILE_CHECKED);
     const after = await store.read(id);
     return { ok: report.ok, items: report.items, health, offered: !!after && !!pendingOffer(after) };
   }
@@ -626,7 +641,9 @@ export function connectorUsecases(deps: AdminDeps) {
       const row = await must(id);
       const { url } = remote(row);
       const fetched = await transport.fetchManifest(url, id);
-      await store.recordCheck(id, { served: fetched, at: clock().toISOString() });
+      // An offer only on the row still at the address it was read from: one moved meanwhile is read in again there.
+      if (!(await store.recordCheck(id, { url, served: fetched, at: clock().toISOString() })))
+        throw new InputError(MOVED_WHILE_READ);
       const seen = (await store.read(id))!;
       return { diff: manifestDiff(manifestOf(seen), fetched), connector: await detail(seen) };
     }

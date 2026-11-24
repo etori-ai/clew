@@ -34,6 +34,12 @@ export interface Registration {
   url: string | null;
 }
 export interface CheckAsDeps {
+  /**
+   * The ids of Clew's own connectors, the internal ones and the bundled ones (`internalIds` and `bundledIds` of the
+   * registry). They run in Clew's process whether or not they have a `connector` row: `people` never has one, and a
+   * bundled connector has none until the server first boots.
+   */
+  own: readonly string[];
   /** The connector registered in this installation under this id, in any state, or undefined. */
   registration: (id: string) => Promise<Registration | undefined>;
   /** The person with this user name, as Clew signs them: their current grant. */
@@ -54,17 +60,18 @@ const address = (url: string) => {
  * Why the check may not sign for the audience a service names, or undefined (CB-13). Every assertion the check signs, a
  * request's, a callback grant and the installation's own, is for the id in the manifest the service serves, `--id` or
  * not. A connector registered in this installation under that id accepts them, so the check signs for that id only at
- * the address it is registered at; one of Clew's own connectors has no service and is never signed for. An id this
- * installation has not registered is no connector's here, so a service can be checked before it is registered.
+ * the address it is registered at; one of Clew's own connectors has no service and is never signed for, with a row or
+ * without one. An id that is neither is no connector's here, so a service can be checked before it is registered.
  */
 export async function audienceProblem(
   input: { id: string; url: string },
-  registration: CheckAsDeps['registration'],
+  deps: Pick<CheckAsDeps, 'own' | 'registration'>,
 ): Promise<string | undefined> {
-  const registered = await registration(input.id);
+  const ownConnector = `The service at ${input.url} names the id ${input.id}, one of Clew's own connectors; the check signs nothing for it.`;
+  if (deps.own.includes(input.id)) return ownConnector;
+  const registered = await deps.registration(input.id);
   if (!registered) return undefined;
-  if (registered.bundled || !registered.url)
-    return `The service at ${input.url} names the id ${input.id}, one of Clew's own connectors; the check signs nothing for it.`;
+  if (registered.bundled || !registered.url) return ownConnector;
   if (address(registered.url) !== address(input.url))
     return `The service at ${input.url} names the id ${input.id}, which is registered at ${registered.url}; the check signs for a registered connector only at the address it is registered at.`;
   return undefined;
@@ -81,15 +88,14 @@ export async function checkAs(
   input: { id: string; url: string; userName: string; keys: number; reads: number },
   deps: CheckAsDeps,
 ): Promise<AuthenticatedContext> {
+  const ownConnector = `--id ${input.id} is one of Clew's own connectors, not a registered service; pass the id the service was registered under (bun scripts/connector-add.ts).`;
+  if (deps.own.includes(input.id)) throw new Error(ownConnector);
   const registered = await deps.registration(input.id);
   if (!registered)
     throw new Error(
       `--id ${input.id}: no connector with that id is registered in this installation; register it first (bun scripts/connector-add.ts).`,
     );
-  if (registered.bundled || !registered.url)
-    throw new Error(
-      `--id ${input.id} is one of Clew's own connectors, not a registered service; pass the id the service was registered under (bun scripts/connector-add.ts).`,
-    );
+  if (registered.bundled || !registered.url) throw new Error(ownConnector);
   if (address(registered.url) !== address(input.url))
     throw new Error(
       `--id ${input.id} is registered at ${registered.url}, not at ${input.url}; --as checks a connector only at the address it is registered at.`,

@@ -137,7 +137,7 @@ test('coming back to the window asks about the session without hiding a page con
   expect(await opacity()).toBe('');
   await expect(composer(page)).toBeVisible();
   // A page the browser brings back from its back/forward cache is hidden until the session has answered.
-  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
   expect(await opacity()).toBe('0');
   release();
   await expect.poll(opacity).toBe('');

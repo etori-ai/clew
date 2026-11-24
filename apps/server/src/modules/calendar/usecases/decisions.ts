@@ -93,8 +93,9 @@ const recipientIsCurrent = (members: readonly UnitMember[], personId: string, ad
   const holders = members.filter(m => m.email.toLowerCase() === email);
   return holders.length === 1 && holders[0]?.personId === personId;
 };
+/** An invitee whose name an erasure cleared (D123) is named by nobody: the sentence says one of the unit's people. */
 const recipientChanged = (name: string) =>
-  `Det går inte att bekräfta adressen för ${name} i din enhet. Ta fram nya tider.`;
+  `Det går inte att bekräfta adressen för ${name || 'en av medarbetarna'} i din enhet. Ta fram nya tider.`;
 
 /** Human routes prepare immutable commands. No calendar write is reachable through a model tool. */
 export function calendarDecisions({

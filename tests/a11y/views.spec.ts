@@ -51,7 +51,7 @@ test.describe('a declared table or list on its page', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('typing asks the capability again: the field keeps the focus, the address carries the question, and the count is spoken', async ({
+  test('typing asks the capability again: the field keeps the focus, the words go in the read and never in the address, and the count is spoken', async ({
     page,
     api: _,
   }) => {
@@ -59,11 +59,19 @@ test.describe('a declared table or list on its page', () => {
     await page.goto(directory);
     const panel = page.getByRole('main');
     const field = panel.getByRole('searchbox', { name: 'Sök i telefonboken' });
+    const asked = page.waitForRequest(
+      r =>
+        r.method() === 'POST' &&
+        new URL(r.url()).pathname === '/api/cap/phonebook.directory' &&
+        (r.postDataJSON() as { query?: string } | null)?.query === 'lärare',
+    );
     await field.fill('lärare');
+    expect(new URL((await asked).url()).search).toBe('');
     await expect(panel.getByRole('row')).toHaveCount(3);
     await expect(field).toBeFocused();
-    // The search is in the address with the page's name and its way back kept.
-    await expect(page).toHaveURL(/input=.*l%C3%A4rare.*&title=S%C3%B6k.*&from=%2F$/);
+    // What is typed is a name as often as not, so it never enters the address (D100 item 5): the page's name and its
+    // way back stay as they were.
+    await expect(page).toHaveURL(directory);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 kontakter'));
     // The choice is the capability's own input too: "Min enhet" narrows to the unit Startsidan knows the person by.
     await field.fill('');
@@ -75,7 +83,7 @@ test.describe('a declared table or list on its page', () => {
     await field.fill('xyzzy');
     await expect(panel.getByRole('paragraph').filter({ hasText: 'Inga träffar i telefonboken.' })).toBeVisible();
     const input = new URL(page.url()).searchParams.get('input');
-    expect(JSON.parse(input ?? '{}')).toEqual({ scope: 'unit', query: 'xyzzy' });
+    expect(JSON.parse(input ?? '{}')).toEqual({ scope: 'unit' });
     await expect
       .poll(() => announcements(page))
       .toContainEqual(expect.stringContaining('Inga träffar i telefonboken.'));
