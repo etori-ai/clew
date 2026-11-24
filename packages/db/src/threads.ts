@@ -112,7 +112,10 @@ export async function unresolvedThreads(personId: string, ids: readonly string[]
     .orderBy(desc(threads.createdAt));
   return hydrate(rows);
 }
-/** Every unresolved work card plus bounded conversation/handled history. History can never displace work. */
+/**
+ * Every unresolved work card plus bounded conversation/handled history: the 50 with the latest activity. History can
+ * never displace work. Alla samtal pages through every conversation with `listConversations`.
+ */
 export async function listThreads(personId: string, now = new Date()): Promise<Thread[]> {
   const since = new Date(now.getTime() - 7 * 86400_000);
   const [work, history] = await Promise.all([
@@ -131,10 +134,56 @@ export async function listThreads(personId: string, now = new Date()): Promise<T
           or(eq(threads.state, 'open'), gte(threads.updatedAt, since)),
         ),
       )
-      .orderBy(desc(threads.createdAt))
+      .orderBy(desc(threads.updatedAt), desc(threads.id))
       .limit(50),
   ]);
   return hydrate([...work, ...history].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+}
+/** A thread's latest activity to the microsecond, as text the cursor carries and `timestamptz` reads back exactly. */
+const activityText = sql<string>`to_char(${threads.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+/**
+ * Alla samtal (WD-L1): `limit` of the person's conversations after the cursor, the latest activity first, and the
+ * cursor of the last one when more follow. The order is `thread_conversation_recent`'s.
+ */
+export async function listConversations(
+  personId: string,
+  after: { at: string; id: string } | undefined,
+  limit: number,
+): Promise<{ threads: Thread[]; next: { at: string; id: string } | null }> {
+  const rows = await database()
+    .select({ thread: threads, at: activityText })
+    .from(threads)
+    .where(
+      and(
+        eq(threads.personId, personId),
+        eq(threads.kind, 'question'),
+        after ? sql`(${threads.updatedAt}, ${threads.id}) < (${after.at}::timestamptz, ${after.id})` : undefined,
+      ),
+    )
+    .orderBy(desc(threads.updatedAt), desc(threads.id))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    threads: await hydrate(page.map(r => r.thread)),
+    next: rows.length > limit && last ? { at: last.at, id: last.thread.id } : null,
+  };
+}
+/** The person's conversation a question with this turn key was written in (WD-L3), by `thread_message_turn`. */
+export async function turnWritten(personId: string, turn: string): Promise<string | undefined> {
+  const [row] = await database()
+    .select({ id: threads.id })
+    .from(threadMessages)
+    .innerJoin(threads, eq(threads.id, threadMessages.threadId))
+    .where(
+      and(
+        eq(threadMessages.role, 'user'),
+        sql`(${threadMessages.meta}->>'turn') = ${turn}`,
+        eq(threads.personId, personId),
+      ),
+    )
+    .limit(1);
+  return row?.id;
 }
 export async function readThread(personId: string, id: string, tx?: Transaction) {
   const db = tx ?? database();

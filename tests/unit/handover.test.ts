@@ -785,6 +785,40 @@ describe('an assistant beside the conversation, and a source that still hands ba
       details: { assistant: HR, side: true },
     });
   });
+  test('a question to another system’s assistant sent again under its key goes there once: the answer is the turn as written (WD-L3)', async () => {
+    const w = world({
+      extra: [
+        scripted([
+          [
+            { type: 'text', delta: 'Ja, även på deltid.' },
+            { type: 'done', session: 's-1' },
+          ],
+        ]),
+      ],
+    });
+    const key = '0d9c8b7a-6f5e-4d3c-8b2a-1f0e9d8c7b6a';
+    const first = await w.assistant.converse(hillevi, {
+      text: 'Gäller det på deltid?',
+      assistant: HR,
+      side: true,
+      turn: key,
+    });
+    expect(first.thread.messages[0]!.meta).toMatchObject({ turn: key, handed: { assistant: HR, side: true } });
+    // The script holds one answer: a second ask of the source would find none and fail.
+    const again = await w.assistant.converse(hillevi, {
+      text: 'Gäller det på deltid?',
+      assistant: HR,
+      side: true,
+      turn: key,
+    });
+    expect(again).toMatchObject({
+      conversationId: first.conversationId,
+      assistant: 'handover',
+      answer: { body: 'Ja, även på deltid.' },
+    });
+    expect(again.thread.messages).toHaveLength(2);
+    expect(w.store.audit.map(r => r.action)).toEqual(['conversation.handed']);
+  });
   test('a conversation keeps one exchange with each assistant asked in it, and a question to one asked before continues its own', async () => {
     const w = world({
       extra: [

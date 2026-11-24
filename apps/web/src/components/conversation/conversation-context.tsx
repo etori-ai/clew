@@ -24,7 +24,7 @@ import type {
   Thread,
 } from '@clew/contracts';
 import { useLocation, useMatch, useNavigate } from 'react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAnnounce, type ChatComposerInputHandle } from '@clew/ui';
 import { api } from '../../api';
 import { errorMessage } from '../../query-policy';
@@ -138,7 +138,10 @@ export interface ConversationState {
    */
   submit(raw: string, from?: AskFrom, about?: ChipRef[]): Promise<void>;
   ask(text: string, from?: AskFrom, about?: ChipRef[]): void;
-  /** Stoppa (D36): the turn is aborted, nothing is saved, and the question goes back in the box. */
+  /**
+   * Stoppa (D36): the turn is aborted and the question goes back in the box, unless the turn was written before it
+   * stopped (a proposal already made into an item, WD-L3): then the written turn is drawn and nothing goes back.
+   */
   stop(): void;
   performActions(actions: ClewAction[]): Promise<void>;
   cancelActions(): void;
@@ -164,6 +167,8 @@ export interface ConversationState {
    * Resolves false when nothing was sent, so the panel's box keeps what was typed.
    */
   askAside(assistant: Handed, text: string, confirmed?: boolean): Promise<boolean>;
+  /** Stoppa in the panel (WD-L5): the question to the other system's assistant is aborted and goes back in its box. */
+  stopAside(): void;
   /** Lets go of a question the panel held or failed to send. */
   dropAside(): void;
   /**
@@ -220,6 +225,7 @@ export const ConversationContext = createContext<ConversationState>({
   aside: null,
   asideError: null,
   askAside: async () => false,
+  stopAside: noop,
   dropAside: noop,
   askClew: noop,
   acceptOffer: noop,
@@ -289,7 +295,9 @@ interface Send {
 /** The turn machinery a box and its transcript share: one conversation, its turn on its way, and what an answer offers. */
 interface Turns {
   conversation: Conversation | null;
-  setConversation: Dispatch<SetStateAction<Conversation | null>>;
+  /** The conversation on the page, by its id; what it holds is the query cache's (D33, WD-L6). */
+  openId: string | null;
+  setOpenId: Dispatch<SetStateAction<string | null>>;
   latest: ConversationResponse | null;
   setLatest: Dispatch<SetStateAction<ConversationResponse | null>>;
   pending: PendingTurn | null;
@@ -308,12 +316,41 @@ interface Turns {
   makeCard(messageId: string): Promise<void>;
 }
 
+/** A question's key (WD-L3): the server writes it on the question, so the same question sent again is not asked twice. */
+const turnKey = () => crypto.randomUUID();
+/** A question that did not come back, kept with its key while the same words are sent again from the same place. */
+interface Unanswered {
+  text: string;
+  /** The conversation it was asked in; null for one that would have started a conversation. */
+  at: string | null;
+  turn: string;
+}
+/** The key for a question: the kept one when the same words go again from the same place, else a new one. */
+const keyFor = (kept: Unanswered | null, text: string, at: string | null) =>
+  kept && kept.text === text && kept.at === at ? kept.turn : turnKey();
+/** What the server wrote under a question's key, or null when it wrote nothing or could not be asked. */
+const writtenUnder = (turn: string) =>
+  api.writtenTurn(turn).then(
+    r => r.written,
+    () => null,
+  );
+
 /**
  * One conversation's turns (D31, D36): the question is drawn at once with its answer pending under it, the box is
  * cleared and rests with Stoppa, and the answer streams in, the capabilities it reads as steps and the model's text as
- * it is written. The written turn replaces the pending one when it is done. Stopped or failed, nothing was saved and the
- * question goes back in the box; a turn left behind (another conversation) is stopped and nothing goes back. Every
- * thread an answer carries goes into the cache (D33), the same path as a card's own action.
+ * it is written. The written turn replaces the pending one when it is done. A turn left behind (another conversation)
+ * is stopped and nothing goes back.
+ *
+ * Stopped or failed, the turn may still have been written (WD-L3): a proposal the model made into an item before
+ * Stoppa, or an answer committed before the connection broke. Every question carries a key the server writes on it, and
+ * before the page says anything it asks for what was written under the key: a written turn is drawn as answered, and
+ * otherwise the question goes back in the box with its key, so sending the same words again from the same place is
+ * answered with what was written meanwhile, never asked twice.
+ *
+ * The conversation on the page is the query cache's (D33, WD-L6): its id is kept here and its thread read from the
+ * cache, so a change notice (D46) draws a turn written in another tab or by another system's assistant. A turn runs as a
+ * mutation of the cache, so a notice waits until its thread is written (`changeNotices`), and every thread an answer
+ * carries goes into the cache, the same path as a card's own action.
  */
 function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   const announce = useAnnounce();
@@ -325,13 +362,20 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   const busyRef = useRef(false);
   busyRef.current = busy;
   const [error, setError] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const opened = useQuery({ ...threadQuery(openId ?? ''), enabled: !!openId });
+  const conversation = useMemo(
+    () => (openId && opened.data?.id === openId ? conversationOf(opened.data) : null),
+    [openId, opened.data],
+  );
   const [latest, setLatest] = useState<ConversationResponse | null>(null);
   const [pending, setPending] = useState<PendingTurn | null>(null);
   const [done, setDone] = useState<ConversationState['done']>(null);
   // The turn in flight and why it would be aborted: Stoppa and closing put the question back in the box, leaving does not.
   const inflight = useRef<AbortController | null>(null);
   const abortReason = useRef<'stop' | 'leave'>('stop');
+  const unanswered = useRef<Unanswered | null>(null);
+  const { mutateAsync: tracked } = useMutation<void, unknown, () => Promise<void>>({ mutationFn: turn => turn() });
   const abortTurn = useCallback((reason: 'stop' | 'leave') => {
     // A suggestion waiting for the person's answer is not a turn in flight: leaving it behind just takes it away.
     setPending(p => (p?.offer ? null : p));
@@ -359,9 +403,12 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
     }: Send) => {
       if (!text || busyRef.current) return;
       if (!current) {
-        setConversation(null);
+        setOpenId(null);
         setLatest(null);
       }
+      const at = current?.id ?? null;
+      const turn = keyFor(unanswered.current, text, at);
+      unanswered.current = null;
       const controller = new AbortController();
       inflight.current = controller;
       abortReason.current = 'stop';
@@ -381,58 +428,22 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
       setValue('');
       onStart?.();
       announce(handed ? `Frågar ${handed.name} …` : 'Söker svar …');
-      try {
-        const response = await api.converseStream(
-          {
-            text,
-            chips,
-            ...(beside && !handed ? { beside } : {}),
-            ...(current ? { conversationId: current.id } : {}),
-            ...(handed ? { assistant: handed.id } : {}),
-            ...(handed && suggested ? { suggested: true as const } : {}),
-            ...(own ? { own: true as const } : {}),
-            ...(handed && confirmed ? { confirmed: true as const } : {}),
-          },
-          event => {
-            // The turn went to another system's assistant: what follows is drawn as that assistant's from its first word.
-            if (event.type === 'handed') setPending(p => p && { ...p, handed: event.assistant, answer: '' });
-            else if (event.type === 'step')
-              setPending(
-                p =>
-                  p && {
-                    ...p,
-                    steps: p.steps.some(s => s.id === event.step.id)
-                      ? p.steps.map(s => (s.id === event.step.id ? event.step : s))
-                      : [...p.steps, event.step],
-                  },
-              );
-            else setPending(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
-          },
-          controller.signal,
-        );
-        if ('offer' in response) {
-          // Nothing was sent or saved: the question stays on the page with the choice under it, and the box rests.
-          const { offer, held } = response;
-          setPending(p => {
-            if (!p) return p;
-            const { handed: _sentTo, held: _before, ...rest } = p;
-            return { ...rest, steps: [], answer: '', offer, ...(held ? { held } : {}) };
-          });
-          announce(
-            held
-              ? `Frågan är inte skickad. Den ser ut att gälla ${held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Välj i samtalet.`
-              : `${offer.name} i ${offer.source} kan svara på det här. Välj i samtalet.`,
-          );
-          onOffer?.(offer, held);
+      const left = () => controller.signal.aborted && abortReason.current === 'leave';
+      // The written turn: its thread goes into the cache before the pending turn gives way to it, so the transcript is
+      // never without it, and the page that asked hears of it only while the person is still there.
+      const land = async (response: ConversationResponse) => {
+        onThreadChange(response.thread);
+        await applyThread(client, response.thread);
+        if (left()) {
+          setPending(null);
           return;
         }
         // The message list was on the page while the answer was written, so the log speaks it once it is done (4.1.3).
-        setConversation(conversationOf(response.thread));
+        setOpenId(response.thread.id);
         setLatest(response);
         setPending(null);
         onAnswered?.(response);
-        // The answer's thread is the truth for the log (Frågor); a draft's or a proposal's thread for its card; the verbs about a chip may have changed.
-        apply(response.thread);
+        // A draft's or a proposal's thread for its card; the verbs about a chip may have changed.
         if (response.draft) apply(response.draft.thread);
         else if (response.forslag)
           void client
@@ -440,12 +451,73 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
             .then(apply)
             .catch(() => undefined);
         void client.invalidateQueries({ queryKey: keys.verbsAll });
-      } catch (e) {
-        setPending(null);
-        const stopped = controller.signal.aborted;
-        if (!stopped || abortReason.current === 'stop') setValue(v => v || raw);
-        if (!stopped) setError(errorMessage(e, 'Frågan kunde inte ställas.'));
-        else if (abortReason.current === 'stop') announce('Frågan avbröts. Den ligger kvar i rutan.');
+      };
+      try {
+        await tracked(async () => {
+          try {
+            const response = await api.converseStream(
+              {
+                text,
+                chips,
+                turn,
+                ...(beside && !handed ? { beside } : {}),
+                ...(current ? { conversationId: current.id } : {}),
+                ...(handed ? { assistant: handed.id } : {}),
+                ...(handed && suggested ? { suggested: true as const } : {}),
+                ...(own ? { own: true as const } : {}),
+                ...(handed && confirmed ? { confirmed: true as const } : {}),
+              },
+              event => {
+                // The turn went to another system's assistant: what follows is drawn as that assistant's from its first word.
+                if (event.type === 'handed') setPending(p => p && { ...p, handed: event.assistant, answer: '' });
+                else if (event.type === 'step')
+                  setPending(
+                    p =>
+                      p && {
+                        ...p,
+                        steps: p.steps.some(s => s.id === event.step.id)
+                          ? p.steps.map(s => (s.id === event.step.id ? event.step : s))
+                          : [...p.steps, event.step],
+                      },
+                  );
+                else setPending(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
+              },
+              controller.signal,
+            );
+            if ('offer' in response) {
+              // Nothing was sent or saved: the question stays on the page with the choice under it, and the box rests.
+              const { offer, held } = response;
+              setPending(p => {
+                if (!p) return p;
+                const { handed: _sentTo, held: _before, ...rest } = p;
+                return { ...rest, steps: [], answer: '', offer, ...(held ? { held } : {}) };
+              });
+              announce(
+                held
+                  ? `Frågan är inte skickad. Den ser ut att gälla ${held === 'person' ? 'din personal' : 'ett av dina ärenden'}. Välj i samtalet.`
+                  : `${offer.name} i ${offer.source} kan svara på det här. Välj i samtalet.`,
+              );
+              onOffer?.(offer, held);
+              return;
+            }
+            await land(response);
+          } catch (e) {
+            const stopped = controller.signal.aborted;
+            // A turn left behind is not read back: nothing pulls the person to a conversation they left.
+            const written = left() ? null : await writtenUnder(turn);
+            if (written) {
+              await land(written);
+              if (stopped) announce('Svaret hann skrivas innan frågan stoppades. Det står i samtalet.');
+              return;
+            }
+            setPending(null);
+            if (left()) return;
+            unanswered.current = { text, at, turn };
+            setValue(v => v || raw);
+            if (!stopped) setError(errorMessage(e, 'Frågan kunde inte ställas.'));
+            else announce('Frågan avbröts. Den ligger kvar i rutan.');
+          }
+        });
       } finally {
         if (inflight.current === controller) inflight.current = null;
         busyRef.current = false;
@@ -453,7 +525,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
         if (refocus?.() ?? true) input.current?.focus();
       }
     },
-    [announce, apply, client],
+    [announce, apply, client, onThreadChange, tracked],
   );
   const performActions = useCallback(
     async (actions: ClewAction[]) => {
@@ -511,14 +583,18 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   );
   return {
     conversation,
-    setConversation,
+    openId,
+    setOpenId,
     latest,
     setLatest,
     pending,
     done,
     setDone,
     busy,
-    error,
+    // A conversation that can no longer be read (gone, or no longer the person's to see) says so, as opening it did.
+    error:
+      error ??
+      (openId && opened.isError && !opened.data ? errorMessage(opened.error, 'Samtalet kunde inte öppnas.') : null),
     setError,
     value,
     setValue,
@@ -579,7 +655,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const turns = useTurns(onThreadChange);
   const {
     conversation,
-    setConversation,
+    openId,
+    setOpenId,
     latest,
     setLatest,
     pending,
@@ -597,6 +674,23 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     cancelActions,
     makeCard,
   } = turns;
+  // The panel beside the conversation: one question at a time to another system's assistant, in the same conversation.
+  const [aside, setAside] = useState<AsideTurn | null>(null);
+  const [asideError, setAsideError] = useState<string | null>(null);
+  const asideBusy = useRef(false);
+  // The panel's question in flight and why it would be aborted (WD-L5), as for the box's turn: Stoppa puts it back in
+  // the panel's box; leaving the conversation (another one, a new one, closing it, another page) lets it go.
+  const asideFlight = useRef<AbortController | null>(null);
+  const asideReason = useRef<'stop' | 'leave'>('stop');
+  const asideUnanswered = useRef<Unanswered | null>(null);
+  const stopAside = useCallback((reason: 'stop' | 'leave' = 'stop') => {
+    if (!asideFlight.current) return;
+    asideReason.current = reason;
+    asideFlight.current.abort();
+  }, []);
+  // The conversation on the page now, for an answer that comes back after the person may have moved on.
+  const openNow = useRef<string | null>(null);
+  openNow.current = openId;
   // How many conversation boxes are mounted (`useClaimBox`): state, not the input's ref, so the controls that add to the
   // box are drawn again when one comes or goes.
   const [boxes, setBoxes] = useState(0);
@@ -643,11 +737,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const close = useCallback(() => {
     if (!shownRef.current && !where.current.onRoute) return;
     abortTurn('stop');
+    stopAside('leave');
     setShown(false);
     setError(null);
     onConversation(null);
     input.current?.focus();
-  }, [onConversation, abortTurn, setError, input]);
+  }, [onConversation, abortTurn, stopAside, setError, input]);
   const rememberObject = useCallback((o: ClewObject) => {
     known.current.set(o.ref, {
       ref: o.ref,
@@ -680,8 +775,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const newConversation = useCallback(
     (options?: { from?: string; stay?: boolean }) => {
       abortTurn('leave');
+      stopAside('leave');
       // A new conversation has nothing in its drawer.
-      setConversation(null);
+      setOpenId(null);
       setLatest(null);
       setDone(null);
       setError(null);
@@ -692,15 +788,20 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       if (where.current.onRoute && !options?.stay) navigate('/');
       input.current?.focus();
     },
-    [navigate, abortTurn, setConversation, setLatest, setDone, setError, setValue, input],
+    [navigate, abortTurn, stopAside, setOpenId, setLatest, setDone, setError, setValue, input],
   );
   const client = useQueryClient();
+  // The conversation asked for last: one that is read after a later one was asked for is not drawn under its address.
+  const opening = useRef<string | null>(null);
   const openConversation = useCallback(
     async (threadId: string) => {
       abortTurn('leave');
+      stopAside('leave');
+      opening.current = threadId;
       try {
-        const t = await client.query(threadQuery(threadId));
-        setConversation(conversationOf(t));
+        await client.query(threadQuery(threadId));
+        if (opening.current !== threadId) return;
+        setOpenId(threadId);
         setLatest(null);
         setDone(null);
         setShown(true);
@@ -709,17 +810,18 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         setError(errorMessage(e, 'Samtalet kunde inte öppnas.'));
       }
     },
-    [client, abortTurn, setConversation, setLatest, setDone, setError, input],
+    [client, abortTurn, stopAside, setOpenId, setLatest, setDone, setError, input],
   );
   // The route names the conversation: arriving at /conversations/:id (a link, the back button, a reload) puts the
   // transcript on the page. Arriving at /conversations/new is a conversation not asked yet: whatever conversation was
   // held before is let go of, unless a question is on its way from Hem to this address.
   const wasOnRoute = useRef(false);
   useEffect(() => {
-    if (conversationId && conversationId !== conversation?.id) void openConversation(conversationId);
+    if (conversationId && conversationId !== openId) void openConversation(conversationId);
     else if (onRoute && !shown) setShown(true);
-    if (routeId === 'new' && !pending && conversation) {
-      setConversation(null);
+    if (routeId === 'new' && !pending && openId) {
+      opening.current = null;
+      setOpenId(null);
       setLatest(null);
       setDone(null);
     }
@@ -731,9 +833,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!here && shownRef.current) {
       abortTurn('leave');
+      stopAside('leave');
       setShown(false);
     }
-  }, [here, abortTurn]);
+  }, [here, abortTurn, stopAside]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // ⌘K is "Nytt samtal" from anywhere (the canvas's H3 item 1): in a conversation it starts a new one, elsewhere it takes the focus to the box.
@@ -852,27 +955,52 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     (text: string, from?: AskFrom, about?: ChipRef[]) => void submit(text, from, about),
     [submit],
   );
-  // The panel beside the conversation: one question at a time to another system's assistant, in the same conversation.
-  const [aside, setAside] = useState<AsideTurn | null>(null);
-  const [asideError, setAsideError] = useState<string | null>(null);
-  const asideBusy = useRef(false);
   const dropAside = useCallback(() => {
     if (!asideBusy.current) setAside(null);
     setAsideError(null);
   }, []);
+  /**
+   * The panel's question (WD-L5). It can be stopped, and leaving the conversation stops it. Its answer lands in the
+   * conversation it was asked in and nowhere else: the thread goes into the cache, where that conversation is drawn
+   * from (WD-L6), and the page is given an address only while it is still the conversation not asked yet that the
+   * question started. A question stopped or failed is read back by its key, as the box's turn is (WD-L3).
+   */
   const askAside = useCallback(
     async (assistant: Handed, raw: string, confirmed?: boolean): Promise<boolean> => {
       const text = raw.replace(/\s+/g, ' ').trim();
       if (!text || asideBusy.current || busy) return false;
+      const current = openRef.current ? conversation : null;
+      const at = current?.id ?? null;
+      const turn = keyFor(asideUnanswered.current, text, at);
+      asideUnanswered.current = null;
+      const controller = new AbortController();
+      asideFlight.current = controller;
+      asideReason.current = 'stop';
       asideBusy.current = true;
       setAsideError(null);
       setAside({ assistant: assistant.id, text, at: new Date().toISOString(), answer: '' });
       announce(`Frågar ${assistant.name} …`);
-      const current = openRef.current ? conversation : null;
+      const left = () => controller.signal.aborted && asideReason.current === 'leave';
+      const land = async (response: ConversationResponse) => {
+        await applyThread(client, response.thread);
+        setAside(null);
+        if (left()) return;
+        if (!at && openNow.current === null && window.location.pathname === NEW) {
+          setOpenId(response.thread.id);
+          onConversation(response.conversationId);
+        }
+        const answer = response.thread.messages.at(-1)?.meta?.handover;
+        announce(
+          answer?.failed
+            ? `${assistant.name} svarade inte. Skriv frågan till assistenten om du vill ha svar där.`
+            : `${assistant.name} har svarat i sidofältet.`,
+        );
+      };
       try {
         const response = await api.converseStream(
           {
             text,
+            turn,
             ...(current ? { conversationId: current.id } : {}),
             assistant: assistant.id,
             side: true as const,
@@ -882,6 +1010,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
             if (event.type === 'text')
               setAside(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
           },
+          controller.signal,
         );
         if ('offer' in response) {
           // Clew held the question before it left: the panel asks where it should go.
@@ -889,26 +1018,27 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           announce('Frågan är inte skickad. Välj i sidofältet.');
           return true;
         }
-        setConversation(conversationOf(response.thread));
-        setAside(null);
-        void applyThread(client, response.thread);
-        if (!current) onConversation(response.conversationId);
-        const answer = response.thread.messages.at(-1)?.meta?.handover;
-        announce(
-          answer?.failed
-            ? `${assistant.name} svarade inte. Skriv frågan till assistenten om du vill ha svar där.`
-            : `${assistant.name} har svarat i sidofältet.`,
-        );
+        await land(response);
         return true;
       } catch (e) {
+        const stopped = controller.signal.aborted;
+        const written = left() ? null : await writtenUnder(turn);
+        if (written) {
+          await land(written);
+          return true;
+        }
         setAside(null);
-        setAsideError(errorMessage(e, 'Frågan kunde inte ställas.'));
+        if (left()) return false;
+        asideUnanswered.current = { text, at, turn };
+        if (stopped) announce('Frågan avbröts. Den ligger kvar i rutan.');
+        else setAsideError(errorMessage(e, 'Frågan kunde inte ställas.'));
         return false;
       } finally {
+        if (asideFlight.current === controller) asideFlight.current = null;
         asideBusy.current = false;
       }
     },
-    [announce, busy, client, conversation, onConversation, setConversation],
+    [announce, busy, client, conversation, onConversation, setOpenId],
   );
   const askClew = useCallback(
     (text: string) => {
@@ -918,6 +1048,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     [conversation, dispatch],
   );
   const stop = useCallback(() => abortTurn('stop'), [abortTurn]);
+  const stopPanel = useCallback(() => stopAside('stop'), [stopAside]);
 
   const state = useMemo<ConversationState>(
     () => ({
@@ -953,6 +1084,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       aside,
       asideError,
       askAside,
+      stopAside: stopPanel,
       dropAside,
       askClew,
       acceptOffer,
@@ -991,6 +1123,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       aside,
       asideError,
       askAside,
+      stopPanel,
       dropAside,
       askClew,
       acceptOffer,
