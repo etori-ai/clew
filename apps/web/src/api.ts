@@ -685,7 +685,9 @@ export const api = {
     updateProvider: (id: string, input: ProviderPatchInput) =>
       patch<ProviderDetail>(`/api/admin/providers/${id}`, input),
     removeProvider: (id: string) => del<{ removed: true }>(`/api/admin/providers/${id}`),
-    providerKey: (id: string, apiKey: string) => post<ProviderDetail>(`/api/admin/providers/${id}/key`, { apiKey }),
+    /** `baseUrl` is the address the page showed: the server refuses the key when the provider has moved host since. */
+    providerKey: (id: string, apiKey: string, baseUrl: string) =>
+      post<ProviderDetail>(`/api/admin/providers/${id}/key`, { apiKey, baseUrl }),
     testProvider: (id: string) => post<ProviderTestReport>(`/api/admin/providers/${id}/test`),
   },
   calendar: (from?: string) =>

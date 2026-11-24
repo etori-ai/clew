@@ -1,4 +1,4 @@
-import type { Actor } from '@clew/connectors';
+import type { Actor, SourceOptions } from '@clew/connectors';
 import { NewsOutputSchema, checkContract, openRef, type NewsResult } from '@clew/contracts';
 import { merge, type SourceOutcome } from './domain';
 import { DEFAULT_BUDGET, type NewsCall, type NewsDeps, type NewsSourceRef } from './model';
@@ -31,8 +31,8 @@ export function newsUsecases(deps: NewsDeps) {
     }
   }
   /** List as the actor: `call` is the registry handle for this run, so every source's scope applies to the same person. */
-  async function list(actor: Actor, call: NewsCall): Promise<NewsResult> {
-    const sources = deps.sources(actor);
+  async function list(actor: Actor, call: NewsCall, options: SourceOptions = {}): Promise<NewsResult> {
+    const sources = deps.sources(actor, options);
     const pending = sources.map(s => askSource(s, call));
     const settled = await withinBudget(Promise.all(pending), budget.totalMs);
     // The total budget ended first: take what has answered and let the stragglers finish unobserved.

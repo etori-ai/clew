@@ -47,7 +47,9 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
         output: SearchResultSchema,
         scope: () => true,
         kinds: [...SearchKind.anyOf.map(k => k.const)],
-        run: (actor, input: SearchInput, clew) => search.search(actor, input, clew.call),
+        // The model's search asks only the sources it may have (D122 item 4).
+        run: (actor, input: SearchInput, clew) =>
+          search.search(actor, input, clew.call, { forModel: clew.forModel === true }),
       },
       {
         name: SEARCH_CONNECTOR + '.openSource',
@@ -60,7 +62,11 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
         scope: () => true,
         run: async (actor, input: { ref: string }, clew) => {
           const parsed = parseSourceRef(input.ref);
-          const hit = parsed && (await search.fetch(actor, parsed.connectorId, { ref: parsed.ref }, clew.call));
+          const hit =
+            parsed &&
+            (await search.fetch(actor, parsed.connectorId, { ref: parsed.ref }, clew.call, {
+              forModel: clew.forModel === true,
+            }));
           if (!hit?.link) throw new CapabilityError('Källan går inte att öppna härifrån.', 'not-found');
           return { url: hit.link };
         },
@@ -76,7 +82,11 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
         scope: () => true,
         run: async (actor, input: FetchInput, clew) => {
           const parsed = parseSourceRef(input.ref);
-          const hit = parsed && (await search.fetch(actor, parsed.connectorId, { ref: parsed.ref }, clew.call));
+          const hit =
+            parsed &&
+            (await search.fetch(actor, parsed.connectorId, { ref: parsed.ref }, clew.call, {
+              forModel: clew.forModel === true,
+            }));
           if (!hit) throw new CapabilityError('Avsnittet finns inte längre.', 'not-found');
           return hit;
         },

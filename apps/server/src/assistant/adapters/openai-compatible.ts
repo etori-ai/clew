@@ -10,7 +10,8 @@ import { boundedText } from '../../bounded-body';
  * AI SDK's OpenAI-compatible provider runs a turn. The test sets no token limit, as a turn sets none: the parameter's
  * name differs between providers (`max_tokens`, which OpenAI's reasoning models refuse, and `max_completion_tokens`,
  * which older servers do not know), and a limit a reasoning model spends on thinking can leave no answer at all.
- * Every failure becomes a `WireError`: no answer (network, timeout, 5xx), a refused key (401, 403), or anything else.
+ * Every failure becomes a `WireError`: no answer (network, timeout, 5xx), a refused key (401, 403), or anything else;
+ * a turn's own requests are classed more narrowly (`turnError`).
  */
 /** The most of a probe's answer read: a model list of thousands of models is well under it. */
 const ANSWER_BYTES = 4 * 1024 * 1024;
@@ -126,17 +127,26 @@ export function openAICompatibleWire(
   };
 }
 /**
- * A turn's failure as the wire names it, so the assistant marks a provider down only when the endpoint itself did not
- * answer or refused the key (D8): a 5xx, or a call the SDK could not make, is `unreachable` (a request that got no answer
- * at all is named so where it is sent), a 401 or 403 is `key-rejected`, and any other answer of the endpoint (a 4xx: the
- * request too long for the model, a model id it does not know) is `unsupported`. A turn that ran out of time or was
- * stopped is not the endpoint's failure and passes as it is; so does anything that is not the wire's.
+ * The statuses with which an endpoint says it is not there for anyone: a gateway that reached no server behind it, a
+ * server that is down or overloaded, an upstream that did not answer in time.
+ */
+const DOWN_STATUSES = new Set([502, 503, 504]);
+/**
+ * A turn's failure as the wire names it, so the assistant marks a provider down for everyone only when the endpoint
+ * itself did not answer or refused the key (D8): a call the SDK could not make, or a 502, 503 or 504, is `unreachable`
+ * (a request that got no answer at all is named so where it is sent), a 401 is `key-rejected`, and any other answer of
+ * the endpoint is `unsupported`, the turn's own failure. A 403 is that too: in front of a model it is as often a web
+ * application firewall or a moderation gateway refusing one prompt's content as a refused key, and one person's
+ * question must not take the assistant from everyone. So is a 500, which one request can cause. The minute probe and
+ * "Testa", which send nobody's prompt, still class a 403 as a refused key and any 5xx as no answer
+ * (`call` above). A turn that ran out of time or was stopped is not the endpoint's failure and passes as it is; so
+ * does anything that is not the wire's.
  */
 export function turnError(error: unknown): unknown {
   if (!APICallError.isInstance(error)) return error;
   const status = error.statusCode;
   const message = (status ? `HTTP ${status}: ` : '') + error.message.slice(0, 200);
-  if (status === 401 || status === 403) return new WireError('key-rejected', message);
-  if (status === undefined || status >= 500) return new WireError('unreachable', message);
+  if (status === 401) return new WireError('key-rejected', message);
+  if (status === undefined || DOWN_STATUSES.has(status)) return new WireError('unreachable', message);
   return new WireError('unsupported', message);
 }
