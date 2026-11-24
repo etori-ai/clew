@@ -89,6 +89,7 @@ authRoutes.get('/session', protectedRoute(), c => {
     ...sessionEntryPoints(session.context),
     csrfToken: session.csrfToken,
     sessionKey: session.sessionKey,
+    policyVersion: session.policyVersion,
     expiresAt: session.context.expiresAt,
   });
 });

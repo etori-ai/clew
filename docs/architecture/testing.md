@@ -152,8 +152,9 @@ the fixture fails a spec on any violation of the content security policy that th
 
 ## Rules the tools enforce
 
-- `dependency-cruiser` (`bun run deps`, over the server's and the web app's source and tests, `packages`, `connectors`,
-  `scripts` and `tests`): `usecases-reach-stores-through-ports` (a use case never imports `@clew/db`,
+- `dependency-cruiser` (`bun run deps`, over the whole of `apps`, `packages`, `connectors`, `scripts` and `tests`, an
+  app's or a package's built `dist` aside, so a configuration beside an app's source or a new folder under an app is
+  judged too): `usecases-reach-stores-through-ports` (a use case never imports `@clew/db`,
   Drizzle, Postgres, the durable engine, an adapter or the composition root; an error for every `usecases` folder),
   `unit-tests-stay-fast` (`tests/unit` never imports a live adapter, the composition root,
   `@clew/db` or the durable engine; a type needed from the schema comes from `packages/db/src/schema.ts`, because TypeScript 7

@@ -10,7 +10,7 @@ import {
   thirdPartyNotices,
   typefaceUnnoticed,
   unnoticed,
-} from '../../scripts/third-party-notices';
+} from '../../packages/notices/src/index';
 
 /**
  * A repository in miniature, laid out as Bun installs it: every package in `node_modules/.bun/<name>@<version>/`, its
@@ -56,6 +56,20 @@ mkdirSync(nameless, { recursive: true });
 writeFileSync(join(nameless, 'package.json'), JSON.stringify({ version: '1.0.0', type: 'module' }));
 pkg('lonely@1.0.0', 'lonely', '1.0.0', { LICENSE: 'lonely licence' }, ['ghost']);
 const lonely = join(store, 'lonely@1.0.0', 'node_modules', 'lonely');
+// A package with a peer the install provides beside it, an optional peer it provides too, and a peer it leaves out.
+const styled = pkg('styled@1.0.0', 'styled', '1.0.0', { LICENSE: 'styled licence' });
+pkg('styled@1.0.0', 'base-styles', '2.0.0', { LICENSE: 'base styles licence' });
+pkg('styled@1.0.0', 'compiler', '3.0.0', { LICENSE: 'compiler licence' });
+writeFileSync(
+  join(styled, 'package.json'),
+  JSON.stringify({
+    name: 'styled',
+    version: '1.0.0',
+    license: 'MIT',
+    peerDependencies: { 'base-styles': '*', compiler: '*', absent: '*' },
+    peerDependenciesMeta: { compiler: { optional: true } },
+  }),
+);
 // A workspace's node_modules links to the store, as Bun installs it.
 mkdirSync(join(base, 'apps', 'web', 'node_modules'), { recursive: true });
 const linked = join(base, 'apps', 'web', 'node_modules', 'jszip');
@@ -100,6 +114,12 @@ describe("the third-party notices of Clew's browser builds (D143 item 3)", () =>
     expect(text).toContain('https://github.com/etori-ai/clew');
     expect(text).toContain('Carried by the packages above');
     expect(text.indexOf('pako 1.0.11 (MIT)')).toBeGreaterThan(text.indexOf('Carried by the packages above'));
+  });
+  test('a peer the install provides is carried as a dependency is; an optional peer, or one it leaves out, is not', () => {
+    const found = collect([styled], { vendored, base });
+    expect(found.carried.map(p => `${p.name} ${p.version}`)).toEqual(['base-styles 2.0.0']);
+    expect(found.unread).toEqual([]);
+    expect(unnoticed(found)).toEqual([]);
   });
   test('a package another build put inside its files, which no install holds, is credited from its kept upstream text', () => {
     const kept = keptPackage(

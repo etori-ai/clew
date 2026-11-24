@@ -110,6 +110,23 @@ test('removing a plain audience group invalidates an in-flight request and backg
     await database().delete(schema.groups).where(eq(schema.groups.id, group));
   }
 });
+test("a change of the person's access keeps the session's key and gives it a new version, which the browser reads again", async () => {
+  const { authenticate } = await import('../../apps/server/src/auth');
+  const owner = await person(),
+    raw = randomToken();
+  await session(owner, { digest: tokenDigest(raw) });
+  const before = await authenticate(raw);
+  expect(before.sessionKey).toBe(tokenDigest(raw).slice(0, 24));
+  // The provisioner makes the manager an employee: the same session, under other access (the review of batch 12, 1).
+  await database()
+    .update(schema.accessGrants)
+    .set({ role: 'employee' })
+    .where(eq(schema.accessGrants.personId, owner.id));
+  const after = await authenticate(raw);
+  expect(after.sessionKey).toBe(before.sessionKey);
+  expect(after.policyVersion).not.toBe(before.policyVersion);
+  expect(after.policyVersion).toBe(after.context.authorizationVersion.slice(0, 16));
+});
 test('an active session stands for its own person; revoked, expired or foreign sessions stand for nobody', async () => {
   const { standingSession } = await import('../../apps/server/src/auth');
   const hillevi = await person(),
