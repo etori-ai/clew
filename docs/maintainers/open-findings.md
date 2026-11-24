@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 6 | A decision is bound to what the person was shown | `AM-4`, `DE-M9`, `DE-L5`, `DE-L6` | |
 | 7 | A decision that failed or whose outcome is unknown has a way forward | `DE-M1`, `DE-M2`, `DE-M3`, `DE-L1`, `DE-L2`, `DE-L11`, `DE-L17` | |
 | 8 | Erasure reaches everything | `DE-M6`, `BD-M1`, `BD-M2`, `BD-L1`, `BD-L3`, `BD-L5` | |
 | 9 | Who may see and change what | `ID-3`, `ID-7`, `CO-M1`, `CO-L1`, `CB-7`, `BD-L2`, `CS-M2` | |
@@ -42,15 +41,15 @@ no batch.
 |---|---|---|---|---|---|
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 1 | 2 | 3 |
 | CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 1 | 5 | 6 |
-| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 6 | 5 | 11 |
-| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 9 | 17 | 26 |
+| AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 5 | 5 | 10 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 8 | 15 | 23 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 6 | 8 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 1 | 7 | 8 |
-| | **Total** | **0** | **30** | **70** | **100** |
+| | **Total** | **0** | **28** | **68** | **96** |
 
 ## High
 
@@ -90,7 +89,6 @@ and it carries a table of what reaches the model and a table of the tools.
 |---|---|---|---|
 | AM-2 | Medium | Source text is written into the system prompt beside Clew's rules, with no rule that it is data and no line rule on its fields. | `apps/server/src/assistant/model.ts:136-213` |
 | AM-3 | Medium | The live server binds the assistant's `people` port with the person's Clew id and the prompt calls it their user name, which the registry refuses. | `apps/server/src/composition/index.ts:359-363` |
-| AM-4 | Medium | A decision on a card carries no version, so the server approves the card as it is on arrival, not as the person was shown it. Same as `DE-M9`. | `packages/contracts/src/index.ts:4716-4722` |
 | AM-5 | Medium | One failed turn marks the provider down for everyone, and turns fail for reasons unrelated to the endpoint: an 8-second budget, no text after tool calls, no token limit. | `apps/server/src/assistant/index.ts:734` |
 | AM-6 | Medium | A model call that does not end in the model's answer leaves no record of which model was called or what it read. | `apps/server/src/assistant/index.ts:727` |
 | AM-7 | Medium | D115's guard is applied to the turn's prompt but not to the conversation's history, which is sent unchecked. | `apps/server/src/assistant/context.ts:92` |
@@ -116,13 +114,10 @@ ports with no contract under M7.
 | DE-M6 | Medium | No erasure clears an invitee's `participant_name` and `participant_email` from `proposal`. | `packages/db/src/schema.ts:433-435` |
 | DE-M7 | Medium | Ten ports or groups of ports have behaviour that no contract case holds both adapters to. | `tests/` (the store contracts) |
 | DE-M8 | Medium | The CalDAV adapter builds a person's address as `<login>@clew.test` and reads an appointment with no organiser as someone else's. | `packages/calendar/src/nextcloud.ts:68` |
-| DE-M9 | Medium | `POST /api/threads/:id/act` carries nothing of the version shown, so the version check guards only the server's own read against its commit. Same as `AM-4`. | `packages/contracts/src/index.ts:4716-4722` |
 | DE-L1 | Low | A workflow that ends in ERROR leaves its execution or follow-up with no way forward except an operator's script. | `apps/server/src/dbos/workflows.ts:62-70` |
 | DE-L2 | Low | The heartbeat sweep deletes a dead executor's row before its workflows are adopted, so a failed adoption leaves them stranded. | `apps/server/src/dbos/heartbeat.ts:36-43` |
 | DE-L3 | Low | `scanInto`, the first scan implementation, is unreachable in the server, and its tests still stand as evidence. | `apps/server/src/threads/usecases/cards.ts:110-203` |
 | DE-L4 | Low | The projection's job inserts, an approved undo's end of the follow-up plan and a connector removal's cascade leave no audit row of their own. | `apps/server/src/composition/execution-projection.ts:227-236` |
-| DE-L5 | Low | The approval endpoint never checks whether an original is already compensated, so one confirmed effect can be undone twice. | `apps/server/src/routes/api.ts:82-92` |
-| DE-L6 | Low | On PostgreSQL the planner's `replan` accepts any open card of the manager and rewrites it. | `apps/server/src/modules/calendar/usecases/samtal.ts:502-547` |
 | DE-L7 | Low | A connector's `observedAt` is compared with the stored one as a string, so an offset changes which is newer. | `apps/server/src/threads/usecases/refresh.ts:117` |
 | DE-L8 | Low | `activeByUserName` in the competence store folds a user name's case with a plain `lower`, not ICU, and cannot use the index. | `apps/server/src/modules/competence/adapters/postgres.ts:710-726` |
 | DE-L9 | Low | One open card per topic is enforced on insert only by the memory adapter, and a reopen can violate the PostgreSQL index. | `apps/server/src/threads/adapters/memory.ts:111-118` |
