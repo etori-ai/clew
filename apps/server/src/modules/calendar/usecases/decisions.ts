@@ -279,7 +279,9 @@ export function calendarDecisions({
       });
     }
     await approve(p, {
-      decisionId: `calendar:${threadId}:${t.updatedAt}`,
+      // A send after one that ended refused, in part or let go (DE-M1, DE-M2) names it, so it is a new decision whatever
+      // the card's version.
+      decisionId: `calendar:${threadId}:${t.updatedAt}${t.execution ? `:after:${t.execution.id}` : ''}`,
       operation: 'calendar.confirmProposals',
       payload: {
         items,

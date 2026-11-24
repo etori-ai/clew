@@ -1,4 +1,4 @@
-import { SUBJECT_CHANGED, type ExecutionSummary } from '@clew/contracts';
+import { RELEASED_BY_PERSON, SUBJECT_CHANGED, type ExecutionSummary } from '@clew/contracts';
 import type { StatusKind } from '@clew/ui/status-words';
 
 /**
@@ -14,6 +14,9 @@ export function executionStatus(execution: ExecutionSummary | null | undefined, 
     return execution.state === 'unknown'
       ? 'Personen har inte längre det användarnamn som beslutet gällde, så åtgärden skickas inte igen. Utfallet behöver kontrolleras i källsystemet.'
       : 'Personen har inte längre det användarnamn som beslutet gällde. Inget skickades. Fatta beslutet igen.';
+  // A decision in doubt the person let go, having seen in the source that it did not go through (DE-M2).
+  if (execution.reason === RELEASED_BY_PERSON)
+    return 'Beslutet är markerat som inte genomfört. Fatta det igen om det behövs.';
   if (silent && !execution.reason && !execution.compensates && ['pending', 'running'].includes(execution.state))
     return 'Ditt beslut är sparat. Det du skickar köas och läses tillbaka när systemet svarar.';
   if (execution.reason === 'needs-session') return 'Källan kräver en aktiv inloggning. Åtgärden väntar.';
@@ -34,6 +37,19 @@ export function executionStatus(execution: ExecutionSummary | null | undefined, 
     return 'Åtgärden kunde inte genomföras. Kontrollera beskedet innan du fattar ett nytt beslut.';
   return null;
 }
+
+/** A decision in doubt the person may let go (DE-M2); not an undo, whose original receipt stands whatever became of it. */
+export const releasable = (execution: ExecutionSummary | null | undefined) =>
+  execution?.state === 'unknown' && !execution.compensates;
+/**
+ * The question asked before a person lets go of a decision in doubt (DE-M2), in an action's `confirm` shape
+ * (`confirmParts`): a decision made again after one that did go through does the same thing twice, so that is said
+ * before, not after.
+ */
+export const releaseQuestion = (source: string) => ({
+  label: 'Markera som inte genomfört',
+  confirm: `Markera beslutet som inte genomfört? Gör det bara om du har sett i ${source} att det inte gick igenom. Clew slutar då vänta på besked, och du kan fatta beslutet igen. Gick det ändå igenom gör ett nytt beslut samma sak en gång till.`,
+});
 
 /** The reasons a decision waits before it can be sent: a sign-in, an authority or the source's terms (D45, D47). */
 export const WAITING_REASONS: readonly string[] = ['needs-session', 'authority-revoked', 'source-contract-changed'];

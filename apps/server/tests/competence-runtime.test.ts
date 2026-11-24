@@ -214,8 +214,10 @@ test(
       assert.equal(read, 3);
       await ensureHeartbeatTable();
       await beat(engine.name, 'copy-child', new Date(Date.now() - 120_000));
-      assert.deepEqual(await claimDead(engine.name, launched.executorID), ['copy-child']);
-      assert.deepEqual(await adoptExecutors(['copy-child']), [killed.id]);
+      assert.deepEqual(await claimDead(engine.name, launched.executorID, adoptExecutors), {
+        dead: ['copy-child'],
+        adopted: [killed.id],
+      });
       await durableResult(killed.id);
       assert.equal(read, 4);
       assert.equal((await reads(run)).length, 1);

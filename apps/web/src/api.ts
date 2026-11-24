@@ -636,6 +636,8 @@ export const api = {
     return response.arrayBuffer();
   },
   checkExecution: (id: string) => post<Thread>(`/api/threads/${id}/execution/check`),
+  /** The person lets go of a decision in doubt, having seen in the source that it did not go through (DE-M2). */
+  releaseExecution: (id: string) => post<Thread>(`/api/threads/${id}/execution/release`),
   approveCorrection: (input: { decisionId: string; operation: string; payload: unknown }) =>
     post<CorrectionExecution>('/api/executions', input),
   correctionExecution: (id: string) => call<CorrectionExecution>(`/api/executions/${encodeURIComponent(id)}`),

@@ -175,9 +175,15 @@ test('calendar approval creates its card atomically; a source commit before a fa
   expect(a.waitingOn).toBe('källans besked');
   expect(w.provider.events).toHaveLength(0);
   w.failNextCommit();
-  await w.uc.progress(a.execution!.id);
-  expect((await w.store.read(a.execution!.id))?.state).toBe('unknown');
+  // The calendar wrote the event and Clew could not record its answer: that is Clew's own failure, thrown for the
+  // workflow to try the step again (DE-M3), and the execution stays where it was, never stored as the source not
+  // answering.
+  await expect(w.uc.progress(a.execution!.id)).rejects.toThrow('simulated database receipt failure');
+  expect((await w.store.read(a.execution!.id))?.state).toBe('running');
   expect(w.provider.events).toHaveLength(1);
+  // Inside the lease the step is busy; after it, the step reads the calendar back and never writes twice.
+  expect(await w.uc.progress(a.execution!.id)).toBe('busy');
+  w.setting.now = new Date(Date.parse(w.setting.now) + 121_000).toISOString();
   await w.uc.progress(a.execution!.id);
   expect((await w.store.read(a.execution!.id))?.state).toBe('succeeded');
   expect(w.provider.events).toHaveLength(1);
@@ -523,7 +529,12 @@ test('an invitation read back from the calendar books the talk in the open round
     const undone = await w.decisions.undo(w.actor, card);
     await w.uc.progress(undone.execution!.id);
     expect(w.provider.events).toHaveLength(0);
-    expect((await w.proposals.readThread(w.id, card))!.proposals.map(p => p.status)).toEqual(['undone']);
+    // The card is open again with the time proposed, so it can be sent once more or another week drawn (DE-L17).
+    const reopened = (await w.proposals.readThread(w.id, card))!;
+    expect(reopened.thread.state).toBe('open');
+    expect(reopened.proposals.map(p => [p.status, p.eventRef ?? null, p.undoUntil ?? null])).toEqual([
+      ['proposed', null, null],
+    ]);
     expect(await talk()).toMatchObject({
       id: booked.id,
       bookedStart: null,
@@ -825,6 +836,42 @@ test('an invitation whose result is unknown holds the person for its approval’
   later.b.setting.round = { label: 'Next round', opensOn: '2098-12-01', dueOn: '2098-12-31', held: [], booked: [] };
   const next = await cardFor(later.b, later.shared, '2098-12-10T09:00:00.000Z');
   expect((await later.b.decisions.confirm(later.b.actor, next, [next + ':shared'])).execution?.state).toBe('pending');
+});
+test('an invitation in doubt that its manager lets go is sent again as a new decision, named after the one let go (DE-M1, DE-M2)', async () => {
+  const pair = await sharedPair(),
+    { a, shared, cards } = pair;
+  const create = a.provider.create.bind(a.provider);
+  a.provider.create = async () => {
+    throw new Error('offline');
+  };
+  const first = (await pair.confirmA()).execution!.id;
+  await a.uc.progress(first);
+  expect(await a.store.read(first)).toMatchObject({ state: 'unknown' });
+  // While it is in doubt the card's send is the same decision, replayed: nothing new is approved.
+  expect((await pair.confirmA()).execution?.id).toBe(first);
+  // The manager has seen in the calendar that it was not sent, and lets it go in their name; nothing is sent.
+  await a.uc.release(a.actor, first);
+  expect(await a.store.read(first)).toMatchObject({ state: 'failed', reason: 'released-by-person' });
+  const audited = async (id: string) =>
+    (
+      await database()
+        .select()
+        .from(schema.audit)
+        .where(eq(schema.audit.subject, 'execution:' + id))
+    ).map(r => [r.action, r.actor]);
+  expect(await audited(first)).toContainEqual(['execution.released', 'person:' + a.id]);
+  // The card sends the time again as a new decision, named after the one let go, and it reaches the calendar once.
+  a.provider.create = create;
+  const card = (await a.proposals.readThread(a.id, cards[0]))!.thread;
+  const again = (await pair.confirmA()).execution!;
+  expect(again).toMatchObject({
+    state: 'pending',
+    decisionId: `calendar:${cards[0]}:${card.updatedAt}:after:${first}`,
+  });
+  expect(again.id).not.toBe(first);
+  expect((await audited(again.id)).map(([action]) => action)).toContain('execution.approved');
+  await a.uc.progress(again.id);
+  expect(sentTo(a)).toEqual([[shared.email]]);
 });
 test('concurrent approvals sharing invitee locks finish even when they outnumber the database connections', async () => {
   const refusal = 'Delad Medarbetare bjuds redan in till ett utvecklingssamtal av en annan chef.';
