@@ -730,6 +730,11 @@ export class MockApi {
     this.revision++;
     await this.notify();
   }
+  /** Something of the person's changed outside the page (a source's scan): the change stream says so (D46). */
+  async changed() {
+    this.revision++;
+    await this.notify();
+  }
   /** A notice on the open change stream (D46), as the server sends one when something of the person's is committed. */
   private async notify() {
     const data = JSON.stringify({ revision: String(this.revision), policy: CHANGE_POLICY });
@@ -2021,10 +2026,22 @@ export class MockApi {
       return json(this.update(id, { state: 'open', handledAt: null, snoozedUntil: null }));
     // Confirming proposals (D70 amended): the decision waits on the calendar; its answer reads the invitations back,
     // the card stays open and waits on the invitees, and its receipt carries the way back for ten minutes.
+    // Refused as the server's `confirm` refuses (AM-4): no decision without the card's version, a decision on its way is
+    // replayed, and a card that has changed since the person was shown it is decided again.
     if (path.endsWith('/confirm') && post) {
       if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
       if (this.mutationFails) return route.fulfill({ status: 503, json: { error: FAILED } });
-      const ids = ((request.postDataJSON() ?? {}) as { proposalIds?: string[] }).proposalIds ?? [];
+      const body = (request.postDataJSON() ?? {}) as { proposalIds?: string[]; version?: string };
+      if (typeof body.version !== 'string' || !body.version)
+        return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
+      const shown = this.threads.find(t => t.id === id);
+      if (shown?.execution && ['pending', 'running', 'unknown'].includes(shown.execution.state)) return json(shown);
+      if (shown && body.version !== shown.updatedAt)
+        return route.fulfill({
+          status: 400,
+          json: { error: 'Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.' },
+        });
+      const ids = body.proposalIds ?? [];
       return json(
         this.approve(id, 'calendar.confirmProposals', t => {
           const sent = t.proposals.filter(p => ids.includes(p.id));

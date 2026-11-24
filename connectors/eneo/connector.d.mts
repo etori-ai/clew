@@ -12,4 +12,6 @@ export declare function createConnector(options?: {
   eneoPublicUrl?: string;
   /** The longest one assistant answer may take. */
   askTotalMs?: number;
+  /** Plain http to `eneoUrl` beyond `localhost` and `127.0.0.1`, for a private development network (ENEO_ALLOW_HTTP). */
+  allowHttp?: boolean;
 }): { manifest: unknown; handle(request: Request): Promise<Response> };

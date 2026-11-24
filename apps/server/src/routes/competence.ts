@@ -39,7 +39,7 @@ import {
 } from '@clew/contracts';
 import { failure, ForbiddenError, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { CompetenceUsecases } from '../modules/competence/usecases';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * The competence module's own routes (D108): the catalogue an administrator keeps, with its import from a file, a merge

@@ -14,7 +14,12 @@ import {
 } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { previewManifest } from '../../packages/connectors/src/preview';
-import { INSTALLATION_CALLER, INSTALLATION_SUBJECT, protocolSchema } from '../../packages/connectors/src/protocol';
+import {
+  INSTALLATION_CALLER,
+  INSTALLATION_SUBJECT,
+  MAX_ANSWER_BYTES,
+  protocolSchema,
+} from '../../packages/connectors/src/protocol';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createVerifier, verifyAssertion, verifyInstallationAssertion } from '../../connectors/hello/verification.mjs';
 // @ts-expect-error A frozen JavaScript fixture without declarations: the template before D119.
@@ -346,6 +351,26 @@ describe('the registry reads as the installation', () => {
         throw new TypeError('fetch failed');
       }).readHoldings('lms'),
     ).rejects.toMatchObject({ code: 'unavailable' });
+    // An answer that never ends is read no further than the limit (CB-5): the source not answering.
+    const counted = { pieces: 0, cancelled: false };
+    const piece = new TextEncoder().encode('[' + '0,'.repeat(32 * 1024));
+    const endless = new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          counted.pieces++;
+          controller.enqueue(piece);
+        },
+        cancel() {
+          counted.cancelled = true;
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+    await expect(world({ answer: () => endless }).registry.readHoldings('lms')).rejects.toMatchObject({
+      code: 'unavailable',
+    });
+    expect(counted.cancelled).toBe(true);
+    expect(counted.pieces).toBeLessThanOrEqual(Math.ceil(MAX_ANSWER_BYTES / (64 * 1024)) + 2);
     // The declaration lets a holding carry a name; the profile does not: refused, not released.
     const named = json(
       {

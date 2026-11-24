@@ -9,6 +9,7 @@ services:
     environment:
       CLEW_CONNECTOR_SECRET: ${ENEO_SECRET:?set ENEO_SECRET to a shared secret of 16+ characters}
       ENEO_URL: ${ENEO_URL:?set ENEO_URL to the Eneo installation's base URL}
+      ENEO_ALLOW_HTTP: ${ENEO_ALLOW_HTTP:-}
       ENEO_COLLECTIONS_TTL_SECONDS: "300"
     ports:
       - "127.0.0.1:4011:4011"

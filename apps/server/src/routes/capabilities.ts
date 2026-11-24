@@ -4,7 +4,7 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { failure, InputError, privateHeaders, type Env } from '../context';
 import type { PersonKeys } from '../threads/model';
 import { viewWithPeople } from '../threads/usecases/keys';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * Standing actions and panel views: one capability run directly, as the person. GET answers a read, its input as JSON in

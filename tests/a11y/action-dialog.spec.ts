@@ -109,9 +109,11 @@ test.describe('the action dialog on a work item', () => {
     await dialog.getByRole('button', { name: 'Boka samtalet' }).click();
     await expect(dialog).toBeHidden();
     await expect.poll(() => sent.length).toBe(1);
+    // Decided on the item as it was shown (AM-4).
     expect(sent[0]).toEqual({
       actionId: 'book',
       values: { when: '2026-11-05T12:15:00.000Z', place: 'Bergsåkers skola, rum 12' },
+      version: '2026-11-04T08:00:00.000Z',
     });
     // The decision waits on the source first, then the receipt is on the work item when it answers (D45): each row
     // read back, Ångra with the minutes left, and the decision under Händelser. The notice draws the headline bare.
@@ -345,7 +347,42 @@ test.describe('the action dialog on a work item', () => {
     await expect(dialog.getByRole('definition')).toHaveText(['Trevlig jul!']);
     await dialog.getByRole('button', { name: 'Godkänn', exact: true }).click();
     await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0]).toEqual({ actionId: 'decide', values: { comment: 'Trevlig jul!' } });
+    expect(sent[0]).toEqual({
+      actionId: 'decide',
+      values: { comment: 'Trevlig jul!' },
+      version: '2026-11-04T08:00:00.000Z',
+    });
+    await expect(page.locator('#card-ledighet').getByText('Ansökan är godkänd', { exact: true })).toBeVisible();
+  });
+
+  /**
+   * The decision is on the item as the dialog opened on it (AM-4). The item changes while the dialog is open and the page
+   * draws it again: Godkänn is refused, said in the dialog, and the next Godkänn is on the item as it now draws.
+   */
+  test('an item that changes while its dialog is open is refused on send, and the next send is on what it says now', async ({
+    page,
+    api,
+  }) => {
+    const sent = sentTo(page, 'ledighet');
+    await open(page, '/todo?item=ledighet');
+    await pane(page).getByRole('button', { name: 'Godkänn', exact: true }).click();
+    const dialog = dialogOf(page, 'Godkänn');
+    await expect(dialog.getByRole('heading', { name: 'När du trycker Godkänn' })).toBeVisible();
+    const card = api.threads.find(t => t.id === 'ledighet')!;
+    const shown = card.updatedAt;
+    card.title = card.title + ' (ändrad)';
+    card.updatedAt = new Date(Date.parse(shown) + 60_000).toISOString();
+    await api.changed();
+    await expect(page.getByText(card.title, { exact: true }).first()).toBeAttached();
+    await dialog.getByRole('button', { name: 'Godkänn', exact: true }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    const refusal = 'Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.';
+    await expect(dialog.getByRole('alert').filter({ hasText: refusal })).toBeVisible();
+    await expect.poll(async () => (await announcements(page)).some(a => a.includes(refusal))).toBe(true);
+    await expectNoAxeViolations(page);
+    await dialog.getByRole('button', { name: 'Godkänn', exact: true }).click();
+    await expect.poll(() => sent.length).toBe(2);
+    expect(sent.map(body => body.version)).toEqual([shown, card.updatedAt]);
     await expect(page.locator('#card-ledighet').getByText('Ansökan är godkänd', { exact: true })).toBeVisible();
   });
 
@@ -355,7 +392,7 @@ test.describe('the action dialog on a work item', () => {
     await pane(page).getByRole('button', { name: 'Godkänn', exact: true }).click();
     await dialogOf(page, 'Godkänn').getByRole('button', { name: 'Godkänn', exact: true }).click();
     await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0]).toEqual({ actionId: 'decide', values: {} });
+    expect(sent[0]).toEqual({ actionId: 'decide', values: {}, version: '2026-11-04T08:00:00.000Z' });
   });
 
   test('a write that asks nothing but says what it writes is one step, without step markers', async ({ page, api }) => {

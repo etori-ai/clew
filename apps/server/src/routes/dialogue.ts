@@ -20,7 +20,7 @@ import {
 } from '@clew/contracts';
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { DialogueUsecases } from '../modules/dialogue/usecases';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * The follow-up dialogue (D118): one unit's dialogue to read, and its writes: an assessment, an activity added, changed,

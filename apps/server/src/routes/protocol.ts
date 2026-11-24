@@ -1,14 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { Hono } from 'hono';
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
 import { MAX_MANIFEST_BYTES, openApiDocument, protocolSchema } from '@clew/connectors/protocol';
 import { previewManifest } from '@clew/connectors/preview';
 import { manifestReference } from '@clew/connectors/reference';
 import { manifest as hello } from '../../../../connectors/hello/connector.mjs';
 import { manifest as phonebook } from '../../../../connectors/phonebook/connector.mjs';
 import { parseManifest } from '@clew/connectors/remote';
-import { boundedText } from './bounded-body';
+import { schemaCompiler } from '@clew/connectors';
+import { boundedText } from '../bounded-body';
 
 /**
  * The connector protocol as this instance speaks it (D60): the JSON Schema bundle, an OpenAPI document, a page that
@@ -89,18 +88,10 @@ protocolRoutes.post('/manifest', async c => {
   } catch {
     return c.json({ error: 'The body is not JSON.' }, 400, shared);
   }
-  // A compiler of this request's own (CB-6): Ajv keeps every schema it compiles, keyed by the object, and each request
-  // brings new objects, so one compiler for the module grew with every request and never let go. The loader's compiler
-  // is made per call the same way (`packages/connectors/src/validation.ts`).
-  const ajv = addFormats(new Ajv({ strict: false }));
-  const acceptsEmptyInput = (schema: object) => {
-    try {
-      return !!ajv.compile(schema)({});
-    } catch {
-      return false;
-    }
-  };
-  return c.json(previewManifest(document, { id: c.req.query('id'), acceptsEmptyInput }), 200, {
+  // A compiler of this request's own (CB-6), made as the loader makes its own: Ajv keeps every schema it compiles, so
+  // one compiler for the module grew with every request and never let go. It compiles each schema once, for the rules
+  // and for whether `{}` is a valid input alike, and the manifest's capabilities are capped by the protocol.
+  return c.json(previewManifest(document, { id: c.req.query('id'), compile: schemaCompiler() }), 200, {
     ...shared,
     'Cache-Control': 'no-store',
   });

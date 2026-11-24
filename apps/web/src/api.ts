@@ -502,7 +502,9 @@ export const api = {
   claimDelivery: (id: string) => post<{ claimed: boolean }>(`/api/deliveries/${encodeURIComponent(id)}/claim`, {}),
   ask: (question: string) => post<Thread>('/api/ask', { question }),
   reply: (id: string, body: string) => post<Thread>(`/api/threads/${id}/reply`, { body }),
-  confirm: (id: string, proposalIds: string[]) => post<Thread>(`/api/threads/${id}/confirm`, { proposalIds }),
+  /** Send the chosen times, on the planning card's version as the person was shown it (AM-4). */
+  confirm: (id: string, proposalIds: string[], version: string) =>
+    post<Thread>(`/api/threads/${id}/confirm`, { proposalIds, version }),
   undo: (id: string) => post<Thread>(`/api/threads/${id}/undo`),
   replan: (id: string, week: string) => post<Thread>(`/api/threads/${id}/replan`, { week }),
   dismiss: (id: string) => post<Thread>(`/api/threads/${id}/dismiss`),

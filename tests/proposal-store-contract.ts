@@ -22,6 +22,8 @@ export interface ProposalStoreHarness {
    * (PostgreSQL) a row of it, where the store holds only its own (memory) an id it never made.
    */
   foreignThread(personId: string, topic: string): Promise<string>;
+  /** What can be seen of that card from outside the store, to show a write addressed to it left it as it was. */
+  foreignState(id: string): Promise<unknown>;
 }
 const T0 = '2026-11-04T06:00:00.000Z';
 const plus = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).toISOString();
@@ -73,6 +75,21 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
       expect(await store.latestThread(people[0], topic)).toBeUndefined();
       expect(await store.openThread(people[0], topic)).toBeUndefined();
       expect(await store.transaction(tx => tx.lockThread(people[0], id))).toBeUndefined();
+    });
+    test('a write addressed to another connector’s card leaves it as it was (DE-L6)', async () => {
+      const { store, people, foreignThread, foreignState } = await make();
+      const id = await foreignThread(people[0], `utvecklingssamtal-${unique()}`);
+      const before = await foreignState(id);
+      await store.transaction(async tx => {
+        await tx.updateThread(id, { title: 'Planera utvecklingssamtal', state: 'handled', updatedAt: plus(T0, 1) });
+        expect(await tx.transition(id, 'proposed', { status: 'superseded' })).toEqual([]);
+      });
+      await expect(
+        store.transaction(tx => tx.addMessage(id, { role: 'assistant', body: 'Nya tider', at: T0 })),
+      ).rejects.toThrow();
+      await expect(store.transaction(tx => tx.insertProposals([proposal(id, people[0], 'Anna')]))).rejects.toThrow();
+      expect(await foreignState(id)).toEqual(before);
+      expect(await store.readThreadById(id)).toBeUndefined();
     });
     test('a proposal thread is read back with its records, and the contract view leaves superseded ones out', async () => {
       const {

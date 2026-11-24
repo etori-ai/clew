@@ -239,12 +239,12 @@ function ProposalActions({
         </Text>
       )}
       <HStack gap={2} wrap="wrap" vAlign="center">
-        {proposed && open && (
+        {proposed && open && thread && (
           <Button
             size="sm"
             variant="primary"
             label="Skicka inbjudan"
-            clickAction={() => run(() => api.confirm(p.threadId, [p.id]))}
+            clickAction={() => run(() => api.confirm(p.threadId, [p.id], thread.updatedAt))}
           />
         )}
         {proposed && <Button size="sm" variant="secondary" label="Flytta …" onClick={onMove} />}

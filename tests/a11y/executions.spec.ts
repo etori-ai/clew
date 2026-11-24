@@ -199,34 +199,42 @@ test('a decision the source answers at once: the receipt replaces the button, th
 
 /**
  * A decision is on the item as the person was shown it (AM-4). The source changes the item after the page drew it: the
- * decision is refused and says why, the item is read again so it shows what it says now, and the next press decides on
- * that, with the version the person now sees.
+ * decision is refused and says why in an alert, the focus stays on the pressed button, the item is read again so it
+ * shows what it says now, and the next press decides on that, with the version the person now sees. Beside the queue on
+ * a desktop, alone at 320 px.
  */
-test('a decision on an item that changed since it was drawn is refused, says why, and the item shows what it says now', async ({
-  page,
-  api,
-}) => {
-  await page.setViewportSize(desktop);
-  await open(page, '/todo?item=fakturor');
-  const pane = page.getByRole('complementary', { name: 'Valt ärende' });
-  await expect(pane.getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
-  const card = api.threads.find(t => t.id === 'fakturor')!;
-  const shown = card.updatedAt;
-  card.title = 'Attestera 3 fakturor, 51 900 kr';
-  card.updatedAt = new Date(Date.parse(shown) + 60_000).toISOString();
-  const decide = pane.getByRole('button', { name: 'Attestera 2 valda' });
-  await decide.focus();
-  await page.keyboard.press('Enter');
-  await expect(
-    pane.getByText('Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.', { exact: true }),
-  ).toBeVisible();
-  await expect(pane.getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 51 900 kr' })).toBeVisible();
-  await expect(pane.getByText('2 fakturor attesterade', { exact: true })).toHaveCount(0);
-  await expectNoAxeViolations(page);
-  await pane.getByRole('button', { name: 'Attestera 2 valda' }).press('Enter');
-  await expect(pane.getByText('2 fakturor attesterade', { exact: true })).toBeVisible();
-  expect(api.acted.map(a => a.body.version)).toEqual([shown, card.updatedAt]);
-});
+for (const [layout, viewport] of [
+  ['desktop', desktop],
+  ['narrow', narrow],
+] as const)
+  test(`a decision on an item that changed since it was drawn is refused, says why, and the item shows what it says now (${layout})`, async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(viewport);
+    await open(page, '/todo?item=fakturor');
+    const pane =
+      layout === 'desktop' ? page.getByRole('complementary', { name: 'Valt ärende' }) : page.getByRole('main');
+    await expect(pane.getByRole('heading', { name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    const card = api.threads.find(t => t.id === 'fakturor')!;
+    const shown = card.updatedAt;
+    card.title = 'Attestera 3 fakturor, 51 900 kr';
+    card.updatedAt = new Date(Date.parse(shown) + 60_000).toISOString();
+    const decide = pane.getByRole('button', { name: 'Attestera 2 valda' });
+    await decide.focus();
+    await page.keyboard.press('Enter');
+    await expect(pane.getByRole('alert')).toHaveText(
+      'Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.',
+    );
+    await expect(pane.getByRole('heading', { name: 'Attestera 3 fakturor, 51 900 kr' })).toBeVisible();
+    await expect(pane.getByText('2 fakturor attesterade', { exact: true })).toHaveCount(0);
+    await expect(decide).toBeFocused();
+    await expectNoAxeViolations(page);
+    expect(await reflowProblems(page)).toEqual([]);
+    await page.keyboard.press('Enter');
+    await expect(pane.getByText('2 fakturor attesterade', { exact: true })).toBeVisible();
+    expect(api.acted.map(a => a.body.version)).toEqual([shown, card.updatedAt]);
+  });
 
 /**
  * A source slower than the button's window: the first notice says that the decision waits on the source, and the

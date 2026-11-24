@@ -266,8 +266,9 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
     return found.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).at(-1)!;
   };
   /**
-   * A card's button, as `POST /api/threads/:id/act` takes it in the session `binding`; then the approved write's workflow
-   * runs, after `meanwhile` (what happens between the approval and the dispatch).
+   * A card's button, as `POST /api/threads/:id/act` takes it in the session `binding`, on the version of the card the
+   * person was shown (`thread.updatedAt`, AM-4); then the approved write's workflow runs, after `meanwhile` (what happens
+   * between the approval and the dispatch).
    */
   async function decide(
     user: string,
@@ -276,7 +277,15 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
     actionId: 'approve' | 'reject',
     meanwhile: () => void = () => {},
   ) {
-    const answer = await decisions.act(asking(user, binding), thread.id, actionId);
+    const answer = await decisions.act(
+      asking(user, binding),
+      thread.id,
+      actionId,
+      undefined,
+      undefined,
+      undefined,
+      thread.updatedAt,
+    );
     const executionId = 'thread' in answer ? answer.thread?.execution?.id : undefined;
     meanwhile();
     if (executionId) await executions.progress(executionId);
@@ -527,6 +536,34 @@ describe('the Approval loop, signed in (D101, D103)', () => {
       receipt: { rows: [{ outcome: 'done' }] },
     });
     expect(await waiting(w, 'hillevi', 626)).toBe(2);
+  });
+
+  test('a card decided on the version it was shown is sent; one the scan has rewritten since is refused, with nothing approved and nothing sent (AM-4)', async () => {
+    const w = world();
+    w.signIn('hillevi', 'session-1');
+    await w.visit('hillevi', 'session-1');
+    const shown = w.card('hillevi', 627);
+    // The file changes in Nextcloud and the next scan rewrites the card with its new version, a minute on.
+    w.nextcloud.controls.edit(627);
+    w.advance(60_000);
+    await w.visit('hillevi', 'session-1');
+    const now = w.card('hillevi', 627);
+    expect(now.id).toBe(shown.id);
+    expect(now.updatedAt).not.toBe(shown.updatedAt);
+    expect(now.items[0]!.revision).not.toBe(shown.items[0]!.revision);
+    // The page still drew the old card: the decision is refused before anything is approved or sent.
+    await expect(w.decide('hillevi', 'session-1', shown, 'approve')).rejects.toThrow(
+      'Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.',
+    );
+    expect(w.memoryLedger.audit().filter(a => a.action === 'execution.approved')).toEqual([]);
+    expect(w.writes()).toEqual([]);
+    // On what it says now, it goes through.
+    expect(await w.decide('hillevi', 'session-1', now, 'approve')).toMatchObject({
+      state: 'handled',
+      receipt: { rows: [{ outcome: 'done' }] },
+    });
+    expect(w.memoryLedger.audit().filter(a => a.action === 'execution.approved')).toHaveLength(1);
+    expect(w.writes()).toHaveLength(1);
   });
 
   test('when another approver decides first, the card says who did; the work is resolved, but the card stays open until put away', async () => {

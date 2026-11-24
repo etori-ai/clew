@@ -18,6 +18,10 @@ const NO_FILES = ['image_generation', 'file_creation', 'file_analysis', 'compute
 const PARTIAL_TAG = /^<(?:i(?:n(?:r(?:e(?:f(?: (?:i(?:d(?:=(?:"(?:[0-9a-f]*(?:"(?:\s*\/?)?)?)?)?)?)?)?)?)?)?)?)?)?$/;
 /** The longest one answer may take, a little under what Clew waits for. */
 const ASK_TOTAL_MS = 170_000;
+/** The most of one of Eneo's JSON answers that is read: as much as Clew itself reads of a connector's answer. */
+const ANSWER_LIMIT = 4 * 1024 * 1024;
+/** The most one event of Eneo's answer stream may hold before its end arrives, in characters. */
+const EVENT_LIMIT = 1024 * 1024;
 
 export const manifest = {
   protocol: 1,
@@ -114,6 +118,45 @@ export function decodeClaims(token) {
     return null;
   }
 }
+/**
+ * An answer's JSON, read a piece at a time. An answer that declares more than `limit` bytes is given up before any of
+ * it is read, and one that passes `limit` as it is read is given up there; `fail` makes the error, Eneo not answering.
+ */
+async function jsonWithin(response, limit, fail) {
+  const declared = response.headers.get('content-length');
+  if (declared !== null && Number(declared) > limit) {
+    await response.body?.cancel().catch(() => undefined);
+    throw fail();
+  }
+  const pieces = [];
+  let size = 0;
+  if (response.body) {
+    const reader = response.body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > limit) throw fail();
+        pieces.push(value);
+      }
+    } catch {
+      await reader.cancel().catch(() => undefined);
+      throw fail();
+    }
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const piece of pieces) {
+    bytes.set(piece, at);
+    at += piece.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw fail();
+  }
+}
 const clip = (text, limit) => {
   const t = String(text ?? '');
   return t.length <= limit ? t : t.slice(0, limit - 1).trimEnd() + '…';
@@ -132,14 +175,19 @@ export function createConnector({
   fetch: fetchImpl = globalThis.fetch,
   perCallMs = 2000,
   askTotalMs = ASK_TOTAL_MS,
+  // Plain http towards a host other than this one, for a development stack on a private network (`http://eneo`).
+  allowHttp = process.env.ENEO_ALLOW_HTTP === 'true',
 } = {}) {
   const verify = createVerifier({ secret, jwks, clewUrl: process.env.CLEW_URL ?? '' }, CONNECTOR);
-  // The person's own token goes to Eneo with every call: https only, outside local development, as the other
-  // real-system adapters require.
+  // The person's own token goes to Eneo with every call: https, or plain http only towards this host itself or with
+  // ENEO_ALLOW_HTTP, as Moodle's and Nextcloud's adapters allow; no other scheme.
   if (eneoUrl) {
     const address = new URL(eneoUrl);
-    if (address.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(address.hostname))
-      throw new Error('ENEO_URL must be https outside local development.');
+    if (
+      address.protocol !== 'https:' &&
+      !(address.protocol === 'http:' && (allowHttp || ['localhost', '127.0.0.1'].includes(address.hostname)))
+    )
+      throw new Error('ENEO_URL must be https outside local development (ENEO_ALLOW_HTTP=true allows http).');
   }
   const base = eneoUrl.replace(/\/+$/, '') + '/api/v1';
   const json = (body, status = 200) =>
@@ -175,11 +223,7 @@ export function createConnector({
     if (r.status === 401 || r.status === 403) throw denied();
     if (r.status === 404) throw new EneoError('not-found', 'Dokumentet eller samlingen finns inte längre i Eneo.');
     if (!r.ok) throw unavailable();
-    try {
-      return await r.json();
-    } catch {
-      throw unavailable();
-    }
+    return jsonWithin(r, ANSWER_LIMIT, unavailable);
   }
   const items = page => (Array.isArray(page?.items) ? page.items : []);
   /** Resolve current source access on every request, including when permissions changed since the last search. */
@@ -317,6 +361,8 @@ export function createConnector({
               if (!data || data === '[DONE]') continue;
               part(JSON.parse(data));
             }
+            // An event that has not ended by now never will: the stream is given up as Eneo not answering.
+            if (buffer.length > EVENT_LIMIT) throw unavailable();
           }
         } catch {
           await reader.cancel().catch(() => undefined);

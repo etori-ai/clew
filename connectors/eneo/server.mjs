@@ -1,4 +1,4 @@
-// Serves connector.mjs over HTTP. Environment: PORT (default 4011), CLEW_CONNECTOR_SECRET (shared with Clew), ENEO_URL (Eneo's base URL), ENEO_PUBLIC_URL (optional: where a person opens Eneo in a browser, https).
+// Serves connector.mjs over HTTP. Environment: PORT (default 4011), CLEW_CONNECTOR_SECRET (shared with Clew), ENEO_URL (Eneo's base URL, https but on localhost), ENEO_ALLOW_HTTP (true: plain http on a private network), ENEO_PUBLIC_URL (optional: where a person opens Eneo in a browser, https).
 import { createServer } from 'node:http';
 import { listener } from './http.mjs';
 import { createConnector } from './connector.mjs';

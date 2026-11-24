@@ -4,7 +4,7 @@ import { SCIM_CONTENT_TYPE, ScimError } from '../modules/people/contracts';
 import { project, resourceTypes, schemaDocuments, serviceProviderConfig } from '../modules/people/domain';
 import type { Provisioner } from '../modules/people/ports';
 import type { ScimQuery, ScimUsecases } from '../modules/people/usecases';
-import { boundedText } from './bounded-body';
+import { boundedText } from '../bounded-body';
 
 /**
  * SCIM 2.0 under `/scim/v2` (RFC 7644; D68): the one way people and groups enter an installation. A bearer token issued to

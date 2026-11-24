@@ -38,9 +38,13 @@ const toProposalRow = (patch: ProposalPatch) => {
   };
 };
 /**
- * The store holds the calendar's own threads only, as the memory adapter does: every card of every connector is a row of
- * the same table, and a use case of the calendar's that was handed another card's id (a replan, a move, a dismissal)
- * would rewrite it as a proposal thread.
+ * The store holds the calendar's threads only (DE-L6): every card of every connector is a row of the same table, and a
+ * replan handed another connector's card would rewrite it as a proposal thread. Every read and every write names the
+ * calendar, so a write addressed to another connector's card changes nothing (an update) or is refused (a message or a
+ * proposal, which would otherwise be added to it). Proposals are this store's alone, so a write by proposal id reaches
+ * only a calendar card's. The calendar's own cards that are not planning cards (a follow-up, an obligation, a calendar
+ * decision's) are the store's too, since a calendar decision is read through it, so the replan itself takes only the
+ * planning card.
  */
 const CALENDAR = eq(threads.connector, 'calendar');
 async function read(personId: string | undefined, id: string): Promise<ProposalThread | undefined> {
@@ -102,9 +106,15 @@ const txOf = (tx: Transaction, durable: DurableQueue, invitations: InvitationsTx
         ...(handledAt !== undefined ? { handledAt: date(handledAt) } : {}),
         ...(updatedAt !== undefined ? { updatedAt: date(updatedAt)! } : {}),
       })
-      .where(eq(threads.id, id));
+      .where(and(eq(threads.id, id), CALENDAR));
   },
   async addMessage(threadId, message) {
+    const touched = await tx
+      .update(threads)
+      .set({ updatedAt: new Date(message.at) })
+      .where(and(eq(threads.id, threadId), CALENDAR))
+      .returning({ id: threads.id });
+    if (!touched.length) throw new Error(`Thread ${threadId} is not a calendar thread.`);
     await tx.insert(threadMessages).values({
       id: crypto.randomUUID(),
       threadId,
@@ -112,13 +122,15 @@ const txOf = (tx: Transaction, durable: DurableQueue, invitations: InvitationsTx
       body: message.body,
       createdAt: new Date(message.at),
     });
-    await tx
-      .update(threads)
-      .set({ updatedAt: new Date(message.at) })
-      .where(eq(threads.id, threadId));
   },
   async insertProposals(rows) {
     if (!rows.length) return;
+    const ids = [...new Set(rows.map(p => p.threadId))];
+    const own = await tx
+      .select({ id: threads.id })
+      .from(threads)
+      .where(and(inArray(threads.id, ids), CALENDAR));
+    if (own.length < ids.length) throw new Error('A proposal names a thread that is not a calendar thread.');
     await tx.insert(proposals).values(
       rows.map(p => ({
         id: p.id,
@@ -147,7 +159,13 @@ const txOf = (tx: Transaction, durable: DurableQueue, invitations: InvitationsTx
     const rows = await tx
       .update(proposals)
       .set(toProposalRow(patch))
-      .where(and(eq(proposals.threadId, threadId), eq(proposals.status, from)))
+      .where(
+        and(
+          eq(proposals.threadId, threadId),
+          eq(proposals.status, from),
+          inArray(proposals.threadId, tx.select({ id: threads.id }).from(threads).where(CALENDAR)),
+        ),
+      )
       .returning({ id: proposals.id });
     return rows.map(r => r.id);
   },

@@ -203,12 +203,19 @@ export function calendarDecisions({
       { id: 'event', label: e.title, action: 'cancel', ref: e.ref, revision: input.revision },
     ]);
   }
-  async function confirm(p: AuthenticatedContext, threadId: string, proposalIds: string[]) {
+  /**
+   * Send the chosen times (D45, D47). `version` is the planning card's `updatedAt` as the person was shown it (AM-4), as
+   * on a work item's action: a card redrawn since is refused, so the times sent are the ones the person saw. A decision
+   * already on its way is replayed whatever the version. Optional only for the use case's own tests; the route requires it.
+   */
+  async function confirm(p: AuthenticatedContext, threadId: string, proposalIds: string[], version?: string) {
     await p.authorize();
     const current = await required(p, threadId),
       t = current.thread;
     if (active(t)) return t;
     if (t.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
+    if (version !== undefined && version !== t.updatedAt)
+      throw new InputError('Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.');
     if (!proposalIds.length) throw new InputError('Välj minst en tid.');
     const selected = current.proposals.filter(x => proposalIds.includes(x.id) && x.status === 'proposed');
     if (selected.length !== new Set(proposalIds).size)

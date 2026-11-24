@@ -55,10 +55,11 @@ import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/co
 import { changesFor } from '../composition/changes';
 import { personKeys } from '../composition/person-keys';
 import { capabilityRoutes } from './capabilities';
+import { executionRoutes } from './executions';
 import { authenticate, AuthError } from '../auth';
 import { readDocument, reviewDocuments } from '../composition/documents';
 import { logger } from '../logging';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 const {
   act,
@@ -79,17 +80,6 @@ const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
 const { ask, converse, listAssistants, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
-const approval = ajv.compile(
-  Type.Object(
-    {
-      decisionId: Type.String({ minLength: 1, maxLength: 200 }),
-      operation: Type.String({ minLength: 1, maxLength: 80 }),
-      payload: Type.Unknown(),
-      compensates: Type.Optional(Type.String({ maxLength: 100 })),
-    },
-    { additionalProperties: false },
-  ),
-);
 // A job (D55): the fact Clew fans out, and the proposal the person approves once, echoed back as it was assembled; the ledger re-authorizes every step.
 const JobApprovalInput = Type.Object(
   {
@@ -217,19 +207,7 @@ api.get('/changes', c =>
   }),
 );
 /** Human approval is deliberately separate from capabilities and model tools. */
-api.post('/executions', async c => {
-  const input = await body(c.req.raw, approval, 64_000),
-    persona = c.get('session').context;
-  if (registry.allowed(persona, input.operation)?.capability.kind !== 'execute') throw new InputError('Okänd förmåga.');
-  return c.json(await executions.approve(persona, input), 202);
-});
-api.get('/executions/:id', async c => {
-  const execution = await executions.read(c.get('session').context, c.req.param('id'));
-  return execution ? c.json(execution) : c.json({ error: 'Åtgärden finns inte.' }, 404);
-});
-api.post('/executions/:id/reconcile', async c =>
-  c.json(await executions.reconcile(c.get('session').context, c.req.param('id')), 202),
-);
+api.route('/executions', executionRoutes({ registry, executions }));
 /** A job across systems (D55): assemble the proposal for one fact as the person (nothing is written), approve it once (the human decision endpoint, never a tool), read it back. */
 api.post('/jobs/assemble', async c => {
   const { fact } = await body(c.req.raw, validators.fact as unknown as (value: unknown) => value is FactEnvelope),
@@ -456,11 +434,10 @@ api.get('/threads/:id', async c => {
 api.post('/threads/:id/reply', async c =>
   c.json(await reply(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.reply)).body)),
 );
-api.post('/threads/:id/confirm', async c =>
-  c.json(
-    await confirm(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.confirm)).proposalIds),
-  ),
-);
+api.post('/threads/:id/confirm', async c => {
+  const input = await body(c.req.raw, validators.confirm);
+  return c.json(await confirm(c.get('session').context, c.req.param('id'), input.proposalIds, input.version));
+});
 api.post('/threads/:id/undo', async c => c.json(await undo(c.get('session').context, c.req.param('id'))));
 api.post('/threads/:id/replan', async c =>
   c.json(await replan(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.replan)).week)),
