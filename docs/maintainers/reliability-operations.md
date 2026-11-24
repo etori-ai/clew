@@ -88,8 +88,8 @@ left pending, and `SET CONSTRAINTS ALL DEFERRED` after its last write. Without t
 `DROP TABLE` or `TRUNCATE` of that table, or dropping a foreign key that references it, fails with 55006 later in the
 same run, in that migration or a later one. `CREATE TRIGGER`, `DROP INDEX` and adding a foreign key that references
 such a table are not affected. A write that matches no row queues nothing, so only an upgrade with rows shows the
-failure: give the migration an upgrade test in `tests/db` ([testing](../architecture/testing.md)). 0032, 0053 and 0056
-follow this rule. 0030 guards only its `ALTER` of `thread`: its writes come after its own `SET CONSTRAINTS ALL
+failure: give the migration an upgrade test in `tests/db` ([testing](../architecture/testing.md)). 0032, 0053, 0056 and
+0085 follow this rule. 0030 guards only its `ALTER` of `thread`: its writes come after its own `SET CONSTRAINTS ALL
 DEFERRED`, and 0031's `DELETE` from `connector` has no guard; the events of both stay pending until 0032's
 `SET CONSTRAINTS ALL IMMEDIATE` fires them, before its `ALTER` of `connector`. 0040's guard wraps only `ALTER`s of
 `auth_person` and is a precaution, since no migration before it leaves events pending there. The closing

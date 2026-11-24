@@ -1,5 +1,6 @@
 import { checkConnector, type CheckOptions } from '@clew/connectors/check';
-import { fetchManifest, manifestFailure, type FetchLike } from '@clew/connectors/remote';
+import { fetchManifest, type FetchLike } from '@clew/connectors/remote';
+import { failureDetails } from '../../auth-refresh';
 import type { Transport } from '../model';
 
 /**
@@ -16,6 +17,11 @@ export interface ServiceTransportOptions {
   assertInstallation?: (id: string) => NonNullable<CheckOptions['assertInstallation']>;
   acceptsEmptyInput?: CheckOptions['acceptsEmptyInput'];
   fetch?: FetchLike;
+  /**
+   * The connectors' log port (D91), bound by composition: a check whose manifest could not be read says why, for the
+   * people who run the installation, with what the error and its cause say (`failureDetails`).
+   */
+  log?: (message: string, ...details: unknown[]) => void;
 }
 export function serviceTransport(options: ServiceTransportOptions): Transport {
   return {
@@ -28,7 +34,6 @@ export function serviceTransport(options: ServiceTransportOptions): Transport {
         manifest => ({ uses: manifest.uses ?? [] }),
         (error: unknown) => ({ error }),
       );
-      const failed = 'error' in served ? served.error : undefined;
       const report = await checkConnector({
         url,
         id,
@@ -38,12 +43,21 @@ export function serviceTransport(options: ServiceTransportOptions): Transport {
         ...(options.assertInstallation ? { assertInstallation: options.assertInstallation(id) } : {}),
         ...(options.acceptsEmptyInput ? { acceptsEmptyInput: options.acceptsEmptyInput } : {}),
         ...('error' in served
-          ? { fetch: () => Promise.reject(failed) }
+          ? { fetch: () => Promise.reject(served.error) }
           : options.fetch
             ? { fetch: options.fetch }
             : {}),
       });
-      return 'error' in served && !report.manifest ? { ...report, failure: manifestFailure(failed) } : report;
+      // The check names the failure, whichever read met it: the one above, or the check's own when the service changed
+      // in between. What the error and its cause say goes to the log, and only its code to the administrator.
+      if (report.failure)
+        options.log?.('A connector check could not read the manifest', {
+          connector: id,
+          url,
+          health: report.failure,
+          ...('error' in served ? { failure: failureDetails(served.error) } : { finding: report.findings[0]?.text }),
+        });
+      return report;
     },
   };
 }

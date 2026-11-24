@@ -90,6 +90,22 @@ export class ManifestError extends Error {
  */
 export const manifestFailure = (error: unknown): 'unreachable' | 'manifest-invalid' =>
   error instanceof ManifestError && !/answered \d+/.test(error.message) ? 'manifest-invalid' : 'unreachable';
+/**
+ * The short code a failed read carries, which an administrator may be shown: the network's or the TLS library's
+ * (`ECONNREFUSED`, `ENOTFOUND`, `UND_ERR_CONNECT_TIMEOUT`, `CERT_HAS_EXPIRED`, `ERR_TLS_CERT_ALTNAME_INVALID`; on fetch's
+ * error under Bun, on its cause under Node), or `TimeoutError` when the read ran out of time. Letters, digits and
+ * underscores only, so nothing the other end said rides along; undefined when the error carries none.
+ */
+export function failureCode(error: unknown): string | undefined {
+  let e: unknown = error;
+  for (let depth = 0; e && typeof e === 'object' && depth < 4; depth++) {
+    const { code, name, cause } = e as { code?: unknown; name?: unknown; cause?: unknown };
+    if (typeof code === 'string' && /^[A-Za-z][A-Za-z0-9_]{1,63}$/.test(code)) return code;
+    if (name === 'TimeoutError') return 'TimeoutError';
+    e = cause;
+  }
+  return undefined;
+}
 
 /**
  * Every problem a manifest document has, in the order Clew finds them; none means Clew would load it. The schema first

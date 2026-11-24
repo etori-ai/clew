@@ -121,13 +121,14 @@ export function postgresConnectorStore(): ConnectorStore {
       const [row] = await database().select().from(connectors).where(eq(connectors.id, id));
       return row ? toRecord(row) : undefined;
     },
-    async recordCheck(id, { health, served, at }) {
-      await recordCheck(id, {
+    recordCheck: (id, { url, secret, health, served, at }) =>
+      recordCheck(id, {
+        url,
+        ...(secret !== undefined ? { secret } : {}),
         ...(health ? { health } : {}),
         ...(served !== undefined ? { served } : {}),
         at: new Date(at),
-      });
-    },
+      }),
     async recordDescription(id, manifest, at) {
       await recordDescription(id, manifest, new Date(at));
     },
