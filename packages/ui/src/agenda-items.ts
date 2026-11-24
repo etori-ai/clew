@@ -21,6 +21,11 @@ export interface AgendaItem {
   /** What the entry stands for, so a dialog can act on it: the calendar's event or the drawn proposal. */
   event?: CalendarEvent;
   proposal?: Proposal;
+  /**
+   * The ids of the talk meetings a proposal is drawn in the place of (`agendaItems`): an address that names one of those
+   * meetings (`entry=<event id>`, from Dagens möten or Hela veckan) opens this entry (`entryOf`).
+   */
+  covers?: string[];
 }
 
 /** The title a proposal is drawn with: what the invitation will be called, never how a talk is recognised. */
@@ -68,7 +73,8 @@ export function agendaItems(
   chosen?: { start: string; end: string; title: string },
 ): AgendaItem[] {
   const rows = proposals.filter(p => live.has(p.status));
-  const covered = (e: CalendarEvent) => rows.some(p => p.eventRef && e.id.startsWith(p.eventRef));
+  const covers = (p: Proposal, e: CalendarEvent) => !!e.talk && !!p.eventRef && e.id.startsWith(p.eventRef);
+  const covered = (e: CalendarEvent) => rows.some(p => covers(p, e));
   const longest = gaps.reduce<(typeof gaps)[number] | null>(
     (best, g) => (best && minutes(best) >= minutes(g) ? best : g),
     null,
@@ -106,6 +112,7 @@ export function agendaItems(
     ...rows.map(p => {
       const drawn = p.status === 'proposed';
       const span = { start: p.start, end: p.end, allDay: false };
+      const meetings = events.filter(e => covers(p, e)).map(e => e.id);
       return {
         id: p.id,
         title: SAMTAL,
@@ -116,6 +123,7 @@ export function agendaItems(
         ...(drawn ? { marker: PROPOSAL_MARK } : {}),
         meta: meta(span, inviteeName(p.participant)),
         proposal: p,
+        ...(meetings.length ? { covers: meetings } : {}),
       };
     }),
     ...gaps.map(g => ({
@@ -142,3 +150,9 @@ export function agendaItems(
       : []),
   ];
 }
+/**
+ * The entry an address names among a day's or a week's items: the item by its own id, else the proposal drawn in the
+ * place of the talk meeting the id names (`AgendaItem.covers`), so a link to a manager's own talk opens its proposal.
+ */
+export const entryOf = (items: readonly AgendaItem[], id: string): AgendaItem | undefined =>
+  items.find(i => i.id === id) ?? items.find(i => i.covers?.includes(id));

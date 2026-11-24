@@ -1,6 +1,6 @@
 {
   "id": "20c67e0f-db92-4022-8c6a-765493ebc5eb",
-  "prevId": "06dff247-1156-4121-85e6-2e9077920ddc",
+  "prevId": "cc0e8e3f-25f2-4873-bed9-7c31026bbe8b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5369,6 +5369,12 @@
         },
         "event_revision": {
           "name": "event_revision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_ical_uid": {
+          "name": "event_ical_uid",
           "type": "text",
           "primaryKey": false,
           "notNull": false

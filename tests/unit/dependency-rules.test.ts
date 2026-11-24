@@ -41,17 +41,43 @@ test('the rules as configured follow imports between TypeScript files', () => {
   expect(followed.length).toBeGreaterThan(0);
 });
 
-test('`bun run deps` cruises every app, package, connector, script and test that a rule is written for', () => {
+test('`bun run deps` cruises every folder a rule is written for whole, and leaves out only build output', () => {
   // A rule written for `apps/` judges only the folders the script names: until 2026-11-24 it named the server's source
-  // alone, and a test in apps/web imported a connector unseen (BL-13 of the review of 2026-11-23).
+  // alone, and a test in apps/web imported a connector unseen (BL-13 of the review of 2026-11-23). Named folder by
+  // folder, a configuration beside an app's source (apps/web/vite.config.ts) or a new folder under an app escaped, so
+  // the script names the top-level folders.
   const root = new URL('../..', import.meta.url).pathname;
   const script = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> })
     .scripts.deps!;
-  const cruised = script.split(/\s+/).slice(3);
-  const apps = readdirSync(join(root, 'apps'), { withFileTypes: true })
-    .filter(e => e.isDirectory())
-    .flatMap(e => ['src', 'tests'].map(folder => `apps/${e.name}/${folder}`))
-    .filter(folder => existsSync(join(root, folder)));
-  expect(apps).toContain('apps/web/tests');
-  expect(cruised).toEqual(expect.arrayContaining([...apps, 'packages', 'connectors', 'scripts', 'tests']));
+  const exclude = /--exclude "([^"]+)"/.exec(script)?.[1];
+  const cruised = script
+    .replace(/--exclude "[^"]+"/, '')
+    .split(/\s+/)
+    .filter(word => word && !word.startsWith('-') && !['depcruise', '.dependency-cruiser.cjs'].includes(word));
+  // Every top-level folder a rule names, as `^apps/`, `^(apps|packages)/` or `^tests/unit/`, and the scripts.
+  const { forbidden } = require(join(root, '.dependency-cruiser.cjs')) as {
+    forbidden: Array<{ from: { path?: string }; to: { path?: string } }>;
+  };
+  const named = new Set(['scripts']);
+  for (const rule of forbidden)
+    for (const path of [rule.from.path, rule.to.path])
+      for (const [, folders] of (path ?? '').matchAll(/\^\(?([a-z|]+)\)?\//g))
+        for (const f of folders!.split('|')) if (f) named.add(f);
+  expect([...named].sort()).toEqual(['apps', 'connectors', 'packages', 'scripts', 'tests']);
+  expect(cruised.sort()).toEqual([...named].sort());
+  for (const folder of cruised) expect(existsSync(join(root, folder))).toBe(true);
+  // node_modules is never gathered (doNotFollow); the exclusion leaves out an app's or a package's build output only, and
+  // never a dependency, whose rules (a runtime library in domain code, the store in a route) would then pass unseen.
+  const excluded = new RegExp(exclude!);
+  for (const output of ['apps/web/dist/assets/index.js', 'packages/site-header/dist/site-header.js'])
+    expect({ output, excluded: excluded.test(output) }).toEqual({ output, excluded: true });
+  for (const source of [
+    'apps/web/vite.config.ts',
+    'apps/server/src/main.ts',
+    'packages/notices/src/viewer.ts',
+    'node_modules/.bun/hono@4.13.18/node_modules/hono/dist/index.js',
+    'node_modules/.bun/drizzle-orm@0.45.4/node_modules/drizzle-orm/index.js',
+  ])
+    expect({ source, excluded: excluded.test(source) }).toEqual({ source, excluded: false });
+  expect(readdirSync(join(root, 'apps'))).toContain('web');
 });

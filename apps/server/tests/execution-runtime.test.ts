@@ -77,7 +77,8 @@ test(
           remoteConnector(await fetchManifest(url), {
             url,
             key,
-            // Bound to each request's body and capability, as the reference connector's verifier requires (D117).
+            // Bound to each request's route, body, capability and operation id, as the reference connector's verifier
+            // requires (D117), and taken once.
             assert: (actor, chain, binding) => authority.assert('reference', actor, [], chain, binding),
           }),
         )

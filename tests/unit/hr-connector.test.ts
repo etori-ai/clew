@@ -385,7 +385,9 @@ describe('the HR fixture connector', () => {
     // A manager's scan, not yet sent, aimed at a capability's name anywhere but its own route runs nothing; on the scan's
     // route it is still taken, so nothing was used up on the way.
     const scanBody = JSON.stringify({ actor: hillevi });
-    const scan = await (await testAuthority(secret)).assert('hr', hillevi, [], [], { body: scanBody });
+    const scan = await (
+      await testAuthority(secret)
+    ).assert('hr', hillevi, [], [], { path: '/clew/scan', body: scanBody });
     const post = (path: string) =>
       service.handle(
         new Request('http://hr' + path, {

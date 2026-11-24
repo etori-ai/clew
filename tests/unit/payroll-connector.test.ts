@@ -150,7 +150,8 @@ describe('the payroll fixture connector', () => {
       method: 'POST',
       headers: {
         authorization:
-          'Bearer ' + (await assertionFor('payroll', secret)(outside, [], { body, capability: 'payroll.absences' })),
+          'Bearer ' +
+          (await assertionFor('payroll', secret)(outside, [], { path: '/clew/capabilities/payroll.absences', body })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },

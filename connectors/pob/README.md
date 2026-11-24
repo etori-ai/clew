@@ -148,6 +148,11 @@ The assistant prepares, the person sends. Three capabilities are added to the ma
 - **Type, category and group** come from `POB_CREATE`, not from the person.
 - **Never repeated.** The execute is `manual`: Clew does not send it again by itself. The made-up POB keeps the
   operation id, so the same decision sent twice is one errand; whether a real POB can is not known.
+- **One process.** The verifier takes each of Clew's assertions once, but it remembers them in its own process only:
+  run as several replicas, or restarted, the connector would take a captured request once more in each process within
+  the assertion's two minutes, and a fault report would be created again. With `POB_WRITES=create`, run a single
+  process, or share the record of taken `jti`s between the processes in storage that outlives a restart
+  ([authorization](../../docs/guides/authorization.md)).
 - With `POB_URGENT_NOTE` the work item says what to do when a fault cannot wait.
 
 It works on the made-up POB only. The API adapter reads and has no `create`: how POB creates an errand has been seen

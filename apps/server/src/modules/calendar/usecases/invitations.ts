@@ -1,6 +1,6 @@
 import type { AuthenticatedContext, TalkCalendarDecision } from '@clew/contracts';
 import { dayStart } from '@clew/calendar/dates';
-import type { EventOccurrence } from '@clew/calendar/model';
+import { UnreadableEventError, type EventOccurrence } from '@clew/calendar/model';
 import { ForbiddenError, InputError } from '../../../context';
 import type { CalendarBinder, ProposalRecord, ProposalStore, ProposalTx, Team } from '../model';
 import { chunks } from '../domain';
@@ -175,8 +175,10 @@ export function invitationUsecases({ store, bind, team, clock }: InvitationDeps)
       for (const p of candidates) {
         try {
           read.push({ p, event: await eventOf(persona, p) });
-        } catch {
-          throw new InputError(UNREADABLE);
+        } catch (error) {
+          // A meeting the calendar holds in a form Clew cannot read stays so until it is changed there: its own words
+          // say what, where "try again" would send the manager back to the same refusal.
+          throw new InputError(error instanceof UnreadableEventError ? error.message : UNREADABLE);
         }
       }
       const observe = (r: (typeof read)[number]) =>

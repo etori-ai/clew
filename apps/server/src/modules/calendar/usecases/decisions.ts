@@ -507,7 +507,7 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewh
         label: item.label,
         outcome,
         ...(found && outcome === 'done'
-          ? { source: { ref: found.ref, revision: found.revision, uid: found.uid } }
+          ? { source: { ref: found.ref, revision: found.revision, uid: found.uid, icalUid: found.icalUid } }
           : {}),
         // The receipt is the read-back (D45), so it says what the calendar holds about the room too: an answer that is
         // still to come leaves the booking without an undo (D69), and a no means the meeting has no room.

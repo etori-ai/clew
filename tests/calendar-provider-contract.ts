@@ -83,6 +83,7 @@ export function calendarProviderContract(name: string, harness: CalendarHarness,
         organizer: provider.account.email,
         canCancel: true,
         roomResponse: 'none',
+        icalUid: created.icalUid,
       });
       expect(found.participants.find(p => p.email === harness.guestEmail)).toMatchObject({
         resource: false,
@@ -142,10 +143,17 @@ export function calendarProviderContract(name: string, harness: CalendarHarness,
         [room.ref, 'free'],
       ]);
       expect((await provider.freeBusy(at(8), at(11), targets)).map(b => b.ref)).toEqual(targets.map(t => t.ref));
+      // As many as one request takes are answered, every one of them; one more is refused.
       const many = Array.from({ length: FREE_BUSY_TARGETS + 1 }, (_, i) => ({
         ref: `p${i}`,
         email: `p${i}@clew.test`,
       }));
+      const full = [guest, ...many.slice(0, FREE_BUSY_TARGETS - 1)];
+      expect((await provider.availability(at(9), at(10), full)).map(a => a.ref)).toEqual(full.map(t => t.ref));
+      expect((await provider.freeBusy(at(8), at(11), full)).map(b => [b.ref, b.state])).toEqual([
+        ['guest', 'known'],
+        ...full.slice(1).map(t => [t.ref, 'unknown']),
+      ]);
       expect(await refused(provider.availability(at(9), at(10), many))).toBe(true);
       expect(await refused(provider.freeBusy(at(9), at(10), many))).toBe(true);
       await provider.cancel(event.ref, (await provider.lookup(event.ref))!.revision);
@@ -200,6 +208,8 @@ export function calendarProviderContract(name: string, harness: CalendarHarness,
       const event = await provider.create(harness.uid(), meeting(at, [harness.guestEmail]));
       const invitation = (await guest.list(at(0), at(23))).find(e => e.start === at(9))!;
       expect(invitation.organizer).toBe(provider.account.email);
+      // Each copy is the guest's own, and carries the id every copy of the meeting carries (WA-L5).
+      expect(invitation.icalUid).toBe(event.icalUid);
       expect(await guest.lookup(event.ref).catch(() => null)).toBeNull();
       const accepted = await guest.accept(invitation.ref, invitation.revision);
       expect(accepted.participants.find(p => p.email === harness.guestEmail)?.response).toBe('accepted');

@@ -31,8 +31,8 @@ import { assertionFor, installationAssertionFor, testAuthority, testJwks } from 
  * the call. It is not a capability: the registry keeps it apart, so no person's path (a page, a card, a tool, a job,
  * another connector's callback) can name it, whoever the person is; only `holdingsSources` and `readHoldings` reach it.
  * Remote, it goes to `/clew/installation/{name}` with the installation's own assertion: no actor, subject
- * `clew:installation`, `caller: "installation"`, bound to the body and the name. The verifier every connector in the
- * repository carries tells it from a person's, both ways.
+ * `clew:installation`, `caller: "installation"`, bound to the route, the body and the name. The verifier every
+ * connector in the repository carries tells it from a person's, both ways.
  */
 const secret = 'test-secret-test-secret';
 const manager: Actor = {
@@ -206,13 +206,14 @@ describe('the registry reads as the installation', () => {
       ['/clew/installation/lms.holdings', { input: { cursor: '2' } }],
       ['/clew/installation/lms.holdings', { input: { cursor: '4' } }],
     ]);
-    // The assertion is the installation's own: no actor, no callback, bound to the body and the name.
+    // The assertion is the installation's own: no actor, no callback, bound to the route, the body and the name.
     const claims = decodeJwt(lms.seen[1]!.token);
     expect(claims).toMatchObject({
       iss: 'clew',
       aud: 'lms',
       sub: INSTALLATION_SUBJECT,
       caller: INSTALLATION_CALLER,
+      path: '/clew/installation/lms.holdings',
       capability: 'lms.holdings',
       body: createHash('sha256')
         .update(JSON.stringify({ input: { cursor: '2' } }))
@@ -470,9 +471,11 @@ describe('the registry reads as the installation', () => {
 });
 
 describe('the verifier tells the installation from a person', () => {
-  const url = 'http://lms/clew/installation/lms.holdings';
+  const route = '/clew/installation/lms.holdings';
+  const url = 'http://lms' + route;
   const text = JSON.stringify({ input: {} });
   const binding = {
+    path: route,
     body: createHash('sha256').update(text).digest('base64url'),
     capability: 'lms.holdings',
     route: 'installation' as const,
@@ -487,7 +490,7 @@ describe('the verifier tells the installation from a person', () => {
 
   test("the installation's assertion verifies as the installation for exactly its request, and never as a person", async () => {
     const authority = await testAuthority(secret);
-    const token = await authority.installation('lms', { body: text, capability: 'lms.holdings' });
+    const token = await authority.installation('lms', { path: route, body: text });
     expect(await verify.installation(token, secret, request(token))).toBe(true);
     // Never a person, on any route.
     expect(await verify(token, secret, request(token))).toBeNull();
@@ -503,30 +506,38 @@ describe('the verifier tells the installation from a person', () => {
       false,
     );
     expect(await verify.installation(token, 'wrong-secret-wrong-secret', request(token))).toBe(false);
-    expect(await verify.installation(token, secret)).toBe(false);
-    expect(verifyInstallationAssertion(token, await testJwks(), 'lms')).toBe(false);
+    expect(await verify.installation(token, secret, undefined as never)).toBe(false);
+    expect(verifyInstallationAssertion(token, await testJwks(), 'lms', Date.now(), undefined as never)).toBe(false);
     expect(verifyInstallationAssertion(token, await testJwks(), 'lms', Date.now(), binding)).toBe(true);
     // Clew signs it bound to its request or not at all.
     await expect(authority.installation('lms', { body: text } as never)).rejects.toThrow('bound');
+    await expect(
+      authority.installation('lms', { path: '/clew/capabilities/lms.holdings', body: text }),
+    ).rejects.toThrow('bound');
   });
 
   test("a person's assertion, however valid and bound to the same request, is never the installation's", async () => {
     const authority = await testAuthority(secret);
+    const capabilityRoute = 'http://lms/clew/capabilities/lms.holdings';
     for (const actor of people) {
-      const token = await authority.assert('lms', actor, [], [], { body: text, capability: 'lms.holdings' });
+      const token = await authority.assert('lms', actor, [], [], { path: route, body: text });
       expect(await verify.installation(token, secret, request(token))).toBe(false);
-      // Nor is it a person's on the installation's route: a person's call goes to the capability's route alone.
+      // Nor is it a person's on the installation's route, nor, signed for that route, on the capability's.
       expect(await verify(token, secret, request(token))).toBeNull();
-      expect(await verify(token, secret, request(token, 'http://lms/clew/capabilities/lms.holdings'))).toMatchObject({
-        id: actor.id,
-      });
+      expect(await verify(token, secret, request(token, capabilityRoute))).toBeNull();
+      // A person's call goes to the capability's route alone, with an assertion signed for it.
+      const own = await authority.assert('lms', actor, [], [], { path: '/clew/capabilities/lms.holdings', body: text });
+      expect(await verify(own, secret, request(own, capabilityRoute))).toMatchObject({ id: actor.id });
     }
   });
 
   test('the route is bound exactly: its kind, its place at the start of the path, and nothing after the name', async () => {
     const authority = await testAuthority(secret);
-    const installation = await authority.installation('lms', { body: text, capability: 'lms.holdings' });
-    const person = await authority.assert('lms', manager, [], [], { body: text, capability: 'lms.holdings' });
+    const installation = await authority.installation('lms', { path: route, body: text });
+    const person = await authority.assert('lms', manager, [], [], {
+      path: '/clew/capabilities/lms.holdings',
+      body: text,
+    });
     const capabilityRoute = 'http://lms/clew/capabilities/lms.holdings';
     // The installation's assertion on a person's route, or the name reached through another route, is refused.
     for (const at of [
@@ -549,7 +560,7 @@ describe('the verifier tells the installation from a person', () => {
     expect(await verify(person, secret, request(person, capabilityRoute))).toMatchObject({ id: manager.id });
     // A call that names no capability (a scan, a figure) keeps verifying on its own route.
     const scanText = JSON.stringify({ actor: manager });
-    const scan = await authority.assert('lms', manager, [], [], { body: scanText });
+    const scan = await authority.assert('lms', manager, [], [], { path: '/clew/scan', body: scanText });
     expect(await verify(scan, secret, request(scan, 'http://lms/clew/scan', scanText))).toMatchObject({
       id: manager.id,
     });
@@ -559,8 +570,11 @@ describe('the verifier tells the installation from a person', () => {
     const authority = await testAuthority(secret);
     const jwks = await testJwks();
     const capabilityRoute = 'http://lms/clew/capabilities/lms.holdings';
-    const person = await authority.assert('lms', manager, [], [], { body: text, capability: 'lms.holdings' });
-    const installation = await authority.installation('lms', { body: text, capability: 'lms.holdings' });
+    const person = await authority.assert('lms', manager, [], [], {
+      path: '/clew/capabilities/lms.holdings',
+      body: text,
+    });
+    const installation = await authority.installation('lms', { path: route, body: text });
     const bound = async (token: string, at: string) =>
       previous.verifyAssertion(token, jwks, 'lms', Date.now(), await previous.bindingOf(request(token, at)));
     expect(await bound(person, capabilityRoute)).toMatchObject({ id: manager.id });

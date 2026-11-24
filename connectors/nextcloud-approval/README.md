@@ -85,6 +85,12 @@ Before anything is sent the token's account must be the person (below). A missin
 Nextcloud not answering, is answered as `failed` rows saying nothing was sent: a known outcome, so the card does not
 show an unknown one. There is no undo: Approval has none.
 
+Run the connector as a single process. The verifier takes each of Clew's assertions once, but it remembers them in its
+own process only: run as several replicas, or restarted, the connector would take a captured decision once more in each
+process within the assertion's two minutes, and nothing in Approval tells a repeat from a new decision on a file that
+asks for one again. To run more than one, share the record of taken `jti`s between the processes in storage that
+outlives a restart ([authorization](../../docs/guides/authorization.md)).
+
 ## Identity
 
 Every request is verified as every connector's is (the transport key and the installation-signed assertion,

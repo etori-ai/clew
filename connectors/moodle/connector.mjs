@@ -642,8 +642,8 @@ export function createConnector({
     if (request.method === 'GET' && url.pathname === '/clew/manifest') return json(manifest);
     if (request.method !== 'POST' || !url.pathname.startsWith('/clew/')) return fail('not-found', 'Okänd adress.', 404);
 
-    // The assertion must have been issued for exactly this body and this capability (D117), so the `input` and the
-    // `about` read below are Clew's. An assertion without the `body` claim is refused here.
+    // The assertion must have been issued for exactly this request, its route, body and capability (D117), so the
+    // `input` and the `about` read below are Clew's. An assertion without the `path` or `body` claim is refused here.
     const assertion = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
     const key = request.headers.get('x-clew-connector-key');
     if (url.pathname.startsWith(INSTALLATION_ROUTE)) return installationCall(request, url, assertion, key);
