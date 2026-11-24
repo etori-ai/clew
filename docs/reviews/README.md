@@ -81,6 +81,7 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [One pattern on Astryx, and the library question](2026-11-14-one-pattern-on-astryx-and-the-library-question.md)
 - [Follow-up review of the prototype shell and registers](2026-11-19-prototype-shell-follow-up.md)
 - [The talk booking stack, reviewed before it lands](2026-11-20-the-talk-booking-stack.md)
+- [Implementation plan: an errand's owner reads and answers its messages from Clew · 2026-11-23](2026-11-23-an-errand-owner-answers-supportmanagement-from-clew.md)
 - [The assistant and the model boundary, reviewed](2026-11-23-review-assistant-and-model-boundary.md)
 - [Baseline, build and supply chain: `origin/main` at `9fd4c962`](2026-11-23-review-baseline-build-and-supply-chain.md)
 - [Review: introduction and leaving, the follow-up dialogue and talks · 2026-11-23](2026-11-23-review-boarding-dialogue-and-talks.md)
