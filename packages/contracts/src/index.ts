@@ -5005,7 +5005,7 @@ export function turnRequestKey(request: ConversationInput): string {
 /** Shared by a server replay and the browser recovering a broken response. */
 export function matchesWrittenTurn(thread: Thread | undefined, index: number, request: ConversationInput): boolean {
   const question = thread?.messages[index];
-  if (!thread || question?.role !== 'user' || (!request.conversationId && index !== 0)) return false;
+  if (!thread || question?.role !== 'user') return false;
   const meta = question.meta;
   // A pre-existing question with attachments did not record which one was open. Its history is still readable.
   if (meta?.chips?.length && meta.turnBeside === undefined) return false;
@@ -5013,7 +5013,7 @@ export function matchesWrittenTurn(thread: Thread | undefined, index: number, re
     turnRequestKey(request) ===
     turnRequestKey({
       text: question.body,
-      conversationId: request.conversationId ? thread.id : undefined,
+      conversationId: index === 0 ? undefined : thread.id,
       assistant: meta?.handed?.assistant,
       side: meta?.handed?.side,
       chips: meta?.chips,

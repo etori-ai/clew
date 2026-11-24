@@ -2510,6 +2510,10 @@ describe('a question sent again under its key (WD-L3)', () => {
     const refused = 'Frågan kunde inte ställas. Skriv den igen.';
     // Another person sends Hillevi's key: the message says nothing of whose it is or what it holds.
     await expect(w.assistant.converse(hassan, { text: 'vem är här?', turn: key })).rejects.toThrow(refused);
+    // Starting the conversation and asking a follow-up in it have different histories, even with identical words.
+    await expect(
+      w.assistant.converse(hillevi, { text: 'vem är här?', conversationId: first.conversationId, turn: key }),
+    ).rejects.toThrow(refused);
     // Hillevi's key, sent as a follow-up in another of her conversations.
     await expect(
       w.assistant.converse(hillevi, { text: 'vem är här?', conversationId: other.conversationId, turn: key }),
