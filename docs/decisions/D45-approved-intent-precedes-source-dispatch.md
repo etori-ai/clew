@@ -1,6 +1,6 @@
 # D45 · Approved intent precedes source dispatch
 
-**Status:** accepted, generic card path implemented; calendar migration pending; amended by D85 (2026-11-09: the durable engine is DBOS Transact, so "Temporal" below reads "the durable engine") · **Date:** 2026-11-05 · **Area:** platform
+**Status:** accepted, generic card path implemented; calendar migration pending; amended by D85 (2026-11-09: the durable engine is DBOS Transact, so "Temporal" below reads "the durable engine"); amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-4`, `DE-M9`, `DE-L5`): a decision on a work item names the version of the item the person was shown and is refused on any other, a decision already made being replayed whatever it names, and an effect is compensated at most once, by the decision `undo:<original>`, which no other decision may be named · **Date:** 2026-11-05 · **Area:** platform
 
 **Implementation follow-up, 2026-11-05:** [D47](D47-occurrences-timers-and-attention-have-durable-identities.md) records the calendar migration and bounded follow-up now implemented. The pending wording below describes this decision's original checkpoint; use the [acceptance matrix](../reference/reliability-acceptance.md) for current evidence.
 

@@ -95,5 +95,26 @@ proposalStoreContract('postgres', async () => {
     hasJob: async id =>
       (await database().select({ id: schema.jobs.id }).from(schema.jobs).where(eq(schema.jobs.id, id))).length > 0,
     told: async id => (await readAudit('invitation:' + id)).map(r => r.action),
+    // A service desk's open card in the same table, cleaned up with the person's threads.
+    foreignThread: async (personId, topic) => {
+      const id = `foreign-${run}-${Math.random().toString(36).slice(2, 8)}`;
+      await database()
+        .insert(schema.threads)
+        .values({
+          id,
+          personId,
+          kind: 'pushed',
+          topic,
+          title: 'Beställning väntar',
+          state: 'open',
+          connector: 'sm',
+          area: 'arenden',
+          summary: 'En beställning väntar på beslut.',
+          trigger: { reason: 'Ny beställning', source: 'Servicedesk', at: new Date().toISOString() },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      return id;
+    },
   };
 });

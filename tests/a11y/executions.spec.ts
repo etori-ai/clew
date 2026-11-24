@@ -143,6 +143,37 @@ test('a decision the source answers at once: the receipt replaces the button, th
 });
 
 /**
+ * A decision is on the item as the person was shown it (AM-4). The source changes the item after the page drew it: the
+ * decision is refused and says why, the item is read again so it shows what it says now, and the next press decides on
+ * that, with the version the person now sees.
+ */
+test('a decision on an item that changed since it was drawn is refused, says why, and the item shows what it says now', async ({
+  page,
+  api,
+}) => {
+  await page.setViewportSize(desktop);
+  await open(page, '/todo?item=fakturor');
+  const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+  await expect(pane.getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+  const card = api.threads.find(t => t.id === 'fakturor')!;
+  const shown = card.updatedAt;
+  card.title = 'Attestera 3 fakturor, 51 900 kr';
+  card.updatedAt = new Date(Date.parse(shown) + 60_000).toISOString();
+  const decide = pane.getByRole('button', { name: 'Attestera 2 valda' });
+  await decide.focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    pane.getByText('Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.', { exact: true }),
+  ).toBeVisible();
+  await expect(pane.getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 51 900 kr' })).toBeVisible();
+  await expect(pane.getByText('2 fakturor attesterade', { exact: true })).toHaveCount(0);
+  await expectNoAxeViolations(page);
+  await pane.getByRole('button', { name: 'Attestera 2 valda' }).press('Enter');
+  await expect(pane.getByText('2 fakturor attesterade', { exact: true })).toBeVisible();
+  expect(api.acted.map(a => a.body.version)).toEqual([shown, card.updatedAt]);
+});
+
+/**
  * A source slower than the button's window: the first notice says that the decision waits on the source, and the
  * receipt replaces it when the source answers, with nobody touching anything. The focus stays on the title while the
  * notice changes, each notice is said, and Ångra, which comes with the receipt, is reached from the title.

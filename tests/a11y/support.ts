@@ -2121,9 +2121,13 @@ export class MockApi {
       // receipt, read back with the refs the person approved, comes with the source's answer (`approve`).
       const body = (request.postDataJSON() ?? {}) as {
         actionId?: string;
+        version?: string;
         refs?: string[];
         values?: Record<string, string>;
       };
+      // The endpoint takes no decision without the version of the item it was made on (`ActInput`, AM-4).
+      if (typeof body.version !== 'string' || !body.version)
+        return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
       const t = this.threads.find(t => t.id === id);
       const action = t?.actions.find(a => a.id === body.actionId);
       if (t && action?.kind === 'execute') {
@@ -2131,9 +2135,10 @@ export class MockApi {
         if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
         if (this.mutationFails) return route.fulfill({ status: 503, json: { error: FAILED } });
         // Refused as the server's `act` refuses, in its order: the answers against the asks (`answersOf`), then an item
-        // that is no longer open, then an earlier decision of another action. The same action decided again is the same
-        // decision, which the ledger replays: the item as it is, nothing new (`threads/usecases/decisions.ts`). A decision
-        // that dispatch refused because its user name moved to someone else (`SUBJECT_CHANGED`, D122) is decided anew.
+        // that is no longer open, then one that has changed since the person was shown it (AM-4), then an earlier decision
+        // of another action. The same action decided again is the same decision, which the ledger replays whatever version
+        // it names: the item as it is, nothing new (`threads/usecases/decisions.ts`). A decision that dispatch refused
+        // because its user name moved to someone else (`SUBJECT_CHANGED`, D122) is decided anew.
         const values = body.values ?? {};
         const missing = (action.path?.asks ?? []).find(a => a.required && !values[a.property]);
         const refused = t.execution?.state === 'failed' && t.execution.reason === 'subject-changed';
@@ -2145,6 +2150,9 @@ export class MockApi {
             ? 'Åtgärden frågar inte efter det värdet.'
             : undefined) ??
           (!previous && t.state !== 'open' ? 'Ärendet är redan hanterat.' : undefined) ??
+          (!previous && body.version !== t.updatedAt
+            ? 'Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.'
+            : undefined) ??
           (previous && previous.operation !== action.capability
             ? 'Ett tidigare beslut väntar redan på besked.'
             : undefined);

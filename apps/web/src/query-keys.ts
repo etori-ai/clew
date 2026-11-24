@@ -5,6 +5,8 @@
 export const keys = {
   threads: ['threads'] as const,
   thread: (id: string) => ['thread', id] as const,
+  /** Every item read on its own (`thread`), as one prefix. */
+  anyThread: ['thread'] as const,
   /** A work item's Händelser (D112 item 4), read again whenever the item changes (`version` is its `updatedAt`). */
   itemEvents: (id: string, version: string) => ['item-events', id, version] as const,
   areas: ['areas'] as const,

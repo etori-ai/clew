@@ -312,7 +312,15 @@ api.route('/cap', capabilityRoutes({ registry, run: runCapability, people: perso
 api.post('/threads/:id/act', async c => {
   const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType, 64_000);
   return c.json(
-    await act(c.get('session').context, c.req.param('id'), input.actionId, input.refs, input.reviews, input.values),
+    await act(
+      c.get('session').context,
+      c.req.param('id'),
+      input.actionId,
+      input.refs,
+      input.reviews,
+      input.values,
+      input.version,
+    ),
   );
 });
 /** "Det här händer" (D112): what the card's action would write with these rows and answers, from its effect read. Nothing is written. */

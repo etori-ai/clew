@@ -37,13 +37,21 @@ const toProposalRow = (patch: ProposalPatch) => {
     ...(end !== undefined ? { end: date(end)! } : {}),
   };
 };
+/**
+ * The store holds the calendar's own threads only, as the memory adapter does: every card of every connector is a row of
+ * the same table, and a use case of the calendar's that was handed another card's id (a replan, a move, a dismissal)
+ * would rewrite it as a proposal thread.
+ */
+const CALENDAR = eq(threads.connector, 'calendar');
 async function read(personId: string | undefined, id: string): Promise<ProposalThread | undefined> {
   const owner =
     personId ??
     (await database().select({ personId: threads.personId }).from(threads).where(eq(threads.id, id)))[0]?.personId;
   if (!owner) return undefined;
   const found = await readThread(owner, id);
-  return found ? { thread: found.thread, proposals: found.proposalRows.map(toRecord) } : undefined;
+  return found && found.thread.connector === 'calendar'
+    ? { thread: found.thread, proposals: found.proposalRows.map(toRecord) }
+    : undefined;
 }
 /** Told of invitations when the store is built without the port (a test of the store alone): nobody. */
 const nobody: InvitationsTx = {
@@ -57,7 +65,7 @@ const txOf = (tx: Transaction, durable: DurableQueue, invitations: InvitationsTx
     const [r] = await tx
       .select()
       .from(threads)
-      .where(and(eq(threads.id, id), eq(threads.personId, personId)))
+      .where(and(eq(threads.id, id), eq(threads.personId, personId), CALENDAR))
       .for('update');
     if (!r) return undefined;
     const found = (await readThread(personId, id, tx))!;
@@ -173,7 +181,7 @@ export function postgresProposalStore(
       const [r] = await database()
         .select({ id: threads.id })
         .from(threads)
-        .where(and(eq(threads.personId, personId), eq(threads.topic, topic)))
+        .where(and(eq(threads.personId, personId), eq(threads.topic, topic), CALENDAR))
         .orderBy(desc(threads.createdAt))
         .limit(1);
       return r ? read(personId, r.id) : undefined;
@@ -182,7 +190,7 @@ export function postgresProposalStore(
       const [row] = await database()
         .select({ id: threads.id })
         .from(threads)
-        .where(and(eq(threads.personId, personId), eq(threads.topic, topic), eq(threads.state, 'open')));
+        .where(and(eq(threads.personId, personId), eq(threads.topic, topic), eq(threads.state, 'open'), CALENDAR));
       return row ? read(personId, row.id) : undefined;
     },
     async activeProposals(personId) {

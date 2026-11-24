@@ -104,6 +104,13 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     };
     return { t, action, found, selected, payload, asked: answered.answers, subject };
   }
+  /**
+   * The human decision on a work item's action (D45, D47). `version` is the item's `updatedAt` as the person was shown
+   * it (AM-4): an execute is decided on that version, so an item that has changed since is refused and the person
+   * decides on what it says now. The route always gives it (`ActInput`); only a card made in the same request, from the
+   * dialog the person decided in, is decided without one (the entity menu, D126 item 7). A decision already made on the
+   * item is replayed whatever the version: it was bound when it was made.
+   */
   async function act(
     persona: AuthenticatedContext,
     id: string,
@@ -111,6 +118,7 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     refs?: string[],
     reviews?: ReviewEvidence[],
     values?: AskValues,
+    version?: string,
   ) {
     const { t, action, found, selected, payload, asked, subject } = await decided(
       persona,
@@ -144,6 +152,8 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     )
       throw new InputError('Underlaget och ärendet gäller olika versioner. Läs in ärendet igen.');
     if (!previous && t.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
+    if (!previous && version !== undefined && version !== t.updatedAt)
+      throw new InputError('Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.');
     if (previous && previous.operation !== action.capability)
       throw new InputError('Ett tidigare beslut väntar redan på besked.');
     const unit = cardUnit(t);

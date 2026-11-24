@@ -117,7 +117,7 @@ function ActionDraftCard({ draft, at, replaced }: { draft: ActionDraftRef; at: s
   const open = (startAt: ActionStep) => setDialog({ open: true, startAt });
   const send = async (sent: AskValues): Promise<string | null> => {
     const result = await decision.send(async () => {
-      const answer = await api.act(thread.id, action.id, undefined, undefined, sent);
+      const answer = await api.act(thread, action.id, undefined, undefined, sent);
       if (answer.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
       setDialog(d => (d ? { ...d, open: false } : d));
       return answer.thread;

@@ -423,7 +423,7 @@ export function useCardAction({
     if (!dialog) return null;
     const { action, refs } = dialog;
     const result = await decision.send(async () => {
-      const answer = await api.act(thread.id, action.id, refs, undefined, values);
+      const answer = await api.act(thread, action.id, refs, undefined, values);
       if (answer.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
       // Sent: the dialog closes first and the focus is back on the pressed button, which loads until the item has come
       // to rest, before the item shows the source's answer, as for a one-press action (D64).
@@ -482,7 +482,7 @@ export function useCardAction({
     if (action.kind === 'read') {
       if (action.target === 'link') {
         await run(async () => {
-          const result = await api.act(thread.id, action.id, chosen);
+          const result = await api.act(thread, action.id, chosen);
           const url = result.kind === 'read' ? (result.output as { url?: unknown }).url : undefined;
           // The server holds a link read's address to http(s); one that is not is the source's fault, and said.
           if (typeof url !== 'string' || !isWebAddress(url)) throw new Error('Källans länk är ogiltig.');
@@ -497,7 +497,7 @@ export function useCardAction({
     setPressed(action.id);
     await run(
       async () => {
-        const result = await api.act(thread.id, action.id, chosen, reviews);
+        const result = await api.act(thread, action.id, chosen, reviews);
         if (result.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
         return result.thread;
       },

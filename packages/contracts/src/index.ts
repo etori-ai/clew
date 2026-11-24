@@ -4740,6 +4740,12 @@ export const AreaSchema = object({
 export type Area = Static<typeof AreaSchema>;
 export const ActInput = object({
   actionId: id,
+  /**
+   * The work item's `updatedAt` as the person was shown it (AM-4): a decision is on that version. An item that has
+   * changed since is refused, and the person decides again on what it says now; a decision already made on it is
+   * replayed, whatever the version.
+   */
+  version: Type.String({ minLength: 1, maxLength: 40 }),
   refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 50 })),
   reviews: Type.Optional(Type.Array(ReviewEvidenceSchema, { maxItems: 50 })),
   /** The person's answers to the action's asks (D112 item 10): the asked properties only, merged into the input. */

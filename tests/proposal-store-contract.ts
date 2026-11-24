@@ -17,6 +17,11 @@ export interface ProposalStoreHarness {
    * binds a port that records each call in the transaction it is given, as composition binds the talks module's.
    */
   told(invitationId: string): Promise<string[]>;
+  /**
+   * An open card of another connector, owned by the person and on the given topic: where cards share one table
+   * (PostgreSQL) a row of it, where the store holds only its own (memory) an id it never made.
+   */
+  foreignThread(personId: string, topic: string): Promise<string>;
 }
 const T0 = '2026-11-04T06:00:00.000Z';
 const plus = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).toISOString();
@@ -59,6 +64,16 @@ const proposal = (
 
 export function proposalStoreContract(name: string, make: () => Promise<ProposalStoreHarness>) {
   describe(`${name} proposal store`, () => {
+    test('a card of another connector is not the store’s, even on the same topic: no read, no lock, no latest or open thread (DE-L6)', async () => {
+      const { store, people, foreignThread } = await make();
+      const topic = `utvecklingssamtal-${unique()}`;
+      const id = await foreignThread(people[0], topic);
+      expect(await store.readThread(people[0], id)).toBeUndefined();
+      expect(await store.readThreadById(id)).toBeUndefined();
+      expect(await store.latestThread(people[0], topic)).toBeUndefined();
+      expect(await store.openThread(people[0], topic)).toBeUndefined();
+      expect(await store.transaction(tx => tx.lockThread(people[0], id))).toBeUndefined();
+    });
     test('a proposal thread is read back with its records, and the contract view leaves superseded ones out', async () => {
       const {
         store,
