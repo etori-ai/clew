@@ -1,11 +1,12 @@
 import type { AuthenticatedContext } from '@clew/contracts';
-import { bindCalendar, type CalendarBinding } from '@clew/calendar/accounts';
+import { bindCalendar } from '@clew/calendar/accounts';
 import { postgresProposalStore } from '../modules/calendar/adapters/postgres';
+import { calendarBinder } from '../modules/calendar/adapters/binder';
 import { durableObligations } from '../dbos/obligations';
 import type { Notifier, People, RoundReader, Team } from '../modules/calendar/model';
 import { teamFromStaff } from '../modules/calendar/domain';
 import { ForbiddenError } from '../context';
-import { staff } from './people';
+import { staff, userReads } from './people';
 import { systemContext } from '../system-context';
 import { calendarUsecases } from '../modules/calendar/usecases/samtal';
 import { eventUsecases } from '../modules/calendar/usecases/events';
@@ -28,16 +29,11 @@ import { talkInvitationsOn } from './talk-invitations';
  * The calendar's live wiring (D25). It is its own file because the registry registers the calendar connector over
  * these use cases, and `composition/index.ts` builds the stream over the registry: this file must not import either.
  */
-// Provider discovery is cached only while the person's access scope is unchanged.
-const bindings = new Map<string, { version: string; binding: CalendarBinding }>();
-const bind: CalendarBinder = (persona: AuthenticatedContext) => {
-  let cached = bindings.get(persona.id);
-  if (!cached || cached.version !== persona.authorizationVersion) {
-    cached = { version: persona.authorizationVersion, binding: bindCalendar(persona) };
-    bindings.set(persona.id, cached);
-  }
-  return cached.binding;
-};
+/**
+ * The person's calendar as Clew's directory holds them (DE-M8): their address is read on every call, and provider
+ * discovery is kept only while that address and the person's access scope are unchanged (`calendarBinder`).
+ */
+const bind: CalendarBinder = calendarBinder({ email: id => userReads.email(id), bindCalendar });
 /**
  * The people a manager plans for and may invite (D96 item 3): everyone provisioned on the units they manage, read
  * through Personal's overview (D94) on every call, so a person who joins or leaves a unit counts at once. Not cached by

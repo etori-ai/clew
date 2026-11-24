@@ -20,6 +20,8 @@ export interface ErrandSource {
 }
 export declare const defaultStatusKinds: Record<string, StatusKind>;
 export declare const STATUS_KINDS: StatusKind[];
+/** The adapter `SM_ADAPTER` names. Throws when none is named, the name is unknown, or `fixture` is named beside `SM_URL`. */
+export declare function adapterOf(env: Record<string, string | undefined>): 'api' | 'fixture';
 export declare function createManifest(options?: { audience?: string; source?: string }): unknown;
 export declare function createConnector(options?: {
   jwks?: object | (() => Promise<object>);

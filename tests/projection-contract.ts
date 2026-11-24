@@ -68,7 +68,7 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
     const approve = (h: ProjectionHarness, e: Execution) => h.store.transaction(tx => tx.insert(e));
     const settle = (h: ProjectionHarness, e: Execution, patch: Partial<Execution>) =>
       h.store.transaction(tx => tx.update({ ...e, updatedAt: later, ...patch }));
-    const done = (ref: string, source?: { ref: string; revision: string; uid?: string }) => ({
+    const done = (ref: string, source?: { ref: string; revision: string; uid?: string; icalUid?: string }) => ({
       headline: 'Klart',
       rows: [{ ref, label: 'Rad', outcome: 'done' as const, detail: 'Läst tillbaka', ...(source ? { source } : {}) }],
       undoCapability: 'reference.undo',
@@ -210,6 +210,7 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
         eventUid: null,
         eventRef: null,
         eventRevision: null,
+        eventIcalUid: null,
         confirmedAt: null,
         undoUntil: null,
         reminders: 0,
@@ -317,7 +318,7 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
         action: 'obligation.policy_approved',
         details: { executionId: e.id, maxReminders: 2, afterWorkdays: 2, expiresAt: followup.expiresAt },
       });
-      const source = { ref: 'event-1', revision: 'r1', uid: 'uid-1' };
+      const source = { ref: 'event-1', revision: 'r1', uid: 'uid-1', icalUid: 'ical-1' };
       await settle(h, e, { state: 'succeeded', dispatchedAt: dispatched, result: done('create:' + p1.id, source) });
       const undoUntil = '2099-11-05T10:11:00.000Z';
       expect(await h.proposal(p1.id)).toMatchObject({
@@ -325,6 +326,7 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
         eventUid: 'uid-1',
         eventRef: 'event-1',
         eventRevision: 'r1',
+        eventIcalUid: 'ical-1',
         confirmedAt: dispatched,
         undoUntil,
       });
@@ -381,6 +383,7 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
         eventUid: null,
         eventRef: null,
         eventRevision: null,
+        eventIcalUid: null,
         confirmedAt: null,
         undoUntil: null,
       });

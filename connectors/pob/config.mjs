@@ -26,10 +26,26 @@ function address(env, name) {
 }
 
 export function readConfig(env = process.env) {
-  const adapter = env.POB_ADAPTER || 'fixture';
+  // The adapter is always said. The made-up POB answers with invented errands under POB's name, so a deployment that
+  // names none does not start, and neither does one that names it beside a POB address or credential.
+  const adapter = (env.POB_ADAPTER || '').trim();
+  if (!adapter)
+    throw new Error(
+      'POB_ADAPTER is not set. Set it to "api" to read POB (with POB_URL and a credential), or to "fixture" for the ' +
+        'made-up errands in cases.mjs: development and tests only.',
+    );
   if (adapter !== 'fixture' && adapter !== 'api')
-    throw new Error(`Unknown POB_ADAPTER "${adapter}". Known: fixture, api.`);
+    throw new Error(`Unknown POB_ADAPTER "${adapter}". Known: api, fixture.`);
   const api = adapter === 'api';
+  const real = ['POB_URL', 'POB_AUTHORIZATION', 'POB_USER', 'POB_PASSWORD', 'POB_PASSWORD_FILE'].filter(name =>
+    (env[name] || '').trim(),
+  );
+  if (!api && real.length)
+    throw new Error(
+      `POB_ADAPTER is "fixture" but ${real.join(' and ')} ${real.length > 1 ? 'are' : 'is'} set. The stand-in reads ` +
+        `no POB and answers with made-up errands: set POB_ADAPTER=api to read it, or remove ${real.join(' and ')} to ` +
+        'run the stand-in.',
+    );
 
   // What the installation switches on beyond reading. `create` is the fault report; replying in an errand is not built.
   const writes = (env.POB_WRITES || '')

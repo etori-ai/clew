@@ -26,6 +26,14 @@ export const postgresUserReads = (db: () => Database = database): Omit<UserReads
       .where(eq(schema.people.id, personId));
     return row?.userName ?? null;
   },
+  async email(personId) {
+    if (personId.includes('\u0000')) return null;
+    const [row] = await db()
+      .select({ email: schema.people.email })
+      .from(schema.people)
+      .where(eq(schema.people.id, personId));
+    return row?.email || null;
+  },
   async holders(readerId, userNames) {
     // A NUL names nobody, and PostgreSQL refuses to compare one.
     const names = [...new Set(userNames)].filter(name => name && !name.includes('\u0000'));

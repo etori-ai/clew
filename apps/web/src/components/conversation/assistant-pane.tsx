@@ -183,7 +183,9 @@ export function AssistantPane({
   const all = talk.conversation?.messages ?? [];
   const messages = sideMessages(all, assistant);
   const pending = talk.aside?.assistant === assistant ? talk.aside : null;
-  const busy = talk.busy || (!!pending && !pending.held);
+  // The question on its way to the assistant (WD-L5): the send button is Stoppa and the field stays open, as in the
+  // conversation's own box (D36), and Enter waits until the answer is written. A question Clew held is no turn to stop.
+  const asking = !!pending && !pending.held;
   const time = (at: string, footer?: string) => (
     <ChatMessageMetadata
       timestamp={<Timestamp value={at} format="time" hasTooltip={false} />}
@@ -286,7 +288,9 @@ export function AssistantPane({
                 density="compact"
                 value={value}
                 onChange={setValue}
-                isDisabled={busy}
+                isDisabled={talk.busy}
+                isStopShown={asking}
+                onStop={talk.stopAside}
                 input={
                   <ChatComposerInput
                     handleRef={field}
@@ -294,13 +298,19 @@ export function AssistantPane({
                     maxRows={3}
                     hasHistory={false}
                     placeholder={`Skriv till ${who.name} i ${who.source}`}
+                    onKeyDown={e => {
+                      if (asking && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
+                    }}
                   />
                 }
                 onSubmit={text => {
                   const sent = text;
                   setValue('');
+                  // Stopped or not sent, the question goes back in the box and the box takes the focus from Stoppa.
                   void talk.askAside(who, sent).then(ok => {
-                    if (!ok) setValue(v => v || sent);
+                    if (ok) return;
+                    setValue(v => v || sent);
+                    field.current?.focus();
                   });
                 }}
                 {...(talk.asideError ? { status: { type: 'error' as const, message: talk.asideError } } : {})}

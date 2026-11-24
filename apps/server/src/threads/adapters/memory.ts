@@ -149,6 +149,13 @@ export function memoryThreadStore(): MemoryThreadStore {
     async addMessage(threadId, message) {
       const row = threads.get(threadId);
       if (!row) throw new Error(`Thread ${threadId} does not exist.`);
+      // A question's turn key is written once, as Postgres's unique index holds it (WD-L3).
+      const turn = message.role === 'user' ? message.meta?.turn : undefined;
+      if (
+        turn !== undefined &&
+        [...threads.values()].some(r => r.thread.messages.some(m => m.role === 'user' && m.meta?.turn === turn))
+      )
+        throw new Error(`A question with turn key ${turn} is already written.`);
       row.thread.messages.push({
         id: `message-${++messageSequence}`,
         role: message.role,
@@ -210,21 +217,41 @@ export function memoryThreadStore(): MemoryThreadStore {
     dump: () => [...threads.values()].map(copy),
     async listThreads(personId, now) {
       const since = Date.parse(now) - 7 * 86400_000;
-      const visible = [...threads.values()]
-        .filter(
-          r =>
-            r.personId === personId &&
-            (r.thread.state === 'open' || unresolvedExecution(r.thread) || Date.parse(r.thread.updatedAt) >= since),
-        )
-        .sort((a, b) => Date.parse(b.thread.createdAt) - Date.parse(a.thread.createdAt));
-      let history = 0;
-      return visible
-        .filter(
-          r =>
-            (r.thread.kind === 'pushed' && (r.thread.state === 'open' || unresolvedExecution(r.thread))) ||
-            history++ < 50,
-        )
+      const mine = [...threads.values()].filter(
+        r =>
+          r.personId === personId &&
+          (r.thread.state === 'open' || unresolvedExecution(r.thread) || Date.parse(r.thread.updatedAt) >= since),
+      );
+      const work = (r: { thread: Thread }) =>
+        r.thread.kind === 'pushed' && (r.thread.state === 'open' || unresolvedExecution(r.thread));
+      // The history is the 50 with the latest activity, as Postgres picks them; the list is newest first by creation.
+      const history = mine
+        .filter(r => !work(r))
+        .sort((a, b) => Date.parse(b.thread.updatedAt) - Date.parse(a.thread.updatedAt))
+        .slice(0, 50);
+      return [...mine.filter(work), ...history]
+        .sort((a, b) => Date.parse(b.thread.createdAt) - Date.parse(a.thread.createdAt))
         .map(r => withTimers(r.thread));
+    },
+    async listConversations(personId, { after, limit }) {
+      const newest = (a: Thread, b: Thread) =>
+        Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+      const all = [...threads.values()]
+        .filter(r => r.personId === personId && r.thread.kind === 'question')
+        .map(r => r.thread)
+        .sort(newest)
+        .filter(t => !after || newest(t, { ...t, id: after.id, updatedAt: after.at }) > 0);
+      const page = all.slice(0, limit);
+      const last = page.at(-1);
+      return {
+        threads: page.map(withTimers),
+        next: all.length > limit && last ? { at: last.updatedAt, id: last.id } : null,
+      };
+    },
+    async turnWritten(personId, turn) {
+      return [...threads.values()].find(
+        r => r.personId === personId && r.thread.messages.some(m => m.role === 'user' && m.meta?.turn === turn),
+      )?.thread.id;
     },
     async readThread(personId, id) {
       const row = own(personId, id);

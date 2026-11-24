@@ -155,7 +155,7 @@ if (refused) {
 const authority = await signingAuthority();
 // With `--as` the batch passes this installation's own rule of who may be asked about (D117), as every call does, and the
 // request body tells the connector how that person stands to each key sent; without `--as` the check vouches for nobody,
-// so no real key is sent. Every assertion is bound to its request's body and capability.
+// so no real key is sent. Every assertion is bound to its request's route, body and capability, as Clew binds it.
 const report = await checkConnector({
   url,
   id: audience,

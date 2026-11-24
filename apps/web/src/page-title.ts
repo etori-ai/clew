@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
-import { useAnnounce } from '@clew/ui';
+import { tabTitle, useAnnounce } from '@clew/ui';
 
 /** The title on screen, kept across pages: a change of page by a link is one component giving way to another, and that is still one view giving way to the next. */
 let previous: string | null = null;
 const show = (title: string) => {
-  document.title = `${title} · Startsidan`;
+  document.title = tabTitle(title);
 };
 
 /**

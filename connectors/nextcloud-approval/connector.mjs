@@ -19,6 +19,31 @@ import {
 
 export { createManifest };
 
+/**
+ * The adapter `NEXTCLOUD_ADAPTER` names, read before anything is served: `nextcloud`, the real API, or `fixture`, the
+ * stand-in of approvals.mjs, for development and tests only. There is no default: the stand-in answers with made-up
+ * files under the system's name and reads the person's token without checking its signature, so a deployment that names
+ * no adapter does not start, and neither does one that names `fixture` beside `NEXTCLOUD_URL`. Each error names the
+ * variable to change; what `nextcloud` needs besides, its adapter checks.
+ */
+export function adapterOf(env) {
+  const set = value => typeof value === 'string' && value.trim() !== '';
+  const adapter = set(env.NEXTCLOUD_ADAPTER) ? env.NEXTCLOUD_ADAPTER.trim() : '';
+  if (!adapter)
+    throw new Error(
+      'NEXTCLOUD_ADAPTER is not set. Set it to "nextcloud" to read Nextcloud (with NEXTCLOUD_URL), or to "fixture" ' +
+        'for the stand-in in approvals.mjs, whose files are made up: development and tests only.',
+    );
+  if (adapter !== 'nextcloud' && adapter !== 'fixture')
+    throw new Error(`Unknown NEXTCLOUD_ADAPTER "${adapter}". Known: nextcloud, fixture.`);
+  if (adapter === 'fixture' && set(env.NEXTCLOUD_URL))
+    throw new Error(
+      'NEXTCLOUD_ADAPTER is "fixture" but NEXTCLOUD_URL is set. The stand-in reads no Nextcloud and answers with ' +
+        'made-up files: set NEXTCLOUD_ADAPTER=nextcloud to read it, or remove NEXTCLOUD_URL to run the stand-in.',
+    );
+  return adapter;
+}
+
 const PREFIX = `${CONNECTOR}:file:`;
 const refPattern = new RegExp(fileRefPattern);
 const refOf = id => PREFIX + id;

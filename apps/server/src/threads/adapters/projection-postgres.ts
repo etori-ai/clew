@@ -19,6 +19,7 @@ const proposalOf = (r: typeof proposals.$inferSelect): ProposalRecord => ({
   eventUid: r.eventUid,
   eventRef: r.eventRef,
   eventRevision: r.eventRevision,
+  eventIcalUid: r.eventIcalUid,
   confirmedAt: r.confirmedAt?.toISOString() ?? null,
   undoUntil: r.undoUntil?.toISOString() ?? null,
   reminders: r.reminders,

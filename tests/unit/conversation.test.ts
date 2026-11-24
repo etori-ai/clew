@@ -16,6 +16,7 @@ import { refreshScan } from '../refresh-scan';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
+import { draft } from '../store-contract';
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
 import { startedCards } from '../../apps/server/src/threads/usecases/started';
@@ -2196,7 +2197,7 @@ describe('the assistant starts a work item from a propose, the person sends it',
     for (const id of [a.threadId, c.threadId, d.threadId]) expect(audit(w.store, id)).toEqual(['thread.started']);
   });
 
-  test('a turn stopped after its propose became an item writes conversation.stopped on the conversation, naming the item and the model (AM-6)', async () => {
+  test('a turn stopped after its propose became an item is written whole, the item its answer, and its row says it was stopped (WD-L3, AM-6)', async () => {
     const stop = new AbortController();
     let proposing = false;
     const generate: ModelGenerate = async ({ tools, signal }) => {
@@ -2209,24 +2210,45 @@ describe('the assistant starts a work item from a propose, the person sends it',
     const w = world({ generate, extra: [desk([])] });
     const first = await w.assistant.converse(hassan, { text: 'Min dator krånglar' });
     proposing = true;
-    await expect(
-      w.assistant.converse(
-        hassan,
-        { text: 'Felanmäl den', conversationId: first.conversationId },
-        { signal: stop.signal },
-      ),
-    ).rejects.toBeInstanceOf(TurnStopped);
-    const [card] = await deskCards(w);
-    // The item stays the person's, with its own row; the turn's row is about the conversation and names it.
+    const turn = await w.assistant.converse(
+      hassan,
+      { text: 'Felanmäl den', conversationId: first.conversationId, turn: 'stopped-turn-1' },
+      { signal: stop.signal },
+    );
+    const [card, ...more] = await deskCards(w);
+    expect(more).toEqual([]);
+    // The item stays the person's, with its own row, and the conversation says so in Clew's own words: the page that
+    // pressed Stoppa reads the turn back by its key and draws it.
     expect(audit(w.store, card!.id)).toEqual(['thread.started']);
+    expect(turn).toMatchObject({
+      conversationId: first.conversationId,
+      shape: 'forslag',
+      assistant: 'router',
+      answer: {
+        body: 'Jag har förberett "Felanmäl dator" som ett ärende. Fyll i uppgifterna och skicka när du är klar. Inget är skickat.',
+      },
+      draft: { kind: 'action', threadId: card!.id, actionId: 'send', values: said },
+    });
+    expect(turn.thread.messages.map(m => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    expect((await w.assistant.writtenTurn(hassan, 'stopped-turn-1')).written).toMatchObject({
+      conversationId: first.conversationId,
+      answer: { body: turn.answer.body },
+      draft: { threadId: card!.id },
+    });
     expect(w.store.audit.at(-1)).toEqual({
       actor: 'person:hassan',
-      action: 'conversation.stopped',
+      action: 'conversation.replied',
       subject: 'thread:' + first.conversationId,
       at: T0,
       details: {
+        assistant: 'router',
+        shape: 'forslag',
         chips: [],
+        tools: [],
+        drafted: { thread: card!.id, action: 'send', asks: ['problem', 'place'] },
+        cards: [card!.id],
         started: { thread: card!.id, capability: 'desk.reportFault' },
+        stopped: true,
         model: 'open-model',
         modelCall: { providerId: 'llm', durationMs: 0, traceId: '0af7651916cd43dd8448eb211c80319c' },
       },
@@ -2274,5 +2296,122 @@ describe('the assistant starts a work item from a propose, the person sends it',
     expect(turn.forslag).toBeUndefined();
     expect(heard).toEqual([{ error: TOOL_UNANSWERED }]);
     expect(JSON.stringify(heard)).not.toContain('anmälare');
+  });
+});
+
+describe('a question sent again under its key (WD-L3)', () => {
+  test('a question sent again under its key is answered with the turn as written: nothing asked, written or recorded twice (WD-L3)', async () => {
+    let calls = 0;
+    const generate: ModelGenerate = async () => {
+      calls++;
+      return { text: 'Tre är på plats.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    const key = 'b0f6a9c2-4d1e-4f7a-9c3b-2e8d5a1f6c70';
+    const first = await w.assistant.converse(hillevi, { text: 'vem är här?', turn: key });
+    // The answer broke on its way, or the person pressed Stoppa as it was written: the question is sent again.
+    const again = await w.assistant.converse(hillevi, { text: 'vem är här?', turn: key });
+    expect(calls).toBe(1);
+    expect(again).toMatchObject({
+      conversationId: first.conversationId,
+      shape: first.shape,
+      assistant: 'model',
+      answer: first.answer,
+      clewActions: [],
+    });
+    expect(again.thread.messages).toEqual(first.thread.messages);
+    expect(first.thread.messages[0]!.meta?.turn).toBe(key);
+    expect(audit(w.store, first.conversationId)).toEqual(['conversation.asked']);
+    expect(w.store.audit).toHaveLength(1);
+    // The page's read after a stop or a broken answer: what the key came to, or nothing.
+    expect((await w.assistant.writtenTurn(hillevi, key)).written).toMatchObject({
+      conversationId: first.conversationId,
+    });
+    expect(await w.assistant.writtenTurn(hillevi, 'a1b2c3d4-0000-4000-8000-000000000000')).toEqual({ written: null });
+    expect(await w.assistant.writtenTurn(hassan, key)).toEqual({ written: null });
+    await expect(w.assistant.writtenTurn(hillevi, 'inte en nyckel')).rejects.toThrow('Ogiltig förfrågan.');
+    // A follow-up is a question of its own, with a key of its own.
+    const next = await w.assistant.converse(hillevi, {
+      text: 'och i morgon?',
+      conversationId: first.conversationId,
+      turn: 'c7d8e9f0-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+    });
+    expect(next.thread.messages).toHaveLength(4);
+    expect(calls).toBe(2);
+  });
+  test('two sends of one question that race are written once: the later one answers with the first one’s turn (WD-L3)', async () => {
+    let release!: () => void;
+    const held = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    let calls = 0;
+    const generate: ModelGenerate = async () => {
+      calls++;
+      await held;
+      return { text: 'Tre är på plats.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    const key = 'e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b';
+    const both = Promise.all([
+      w.assistant.converse(hillevi, { text: 'vem är här?', turn: key }),
+      w.assistant.converse(hillevi, { text: 'vem är här?', turn: key }),
+    ]);
+    await Bun.sleep(0);
+    release();
+    const [a, b] = await both;
+    expect(calls).toBe(2);
+    expect(b.conversationId).toBe(a.conversationId);
+    const conversations = (await w.store.listThreads('hillevi', T0)).filter(t => t.kind === 'question');
+    expect(conversations.map(t => t.messages.length)).toEqual([2]);
+    // Both model calls are on record (D91): the one written, and the one whose turn could not be written.
+    expect(w.store.audit.map(r => r.action).sort()).toEqual(['conversation.asked', 'conversation.failed']);
+  });
+});
+
+describe('Alla samtal (WD-L1)', () => {
+  test('Alla samtal pages through every conversation, the latest activity first, passing over those the person may not see (WD-L1)', async () => {
+    const w = world();
+    const at = (s: number) => new Date(Date.parse(T0) + s * 1000).toISOString();
+    const seen = Array.from({ length: 120 }, (_, i) =>
+      draft('hillevi', {
+        id: `samtal-${String(i).padStart(3, '0')}`,
+        kind: 'question',
+        createdAt: at(i),
+        updatedAt: at(i),
+      }),
+    );
+    // Written under an access Hillevi no longer has: stored, never listed.
+    const unseen = Array.from({ length: 30 }, (_, i) =>
+      draft('hillevi', { id: `dolt-${i}`, kind: 'question', createdAt: at(200 + i), updatedAt: at(200 + i) }),
+    );
+    await w.store.transaction(async tx => {
+      for (const t of [...seen, ...unseen, draft('hillevi'), draft('hassan', { kind: 'question' })])
+        await tx.insertThread(t);
+      for (const t of unseen)
+        await tx.addMessage(t.id, {
+          role: 'assistant',
+          body: 'Svar',
+          at: t.updatedAt,
+          meta: { access: { connectors: [], capabilities: [], authorizationVersion: 'v0' } },
+        });
+      // The first conversation, begun first, is continued last.
+      await tx.addMessage(seen[0]!.id, { role: 'user', body: 'Och nu?', at: at(500) });
+    });
+    const order = [seen[0]!, ...seen.slice(1).reverse()].map(t => t.id);
+    const pages = [];
+    let after: string | undefined;
+    do {
+      const page = await w.threads.listConversationsFor(hillevi, after);
+      pages.push(page.conversations.map(t => t.id));
+      after = page.next ?? undefined;
+    } while (after);
+    expect(pages.map(p => p.length)).toEqual([50, 50, 20]);
+    expect(pages.flat()).toEqual(order);
+    await expect(w.threads.listConversationsFor(hillevi, 'inte en markör')).rejects.toThrow('Ogiltig förfrågan.');
+    await expect(w.threads.listConversationsFor(hillevi, '2026-13-99T00:00:00Z~x')).rejects.toThrow(
+      'Ogiltig förfrågan.',
+    );
+    // Reading pages writes nothing.
+    expect(w.store.audit).toEqual([]);
   });
 });

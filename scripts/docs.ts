@@ -353,6 +353,12 @@ generated.set(
 );
 
 const failures: string[] = [];
+// Every number that names two records has a line in the status page's guide to the decision history, which links each
+// of its records: a guide that leaves one out tells a reader less than the index does.
+const historyGuide = read('docs/reference/status.md');
+for (const d of decisions.filter(d => duplicates.includes(`D${d.number}`)))
+  if (!historyGuide.includes(`](../decisions/${fileOf(d)})`))
+    failures.push(`docs/reference/status.md: link ${fileOf(d)}, one of the records numbered D${d.number}`);
 for (const [path, content] of generated) {
   if (check) {
     if (!existsSync(resolve(root, path)) || read(path) !== content)

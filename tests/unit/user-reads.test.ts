@@ -5,6 +5,7 @@ import { userRow } from '../scim-store-contract';
 import {
   USER_READ_ORGANISATION,
   userReadActors,
+  userReadAddresses,
   userReadColleague,
   userReadNames,
   userReadOthers,
@@ -30,7 +31,11 @@ userReadsContract('memory', async () => {
     );
     for (const a of actors) {
       await tx.insertUser(
-        userRow(a.id, USER_READ_ORGANISATION, { name: a.name, userName: userReadNames(actors)[a.id] }),
+        userRow(a.id, USER_READ_ORGANISATION, {
+          name: a.name,
+          userName: userReadNames(actors)[a.id],
+          email: userReadAddresses(actors)[a.id] ?? null,
+        }),
       );
       await tx.replaceAssignments(a.id, [{ unitId: a.unitId, role: a.role }]);
     }
@@ -49,6 +54,7 @@ userReadsContract('memory', async () => {
       capabilities: async id => (actors.find(a => a.id === id)?.role === 'manager' ? ['test.read'] : []),
       ...directoryUsecases({ store }),
       userName: keys.userName,
+      email: keys.email,
       holders: keys.holders,
       enabled: keys.enabled,
     },

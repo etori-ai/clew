@@ -311,6 +311,11 @@ export const CalendarEventSchema = object({
   canCancel: Type.Boolean(),
   recurring: Type.Boolean(),
   organizer: Type.String(),
+  /**
+   * The meeting of an invitation to a talk that Clew sent and that still stands (D133): found by the event's id among
+   * Clew's own invitations, the reader's or one that invites the reader, never by its title. Absent for any other event.
+   */
+  talk: Type.Optional(Type.Literal(true)),
 });
 export type CalendarEvent = Static<typeof CalendarEventSchema>;
 
@@ -3422,6 +3427,8 @@ export const MessageMetaSchema = object({
   ),
   chips: Type.Optional(Type.Array(ChipSchema)),
   refs: Type.Optional(Type.Array(Type.String())),
+  /** On a question: the key the page sent it with (`ConversationInput.turn`), so the same question sent again is not asked again. */
+  turn: Type.Optional(Type.String()),
   shape: Type.Optional(AnswerShape),
   view: Type.Optional(ViewRefSchema),
   /**
@@ -3666,7 +3673,18 @@ export type ReviewPreview = Static<typeof ReviewPreviewSchema>;
 export const ReceiptRowSchema = object({
   ref: Type.String(),
   label: Type.String(),
-  source: Type.Optional(object({ ref: Type.String(), revision: Type.String(), uid: Type.Optional(Type.String()) })),
+  /**
+   * The source's evidence for a row that is done: the event's handle and revision, Clew's uid for it and the id every
+   * copy of the meeting carries (`icalUid`, WA-L5), which differs from the uid where Clew's uid is the organiser's alone.
+   */
+  source: Type.Optional(
+    object({
+      ref: Type.String(),
+      revision: Type.String(),
+      uid: Type.Optional(Type.String()),
+      icalUid: Type.Optional(Type.String()),
+    }),
+  ),
   outcome: Type.Union([Type.Literal('done'), Type.Literal('unknown'), Type.Literal('failed'), Type.Literal('skipped')]),
   detail: Type.String(),
 });
@@ -4900,6 +4918,8 @@ export const AttentionSchema = object({
 });
 export type Attention = Static<typeof AttentionSchema>;
 
+/** A question's key as the page makes it (WD-L3): a UUID's characters, no more. */
+export const TurnKey = Type.String({ minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9-]+$' });
 /** The composer's input: text plus the chips the person attached (D12). `conversationId` continues an earlier conversation. */
 export const ConversationInput = object({
   text: Type.String({ minLength: 1, maxLength: 400, pattern: '^[^\\r\\n]+$' }),
@@ -4929,8 +4949,21 @@ export const ConversationInput = object({
    * is drawn.
    */
   side: Type.Optional(Type.Literal(true)),
+  /**
+   * The page's key for this question (WD-L3): made when it is first sent and kept while the same words stand in the box
+   * after a stop or a failure. A turn whose key is already written is not asked again: the answer is the turn as it was
+   * written. Unique per question, never reused for other words.
+   */
+  turn: Type.Optional(TurnKey),
 });
 export type ConversationInput = Static<typeof ConversationInput>;
+/** Alla samtal (WD-L1): one page of the person's conversations, the latest activity first, and where the next begins. */
+export const ConversationPageSchema = object({
+  conversations: Type.Array(ThreadSchema),
+  /** Pass as `after` for the next page; null when there is none. Opaque to the page. */
+  next: Type.Union([Type.String({ maxLength: 160 }), Type.Null()]),
+});
+export type ConversationPage = Static<typeof ConversationPageSchema>;
 /** One turn's answer: its shape, where it came from, and what it produced for the page. */
 export const ConversationResponseSchema = object({
   conversationId: id,
@@ -4958,6 +4991,12 @@ export const ConversationResponseSchema = object({
   model: Type.Optional(ModelRefSchema),
 });
 export type ConversationResponse = Static<typeof ConversationResponseSchema>;
+/**
+ * What a question sent with a turn key came to (WD-L3), read after a stop or a failure: the turn as it was written, or
+ * null when nothing of it was written.
+ */
+export const WrittenTurnSchema = object({ written: Type.Union([ConversationResponseSchema, Type.Null()]) });
+export type WrittenTurn = Static<typeof WrittenTurnSchema>;
 /**
  * A capability the turn reads while the person waits (D36): which system, what it asks, and how long it took. Shown
  * live under the question; the turn's audit row still names the tools once the answer is written.

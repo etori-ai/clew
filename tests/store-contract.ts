@@ -395,6 +395,82 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       ).toEqual(work.map(t => t.id).sort());
       expect(listed.filter(t => t.kind === 'question')).toHaveLength(50);
     });
+    test('the stream’s history is the latest activity: a conversation begun long ago and continued now is in it (WD-L1)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const now = plus(T0, 60_000);
+      const old = draft(a, { kind: 'question', createdAt: T0, updatedAt: T0 });
+      const newer = Array.from({ length: 50 }, (_, i) =>
+        draft(a, { kind: 'question', createdAt: plus(T0, 1000 + i), updatedAt: plus(T0, 1000 + i) }),
+      );
+      await store.transaction(async tx => {
+        for (const t of [old, ...newer]) await tx.insertThread(t);
+      });
+      await store.transaction(tx => tx.addMessage(old.id, { role: 'user', body: 'Och nu?', at: now }));
+      const listed = (await store.listThreads(a, now)).filter(t => t.kind === 'question');
+      expect(listed).toHaveLength(50);
+      expect(listed.map(t => t.id)).toContain(old.id);
+      expect(listed.map(t => t.id)).not.toContain(newer[0]!.id);
+    });
+    test('conversations page by their latest activity, then id, and the cursor reaches every one, the owner’s only (WD-L1)', async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const run = unique();
+      // Seven conversations of a's: two continued at the same instant (ordered by id), one begun first and continued last.
+      const at = [10, 20, 30, 30, 40, 50, 5].map(s => plus(T0, s * 1000));
+      const mine = at.map((updatedAt, i) =>
+        draft(a, { id: `c-${run}-${i}`, kind: 'question', createdAt: plus(T0, i), updatedAt }),
+      );
+      const work = draft(a, { updatedAt: plus(T0, 99_000) });
+      const theirs = draft(b, { kind: 'question', updatedAt: plus(T0, 99_000) });
+      await store.transaction(async tx => {
+        for (const t of [...mine, work, theirs]) await tx.insertThread(t);
+      });
+      await store.transaction(tx => tx.addMessage(mine[6]!.id, { role: 'user', body: 'Igen', at: plus(T0, 60_000) }));
+      const expected = [6, 5, 4, 3, 2, 1, 0].map(i => mine[i]!.id);
+      const first = await store.listConversations(a, { limit: 3 });
+      expect(first.threads.map(t => t.id)).toEqual(expected.slice(0, 3));
+      expect(first.threads[0]!.messages.map(m => m.body)).toEqual(['Igen']);
+      const second = await store.listConversations(a, { after: first.next!, limit: 3 });
+      expect(second.threads.map(t => t.id)).toEqual(expected.slice(3, 6));
+      const last = await store.listConversations(a, { after: second.next!, limit: 3 });
+      expect(last.threads.map(t => t.id)).toEqual(expected.slice(6));
+      expect(last.next).toBeNull();
+      // Exactly a page: nothing follows it.
+      expect((await store.listConversations(a, { limit: 7 })).next).toBeNull();
+      expect((await store.listConversations(b, { limit: 10 })).threads.map(t => t.id)).toEqual([theirs.id]);
+    });
+    test('a question’s turn key is written once and found by its owner only (WD-L3)', async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const key = `turn-${unique()}-${unique()}`;
+      const conversation = draft(a, { kind: 'question' }),
+        other = draft(a, { kind: 'question' });
+      await store.transaction(async tx => {
+        await tx.insertThread(conversation);
+        await tx.insertThread(other);
+        await tx.addMessage(conversation.id, { role: 'user', body: 'Hur många?', at: T0, meta: { turn: key } });
+        // An answer may say anything; only a question carries the key.
+        await tx.addMessage(conversation.id, { role: 'assistant', body: 'Tre.', at: T0, meta: { turn: key } });
+      });
+      expect(await store.turnWritten(a, key)).toBe(conversation.id);
+      expect(await store.turnWritten(b, key)).toBeUndefined();
+      expect(await store.turnWritten(a, `turn-${unique()}-${unique()}`)).toBeUndefined();
+      // The same key on a second question is refused, and the transaction writes nothing.
+      await expect(
+        store.transaction(async tx => {
+          await tx.addMessage(other.id, { role: 'user', body: 'Hur många?', at: plus(T0, 1000), meta: { turn: key } });
+        }),
+      ).rejects.toThrow();
+      expect((await store.readThread(a, other.id))?.messages).toEqual([]);
+      expect(await store.turnWritten(a, key)).toBe(conversation.id);
+    });
     test('a thread can be locked inside a transaction by its owner only, and reads the same as outside', async () => {
       const {
         store,

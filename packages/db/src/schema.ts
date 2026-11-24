@@ -349,6 +349,10 @@ export const threads = pgTable(
   },
   t => [
     index('thread_person_state').on(t.personId, t.state, t.createdAt),
+    // Alla samtal pages through a person's conversations, the latest activity first (WD-L1).
+    index('thread_conversation_recent')
+      .on(t.personId, t.updatedAt.desc().nullsFirst(), t.id.desc().nullsFirst())
+      .where(sql`${t.kind} = 'question'`),
     check('thread_kind', sql`${t.kind} IN ('pushed', 'question')`),
     // One open pushed thread per topic and person: the scan is idempotent even when two requests race.
     uniqueIndex('thread_open_topic')
@@ -380,6 +384,10 @@ export const threadMessages = pgTable(
   t => [
     index('thread_message_thread').on(t.threadId, t.createdAt, t.seq),
     check('thread_message_role', sql`${t.role} IN ('assistant', 'user')`),
+    // A question's turn key (WD-L3) is written once: the same question sent again finds its turn, never asks twice.
+    uniqueIndex('thread_message_turn')
+      .on(sql`(${t.meta}->>'turn')`)
+      .where(sql`${t.role} = 'user' AND (${t.meta}->>'turn') IS NOT NULL`),
   ],
 );
 // The index from entity to cards (D97 item 6): one row per thread and entity its rows (or the thread itself) name, with
@@ -438,6 +446,9 @@ export const proposals = pgTable(
     eventUid: text('event_uid'),
     eventRef: text('event_ref'),
     eventRevision: text('event_revision'),
+    // The id every copy of the invitation's meeting carries (iCalendar's UID, Graph's iCalUId), read back from the
+    // organiser's copy when it was sent: where Clew's uid is on that copy alone, the invitee's copy is known by it.
+    eventIcalUid: text('event_ical_uid'),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     undoUntil: timestamp('undo_until', { withTimezone: true }),
     // The approved decision that last took this proposal (M1): while that execution may still send the invitation (being
@@ -773,6 +784,13 @@ export const personChanges = pgTable('person_change', {
   policy: bigint('policy', { mode: 'number' }).notNull().default(0),
 });
 export const policyChanges = pgTable('policy_change', {
+  id: text('id').primaryKey(),
+  revision: bigint('revision', { mode: 'number' }).notNull().default(0),
+});
+// Installation-wide content counters, one row per thing an administration page shows that is no one person's: the
+// change stream folds a row into the revision of those who may see that page. `competence-source`: a source's read
+// under Administration › Kompetens › Källor (WD-L8), bumped by `competence_source_changed` (migration 0087).
+export const contentChanges = pgTable('content_change', {
   id: text('id').primaryKey(),
   revision: bigint('revision', { mode: 'number' }).notNull().default(0),
 });

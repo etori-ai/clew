@@ -1,15 +1,21 @@
-# The Eneo connector beside a Clew stack. The connector is its own image; an administrator registers it in Clew
-# (`bun scripts/connector-add.ts eneo http://host.docker.internal:4011 --secret <the secret> --enable` until the admin
-# page exists), so nothing on Clew's container names it (D23). Eneo itself runs elsewhere; ENEO_URL points at it.
+# The Eneo connector on its own, next to a Clew and an Eneo it can reach. The connector is its own image; an
+# administrator registers it in Clew (Administration › Anslutna system, or `bun scripts/connector-add.ts`), so nothing
+# on Clew's container names it (D23). Eneo itself runs elsewhere; ENEO_URL points at it. In development it runs inside
+# the app container instead (README.md, "Running it").
 #
-#   ENEO_SECRET=<16+ characters> ENEO_URL=https://eneo.example docker compose -f connectors/eneo/compose.yaml up eneo
+#   ENEO_SECRET=<16+ characters> CLEW_URL=https://clew.example ENEO_URL=https://eneo.example \
+#     docker compose -f connectors/eneo/compose.yaml up eneo
+#
+# CLEW_URL is https: the connector fetches Clew's public keys from it, and over plain http only from a host of the
+# development stack; it does not start without one. The secret comes from the secrets store, never from this file.
 services:
   eneo:
     build: .
     environment:
       CLEW_CONNECTOR_SECRET: ${ENEO_SECRET:?set ENEO_SECRET to a shared secret of 16+ characters}
+      CLEW_URL: ${CLEW_URL:?set CLEW_URL to Clew's base URL, https outside local development}
       ENEO_URL: ${ENEO_URL:?set ENEO_URL to the Eneo installation's base URL}
       ENEO_ALLOW_HTTP: ${ENEO_ALLOW_HTTP:-}
-      ENEO_COLLECTIONS_TTL_SECONDS: "300"
+      ENEO_PUBLIC_URL: ${ENEO_PUBLIC_URL:-}
     ports:
       - "127.0.0.1:4011:4011"

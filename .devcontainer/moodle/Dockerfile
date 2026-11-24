@@ -1,7 +1,7 @@
 # Moodle LMS (GPL-3.0-or-later) as a learning platform in the development stack: a source that was not written for Clew
 # and holds what people have completed. Built on the official PHP image and not on moodlehq/moodle-php-apache, which
 # carries no licence file and installs Microsoft's SQL Server driver under its own EULA.
-FROM php:8.4-apache-bookworm@sha256:5d55c49594dd833e2e4ff677b65f7d8ff48817f443a60691d9b2b382413bba42
+FROM docker.io/library/php:8.4-apache-bookworm@sha256:5d55c49594dd833e2e4ff677b65f7d8ff48817f443a60691d9b2b382413bba42
 
 # The extensions Moodle asks for on PostgreSQL; the rest of its list (curl, mbstring, openssl, sodium, xml, ctype,
 # iconv, simplexml, dom, tokenizer, fileinfo, zlib) is already in the base image.

@@ -8,7 +8,7 @@ import type { Actor, ThreadDraft } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { ExecuteResultSchema, ScanResponseSchema, ThreadDraftSchema } from '../../packages/connectors/src/protocol';
-import { createConnector, createManifest } from '../../connectors/nextcloud-approval/connector.mjs';
+import { adapterOf, createConnector, createManifest } from '../../connectors/nextcloud-approval/connector.mjs';
 import {
   SourceDenied,
   SourceLost,
@@ -112,17 +112,14 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
   };
   /** A request straight to the service, signed for `actor`, as Clew sends it. */
   const post = async (actor: Actor, path: string, body: object, headers: Record<string, string> = {}) => {
-    // Bound to this body and, on a capability's route, to the capability (D117), as Clew signs it.
+    // Bound to this body and to this route, so on a capability's route to the capability (D117), as Clew signs it.
     const text = JSON.stringify({ actor, ...body });
-    const capability = path.startsWith('/clew/capabilities/') ? path.slice('/clew/capabilities/'.length) : undefined;
     return service.handle(
       new Request('http://nextcloud-approval' + path, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization:
-            'Bearer ' +
-            (await assertionFor(ID, secret)(actor, [], { body: text, ...(capability ? { capability } : {}) })),
+          authorization: 'Bearer ' + (await assertionFor(ID, secret)(actor, [], { path, body: text })),
           'x-clew-connector-key': secret,
           ...headers,
         },
@@ -650,6 +647,19 @@ function sentAsRecorded(
     if (name !== 'Authorization') expect(call.headers[name.toLowerCase()]).toBe(value);
   if (request.body !== undefined) expect(call.body).toBe(request.body);
 }
+
+describe('the adapter (CS-L7)', () => {
+  test('is always named: no default, and the stand-in never starts beside an address', () => {
+    expect(adapterOf({ NEXTCLOUD_ADAPTER: 'nextcloud', NEXTCLOUD_URL: 'https://moln.example' })).toBe('nextcloud');
+    expect(adapterOf({ NEXTCLOUD_ADAPTER: 'fixture', NEXTCLOUD_URL: '' })).toBe('fixture');
+    expect(() => adapterOf({ NEXTCLOUD_URL: 'https://moln.example' })).toThrow('NEXTCLOUD_ADAPTER is not set');
+    expect(() => adapterOf({})).toThrow('NEXTCLOUD_ADAPTER is not set');
+    expect(() => adapterOf({ NEXTCLOUD_ADAPTER: 'owncloud' })).toThrow('Unknown NEXTCLOUD_ADAPTER "owncloud"');
+    expect(() => adapterOf({ NEXTCLOUD_ADAPTER: 'fixture', NEXTCLOUD_URL: 'https://moln.example' })).toThrow(
+      'NEXTCLOUD_ADAPTER is "fixture" but NEXTCLOUD_URL is set',
+    );
+  });
+});
 
 describe("the Nextcloud API adapter, against Nextcloud's recorded answers", () => {
   test('reads the account behind the token (01)', async () => {

@@ -4,6 +4,16 @@ export const timeZone = 'Europe/Stockholm';
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 
 export const today = () => Temporal.Now.plainDateISO(timeZone).toString();
+/** Whether a string is a date that exists, written `YYYY-MM-DD`: `2026-02-30` has the shape and is no date. */
+export function isCalendarDate(value: string) {
+  if (!isoDate.test(value)) return false;
+  try {
+    Temporal.PlainDate.from(value, { overflow: 'reject' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 export const addDays = (date: string, days: number) => Temporal.PlainDate.from(date).add({ days }).toString();
 export const dates = (from: string, count: number) => Array.from({ length: count }, (_, index) => addDays(from, index));
 export const weekStart = (date: string) =>

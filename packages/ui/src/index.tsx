@@ -103,7 +103,8 @@ export { Overlay } from '@astryxdesign/core/Overlay';
 export { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
 export { Kbd } from '@astryxdesign/core/Kbd';
 export { ScrollableArea } from '@astryxdesign/core/ScrollableArea';
-// Astryx's toasts, through the session's own hook: a session's end takes its toasts down (`session.tsx`).
+// Astryx's toasts, through the session's own hook: each stands in the session's own toast region, which leaves with the
+// session (`session.tsx`).
 export { useToast } from './session';
 // Administration (D23): tables, switches, dialogs, forms and tabs. Still only re-exports.
 export {
@@ -209,7 +210,10 @@ export {
   signOut,
   type BrowserSession,
   type SessionAnswer,
+  type SessionShape,
 } from './session';
+export { signInHref, signInTarget } from './sign-in-address';
+export { tabTitle } from './tab-title';
 // The area mark (D71): the system's hue in registration order, the area's icon, the word always beside them.
 export { AreaChip, AreaGlyph, AreaLine, AreaMark, SystemSwatch, clewIcon, swatchWords } from './components/mark';
 export { hueOf, hueWord, ordinalWord, systemHues, type SystemHue } from './system-hues';
@@ -217,7 +221,7 @@ export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';
 // The calendar family (D32): the page's grid, the embedded day and list, the date picker, and the one item mapping.
 export { DayStrip, EventList, DatePicker } from './calendar-embeds';
-export { agendaItems, CHOSEN_ID, inviteeName, PROPOSAL_MARK } from './agenda-items';
+export { agendaItems, CHOSEN_ID, entryOf, inviteeName, PROPOSAL_MARK } from './agenda-items';
 export { FigureLine, FigureTile, FigureTileSkeleton } from './components/figure';
 export { BoardCard } from './components/board-card';
 export { KeyFigure } from './components/key-figure';

@@ -16,7 +16,21 @@ import {
 import { previewManifest } from '../../packages/connectors/src/preview';
 import { HOLDINGS_EXAMPLE, RULES, manifestReference } from '../../packages/connectors/src/reference';
 import { ManifestError, manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
-import { PROTOCOL_PAGE_HEADERS, protocolRoutes } from '../../apps/server/src/routes/protocol';
+import {
+  PROTOCOL_PAGE_HEADERS,
+  VIEWER_SCRIPT,
+  mountProtocol,
+  protocolRoutes,
+} from '../../apps/server/src/routes/protocol';
+import {
+  VIEWER_BUILT_IN,
+  VIEWER_VERSIONS,
+  servedViewerNotices,
+  viewerPackages,
+} from '../../packages/notices/src/viewer';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { MAX_CAPABILITIES, MAX_MANIFEST_BYTES } from '../../packages/connectors/src/protocol';
 import { MANIFEST_MAX, overManifestMax } from '../../apps/web/src/pages/protocol-preview-model';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
@@ -207,24 +221,26 @@ describe('the manifest dry run', () => {
 });
 
 describe('the served protocol routes', () => {
+  // What the routes log: the viewer's notices log what keeps them from being whole.
+  const logged: unknown[][] = [];
+  const routes = protocolRoutes({ log: (...line) => void logged.push(line) });
   test('the OpenAPI document and the schema bundle are public, cacheable and readable from any origin', async () => {
-    const openapi = await protocolRoutes.request('http://clew.local/openapi.json');
+    const openapi = await routes.request('http://clew.local/openapi.json');
     expect(openapi.status).toBe(200);
     expect(openapi.headers.get('access-control-allow-origin')).toBe('*');
     expect(openapi.headers.get('cache-control')).toContain('public');
     const document = await openapi.json();
     expect(document.openapi).toBe('3.1.0');
     expect(document.paths['/api/connectors/jwks'].servers[0].url).toBe('http://clew.local');
-    const schema = await protocolRoutes.request('http://clew.local/connector-protocol.schema.json');
+    const schema = await routes.request('http://clew.local/connector-protocol.schema.json');
     expect((await schema.json()).$defs.ConnectorManifest).toBeDefined();
   });
   test('the public URL the operator set wins over the request origin', async () => {
     process.env.PUBLIC_URL = 'https://clew.example.se/';
     try {
       expect(
-        (await (await protocolRoutes.request('http://127.0.0.1:3000/openapi.json')).json()).paths[
-          '/api/connectors/jwks'
-        ].servers[0].url,
+        (await (await routes.request('http://127.0.0.1:3000/openapi.json')).json()).paths['/api/connectors/jwks']
+          .servers[0].url,
       ).toBe('https://clew.example.se');
     } finally {
       delete process.env.PUBLIC_URL;
@@ -240,7 +256,7 @@ describe('the served protocol routes', () => {
   });
   test('the dry run answers a manifest, refuses what is not JSON, and takes the id from the query', async () => {
     const post = (body: string, query = '') =>
-      protocolRoutes.request('http://clew.local/manifest' + query, {
+      routes.request('http://clew.local/manifest' + query, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body,
@@ -264,13 +280,13 @@ describe('the served protocol routes', () => {
         controller.enqueue(new TextEncoder().encode(' '.repeat(64 * 1024)));
       },
     });
-    const chunked = await protocolRoutes.request(
+    const chunked = await routes.request(
       new Request('http://clew.local/manifest', { method: 'POST', body: endless, duplex: 'half' } as RequestInit),
     );
     expect(chunked.status).toBe(413);
     expect(pieces).toBeLessThanOrEqual(Math.ceil(MAX_MANIFEST_BYTES / (64 * 1024)) + 2);
     expect(
-      (await protocolRoutes.request('http://clew.local/manifest', { method: 'OPTIONS' })).headers.get(
+      (await routes.request('http://clew.local/manifest', { method: 'OPTIONS' })).headers.get(
         'access-control-allow-methods',
       ),
     ).toContain('POST');
@@ -294,7 +310,7 @@ describe('the served protocol routes', () => {
     };
     const body = JSON.stringify(many);
     const post = () =>
-      protocolRoutes.request('http://clew.local/manifest', {
+      routes.request('http://clew.local/manifest', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body,
@@ -349,7 +365,7 @@ describe('the served protocol routes', () => {
     ]);
   });
   test('the viewer page and its scripts come from the image, not a CDN, under a policy of the page’s own', async () => {
-    const page = await protocolRoutes.request('http://clew.local/');
+    const page = await routes.request('http://clew.local/');
     expect(page.status).toBe(200);
     const html = await page.text();
     expect([...html.matchAll(/<script\b[^>]*>/g)].map(([tag]) => tag)).toEqual([
@@ -369,7 +385,7 @@ describe('the served protocol routes', () => {
     ]);
     expect(page.headers.get('x-frame-options')).toBe('DENY');
     expect(page.headers.get('referrer-policy')).toBe('same-origin');
-    const start = await protocolRoutes.request('http://clew.local/viewer.js');
+    const start = await routes.request('http://clew.local/viewer.js');
     expect(start.status).toBe(200);
     expect(start.headers.get('content-type')).toContain('javascript');
     const text = await start.text();
@@ -377,10 +393,141 @@ describe('the served protocol routes', () => {
     expect(text).toContain("url: '/api/protocol/openapi.json'");
     expect(text).toContain('withDefaultFonts: false');
     expect(text).toContain('hideTestRequestButton: true');
-    const script = await protocolRoutes.request('http://clew.local/scalar.js');
+    const script = await routes.request('http://clew.local/scalar.js');
     expect(script.status).toBe(200);
     expect(script.headers.get('content-type')).toContain('javascript');
     expect(await script.text()).toContain('@scalar/api-reference');
+  });
+  test('the viewer’s notices name every package its script bundles at the version it bundles, with a licence text for each (D143 item 3)', () => {
+    const found = viewerPackages(VIEWER_SCRIPT);
+    expect(found.problems).toEqual([]);
+    const credited = new Map<string, string[]>();
+    for (const p of [...found.bundled, ...found.carried])
+      credited.set(p.name, [...(credited.get(p.name) ?? []), p.version]);
+    // The script's source map names each file Scalar's build put in it from its folder in Scalar's repository,
+    // packages/api-reference/dist/browser/: a package's under its node_modules folder, with its version in the folder
+    // above (`.pnpm/name@version[_peers]/node_modules/name`), and the repository's own packages by folder
+    // (`../../../<folder>/`), published as `@scalar/<folder>` at the one version Scalar's packages name it at, exactly.
+    const map = JSON.parse(readFileSync(`${VIEWER_SCRIPT}.map`, 'utf8')) as { sources: string[] };
+    const manifest = (root: string) =>
+      JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+        version: string;
+        dependencies?: Record<string, string>;
+      };
+    const pinned = new Map<string, Set<string>>();
+    for (const p of [...found.bundled, ...found.carried].filter(p => p.name.startsWith('@scalar/') && p.root))
+      for (const [name, version] of Object.entries(manifest(p.root).dependencies ?? {}))
+        if (name.startsWith('@scalar/')) pinned.set(name, new Set([...(pinned.get(name) ?? []), version]));
+    const scalar = (name: string) => (pinned.get(name)?.size === 1 ? [...pinned.get(name)!][0]! : '');
+    const named = new Map([['@scalar/api-reference', manifest(join(dirname(VIEWER_SCRIPT), '../..')).version]]);
+    const unplaced: string[] = [];
+    for (const source of map.sources) {
+      const at = source.lastIndexOf('node_modules/');
+      const folder = source.match(/^\.\.\/\.\.\/\.\.\/([^./][^/]*)\//)?.[1];
+      if (at >= 0) {
+        const [scope, name] = source.slice(at + 'node_modules/'.length).split('/');
+        const pkg = scope!.startsWith('@') ? `${scope}/${name}` : scope!;
+        named.set(pkg, source.slice(0, at).match(/@(\d+\.\d+\.\d+[^/_]*)(?:_[^/]*)?\/$/)?.[1] ?? '');
+      } else if (folder) named.set(`@scalar/${folder}`, scalar(`@scalar/${folder}`));
+      else if (!source.startsWith('../../src/')) unplaced.push(source);
+    }
+    expect(unplaced).toEqual([]);
+    expect(named.size).toBeGreaterThan(150);
+    expect([...named.keys()].filter(name => name.startsWith('@scalar/')).length).toBeGreaterThan(20);
+    // Each once, at the version in the script, never at another the install holds.
+    expect([...named].filter(([name, version]) => credited.get(name)?.join() !== version)).toEqual([]);
+    // The banners and `@license` comments that survive in the script name a package each, credited at their version.
+    const script = readFileSync(VIEWER_SCRIPT, 'utf8');
+    const banners = [...script.matchAll(/\/\*[!*]?[\s\S]{0,600}?\*\//g)]
+      .map(([comment]) => comment)
+      .filter(comment => /^\/\*!|@license/.test(comment));
+    const bannerNames = banners.map(banner => banner.match(/(@?[a-z][\w./-]*) v?(\d+\.\d+\.\d+)/)?.slice(1, 3));
+    expect(bannerNames.length).toBeGreaterThan(5);
+    expect(bannerNames.filter(found => !found || !credited.get(found[0]!)?.includes(found[1]!))).toEqual([]);
+    // Tailwind's base styles are in the script by its banner alone, credited from the copy installed as a peer.
+    expect(bannerNames.some(found => found?.[0] === 'tailwindcss')).toBe(true);
+    // The lists hold what the script holds and no more: a Scalar upgrade that leaves an entry behind fails here.
+    expect(VIEWER_BUILT_IN.filter(p => named.get(p.name) !== p.version)).toEqual([]);
+    expect(
+      Object.keys(VIEWER_VERSIONS).filter(
+        key => named.get(key.slice(0, key.lastIndexOf('@'))) !== key.slice(key.lastIndexOf('@') + 1),
+      ),
+    ).toEqual([]);
+    // Only what no install holds is kept in licences/: tailwindcss is installed, as a peer of @headlessui/tailwindcss.
+    expect(VIEWER_BUILT_IN.map(p => p.name)).toEqual(['unist-util-find-after']);
+  });
+  test('a version the script holds that nobody checked is served with a word and logged once, and so is a failure to read', () => {
+    const lines: unknown[][] = [];
+    const log = (...line: unknown[]) => void lines.push(line);
+    // A script whose map names a version of parse5 that neither list records.
+    const dir = mkdtempSync(join(tmpdir(), 'clew-viewer-'));
+    try {
+      const root = join(dir, 'node_modules', '@scalar', 'api-reference');
+      mkdirSync(join(root, 'dist', 'browser'), { recursive: true });
+      writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify({ name: '@scalar/api-reference', version: '1.0.0', license: 'MIT' }),
+      );
+      writeFileSync(join(root, 'LICENSE'), 'MIT License');
+      const script = join(root, 'dist', 'browser', 'standalone.js');
+      writeFileSync(script, '');
+      writeFileSync(
+        `${script}.map`,
+        JSON.stringify({
+          sources: ['../../src/index.ts', '../../../../node_modules/.pnpm/parse5@6.0.0/node_modules/parse5/index.js'],
+        }),
+      );
+      const served = servedViewerNotices(script, log);
+      const first = served();
+      expect('text' in first && first.text).toContain('These notices are incomplete');
+      expect('text' in first && first.text).toContain('parse5 6.0.0 is in the script, and Clew does not install it');
+      expect(served()).toBe(first);
+      expect(lines.length).toBe(1);
+      const missing = servedViewerNotices(join(dir, 'gone.js'), log);
+      expect(missing()).toEqual({ failure: 'The third-party notices could not be read.' });
+      expect(missing()).toEqual({ failure: 'The third-party notices could not be read.' });
+      expect(lines.length).toBe(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  test('the notices and Clew’s licence are served beside the script, and the page answers with a trailing slash', async () => {
+    const notices = await routes.request('http://clew.local/third-party-notices.txt');
+    expect(notices.status).toBe(200);
+    expect(notices.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    const text = await notices.text();
+    expect(text).toStartWith('Third-party software in this build of Clew');
+    expect(text).not.toContain('These notices are incomplete');
+    for (const name of [
+      '@scalar/api-reference 1.81.0 (MIT)',
+      'vue ',
+      'tailwindcss 4.3.5 (MIT)',
+      'proto-parser 0.0.9',
+      'parse5 7.3.0 (MIT)',
+    ])
+      expect(text).toContain(`\n${name}`);
+    expect(text).not.toContain('\nparse5 8.1.1');
+    expect(text).toContain('--- LICENSE (of 8.1.1, which Clew installs: 7.3.0 declares the same licence, MIT)');
+    expect(text).toContain("kept in Clew's repository as licences/scalar.txt");
+    expect(logged).toEqual([]);
+    // Read once: the second answer is the same text.
+    expect(await (await routes.request('http://clew.local/third-party-notices.txt')).text()).toBe(text);
+    const licence = await routes.request('http://clew.local/LICENSE.txt');
+    expect(licence.status).toBe(200);
+    expect(await licence.text()).toBe(readFileSync(join(import.meta.dir, '../../LICENSE'), 'utf8'));
+    // Mounted as the server mounts it, before a guard that answers everything else under /api without a session, on an
+    // app of the same Hono the routes are made with: `hono` does not resolve from the repository root.
+    const app = new (routes.constructor as new () => typeof routes)();
+    mountProtocol(app, { log: (...line) => void logged.push(line) });
+    app.use('/api/*', async c => c.json({ error: 'Sessionen har gått ut.' }, 401));
+    // Permanent, keeping the method, and cached as long as the page is, so a browser asks again later.
+    const slash = await app.request('http://clew.local/api/protocol/');
+    expect(slash.status).toBe(308);
+    expect(slash.headers.get('location')).toBe('/api/protocol');
+    expect(slash.headers.get('cache-control')).toBe('max-age=300');
+    expect((await app.request('http://clew.local/api/protocol')).status).toBe(200);
+    expect((await app.request('http://clew.local/api/protocol/third-party-notices.txt')).status).toBe(200);
+    expect((await app.request('http://clew.local/api/elsewhere')).status).toBe(401);
   });
 });
 

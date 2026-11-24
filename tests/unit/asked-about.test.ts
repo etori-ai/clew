@@ -1313,6 +1313,7 @@ describe('a remote connector is told the relation, bound to the request', () => 
     expect(call!.input).toEqual({ keys: ['anna', 'hillevi', 'olle'] });
     expect(call!.about).toEqual({ entity: 'person', relations: { anna: 'managed', hillevi: 'self', olle: 'managed' } });
     expect(call!.claims.capability).toBe('remote.person');
+    expect(call!.claims.path).toBe('/clew/capabilities/remote.person');
     expect(call!.claims.body).toBe(
       createHash('sha256')
         .update(await w.requests[0]!.clone().text())
@@ -1321,24 +1322,29 @@ describe('a remote connector is told the relation, bound to the request', () => 
     expect(call!.claims.about).toBeUndefined();
     expect(decodeJwt(call!.claims.callback as string).about).toBeUndefined();
   });
-  test('the assertion cannot be replayed with another body or on another capability', async () => {
+  test('the assertion cannot be replayed: not as it was sent, with another body or on another capability', async () => {
     const w = await remote();
     await w.cap('hillevi', 'remote.person', { keys: ['anna'] });
     const original = w.requests[0]!;
     const headers = Object.fromEntries(original.headers.entries());
-    const replay = (url: string, body: unknown) =>
-      w.handle(new Request(url, { method: 'POST', headers, body: JSON.stringify(body) }));
-    const sent = JSON.parse(await original.clone().text());
-    // The same bytes pass; a widened input, a forged relation or another capability does not.
+    const text = await original.clone().text();
+    const sent = JSON.parse(text);
+    // Taken once, the same bytes again are a copy, refused for as long as the assertion would hold (CS-L1).
+    expect((await w.handle(new Request(original.url, { method: 'POST', headers, body: text }))).status).toBe(401);
+    // And it is bound to its request: a verifier that has not seen it takes the same bytes, and nothing else.
+    const token = headers.authorization!.slice('Bearer '.length);
+    const unseen = (url: string, body: unknown) =>
+      createVerifier({ secret, jwks: testJwks }, 'remote')(
+        token,
+        secret,
+        new Request(url, { method: 'POST', headers, body: typeof body === 'string' ? body : JSON.stringify(body) }),
+      );
+    expect(await unseen(original.url, text)).not.toBeNull();
+    expect(await unseen(original.url, { ...sent, input: { keys: ['anna', 'karin'] } })).toBeNull();
     expect(
-      (await w.handle(new Request(original.url, { method: 'POST', headers, body: await original.clone().text() })))
-        .status,
-    ).toBe(200);
-    expect((await replay(original.url, { ...sent, input: { keys: ['anna', 'karin'] } })).status).toBe(401);
-    expect(
-      (await replay(original.url, { ...sent, about: { entity: 'person', relations: { anna: 'self' } } })).status,
-    ).toBe(401);
-    expect((await replay('http://remote/clew/capabilities/remote.notes', sent)).status).toBe(401);
+      await unseen(original.url, { ...sent, about: { entity: 'person', relations: { anna: 'self' } } }),
+    ).toBeNull();
+    expect(await unseen('http://remote/clew/capabilities/remote.notes', text)).toBeNull();
   });
   test('the bearer stays the same size however many long keys a call names', async () => {
     // A resolver that vouches for every key as a report: two hundred e-mail-shaped keys travel with their relations.

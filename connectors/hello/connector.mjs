@@ -292,7 +292,10 @@ export function createConnector({
     try {
       return json({ output: await capability(actor, body.input ?? {}, callbackFor(token)) });
     } catch (error) {
-      return fail('unavailable', 'Hello-anslutningen kunde inte svara: ' + error.message, 503);
+      // A fixed sentence: what was thrown (a callback's refusal in another connector's or Clew's words, a runtime error,
+      // a network error's English) stays out of the answer, which reaches the person and the model. Its name is logged.
+      console.error(`${CONNECTOR} connector: unexpected`, error?.name);
+      return fail('unavailable', 'Hello-anslutningen kunde inte svara.', 503);
     }
   }
   return { manifest, handle };

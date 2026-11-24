@@ -4,6 +4,10 @@
  */
 export const keys = {
   threads: ['threads'] as const,
+  /** Alla samtal's pages (WD-L1), apart from the stream: every conversation, the latest activity first. */
+  conversations: ['conversations'] as const,
+  /** A correction's execution (D45) on a review, read again when the change stream says it moved (WD-L8). */
+  correction: (id: string) => ['correction', id] as const,
   thread: (id: string) => ['thread', id] as const,
   /** Every item read on its own (`thread`), as one prefix. */
   anyThread: ['thread'] as const,

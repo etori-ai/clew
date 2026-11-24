@@ -12,7 +12,7 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { NOW, competenceConversation } from './data';
+import { NOW, competenceConversation, conversation } from './data';
 import { competenceTypes } from './competence';
 
 test.use({ viewport: desktop });
@@ -78,6 +78,62 @@ test.describe('the answer on its way', () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole('log')).toHaveCount(0);
     await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+  });
+
+  // WD-L3: what a stopped or broken turn wrote is read back by the question's key before the page says anything.
+  test('a turn whose connection broke after it was written is read back and drawn once, and nothing goes back in the box', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/');
+    api.breakAfterWrite = true;
+    const input = composer(page);
+    await input.fill('Vem är på plats?');
+    await input.press('Enter');
+    const log = page.getByRole('log');
+    await expect(log).toContainText('Tio personer är på plats i dag.');
+    await expect(page).toHaveURL('/conversations/konversation');
+    await expect(log.getByText('Vem är på plats?', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('Svaret bröts innan det var klart. Försök igen.')).toHaveCount(0);
+    await expect(composer(page)).toHaveText('');
+    await expect(composer(page)).toBeFocused();
+    expect(api.asked).toHaveLength(1);
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Tio personer är på plats i dag.'));
+  });
+
+  test('a question stopped and sent again goes with the same key, so a turn written after Stoppa is drawn, not asked twice', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/');
+    const release = api.holdAnswer();
+    await composer(page).fill('Vem är på plats?');
+    await composer(page).press('Enter');
+    const stop = page.getByRole('button', { name: 'Stoppa' });
+    await stop.focus();
+    await page.keyboard.press('Enter');
+    await expect(hemLine(page)).toHaveValue('Vem är på plats?');
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Frågan avbröts'));
+    // The server finished the turn all the same (the model had already made a proposal into an item): it is written
+    // under the question's key, and sending the same words again is answered with it.
+    const [key] = api.turnKeys;
+    api.written.set(key!, conversation(api.threads, 'Vem är på plats?'));
+    release();
+    await hemLine(page).press('Enter');
+    const log = page.getByRole('log');
+    await expect(log).toContainText('Tio personer är på plats i dag.');
+    await expect(page).toHaveURL('/conversations/konversation');
+    await expect(log.getByText('Vem är på plats?', { exact: true })).toHaveCount(1);
+    expect(api.turnKeys).toEqual([key, key]);
+    await expectNoAxeViolations(page);
+    // Other words are another question, with a key of its own.
+    await composer(page).fill('Och i morgon?');
+    await composer(page).press('Enter');
+    await expect(log.getByText('Och i morgon?', { exact: true })).toHaveCount(1);
+    expect(api.turnKeys).toHaveLength(3);
+    expect(api.turnKeys[2]).not.toBe(key);
   });
 
   // D92: the conversation takes Hem's place with Astryx's fade and Hem comes back with one; under reduced motion both are
@@ -537,5 +593,36 @@ test.describe('the assistant drafts, the person decides (D112 item 8)', () => {
     await expect(drafts.first().getByRole('img', { name: 'Ersatt av ett nyare utkast' })).toHaveCount(0);
     await expect(drafts.first().getByRole('button', { name: 'Granska och boka' })).toHaveCount(0);
     await expect(drafts.last().getByRole('button', { name: 'Granska och boka' })).toBeVisible();
+  });
+});
+
+/**
+ * The conversation on the page is the server's (D33, WD-L6): a turn written somewhere else (another tab, another system's
+ * assistant) is drawn when the change stream says something changed (D46), without leaving and opening it again.
+ */
+test.describe('the open conversation as the server has it', () => {
+  test('a turn written in another tab is drawn in the open conversation on the change notice, and the log says it', async ({
+    page,
+    api,
+  }) => {
+    await open(page, '/');
+    await composer(page).fill('Vem är på plats?');
+    await composer(page).press('Enter');
+    const log = page.getByRole('log');
+    await expect(log).toContainText('Tio personer är på plats i dag.');
+    await expect(page).toHaveURL('/conversations/konversation');
+    await expect(composer(page)).toBeFocused();
+    // The same conversation goes on in another tab: the server has the turn, and the stream says something changed.
+    const elsewhere = conversation(api.threads, 'Och i morgon?', 'konversation');
+    api.threads = [...api.threads.filter(t => t.id !== 'konversation'), elsewhere.thread];
+    await api.changed();
+    await expect(log.getByText('Och i morgon?', { exact: true })).toBeVisible();
+    await expect(log.getByText('Vem är på plats?', { exact: true })).toHaveCount(1);
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining(elsewhere.answer.body.slice(0, 40)));
+    // Nothing moved under the person: the box keeps the focus.
+    await expect(composer(page)).toBeFocused();
+    await expectNoAxeViolations(page);
   });
 });

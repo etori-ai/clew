@@ -15,7 +15,7 @@
   "tags": [
     {
       "name": "Connector",
-      "description": "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117). On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119). Answer at the registered address itself: Clew follows no redirect, and a 3xx answer is the connector failing. Clew reads at most 500000 bytes of a manifest and 4194304 bytes of any other JSON answer; a larger one is the connector failing too."
+      "description": "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion was issued for this request: its `path` claim the path received, its `body` claim the SHA-256 of the body received (D117), and each `jti` taken once. On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119). Answer at the registered address itself: Clew follows no redirect, and a 3xx answer is the connector failing. Clew reads at most 500000 bytes of a manifest and 4194304 bytes of any other JSON answer; a larger one is the connector failing too."
     },
     {
       "name": "Clew",
@@ -97,7 +97,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "The durable operation id of an approved write (D45). Deduplicate on it; the same id means the same approved operation."
+              "description": "The durable operation id of an approved write (D45). Deduplicate on it; the same id means the same approved operation. The assertion's `operationId` claim carries it too (D117): a request whose header and claim differ, or that has one without the other, was not sent by Clew."
             }
           },
           {
@@ -195,7 +195,7 @@
         ],
         "operationId": "readAsInstallation",
         "summary": "A read Clew makes as the installation, with no person behind it",
-        "description": "Only for a read the manifest declares under `installation` (D119), today `<id>.holdings`. No actor: the assertion's subject is `clew:installation`, its `caller` claim `installation`, and it carries no `actor` and no `callback`; it is bound to the body and to `{name}` as every request is. Answer only that assertion here: a person's assertion, whoever they are, is refused with 401, and the installation's assertion is never valid on `/clew/capabilities/{name}`. Clew never reaches this route on a person's behalf: the read is not a capability, so neither a page, a card, the model nor another connector's callback can name it.",
+        "description": "Only for a read the manifest declares under `installation` (D119), today `<id>.holdings`. No actor: the assertion's subject is `clew:installation`, its `caller` claim `installation`, and it carries no `actor` and no `callback`; it is bound to the route, the body and `{name}` as every request is. Answer only that assertion here: a person's assertion, whoever they are, is refused with 401, and the installation's assertion is never valid on `/clew/capabilities/{name}`. Clew never reaches this route on a person's behalf: the read is not a capability, so neither a page, a card, the model nor another connector's callback can name it.",
         "security": [
           {
             "installationAssertion": [],
@@ -3146,7 +3146,7 @@
                 }
               },
               "additionalProperties": false,
-              "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
+              "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the route, the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
             },
             "maxItems": 1,
             "description": "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). A manifest without it is untouched."
@@ -3674,7 +3674,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
+        "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the route, the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
       },
       "CallResponse": {
         "anyOf": [
@@ -10793,13 +10793,13 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `body` is the SHA-256 of the exact request body, base64url, and on `/clew/capabilities/{name}` `capability` is that name. Verify against `/api/connectors/jwks`, and recompute both from the request received; the body's `input` and `about` (`CallAbout`) are then Clew's."
+        "description": "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `path` is the path of the route it is posted to, as the connector serves it (`/clew/scan`, `/clew/capabilities/{name}`; without the registered address's own path), `body` is the SHA-256 of the exact request body, base64url, on `/clew/capabilities/{name}` `capability` is that name, and on an approved write `operationId` is its `X-Clew-Operation-Id`. Verify against `/api/connectors/jwks` and recompute each from the request received: an assertion holds on the one route it was signed for, so a scan's is refused on `/clew/figure`. The body's `input` and `about` (`CallAbout`) are then Clew's. Clew signs one for every request, so take each `jti` once and refuse it again until it expires."
       },
       "installationAssertion": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "RS256 assertion signed by the installation for a read it makes itself (D119): `sub` is `clew:installation`, `caller` is `installation`, there is no `actor` and no `callback`, for this connector only and for at most two minutes, and it is bound to one request as every assertion is: `body` is the SHA-256 of the exact request body, base64url, and `capability` the name on `/clew/installation/{name}`. Verify against `/api/connectors/jwks`. A person's assertion never verifies as this one, and this one never verifies as a person's."
+        "description": "RS256 assertion signed by the installation for a read it makes itself (D119): `sub` is `clew:installation`, `caller` is `installation`, there is no `actor` and no `callback`, for this connector only and for at most two minutes, and it is bound to one request as every assertion is: `path` is `/clew/installation/{name}`, `body` the SHA-256 of the exact request body, base64url, and `capability` the name. Verify against `/api/connectors/jwks` and recompute each from the request received. Clew signs one for every read, so take each `jti` once and refuse it again until it expires. A person's assertion never verifies as this one, and this one never verifies as a person's."
       },
       "connectorKey": {
         "type": "apiKey",

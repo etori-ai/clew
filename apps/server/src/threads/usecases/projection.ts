@@ -206,6 +206,7 @@ async function settleInvitations(
         eventUid: evidence.uid,
         eventRef: evidence.ref,
         eventRevision: evidence.revision,
+        eventIcalUid: evidence.icalUid ?? null,
         confirmedAt: e.dispatchedAt ?? e.createdAt,
         undoUntil,
       });
@@ -231,6 +232,7 @@ async function settleInvitations(
               eventUid: null,
               eventRef: null,
               eventRevision: null,
+              eventIcalUid: null,
               confirmedAt: null,
             },
       );

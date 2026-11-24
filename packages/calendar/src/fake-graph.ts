@@ -252,6 +252,9 @@ export function fakeGraph(options: FakeGraphOptions): FakeGraph {
       end = instant(body.endTime);
     if (!Array.isArray(body.schedules) || !(start < end))
       return graphError(400, 'ErrorInvalidRequest', 'A schedule needs addresses and a UTC window.');
+    // Graph answers at most twenty schedules in one request.
+    if (body.schedules.length > 20)
+      return graphError(400, 'ErrorInvalidRequest', 'A schedule request takes at most 20 addresses.');
     const status = (m: Meeting, email: string) => {
       if (same(m.organizer.email, email)) return 'busy';
       const a = m.attendees.find(a => same(a.email, email));

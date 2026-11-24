@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { Button } from '@astryxdesign/core/Button';
 import { Calendar } from '@astryxdesign/core/Calendar';
 import { Icon } from '@astryxdesign/core/Icon';
@@ -19,7 +19,10 @@ type Shared = {
   dayHeadingLevel?: HeadingLevel;
   accessiblePath?: string;
   selectedId?: string;
+  /** What pressing an entry does; without it or `itemLink`, the entries are not controls (WA-M2). */
   onItemClick?: (item: AgendaItem) => void;
+  /** Where each entry's name leads, as a link (D126 rule 1). */
+  itemLink?: ComponentProps<typeof EventCalendar>['itemLink'];
 };
 
 /** One day on its hour axis, fitted to its entries: the "day around it" the side panel and the event dialog show. */
@@ -31,6 +34,7 @@ export function DayStrip({
   accessiblePath,
   selectedId,
   onItemClick,
+  itemLink,
 }: Shared & { date: string }) {
   return (
     <EventCalendar
@@ -43,6 +47,7 @@ export function DayStrip({
       accessiblePath={accessiblePath}
       selectedId={selectedId}
       onItemClick={onItemClick}
+      itemLink={itemLink}
     />
   );
 }
@@ -57,6 +62,7 @@ export function EventList({
   accessiblePath,
   selectedId,
   onItemClick,
+  itemLink,
 }: Shared & { from: string; days?: 1 | 5 }) {
   const name = label ?? (days === 1 ? dayLabel(from) : `Vecka ${weekNumber(from)}, ${rangeLabel(from, 5)}`);
   return (
@@ -70,6 +76,7 @@ export function EventList({
       accessiblePath={accessiblePath}
       selectedId={selectedId}
       onItemClick={onItemClick}
+      itemLink={itemLink}
     />
   );
 }

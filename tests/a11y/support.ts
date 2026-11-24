@@ -277,6 +277,19 @@ export class MockApi {
     own?: boolean;
     confirmed?: boolean;
   }[] = [];
+  /** The key each question went with (WD-L3), in the order asked; `asked` holds the rest of what was sent. */
+  turnKeys: string[] = [];
+  /** What was written under a question's key, as the server keeps it on the question (WD-L3). */
+  written = new Map<string, unknown>();
+  /**
+   * The next turn is written and its stream then breaks before `done` (WD-L3), as a connection lost after the server's
+   * commit leaves it: the page has to read back what was written. It resets itself after that turn.
+   */
+  breakAfterWrite = false;
+  /** How many conversations Alla samtal reads at a time (WD-L1); the server's page is 50, a spec makes it small. */
+  conversationPage = 50;
+  /** Every read of Alla samtal, as the cursor it was read after (null for the first page). */
+  conversationReads: (string | null)[] = [];
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   /** How long the areas take, so a test can see Läget's tiles in their shape (D54). */
@@ -324,6 +337,8 @@ export class MockApi {
   timesReads: string[] = [];
   sessionDelay = 0;
   signedIn = true;
+  /** The session's authorization version (`policyVersion`): a spec moves it as a change of the person's access does. */
+  policyVersion = 'test';
   /** The development sign-in (D6): the personas the sign-in page lists, or undefined for the server's 404 when it is off. */
   devAccounts: { userName: string; name: string }[] | undefined = undefined;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
@@ -759,6 +774,12 @@ export class MockApi {
     // What a read is read with: its body, never its address (WD-M4: the address is in every access log on the way).
     const input = <T = Record<string, unknown>>() => (request.postDataJSON() ?? {}) as T;
     const id = path.split('/')[2] ?? '';
+    // A read and `@`'s search are POSTs with their input as the body (WD-M4): any other method is no route, as the
+    // server answers it, and a test that asks one fails.
+    if ((path.startsWith('/cap/') || path === '/objects') && !post) {
+      this.unmocked.push(`${request.method()} ${path}`);
+      return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
+    }
     if (path === '/protocol/manifest-reference.json') return json(reference);
     // The manifest dry run (D60, D97) as the server runs it: the real preview over the posted document.
     if (path === '/protocol/manifest' && post) {
@@ -806,6 +827,7 @@ export class MockApi {
       return this.signedIn
         ? json({
             ...session,
+            policyVersion: this.policyVersion,
             ...(this.employee || this.assignments
               ? {
                   user: {
@@ -1249,7 +1271,14 @@ export class MockApi {
       this.currentModel = (request.postDataJSON() as { modelId: string }).modelId;
       return json(assistantStatus(this.modelChoices, this.currentModel));
     }
+    // A date that is no day of the calendar (2026-02-30) is refused as the server refuses it, never read as another day.
+    const invalidDate = (date: string | undefined | null) =>
+      date !== undefined && date !== null && !calendarDay(date)
+        ? route.fulfill({ status: 400, json: { error: 'Ogiltigt datum.' } })
+        : null;
     if (path === '/calendar') {
+      const refused = invalidDate(url.searchParams.get('from'));
+      if (refused) return refused;
       const from = url.searchParams.get('from') ?? '2026-11-02';
       return json({
         from,
@@ -1341,10 +1370,14 @@ export class MockApi {
     }
     if (path === '/cap/calendar.today') return json({ output: today });
     if (path === '/cap/calendar.week') {
+      const refused = invalidDate(input<{ from?: string }>().from);
+      if (refused) return refused;
       const from = input<{ from?: string }>().from ?? '2026-11-02';
       return json({ output: { from, events: events(from) } });
     }
     if (path === '/cap/calendar.day') {
+      const refused = invalidDate(input<{ date?: string }>().date);
+      if (refused) return refused;
       const date = input<{ date?: string }>().date ?? '2026-11-04';
       return json({
         output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] },
@@ -1979,9 +2012,27 @@ export class MockApi {
     }
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
     // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
+    // Alla samtal (WD-L1) as the server reads it: the conversations alone, the latest activity first, a page at a time
+    // from where the last one ended.
+    if (path === '/conversations' && !post) {
+      const after = url.searchParams.get('after');
+      this.conversationReads.push(after);
+      const all = this.threads
+        .filter(t => t.kind === 'question')
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
+      const cursor = (t: Thread) => `${t.updatedAt}~${t.id}`;
+      const from = after ? all.findIndex(t => cursor(t) === after) + 1 : 0;
+      const page = all.slice(from, from + this.conversationPage);
+      const more = from + this.conversationPage < all.length;
+      return json({ conversations: page, next: more ? cursor(page.at(-1)!) : null });
+    }
+    // What was written under a question's key (WD-L3): the page reads it back after a turn it stopped or lost.
+    if (path.startsWith('/conversation/turns/') && !post)
+      return json({ written: this.written.get(decodeURIComponent(path.slice('/conversation/turns/'.length))) ?? null });
     if (path === '/conversation/stream') {
-      const body = request.postDataJSON() as {
+      const { turn, ...body } = request.postDataJSON() as {
         text: string;
+        turn?: string;
         conversationId?: string;
         chips?: { ref: string }[];
         assistant?: string;
@@ -1991,6 +2042,15 @@ export class MockApi {
         side?: boolean;
       };
       this.asked.push(body);
+      if (turn) this.turnKeys.push(turn);
+      // A question sent again under a key the server has written is answered with what was written, and not asked.
+      const answered = turn ? this.written.get(turn) : undefined;
+      if (answered)
+        return route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'done', response: answered })}\n\n`,
+        });
       await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
       // Clew's assistant suggests the listed assistant for a question that matches, and the person is asked first
@@ -2036,6 +2096,21 @@ export class MockApi {
         { type: 'text', delta: response.answer.body.slice(half) },
         { type: 'done', response },
       ];
+      // The turn is committed before its last event is sent; a connection lost in between loses only `done`.
+      if (this.breakAfterWrite) {
+        this.breakAfterWrite = false;
+        this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
+        if (turn) this.written.set(turn, response);
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: events
+            .slice(0, -1)
+            .map(e => `data: ${JSON.stringify(e)}\n\n`)
+            .join(''),
+        });
+        return;
+      }
       try {
         await route.fulfill({
           status: 200,
@@ -2046,6 +2121,7 @@ export class MockApi {
         return;
       }
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
+      if (turn) this.written.set(turn, response);
       return;
     }
     if (path === '/conversation') {
@@ -3379,6 +3455,37 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
   const unmarked = await page.evaluate(() => (window as unknown as { unmarked: string[] }).unmarked);
   return { hidden, unmarked, stops: [...seen] };
 }
+
+/** Whether a `YYYY-MM-DD` names a day of the calendar: 2026-02-30 does not, as `isCalendarDate` says on the server. */
+function calendarDay(date: string) {
+  const at = Date.parse(`${date}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(at) && new Date(at).toISOString().slice(0, 10) === date;
+}
+/**
+ * Presses Tab until `target` has the focus, as a person with a keyboard reaches it: fails when it is not in the tab order
+ * within `max` presses, where `focus()` would have reached it anyway.
+ */
+export async function tabTo(page: Page, target: Locator, max = 60) {
+  for (let i = 0; i < max; i++) {
+    await page.keyboard.press('Tab');
+    if (await target.evaluate(el => el === document.activeElement)) return;
+  }
+  throw new Error(`Tab did not reach the element in ${max} presses.`);
+}
+/**
+ * The calendar entries in `scope` a Tab stops on: none where pressing an entry does nothing (WA-M2), so a person is not
+ * walked through rows that are pictures of the day.
+ */
+export const entryStops = (scope: Locator) =>
+  scope
+    .locator('.clew-cal-event, .fc-event, .fc-list-event, a[href], button, [tabindex]:not([tabindex="-1"])')
+    .evaluateAll(
+      els =>
+        els.filter(el => {
+          const e = el as HTMLElement;
+          return e.tabIndex >= 0 && !e.hasAttribute('disabled') && e.getClientRects().length > 0;
+        }).length,
+    );
 
 /** The focused element, as a person using a screen reader would be told about it. `body` means focus was lost. */
 export const focused = (page: Page) =>
