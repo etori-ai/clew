@@ -5437,7 +5437,7 @@ import { SITE_NAME_MAX, type InstallationTheme, type ThemeProblem } from './them
  */
 export interface InstallationAppearance {
   revision: number;
-  /** What the tab titles, the sign-in page and the assistant call the installation; `SITE_NAME_DEFAULT` until named. */
+  /** What the tab titles, the sign-in page and Clew's own header call the installation (never the model, D98 item 11); `SITE_NAME_DEFAULT` until named. */
   name: string;
   theme: InstallationTheme | null;
   logo: { src: string; darkSrc?: string; alt: string } | null;

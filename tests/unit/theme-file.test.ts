@@ -5,6 +5,7 @@ import {
   THEME_BASE_COLORS,
   THEME_COLOR_TOKENS,
   THEME_CONTRAST_PAIRS,
+  SITE_NAME_DEFAULT,
   SITE_NAME_MAX,
   THEME_TEMPLATE,
   checkSiteName,
@@ -48,7 +49,12 @@ const examples = () =>
       file: JSON.parse(readFileSync(new URL(`../../themes/${name}/theme.tokens.json`, import.meta.url), 'utf8')),
     }));
 /** A theme as an installation saves it, for Astryx to resolve as the page does. */
-const branding = (colors: ThemeColors): Branding => ({ revision: 1, theme: { name: null, colors }, logo: null });
+const branding = (colors: ThemeColors): Branding => ({
+  revision: 1,
+  name: SITE_NAME_DEFAULT,
+  theme: { name: null, colors },
+  logo: null,
+});
 /** Each pair as one line, for a table compared whole: `foreground on ground` and its minimum. */
 const tableOf = (pairs: ReadonlyArray<readonly [string, string, number]>) =>
   Object.fromEntries(pairs.map(([foreground, ground, min]) => [`${foreground} on ${ground}`, min]));
