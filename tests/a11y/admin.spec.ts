@@ -491,7 +491,7 @@ test.describe('administration', () => {
             diff,
             connector: {
               ...connectorDetail(api.connectors.find(c => c.id === 'hello')!),
-              offered: { at: '2026-11-04T07:00:00.000Z', diff },
+              offered: { at: '2026-11-04T07:00:00.000Z', revision: 'a'.repeat(64), diff },
             },
           },
         }),
@@ -534,7 +534,7 @@ test.describe('administration', () => {
         fields: ['source'],
         same: false,
       };
-      const offered = { at: '2026-11-04T07:00:00.000Z', diff };
+      const offered = { at: '2026-11-04T07:00:00.000Z', revision: 'a'.repeat(64), diff };
       const detail = { ...connectorDetail(api.connectors.find(c => c.id === 'hello')!), offered };
       await page.route('**/api/admin/connectors/hello', route =>
         route.request().method() === 'GET' ? route.fulfill({ json: detail }) : route.fallback(),
@@ -561,7 +561,7 @@ test.describe('administration', () => {
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Använd det nya' }).click();
       await expect(dialog).toHaveCount(0);
-      expect(applied).toEqual([{ apply: true, offered: offered.at }]);
+      expect(applied).toEqual([{ apply: true, offered: offered.revision }]);
       // A check that finds a change says so where the administrator is (4.1.3).
       await page.route('**/api/admin/connectors/hello/test', route =>
         route.fulfill({

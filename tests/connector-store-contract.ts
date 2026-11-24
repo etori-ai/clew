@@ -326,17 +326,27 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       const second = { ...approved, source: 'Hello 3' };
       await store.recordCheck(id, { url: ADDRESS, served: second, at: T2 });
       expect(
-        await store.transaction(tx => tx.approveOffer(id, { at: T1, manifest: first }, first, 'person:mikael', T2)),
+        await store.transaction(tx =>
+          tx.approveOffer(id, { at: T1, manifest: first, version: 1 }, first, 'person:mikael', T2),
+        ),
       ).toBe(false);
       // Same instant, other content: refused too.
       expect(
-        await store.transaction(tx => tx.approveOffer(id, { at: T2, manifest: first }, first, 'person:mikael', T2)),
+        await store.transaction(tx =>
+          tx.approveOffer(id, { at: T2, manifest: first, version: 1 }, first, 'person:mikael', T2),
+        ),
       ).toBe(false);
       expect(await store.read(id)).toMatchObject({ manifest: approved, version: 1 });
+      // The right offer on a different connector version is stale too.
+      expect(
+        await store.transaction(tx =>
+          tx.approveOffer(id, { at: T2, manifest: second, version: 0 }, second, 'person:mikael', T2),
+        ),
+      ).toBe(false);
       // The stored offer, named by its instant and its content (keys in any order), goes live.
       expect(
         await store.transaction(tx =>
-          tx.approveOffer(id, { at: T2, manifest: reversed(second) }, second, 'person:mikael', T2),
+          tx.approveOffer(id, { at: T2, manifest: reversed(second), version: 1 }, second, 'person:mikael', T2),
         ),
       ).toBe(true);
       const row = (await store.read(id))!;
@@ -350,7 +360,9 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       expect((row.manifest as { source: string }).source).toBe('Hello 3');
       // Once applied there is no offer left to apply again.
       expect(
-        await store.transaction(tx => tx.approveOffer(id, { at: T2, manifest: second }, second, 'person:mikael', T2)),
+        await store.transaction(tx =>
+          tx.approveOffer(id, { at: T2, manifest: second, version: 1 }, second, 'person:mikael', T2),
+        ),
       ).toBe(false);
     });
     test("recordDescription moves a bundled row's description and never a remote row's manifest", async () => {

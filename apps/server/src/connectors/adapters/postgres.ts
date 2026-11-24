@@ -91,7 +91,7 @@ const txOf = (tx: Transaction): ConnectorTx => ({
     return (await tx.select().from(connectors).orderBy(connectors.id)).map(toRecord);
   },
   approveOffer: (id, offer, manifest, by, at) =>
-    approveOffer(tx, id, { at: new Date(offer.at), manifest: offer.manifest }, manifest, by, new Date(at)),
+    approveOffer(tx, id, { ...offer, at: new Date(offer.at) }, manifest, by, new Date(at)),
   async remove(id) {
     // What the competence register copied from the connector goes with its row (D108 item 9), counted as it goes (DE-L4),
     // in the lock order an operator's forgetting of the source shares (`@clew/db/competence`); then the row, whose
