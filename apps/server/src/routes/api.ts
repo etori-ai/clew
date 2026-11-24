@@ -58,7 +58,7 @@ import { capabilityRoutes } from './capabilities';
 import { authenticate, AuthError } from '../auth';
 import { readDocument, reviewDocuments } from '../composition/documents';
 import { logger } from '../logging';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 const {
   act,

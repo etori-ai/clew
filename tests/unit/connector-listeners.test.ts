@@ -1,27 +1,35 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { connect, type AddressInfo } from 'node:net';
 
 /**
  * Every connector that serves itself with Node's HTTP server does it through its own copy of the same listener,
- * `connectors/<id>/http.mjs` (CS-M1). Anyone who reaches the port reaches it before Clew's signature is checked: a GET
- * with a body or a Host that is no host once threw before the handler and ended the process, and a body was read
- * whole. Each copy is held to the same behaviour here, and each folder to serving through it.
+ * `connectors/<id>/http.mjs` (CS-M1), unless it is named in `OWN_SERVER` below. Anyone who reaches the port reaches it
+ * before Clew's signature is checked: a GET with a body or a Host that is no host once threw before the handler and
+ * ended the process, a body was read whole, and an answer was pulled from the handler however slowly the caller read.
+ * Each copy is held to the same behaviour here, and each folder to serving through it.
  */
-const FOLDERS = [
-  'hello',
-  'intranet',
-  'eneo',
-  'phonebook',
-  'appraisals',
-  'nextcloud-approval',
-  'moodle',
-  'qlik',
-  'supportmanagement',
-  'pob',
-] as const;
 const root = new URL('../../connectors/', import.meta.url);
+/**
+ * The folders whose `server.mjs` keeps a small server of its own, each with why. Every other folder with a
+ * `server.mjs` is held to the listener, so a new connector that is in neither list fails here.
+ */
+const OWN_SERVER: Record<string, string> = {
+  hr: 'a fixture of the development stack (D61) on synthetic data, with a 64 kB limit of its own',
+  finance: 'a fixture of the development stack (D61) on synthetic data, with a 64 kB limit of its own',
+  incidents: 'a fixture of the development stack (D61) on synthetic data, with a 64 kB limit of its own',
+  communication: 'a fixture of the development stack (D61) on synthetic data, with a 64 kB limit of its own',
+  timesheet: 'a fixture of the development stack (D61) on synthetic data, with a 64 kB limit of its own',
+  payroll: 'a fixture of the development stack (D61) on synthetic data, with a 64 kB limit of its own',
+  servicedesk: 'a fixture of the development stack (D61) on synthetic data, with a 64 kB limit of its own',
+  reference: "the durability suite's synthetic fixture, started by `bun run test:durability` alone, with a 16 kB limit",
+};
+const FOLDERS = readdirSync(root, { withFileTypes: true })
+  .filter(entry => entry.isDirectory() && existsSync(new URL(`${entry.name}/server.mjs`, root)))
+  .map(entry => entry.name)
+  .filter(name => !(name in OWN_SERVER))
+  .sort();
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8');
 type Listener = (
   handle: (request: Request) => Promise<Response>,
@@ -42,7 +50,20 @@ async function serve(listener: Listener, handle: (request: Request) => Promise<R
       socket.on('end', () => resolve(answer));
       socket.on('error', reject);
     });
-  return { port, raw, unexpected, close: () => new Promise(resolve => server.close(resolve)) };
+  /**
+   * A request written by hand whose body never ends: what comes back before the connection closes. A listener that
+   * read on would never answer it.
+   */
+  const unfinished = (text: string) =>
+    new Promise<string>(resolve => {
+      const socket = connect(port, '127.0.0.1', () => socket.write(text));
+      let answer = '';
+      socket.on('data', chunk => (answer += chunk));
+      // The listener closes the connection on a body it will not read; a write that meets the close is no failure.
+      socket.on('error', () => undefined);
+      socket.on('close', () => resolve(answer));
+    });
+  return { port, raw, unfinished, unexpected, close: () => new Promise(resolve => server.close(resolve)) };
 }
 const ok = async () => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } });
 
@@ -100,6 +121,90 @@ describe.each(FOLDERS)('the listener of %s', folder => {
       await close();
     }
   });
+
+  test('a declared length over the limit is refused at once, without reading the body, and the connection closed', async () => {
+    let calls = 0;
+    const { unfinished, close } = await serve(
+      await load(),
+      async () => {
+        calls++;
+        return ok();
+      },
+      8,
+    );
+    try {
+      const started = Date.now();
+      // A hundred megabytes declared, three bytes sent: the answer cannot wait for the rest.
+      expect(
+        await unfinished('POST /clew/scan HTTP/1.1\r\nHost: connector\r\nContent-Length: 100000000\r\n\r\nabc'),
+      ).toStartWith('HTTP/1.1 413');
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(calls).toBe(0);
+    } finally {
+      await close();
+    }
+  });
+
+  test('a body sent in pieces is refused as it passes the limit, and nothing after it is read', async () => {
+    let calls = 0;
+    const { unfinished, close } = await serve(
+      await load(),
+      async () => {
+        calls++;
+        return ok();
+      },
+      8,
+    );
+    try {
+      const started = Date.now();
+      // One chunk of ten bytes and no end: the connection closes once the refusal is out.
+      expect(
+        await unfinished(
+          'POST /clew/scan HTTP/1.1\r\nHost: connector\r\nTransfer-Encoding: chunked\r\n\r\na\r\n0123456789\r\n',
+        ),
+      ).toStartWith('HTTP/1.1 413');
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(calls).toBe(0);
+    } finally {
+      await close();
+    }
+  });
+
+  test('a caller that reads nothing holds the handler back, rather than its answer filling memory', async () => {
+    const piece = new Uint8Array(16 * 1024);
+    let pulled = 0;
+    const { port, close } = await serve(
+      await load(),
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              // 64 MiB in all, were nothing to hold it back.
+              if (++pulled > 4096) controller.close();
+              else controller.enqueue(piece);
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        ),
+    );
+    const socket = connect(port, '127.0.0.1', () =>
+      socket.write('POST /clew/ask HTTP/1.1\r\nHost: connector\r\nConnection: close\r\n\r\n'),
+    );
+    socket.pause();
+    try {
+      // Until the handler is no longer pulled: what the connection's buffers hold, a few megabytes.
+      let seen = -1;
+      for (let i = 0; i < 50 && (pulled === 0 || pulled !== seen); i++) {
+        seen = pulled;
+        await Bun.sleep(100);
+      }
+      expect(pulled).toBeGreaterThan(0);
+      expect(pulled).toBeLessThan(1024);
+    } finally {
+      socket.destroy();
+      await close();
+    }
+  }, 10_000);
 
   test('an answer is written as it arrives, and a caller that goes away aborts the request', async () => {
     let release!: () => void;
@@ -169,6 +274,15 @@ describe.each(FOLDERS)('the listener of %s', folder => {
     expect(server).not.toContain('createServer(async');
     expect(read(`${folder}/Dockerfile`)).toMatch(/^COPY .*\bhttp\.mjs\b.* \.\/$/m);
   });
+});
+
+test('a folder named as keeping its own server does keep it, so the list holds no folder that serves through the listener', () => {
+  expect(FOLDERS).toContain('hello');
+  for (const folder of Object.keys(OWN_SERVER)) {
+    const server = read(`${folder}/server.mjs`);
+    expect(server).toContain('createServer(async');
+    expect(server).not.toContain('./http.mjs');
+  }
 });
 
 test('every copy of the listener is the same file but for the name in its log line', () => {

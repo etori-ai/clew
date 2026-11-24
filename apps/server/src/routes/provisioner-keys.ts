@@ -11,7 +11,7 @@ import {
 import { InputError, failure, privateHeaders, type Env } from '../context';
 import type { UsersAdminUsecases } from '../modules/people/usecases';
 import { scimAddress } from './scim';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * The provisioners' keys (D107), mounted under `/api/admin/users/provisioners` behind the administration's session

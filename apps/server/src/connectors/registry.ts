@@ -1,5 +1,3 @@
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
 import type { AuthenticatedContext, Thread } from '@clew/contracts';
 import {
   audiencedActorOf,
@@ -9,6 +7,7 @@ import {
   Registry,
   type HoldingsReader,
   type RunCaller,
+  schemaCompiler,
 } from '@clew/connectors';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
@@ -141,11 +140,14 @@ export const holdingsReader: HoldingsReader = {
   readHoldings: (connectorId, cursor, options) => registry.readHoldings(connectorId, cursor, options),
 };
 
-const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));
-/** Whether a capability's input schema accepts `{}`: the conformance check calls only the reads that do (the same rule as `scripts/connector-check.ts`). */
+/**
+ * Whether a capability's input schema accepts `{}`: the conformance check calls only the reads that do (the same rule as
+ * `scripts/connector-check.ts`). A compiler of the call's own, as the loader's (CB-6): one kept for the module held every
+ * schema it compiled, and every `$id`, so a second check of a manifest that gives a schema an `$id` was refused.
+ */
 export const acceptsEmptyInput = (schema: object) => {
   try {
-    return !!ajv.compile(schema)({});
+    return !!schemaCompiler()(schema)({});
   } catch {
     return true;
   }

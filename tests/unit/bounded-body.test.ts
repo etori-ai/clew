@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { boundedText, textOfAtMost } from '../../apps/server/src/routes/bounded-body';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { boundedText, textOfAtMost } from '../../apps/server/src/bounded-body';
 
 /**
  * Every route reads a request's body through `boundedText` (ID-8, CB-6): no more of it than the route's limit is held,
@@ -54,4 +56,27 @@ describe('a body read no further than its limit', () => {
     expect(await textOfAtMost(sent('x'.repeat(11)), 10)).toBeUndefined();
     expect(await textOfAtMost(sent('€'.repeat(11)), 10)).toBeUndefined();
   });
+});
+
+test('no body is read anywhere in the server but through the bounded reader', () => {
+  // A whole body read with `.text()`, `.json()` and their kind, a request's or an answer's, holds whatever another party
+  // sends (ID-8, CB-6). Hono's `parseBody` reads it whole too.
+  const server = join(import.meta.dirname, '../../apps/server/src');
+  const whole = /\.(text|json|arrayBuffer|formData|blob)\(\s*\)|\bparseBody\(/;
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.tsx?$/.test(name) && name !== 'bounded-body.ts')
+        readFileSync(path, 'utf8')
+          .split('\n')
+          .forEach((line, i) => {
+            const code = line.replace(/\/\/.*$/, '').replace(/^\s*\*.*$/, '');
+            if (whole.test(code)) found.push(`${relative(server, path)}:${i + 1}`);
+          });
+    }
+  };
+  walk(server);
+  expect(found).toEqual([]);
 });

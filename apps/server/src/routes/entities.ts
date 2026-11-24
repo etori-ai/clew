@@ -10,7 +10,7 @@ import {
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { EntityUsecases } from '../modules/entities/usecases';
 import type { EntityActions } from '../modules/entities/actions';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * Entities (D97): a person or a unit and what the sources about it say, for the web. Four reads, each parsing the

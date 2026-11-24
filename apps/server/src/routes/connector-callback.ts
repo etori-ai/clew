@@ -6,7 +6,7 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { ForbiddenError, InputError, privateHeaders } from '../context';
 import { AssertionError, type CallbackGrant } from '../connectors/authority';
 import { STARTING } from '../startup';
-import { textOfAtMost } from './bounded-body';
+import { textOfAtMost } from '../bounded-body';
 
 /**
  * The one way back in for a remote connector (D21): run another connector's `read` or `propose` as the person the connector

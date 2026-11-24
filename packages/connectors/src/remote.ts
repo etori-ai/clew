@@ -90,7 +90,11 @@ export class ManifestError extends Error {
  * (every path listed), then the rules between fields. A protocol number this Clew does not load is named as such
  * (D60), with the one it loads, not as a literal mismatch. `previewManifest` shows the whole list; `parseManifest` throws on it.
  */
-export function manifestProblems(document: unknown, expectedId?: string): string[] {
+export function manifestProblems(
+  document: unknown,
+  expectedId?: string,
+  compile?: (schema: object) => unknown,
+): string[] {
   const errors = contractProblems(ConnectorManifestSchema, document);
   if (errors.length) {
     const protocol = (document as { protocol?: unknown } | null)?.protocol;
@@ -104,7 +108,7 @@ export function manifestProblems(document: unknown, expectedId?: string): string
   const problems: string[] = [];
   if (expectedId && manifest.id !== expectedId)
     problems.push(`Manifest id "${manifest.id}" does not match the configured id "${expectedId}".`);
-  problems.push(...connectorProblems(manifest));
+  problems.push(...connectorProblems(manifest, compile));
   return problems;
 }
 /** Validate a manifest document; returns the typed manifest or throws with the schema problems listed, else the first rule it breaks. */
@@ -166,11 +170,20 @@ export async function fetchManifest(
   expectedId?: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<ConnectorManifest> {
+  // A redirect is not followed (CB-4), and it is said as such: the address registered is where every call goes, so the
+  // administrator registers the one the service answers on. Followed by `redirect: 'error'` it was "fetch failed", which
+  // the loader took for a service that does not answer yet.
   const response = await fetchImpl(url + '/clew/manifest', {
     headers: { accept: 'application/json' },
-    redirect: 'error',
+    redirect: 'manual',
     signal: AbortSignal.timeout(5000),
   });
+  if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new ManifestError(
+      `GET ${url}/clew/manifest answered with a redirect (${response.status}), which Clew does not follow. Register the address the connector answers on itself.`,
+    );
+  }
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     throw new ManifestError(`GET ${url}/clew/manifest answered ${response.status}.`);
