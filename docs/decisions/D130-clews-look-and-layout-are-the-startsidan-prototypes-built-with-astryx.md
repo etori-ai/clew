@@ -1,6 +1,6 @@
 # D130 · Clew's look and layout are the startsidan prototype's, built with Astryx
 
-**Status:** provisional (Oliver Borgström, 2026-11-18; first chosen 2026-11-11 and built on the branch `prototype-look`, PR #40, which did not land; accepted once a manager outside the team has used it) · **Date:** 2026-11-18 · **Area:** ui, product
+**Status:** provisional (Oliver Borgström, 2026-11-18; first chosen 2026-11-11 and built on the branch `prototype-look`, PR #40, which did not land; accepted once a manager outside the team has used it); item 19 amended 2026-11-23: on a phone Att göra's queue is a list of rows, not a table (see the amendment) · **Date:** 2026-11-18 · **Area:** ui, product
 
 **Decision.** Clew is drawn after the startsidan prototype's Version 1.0 for managers (the portal in
 `startsidan-prototype/apps/portal`): its type, its form, its colours as an example theme, and its layout. It is built
@@ -223,3 +223,71 @@ in [D46](D46-astryx-neutral-is-the-default-theme.md); "typography, motion, radii
 [D38](D38-municipal-branding-uses-astryx-themes.md), for typography and radii.
 
 **Amended 2026-11-21 by [D142](D142-an-item-reviewed-row-by-row-has-one-page-and-a-rows-button-names-the-next-press.md).** Item 13: the button at the end of a row of "Behöver dig" names the person's next press ("Granska 3", the item's one decision, else "Öppna"); on a row whose button runs, the title is the link to the item's page.
+**Amended 2026-11-23: what a phone changes.** The reference is drawn for a wide window; the review of the phone view
+([review](../reviews/2026-11-23-the-mobile-view.md)) found four places where following it there worked against the
+person, and the product owner asked for them to be put right.
+
+1. *The band is one row down to 320 px.* On a phone the band's controls, "Meny" included, are marks alone, each a
+   44 px target on a touch screen, standing edge to edge (item 6). With "Meny" labelled and gaps between them the row
+   needed exactly 375 px, so under that the controls fell to a second row.
+2. *Hem's work comes before Läget on a phone* (item 13). The reference has the key figures first; one under the other
+   they are a screen, which put "Behöver dig" a screen and a half down on the page that exists to show it.
+3. *A key figure has a row to itself under 480 px* (`FigureRow`). Two to a row, as the reference has them, left each a
+   154 px card: a value broke over two lines, and a label was clipped behind a scrollbar of the card's own (1.4.10).
+4. *The floating "Fråga AI" is the mark alone on a phone* (item 14): a round 48 px button named "Fråga AI". With its
+   label it was 139 px wide and lay over a row's "Öppna", a figure's value or a heading wherever the page stood.
+
+## Amendment, 2026-11-23: on a phone Att göra's queue is a list
+
+A review of the phone view on 2026-11-23 measured Att göra signed in as a manager on the development stack. Item 19
+draws the pile as a table at every width, and below 768 px that did not hold. At 375 px the title column was 157 px
+and the Status column 120 px, which in four rows of six held one lowercase word or a dot alone; titles wrapped to
+three to five lines, so a row was 119 to 155 px tall, and only the title, 133 px wide (96 px at 320 px), was the link.
+At 320 px the table's wrapper was the page's one sideways scroller. Over the first row stood the page's title, "Fråga
+assistenten", the tabs, the card's heading saying the current tab's name a second time, and the filter and the system
+on a row each. The state was a dot in the warning colour with "försenad", where Hem draws the same state of the same
+work item as a red badge, "Försenad".
+
+Below 768 px (`mobileQuery`, the line every phone decision follows) the pile is drawn like this. A wide window keeps
+item 19 as it stands, the table included, and so does the window between 768 px and the 900 px of column under which
+a row leads to the item's page.
+
+1. **Each work item is one row of Astryx's `List`**, the app's one link row (`LinkRow`, as Samtal's phone list of
+   item 20): the title, which is the row's one link and tab stop and is named by the title alone, and the row around
+   it that link's target, so a press anywhere on it opens the item's page. Under the title one supporting line: the
+   system (none for an item from Clew itself), the unit for a person with several
+   ([D135](D135-a-person-with-several-assignments-sees-the-work-of-all-of-them.md)), and what the table's row says
+   under its title (whom it is about, or why it is here, and "kan vara gammal" at its end when the system does not
+   answer). Neither line is cut: at 320 px they take the lines they need. Rows are divided by a rule.
+   [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) first built the
+   queue's rows as `List` and `ListItem` too (its Astryx gap 2), before
+   [D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) rule 2 made them a table.
+2. **Where it stands is said in words under that line**, since there is no Status column. A plain to-do says when it
+   is due as the badge its row on Hem and its own page draw ("Försenad", "I dag", "Fredag", "Vecka 48"), so one state
+   of one work item is one badge in the three places. Every other state is the vocabulary's mark with its word
+   ([D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) item 13: "Väntar · inte nu", "Klart · i dag
+   08.13", "Obekräftat · 1 av 3"). A to-do with no day and nothing else to say draws none: the pile says that it needs
+   the person. A dot never stands alone. D126 item 13's Status column, and the dot that carries the whole mark as its
+   name under Behöver dig, are the wide window's.
+3. **The card's heading is not drawn.** The current tab stands directly over the card and says the same words. The
+   heading and how many rows the filter left stay for a screen reader, the heading still names the region, and the
+   outline keeps its level 2 (`BoardCard`'s `isHeadingHidden`, Astryx's `VisuallyHidden`).
+4. **The filter and the system share a row where they fit**: the menu's button keeps its own width and the field
+   takes what it leaves (131 px beside "Alla system" at 375 px at touch size). Below 360 px (`tightQuery`), or under a
+   system whose name is longer than twelve characters, the menu stands under the field, which then has the card's
+   width.
+
+What narrows the rows, what is said aloud when it does, the addresses, where a row leads and where the focus goes are
+unchanged. Not changed either, and still over the first row on a phone: the four key figures of item 19, two by two
+at 375 px and one under the other at 320 px.
+
+The choices in items 2 to 4 are the build's own; nobody outside the repository has used them. The two canvases that
+draw Att göra on a phone (boards PhoneInbox of D112's canvas and the phone frames of D126's) could not be opened from
+the account this was built with, so the row follows what the repository records of them and what Hem and Samtal
+already draw.
+
+Built in `apps/web/src/pages/todo.tsx`, `apps/web/src/components/work/work-row.tsx` (`LinkRow`'s `below` and
+`titleLines`), `packages/ui/src/components/board-card.tsx` and `apps/web/src/media.ts`. `tests/a11y/queue.spec.ts`
+has the phone's cases (the row, its one link and its target, the tab order and the focus ring, the filter's row at
+375 and 320 px, the count said and kept, a silent system); `reflow.spec.ts`, `axe.spec.ts` and `optimistic.spec.ts`
+name the list where they named the table on a phone.

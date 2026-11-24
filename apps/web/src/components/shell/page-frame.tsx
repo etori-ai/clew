@@ -42,7 +42,7 @@ import {
   useMediaQuery,
   useResizable,
 } from '@clew/ui';
-import { mobileQuery, paneBesideQuery, shortQuery } from '../../media';
+import { mobileQuery, paneBesideQuery, shortQuery, tightQuery } from '../../media';
 import { asksBeside, withAsk, withoutAsk } from '../../panel-address';
 import { RowPage, SHELL_WIDTH, SiteName } from './shell';
 import { useClearCorner, useCornerDoor, useReturnFocusToCorner, type CornerDoor } from './assistant-corner';
@@ -69,11 +69,6 @@ export const PAGE_WIDTH = SHELL_WIDTH;
 export const narrowPageQuery = '(max-width: 1024px)';
 /** The facts' end panel beside the column (board Person, board Ärende). */
 const FACTS_WIDTH = 340;
-/**
- * The boards keep the page's 24 px inset on a phone (Hem, Att göra and Ärende at 390 px); only the narrowest screens,
- * where 1.4.10 asks for 320 px, take the tighter 16 px.
- */
-const tightQuery = '(max-width: 359px)';
 
 /**
  * Whether and about what a page has the assistant's pane (D141 rule 1, D138 item 3): every page says, so
@@ -223,8 +218,6 @@ interface PageFrameProps {
   meta?: ReactNode;
   /** At the end of the title's line (on a phone under it): a register's search and one primary action, a thing's actions. */
   actions?: ReactNode;
-  /** The actions stay at the end of the title's line on a phone too (Kalender's two rows of controls, 1.4.10). */
-  actionsOnLine?: boolean;
   /** Directly under the title, the header's width: a work item's decisions, Hem's box, a page's alert. */
   below?: ReactNode;
   /** The page's tabs (`ThingTabs`), at the foot of the header. */
@@ -602,7 +595,6 @@ function FrameBody({
   status,
   meta,
   actions,
-  actionsOnLine = false,
   door,
   below,
   tabs: pageTabs,
@@ -765,7 +757,7 @@ function FrameBody({
             {metaLine}
           </VStack>
         </StackItem>
-        {(!mobile || actionsOnLine) && actions}
+        {!mobile && actions}
         {!mobile && door}
       </HStack>
     ) : (
@@ -801,7 +793,7 @@ function FrameBody({
           ) : (
             (wayLine ?? titleLine)
           )}
-          {mobile && !actionsOnLine && actions}
+          {mobile && actions}
           {below}
         </VStack>
         {headTabs}

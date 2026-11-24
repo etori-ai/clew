@@ -3,6 +3,7 @@ import {
   desktop,
   expect,
   expectNoAxeViolations,
+  hiddenFocusStops,
   narrow,
   open,
   openNav,
@@ -18,8 +19,9 @@ import { ASKED_MANAGER, CERTIFICATE_TITLE, NOTICE_REASON, NOTICE_TEXT, asNotice,
  * tabs that lead to their address; the rows are Astryx's Table, the name the row's one link, and choosing it puts the
  * work item in the pane and in the address (`/todo?item=`). Where the pane does not fit beside the list (the template
  * measures the page's own box, 900 px), there is no pane: the row leads to the item's page, with the way back to the
- * list. Keyboard, focus, announcements, axe and reflow at 320 px, the addresses of Hem's tabs from before D112, and a
- * notice's layout in the pane.
+ * list. On a phone (below 768 px; D130 item 19, amended 2026-11-23) there is no table: each work item is a row of a
+ * list, the whole row the link to the item's page. Keyboard, focus, announcements, axe and reflow at 320 px, the
+ * addresses of Hem's tabs from before D112, and a notice's layout in the pane.
  */
 const wide = { width: 1440, height: 900 };
 /** The page's box is under 900 px beside the rail: one surface. */
@@ -33,6 +35,39 @@ const rows = (page: import('@playwright/test').Page, name = 'Behöver dig') =>
     .filter({ has: page.getByRole('link') });
 const row = (page: import('@playwright/test').Page, title: string) =>
   page.getByRole('table').getByRole('link', { name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) });
+/** A phone's queue: a list named by its pile, each row a list item with its one link. */
+const phoneQueue = (page: import('@playwright/test').Page, name = 'Behöver dig') =>
+  page.getByRole('main').getByRole('list', { name, exact: true });
+const phoneRows = (page: import('@playwright/test').Page, name = 'Behöver dig') =>
+  phoneQueue(page, name).getByRole('listitem');
+const phoneRow = (page: import('@playwright/test').Page, title: string) =>
+  page.getByRole('main').getByRole('listitem').getByRole('link', { name: title, exact: true });
+/** Whether something in the accessibility tree is drawn: Astryx's `VisuallyHidden` clips what it holds. */
+const isDrawn = (l: import('@playwright/test').Locator) =>
+  l.evaluate(el => {
+    for (let at: Element | null = el; at; at = at.parentElement) {
+      const s = getComputedStyle(at);
+      if (s.clip === 'rect(0px, 0px, 0px, 0px)' || s.clipPath === 'inset(50%)') return false;
+    }
+    return (el as HTMLElement).checkVisibility();
+  });
+const box = async (l: import('@playwright/test').Locator) => (await l.boundingBox())!;
+/**
+ * The rows in which something is cut: a box that clamps its lines or clips, holding more than it shows. `reflowProblems`
+ * sees what is cut sideways; a line clamp cuts downwards (1.4.10).
+ */
+const cutRows = (rows: import('@playwright/test').Locator) =>
+  rows.evaluateAll(list =>
+    list
+      .filter(row =>
+        [...row.querySelectorAll<HTMLElement>('*')].some(el => {
+          const s = getComputedStyle(el);
+          const clips = s.webkitLineClamp !== 'none' || s.overflowX !== 'visible' || s.overflowY !== 'visible';
+          return clips && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1);
+        }),
+      )
+      .map(row => row.id),
+  );
 
 test.describe('Att göra: the piles', () => {
   test.use({ viewport: wide });
@@ -363,15 +398,15 @@ test.describe('Att göra where the pane does not fit', () => {
     const nav = await openNav(page);
     await expect(nav.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('aria-current', 'page');
     await page.keyboard.press('Escape');
-    await row(page, 'Omtankesamtal med Anna Lindqvist').click();
+    await phoneRow(page, 'Omtankesamtal med Anna Lindqvist').click();
     await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
     // The decision under the title (D126 rule 1).
     await expect(page.getByRole('button', { name: 'Boka samtalet' })).toBeInViewport();
-    await expect(queue(page)).toHaveCount(0);
+    await expect(phoneQueue(page)).toHaveCount(0);
     expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
     await page.goBack();
-    await expect(rows(page)).toHaveCount(6);
+    await expect(phoneRows(page)).toHaveCount(6);
   });
 
   for (const [path, title] of [
@@ -433,6 +468,185 @@ test.describe('Hem leads to Att göra', () => {
  * thing to read, and the way to the whole of it after the text; "Varför ser jag detta?" is its provenance line and a row
  * that only repeats its title is not drawn. The receipt's button stays among the item's buttons, reached from the text.
  */
+/**
+ * Below 768 px (D130 item 19, amended 2026-11-23) the queue is no table. Each work item is one row of Astryx's `List`:
+ * the title, which is the row's one link and whose target is the whole row; under it the system and what the row says;
+ * under that where it stands, in words. The card's heading, which the current tab directly over it already says, is
+ * not drawn, and the filter and the system share a row where they fit.
+ */
+test.describe('Att göra on a phone: the queue is a list', () => {
+  test.use({ viewport: phone });
+
+  test('each work item is one row: the title, the system and why under it, where it stands in words, and no table', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/todo');
+    await expect(page.getByRole('table')).toHaveCount(0);
+    const all = phoneRows(page);
+    await expect(all).toHaveCount(6);
+    // The title, then the system and why the item is here on one line, which is not cut.
+    const fakturor = page.locator('#work-fakturor');
+    await expect(fakturor).toContainText('Attestera 3 fakturor, 48 200 kr');
+    await expect(fakturor).toContainText('Ekonomisystemet\u00a0· Fakturorna förfaller i veckan');
+    expect(await cutRows(all)).toEqual([]);
+    // A to-do says when it is due as the badge its row on Hem draws, in words, never a dot alone (1.4.1).
+    await expect(fakturor.getByText('I dag', { exact: true })).toBeVisible();
+    await expect(page.locator('#work-omtanke').getByText('Vecka 46', { exact: true })).toBeVisible();
+    await expect(all.getByRole('img')).toHaveCount(0);
+    // An item from Clew itself names no system: Clew is not a system the person goes to.
+    await expect(page.locator('#work-samtal')).not.toContainText('\u00a0· ');
+    // The pile's heading is not drawn, since the current tab over the card says it; it still names the region and
+    // says how many rows there are to a screen reader, and the outline keeps its level 2.
+    const heading = page.getByRole('heading', { level: 2, name: 'Behöver dig' });
+    await expect(heading).toHaveCount(1);
+    expect(await isDrawn(heading)).toBe(false);
+    const card = page.getByRole('region', { name: 'Behöver dig' });
+    await expect(card).toContainText('· 6 ärenden');
+    await expect(card.getByRole('list', { name: 'Behöver dig', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('navigation', { name: 'Urval' }).getByRole('link', { name: /^Behöver dig/ }),
+    ).toHaveAttribute('aria-current', 'true');
+    await expectNoAxeViolations(page);
+    expect(await reflowProblems(page)).toEqual([]);
+    // What waits says so in the vocabulary's word (D126 item 13), with what it concerns after it.
+    await page
+      .getByRole('navigation', { name: 'Urval' })
+      .getByRole('link', { name: /^Väntar/ })
+      .click();
+    await expect(page).toHaveURL(/\/todo\?tab=waiting$/);
+    await expect(phoneRows(page, 'Väntar på andra')).toHaveCount(3);
+    const tillbud = page.locator('#work-tillbud');
+    await expect(tillbud).toContainText('Avvikelsesystemet\u00a0· Väntar på skyddsombudet');
+    await expect(tillbud.getByText('Väntar', { exact: true })).toBeVisible();
+    await expect(page.locator('#work-brandskydd')).toContainText('Väntar\u00a0· inte nu');
+    await expectNoAxeViolations(page);
+    await page.getByRole('navigation', { name: 'Urval' }).getByRole('link', { name: 'Klart', exact: true }).click();
+    await expect(phoneRows(page, 'Klart')).toHaveCount(2);
+    await expect(page.locator('#work-attest')).toContainText('Obekräftat\u00a0· 1 av 2');
+    await expect(page.locator('#work-avfardad')).toContainText('Klart\u00a0· avfärdat');
+    await expectNoAxeViolations(page);
+    expect(await reflowProblems(page)).toEqual([]);
+  });
+
+  test('a row is one link and one tab stop, named by its title, and the whole row is its target; Enter opens the item’s page and the way back gives the focus to the row', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/todo');
+    const all = phoneRows(page);
+    for (let i = 0; i < (await all.count()); i++) await expect(all.nth(i).getByRole('link')).toHaveCount(1);
+    const fakturor = page.locator('#work-fakturor');
+    const link = fakturor.getByRole('link');
+    await expect(link).toHaveAccessibleName('Attestera 3 fakturor, 48 200 kr');
+    await expect(link).toHaveAttribute('href', '/items/fakturor?from=%2Ftodo');
+    // 2.5.8: the row is the link's target, at least 44 px tall and as wide as the list.
+    const target = await box(fakturor);
+    expect(target.height).toBeGreaterThanOrEqual(44);
+    expect(target.width).toBeGreaterThanOrEqual((await box(phoneQueue(page))).width - 1);
+    // The rows in the order they are drawn, one stop each, and every stop of the page shows its focus (2.4.7) and is
+    // not hidden under what is pinned (2.4.11).
+    await link.focus();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('#work-omtanke').getByRole('link')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('#work-ledighet').getByRole('link')).toBeFocused();
+    // The walk goes on from where the focus last was, so it starts at the top of the page: after the rows nothing
+    // floats over this page to end on, since "Fråga AI" stands on the title's line (D138 as amended 2026-11-20).
+    await page.locator('a[href], button').first().focus();
+    const { hidden, unmarked } = await hiddenFocusStops(page);
+    expect({ hidden, unmarked }).toEqual({ hidden: [], unmarked: [] });
+    // A press on the line under the title, or at the row's far end, follows the row's link.
+    await fakturor.getByText('Fakturorna förfaller i veckan').click();
+    await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo');
+    await page.goBack();
+    const omtanke = page.locator('#work-omtanke');
+    const at = await box(omtanke);
+    await page.mouse.click(at.x + at.width - 12, at.y + at.height - 12);
+    await expect(page).toHaveURL('/items/omtanke?from=%2Ftodo');
+    await page.goBack();
+    // From the keyboard, and back by the item's own way back: the row has the focus again (2.4.3).
+    await page.locator('#work-ledighet').getByRole('link').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { level: 1, name: 'Ledighetsansökan från Johan Byström' })).toBeFocused();
+    await page.getByRole('main').getByRole('link', { name: 'Att göra', exact: true }).click();
+    await expect(page).toHaveURL(/\/todo$/);
+    await expect(phoneRow(page, 'Ledighetsansökan från Johan Byström')).toBeFocused();
+  });
+
+  test('the filter and the system share a row, narrow the rows and say how many are left; a system with a long name stands under the field', async ({
+    page,
+    api,
+  }) => {
+    api.areas = [...api.areas, { ...api.areas[0]!, id: 'introduktion', title: 'Introduktion och avslut' }];
+    await open(page, '/todo');
+    const filter = page.getByRole('searchbox', { name: 'Filtrera' });
+    const system = page.getByRole('button', { name: 'Alla system' });
+    // One row: the button beside the field, whole, and the field wide enough to type in.
+    const [field, button] = [await box(filter), await box(system)];
+    expect(button.x).toBeGreaterThan(field.x + field.width);
+    expect(button.y).toBeLessThan(field.y + field.height);
+    expect(field.width).toBeGreaterThanOrEqual(80);
+    expect(
+      await system.evaluate(el => [...el.querySelectorAll('*')].every(e => e.scrollWidth <= e.clientWidth + 1)),
+    ).toBe(true);
+    await filter.fill('fakt');
+    await expect(page).toHaveURL(/\/todo\?filter=fakt$/);
+    await expect(phoneRows(page)).toHaveCount(1);
+    await expect.poll(() => announcements(page)).toContainEqual('1 ärenden');
+    // The count the filter left stays with the pile's name for a screen reader.
+    await expect(page.getByRole('region', { name: 'Behöver dig' })).toContainText('· 1 ärenden');
+    await filter.fill('');
+    await expect(phoneRows(page)).toHaveCount(6);
+    await system.click();
+    await page.getByRole('menuitemradio', { name: 'Personal' }).click();
+    await expect(page).toHaveURL(/\/todo\?area=personal$/);
+    await expect(phoneRows(page)).toHaveCount(3);
+    await expect.poll(() => announcements(page)).toContainEqual('Visar Personal: 3 ärenden');
+    expect(await reflowProblems(page)).toEqual([]);
+    // Nothing matches: the card says so in the rows' place.
+    await filter.fill('finns inte');
+    await expect(page.getByRole('heading', { level: 2, name: 'Inget som stämmer med valet' })).toBeVisible();
+    await expect(phoneQueue(page)).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // A name the field has no room beside: the menu's button stands under the field, which has the card's width.
+    await open(page, '/todo?area=introduktion');
+    const long = await box(page.getByRole('button', { name: 'Introduktion och avslut' }));
+    const wide = await box(page.getByRole('searchbox', { name: 'Filtrera' }));
+    expect(long.y).toBeGreaterThanOrEqual(wide.y + wide.height);
+    expect(await reflowProblems(page)).toEqual([]);
+  });
+
+  test('at 320 px the system stands under the filter, the rows take the lines they need and nothing scrolls sideways', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(narrow);
+    await open(page, '/todo');
+    const field = await box(page.getByRole('searchbox', { name: 'Filtrera' }));
+    const button = await box(page.getByRole('button', { name: 'Alla system' }));
+    expect(button.y).toBeGreaterThanOrEqual(field.y + field.height);
+    await expect(phoneRows(page)).toHaveCount(6);
+    // Neither the title nor the line under it is cut: each takes the lines it needs.
+    expect(await cutRows(phoneRows(page))).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(narrow.width);
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+
+  test('a work item whose system does not answer says at the end of its line that it may be old', async ({
+    page,
+    api,
+  }) => {
+    api.sources = [{ connector: 'hr', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' }];
+    await open(page, '/todo');
+    await expect(page.locator('#work-omtanke')).toContainText('· kan vara gammal');
+    await expect(page.locator('#work-fakturor')).not.toContainText('kan vara gammal');
+    expect(await silentSaidIn(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+});
+
 test.describe('Att göra: a notice in the reading pane', () => {
   test.use({ viewport: wide });
 

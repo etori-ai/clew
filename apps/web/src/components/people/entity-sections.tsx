@@ -507,30 +507,28 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
  * board Person; D137 item 2 for a record), every one of them in one menu, "Åtgärder", grouped by the system each acts in,
  * as the row menu on Personal is (artboard A3). No action is a button of its own: which system's action stood first was
  * only the order the server listed them in, and no connector is given a place by position. The menu is the same at
- * every width and with one action as with ten; on a phone its button is the width of the column. What the page adds of
- * its own (`extra`: the reader's own Inställningar) stands beside it, under it on a phone. None of them asks the
- * assistant: the frame's "Fråga AI" does, after the menu on the title's line (D138 item 1). Every one opens the action
- * dialog, and nothing is created before its last button, after which its work item opens (`entity-actions.ts`); a dialog
- * that closes gives the focus back to the menu's button. A source's refusal is said aloud and stands under the menu
- * until the next action. They hold what can be done about the thing, never a choice of where Clew shows it, and never a
- * way into a source's page, which is a link in its section.
+ * every width and with one action as with ten; on a phone its button is the width of the column. The page adds nothing
+ * of its own beside it: the reader's settings open from the person on the band alone (D39, amended 2026-11-23). None
+ * of them asks the assistant: the frame's "Fråga AI" does, after the menu on the title's line (D138 item 1). Every one
+ * opens the action dialog, and nothing is created before its last button, after which its work item opens
+ * (`entity-actions.ts`); a dialog that closes gives the focus back to the menu's button. A source's refusal is said
+ * aloud and stands under the menu until the next action. They hold what can be done about the thing, never a choice of
+ * where Clew shows it, and never a way into a source's page, which is a link in its section.
  */
 export function EntityActions({
   subject,
   actions,
   mobile,
-  extra,
 }: {
   subject: ActionSubject;
   actions: readonly SubjectAction[];
   mobile: boolean;
-  extra?: ReactNode;
 }) {
   const { start, error, dialog } = useEntityAction();
   const { name } = subject;
   const refusal = error ? <Text as="p">{error}</Text> : null;
   // Nothing to act on: no empty group under the name.
-  if (!actions.length && !extra && !refusal) return dialog;
+  if (!actions.length && !refusal) return dialog;
   const menu = actions.length > 0 && (
     <DropdownMenu
       renderTrigger={trigger => (
@@ -551,13 +549,9 @@ export function EntityActions({
   return (
     <VStack gap={2} {...(mobile ? {} : { hAlign: 'end' as const })}>
       {mobile ? (
-        <>
-          {menu}
-          {extra && <HStack>{extra}</HStack>}
-        </>
+        menu
       ) : (
         <HStack gap={2} wrap="wrap" vAlign="center">
-          {extra}
           {menu}
         </HStack>
       )}

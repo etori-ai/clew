@@ -8,7 +8,7 @@ the address or the session lives in the web app (`apps/web/src/components`, grou
 
 | Component | File | Made of | For |
 |---|---|---|---|
-| `BoardCard` | `board-card.tsx` | `Card`, `Heading`, `HStack`, `VStack`, `Text`, `Skeleton` | A card with its heading inside, how many it holds after it, an action at the end of that line, tools under it and the content. `list`, `flush` and `bare` say how the content is inset |
+| `BoardCard` | `board-card.tsx` | `Card`, `Heading`, `HStack`, `VStack`, `Text`, `Skeleton`, `VisuallyHidden` | A card with its heading inside, how many it holds after it, an action at the end of that line, tools under it and the content. `list`, `flush` and `bare` say how the content is inset; `isHeadingHidden` keeps the heading and the count for a screen reader where what stands over the card already says them in view (Att göra's tab on a phone) |
 | `KeyFigure` | `key-figure.tsx` | `Card` or `ClickableCard`, `Text`, `Icon` | A key figure: the label in small capitals, the value in its status colour, a line and a foot |
 | `StatusRow` | `status-row.tsx` | `Card` (the theme's `row-*` variants), `Text`, `Link`, `Button` | A row that needs the person: an edge in its status colour, the title, its badge and the button that names the next press ("Öppna", "Granska 3"); where that button runs on the row, the title is the link (D142) |
 | `FigureRow`, `PersonAvatar`, `registerTable`, `SECTION_GAP`, `CARD_GAP` | `measures.tsx` | `Grid`, `Avatar`, props for `Table` | The measures pages share (`docs/reference/layout-measures.md`) |

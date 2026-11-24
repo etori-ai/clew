@@ -371,6 +371,21 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       />
     </BoardCard>
   );
+  const lage = manager ? (
+    <Lage
+      areas={areas}
+      loading={loadingAreas}
+      unitLabel={user.unitLabel}
+      unitId={user.unitId || undefined}
+      // A tile leads where every other way to a tool leads, the tool's page (D42), when the view is a tool in the
+      // person's menu; any other view to its own page with Hem as the way back (D126 rule 1).
+      tileHref={(capability, title) =>
+        areasQ.data?.menu?.some(e => e.capability === capability)
+          ? toolHref(capability)
+          : pageHref({ capability, title })
+      }
+    />
+  ) : null;
   /**
    * Hem's blocks, in the reference's order (D130): the answer to what was asked on the line (D133 item 9), the callout,
    * Läget, and the board's two columns.
@@ -387,27 +402,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       {/* Fokusnyhet (board Hem10): one callout above the blocks, while an item asks for the person's read receipt. */}
       {focus && <FocusNews thread={focus} href={itemHref(focus.id)} onChange={replace} />}
       {/* Läget (D54, D117) before the work, as the reference's board has its key figures (D130): a manager's unit, each
-          tile leading to the page of what it counts. */}
-      {manager && (
-        <Lage
-          areas={areas}
-          loading={loadingAreas}
-          unitLabel={user.unitLabel}
-          unitId={user.unitId || undefined}
-          // A tile leads where every other way to a tool leads, the tool's page (D42), when the view is a tool in the
-          // person's menu; any other view to its own page with Hem as the way back (D126 rule 1).
-          tileHref={(capability, title) =>
-            areasQ.data?.menu?.some(e => e.capability === capability)
-              ? toolHref(capability)
-              : pageHref({ capability, title })
-          }
-        />
-      )}
+          tile leading to the page of what it counts. On a phone the work comes first: Läget's tiles stand one under
+          the other there, a screen of them, and what needs the person is what Hem is for. */}
+      {mobile ? null : lage}
       {/* The board (D130 item 13), as the reference lays it out: what needs the person in the wide column, and beside
           it a narrow one with the day and the news. Where the window is too narrow for both, one under the other. */}
       {stacked ? (
         <VStack gap={CARD_GAP}>
           {needsBlock}
+          {mobile ? lage : null}
           {dayBlock}
           <NewsBlock hrefFor={pageHref} />
           <MyCommitments />

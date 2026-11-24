@@ -27,11 +27,13 @@ import {
   KeyFigure,
   LayoutPanel,
   Link,
+  List,
   pixel,
   proportional,
   registerTable,
   ResizeHandle,
   SECTION_GAP,
+  StackItem,
   StatusMark,
   Tab,
   Table,
@@ -77,6 +79,7 @@ import {
 } from '../work-items';
 import { useNav } from '../components/shell/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell/shell';
+import { tightQuery } from '../media';
 import { silentLine, staleWhy, useSilentSources } from '../components/shell/silent-sources';
 import { BriefSkeleton } from '../components/work/brief';
 import { cardBody } from '../components/work/card-panel';
@@ -84,6 +87,7 @@ import { whenWord } from '../when-word';
 import { DOT } from '../dot';
 import { statusOf, type ItemStatus } from '../status-of';
 import { reviewedAction } from '../components/work/card';
+import { LinkRow } from '../components/work/work-row';
 import { ReceiptNotice, receiptMessage } from '../components/work/receipt-notice';
 import {
   PageTalk,
@@ -124,6 +128,12 @@ const PANE_SHARE = 0.55;
 const TALK = 260;
 const TALK_MIN = 200;
 const TALK_SHARE = 45;
+/**
+ * The longest name of a system, in characters, whose menu button leaves the filter's field room to type in beside it
+ * on a phone: beside "Alla system" the field is 131 px at 375 px at touch size (measured 2026-11-23), and 15 px less
+ * at 360 px. A longer name stands on the row under the field.
+ */
+const SYSTEM_BESIDE_FILTER = 12;
 
 /**
  * The width of the box the page was given, as the `table-inbox` template measures it (`useSurfaceWidth`, D112 gap 4):
@@ -183,9 +193,18 @@ function aboutOf(thread: Thread): string | null {
  * the page's own box) there is no pane: a row leads to the item's page. With no item open, the corner's "Fråga AI"
  * opens the assistant's pane beside the queue (D141, D138), about the pile; an item opened takes the end slot
  * and the address lets go of the assistant's pane (`todoHref`), so closing the item leaves the queue as it was.
+ *
+ * The responsive contract (D130 item 19, amended 2026-11-23), each line with what enforces it:
+ *   from 900 px of column   the table, and the reading pane beside it once a row is chosen   (`single`, measured)
+ *   below 900 px of column  the table without the system's column; a row leads to the item's page   (`single`)
+ *   below 768 px of window  no table: each work item is a row of Astryx's `List`, the whole row the link to the item's
+ *                           page; the card's heading, which the current tab over it already says, is not drawn; the
+ *                           filter and the system share a row   (`mobile`, `mobileQuery`)
+ *   below 360 px of window  the system's menu stands under the filter's field   (`tight`, `tightQuery`)
  */
 export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
+  const tight = useMediaQuery(tightQuery);
   const short = useMediaQuery(shortQuery);
   const narrowPage = useMediaQuery(narrowPageQuery);
   const client = useQueryClient();
@@ -404,33 +423,41 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   };
 
   const systemLabel = area ? marks.areaTitle(area) : 'Alla system';
+  const filterField = (
+    <TextInput
+      type="search"
+      label="Filtrera"
+      isLabelHidden
+      placeholder="Filtrera"
+      startIcon="search"
+      value={filter}
+      hasClear
+      width={mobile ? '100%' : 240}
+      onChange={value => navigate(href({ filter: value || null }), { replace: true })}
+    />
+  );
+  const systemMenu = (
+    <DropdownMenu button={{ label: systemLabel, variant: 'secondary' }}>
+      <DropdownMenuRadioGroup
+        label="System"
+        value={area ?? ALL_SYSTEMS}
+        onChange={value => navigate(href({ area: value && value !== ALL_SYSTEMS ? value : null }))}
+      >
+        <DropdownMenuRadioItem value={ALL_SYSTEMS} label="Alla system" />
+        {areas.map(a => (
+          <DropdownMenuRadioItem key={a.id} value={a.id} label={a.title} />
+        ))}
+      </DropdownMenuRadioGroup>
+    </DropdownMenu>
+  );
+  // On a phone the field and the system's menu share one row where they fit: the button keeps its own width and the
+  // field takes what it leaves. Below 360 px, or under a system with a longer name than the field has room beside,
+  // the menu stands on the row under the field, which then has the card's width.
+  const filtersShareRow = mobile && !tight && systemLabel.length <= SYSTEM_BESIDE_FILTER;
   const filters = (
-    <HStack gap={2} vAlign="center" wrap="wrap">
-      <TextInput
-        type="search"
-        label="Filtrera"
-        isLabelHidden
-        placeholder="Filtrera"
-        startIcon="search"
-        value={filter}
-        hasClear
-        width={mobile ? undefined : 240}
-        onChange={value => navigate(href({ filter: value || null }), { replace: true })}
-      />
-      {areas.length > 0 && (
-        <DropdownMenu button={{ label: systemLabel, variant: 'secondary' }}>
-          <DropdownMenuRadioGroup
-            label="System"
-            value={area ?? ALL_SYSTEMS}
-            onChange={value => navigate(href({ area: value && value !== ALL_SYSTEMS ? value : null }))}
-          >
-            <DropdownMenuRadioItem value={ALL_SYSTEMS} label="Alla system" />
-            {areas.map(a => (
-              <DropdownMenuRadioItem key={a.id} value={a.id} label={a.title} />
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenu>
-      )}
+    <HStack gap={2} vAlign="center" wrap={filtersShareRow ? 'nowrap' : 'wrap'}>
+      {mobile ? <StackItem size="fill">{filterField}</StackItem> : filterField}
+      {areas.length > 0 && (mobile ? <StackItem>{systemMenu}</StackItem> : systemMenu)}
     </HStack>
   );
 
@@ -475,14 +502,31 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
    * what it waits on or what came of it ("Ledigheten är beviljad"). Where it stands is the Status column's word, the
    * word its notice says in the pane (D126 item 13), so the line never says it again.
    */
-  const aboutLine = (r: QueueRow) => {
+  const aboutLine = (r: QueueRow, source?: string | null) => {
     const t = r.thread;
     const stale = t.state === 'open' && !!silent.of(t.connector);
     const about = aboutOf(t);
     const why = tab !== 'needs-you' || !about ? r.facts.why : null;
     // D135: the unit the work item is about, for a person with several.
-    const words = [workUnit(user, t), about, why].filter(Boolean).join(DOT);
+    const words = [source, workUnit(user, t), about, why].filter(Boolean).join(DOT);
     return stale ? (words ? staleWhy(words) : 'Kan vara gammal') : words;
+  };
+  /** The system a row names: none for an item from Clew itself (`fromClewItself`), which is no system a person goes to. */
+  const sourceOf = (r: QueueRow) =>
+    fromClewItself(r.thread, areasQ.data?.systems) ? null : marks.ofThread(r.thread).source;
+  /**
+   * Where a row stands, in words, on a phone (D130 item 19, amended 2026-11-23), where there is no Status column. A
+   * plain to-do says when it is due as the badge its row on Hem and its own page draw ("Försenad", "I dag", "Fredag",
+   * "Vecka 48"), so the same state is the same badge on the three; every other state is the vocabulary's mark with its
+   * word (D126 item 13: "Väntar · inte nu", "Klart · i dag 08.13", "Obekräftat · 1 av 3"). A to-do with no day and
+   * nothing else to say draws none: the pile it lies in says that it needs the person.
+   */
+  const stateOf = (r: QueueRow) => {
+    const { kind, detail } = r.status;
+    const due = kind === 'needs-you' ? r.facts.due : null;
+    if (due && detail === due.label.toLocaleLowerCase('sv-SE'))
+      return <Badge variant={due.variant} label={due.label} />;
+    return kind === 'needs-you' && !detail ? null : <StatusMark kind={kind} detail={detail} />;
   };
   const columns: TableColumn<QueueRow>[] = [
     {
@@ -510,10 +554,10 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       header: <Text type="eyebrow">Från</Text>,
       width: pixel(150),
       // An item from Clew itself names no system (`fromClewItself`): Clew is not a system the person goes to.
-      renderCell: r =>
-        fromClewItself(r.thread, areasQ.data?.systems) ? null : (
-          <Token size="sm" label={marks.ofThread(r.thread).source} />
-        ),
+      renderCell: r => {
+        const source = sourceOf(r);
+        return source ? <Token size="sm" label={source} /> : null;
+      },
     },
     // Where it stands (board StatusPanel's queue): the state's mark and what it concerns ("Obekräftat · 1 av 3",
     // "Behöver dig · försenad", "Klart · i dag 08.13"), the same word the item's notice says in the pane. Under the tab
@@ -522,8 +566,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     {
       key: 'status',
       header: <Text type="eyebrow">Status</Text>,
-      // On a phone the mark wraps under its dot rather than push the table past the screen (1.4.10).
-      width: pixel(mobile ? 120 : 180),
+      width: pixel(180),
       renderCell: r => (
         <StatusMark
           kind={r.status.kind}
@@ -533,7 +576,8 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       ),
     },
   ];
-  // Beside the pane, or on a phone, the system's column gives way (the template drops its tags while the pane is open).
+  // Beside the pane, or where a row leads to its page, the system's column gives way (the template drops its tags while
+  // the pane is open).
   const shownColumns = single || (itemId && surfaceWidth < 1200) ? columns.filter(c => c.key !== 'source') : columns;
   // The row open in the pane (the template's `aria-current`), with Astryx's row status in the gutter that says it in
   // words; Astryx's Table has no styled state of its own for an open row (D126, Astryx gaps). A press anywhere on a row
@@ -605,7 +649,9 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     );
   /**
    * The pile as the reference draws a list (D130 item 19): one card with its heading inside, the pile's name and how
-   * many it holds, the filters under the heading, and the table inside the card's inset.
+   * many it holds, the filters under the heading, and the table inside the card's inset. On a phone (amended
+   * 2026-11-23) the rows are a list, and the heading is not drawn: the current tab stands directly over the card and
+   * says the same words. It stays for a screen reader, with how many rows the filter left, and names the region.
    */
   const list = (
     <BoardCard
@@ -614,12 +660,15 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       count={rows.length}
       countLabel="ärenden"
       tools={filters}
+      list={mobile}
+      isHeadingHidden={mobile}
       bare={beside}
       pending={loading}
       pendingLabel="Hämtar ärendena …"
     >
       {(sourcesLine && rows.length > 0) || failed || rows.length === 0 ? (
-        <VStack gap={3}>
+        // In a card of rows the words stand on the rows' line, as the filters over them do.
+        <VStack gap={3} paddingInline={mobile ? 3 : 0}>
           {sourcesLine && rows.length > 0 && (
             <Text as="p" role="status">
               {sourcesLine}
@@ -652,16 +701,37 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           )}
         </VStack>
       ) : null}
-      {!failed && rows.length > 0 && (
-        <Table<QueueRow>
-          aria-label={tabTitle[tab]}
-          data={tableRows}
-          columns={shownColumns}
-          idKey="id"
-          {...registerTable}
-          plugins={itemId && !single ? { open: openStatus, rows: rowPlugin } : { rows: rowPlugin }}
-        />
-      )}
+      {!failed &&
+        rows.length > 0 &&
+        (mobile ? (
+          // A phone's queue (D130 item 19, amended 2026-11-23): the app's one link row (`LinkRow`), the title its link
+          // and the row around it that link's target; under the title the system and what the row says, then where it
+          // stands. Neither line is cut: at 320 px they take the lines they need (1.4.10).
+          <List hasDividers aria-label={tabTitle[tab]}>
+            {tableRows.map(r => (
+              <LinkRow
+                key={r.id}
+                id={`work-${r.id}`}
+                itemKey={r.id}
+                href={r.href}
+                title={r.thread.title}
+                titleLines={0}
+                description={aboutLine(r, sourceOf(r))}
+                descriptionLines={0}
+                below={stateOf(r)}
+              />
+            ))}
+          </List>
+        ) : (
+          <Table<QueueRow>
+            aria-label={tabTitle[tab]}
+            data={tableRows}
+            columns={shownColumns}
+            idKey="id"
+            {...registerTable}
+            plugins={itemId && !single ? { open: openStatus, rows: rowPlugin } : { rows: rowPlugin }}
+          />
+        ))}
     </BoardCard>
   );
 

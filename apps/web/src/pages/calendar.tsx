@@ -1005,8 +1005,11 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       {drawn && <PaneFrame shown={drawn} headingRef={paneFocus as Ref<HTMLHeadingElement>} onClose={closePane} />}
     </Drawer>
   );
+
+  // On a phone the steps stand edge to edge: each is its own 44 px target under a finger, and the 12 px their gaps
+  // took is what lets the widest view menu ("Månad") stand beside them at 360 px.
   const steps = (
-    <HStack gap={1} vAlign="center" role="group" aria-label={`Byt ${stepLabel}`}>
+    <HStack gap={mobile ? 0 : 1} vAlign="center" role="group" aria-label={`Byt ${stepLabel}`}>
       <IconButton
         label={view === 'day' ? 'Förra dagen' : view === 'month' ? 'Förra månaden' : 'Förra veckan'}
         icon={<Icon icon="chevronLeft" />}
@@ -1054,33 +1057,41 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     />
   );
   const bookButton = <Button variant="primary" size="sm" label="Ny bokning" onClick={() => startBooking(null)} />;
-  // The one page header (D74): the title first, what can be done at the end of its line; the assistant is asked from the
-  // corner's "Fråga AI" (D138 item 1). A phone has two rows: the title with what can be done, and under it where in time
-  // with how it is shown, 44 px controls under a finger. The controls are Astryx's `sm`, as the toolbar that held them
-  // made them (28 px, under the heading's 32 px line). An entry opened on a phone still has "Fråga assistenten" among
-  // its buttons in the drawer, which has no box of its own.
-  // In the one page frame (D126): the title on the line every page's title stands on, with what can be done at the
-  // line's end; where in time and how it is shown stand on a row of their own under it (D74, amended 2026-11-20).
+  // The one page header (D74), in the one page frame (D126): the title on the line every page's title stands on, with
+  // what can be done at the line's end; the assistant is asked from the frame's "Fråga AI" there (D138). The controls
+  // are Astryx's `sm` (28 px under a mouse, 44 px under a finger).
+  //
+  // A phone (D74, amended 2026-11-23) has the title on a line of its own and the controls as one wrapping row under it,
+  // in the order they are reached: where in time, how it is shown, then what can be done. At 360 px and wider that is
+  // two rows of 44 px controls, the steps with the view menu and Förslag with Ny bokning. None of the page's controls
+  // share the title's line: its length changes as the person steps, and a control that wrapped with it would move the
+  // steps from under the finger that had just pressed one. The frame's "Fråga AI" is its mark alone at the end of that
+  // line, which does not wrap, so it adds no row; an entry opened on a phone still has "Fråga assistenten" among its
+  // buttons in the drawer, which has no box of its own.
   const head = mobile
     ? {
         title: shortTitle,
-        actions: (
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            {proposalsMenu}
-            {bookButton}
-          </HStack>
-        ),
+        actions: null,
         status: undefined,
         meta: (
           <VStack gap={2}>
-            <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+            <HStack vAlign="center" gap={2} wrap="wrap">
               {steps}
-              {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
+              {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the
+                  piles do (D31 §5). The button shows the view alone, which is what lets it stand beside the steps at
+                  360 px; its name still says what it chooses ("Vy: Vecka", Astryx's `label` under `children`). */}
               <DropdownMenu
                 presentation="adaptive"
-                button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }}
+                button={{
+                  label: `Vy: ${viewLabels[view]}`,
+                  children: viewLabels[view],
+                  size: 'sm',
+                  variant: 'secondary',
+                }}
                 items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))}
               />
+              {proposalsMenu}
+              {bookButton}
             </HStack>
             {silentHead}
           </VStack>
@@ -1185,7 +1196,6 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         status={head.status}
         meta={head.meta}
         actions={head.actions}
-        actionsOnLine
         below={head.below}
         bleed={fill}
         label="Kalender"

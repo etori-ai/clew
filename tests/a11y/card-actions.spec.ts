@@ -408,36 +408,29 @@ test.describe('the calendar on a phone', () => {
   }) => {
     await open(page, '/calendar');
     const main = page.getByRole('main');
-    const at = async (name: string | RegExp) => (await main.getByRole('button', { name }).boundingBox())!;
     const title = (await page.getByRole('heading', { level: 1, name: 'Vecka 45' }).boundingBox())!;
-    const door = await at('Fråga AI');
+    const door = (await main.getByRole('button', { name: 'Fråga AI' }).boundingBox())!;
     expect(door.y, 'Fråga AI is on the title’s line').toBeLessThan(title.y + title.height);
     expect(door.y + door.height).toBeGreaterThan(title.y);
     expect(door.x, 'and ends it').toBeGreaterThan(title.x + title.width);
-    const [previous, view, proposals, book] = [
-      await at('Förra veckan'),
-      await at(/^Vy: /),
-      await at(/^Förslag/),
-      await at('Ny bokning'),
+    // D74, amended 2026-11-23: under the title's line the controls are two rows, the steps with the view menu and
+    // Förslag with Ny bokning. `touch.spec.ts` holds the same at a finger's 44 px.
+    const controls = [
+      page.getByRole('group', { name: /^Byt / }),
+      page.getByRole('button', { name: /^Vy: / }),
+      page.getByRole('button', { name: /^Förslag/ }),
+      page.getByRole('button', { name: 'Ny bokning' }),
     ];
-    expect(view.y, 'where in time and how it is shown share a row').toBe(previous.y);
-    expect(book.y, 'what can be done is one row').toBe(proposals.y);
-    const list = (await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox())!;
-    // Every button of the head stands on one of those three lines.
-    const lines = await main.getByRole('button').evaluateAll(
-      (all, top) => [
-        ...new Set(
-          all
-            .map(b => b.getBoundingClientRect())
-            .filter(b => b.height > 0 && b.bottom <= top)
-            .map(b => Math.round(b.top + b.height / 2)),
-        ),
-      ],
-      list.y,
+    for (const control of controls) await expect(control).toBeVisible();
+    const tops = await Promise.all(controls.map(async control => Math.round((await control.boundingBox())!.y)));
+    expect([...new Set(tops)]).toHaveLength(2);
+    expect(Math.min(...tops), 'the controls stand under the title’s line').toBeGreaterThanOrEqual(
+      Math.round(door.y + door.height),
     );
-    expect(lines).toHaveLength(3);
-    // 273 px as drawn: the bar (48), the trail's line, the title's line and two rows of 28 px controls with their gaps.
-    expect(list.y).toBeLessThan(280);
+    // Measured from the shell's bar, whose height is not the calendar's. Under a mouse the two rows are 28 px controls.
+    const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
+    const bar = await page.getByRole('banner').boundingBox();
+    expect(list!.y - (bar!.y + bar!.height)).toBeLessThan(230);
   });
 });
 

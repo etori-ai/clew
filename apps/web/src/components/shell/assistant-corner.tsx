@@ -12,8 +12,9 @@ import {
   type RefObject,
 } from 'react';
 import { useLocation } from 'react-router';
-import { Button, Icon, SparklesIcon } from '@clew/ui';
+import { Button, Icon, SparklesIcon, useMediaQuery } from '@clew/ui';
 import { useConversation } from '../conversation/conversation-context';
+import { mobileQuery } from '../../media';
 
 /** The button's distance from the window's edges. */
 const EDGE = 24;
@@ -103,6 +104,10 @@ const Corner = createContext<CornerChannel>({ claim: () => noop, door: () => noo
  * the person is on, as the rail's "Ny fråga" did (`question`): the conversation's own page opens, with this page as the
  * way back.
  *
+ * On a phone it is the mark alone, a 48 px round target named "Fråga AI": with its label it was 139 px wide over a
+ * 375 px page and lay over a row's "Öppna", a figure's value or a heading wherever the page was scrolled (review
+ * 2026-11-23); the mark covers a third of that, and Hem's own line and every page's "Fråga assistenten" say the words.
+ *
  * The button is Astryx's `Button` raised with `elevation`, as the `ButtonFloating` template raises one. Astryx places
  * nothing in a corner of the window, so the one `style` here does, and with it the rule that keeps the button off the
  * control the keyboard is on (`useYieldToFocus`): the gap is recorded in D130 with this exception.
@@ -128,6 +133,7 @@ function AssistantCorner({
     focusPending.current = false;
     button.current?.focus();
   });
+  const markOnly = useMediaQuery(mobileQuery);
   const icon = <Icon icon={SparklesIcon} color="inherit" />;
   return (
     <div
@@ -147,6 +153,7 @@ function AssistantCorner({
           icon={icon}
           size="lg"
           elevation="med"
+          isIconOnly={markOnly}
           onClick={() => {
             hemLine.current?.scrollIntoView({ block: 'center' });
             hemLine.current?.focus();
@@ -164,6 +171,7 @@ function AssistantCorner({
           icon={icon}
           size="lg"
           elevation="med"
+          isIconOnly={markOnly}
           href="/conversations/new"
           onClick={() => talk.newConversation({ from: pathname + search, stay: true })}
         />

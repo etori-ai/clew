@@ -404,23 +404,24 @@ export function createHeaderBandTheme(branding: Branding): ClewTheme {
     '--color-border-emphasized': on,
     '--focus-outline-color': on,
   };
+  // What opens from a control on the band (the reminders, the person's settings) is the page's surface, not the band's:
+  // an anchored popover with a pointer, a sheet on a touch phone. Astryx draws both inside the theme of their trigger,
+  // so every token the band changes is set back on the surface itself to what the page resolves it to, in both
+  // appearances and whether or not a theme is saved. Its ground, its text, its close button and its focus ring are
+  // then drawn as anywhere else on the page (1.4.3, 2.4.7), and nothing that opens there wraps itself in a theme.
+  const light = resolveThemeTokens(page, { mode: 'light' }) as Record<string, string | undefined>;
+  const dark = resolveThemeTokens(page, { mode: 'dark' }) as Record<string, string | undefined>;
+  const asPage = Object.fromEntries(
+    Object.keys(tokens).flatMap(token => {
+      const [l, d] = [light[token], dark[token]];
+      return l && d ? [[token, l === d ? l : `light-dark(${l}, ${d})`]] : [];
+    }),
+  );
   theme = defineTheme({
     name: `clew-header-band-${colors ? key : 'neutral'}`,
     extends: page,
     tokens,
-    // A sheet that rises from a control on the band (the reminders on a touch phone) is the page's surface, not the
-    // band's: every colour the band changes is set back to the page's on the sheet itself, so its ground, its close
-    // button and what it holds are drawn as anywhere else on the page (1.4.3). A popover keeps its own ground already.
-    components: {
-      'bottom-sheet': {
-        base: Object.fromEntries(
-          Object.keys(tokens).flatMap(token => {
-            const value = (page.tokens as Record<string, string | undefined>)[token];
-            return value ? [[token, value]] : [];
-          }),
-        ),
-      },
-    },
+    components: { popover: { base: asPage }, 'bottom-sheet': { base: asPage } },
   });
   bands.set(key, theme);
   return theme;
@@ -481,3 +482,5 @@ export const resolveClewTokens = (branding: Branding, mode: 'light' | 'dark') =>
  * that a key in `components` became the rule it was written for, not only that the key is in the object.
  */
 export const clewComponentCSS = (branding: Branding) => generateThemeCSS(createClewTheme(branding)).component;
+/** The same for the header's band: what a test reads to see what a popover and a sheet that open from it are given. */
+export const clewBandComponentCSS = (branding: Branding) => generateThemeCSS(createHeaderBandTheme(branding)).component;

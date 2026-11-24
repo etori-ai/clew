@@ -1,5 +1,16 @@
 import type { Locator } from '@playwright/test';
-import { desktop, expect, narrow, open, openNav, pagesNav, personButton, reflowProblems, test } from './support';
+import {
+  desktop,
+  expect,
+  narrow,
+  open,
+  openNav,
+  openSettings,
+  pagesNav,
+  personButton,
+  reflowProblems,
+  test,
+} from './support';
 import { a11yBrandProfile, brandingFixtures, savedBranding } from './branding-fixtures';
 
 const surfaces = [
@@ -137,7 +148,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
     const other = nav.getByRole('link', { name: 'Samtal', exact: true });
     for (const appearance of ['light', 'dark'] as const) {
       if (appearance === 'dark') {
-        await open(page, '/calendar?settings=1');
+        await openSettings(page);
         await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
         await page.keyboard.press('Escape');
       }
@@ -172,7 +183,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
           color: getComputedStyle(element).color,
         }));
     const light = await appearance();
-    await page.goto('/?settings=1');
+    await openSettings(page);
     await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
     const dark = await appearance();
     expect(dark.mode).toBe('dark');
@@ -192,7 +203,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
     await page.reload();
     await expect(profileButton).toBeVisible();
     await expect.poll(async () => (await appearance()).mode).toBe(dark.mode);
-    await page.goto('/calendar?settings=1');
+    await openSettings(page);
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();
     // The default follows the computer, so it has both schemes open; Ljust fixes one, with the same colour.
     expect(light.mode).toBe('light dark');

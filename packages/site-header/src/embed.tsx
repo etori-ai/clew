@@ -268,6 +268,8 @@ function EmbeddedHeader({
       name={settings.userName}
       onSignOut={settings.logoutHref ? () => window.location.assign(settings.logoutHref!) : undefined}
       appearance={chooseMode ? { mode, onChange: chooseMode } : undefined}
+      // A popover cannot hold or return the focus inside a shadow root (`SiteHeaderPerson`): the settings stay a dialog here.
+      surface="dialog"
     />
   ) : settings.loginHref ? (
     <Button label="Logga in" href={settings.loginHref} variant="secondary" size="sm" />

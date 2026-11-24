@@ -104,8 +104,11 @@ test.describe('the three views', () => {
       await expect(heading(page, 2, day)).toBeVisible();
     // No page draws a way to ask of its own (D138 item 1): on a phone the corner's "Fråga AI" is the way.
     await expect(page.getByRole('main').getByRole('button', { name: 'Fråga assistenten' })).toHaveCount(0);
-    // The view switch is an adaptive menu on a phone (D31 §5).
-    await page.getByRole('button', { name: 'Vy: Vecka' }).click();
+    // The view switch is an adaptive menu on a phone (D31 §5). Its button shows the view alone, so that it fits beside
+    // the steps (D74, amended 2026-11-23), and its name holds what it shows (2.5.3).
+    const viewMenu = page.getByRole('button', { name: 'Vy: Vecka' });
+    await expect(viewMenu).toHaveText('Vecka');
+    await viewMenu.click();
     await page.getByRole('menuitem', { name: 'Dag' }).click();
     await expect(heading(page, 2, 'ons 4 nov')).toBeVisible();
     await expect(page.getByText('Morgonmöte ledningsgrupp')).toHaveCount(1);

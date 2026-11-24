@@ -258,11 +258,15 @@ export function SiteHeader({
             label={label}
             heading={heading}
             endContent={
-              <HStack gap={2} vAlign="center">
+              // One row down to 320 px (1.4.10): the host's controls and "Meny" are marks alone, each a 44 px target
+              // on a touch screen, and stand edge to edge, so the name and four of them fit where a labelled "Meny"
+              // and gaps pushed the controls to a second row under 375 px (review 2026-11-23).
+              <HStack gap={0} vAlign="center">
                 {end}
                 <Button
                   label="Meny"
                   icon={<Icon icon="menu" color="inherit" />}
+                  isIconOnly
                   variant="ghost"
                   aria-expanded={isOpen}
                   onClick={() => setIsOpen(true)}

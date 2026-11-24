@@ -10,14 +10,18 @@ import { staleWhy, useSilentSources } from '../shell/silent-sources';
  * around it is Astryx's enlarged target for that link (`ListItem`'s `interactiveRef`), so a press anywhere on the row,
  * on the supporting line, a badge or the empty space beside them, follows the link, and the row's own hover, focus ring,
  * radius and padding are the list's. A work item's row and a news row on Hem are this one row, so they cannot drift.
+ * What says where the thing stands in words (`below`: a badge, a status mark) stands under the supporting line, so the
+ * title keeps the row's whole width on a phone.
  */
 export function LinkRow({
   id,
   itemKey,
   href,
   title,
+  titleLines = 2,
   description,
   descriptionLines = 2,
+  below,
   startContent,
   endContent,
   isSelected = false,
@@ -28,6 +32,11 @@ export function LinkRow({
   itemKey: string;
   href: string;
   title: string;
+  /**
+   * The lines the title may take before it is cut, or 0 for no cut: a queue's row, whose title is all that says what
+   * the work item is, takes the lines it needs at 320 px (WCAG 1.4.10).
+   */
+  titleLines?: number;
   description: ReactNode;
   /**
    * The lines the supporting line may take before it is cut: a summary's two, or 0 for no cut at all (Astryx `Text`:
@@ -35,6 +44,8 @@ export function LinkRow({
    * and what a clamp cuts a keyboard user cannot read on the row (WCAG 1.4.10).
    */
   descriptionLines?: number;
+  /** Under the supporting line: where the thing stands, in words (a badge, a status mark). Never a control. */
+  below?: ReactNode;
   startContent?: ReactNode;
   endContent?: ReactNode;
   /** The chosen row: marked as the current one, on the row and on its link. */
@@ -48,6 +59,11 @@ export function LinkRow({
   align?: 'first-line' | undefined;
 }) {
   const link = useRef<HTMLAnchorElement>(null);
+  const line = (
+    <Text type="supporting" color="secondary" maxLines={descriptionLines}>
+      {description}
+    </Text>
+  );
   return (
     <ListItem
       id={id}
@@ -62,7 +78,7 @@ export function LinkRow({
           href={href}
           color="primary"
           weight="semibold"
-          maxLines={2}
+          maxLines={titleLines}
           isExternalLink={isExternal}
           aria-current={isSelected ? 'true' : undefined}
         >
@@ -70,9 +86,14 @@ export function LinkRow({
         </Link>
       }
       description={
-        <Text type="supporting" color="secondary" maxLines={descriptionLines}>
-          {description}
-        </Text>
+        below ? (
+          <VStack gap={1.5} hAlign="start">
+            {description ? line : null}
+            {below}
+          </VStack>
+        ) : (
+          line
+        )
       }
       {...(endContent ? { endContent } : {})}
     />

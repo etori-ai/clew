@@ -6,6 +6,7 @@ import {
   clewComponentCSS,
   createAskFieldTheme,
   createClewTheme,
+  clewBandComponentCSS,
   createHeaderBandTheme,
   resolveClewTokens,
 } from '../../packages/ui/src/theme';
@@ -161,6 +162,34 @@ describe('the appearance the browser draws (D98)', () => {
     expect(plain['--color-background-surface']).not.toBe('#5b1f78');
     expect(plain['--color-text-primary']).toBe('#ffffff');
     expect(createHeaderBandTheme(custom)).toBe(createHeaderBandTheme({ ...custom, revision: 4 }));
+  });
+
+  test('what opens from the band is drawn as the page: a popover and a sheet take back every token the band changes, with or without a saved theme (D39)', () => {
+    // The tokens `createHeaderBandTheme` changes for the band's ground and its text.
+    const changed = [
+      '--color-background-surface',
+      '--color-text-primary',
+      '--color-text-secondary',
+      '--color-icon-primary',
+      '--color-accent',
+      '--color-on-accent',
+      '--color-border',
+      '--focus-outline-color',
+    ];
+    for (const branding of [custom, NEUTRAL_BRANDING]) {
+      const css = clewBandComponentCSS(branding);
+      const [light, dark] = [resolveClewTokens(branding, 'light'), resolveClewTokens(branding, 'dark')];
+      for (const surface of ['popover', 'bottom-sheet']) {
+        const rule = css.match(new RegExp(`\\.astryx-${surface} \\{([^}]*)\\}`))?.[1] ?? '';
+        for (const token of changed) {
+          const [l, d] = [light[token]!, dark[token]!];
+          expect(rule).toContain(`${token}: ${l === d ? l : `light-dark(${l}, ${d})`};`);
+        }
+      }
+    }
+    // The focus ring among them: with no theme saved the page sets no ring of its own, so the band's white ring stood
+    // on the surface's white ground and was not seen (2.4.7).
+    expect(clewBandComponentCSS(NEUTRAL_BRANDING)).toContain('--focus-outline-color: light-dark(#1b1b1b, #f1f1f1);');
   });
 
   test("a theme's inverted background is the band's ground, with the white or black text that reads on it (D130)", () => {

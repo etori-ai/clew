@@ -18,7 +18,9 @@ function Arrived({ children }: { children: ReactNode }) {
  * holds after it ("Behöver dig · 7") and the way to all of them at the end of that line, and its content under them.
  * A region named by its heading. `list` is for content that is rows with their own inset (an Astryx `List`), so a row's
  * words stand on the heading's line; `flush` for a table, which reaches the card's edges, and `tools` for a register's
- * search under the heading. While its first answer is on its way the card keeps its shape with placeholder
+ * search under the heading. Where the page already names the card in view, directly over it (the current tab of a
+ * phone's strip), `isHeadingHidden` keeps the heading and the count for a screen reader and for the region's name and
+ * draws neither. While its first answer is on its way the card keeps its shape with placeholder
  * lines (`pending`, D36), and the answer then takes their place with Astryx's entry motion; what is in the card from
  * the first paint does not animate, and reduced motion shows it at once.
  */
@@ -32,6 +34,7 @@ export function BoardCard({
   flush = false,
   tools,
   level = 2,
+  isHeadingHidden = false,
   bare = false,
   pending = false,
   pendingLabel = 'Hämtar …',
@@ -54,6 +57,11 @@ export function BoardCard({
   /** The heading's level: 2 on a board, or what the page's outline asks for. */
   level?: 2 | 3;
   /**
+   * The heading and the count are not drawn, since what stands directly over the card already says them in view; they
+   * stay in the accessibility tree, where the region is named by them. An `action` is then not drawn either.
+   */
+  isHeadingHidden?: boolean;
+  /**
    * No card of its own and no inset: the block stands in a frame that already is a card and insets it (a list beside
    * its reading pane).
    */
@@ -65,36 +73,49 @@ export function BoardCard({
   // Whether the card has waited for its content: only then does the content arrive.
   const waited = useRef(pending);
   if (pending) waited.current = true;
+  const heading = (
+    <HStack gap={2} vAlign="center">
+      <Heading id={id} tabIndex={-1} level={level}>
+        {title}
+      </Heading>
+      {count !== undefined && count > 0 && (
+        <Text type="supporting" weight="bold" color="secondary">
+          {`· ${count}`}
+          {countLabel ? <VisuallyHidden>{` ${countLabel}`}</VisuallyHidden> : null}
+        </Text>
+      )}
+    </HStack>
+  );
+  // With no heading drawn, what comes first in a card of its own takes the heading's distance to the card's top.
+  const top = isHeadingHidden && !bare;
   const block = (
     <VStack as="section" aria-labelledby={id} aria-busy={pending} height="100%">
-      <HStack
-        justify="between"
-        vAlign="center"
-        gap={3}
-        wrap="wrap"
-        paddingInline={bare ? 0 : 6}
-        paddingBlockStart={bare ? 0 : 5}
-        paddingBlockEnd={list ? 2 : 4}
-      >
-        <HStack gap={2} vAlign="center">
-          <Heading id={id} tabIndex={-1} level={level}>
-            {title}
-          </Heading>
-          {count !== undefined && count > 0 && (
-            <Text type="supporting" weight="bold" color="secondary">
-              {`· ${count}`}
-              {countLabel ? <VisuallyHidden>{` ${countLabel}`}</VisuallyHidden> : null}
-            </Text>
-          )}
+      {isHeadingHidden ? (
+        <VisuallyHidden as="div">{heading}</VisuallyHidden>
+      ) : (
+        <HStack
+          justify="between"
+          vAlign="center"
+          gap={3}
+          wrap="wrap"
+          paddingInline={bare ? 0 : 6}
+          paddingBlockStart={bare ? 0 : 5}
+          paddingBlockEnd={list ? 2 : 4}
+        >
+          {heading}
+          {action}
         </HStack>
-        {action}
-      </HStack>
+      )}
       {tools ? (
-        <VStack paddingInline={bare ? 0 : 6} paddingBlockEnd={4}>
+        <VStack paddingInline={bare ? 0 : 6} paddingBlockStart={top ? 5 : 0} paddingBlockEnd={4}>
           {tools}
         </VStack>
       ) : null}
-      <VStack paddingInline={flush || bare ? 0 : list ? 3 : 6} paddingBlockEnd={flush || bare ? 0 : list ? 3 : 6}>
+      <VStack
+        paddingInline={flush || bare ? 0 : list ? 3 : 6}
+        paddingBlockStart={top && !tools && !flush ? (list ? 3 : 6) : 0}
+        paddingBlockEnd={flush || bare ? 0 : list ? 3 : 6}
+      >
         {pending ? (
           <VStack gap={3} paddingInline={list ? 3 : 0} paddingBlock={2}>
             <VisuallyHidden role="status">{pendingLabel}</VisuallyHidden>

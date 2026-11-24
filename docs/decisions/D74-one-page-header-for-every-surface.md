@@ -2,7 +2,8 @@
 
 **Status:** accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages, then Hem and a
 conversation the same day); item 5's calendar amended 2026-11-20 by Oliver Borgström (the steps and the view switch
-are a row of their own under the title, see the amendment) · **Date:** 2026-11-07 · **Area:** ui
+are a row of their own under the title, see the amendment) and on 2026-11-23 (on a phone the title has a line of its
+own and the controls are two rows under it, see the amendment) · **Date:** 2026-11-07 · **Area:** ui
 
 **Decision.** Every surface in the shell opens with the same header, drawn by one composition,
 `PageHeader` in `apps/web/src/components/page-header.tsx`. The product owner asked for it on 2026-11-07 ("All views
@@ -132,3 +133,73 @@ and the view menu as its second line.
 
 Built in `apps/web/src/pages/calendar.tsx`. `tests/a11y/calendar.spec.ts` checks that the steps stand still while the
 title changes, and scrolls the month's day into view before clicking it, since the grid now starts one row lower.
+
+## Amendment, 2026-11-23: a phone's head is the title and two rows of controls
+
+Found by the review of the phone view on 2026-11-23: `tests/a11y/touch.spec.ts` ("the calendar's head stays two rows at
+that size") was red, with 309 px between the shell's bar and the week where it allowed 140.
+
+**What had happened.** Item 5 gave a phone the title with Förslag and Ny bokning on one line and the steps with the view
+menu on the next, and the spec's measure (137 px, written 2026-11-10) was that head in the 12 px gutter of the time.
+`PageFrame` has since given a phone's page a 24 px inset (D126, 2026-11-14) and a trail above its title (D130,
+2026-11-19): with the title those are 144 px before any control, so the measure could not hold, and the suite does not
+run by itself (D59), so nothing said so. The amendment of 2026-11-20 did not change the phone's head (read from its
+diff, not run again). In the frame's column neither of the two lines fits either. Under a finger at 375 px the column is
+327 px: the steps (206 px) with "Vy: Vecka" (122) need 336, and "Vecka 45" (104) with Förslag and Ny bokning (233) needs
+353. So the steps, the view menu and the two buttons each took a row under the title, three rows of controls in a head
+that does not scroll: 345 px of a 375 × 812 window (42 %) and 361 px of 320 × 640 (56 %).
+
+**Decision.** On a phone the title has a line of its own, and the controls are one wrapping row under it in the order
+they are reached: the steps with I dag and the date picker, the view menu, Förslag where proposals wait, and Ny bokning.
+From 360 px that is two rows of 44 px controls in every view, the steps with the view menu and Förslag with Ny bokning:
+249 px from the shell's bar to the week at 375 and at 360 px (it was 309), and the head ends 285 px down a 375 × 812
+window (35 %).
+
+1. **Nothing shares the title's line.** The reason is the one of 2026-11-20. A phone's title is "Vecka 45", "Måndag 4
+   maj", "Onsdag 4 november" or "November 2026", and a control at the end of its line wraps under it when the title
+   grows: Ny bokning fits beside "Vecka 45" (104 px) and "Måndag 4 maj" (164) and not beside "Onsdag 4 november" (236).
+   The steps would then move down a row as the person steps from a short date to a long one, and Ny bokning would stand
+   where "Nästa dag" had just been pressed.
+2. **The view menu's button shows the view alone**: "Vecka", "Dag" or "Månad" with the menu's chevron, 27 px narrower
+   than "Vy: Vecka". Its accessible name is still "Vy: Vecka" (Astryx's `Button` takes the name as `label` and the
+   visible text as `children`), so the name holds what is shown (2.5.3) and says what the button chooses.
+3. **The steps stand edge to edge on a phone** (`gap={0}`; 4 px apart on a desktop as before). Each is a 44 px target
+   of its own under a finger, and the 12 px is what lets "Månad", the widest view, stand beside them at 360 px (302 px
+   of the column's 312).
+4. **One wrapping row, not two fixed ones**, so the controls take the rows the width gives them: one row from about
+   600 px, two from 360 px, and at 320 px two rows where no proposal waits (the steps, then the view menu with Ny
+   bokning).
+5. **The order a keyboard or a screen reader meets them in is unchanged**: the steps, the date picker, the view menu,
+   Förslag, Ny bokning. It is now also the order they are drawn in.
+
+**Limits.** At 320 px with proposals waiting, the week and the month take three rows (the steps; the view menu with
+Förslag; Ny bokning): 277 px from the bar to the week, 8 px less than before, and the head still ends 353 px down a
+320 × 640 window. The column is 288 px there and the steps are 194, which leaves room for no labelled button beside
+them, and the view menu, Förslag and Ny bokning are 341 px with their gaps. With the text spacing of 1.4.12 the controls
+wrap to a third row at 360 px too. Nothing scrolls sideways and no label is cut at any of these widths.
+
+**Astryx.** `bunx astryx docs layout`, `component HStack`, `StackItem`, `DropdownMenu` and `Button` were read against
+`@astryxdesign/core` 0.7.16. The row is an `HStack` with `wrap="wrap"`; a `StackItem size="fill"` grows and keeps its
+content's width as its basis, which is why a control on the title's line wraps rather than the title. Nothing custom,
+no CSS and no inline style. `PageFrame`'s `actionsOnLine` is removed: the calendar was its only caller, and a phone's
+calendar no longer passes actions.
+
+**Weighed and left.**
+
+- **Ny bokning or the view menu as an icon alone.** It would give two rows at 320 px with proposals too, but takes the
+  word from a control on the screen where there is least else to explain it.
+- **A shorter title on a phone** ("Ons 4 nov"), so that Ny bokning could share its line. It abbreviates the page's one
+  heading, for the eye and for a screen reader alike, to make room for one button.
+- **The date picker at the end of the title's line.** It would give two rows at 320 px with proposals waiting too (the
+  two arrows and I dag with the view menu are 258 px), but the title's line grows from 32 to 44 px at every width, the
+  picker leaves the group of steps it belongs to and is reached before them, and beside the longest day titles ("Onsdag
+  30 september", 260 px) it does not fit a 320 px screen either.
+
+**The wide layout is unchanged**: the title's line with Fråga om veckan, Förslag and Ny bokning, and the steps with the
+view switch and the week's dates on the row under it.
+
+**Tests.** `tests/a11y/touch.spec.ts`: the case opens the week, the day and the month at 375 and at 360 px under a
+finger and checks that the steps, the view menu, Förslag and Ny bokning stand on two rows and that the week starts less
+than 260 px under the shell's bar (249 measured; a third row makes it 301). `tests/a11y/calendar.spec.ts`: the phone's
+view menu shows "Vecka" and is named "Vy: Vecka". Built in `apps/web/src/pages/calendar.tsx` and
+`apps/web/src/components/shell/page-frame.tsx`. No screen-reader pass was made.

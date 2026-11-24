@@ -102,38 +102,14 @@ for (const state of ['queued', 'blocked'] as const)
     api.threads = [card];
     await page.setViewportSize(narrow);
     await open(page, '/todo');
-    // Att göra draws rows (D112): the row says the state, words on the line for a reminder that waits and, for one
-    // that was stopped, what the state concerns beside its dot, and never that it will remind. Under Behöver dig the
-    // tab says the state's word, so the row draws only "påminnelsen stoppad" and the dot's name says the whole mark
-    // (D126 item 13, D130).
+    // Att göra draws rows, on a phone a list of them (D130 item 19, amended 2026-11-23): the row says the state, words
+    // on the line for a reminder that waits and the vocabulary's mark with what it concerns for one that was stopped
+    // (D126 item 13), and never that it will remind.
     const row = page.getByRole('main').locator('#work-ledighet');
     if (state === 'queued') await expect(row).toContainText('påminnelsen väntar på schemaläggning');
-    else {
-      await expect(row.getByText('påminnelsen stoppad', { exact: true })).toBeVisible();
-      await expect(row.getByRole('img')).toHaveAccessibleName('Behöver dig, påminnelsen stoppad');
-    }
-    // The line is not clamped: at this width it takes the lines it needs, and all of it is drawn. A queued reminder
-    // is on the row's line, which `workRowLines` finds by its separator; a stopped one stands beside the dot and the
-    // line has no separator, so there every box in the row is looked at: none that clamps or clips holds more than it
-    // draws (a box of a pixel is a name for assistive technology, not drawn text).
-    if (state === 'queued') expect(await workRowLines(row)).toMatchObject([{ cut: false }]);
-    else
-      expect(
-        await row.evaluate(r =>
-          [...r.querySelectorAll<HTMLElement>('*')]
-            .filter(el => {
-              const s = getComputedStyle(el);
-              const clips = s.webkitLineClamp !== 'none' || s.overflowX !== 'visible' || s.overflowY !== 'visible';
-              return (
-                clips &&
-                el.clientWidth > 1 &&
-                el.clientHeight > 1 &&
-                (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1)
-              );
-            })
-            .map(el => el.textContent),
-        ),
-      ).toEqual([]);
+    else await expect(row).toContainText('Behöver dig\u00a0· påminnelsen stoppad');
+    // The line is not clamped: at this width it takes the lines it needs, and all of it is drawn.
+    expect(await workRowLines(row)).toMatchObject([{ cut: false }]);
     await expect(row).not.toContainText('påminner dig');
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page)).toEqual([]);
