@@ -151,7 +151,9 @@ A content system (an intranet on Sitevision, SharePoint or WordPress) can also g
 
 Answer every route at the address the administrator registers. Clew follows no redirect: a 3xx is your service failing, so a request never carries the transport key or the person's token to another host. Clew reads at most 500 kB of a manifest and 4 MiB of any other JSON answer, and a larger one is your service failing too. A manifest declares at most 200 capabilities.
 
-Use the complete [verifier](../../connectors/phonebook/verification.mjs) and [authorization guide](authorization.md), including key rotation and source authentication. A curl request with only a body actor and transport secret must fail: the secret cannot sign a person. Use the signed fixture harness or a registered Clew test instance for authenticated calls.
+Use the complete [verifier](../../connectors/phonebook/verification.mjs) and [authorization guide](authorization.md), including key rotation and source authentication. Hand it every request (`verify(token, key, request)`): it binds the assertion to that request's route, body and operation id, verifies nothing without it, and takes each assertion once. A curl request with only a body actor and transport secret must fail: the secret cannot sign a person. Use the signed fixture harness or a registered Clew test instance for authenticated calls.
+
+The verifier remembers the assertions it has taken in its own process. A connector run as several replicas, or restarted, takes a captured copy once more in each process within the assertion's two minutes: a deduplicated write still runs once, but a write whose `execution` is `manual` would run again. A connector with manual writes runs as a single process, or shares the record of taken `jti`s between its processes in storage that outlives a restart ([authorization](authorization.md)).
 
 ## 5. Adapt the example to your system
 
@@ -163,7 +165,7 @@ If you copied phonebook, make these changes together:
 | `connector.mjs` | Rename matching dispatch keys, remove unused handlers and map each read to your source adapter. The verifier takes its audience from `manifest.id`. |
 | `directory.mjs` | Replace the assumed API, response mapping and access rules with your source's documented behavior. |
 | `http.mjs` | Keep it as it is: the listener reads a request within a size limit and answers whatever it holds, so nothing sent to the port, before Clew's signature is checked, can end the process. Change only the name in its log line. |
-| `server.mjs` | Configure the chosen adapter, trusted `CLEW_URL`, transport key and source credentials. |
+| `server.mjs` | Configure the chosen adapter, trusted `CLEW_URL`, transport key and source credentials, and refuse to start on a setting that is missing or wrong, naming the variable. A connector for a real system never serves made-up data unless it is told to: the adapter variable has no default, so without it the connector does not start, and `fixture` beside the real system's address or credential is refused. It does not start without a `CLEW_URL` its keys can be fetched from either (`keysAddress` in the verifier). |
 | Tests/deployment | Update names, id mappings, recorded source responses, image and configuration documentation. |
 
 The full directory walkthrough explains [the source adapter and view declarations](example-custom-directory.md). Merely renaming fields is not enough: the fixture permits organization-wide lookup, while a real source may require actor-aware search **and** individual-record fetches.

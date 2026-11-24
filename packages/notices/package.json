@@ -1,0 +1,11 @@
+{
+  "name": "@clew/notices",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./viewer": "./src/viewer.ts"
+  }
+}

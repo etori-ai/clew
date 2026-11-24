@@ -1313,6 +1313,7 @@ describe('a remote connector is told the relation, bound to the request', () => 
     expect(call!.input).toEqual({ keys: ['anna', 'hillevi', 'olle'] });
     expect(call!.about).toEqual({ entity: 'person', relations: { anna: 'managed', hillevi: 'self', olle: 'managed' } });
     expect(call!.claims.capability).toBe('remote.person');
+    expect(call!.claims.path).toBe('/clew/capabilities/remote.person');
     expect(call!.claims.body).toBe(
       createHash('sha256')
         .update(await w.requests[0]!.clone().text())

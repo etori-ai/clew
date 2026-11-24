@@ -108,8 +108,8 @@ it came by, and carries in its body, which the assertion is bound to, how the ca
 - **Fail-closed:** a key with no vouched relation, a missing `about` (anything sending keys past Clew), an `about` for another entity and a relation other than `self` or `managed` are no row (`moodle.person`,
   `moodle.holdings`) or not found (`moodle.courses`, `moodle.course`), the same answer as for a person Moodle does not
   know, and nothing is looked up for them. The verifier, handed the request, refuses an assertion that was not issued
-  for exactly this body and this capability, so an `about` cannot be added or changed, and refuses one without Clew's
-  `body` claim.
+  for exactly this route, this body and this capability, so an `about` cannot be added or changed, and refuses one
+  without Clew's `path` or `body` claim.
 - **What stays the connector's, because it is about Moodle and not about the organisation:** exactly one account must
   match a key; under `self` the account found must be the signed caller's own; and `moodle.course` answers not found for
   a course the person is not enrolled in, one that does not exist, and one the list would not show (enrolled, never
@@ -118,8 +118,8 @@ it came by, and carries in its body, which the assertion is bound to, how the ca
 - **`moodle.holdings` answers the installation, and nobody else** (D119). It is declared under `installation`, not
   among the capabilities, so Clew's registry offers it to no person: a person, an administrator included, who names it
   on any path is refused as for a name nobody declared. Clew posts it to `/clew/installation/moodle.holdings` with the
-  installation's own assertion (no `actor`, subject `clew:installation`, `caller: "installation"`), bound to the body
-  and the name; the connector verifies it with `verify.installation` and answers any other assertion there, a person's
+  installation's own assertion (no `actor`, subject `clew:installation`, `caller: "installation"`), bound to the route,
+  the body and the name; the connector verifies it with `verify.installation` and answers any other assertion there, a person's
   however valid, with 401. The installation's assertion is in turn refused on a person's route.
 
 ### Known limits
