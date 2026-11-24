@@ -356,6 +356,7 @@ export function useCardAction({
 }: Pick<ActionProps, 'thread'> & Partial<Omit<ActionProps, 'thread'>>) {
   const { run, apply, busy: running, error } = useThreadAction({ onChange });
   const decision = useDecisionSend({ onChange });
+  const toast = useToast();
   const client = useQueryClient();
   const busy = running || decision.busy;
   // The person's own action is on its way (D64): the card keeps the look it had, with the pressed button loading, and the
@@ -440,9 +441,16 @@ export function useCardAction({
       const refreshed = await client.query({ ...threadQuery(shown.id), staleTime: 0 }).catch(() => null);
       if (refreshed) {
         const currentAction = refreshed.actions.find(a => a.id === action.id);
+        const reselect =
+          action.usesItems &&
+          refs?.some(ref => !refreshed.items.some(item => item.ref === ref && (item.selectable || item.selected)));
+        if (reselect) {
+          apply(refreshed);
+          toast({ body: 'Raderna har ändrats. Granska urvalet och välj åtgärden igen.' });
+        }
         setDialog(d => {
           if (d !== dialog) return d;
-          return currentAction && refreshed.state === 'open'
+          return currentAction && refreshed.state === 'open' && !reselect
             ? { ...d, action: currentAction, shown: refreshed }
             : { ...d, open: false };
         });

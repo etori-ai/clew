@@ -396,6 +396,25 @@ test.describe('the action dialog on a work item', () => {
     });
   }
 
+  test('a refused selection returns to the card before the remaining rows can be confirmed', async ({ page, api }) => {
+    const card = api.threads.find(t => t.id === 'ledighet')!;
+    card.items = ['first', 'second'].map(ref => ({ ref, label: ref, selectable: true, selected: true }));
+    card.actions = card.actions.map(a => (a.id === 'decide' ? { ...a, usesItems: true } : a));
+    const sent = sentTo(page, card.id);
+    await open(page, '/todo?item=ledighet');
+    await pane(page).getByRole('button', { name: 'Godkänn 2 valda' }).click();
+    const dialog = dialogOf(page, 'Godkänn');
+    await expect(dialog).toBeVisible();
+    card.items = card.items.slice(0, 1);
+    card.updatedAt = new Date(Date.parse(card.updatedAt) + 60_000).toISOString();
+    await dialog.getByRole('button', { name: 'Godkänn', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(sent.map(b => b.refs)).toEqual([['first', 'second']]);
+    await pane(page).getByRole('button', { name: 'Godkänn 1 valda' }).click();
+    await dialog.getByRole('button', { name: 'Godkänn', exact: true }).click();
+    await expect.poll(() => sent.map(b => b.refs)).toEqual([['first', 'second'], ['first']]);
+  });
+
   test('Godkänn without a comment: the button, then Godkänn in the dialog', async ({ page, api: _ }) => {
     const sent = sentTo(page, 'ledighet');
     await open(page, '/todo?item=ledighet');
