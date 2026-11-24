@@ -32,6 +32,7 @@ import { assistantQuery, threadQuery, verbsQuery } from '../../queries';
 import { keys } from '../../query-keys';
 import { useThreadAction } from '../../mutations';
 import { panelSearch } from '../../panel-address';
+import { ASSISTANT_PARAM } from '../../conversation-about';
 import { applyThread } from '../../thread-cache';
 
 /** A chip as the page hands it to the composer (D12): the object's ref, kind and label, plus its card when it has one. */
@@ -112,6 +113,11 @@ export interface ConversationState {
   done: { text: string; undo?: () => Promise<void> } | null;
   busy: boolean;
   error: string | null;
+  /**
+   * Why the box does not send now, or null when it does: the panel's question is starting this conversation (WD-L5),
+   * and a question from the box before it has an id would start a second one. The box keeps what is typed.
+   */
+  waiting: string | null;
   /**
    * The conversation takes the column: on its own page (`/conversations/<id>`, and `/conversations/new` before anything
    * is asked, D126 rule 5), or on Hem from the moment a question is sent there.
@@ -201,6 +207,7 @@ export const ConversationContext = createContext<ConversationState>({
   done: null,
   busy: false,
   error: null,
+  waiting: null,
   open: false,
   value: '',
   verbs: [],
@@ -263,7 +270,8 @@ interface Question {
   chips: Chip[];
   /** The one of the chips that stands open beside the transcript. */
   beside?: string;
-  current: Conversation | null;
+  /** The conversation it continues, by its id; null starts a new one. */
+  current: string | null;
   from?: AskFrom;
 }
 /** One question on its way: what was typed, what goes with it, the conversation it continues, and what the host hears. */
@@ -273,8 +281,11 @@ interface Send {
   chips: Chip[];
   /** The one of the chips that stands open beside the transcript; never with a question to another system's assistant. */
   beside?: string | undefined;
-  /** The conversation the question continues; null starts a new one. */
-  current: Conversation | null;
+  /**
+   * The conversation the question continues, by its id; null starts a new one. The id, not what is drawn of it: a
+   * conversation opened from its address is the one asked in from the moment it is asked for, read or not (WD-L6).
+   */
+  current: string | null;
   /** The assistant of another system the question goes to; absent, Clew's own answers. */
   handed?: Handed | undefined;
   /** The person said yes to Clew's suggestion of that assistant. */
@@ -318,16 +329,38 @@ interface Turns {
 
 /** A question's key (WD-L3): the server writes it on the question, so the same question sent again is not asked twice. */
 const turnKey = () => crypto.randomUUID();
-/** A question that did not come back, kept with its key while the same words are sent again from the same place. */
-interface Unanswered {
+/** A question as its key is held to: its words, where it was asked, whom it was to and what went with it. */
+interface Asked {
   text: string;
   /** The conversation it was asked in; null for one that would have started a conversation. */
   at: string | null;
+  /** Another system's assistant it went to, by its id ("Till:", the panel); null for Clew's own. */
+  to: string | null;
+  /** The refs of what went with it, in one order. */
+  chips: string;
+}
+const askedOf = (text: string, at: string | null, to: string | null, chips: readonly { ref: string }[]): Asked => ({
+  text,
+  at,
+  to,
+  chips: chips
+    .map(c => c.ref)
+    .sort()
+    .join('\n'),
+});
+/** A question that did not come back, kept with its key while the same question is sent again from the same place. */
+interface Unanswered extends Asked {
   turn: string;
 }
-/** The key for a question: the kept one when the same words go again from the same place, else a new one. */
-const keyFor = (kept: Unanswered | null, text: string, at: string | null) =>
-  kept && kept.text === text && kept.at === at ? kept.turn : turnKey();
+/**
+ * The key for a question: the kept one when the same words go again from the same place to the same recipient with the
+ * same things attached, else a new one. A changed question is another question: the server refuses a key that comes
+ * back with anything else, and never answers one question with another's turn.
+ */
+const keyFor = (kept: Unanswered | null, now: Asked) =>
+  kept && kept.text === now.text && kept.at === now.at && kept.to === now.to && kept.chips === now.chips
+    ? kept.turn
+    : turnKey();
 /** What the server wrote under a question's key, or null when it wrote nothing or could not be asked. */
 const writtenUnder = (turn: string) =>
   api.writtenTurn(turn).then(
@@ -406,8 +439,9 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
         setOpenId(null);
         setLatest(null);
       }
-      const at = current?.id ?? null;
-      const turn = keyFor(unanswered.current, text, at);
+      const at = current;
+      const question = askedOf(text, at, handed?.id ?? null, chips);
+      const turn = keyFor(unanswered.current, question);
       unanswered.current = null;
       const controller = new AbortController();
       inflight.current = controller;
@@ -461,7 +495,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
                 chips,
                 turn,
                 ...(beside && !handed ? { beside } : {}),
-                ...(current ? { conversationId: current.id } : {}),
+                ...(current ? { conversationId: current } : {}),
                 ...(handed ? { assistant: handed.id } : {}),
                 ...(handed && suggested ? { suggested: true as const } : {}),
                 ...(own ? { own: true as const } : {}),
@@ -512,7 +546,7 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
             }
             setPending(null);
             if (left()) return;
-            unanswered.current = { text, at, turn };
+            unanswered.current = { ...question, turn };
             setValue(v => v || raw);
             if (!stopped) setError(errorMessage(e, 'Frågan kunde inte ställas.'));
             else announce('Frågan avbröts. Den ligger kvar i rutan.');
@@ -609,6 +643,9 @@ function useTurns(onThreadChange: (thread: Thread) => void): Turns {
 
 /** The address of a conversation not asked yet: "Fråga assistenten" lands here with the thing beside it (D126 rule 5). */
 const NEW = '/conversations/new';
+/** Why the box waits while the panel's question starts the conversation (WD-L5). */
+const WAIT_FOR_ASIDE =
+  'Frågan i sidofältet startar samtalet. Skicka din fråga när den har fått svar, så hamnar båda i samma samtal.';
 /**
  * The conversation (D31, D50, D126): one state for the box and the transcript, held above the pages so a question asked
  * on Hem is the same conversation when the transcript takes the column. The transcript is on the page at `/` once a
@@ -791,23 +828,29 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     [navigate, abortTurn, stopAside, setOpenId, setLatest, setDone, setError, setValue, input],
   );
   const client = useQueryClient();
-  // The conversation asked for last: one that is read after a later one was asked for is not drawn under its address.
+  // The conversation asked for last: one that is read after a later one was asked for is not drawn under its address,
+  // and its failure is not said there.
   const opening = useRef<string | null>(null);
+  /**
+   * A conversation asked for by its address is the one on the page at once (WD-L6): nothing is drawn of it until its
+   * thread is read (its shape meanwhile), and a question written while it is read continues it, never the one before.
+   */
   const openConversation = useCallback(
     async (threadId: string) => {
       abortTurn('leave');
       stopAside('leave');
       opening.current = threadId;
+      setOpenId(threadId);
+      setLatest(null);
+      setDone(null);
+      setError(null);
+      setShown(true);
       try {
         await client.query(threadQuery(threadId));
         if (opening.current !== threadId) return;
-        setOpenId(threadId);
-        setLatest(null);
-        setDone(null);
-        setShown(true);
         input.current?.focus();
       } catch (e) {
-        setError(errorMessage(e, 'Samtalet kunde inte öppnas.'));
+        if (opening.current === threadId) setError(errorMessage(e, 'Samtalet kunde inte öppnas.'));
       }
     },
     [client, abortTurn, stopAside, setOpenId, setLatest, setDone, setError, input],
@@ -837,6 +880,13 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       setShown(false);
     }
   }, [here, abortTurn, stopAside]);
+  // The panel stands only beside a conversation's transcript, named by the address (`?assistant=`). Whatever takes it
+  // away (Back to Hem, another page, its ✕ or Esc, another conversation) lets its question go (WD-L5): an answer is
+  // never written where no panel shows it.
+  const asideShown = onRoute && new URLSearchParams(location.search).has(ASSISTANT_PARAM);
+  useEffect(() => {
+    if (!asideShown) stopAside('leave');
+  }, [asideShown, stopAside]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // ⌘K is "Nytt samtal" from anywhere (the canvas's H3 item 1): in a conversation it starts a new one, elsewhere it takes the focus to the box.
@@ -861,12 +911,18 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 
   // The question Clew's assistant suggested another system's assistant for, kept so the person's answer sends it again.
   const offered = useRef<{ question: Question; assistant: HandoverAssistant; held?: 'person' | 'card' } | null>(null);
+  // The panel's question is on its way and the conversation it starts has no id yet (WD-L5): a question from the box now
+  // would start a second conversation, so the box waits for it and says why.
+  const waiting = !!aside && !aside.held && !openId ? WAIT_FOR_ASIDE : null;
+  const waitingRef = useRef<string | null>(null);
+  waitingRef.current = waiting;
   /** One question on its way to whoever answers it: Clew, or another system's assistant with nothing attached. */
   const dispatch = useCallback(
     async (
       question: Question,
       how: { to?: Handed | null; suggested?: boolean; own?: boolean; confirmed?: boolean },
     ) => {
+      if (waitingRef.current) return;
       const { raw, text, chips: used, current, from } = question;
       offered.current = null;
       await send({
@@ -921,8 +977,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         ).values(),
       ];
       // A question asked where no transcript is on the page starts a conversation of its own (D50): the box on the
-      // landing is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is.
-      const current = openRef.current ? conversation : null;
+      // landing is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is,
+      // read or still being read (WD-L6).
+      const current = openRef.current ? openId : null;
       const beside = about?.find(c => c.beside)?.ref;
       await dispatch(
         {
@@ -936,7 +993,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         {},
       );
     },
-    [chips, conversation, dispatch],
+    [chips, openId, dispatch],
   );
   const acceptOffer = useCallback(() => {
     const o = offered.current;
@@ -969,9 +1026,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     async (assistant: Handed, raw: string, confirmed?: boolean): Promise<boolean> => {
       const text = raw.replace(/\s+/g, ' ').trim();
       if (!text || asideBusy.current || busy) return false;
-      const current = openRef.current ? conversation : null;
-      const at = current?.id ?? null;
-      const turn = keyFor(asideUnanswered.current, text, at);
+      const at = openRef.current ? openId : null;
+      const question = askedOf(text, at, assistant.id, []);
+      const turn = keyFor(asideUnanswered.current, question);
       asideUnanswered.current = null;
       const controller = new AbortController();
       asideFlight.current = controller;
@@ -985,10 +1042,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         await applyThread(client, response.thread);
         setAside(null);
         if (left()) return;
-        if (!at && openNow.current === null && window.location.pathname === NEW) {
+        const started = !at && openNow.current === null && window.location.pathname === NEW;
+        if (started) {
           setOpenId(response.thread.id);
           onConversation(response.conversationId);
         }
+        // Said only while its conversation is the one on the page: one that lands while another is open, or none, is
+        // in its conversation for when the person goes back to it, and is not spoken of here.
+        if (!started && openNow.current !== response.thread.id) return;
         const answer = response.thread.messages.at(-1)?.meta?.handover;
         announce(
           answer?.failed
@@ -1001,7 +1062,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           {
             text,
             turn,
-            ...(current ? { conversationId: current.id } : {}),
+            ...(at ? { conversationId: at } : {}),
             assistant: assistant.id,
             side: true as const,
             ...(confirmed ? { confirmed: true as const } : {}),
@@ -1029,7 +1090,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         }
         setAside(null);
         if (left()) return false;
-        asideUnanswered.current = { text, at, turn };
+        asideUnanswered.current = { ...question, turn };
         if (stopped) announce('Frågan avbröts. Den ligger kvar i rutan.');
         else setAsideError(errorMessage(e, 'Frågan kunde inte ställas.'));
         return false;
@@ -1038,14 +1099,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         asideBusy.current = false;
       }
     },
-    [announce, busy, client, conversation, onConversation, setOpenId],
+    [announce, busy, client, openId, onConversation, setOpenId],
   );
   const askClew = useCallback(
     (text: string) => {
       setAside(null);
-      void dispatch({ raw: text, text, chips: [], current: openRef.current ? conversation : null }, { own: true });
+      void dispatch({ raw: text, text, chips: [], current: openRef.current ? openId : null }, { own: true });
     },
-    [conversation, dispatch],
+    [openId, dispatch],
   );
   const stop = useCallback(() => abortTurn('stop'), [abortTurn]);
   const stopPanel = useCallback(() => stopAside('stop'), [stopAside]);
@@ -1060,6 +1121,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       done,
       busy,
       error,
+      waiting,
       open,
       value,
       verbs,
@@ -1099,6 +1161,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       done,
       busy,
       error,
+      waiting,
       open,
       value,
       verbs,

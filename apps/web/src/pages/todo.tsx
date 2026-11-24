@@ -9,7 +9,7 @@ import {
   type MouseEvent,
 } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
-import { QueryClientProvider, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   isSnoozed,
   sameSubject,
@@ -60,7 +60,8 @@ import {
   XMarkIcon,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
-import { areasQuery, entityDetailQuery, threadsQuery } from '../queries';
+import { areasQuery, threadsQuery } from '../queries';
+import { useSubjectNames } from '../subject-names';
 import { errorMessage } from '../query-policy';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
@@ -103,6 +104,9 @@ import { workUnit } from '../user-units';
 
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
+/** The word for work items after a count: "1 ärende", "3 ärenden". */
+const itemWord = (n: number) => (n === 1 ? 'ärende' : 'ärenden');
+const itemCount = (n: number) => `${n} ${itemWord(n)}`;
 const ALL_SYSTEMS = 'all';
 /** A field the person is typing in keeps the focus when the pane changes (the filter). */
 const TYPING = 'input, textarea, [contenteditable="true"]';
@@ -170,28 +174,20 @@ function aboutOf(thread: Thread): Subject | null {
   const first = thread.items.find(i => i.subject)?.subject;
   return first && thread.items.every(i => !i.subject || sameSubject(i.subject, first)) ? first : null;
 }
-const subjectId = (s: Subject) => `${s.entity}:${s.key}`;
 
 /**
- * The name of whom each item is about, read from Clew's own directory by the key Clew holds (D62, D122): never the
- * label of the row that names them, which says what the row is ("Medarbetare", "Ansökan"), and never a match on a
- * title (D132). One read per person or unit in the pile, shared with their page's; one the reader may not open, or
- * that is gone, names nobody, and the line says the rest.
+ * The name of whom each item is about, read from Clew's own directory by the key Clew holds (`useSubjectNames`): the
+ * pile's subjects in one read, never one read per person. One the reader may not open, or that is gone, names nobody,
+ * and the line says the rest; so does every line while the names are still read (`pending`).
  */
-function useAboutNames(threads: readonly Thread[]): (thread: Thread) => string | null {
-  const subjects = new Map<string, Subject>();
-  for (const t of threads) {
-    const about = aboutOf(t);
-    if (about) subjects.set(subjectId(about), about);
-  }
-  const reads = useQueries({
-    // A name seldom changes: the pile does not ask again each time it is drawn.
-    queries: [...subjects.values()].map(s => ({ ...entityDetailQuery(s.entity, s.key), staleTime: 5 * 60_000 })),
-  });
-  const names = new Map([...subjects.keys()].map((id, i) => [id, reads[i]?.data?.entity.name ?? null]));
-  return thread => {
-    const about = aboutOf(thread);
-    return about ? (names.get(subjectId(about)) ?? null) : null;
+function useAboutNames(threads: readonly Thread[]): { nameOf: (thread: Thread) => string | null; pending: boolean } {
+  const names = useSubjectNames(threads.flatMap(t => aboutOf(t) ?? []));
+  return {
+    nameOf: thread => {
+      const about = aboutOf(thread);
+      return about ? names.nameOf(about) : null;
+    },
+    pending: names.pending,
   };
 }
 
@@ -270,7 +266,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const tab: TodoTab = search.has('tab') ? tabOf(search.get('tab')) : item ? pileOf(item) : 'needs-you';
   const words = filter.trim().toLocaleLowerCase('sv-SE');
   const inArea = (t: Thread) => !area || t.area === area;
-  const nameOf = useAboutNames(piles[tab].filter(inArea));
+  const { nameOf, pending: namesPending } = useAboutNames(piles[tab].filter(inArea));
   // The filter finds a row by what it says, the name on its line too.
   const matches = (t: Thread) =>
     inArea(t) &&
@@ -382,24 +378,23 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   }, [itemId, !!item, !!threadsQ.data]);
 
   // The rows change in place under the filter and the system: what is shown is said aloud (4.1.3), once typing rests.
+  // Words typed while the names are still read wait for them, since the filter also finds a row by its name.
   const said = useRef({ area, filter });
   useEffect(() => {
     if (said.current.area === area && said.current.filter === filter) return;
+    if (said.current.area === area && words && namesPending) return;
     const areaChanged = said.current.area !== area;
     said.current = { area, filter };
+    const count = itemCount(rows.length);
     const timer = setTimeout(
       () =>
         announce(
-          areaChanged
-            ? area
-              ? `Visar ${marks.areaTitle(area)}: ${rows.length} ärenden`
-              : `Visar alla system: ${rows.length} ärenden`
-            : `${rows.length} ärenden`,
+          areaChanged ? (area ? `Visar ${marks.areaTitle(area)}: ${count}` : `Visar alla system: ${count}`) : count,
         ),
       areaChanged ? 0 : 600,
     );
     return () => clearTimeout(timer);
-  }, [area, filter, rows.length]);
+  }, [area, filter, rows.length, namesPending]);
 
   const failed = threadsQ.isError && threadsQ.data === undefined;
   // A source not read yet is said over the rows, and an empty pile is then never said to be nothing (D8). One that does
@@ -425,7 +420,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
         label={
           <>
             {n}
-            <VisuallyHidden> ärenden</VisuallyHidden>
+            <VisuallyHidden> {itemWord(n)}</VisuallyHidden>
           </>
         }
       />
@@ -628,27 +623,27 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           label="Behöver dig"
           value={String(count('needs-you'))}
           href={href({ tab: 'needs-you', item: null })}
-          name={`Behöver dig: ${count('needs-you')} ärenden`}
+          name={`Behöver dig: ${itemCount(count('needs-you'))}`}
         />
         <KeyFigure
           label="Försenade"
           value={String(overdue)}
           tone={overdue ? 'error' : undefined}
           href={href({ tab: 'needs-you', item: null })}
-          name={`Försenade: ${overdue} ärenden`}
+          name={`Försenade: ${itemCount(overdue)}`}
         />
         <KeyFigure
           label="Väntar på andra"
           value={String(count('waiting'))}
           href={href({ tab: 'waiting', item: null })}
-          name={`Väntar på andra: ${count('waiting')} ärenden`}
+          name={`Väntar på andra: ${itemCount(count('waiting'))}`}
         />
         <KeyFigure
           label="Klart"
           value={String(count('done'))}
           tone={count('done') ? 'success' : undefined}
           href={href({ tab: 'done', item: null })}
-          name={`Klart: ${count('done')} ärenden`}
+          name={`Klart: ${itemCount(count('done'))}`}
         />
       </FigureRow>
     );
@@ -663,7 +658,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       id="todo-pile"
       title={tabTitle[tab]}
       count={rows.length}
-      countLabel="ärenden"
+      countLabel={itemWord(rows.length)}
       tools={filters}
       list={mobile}
       isHeadingHidden={mobile}

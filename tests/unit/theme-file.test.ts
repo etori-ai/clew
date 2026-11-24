@@ -6,16 +6,21 @@ import {
   THEME_COLOR_TOKENS,
   THEME_CONTRAST_PAIRS,
   SITE_NAME_MAX,
+  THEME_TEMPLATE,
   checkSiteName,
   checkThemeContrast,
   contrastRatio,
   parseThemeFile,
+  themeColorOf,
   themeFileOf,
   themeFileSchema,
   themeFromAccent,
+  type ThemeColorPair,
   type ThemeColorToken,
+  type ThemeColors,
+  type ThemeContrastToken,
 } from '@clew/contracts';
-import { NEUTRAL_BRANDING } from '../../packages/ui/src/branding';
+import { NEUTRAL_BRANDING, type Branding } from '../../packages/ui/src/branding';
 import { resolveClewTokens } from '../../packages/ui/src/theme';
 
 const color = (hex: string) => ({ $value: hex });
@@ -35,6 +40,33 @@ const sundsvall = JSON.parse(
 const prototype = JSON.parse(
   readFileSync(new URL('../../themes/startsidan-prototype/theme.tokens.json', import.meta.url), 'utf8'),
 );
+const examples = () =>
+  readdirSync(new URL('../../themes/', import.meta.url), { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(({ name }) => ({
+      name,
+      file: JSON.parse(readFileSync(new URL(`../../themes/${name}/theme.tokens.json`, import.meta.url), 'utf8')),
+    }));
+/** A theme as an installation saves it, for Astryx to resolve as the page does. */
+const branding = (colors: ThemeColors): Branding => ({ revision: 1, theme: { name: null, colors }, logo: null });
+/** Each pair as one line, for a table compared whole: `foreground on ground` and its minimum. */
+const tableOf = (pairs: ReadonlyArray<readonly [string, string, number]>) =>
+  Object.fromEntries(pairs.map(([foreground, ground, min]) => [`${foreground} on ${ground}`, min]));
+/** `#rrggbbaa` over an opaque ground, as a browser lays a translucent fill over what is under it. */
+const composite = (color: string, ground: string) =>
+  '#' +
+  [1, 3, 5]
+    .map(o => {
+      const alpha = parseInt(color.slice(7, 9), 16) / 255;
+      const value = parseInt(color.slice(o, o + 2), 16) * alpha + parseInt(ground.slice(o, o + 2), 16) * (1 - alpha);
+      return Math.round(value).toString(16).padStart(2, '0');
+    })
+    .join('');
+/** A base colour as the page shows it: a translucent tint over the base surface. */
+const shown = (token: ThemeContrastToken, index: 0 | 1) => {
+  const hex = THEME_BASE_COLORS[token][index];
+  return hex.length === 9 ? composite(hex, THEME_BASE_COLORS['background-surface'][index]) : hex;
+};
 
 describe('the theme file and the base it is checked against (D98)', () => {
   const resolved = {
@@ -62,19 +94,73 @@ describe('the theme file and the base it is checked against (D98)', () => {
     }
   });
 
-  test('the base theme holds every contrast pair in both appearances', () => {
+  test('the base theme holds every contrast pair in both appearances, its translucent tints laid over the surface', () => {
     for (const [foreground, background, min] of THEME_CONTRAST_PAIRS)
       for (const index of [0, 1] as const)
-        expect(
-          contrastRatio(THEME_BASE_COLORS[foreground][index], THEME_BASE_COLORS[background][index]),
-        ).toBeGreaterThanOrEqual(min);
+        expect(contrastRatio(shown(foreground, index), shown(background, index))).toBeGreaterThanOrEqual(min);
+    expect(checkThemeContrast({})).toEqual([]);
     expect(checkThemeContrast(THEME_BASE_COLORS)).toEqual([]);
   });
 
+  test('the table holds each colour on the grounds it is drawn on, at its minimum (WA-M1)', () => {
+    const grounds = ['background-body', 'background-surface', 'background-card', 'background-popover'];
+    const withMuted = [...grounds, 'background-muted'];
+    const each = (foreground: string, on: string[], min: number) => on.map(g => [foreground, g, min] as const);
+    expect(tableOf(THEME_CONTRAST_PAIRS)).toEqual(
+      tableOf([
+        ...each('text-primary', [...withMuted, 'accent-muted'], 4.5),
+        ...each('text-primary', ['track'], 3),
+        ...each('text-secondary', withMuted, 4.5),
+        ...each('text-accent', withMuted, 4.5),
+        ...each('text-info', grounds, 4.5),
+        ...each('text-success', grounds, 4.5),
+        ...each('on-accent', ['accent'], 4.5),
+        ...each('on-info', ['info'], 4.5),
+        ...each('on-success', ['success'], 4.5),
+        ...each('text-blue', ['background-blue'], 4.5),
+        ...each('text-green', ['background-green'], 4.5),
+        ...each('on-info-muted', ['info-muted'], 4.5),
+        ...each('on-success-muted', ['success-muted'], 4.5),
+        ...each('accent', withMuted, 3),
+        ...each('icon-accent', grounds, 3),
+        ...each('icon-primary', grounds, 3),
+        ...each('icon-secondary', withMuted, 3),
+        ...each('icon-info', grounds, 3),
+        ...each('icon-success', grounds, 3),
+      ]),
+    );
+    // Each pair once: a row written twice would hide one dropped.
+    expect(Object.keys(tableOf(THEME_CONTRAST_PAIRS))).toHaveLength(THEME_CONTRAST_PAIRS.length);
+  });
+
+  test('every colour the check measures is the one Astryx draws for the same file, a status icon following its words', () => {
+    const tokens = Object.keys(THEME_BASE_COLORS) as ThemeContrastToken[];
+    // Each token set alone to a colour of its own, so a token drawn in another's colour shows. A badge's text and ground
+    // are left out: Clew draws black or white on a saved badge whose pair fails (`theme.ts`), which this colour would.
+    tokens.forEach((set, n) => {
+      if (/^(text|background)-(blue|green)$/.test(set)) return;
+      const pair: ThemeColorPair = [
+        `#0${n.toString(16).padStart(2, '0')}0aa`,
+        `#a${n.toString(16).padStart(2, '0')}a01`,
+      ];
+      const colors: ThemeColors = { [set]: pair };
+      const light = resolveClewTokens(branding(colors), 'light'),
+        dark = resolveClewTokens(branding(colors), 'dark');
+      for (const token of tokens)
+        expect(themeColorOf(colors, token), `${token} with ${set} set`).toEqual([
+          light['--color-' + token]!.toLowerCase(),
+          dark['--color-' + token]!.toLowerCase(),
+        ]);
+    });
+    expect(themeColorOf({ 'text-success': ['#a5d6a7', '#1b3a1c'] }, 'icon-success')).toEqual(['#a5d6a7', '#1b3a1c']);
+    expect(themeColorOf({ 'text-info': ['#9fc5f0', '#a1caff'] }, 'icon-success')).toEqual(
+      THEME_BASE_COLORS['icon-success'],
+    );
+  });
+
   test('every pair is enforced: a foreground drawn in its ground’s colour is refused, one that reads passes', () => {
-    const mark = (token: string, index: 0 | 1) => THEME_BASE_COLORS[token as keyof typeof THEME_BASE_COLORS][index];
     for (const [foreground, background, min] of THEME_CONTRAST_PAIRS) {
-      const ground = [mark(background, 0), mark(background, 1)] as const;
+      const ground = [shown(background, 0), shown(background, 1)] as const;
       const refused = checkThemeContrast({ [foreground]: ground });
       for (const mode of ['light', 'dark'] as const)
         expect(
@@ -109,11 +195,11 @@ describe('the theme file and the base it is checked against (D98)', () => {
       'text-success background-card light',
       'text-info background-card light',
       'icon-secondary background-card light',
-      'icon-success background-card light',
-      'icon-info background-card light',
     ])
       expect(failing).toContain(pair);
     expect(failing.every(p => p.includes('background-card'))).toBe(true);
+    // The status icons follow those words, held at 4.5:1 on the same card: their problem is the words', named once.
+    expect(problems.filter(p => p.token === 'icon-info' || p.token === 'icon-success')).toEqual([]);
     // The same accent and status words on a page whose ground is that blue.
     const page = checkThemeContrast({ 'background-body': ['#a8c0e8', '#1d2a44'], accent: ['#3b6fd0', '#8fb4ff'] });
     expect(page.map(p => `${p.token} ${p.mode}`)).toEqual(
@@ -121,28 +207,112 @@ describe('the theme file and the base it is checked against (D98)', () => {
     );
   });
 
-  test('a status icon a file leaves alone is checked in the status text colour it follows, as Astryx draws it', () => {
-    const pale = checkThemeContrast({ 'text-info': ['#9fc5f0', '#a1caff'] });
-    expect(pale.filter(p => p.token === 'icon-info').map(p => p.message)).toContainEqual(
-      expect.stringMatching(/^icon-info \(#9fc5f0\) mot background-card \(#ffffff\)/),
-    );
-    // Set on its own, the icon is held to its own colour, and the words keep theirs.
-    const icon = checkThemeContrast({ 'icon-success': ['#a5d6a7', '#90ca90'] });
-    expect(new Set(icon.map(p => p.token))).toEqual(new Set(['icon-success']));
+  test('on the muted ground the accent, the secondary icon, the secondary words and a link are held too', () => {
+    // A mid-blue muted ground under a blue accent, as the review probed it: a muted card's focus ring, its chevron, its
+    // words, and Kalender's week numbers and "+N" link on it.
+    const muted = checkThemeContrast({
+      'background-muted': ['#7f9cc6', '#1b1b1b'],
+      accent: ['#2f5fb3', '#f1f1f1'],
+      'text-accent': ['#2f5fb3', '#f1f1f1'],
+    });
+    expect(muted.map(p => `${p.token} ${p.message.split(' mot ')[1]!.split(' ')[0]} ${p.mode}`)).toEqual([
+      'text-secondary background-muted light',
+      'text-accent background-muted light',
+      'accent background-muted light',
+      'icon-secondary background-muted light',
+    ]);
   });
 
-  test('every example in themes/ is a valid theme file that holds every pair', () => {
-    const examples = readdirSync(new URL('../../themes/', import.meta.url), { withFileTypes: true }).filter(d =>
-      d.isDirectory(),
+  test('a link is held on every ground, and the secondary words on a popover, the ground of the composer and the menus', () => {
+    const link = checkThemeContrast({ 'text-accent': ['#757575', '#f1f1f1'] });
+    expect(link.map(p => p.message.split(' mot ')[1]!.split(' ')[0])).toEqual(['background-body', 'background-muted']);
+    const words = checkThemeContrast({ 'background-popover': ['#8a8a8a', '#1b1b1b'] });
+    expect(words.map(p => p.token)).toContain('text-secondary');
+  });
+
+  test('a status tint is held to the words drawn on it, a translucent base tint laid over the surface first', () => {
+    // Neutral's dark tint is translucent: laid over the base surface its words read, and the base holds.
+    const darkInfo = composite(THEME_BASE_COLORS['info-muted'][1], THEME_BASE_COLORS['background-surface'][1]);
+    expect(contrastRatio(THEME_BASE_COLORS['on-info-muted'][1], darkInfo)).toBeGreaterThanOrEqual(4.5);
+    // Measured as if it were opaque, the same words would fail; the check never does that.
+    expect(
+      contrastRatio(THEME_BASE_COLORS['on-info-muted'][1], THEME_BASE_COLORS['info-muted'][1].slice(0, 7)),
+    ).toBeLessThan(4.5);
+    // A pale surface under the base's translucent tint makes a pale fill under pale words: refused, the fill named as
+    // it shows over that surface.
+    const pale = checkThemeContrast({ 'background-surface': ['#ffffff', '#d0d0d0'] });
+    const over = composite(THEME_BASE_COLORS['info-muted'][1], '#d0d0d0');
+    expect(pale.map(p => p.message)).toContainEqual(
+      expect.stringMatching(new RegExp(`^on-info-muted \\(#a1caff\\) mot info-muted \\(${over}\\) .* i mörkt läge`)),
     );
-    expect(examples.map(d => d.name).sort()).toEqual(['clew', 'startsidan-prototype', 'sundsvall']);
-    for (const { name } of examples) {
-      const parsed = parseThemeFile(
-        JSON.parse(readFileSync(new URL(`../../themes/${name}/theme.tokens.json`, import.meta.url), 'utf8')),
-      );
+    // A file's own tint is opaque and measured as it is, light and dark alike.
+    expect(checkThemeContrast({ 'info-muted': ['#003978', '#a1caff'] }).map(p => [p.token, p.mode])).toEqual([
+      ['on-info-muted', 'light'],
+      ['on-info-muted', 'dark'],
+    ]);
+    expect(checkThemeContrast({ 'success-muted': ['#00490b', '#bce0bb'] }).map(p => p.token)).toEqual([
+      'on-success-muted',
+      'on-success-muted',
+    ]);
+    // A selected Item's ground under its label.
+    expect(checkThemeContrast({ 'accent-muted': ['#000000', '#ffffff'] }).map(p => p.token)).toEqual([
+      'text-primary',
+      'text-primary',
+    ]);
+  });
+
+  test('a pale text-success refuses the file, and the success icon that follows it is drawn and refused in it, named once', () => {
+    const pale: ThemeColorPair = ['#a5d6a7', '#1b3a1c'];
+    const problems = problemsOf(file({ 'text-success': color(pale[0]) }, { 'text-success': color(pale[1]) }));
+    // The success StatusDot is drawn in the pale green, on every ground the words are; the words are held at 4.5:1
+    // there, so the file is refused for them, once per ground and appearance, and the icon it never set is not named.
+    expect(themeColorOf({ 'text-success': pale }, 'icon-success')).toEqual(pale);
+    expect(problems.map(p => `${p.token} ${p.message.split(' mot ')[1]!.split(' ')[0]} ${p.mode}`)).toEqual(
+      ['background-body', 'background-surface', 'background-card', 'background-popover'].flatMap(ground => [
+        `text-success ${ground} light`,
+        `text-success ${ground} dark`,
+      ]),
+    );
+    // Set to the same pale green itself, the icon is the file's own colour and named on its own grounds.
+    const icon = checkThemeContrast({ 'icon-success': pale });
+    expect(new Set(icon.map(p => p.token))).toEqual(new Set(['icon-success']));
+    expect(icon).toHaveLength(8);
+  });
+
+  test('a pale text-info is one problem per ground and appearance, never four more for the icon that follows it (N1)', () => {
+    const pale = checkThemeContrast({ 'text-info': ['#9fc5f0', '#a1caff'] });
+    expect(new Set(pale.map(p => p.token))).toEqual(new Set(['text-info']));
+    expect(pale).toHaveLength(4);
+  });
+
+  test('every example in themes/ and the base theme are valid theme files that hold every pair', () => {
+    expect(
+      examples()
+        .map(e => e.name)
+        .sort(),
+    ).toEqual(['clew', 'startsidan-prototype', 'sundsvall']);
+    for (const { name, file } of examples()) {
+      const parsed = parseThemeFile(file);
       if (!parsed.ok) throw new Error(`${name}: ${parsed.problems.map(p => p.message).join(' ')}`);
       expect(checkThemeContrast(parsed.theme.colors), name).toEqual([]);
     }
+    expect(parseThemeFile(themeFileOf(THEME_TEMPLATE))).toEqual({ ok: true, theme: THEME_TEMPLATE });
+  });
+
+  test('the template pins no status icon, so they follow the words a file starts from it, and no translucent tint', () => {
+    const tokens = Object.keys(THEME_TEMPLATE.colors);
+    expect(tokens).not.toContain('icon-info');
+    expect(tokens).not.toContain('icon-success');
+    expect(tokens).not.toContain('info-muted');
+    expect(tokens).not.toContain('success-muted');
+    // Everything else the check reads is there, as the base has it.
+    expect(tokens.sort()).toEqual(
+      Object.keys(THEME_BASE_COLORS)
+        .filter(t => !['icon-info', 'icon-success', 'info-muted', 'success-muted'].includes(t))
+        .sort(),
+    );
+    for (const [token, pair] of Object.entries(THEME_TEMPLATE.colors))
+      expect(pair).toEqual(THEME_BASE_COLORS[token as ThemeContrastToken]);
   });
 
   test('a file is read with hex strings, sRGB objects and references to its own palette', () => {
@@ -236,9 +406,9 @@ describe('the theme file and the base it is checked against (D98)', () => {
     const theme = themeFromAccent('#5B1F78', ' #d7dbf2 ', 'Exempelkommunen');
     expect(theme.colors.accent).toEqual(['#5b1f78', '#d7dbf2']);
     expect(parseThemeFile(themeFileOf(theme))).toEqual({ ok: true, theme });
-    expect(parseThemeFile(themeFileOf({ name: null, colors: THEME_BASE_COLORS }))).toEqual({
+    expect(parseThemeFile(themeFileOf({ name: null, colors: THEME_TEMPLATE.colors }))).toEqual({
       ok: true,
-      theme: { name: null, colors: THEME_BASE_COLORS },
+      theme: { name: null, colors: THEME_TEMPLATE.colors },
     });
   });
 

@@ -131,3 +131,13 @@ message and the focus inset of a field with a status (`packages/ui/src/theme.ts`
 surface, so a mid-tone surface that passes for text could take them under 3:1. Adding the two pairs is a contract
 change that may refuse a file accepted today (2026-11-13,
 [Organisation, Användare and the person card](../reviews/2026-11-13-organisation-users-and-the-person-card.md)).
+
+For the product owner: should Clew's own dark `accent-muted` change, so that the secondary words on a selected item
+read? An Item that is selected is drawn on `accent-muted`, its label in `text-primary` and its description in
+`text-secondary`. The label holds (9.3:1 in the dark), but Clew's base draws `#9e9e9e` on `#474747` there, 3.5:1, under
+the 4.5:1 of WCAG 1.4.3: a selected plan's "N av M klara" on a plan's page and a selected row's secondary words in a
+declared list. `THEME_CONTRAST_PAIRS` holds `text-primary` on `accent-muted` and not `text-secondary`, since the base
+itself fails it and every file would be refused. A darker selected ground in the dark (`#333333` gives 4.7:1) is a
+change to Clew's look ([D46](../decisions/D46-astryx-neutral-is-the-default-theme.md),
+[D130](../decisions/D130-clews-look-and-layout-are-the-startsidan-prototypes-built-with-astryx.md)) (2026-11-24, the
+review of batch 16 of the fixes of the review of 2026-11-23).

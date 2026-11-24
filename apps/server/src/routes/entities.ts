@@ -2,10 +2,12 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { Value } from 'typebox/value';
 import {
   AskValuesSchema,
+  EntityNamesInputSchema,
   isEntityKind,
   type AskValues,
   type EntityActionInput,
   type EntityKind,
+  type EntityNames,
 } from '@clew/contracts';
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { EntityUsecases } from '../modules/entities/usecases';
@@ -14,7 +16,7 @@ import { textOfAtMost } from '../bounded-body';
 
 /**
  * Entities (D97): a person or a unit and what the sources about it say, for the web. Four reads, each parsing the
- * address, calling one use case and answering what it returns. A kind Clew does not have, a key outside the rule and a
+ * address, calling one use case and answering what it returns, and the names of a list's subjects. A kind Clew does not have, a key outside the rule and a
  * source the reader may not use (or that nobody placed, for the list) all answer the same 404 as an unknown address, so
  * the answer never tells which. A person who manages nobody gets a list without groups, not a refusal: the web decides
  * what to draw. Two writes: an action from the entity's menu becomes a card (D8), and an execute sent from its dialog
@@ -22,7 +24,7 @@ import { textOfAtMost } from '../bounded-body';
  * reader. Its effect (D112) is a read of what the action would write, with the same 404.
  */
 export interface EntityRouteDeps {
-  entities: Pick<EntityUsecases, 'list' | 'rows' | 'detail' | 'section'>;
+  entities: Pick<EntityUsecases, 'list' | 'rows' | 'detail' | 'section' | 'names'>;
   /** Starting an action about an entity, deciding an execute, and what it would write; without it the routes only read. */
   actions?: Pick<EntityActions, 'start' | 'effect'> & Partial<Pick<EntityActions, 'decide'>>;
   /** The session guard; a test passes its own. */
@@ -85,6 +87,21 @@ export function entityRoutes(deps: EntityRouteDeps) {
     const kind = kindOf(c);
     if (!kind) return notFound(c);
     return answer(c, await entities.detail(c.get('session').context, kind, c.req.param('key')));
+  });
+  /**
+   * The names of the people and units a list's rows are about, at most `ENTITY_NAMES_MAX` per request, the keys in the
+   * body. A read, posted so that no key stands in an address; one the reader may not open is absent from the answer.
+   */
+  routes.post('/names', async c => {
+    const text = await textOfAtMost(c.req.raw, 64_000);
+    let value: unknown;
+    try {
+      value = text !== undefined ? JSON.parse(text) : undefined;
+    } catch {
+      value = undefined;
+    }
+    if (!Value.Check(EntityNamesInputSchema, value)) throw new InputError('Ogiltig förfrågan.');
+    return c.json({ names: await entities.names(c.get('session').context, value.subjects) } satisfies EntityNames);
   });
   routes.get('/:kind/:key/section', async c => {
     const kind = kindOf(c);

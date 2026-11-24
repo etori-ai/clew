@@ -15,18 +15,29 @@ import type { AuditEntry, ConversationCursor, SubjectErasure, TimerIntent, Workf
 
 /** How many conversations one page of Alla samtal holds (WD-L1). */
 export const CONVERSATION_PAGE = 50;
-const CURSOR_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+/** A cursor's time as the store writes it: UTC, to the microsecond at most. */
+const CURSOR_AT = /^(\d{4})-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d{1,6}))?Z$/;
+/** A cursor's id: the characters a conversation's id is made of (`ids()` draws a UUID), as long as an id may be. */
+const CURSOR_ID = /^[A-Za-z0-9-]{1,80}$/;
 /** A page's end as the browser carries it (`ConversationPage.next`): the latest activity, a tilde, the id. */
 export const cursorText = (cursor: ConversationCursor) => `${cursor.at}~${cursor.id}`;
-/** The cursor a page's `after` names; undefined for one this server did not write. */
+/**
+ * The cursor a page's `after` names; undefined for one this server did not write. The time must be an instant that
+ * exists, from year 1 on: V8 reads 30 February or hour 24 as the day after and year 0 as a year, where the database
+ * refuses all three, so the time is read and written back and must come out the same, to the millisecond Date keeps.
+ * The id is held to the characters an id is made of, so nothing the database cannot take (a NUL) reaches it.
+ */
 export function cursorOf(text: string): ConversationCursor | undefined {
   const cut = text.indexOf('~');
   if (cut < 0) return undefined;
   const at = text.slice(0, cut),
     id = text.slice(cut + 1);
-  return CURSOR_AT.test(at) && !Number.isNaN(Date.parse(at)) && id.length > 0 && id.length <= 80
-    ? { at, id }
-    : undefined;
+  const time = CURSOR_AT.exec(at);
+  if (!time || Number(time[1]) < 1 || !CURSOR_ID.test(id)) return undefined;
+  const instant = new Date(at);
+  if (Number.isNaN(instant.getTime())) return undefined;
+  const ms = (time[2] ?? '').padEnd(3, '0').slice(0, 3);
+  return instant.toISOString() === `${at.slice(0, 19)}.${ms}Z` ? { at, id } : undefined;
 }
 
 /** The audit subjects a work item's own history is written under: the item, and the person's two timers on it. */

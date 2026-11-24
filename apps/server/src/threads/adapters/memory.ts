@@ -126,6 +126,8 @@ export function memoryThreadStore(): MemoryThreadStore {
           r.thread.kind === 'pushed',
       );
       if (rest.kind === 'pushed' && rest.state === 'open' && clash) return false;
+      // An id already taken is no new thread, as the primary key refuses it on PostgreSQL: the first stays as it was.
+      if (threads.has(rest.id)) return false;
       threads.set(rest.id, {
         personId,
         thread: {
@@ -224,10 +226,15 @@ export function memoryThreadStore(): MemoryThreadStore {
       );
       const work = (r: { thread: Thread }) =>
         r.thread.kind === 'pushed' && (r.thread.state === 'open' || unresolvedExecution(r.thread));
-      // The history is the 50 with the latest activity, as Postgres picks them; the list is newest first by creation.
+      // The history is the 50 with the latest activity, then the greatest id, as Postgres picks them; the list is newest
+      // first by creation.
       const history = mine
         .filter(r => !work(r))
-        .sort((a, b) => Date.parse(b.thread.updatedAt) - Date.parse(a.thread.updatedAt))
+        .sort(
+          (a, b) =>
+            Date.parse(b.thread.updatedAt) - Date.parse(a.thread.updatedAt) ||
+            (a.thread.id < b.thread.id ? 1 : a.thread.id > b.thread.id ? -1 : 0),
+        )
         .slice(0, 50);
       return [...mine.filter(work), ...history]
         .sort((a, b) => Date.parse(b.thread.createdAt) - Date.parse(a.thread.createdAt))
@@ -248,10 +255,11 @@ export function memoryThreadStore(): MemoryThreadStore {
         next: all.length > limit && last ? { at: last.updatedAt, id: last.id } : null,
       };
     },
-    async turnWritten(personId, turn) {
-      return [...threads.values()].find(
-        r => r.personId === personId && r.thread.messages.some(m => m.role === 'user' && m.meta?.turn === turn),
-      )?.thread.id;
+    async turnWritten(turn) {
+      const row = [...threads.values()].find(r =>
+        r.thread.messages.some(m => m.role === 'user' && m.meta?.turn === turn),
+      );
+      return row ? { personId: row.personId, threadId: row.thread.id } : undefined;
     },
     async readThread(personId, id) {
       const row = own(personId, id);

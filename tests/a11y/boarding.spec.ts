@@ -499,6 +499,37 @@ test.describe('what an item is done with', () => {
     expect(boarding.writes).toEqual([]);
   });
 
+  test('an order the service desk refuses is said in its dialog, at the top of the step, and the plan says it nowhere else', async ({
+    page,
+    api,
+  }) => {
+    tied(api);
+    const refusal = 'IT-servicedesken tar inte emot beställningar just nu.';
+    api.entityRefusals['servicedesk.order'] = refusal;
+    await open(page, PAGE);
+    const order = rowOf(page, 'Beställ passerkort').getByRole('button', {
+      name: 'Beställ från IT-servicedesken: Beställ passerkort',
+    });
+    await order.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Beställ från IT-servicedesken' });
+    await dialog.getByRole('button', { name: 'Nästa' }).focus();
+    await page.keyboard.press('Enter');
+    await dialog.getByRole('button', { name: 'Beställ från IT-servicedesken' }).focus();
+    await page.keyboard.press('Enter');
+    // The refusal stays in the dialog, which stays open on it; nothing is made.
+    await expect(dialog.getByText(refusal)).toBeVisible();
+    await expect(page).toHaveURL(PAGE);
+    await expectNoAxeViolations(page);
+    // While the dialog says it, and once it is closed, the plan draws no notice of its own that says it again.
+    await expect(page.getByText(refusal).filter({ visible: true })).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(order).toBeFocused();
+    await expect(page.getByText(refusal).filter({ visible: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
   test('a read leads to its page with the person as its input, and Back gives the focus to the link; an address leaves in a new tab', async ({
     page,
     api,

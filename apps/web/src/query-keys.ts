@@ -56,6 +56,8 @@ export const keys = {
     detail: (kind: string, key: string) => ['entities', kind, 'detail', key] as const,
     section: (kind: string, key: string, capability: string) =>
       ['entities', kind, 'detail', key, 'section', capability] as const,
+    /** The names of a list's subjects, by the distinct subjects asked (`<kind>:<key>`), in order. */
+    names: (subjects: readonly string[]) => ['entities', 'names', subjects] as const,
   },
   /** Kompetens (D108): the catalogue a certificate is registered from, and the administrator's whole catalogue. */
   competenceTypes: ['competence', 'types'] as const,

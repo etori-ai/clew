@@ -42,21 +42,6 @@
 .clew-cal-table-header {
   background-color: var(--color-background-surface);
 }
-/*
-  The page's day headers stay while the grid scrolls, stuck in the page frame's column (`PageFrame`). The column's inset
-  is padding of the scroller, and a sticky header stops under that padding, so the meetings showed through the band
-  above the headers as they scrolled by. Stuck the inset higher, the headers close against the column's top edge. The
-  inset is the frame's gutter: `--spacing-6`, and `--spacing-4` where the frame tightens it (its `tightQuery`).
-  FullCalendar's skeleton pins a sticky header's `top: 0` with `!important`, so the inset has to say it the same way.
-*/
-.clew-cal-page .clew-cal-table-header {
-  top: calc(-1 * var(--spacing-6)) !important;
-}
-@media (max-width: 359px) {
-  .clew-cal-page .clew-cal-table-header {
-    top: calc(-1 * var(--spacing-4)) !important;
-  }
-}
 .clew-cal-filler {
   background-color: var(--color-background-surface);
   border-color: var(--clew-cal-line);
@@ -278,8 +263,9 @@
 .clew-cal-now-dot {
   width: 0;
   height: 0;
-  margin: calc(-2.5 * var(--spacing-1));
-  border: calc(2.5 * var(--spacing-1)) solid var(--color-accent);
+  /* 5 px: --spacing-1 is 4 px, so the dot is 10 px across, as it was drawn in pixels. */
+  margin: calc(-1.25 * var(--spacing-1));
+  border: calc(1.25 * var(--spacing-1)) solid var(--color-accent);
   border-radius: var(--radius-full);
 }
 

@@ -1,6 +1,6 @@
 import {
   SITE_NAME_DEFAULT,
-  THEME_BASE_COLORS,
+  THEME_TEMPLATE,
   checkSiteName,
   parseThemeFile,
   themeFileOf,
@@ -186,12 +186,12 @@ export function appearanceUsecases(deps: { store: AppearanceStore; clock: () => 
       return image ? { ...image, revision: record.revision } : null;
     },
     /**
-     * Public: the saved theme as a file again, or with none saved a template of Clew's own base colours for the roles
-     * a contrast pair names, which is a valid theme file and the place to start writing one.
+     * Public: the saved theme as a file again, or with none saved the template (`THEME_TEMPLATE`): Clew's own base colours
+     * for the roles a contrast pair names, which is a valid theme file and the place to start writing one.
      */
     async themeFile(): Promise<Record<string, unknown>> {
       const { theme } = await deps.store.read();
-      return themeFileOf(theme ?? { name: 'Mall: Clews standardfärger', colors: THEME_BASE_COLORS });
+      return themeFileOf(theme ?? THEME_TEMPLATE);
     },
     async adminRead(persona: AuthenticatedContext): Promise<AppearanceAdminView> {
       require(persona);

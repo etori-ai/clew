@@ -1,6 +1,7 @@
 import type { MenuEntry, Thread } from '@clew/contracts';
 import {
   SITE,
+  announcements,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -278,6 +279,50 @@ test.describe('Samtal among the pages and the register', () => {
     await open(page, '/conversations?page=2');
     await expect(main.getByRole('link', { name: 'Fjärde frågan', exact: true })).toBeVisible();
     await expect(main.getByRole('row')).toHaveCount(3);
+  });
+  test('the pager says the page it went to; while that page is read its shape is drawn and said, and one that cannot be read says so with a way to try again', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(desktop);
+    const base = api.threads.find(t => t.kind === 'question')!;
+    api.threads = [...api.threads.filter(t => t.kind !== 'question'), ...conversations(base), fifth(base)];
+    api.conversationPage = 2;
+    await open(page, '/conversations');
+    const main = page.getByRole('main');
+    const pager = main.getByRole('navigation', { name: 'Sidor med samtal' });
+    await expect(main.getByRole('link', { name: 'Första frågan', exact: true })).toBeVisible();
+    const release = api.holdConversations();
+    const next = pager.getByRole('button', { name: 'Gå till nästa sida' });
+    await next.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/conversations?page=2');
+    // The page is read: its shape stands in the list's place and says so, and the pager keeps the focus.
+    await expect(main.getByText('Hämtar fler samtal …')).toBeAttached();
+    await expect(main.getByRole('link', { name: 'Första frågan', exact: true })).toHaveCount(0);
+    await expect(next).toBeFocused();
+    await expectNoAxeViolations(page);
+    release();
+    await expect(main.getByRole('link', { name: 'Tredje frågan', exact: true })).toBeVisible();
+    await expect(next).toBeFocused();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringMatching(/^Sida 2/));
+    // The next page cannot be read: an alert says so, the pager stays, and the person asks again.
+    api.conversationsFail = true;
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/conversations?page=3');
+    const alert = main.getByRole('alert');
+    await expect(alert).toHaveText('Något gick fel. Försök igen.');
+    await expect(main.getByRole('link', { name: 'Tredje frågan', exact: true })).toHaveCount(0);
+    await expect(pager).toBeVisible();
+    await expectNoAxeViolations(page);
+    api.conversationsFail = false;
+    await main.getByRole('button', { name: 'Försök igen' }).click();
+    await expect(main.getByRole('link', { name: 'Femte frågan', exact: true })).toBeVisible();
+    await expect(main.getByRole('alert')).toHaveCount(0);
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringMatching(/^Sida 3/));
+    // Every read of the third page, the failed ones and the one asked again, went on from where the second ended.
+    expect(api.conversationReads.slice(0, 2)).toEqual([null, '2026-11-03T07:00:00.000Z~samtal-2']);
+    expect(new Set(api.conversationReads.slice(2))).toEqual(new Set(['2026-11-01T07:00:00.000Z~samtal-4']));
   });
   test('at 320 px the register’s pages are a list of links with the pager under it, and nothing reflows past the edge', async ({
     page,

@@ -96,7 +96,7 @@ test('a statement that fails on a person’s page or in a search leaves no user 
   app.route(
     '/api/entities',
     entityRoutes({
-      entities: { list: fail, rows: fail, detail: fail, section: fail },
+      entities: { list: fail, rows: fail, detail: fail, section: fail, names: fail },
       guard: async (c, next) => {
         c.set('session', { context: persona } as never);
         await next();

@@ -21,7 +21,7 @@ import {
 import { dayLabel, displayDate, localClock, localInstant, shortDayLabel, timeRange } from '@clew/calendar/dates';
 import { api } from '../../api';
 import { useThreadAction } from '../../mutations';
-import { keys } from '../../query-keys';
+import { invalidateCalendar } from '../../thread-cache';
 import { mobileQuery } from '../shell/shell';
 import { AddToConversation } from '../conversation/add-to-conversation';
 import { useConversation } from '../conversation/conversation-context';
@@ -103,7 +103,7 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
   const act = (action: () => Promise<Thread | void>, said: string) =>
     run(async () => {
       const thread = await action();
-      if (!thread) void client.invalidateQueries({ queryKey: keys.calendarAll });
+      if (!thread) void invalidateCalendar(client);
       announce(said);
       onChanged?.(thread ?? undefined);
       onClose();
