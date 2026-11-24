@@ -1223,6 +1223,29 @@ describe('the edges of the HTTP layer', () => {
       body: { scimType: 'invalidSyntax', detail: 'The request body is nested too deeply.' },
     });
     expect((await json('POST', '/Users', '['.repeat(200_000))).status).toBe(400);
+    // A path-less patch's value is held to the same depth (ID-10): one that nests the core schema's URN two thousand
+    // times once ran the stack out and answered 500, and at five hundred levels was applied.
+    const created = await json('POST', '/Users', person(7));
+    expect(created.status).toBe(201);
+    const urn = 'urn:ietf:params:scim:schemas:core:2.0:User';
+    const nested = (depth: number): unknown => (depth ? { [urn]: nested(depth - 1) } : { displayName: 'Djup' });
+    for (const depth of [9, 500, 2000])
+      expect(
+        await json('PATCH', '/Users/' + created.body.id, {
+          schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+          Operations: [{ op: 'replace', value: nested(depth) }],
+        }),
+      ).toMatchObject({
+        status: 400,
+        body: { scimType: 'invalidSyntax', detail: 'The request body is nested too deeply.' },
+      });
+    // A path-less value within the limit is applied, the core schema's URN nested in it as the RFC allows.
+    expect(
+      await json('PATCH', '/Users/' + created.body.id, {
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations: [{ op: 'replace', value: nested(2) }],
+      }),
+    ).toMatchObject({ status: 200, body: { displayName: 'Djup' } });
     // A body that declares no length is stopped at the limit as it is read.
     const big = new ReadableStream({
       start(controller) {

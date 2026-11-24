@@ -22,6 +22,8 @@ const keys = await generateKeyPair('RS256');
 const jwks = { keys: [{ ...(await exportJWK(keys.publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' }] };
 const previous: Record<string, string | undefined> = {};
 const network = globalThis.fetch;
+/** How often the provider's keys were fetched. */
+let keyFetches = 0;
 /** What the routes said through the server's logger, in order. */
 const said: Array<{ level: 'warn' | 'error'; fields: unknown; message: unknown }> = [];
 beforeAll(() => {
@@ -42,7 +44,10 @@ beforeAll(() => {
         token_endpoint: issuer + '/token',
         jwks_uri: issuer + '/certs',
       });
-    if (url === issuer + '/certs') return Response.json(jwks);
+    if (url === issuer + '/certs') {
+      keyFetches++;
+      return Response.json(jwks);
+    }
     return new Response('<html>Service Unavailable</html>', { status: 500, headers: { 'Content-Type': 'text/html' } });
   }) as typeof fetch;
 });
@@ -143,6 +148,73 @@ describe('a refused sign-in or logout is said in one line', () => {
         message: 'back-channel logout refused',
       },
     ]);
+  });
+});
+describe('the back-channel logout address does bounded work for anyone (ID-8)', () => {
+  /** A token signed with a key the provider never published, naming a key id the key set does not hold. */
+  const forged = async (kid: string) => {
+    const other = await generateKeyPair('RS256');
+    return new SignJWT({ sid: 'sid-anna', events: { 'http://schemas.openid.net/event/backchannel-logout': {} } })
+      .setProtectedHeader({ alg: 'RS256', kid })
+      .setIssuer(issuer)
+      .setAudience(settings.OIDC_CLIENT_ID!)
+      .setSubject('sub-anna')
+      .setJti('jti-' + kid)
+      .setIssuedAt()
+      .sign(other.privateKey);
+  };
+  test("forged tokens with unknown key ids do not make Clew fetch the provider's keys for each one", async () => {
+    // The key set is read once, by a token it can check.
+    await backchannel('logout_token=' + (await logoutToken('another-client')));
+    const before = keyFetches;
+    for (const kid of ['k2', 'k3', 'k4', 'k5', 'k6']) {
+      const response = await backchannel('logout_token=' + (await forged(kid)));
+      expect(response.status).toBe(400);
+    }
+    // jose's cooldown stands: within it, no unknown key id fetches the keys again.
+    expect(keyFetches - before).toBe(0);
+  });
+  test('a body over the limit is refused before it is read whole, whether it declares its length or not', async () => {
+    let pieces = 0;
+    let declaredPieces = 0;
+    const declaredBody = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          declaredPieces++;
+          controller.enqueue(new TextEncoder().encode('logout_token=x'));
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const declared = await authRoutes.request(
+      new Request('http://clew.example.test/backchannel-logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': '16000001' },
+        body: declaredBody,
+        duplex: 'half',
+      } as RequestInit),
+    );
+    expect(declared.status).toBe(400);
+    expect(declaredPieces).toBe(0);
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pieces++;
+        controller.enqueue(new TextEncoder().encode('logout_token=' + 'x'.repeat(8 * 1024)));
+      },
+    });
+    const response = await authRoutes.request(
+      new Request('http://clew.example.test/backchannel-logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: endless,
+        duplex: 'half',
+      } as RequestInit),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Ogiltig utloggning.' });
+    // 16 000 characters are read as at most 48 000 bytes: a few pieces, never the whole of an endless body.
+    expect(pieces).toBeLessThanOrEqual(8);
+    expect(said.map(s => s.fields)).toContainEqual({ scope: 'auth', failure: { name: 'Error', message: 'Limit' } });
   });
 });
 describe('front-channel logout (D121) where it ends nothing', () => {

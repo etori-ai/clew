@@ -90,6 +90,24 @@ export const INSTALLATION_CALLER = 'installation';
  * person behind the call. The holdings profile of D108 item 9 is the first and, for now, the only one.
  */
 export const INSTALLATION_PROFILES = ['holdings'] as const;
+/**
+ * The most bytes of a manifest Clew reads, when it loads one and in the public dry run alike: a larger one is refused
+ * before it is parsed.
+ */
+export const MAX_MANIFEST_BYTES = 500_000;
+/**
+ * The most capabilities one manifest declares. Every input schema is compiled when a manifest is loaded or tried in the
+ * public dry run, so the count bounds the work one document can ask of Clew (the largest connector in the repository
+ * declares 19).
+ */
+export const MAX_CAPABILITIES = 200;
+/**
+ * The most bytes Clew reads of any other JSON answer: a capability's output, a scan, a figure, an installation read and
+ * the error that refuses a question. A larger answer is the connector failing, and Clew stops reading it there, so one
+ * answer can never fill the server's memory. A document has its own limit (`MAX_DOCUMENT_BYTES`), and so has the
+ * stream of an assistant's answer.
+ */
+export const MAX_ANSWER_BYTES = 4 * 1024 * 1024;
 const object = <T extends Record<string, import('typebox').TSchema>>(properties: T, description?: string) =>
   Type.Object(properties, { additionalProperties: false, ...(description ? { description } : {}) });
 const swedish = (description: string) => Type.String({ minLength: 1, maxLength: 200, description });
@@ -448,8 +466,9 @@ export const ConnectorManifestSchema = Type.Object(
         "The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions.",
     }),
     capabilities: Type.Array(ManifestCapabilitySchema, {
+      maxItems: MAX_CAPABILITIES,
       description:
-        'What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one.',
+        'What the connector can do, one entry per operation, at most 200. The name is the contract (D37): a break is a new name, never a changed one.',
     }),
     installation: Type.Optional(
       Type.Array(ManifestInstallationReadSchema, {
@@ -1108,7 +1127,11 @@ export function openApiDocument(options: OpenApiOptions = {}) {
       {
         name: 'Connector',
         description:
-          "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117). On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119).",
+          "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117). On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119). Answer at the registered address itself: Clew follows no redirect, and a 3xx answer is the connector failing. Clew reads at most " +
+          MAX_MANIFEST_BYTES +
+          ' bytes of a manifest and ' +
+          MAX_ANSWER_BYTES +
+          ' bytes of any other JSON answer; a larger one is the connector failing too.',
       },
       {
         name: 'Clew',

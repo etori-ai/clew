@@ -731,6 +731,9 @@ export async function checkConnector(
       const text = JSON.stringify({ input: {} });
       const r = await fetchImpl(url + INSTALLATION_ROUTE + encodeURIComponent(read.name), {
         method: 'POST',
+        // As Clew calls it (CB-4): the registered address only, and the transport's time limit.
+        redirect: 'error',
+        signal: AbortSignal.timeout(10_000),
         headers: {
           'content-type': 'application/json',
           authorization: 'Bearer ' + (await options.assert(CHECK_MANAGER, [], { body: text, capability: read.name })),
@@ -738,6 +741,8 @@ export async function checkConnector(
         },
         body: text,
       });
+      // Only the status is read: the answer is left unread, whatever its size.
+      await r.body?.cancel().catch(() => undefined);
       if (r.status === 401) {
         ok(`${head}: a person's assertion on its route is refused (401)`);
         row.note('ok', 'En persons anrop nekas.');
@@ -757,6 +762,8 @@ export async function checkConnector(
     try {
       const r = await fetchImpl(url + '/clew/capabilities/' + first.name, {
         method: 'POST',
+        redirect: 'error',
+        signal: AbortSignal.timeout(10_000),
         headers: {
           'content-type': 'application/json',
           authorization: 'Bearer ' + (await options.assertForeign(CHECK_MANAGER)),
@@ -764,6 +771,8 @@ export async function checkConnector(
         },
         body: JSON.stringify({ actor: CHECK_MANAGER, input: {} }),
       });
+      // Only the status is read: the answer is left unread, whatever its size.
+      await r.body?.cancel().catch(() => undefined);
       if (r.status === 401) {
         ok('a call signed with another secret is refused (401)');
         item('ok', 'connection', 'Fel nyckel nekas', 'Ett anrop signerat med en annan nyckel avvisades av tjänsten.');

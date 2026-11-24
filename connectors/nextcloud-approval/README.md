@@ -20,7 +20,8 @@ exchanges, cited below by number.
 | `connector.mjs` | The reads, the scan, the decisions and their read-back, the identity check and HTTP error handling |
 | `approvals.mjs` | The approval port, its errors, and an in-memory stand-in that decides as Approval 3.3.2 does |
 | `nextcloud.mjs` | Nextcloud's OCS and WebDAV API behind the port: the only code here that knows them |
-| `server.mjs` | Serves it over HTTP and reads the configuration |
+| `http.mjs` | The HTTP listener: reads a request within a size limit and answers whatever it holds, so nothing sent to the port ends the process |
+| `server.mjs` | Reads the configuration and serves the connector with that listener |
 
 ## What a person gets
 

@@ -1279,10 +1279,11 @@ Example:
 
 #### `capabilities`
 
-What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one.
+What the connector can do, one entry per operation, at most 200. The name is the contract (D37): a break is a new name, never a changed one.
 
 - Type: array of object
 - required
+- Constraints: at most 200 items
 
 #### `capabilities[].execution`
 

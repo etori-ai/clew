@@ -5,7 +5,7 @@ import { type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as phonebookManifest } from '../../connectors/phonebook/connector.mjs';
-import { createHttpDirectory, toPerson } from '../../connectors/phonebook/directory.mjs';
+import { DirectoryUnavailable, createHttpDirectory, toPerson } from '../../connectors/phonebook/directory.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
@@ -279,10 +279,14 @@ describe('the phone book API behind the port', () => {
       manager: { name: 'Bo Ek' },
     },
   };
-  const calls: Array<{ url: string; key: string | null }> = [];
+  const calls: Array<{ url: string; key: string | null; redirect?: RequestRedirect }> = [];
   const fetchApi: FetchLike = async (input, init) => {
     const url = new URL(input);
-    calls.push({ url: url.pathname + url.search, key: new Headers(init?.headers).get('x-api-key') });
+    calls.push({
+      url: url.pathname + url.search,
+      key: new Headers(init?.headers).get('x-api-key'),
+      redirect: init?.redirect,
+    });
     const body = api[url.pathname + url.search];
     return body ? Response.json(body) : new Response('', { status: url.pathname === '/persons/500' ? 500 : 404 });
   };
@@ -299,11 +303,99 @@ describe('the phone book API behind the port', () => {
         link: 'https://phonebook.example/personer/17',
       },
     ]);
-    expect(calls[0]).toEqual({ url: '/persons?q=anna&limit=50', key: 'k' });
+    // The key goes to the phone book's own address only: no redirect is followed (CS-L3).
+    expect(calls[0]).toEqual({ url: '/persons?q=anna&limit=50', key: 'k', redirect: 'error' });
     expect(await directory.person('17')).toMatchObject({ name: 'Anna Lind', manager: 'Bo Ek' });
     expect(await directory.person('404')).toBeNull();
     expect(toPerson({ id: '1', name: 'X', protected: true })).toBeNull();
     expect(toPerson({ id: 'a b', name: 'X' })).toBeNull();
+  });
+  test('PHONEBOOK_URL is https, or plain http towards this host or with PHONEBOOK_ALLOW_HTTP, refused before any key is sent (CS-L3)', () => {
+    const make = (url: string) => () => createHttpDirectory({ url, apiKey: 'k', fetch: fetchApi });
+    const refused = 'PHONEBOOK_URL must be https outside local development (PHONEBOOK_ALLOW_HTTP=true allows http).';
+    const before = process.env.PHONEBOOK_ALLOW_HTTP;
+    try {
+      delete process.env.PHONEBOOK_ALLOW_HTTP;
+      for (const url of [
+        'https://phonebook.example',
+        'HTTPS://phonebook.example',
+        'http://localhost:8080',
+        'http://127.0.0.1:8080',
+      ])
+        expect(make(url)).not.toThrow();
+      for (const url of [
+        'http://phonebook.example',
+        'HTTP://phonebook.example',
+        // A compose service name is not this host without the variable.
+        'http://phonebook-api:8080',
+        // Look-alikes of a local host: another host's name, a user name, a fragment.
+        'http://localhost.evil.example',
+        'http://localhost:80@evil.example',
+        'http://evil.example#@localhost',
+        // Another scheme towards this host is not http.
+        'ftp://localhost/persons',
+        'ws://127.0.0.1:8080',
+        'file://localhost/etc/passwd',
+      ])
+        expect(make(url)).toThrow(refused);
+      // Read when the adapter is made: a development stack on a private network names the API's service.
+      process.env.PHONEBOOK_ALLOW_HTTP = 'true';
+      expect(make('http://phonebook-api:8080')).not.toThrow();
+      for (const url of ['ftp://phonebook-api/persons', 'ws://phonebook-api:8080']) expect(make(url)).toThrow(refused);
+    } finally {
+      if (before === undefined) delete process.env.PHONEBOOK_ALLOW_HTTP;
+      else process.env.PHONEBOOK_ALLOW_HTTP = before;
+    }
+  });
+  test('an answer that declares more than 4 MiB is the phone book not answering without being read, and one that passes it is given up there', async () => {
+    /** A body that never ends, 64 KiB at a time: how much of it was pulled, and whether the reader gave it up. */
+    const endless = (headers: Record<string, string> = {}) => {
+      const seen = { pulled: 0, cancelled: false };
+      const piece = new Uint8Array(64 * 1024).fill(32);
+      const response = new Response(
+        new ReadableStream({
+          pull(controller) {
+            // A bound on the test itself, far past the limit: a reader without one stops here.
+            if (++seen.pulled > 1000) controller.close();
+            else controller.enqueue(piece);
+          },
+          cancel() {
+            seen.cancelled = true;
+          },
+        }),
+        { status: 200, headers },
+      );
+      return { seen, response };
+    };
+    const over = 'The phone book answered more than 4194304 bytes.';
+    const declared = endless({ 'content-length': String(4 * 1024 * 1024 + 1) });
+    const first = createHttpDirectory({
+      url: 'https://phonebook.example',
+      apiKey: 'k',
+      fetch: async () => declared.response,
+    });
+    const refusal = await first.search('anna').catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(DirectoryUnavailable);
+    expect((refusal as Error).message).toBe(over);
+    expect(declared.seen.pulled).toBeLessThanOrEqual(1);
+    expect(declared.seen.cancelled).toBe(true);
+    // No length declared: read a piece at a time, and given up as the piece that passes 4 MiB arrives.
+    const streamed = endless();
+    const second = createHttpDirectory({
+      url: 'https://phonebook.example',
+      apiKey: 'k',
+      fetch: async () => streamed.response,
+    });
+    await expect(second.person('17')).rejects.toThrow(over);
+    expect(streamed.seen.cancelled).toBe(true);
+    expect(streamed.seen.pulled).toBeLessThan(70);
+    // What is within the limit but is no JSON is the phone book not answering too.
+    const garbled = createHttpDirectory({
+      url: 'https://phonebook.example',
+      apiKey: 'k',
+      fetch: async () => new Response('{not json', { status: 200 }),
+    });
+    await expect(garbled.search('anna')).rejects.toThrow('The phone book answered something that is not JSON.');
   });
   test('an API that fails is "unavailable" in Swedish, without the system\'s own words', async () => {
     const service = createConnector({ jwks: testJwks, secret, directory });
