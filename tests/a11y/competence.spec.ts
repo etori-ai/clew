@@ -563,7 +563,10 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(menu).toBeFocused();
       // Removed after the confirmation: its card goes with it, so the page's heading takes the focus.
       await page.keyboard.press('Enter');
-      await page.getByRole('menuitem', { name: 'Ta bort' }).press('Enter');
+      await expect(page.getByRole('menuitem', { name: 'Ändra nivå' })).toBeFocused();
+      await page.keyboard.press('ArrowDown');
+      await expect(page.getByRole('menuitem', { name: 'Ta bort' })).toBeFocused();
+      await page.keyboard.press('Enter');
       const confirm = page.getByRole('alertdialog', { name: 'Ta bort Engelska?' });
       await expect(confirm).toContainText('Färdigheten tas bort från din lista.');
       await settled(page);
