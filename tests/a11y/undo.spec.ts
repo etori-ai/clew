@@ -24,8 +24,9 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await expect.poll(() => api.threads.find(t => t.id === 'samtal')!.receipt).toBeNull();
     const card = page.locator('#card-samtal');
     await expect(card.getByText('2 av 2 kalenderändringar är bekräftade')).toHaveCount(0);
-    // What the card then offers is left out here: with its proposals undone it has neither "Skicka" nor "Vecka N i
-    // stället", which is the register's DE-L17 and not what it should offer.
+    // The undone invitations are proposed times again (DE-L17): the card sends them once more, or draws another week.
+    await expect(card.getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
+    await expect(card.getByRole('button', { name: /^Vecka \d+ i stället$/ })).toBeVisible();
   });
 
   test('the receipt’s toast stays when the person moves on, and its Visa leads to the item’s page with the page they are on as the way back (D126 rule 1)', async ({
@@ -107,5 +108,8 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     const back = page.getByRole('table', { name: 'Behöver dig' }).locator('#work-samtal');
     await expect(back).toBeVisible();
     await expect(back).not.toContainText('kalenderändringar är bekräftade');
+    // The undone invitations are proposed times again, so the item, opened again, sends them once more (DE-L17).
+    await back.getByRole('link', { name: 'Planera utvecklingssamtal' }).click();
+    await expect(pane.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
   });
 });

@@ -1,7 +1,6 @@
 import {
   EffectOutputSchema,
   PreviewOutputSchema,
-  SUBJECT_CHANGED,
   type AskValues,
   type AuthenticatedContext,
   type EffectPreview,
@@ -138,10 +137,18 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
         ...(view ? { view: await viewWithPeople(people, persona, view, output) } : {}),
       };
     }
-    // A started action that dispatch refused because its user name had moved to someone else (D122) is decided again,
-    // as a new decision: the person decides on the user name the person has now.
-    const refused = t.execution?.state === 'failed' && t.execution.reason === SUBJECT_CHANGED;
-    const previous = t.execution && !t.execution.compensates && !refused ? t.execution : undefined;
+    // A decision on its way or done is replayed (D45): pending, running, unknown or succeeded. One that ended without
+    // its effect, or with part of it, leaves the item to be decided again, as a new decision on what the item says now
+    // (DE-M1): the ledger answers a decision it knows with the execution it has, so sent again under the same id it
+    // never reached the source. A started action refused because its user name had moved (D122) is one of them.
+    const ended = !!t.execution && ['failed', 'partial'].includes(t.execution.state);
+    const previous = t.execution && !t.execution.compensates && !ended ? t.execution : undefined;
+    // After a partial answer, what the source got done is not sent again: the person decides on the rows that remain.
+    if (!previous && t.execution?.state === 'partial' && action.usesItems) {
+      const done = new Set(t.receipt?.rows.filter(row => row.outcome === 'done').map(row => row.ref));
+      if (selected.some(ref => done.has(ref)))
+        throw new InputError('En del av raderna är redan genomförda. Välj bara de som återstår.');
+    }
     if (
       !previous &&
       found.capability.review &&
@@ -159,7 +166,11 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     const unit = cardUnit(t);
     try {
       await approve(persona, {
-        decisionId: previous?.decisionId ?? `card:${id}:${actionId}:${Date.parse(t.updatedAt)}`,
+        // A new decision after one that ended names it too, so it is never the ended one's id, however little time the
+        // item's version moved by.
+        decisionId:
+          previous?.decisionId ??
+          `card:${id}:${actionId}:${Date.parse(t.updatedAt)}${ended ? `:after:${t.execution!.id}` : ''}`,
         operation: action.capability,
         payload,
         presentation: { threadId: id, version: t.updatedAt, actionId },

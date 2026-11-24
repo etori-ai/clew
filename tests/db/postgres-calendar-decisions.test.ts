@@ -175,9 +175,15 @@ test('calendar approval creates its card atomically; a source commit before a fa
   expect(a.waitingOn).toBe('källans besked');
   expect(w.provider.events).toHaveLength(0);
   w.failNextCommit();
-  await w.uc.progress(a.execution!.id);
-  expect((await w.store.read(a.execution!.id))?.state).toBe('unknown');
+  // The calendar wrote the event and Clew could not record its answer: that is Clew's own failure, thrown for the
+  // workflow to try the step again (DE-M3), and the execution stays where it was, never stored as the source not
+  // answering.
+  await expect(w.uc.progress(a.execution!.id)).rejects.toThrow('simulated database receipt failure');
+  expect((await w.store.read(a.execution!.id))?.state).toBe('running');
   expect(w.provider.events).toHaveLength(1);
+  // Inside the lease the step is busy; after it, the step reads the calendar back and never writes twice.
+  expect(await w.uc.progress(a.execution!.id)).toBe('busy');
+  w.setting.now = new Date(Date.parse(w.setting.now) + 121_000).toISOString();
   await w.uc.progress(a.execution!.id);
   expect((await w.store.read(a.execution!.id))?.state).toBe('succeeded');
   expect(w.provider.events).toHaveLength(1);
@@ -523,7 +529,12 @@ test('an invitation read back from the calendar books the talk in the open round
     const undone = await w.decisions.undo(w.actor, card);
     await w.uc.progress(undone.execution!.id);
     expect(w.provider.events).toHaveLength(0);
-    expect((await w.proposals.readThread(w.id, card))!.proposals.map(p => p.status)).toEqual(['undone']);
+    // The card is open again with the time proposed, so it can be sent once more or another week drawn (DE-L17).
+    const reopened = (await w.proposals.readThread(w.id, card))!;
+    expect(reopened.thread.state).toBe('open');
+    expect(reopened.proposals.map(p => [p.status, p.eventRef ?? null, p.undoUntil ?? null])).toEqual([
+      ['proposed', null, null],
+    ]);
     expect(await talk()).toMatchObject({
       id: booked.id,
       bookedStart: null,

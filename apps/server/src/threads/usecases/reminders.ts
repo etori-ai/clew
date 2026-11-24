@@ -216,17 +216,28 @@ export function reminderUsecases(deps: ReminderDeps) {
       return 'skipped';
     // Fail closed when the composition root has not supplied an authority reader.
     if (!deps.authorized || !(await deps.authorized(timer))) {
+      const at = deps.clock().toISOString();
       await store.transaction(async tx => {
-        await tx.lockThread(timer.personId, timer.threadId);
+        const thread = await tx.lockThread(timer.personId, timer.threadId);
         const current = await tx.readTimer(id);
         if (!current || current.generation !== generation || current.state !== 'active') return;
         await tx.updateTimer({ ...current, state: 'blocked', reason: 'authority-revoked', leaseUntil: null });
+        // The card is not left where the timer would have moved it from (DE-L11): no timer will come for it now, so a
+        // card parked by "Påminn mig" no longer waits on the reminder, and a snoozed card is no longer snoozed. It is
+        // not announced as the person's reminder: that was set under the authority they no longer have.
+        const parked =
+          thread && (timer.kind === 'reminder' ? isReminderWaiting(thread.waitingOn) : thread.snoozedUntil !== null);
+        if (parked)
+          await tx.updateThread(timer.threadId, {
+            ...(timer.kind === 'reminder' ? { waitingOn: null } : { snoozedUntil: null }),
+            updatedAt: at,
+          });
         await tx.writeAudit({
           actor: 'assistant:reminder',
           action: 'timer.blocked',
           subject: 'timer:' + id,
-          at: deps.clock().toISOString(),
-          details: { generation, reason: 'authority-revoked' },
+          at,
+          details: { generation, reason: 'authority-revoked', ...(parked ? { released: timer.kind } : {}) },
         });
       });
       return 'skipped';

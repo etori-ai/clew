@@ -380,8 +380,22 @@ api.post('/threads/:id/execution/check', async c => {
     id = c.req.param('id');
   const thread = await threadFor(persona, id);
   if (!thread) return c.json({ error: 'Ärendet finns inte.' }, 404);
-  if (thread.execution && (thread.execution.state === 'unknown' || thread.execution.reason))
+  // Any decision not yet settled is checked: one waiting to be sent whose workflow ended is started again (DE-L1).
+  if (thread.execution && ['pending', 'running', 'unknown'].includes(thread.execution.state))
     await executions.reconcile(persona, thread.execution.id);
+  return c.json(await threadFor(persona, id));
+});
+/**
+ * The person ends a decision in doubt after seeing in the source that it did not go through (DE-M2): it fails in their
+ * name, and the item can be decided again.
+ */
+api.post('/threads/:id/execution/release', async c => {
+  const persona = c.get('session').context,
+    id = c.req.param('id');
+  const thread = await threadFor(persona, id);
+  if (!thread) return c.json({ error: 'Ärendet finns inte.' }, 404);
+  if (!thread.execution) throw new InputError('Beslutet väntar inte längre på besked.');
+  await executions.release(persona, thread.execution.id);
   return c.json(await threadFor(persona, id));
 });
 api.post('/threads/:id/undo-receipt', async c =>

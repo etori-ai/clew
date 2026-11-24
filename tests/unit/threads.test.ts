@@ -274,6 +274,19 @@ describe('avfärda, inte nu and ångra', () => {
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.snoozed', 'thread.woken']);
     expect(w.store.audit.at(-1)?.details).toMatchObject({ reason: 'time', snoozedUntil: '2026-11-05T05:00:00.000Z' });
   });
+  test('a snoozed card whose timer will not come is woken by the sweep once its time has passed (DE-L11)', async () => {
+    const w = world();
+    const card = await invoices(w);
+    await w.threads.snoozeThread(hillevi, card.id);
+    // The timer was blocked before the card was unparked (an older release did not unpark it): no timer will come.
+    await w.store.transaction(async tx => {
+      const timer = (await tx.readTimer(`snooze:${card.id}`))!;
+      await tx.updateTimer({ ...timer, state: 'blocked', reason: 'authority-revoked', leaseUntil: null });
+    });
+    w.clock.set('2026-11-05T05:00:01.000Z');
+    expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id)?.snoozedUntil).toBeNull();
+    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.snoozed', 'thread.woken']);
+  });
   test('a snoozed card wakes early when its source changes (the snooze breaks on activity)', async () => {
     const w = world();
     const card = await invoices(w);

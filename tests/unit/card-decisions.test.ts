@@ -111,6 +111,70 @@ test('a decision is on the item as the person was shown it: a changed item is re
   expect(w.approvals).toHaveLength(2);
   expect(w.approvals[1]).toMatchObject({ decisionId: 'card:t-decided:approve:1' });
 });
+test('a decision that ended without its effect, or with part of it, is decided again as a new decision (DE-M1)', async () => {
+  const w = await world();
+  const items = [
+    { ref: 'finance:inv:1', label: 'Skolgrossisten', detail: '6451', selectable: true, selected: true },
+    { ref: 'finance:inv:2', label: 'Energibolaget', detail: '18650', selectable: true, selected: true },
+  ];
+  const settled = (
+    state: 'failed' | 'partial' | 'unknown',
+    updatedAt: string,
+    rows: [string, 'done' | 'failed'][] = [],
+  ) =>
+    w.store.transaction(tx =>
+      tx.updateThread(w.t.id, {
+        items,
+        updatedAt,
+        execution: {
+          id: 'e1',
+          decisionId: `card:${w.t.id}:approve:1`,
+          operation: 'finance.approve',
+          state,
+          reason: null,
+          compensates: null,
+        },
+        receipt: {
+          at: updatedAt,
+          headline: 'Ekonomisystemet svarade.',
+          rows: rows.map(([ref, outcome]) => ({ ref, label: ref, outcome, detail: '' })),
+          undoUntil: null,
+          undoCapability: null,
+        },
+        // What the execution's projection writes onto the item; the store's own patch type leaves it out.
+      } as never),
+    );
+  // Refused: the ledger would answer the same id with the refusal it has, so the person's new decision gets its own,
+  // bound to the item as it stands now.
+  await settled('failed', '2026-11-04T06:10:00.000Z', [['finance:inv:1', 'failed']]);
+  await w.uc.act(persona, w.t.id, 'approve', undefined, undefined, undefined, '2026-11-04T06:10:00.000Z');
+  expect(w.approvals[0]).toMatchObject({
+    decisionId: `card:${w.t.id}:approve:${Date.parse('2026-11-04T06:10:00.000Z')}:after:e1`,
+    payload: { refs: ['finance:inv:1', 'finance:inv:2'] },
+  });
+  // The new decision is still bound to what the person was shown.
+  await expect(
+    w.uc.act(persona, w.t.id, 'approve', undefined, undefined, undefined, '2026-11-04T06:00:00.000Z'),
+  ).rejects.toThrow('Ärendet har ändrats sedan du öppnade det.');
+  // Part of it went through: what the source got done is not sent again, and the rest is a new decision.
+  await settled('partial', '2026-11-04T06:20:00.000Z', [
+    ['finance:inv:1', 'done'],
+    ['finance:inv:2', 'failed'],
+  ]);
+  await expect(w.uc.act(persona, w.t.id, 'approve')).rejects.toThrow(
+    'En del av raderna är redan genomförda. Välj bara de som återstår.',
+  );
+  await w.uc.act(persona, w.t.id, 'approve', ['finance:inv:2']);
+  expect(w.approvals[1]).toMatchObject({
+    decisionId: `card:${w.t.id}:approve:${Date.parse('2026-11-04T06:20:00.000Z')}:after:e1`,
+    payload: { refs: ['finance:inv:2'] },
+  });
+  // A decision whose outcome is not known is still replayed under its own id, never decided over.
+  await settled('unknown', '2026-11-04T06:30:00.000Z');
+  await w.uc.act(persona, w.t.id, 'approve', ['finance:inv:2']);
+  expect(w.approvals[2]).toMatchObject({ decisionId: `card:${w.t.id}:approve:1` });
+  expect(w.approvals).toHaveLength(3);
+});
 test('foreign actions, stale selections and another owner cannot approve effects', async () => {
   const w = await world();
   await expect(w.uc.act({ id: 'other' } as AuthenticatedContext, w.t.id, 'approve')).rejects.toThrow(

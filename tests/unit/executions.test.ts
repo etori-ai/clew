@@ -309,6 +309,71 @@ test('execution evidence cannot be read, replayed, reconciled or undone under a 
   expect((await w.uc.read(persona, approved.id))?.result).toMatchObject(result);
 });
 
+test('a decision in doubt is let go by its own person only: it fails in their name with its audit row, nothing is sent, and nothing after it runs it (DE-M2)', async () => {
+  const w = world();
+  const e = await w.approve();
+  // Still to be sent: there is no doubt to end.
+  await expect(w.uc.release(persona, e.id)).rejects.toThrow('Beslutet väntar inte längre på besked.');
+  w.loseReply();
+  expect(await w.uc.progress(e.id)).toBe('reconcile');
+  expect((await w.uc.read(persona, e.id))?.state).toBe('unknown');
+  const lease = (state: 'running' | 'unknown', leaseUntil: string | null) =>
+    w.store.transaction(async tx => {
+      const row = (await tx.lock(e.id))!;
+      await tx.update({ ...row, state, leaseUntil });
+    });
+  // Being read back right now: left to that check.
+  await lease('running', '2099-01-01T00:00:00.000Z');
+  await expect(w.uc.release(persona, e.id)).rejects.toThrow('Beslutet kontrolleras just nu.');
+  await lease('unknown', null);
+  // Nobody under another authority can.
+  await expect(w.uc.release({ ...persona, unitId: 'other' }, e.id)).rejects.toThrow('finns inte');
+  const before = w.store.audit().length;
+  w.advance(60_000);
+  expect(await w.uc.release(persona, e.id)).toMatchObject({
+    state: 'failed',
+    reason: 'released-by-person',
+    updatedAt: '2026-11-05T10:01:00.000Z',
+  });
+  expect(w.store.audit().slice(before)).toEqual([
+    expect.objectContaining({
+      actor: 'person:person',
+      action: 'execution.released',
+      subject: 'execution:' + e.id,
+      at: '2026-11-05T10:01:00.000Z',
+      details: expect.objectContaining({ attempt: 1 }),
+    }),
+  ]);
+  // A check asked for after it, or one already queued, finds it settled: nothing more is sent.
+  await w.uc.reconcile(persona, e.id);
+  expect(await w.uc.progress(e.id)).toBe('done');
+  expect(await w.uc.read(persona, e.id)).toMatchObject({ state: 'failed', reason: 'released-by-person' });
+  expect(w.writes()).toBe(1);
+  expect(w.store.audit().slice(before)).toHaveLength(1);
+  // Let go once.
+  await expect(w.uc.release(persona, e.id)).rejects.toThrow('Beslutet väntar inte längre på besked.');
+});
+test('an undo in doubt is not let go: the original receipt stands whatever became of it (DE-M2)', async () => {
+  const w = world();
+  const original = await w.approve();
+  await w.uc.progress(original.id);
+  await w.store.transaction(async tx => {
+    const e = (await tx.lock(original.id))!;
+    await tx.update({ ...e, result: { ...result, undoCapability: 'test.undo', undoMinutes: 10 } });
+  });
+  const { undoInputOf } = await import('../../apps/server/src/modules/executions/domain');
+  const undo = await w.uc.approve(persona, {
+    decisionId: 'undo:' + original.id,
+    operation: 'test.undo',
+    payload: undoInputOf((await w.store.read(original.id))!),
+    compensates: original.id,
+  });
+  w.loseReply();
+  await w.uc.progress(undo.id);
+  expect((await w.uc.read(persona, undo.id))?.state).toBe('unknown');
+  await expect(w.uc.release(persona, undo.id)).rejects.toThrow('Beslutet väntar inte längre på besked.');
+  expect((await w.uc.read(persona, undo.id))?.state).toBe('unknown');
+});
 test('one confirmed effect is undone once: an undo is the decision undo:<original>, so a second is the first replayed (DE-L5)', async () => {
   const w = world();
   const approved = await w.approve();
@@ -334,6 +399,56 @@ test('one confirmed effect is undone once: an undo is the decision undo:<origina
   expect(again.id).toBe(first.id);
   expect(w.store.dump().filter(e => e.compensates === approved.id)).toHaveLength(1);
   expect(w.store.audit().filter(row => row.action === 'execution.approved')).toHaveLength(2);
+});
+
+test("a failure of Clew's own while the source's answer is recorded is logged and thrown, never stored as the source not answering (DE-M3)", async () => {
+  const w = world();
+  let failing = true;
+  const logged: unknown[][] = [];
+  // Where the PostgreSQL adapter writes the card's projection with the execution: a constraint, another module's port.
+  const store: typeof w.store = {
+    ...w.store,
+    transaction: fn =>
+      w.store.transaction(tx =>
+        fn({
+          ...tx,
+          update: async e => {
+            if (failing && e.state === 'succeeded') throw new Error('duplicate key value');
+            await tx.update(e);
+          },
+        }),
+      ),
+  };
+  const uc = executionUsecases({
+    store,
+    source: w.source,
+    clock: w.clock,
+    ids: () => 'e1',
+    digest: input => JSON.stringify(input),
+    log: (...line) => void logged.push(line),
+  });
+  const e = await uc.approve(persona, { decisionId: 'decision', operation: 'test.do', payload: { revision: 'r1' } });
+  await expect(uc.progress(e.id)).rejects.toThrow('duplicate key value');
+  // The source answered and wrote once; nothing says it did not answer, and the error is logged by its name alone.
+  expect(w.writes()).toBe(1);
+  expect(await w.store.read(e.id)).toMatchObject({ state: 'running', reason: null });
+  expect(logged).toEqual([
+    ['execution: the answer could not be recorded', { execution: e.id, operation: 'test.do', error: 'Error' }],
+  ]);
+  // The workflow tries again: inside the lease the step is busy; after it, the source is read back and recorded.
+  expect(await uc.progress(e.id)).toBe('busy');
+  // While the lease runs a check starts nothing; once it has passed, the step's workflow may have given up (DE-L1), and
+  // "Kontrollera status" starts the execution again.
+  const started = () => w.store.enqueued().filter(s => s.id.startsWith('reconcile:'));
+  await uc.reconcile(persona, e.id);
+  expect(started()).toEqual([]);
+  w.advance(121_000);
+  await uc.reconcile(persona, e.id);
+  expect(started()).toEqual([{ workflow: 'approvedExecution', id: `reconcile:${e.id}:1`, input: e.id }]);
+  failing = false;
+  expect(await uc.progress(e.id)).toBe('done');
+  expect(await w.store.read(e.id)).toMatchObject({ state: 'succeeded', reason: null });
+  expect(w.writes()).toBe(1);
 });
 
 describe('an approved action about a person (D122)', () => {

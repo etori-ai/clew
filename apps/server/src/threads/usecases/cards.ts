@@ -222,7 +222,8 @@ export function threadUsecases(deps: ThreadDeps) {
     for (const t of due)
       await store.transaction(async tx => {
         const current = await tx.lockThread(persona.id, t.id);
-        if (await tx.readTimer(`snooze:${t.id}`)) return;
+        // A live snooze timer wakes the card itself; one blocked, cancelled or fired never will, so the sweep does (DE-L11).
+        if ((await tx.readTimer(`snooze:${t.id}`))?.state === 'active') return;
         if (current?.state === 'open' && current.snoozedUntil && !isSnoozed(current, now))
           await wake(tx, current, 'time', now);
       });

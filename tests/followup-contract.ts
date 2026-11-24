@@ -71,7 +71,13 @@ export function followupFixture(id: string): FollowupSnapshot {
 }
 type Harness = { id: string; store: FollowupStore; deliveries(): Promise<number>; audits(): Promise<string[]> };
 export function followupContract(name: string, make: () => Promise<Harness>) {
-  const build = (h: Harness, version = 'v1', at = followupAt, email = 'invitee@example.test') => {
+  const build = (
+    h: Harness,
+    version = 'v1',
+    at = followupAt,
+    email = 'invitee@example.test',
+    unreadable: { replies?: boolean; team?: boolean } = {},
+  ) => {
     const actor = {
       id: h.id,
       name: 'Sender',
@@ -80,14 +86,17 @@ export function followupContract(name: string, make: () => Promise<Harness>) {
       principal: { id: 'person:' + h.id },
       authorize: async () => ({ version }),
     } as AuthenticatedContext;
-    const team: Team = async () => [
-      {
-        personId: h.id + ':invitee',
-        ref: 'mailto:' + email,
-        email,
-        name: 'Invitee',
-      },
-    ];
+    const team: Team = async () => {
+      if (unreadable.team) throw new Error('directory unavailable');
+      return [
+        {
+          personId: h.id + ':invitee',
+          ref: 'mailto:' + email,
+          email,
+          name: 'Invitee',
+        },
+      ];
+    };
     return {
       actor,
       uc: followupUsecases({
@@ -95,7 +104,9 @@ export function followupContract(name: string, make: () => Promise<Harness>) {
         current: async () => actor,
         team,
         clock: () => new Date(at),
-        readReplies: async () => {},
+        readReplies: async () => {
+          if (unreadable.replies) throw new Error('calendar unavailable');
+        },
       }),
     };
   };
@@ -156,6 +167,21 @@ export function followupContract(name: string, make: () => Promise<Harness>) {
     expect(await h.deliveries()).toBe(2);
     expect((await h.audits()).filter(x => x === 'obligation.reminded')).toHaveLength(1);
   });
+  test(
+    name +
+      ': a check that cannot read the replies or the team schedules the next one and still returns the thread at its end (DE-L1)',
+    async () => {
+      const h = await make();
+      // Neither can be read: no reminder is sent, and the follow-up goes on to its next check instead of ending here.
+      await build(h, 'v1', followupAt, undefined, { replies: true, team: true }).uc.fire(h.id, 1);
+      expect(await h.deliveries()).toBe(0);
+      expect((await h.store.read(h.id))?.timer).toMatchObject({ generation: 2, state: 'active' });
+      expect((await h.audits()).filter(x => x === 'obligation.checked')).toHaveLength(1);
+      // The replies cannot be read at the policy's end either: the thread still comes back to the manager.
+      await build(h, 'v1', '2026-12-02T09:00:00.000Z', undefined, { replies: true }).uc.fire(h.id, 2);
+      expect((await h.store.read(h.id))?.policy).toMatchObject({ state: 'finished', reason: 'expired' });
+    },
+  );
   test(name + ': the bound applies to manual reminders too; expiry cannot loop behind an unknown outcome', async () => {
     const h = await make(),
       { uc, actor } = build(h);

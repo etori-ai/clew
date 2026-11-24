@@ -113,6 +113,61 @@ for (const [layout, viewport] of [
       await decide.press('Enter');
       await expect.poll(() => api.acted.map(a => [a.threadId, a.body.actionId])).toEqual([['fakturor', 'decide']]);
     });
+    test('a decision in doubt is let go from ⋯ once the person says they saw the source, and the item is decided again (DE-M1, DE-M2)', async ({
+      page,
+      api,
+    }) => {
+      const card = api.threads.find(t => t.id === 'fakturor')!;
+      card.execution = {
+        id: 'execution-fixture',
+        decisionId: 'decision-fixture',
+        operation: 'finance.approve',
+        state: 'unknown',
+        reason: null,
+        compensates: null,
+      };
+      api.threads = [card];
+      await open(page, '/todo?item=fakturor');
+      // Beside the queue on a desktop, the page's own at 320 px.
+      const item =
+        layout === 'desktop' ? page.getByRole('complementary', { name: 'Valt ärende' }) : page.getByRole('main');
+      await expect(item.getByText('Utfallet är inte bekräftat', { exact: true })).toBeVisible();
+      // Kontrollera status stays the notice's move; letting it go is under ⋯, and asks first.
+      await expect(item.getByRole('button', { name: 'Kontrollera status' })).toBeVisible();
+      const more = item.getByRole('button', { name: 'Fler åtgärder' });
+      await more.focus();
+      await more.press('Enter');
+      await page.getByRole('menuitem', { name: 'Markera som inte genomfört' }).press('Enter');
+      const dialog = page.getByRole('alertdialog', { name: 'Markera beslutet som inte genomfört?' });
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText('Gör det bara om du har sett i Ekonomisystemet att det inte gick igenom.');
+      await expect(dialog).toContainText('Gick det ändå igenom gör ett nytt beslut samma sak en gång till.');
+      await expectNoAxeViolations(page);
+      // Avbryt lets nothing go.
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      expect(api.released).toEqual([]);
+      await more.focus();
+      await more.press('Enter');
+      await page.getByRole('menuitem', { name: 'Markera som inte genomfört' }).press('Enter');
+      await dialog.getByRole('button', { name: 'Markera som inte genomfört' }).press('Enter');
+      await expect.poll(() => api.released).toEqual(['fakturor']);
+      // The notice says what holds now, aloud too, and the way on is the item's own decision.
+      await expect(item.getByText('Markerat som inte genomfört', { exact: true })).toBeVisible();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Markerat som inte genomfört'));
+      await expect(item.getByRole('button', { name: 'Kontrollera status' })).toHaveCount(0);
+      await expect(page.locator('body')).not.toBeFocused();
+      await expectNoAxeViolations(page);
+      expect(await reflowProblems(page)).toEqual([]);
+      const decide = item.getByRole('button', { name: /^Attestera/ });
+      const shown = api.threads.find(t => t.id === 'fakturor')!.updatedAt;
+      await decide.focus();
+      await decide.press('Enter');
+      // A new decision, on the item as it was drawn after it was let go.
+      await expect.poll(() => api.acted.map(a => [a.threadId, a.body.version])).toEqual([['fakturor', shown]]);
+    });
   });
 
 /**
@@ -240,4 +295,47 @@ test('a policy update removes retained source content without a page reload', as
     (window as unknown as { emitChange(data: object): void }).emitChange({ revision: '2', policy: '2:1' }),
   );
   await expect(page.getByText(title, { exact: true })).toHaveCount(0);
+});
+
+/**
+ * The planning card's own decision in doubt (DE-M2): the card says it and stops, with Kontrollera status and the way to
+ * let it go beside it. Let go, the card sends its times again (DE-M1), and the focus is on the card, since the button
+ * that had it is gone with the doubt.
+ */
+test('a planning card whose invitations are in doubt is let go and sends its times again (DE-M1, DE-M2)', async ({
+  page,
+  api,
+}) => {
+  await page.setViewportSize(desktop);
+  const samtal = api.threads.find(t => t.id === 'samtal')!;
+  samtal.execution = {
+    id: 'execution-samtal',
+    decisionId: 'calendar:samtal:1',
+    operation: 'calendar.confirmProposals',
+    state: 'unknown',
+    reason: null,
+    compensates: null,
+  };
+  await open(page, '/todo?item=samtal');
+  const card = page.getByRole('complementary', { name: 'Valt ärende' }).locator('#card-samtal');
+  await expect(card.getByRole('status').filter({ hasText: 'Källans besked saknas.' })).toBeVisible();
+  await expect(card.getByRole('button', { name: /^Skicka/ })).toHaveCount(0);
+  const letGo = card.getByRole('button', { name: 'Markera som inte genomfört' });
+  await letGo.focus();
+  await letGo.press('Enter');
+  const dialog = page.getByRole('alertdialog', { name: 'Markera beslutet som inte genomfört?' });
+  await expect(dialog).toBeVisible();
+  await expectNoAxeViolations(page);
+  await dialog.getByRole('button', { name: 'Avbryt' }).press('Enter');
+  await expect(dialog).toBeHidden();
+  await expect(letGo).toBeFocused();
+  expect(api.released).toEqual([]);
+  await letGo.press('Enter');
+  await dialog.getByRole('button', { name: 'Markera som inte genomfört' }).press('Enter');
+  await expect.poll(() => api.released).toEqual(['samtal']);
+  await expect(card.getByRole('status').filter({ hasText: 'Beslutet är markerat som inte genomfört.' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Kontrollera status' })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
+  await expect(card).toBeFocused();
+  await expectNoAxeViolations(page);
 });

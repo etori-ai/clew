@@ -264,7 +264,14 @@ export interface ExecutionDeps {
   clock: () => Date;
   ids: () => string;
   digest: (input: unknown) => string;
+  /**
+   * Where a failure of Clew's own is said (D91): recording a source's answer that throws is logged here with the
+   * error's name, and the error goes on to the workflow, which tries the step again. Absent, it is not logged.
+   */
+  log?: ExecutionLog;
 }
+/** A warning line of the executions module (D91): a message and details that name no person and carry no payload. */
+export type ExecutionLog = (message: string, ...details: unknown[]) => void;
 export class ExecutionError extends Error {}
 /** The authority could not be established now, for a reason that may pass (D117): retried as unavailable, not revoked. */
 export class SourceUnavailableError extends Error {

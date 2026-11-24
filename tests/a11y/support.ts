@@ -290,6 +290,8 @@ export class MockApi {
    * them as its query.
    */
   acted: Array<{ threadId: string; body: Record<string, unknown> }> = [];
+  /** The items whose decision in doubt the person let go (DE-M2). */
+  released: string[] = [];
   actRefusal: string | null = null;
   /**
    * A decision as the server makes one (D45, D47): `act`, `confirm`, `undo` and `undo-receipt` record it and answer with
@@ -767,6 +769,16 @@ export class MockApi {
         body: `retry: 60000\n\ndata: ${JSON.stringify({ revision: String(this.revision), policy: CHANGE_POLICY })}\n\n`,
       });
     if (path === `/threads/${id}/execution/check`) return json(this.threads.find(t => t.id === id));
+    // A decision in doubt the person lets go (DE-M2), refused as the server refuses it: only one in doubt, not an undo.
+    // It fails in the person's name, a new version of the item, and the item is decided again from there (DE-M1).
+    if (path === `/threads/${id}/execution/release` && post) {
+      const t = this.threads.find(t => t.id === id);
+      if (!t) return route.fulfill({ status: 404, json: { error: 'Ärendet finns inte.' } });
+      if (!t.execution || t.execution.state !== 'unknown' || t.execution.compensates)
+        return route.fulfill({ status: 400, json: { error: 'Beslutet väntar inte längre på besked.' } });
+      this.released.push(id);
+      return json(this.update(id, { execution: { ...t.execution, state: 'failed', reason: 'released-by-person' } }));
+    }
     if (path === '/auth/session') {
       if (this.sessionDelay) await new Promise(resolve => setTimeout(resolve, this.sessionDelay));
       return this.signedIn
@@ -2075,8 +2087,9 @@ export class MockApi {
             handledAt: null,
             waitingOn: null,
             receipt: null,
+            // An undone invitation is a proposed time again (DE-L17), as the projection writes it.
             proposals: t.proposals.map(p =>
-              p.status === 'confirmed' ? { ...p, status: 'undone', undoUntil: null } : p,
+              p.status === 'confirmed' ? { ...p, status: 'proposed', eventRef: null, undoUntil: null } : p,
             ),
           }),
           t.execution.compensates ?? t.execution.id,
@@ -2137,12 +2150,16 @@ export class MockApi {
         // Refused as the server's `act` refuses, in its order: the answers against the asks (`answersOf`), then an item
         // that is no longer open, then one that has changed since the person was shown it (AM-4), then an earlier decision
         // of another action. The same action decided again is the same decision, which the ledger replays whatever version
-        // it names: the item as it is, nothing new (`threads/usecases/decisions.ts`). A decision that dispatch refused
-        // because its user name moved to someone else (`SUBJECT_CHANGED`, D122) is decided anew.
+        // it names: the item as it is, nothing new (`threads/usecases/decisions.ts`). One that ended without its effect or
+        // with part of it, refused, let go by the person or not sent because its user name moved (D122), is decided anew
+        // (DE-M1), on the rows the source did not get done.
         const values = body.values ?? {};
         const missing = (action.path?.asks ?? []).find(a => a.required && !values[a.property]);
-        const refused = t.execution?.state === 'failed' && t.execution.reason === 'subject-changed';
-        const previous = t.execution && !t.execution.compensates && !refused ? t.execution : undefined;
+        const ended = !!t.execution && ['failed', 'partial'].includes(t.execution.state);
+        const previous = t.execution && !t.execution.compensates && !ended ? t.execution : undefined;
+        const done = new Set(
+          t.execution?.state === 'partial' ? t.receipt?.rows.filter(r => r.outcome === 'done').map(r => r.ref) : [],
+        );
         const refusal =
           this.actRefusal ??
           (missing ? `${missing.label} behöver fyllas i.` : undefined) ??
@@ -2150,6 +2167,11 @@ export class MockApi {
             ? 'Åtgärden frågar inte efter det värdet.'
             : undefined) ??
           (!previous && t.state !== 'open' ? 'Ärendet är redan hanterat.' : undefined) ??
+          (!previous &&
+          action.usesItems &&
+          (body.refs ?? t.items.filter(i => i.selected).map(i => i.ref)).some(ref => done.has(ref))
+            ? 'En del av raderna är redan genomförda. Välj bara de som återstår.'
+            : undefined) ??
           (!previous && body.version !== t.updatedAt
             ? 'Ärendet har ändrats sedan du öppnade det. Se över det och besluta igen.'
             : undefined) ??
