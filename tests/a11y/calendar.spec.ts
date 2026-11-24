@@ -56,7 +56,9 @@ test.describe('the three views', () => {
     await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
     const column = page.getByRole('main').locator('.astryx-scrollable-area');
     await expect(column).toHaveAttribute('tabindex', '0');
-    await expect(column).toHaveAccessibleName(/^Vecka 45/);
+    // Named for the page; the calendar inside it is the group named for the week, and no name is said twice.
+    await expect(column).toHaveAccessibleName('Kalender');
+    await expect(page.getByRole('group', { name: /^Vecka 45/ })).toHaveCount(1);
     await expectNoAxeViolations(page);
   });
   for (const [name, path] of views)
