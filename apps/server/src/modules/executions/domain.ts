@@ -52,7 +52,9 @@ export function outcome(result: ExecuteResult): ExecutionState {
  * refusal, a part or a release never sends these again, whichever decision did them and whatever the item's latest
  * receipt says.
  */
-export function doneOnCard(executions: readonly Execution[]): string[] {
+export function doneOnCard(
+  executions: readonly Pick<Execution, 'id' | 'state' | 'compensates' | 'result'>[],
+): string[] {
   const undone = new Map<string, 'all' | Set<string>>();
   for (const c of executions) {
     if (!c.compensates || !['succeeded', 'partial'].includes(c.state)) continue;

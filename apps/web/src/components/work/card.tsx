@@ -609,17 +609,16 @@ export function useThreadActions({ thread, onChange }: ActionProps) {
   // change to the thread starts it over. Back from the review, the item gives the focus to the control that led there
   // (`reviewLeftFor`, read as the item is drawn).
   const [draft] = useReviewDraft(reviewedAction(thread) ? thread : undefined);
-  // After a partial answer, the rows the source got done are not chosen again: the person decides on the rest (DE-M1).
-  const done = () =>
-    thread.execution?.state === 'partial'
-      ? new Set(thread.receipt?.rows.filter(row => row.outcome === 'done').map(row => row.ref))
-      : undefined;
-  const marked = () => {
-    const confirmed = done();
-    return thread.items.filter(i => i.selected && !confirmed?.has(i.ref)).map(i => i.ref);
+  const withDraft = () => {
+    const eligible = reviewRows(thread);
+    return selectionAfterReview(
+      thread.items.filter(i => i.selected).map(i => i.ref),
+      {
+        approved: approvedOf(draft, eligible),
+        left: leftOf(draft, eligible),
+      },
+    );
   };
-  const withDraft = () =>
-    selectionAfterReview(marked(), { approved: approvedOf(draft, thread.items), left: leftOf(draft, thread.items) });
   const [selected, setSelected] = useState<string[]>(withDraft);
   const [returned] = useState(() => reviewLeftFor(thread.id));
   const seededAt = useRef(thread.updatedAt);
@@ -840,7 +839,7 @@ export function ActionRow({
       <Button
         variant={due ? 'primary' : 'secondary'}
         label={primaryLabel ?? ''}
-        isDisabled={selectable && count === 0}
+        isDisabled={(selectable || (primary.usesItems && thread.items.length > 0)) && count === 0}
         isLoading={settling && pressed === primary.id}
         {...pressOrLink(primary)}
         data-action={primary.id}

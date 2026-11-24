@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import type { Execution, ExecutionStore, Job, WatchCard, WatchIntent } from '../model';
@@ -33,13 +33,15 @@ export function postgresExecutionStore(
     value ? sealer.open(value, sessionPurpose(id, role)) : null;
   const sealSession = (value: string | null, id: string, role: 'approving' | 'checking') =>
     value ? sealer.seal(value, sessionPurpose(id, role)) : null;
+  const openResult = (r: Pick<Row, 'id' | 'result'>): Execution['result'] =>
+    r.result ? JSON.parse(sealer.open(r.result, 'execution:result:' + r.id)) : null;
   const fromRow = (r: Row): Execution => ({
     ...r,
     ...(r.presentation ? { presentation: r.presentation } : { presentation: undefined }),
     state: r.state as Execution['state'],
     safety: r.safety as Execution['safety'],
     payload: JSON.parse(sealer.open(r.payload, 'execution:input:' + r.id)),
-    result: r.result ? JSON.parse(sealer.open(r.result, 'execution:result:' + r.id)) : null,
+    result: openResult(r),
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     expiresAt: r.expiresAt.toISOString(),
@@ -85,14 +87,14 @@ export function postgresExecutionStore(
       const [r] = await database().select().from(table).where(eq(table.id, id));
       return r ? fromRow(r) : undefined;
     },
-    async readCard(personId, threadId) {
-      return (
-        await database()
-          .select()
-          .from(table)
-          .where(and(eq(table.personId, personId), sql`${table.presentation}->>'threadId' = ${threadId}`))
-          .orderBy(asc(table.createdAt), asc(table.id))
-      ).map(fromRow);
+    async readCardResults(personId, threadIds) {
+      const threadId = sql<string>`${table.presentation}->>'threadId'`;
+      const rows = await database()
+        .select({ threadId, id: table.id, state: table.state, compensates: table.compensates, result: table.result })
+        .from(table)
+        .where(and(eq(table.personId, personId), inArray(threadId, [...threadIds])))
+        .orderBy(asc(table.createdAt), asc(table.id));
+      return rows.map(row => ({ ...row, state: row.state as Execution['state'], result: openResult(row) }));
     },
     async readJob(id) {
       const [r] = await database().select().from(jobs).where(eq(jobs.id, id));

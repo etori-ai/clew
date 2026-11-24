@@ -52,6 +52,8 @@ import { threadAccess } from '../access';
  * the memory ones. Every mutation writes its audit row through the same transaction as its other writes.
  */
 export interface ThreadDeps {
+  /** Confirmed rows, less successful undos, for the visible cards in this read. */
+  doneOnCards(personId: string, ids: readonly string[]): Promise<ReadonlyMap<string, ReadonlySet<string>>>;
   store: ThreadStore;
   registry: Pick<Registry, 'areas' | 'connector' | 'visible' | 'find' | 'viewFor' | 'allowed'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
@@ -94,8 +96,28 @@ export function threadUsecases(deps: ThreadDeps) {
       return path ? { ...action, path } : action;
     }),
   });
+  const present = async (personId: string, threads: Thread[]): Promise<Thread[]> => {
+    const ids = threads
+      .filter(
+        t => t.state === 'open' && t.actions.some(a => a.usesItems) && t.items.some(i => i.selectable || i.selected),
+      )
+      .map(t => t.id);
+    const done = ids.length ? await deps.doneOnCards(personId, ids) : undefined;
+    return threads.map(t => {
+      const confirmed = done?.get(t.id);
+      return pathed(
+        confirmed?.size
+          ? {
+              ...t,
+              items: t.items.map(i => (confirmed.has(i.ref) ? { ...i, selectable: false, selected: false } : i)),
+            }
+          : t,
+      );
+    });
+  };
+  const presentOne = async (personId: string, thread: Thread) => (await present(personId, [thread]))[0]!;
   const read = async (persona: Pick<AuthenticatedContext, 'id'>, threadId: string) =>
-    pathed((await store.readThread(persona.id, threadId))!);
+    presentOne(persona.id, (await store.readThread(persona.id, threadId))!);
 
   /**
    * Clear a snooze whose time has passed and say so, in the sweep's transaction. The timer, if any, is ended quietly. A
@@ -221,7 +243,7 @@ export function threadUsecases(deps: ThreadDeps) {
         details: { originalThreadId: original.id, originalExecutionId: execution.id, refs: items.map(i => i.ref) },
       });
     });
-    return pathed((await access.read(persona, id))!);
+    return presentOne(persona.id, (await access.read(persona, id))!);
   }
   /** Areas with live counts for the sidebar, and each figure with the time Clew read it (D54: "Personalsystemet 06:00"). */
   async function listAreas(persona: AuthenticatedContext): Promise<Area[]> {
@@ -416,7 +438,7 @@ export function threadUsecases(deps: ThreadDeps) {
   /** The person's own threads, newest first, as the stream shows them. */
   const listThreadsFor = async (persona: AuthenticatedContext) => {
     await wakeDue(persona);
-    return (await access.list(persona, clock().toISOString())).map(pathed);
+    return present(persona.id, await access.list(persona, clock().toISOString()));
   };
   /**
    * Alla samtal (WD-L1): one page of the person's conversations, the latest activity first, and where the next page
@@ -432,7 +454,7 @@ export function threadUsecases(deps: ThreadDeps) {
   /** One of the person's threads, or undefined when it is not theirs. */
   const threadFor = async (persona: AuthenticatedContext, threadId: string) => {
     const thread = await access.read(persona, threadId);
-    return thread && pathed(thread);
+    return thread && presentOne(persona.id, thread);
   };
   /**
    * A work item's "Händelser" (D112 item 4): what the person and Clew did to it, from the audit rows its own mutations

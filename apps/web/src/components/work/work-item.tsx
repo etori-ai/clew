@@ -257,6 +257,7 @@ function Rows({ thread, item }: { thread: Thread; item: ItemState }) {
             <CheckboxListItem
               key={i.ref}
               value={i.ref}
+              isDisabled={!i.selectable}
               align="start"
               label={<RowName thread={thread} item={item} row={i} />}
               description={describe(i.ref, i.detail)}

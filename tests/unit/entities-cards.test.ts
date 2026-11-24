@@ -180,6 +180,7 @@ function world(scans: Record<string, ThreadDraft[]> = SCANS) {
   const clock = () => new Date(now);
   const keys = memoryPersonKeys(people.state);
   const threads = threadUsecases({
+    doneOnCards: async () => new Map(),
     store,
     registry,
     run: (p, name, input) => registry.run(audiencedActorOf(p), name, input),

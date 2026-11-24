@@ -83,6 +83,7 @@ export { refresh } from './refresh';
 const store = postgresThreadStore({ durable: ledger, cancel: cancelDurable });
 export { calendar, events };
 const threadCore = threadUsecases({
+  doneOnCards: executions.doneOnCards,
   store,
   registry,
   run: runCapability,
