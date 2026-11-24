@@ -18,6 +18,8 @@ RUN bun install --frozen-lockfile && bun run build
 FROM docker.io/nginxinc/nginx-unprivileged:1.30.6-alpine-slim@sha256:5d8bb9437d74a600ec5dbf90c035451c724dc33eac8d3a71078f6f8612c345f6
 # The image's entrypoint writes this template to /etc/nginx/conf.d with the environment filled in.
 COPY apps/web/nginx.conf.template /etc/nginx/templates/default.conf.template
+# The security headers every page and file is served with (D145); the template includes them.
+COPY apps/web/security-headers.conf /etc/nginx/clew/security-headers.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 ENV CLEW_SERVER_URL=http://clew-server:3000
 EXPOSE 8080

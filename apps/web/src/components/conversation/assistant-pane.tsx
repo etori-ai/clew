@@ -24,6 +24,7 @@ import {
   VisuallyHidden,
   XMarkIcon,
 } from '@clew/ui';
+import { isWebAddress } from '../../web-address';
 import { handoverAssistantsQuery } from '../../queries';
 import { useMarks } from '../../marks';
 import { sideMessages } from '../../conversation-about';
@@ -241,7 +242,7 @@ export function AssistantPane({
           </VStack>
         </HStack>
         <HStack gap={2} vAlign="center">
-          {kept?.link && (
+          {kept?.link && isWebAddress(kept.link) && (
             <Link href={kept.link} target="_blank" rel="noreferrer">
               {`Öppna i ${who.source}`}
             </Link>
