@@ -453,17 +453,31 @@ test('a blocked browser preference stays usable without claiming it was saved', 
   await expect(page.getByRole('radio', { name: 'Mörkt', exact: true })).toBeChecked();
 });
 
-test('logout reports failure, then ends the session after a successful retry', async ({ page, api }) => {
-  await page.route('**/api/auth/logout', route => route.fulfill({ status: 503 }));
+test('logout reports failure in Clew’s words, then ends the session after a successful retry', async ({
+  page,
+  api,
+}) => {
+  const FAILED_LOGOUT = 'Utloggningen kunde inte bekräftas. Försök igen.';
+  const notices = page.getByRole('region', { name: 'Aviseringar' });
   await open(page, '/');
   const account = personButton(page);
   await expect(account).toBeVisible();
-  await openSettings(page);
-  await page.getByRole('button', { name: 'Logga ut', exact: true }).click();
-  await expect
-    .poll(() => announcements(page))
-    .toContainEqual(expect.stringContaining('Utloggningen kunde inte bekräftas. Försök igen.'));
-  // The settings closed with the attempt; the retry opens them again from the person.
+  // A dropped connection and a refused reply alike are said in Swedish, never in the browser's or the code's English
+  // ("Failed to fetch", "The sign-out was not confirmed."), which the toast said before WA-L12.
+  for (const [attempt, fail] of (['a dropped connection', 'a 503'] as const).entries()) {
+    await page.unroute('**/api/auth/logout');
+    await page.route('**/api/auth/logout', route =>
+      fail === 'a 503' ? route.fulfill({ status: 503 }) : route.abort('failed'),
+    );
+    // The settings close with each attempt; each one opens them again from the person.
+    await openSettings(page);
+    await page.getByRole('button', { name: 'Logga ut', exact: true }).click();
+    await expect(notices.getByText(FAILED_LOGOUT)).toHaveCount(attempt + 1);
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining(FAILED_LOGOUT));
+    await expect(notices.getByText(/fetch|sign-out|confirmed/i)).toHaveCount(0);
+    expect(await announcements(page)).not.toContainEqual(expect.stringMatching(/fetch|sign-out|confirmed/i));
+    await expect(account).toBeVisible();
+  }
   await openSettings(page);
   await page.unroute('**/api/auth/logout');
   await page.route('**/api/auth/logout', route => {

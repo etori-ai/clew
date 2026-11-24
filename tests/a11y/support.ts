@@ -2752,7 +2752,7 @@ export class MockApi {
       // As the talks module refuses it (D132 item 4): never a talk marked held, nor a booking an invitation carries.
       if (row.state === 'held') return fail(400, 'Samtalet är redan markerat som hållet.');
       if (row.state === 'booked' && row.invited !== false)
-        return fail(400, 'Samtalet är bokat genom en inbjudan från Clew, så tiden kan inte ändras här.');
+        return fail(400, `Samtalet är bokat genom en inbjudan från ${SITE}, så tiden kan inte ändras här.`);
       const { at: _at, until: _until, invited: _invited, own: _own, ...bare } = row;
       if (method === 'PUT') {
         const { start, end } = body as TalkBookingBody;

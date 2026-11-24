@@ -67,6 +67,7 @@ import {
   capabilityKindLabel,
   fieldList,
   healthLabel,
+  inLine,
   manifestFieldLabel,
   kindLabel,
   roleLabel,
@@ -342,12 +343,14 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         place: (
           <>
             <Text type="supporting" color="secondary">
+              {/* Whose a source of Clew's own is, is said once, in labels.ts's words ("Egen i …"), not also "Clews egen". */}
               {[
-                swatchWords(c.ordinal),
-                c.kind ? kindLabel(c.kind, site).toLowerCase() : null,
+                c.ordinal === null && c.kind ? null : swatchWords(c.ordinal),
+                c.kind ? kindLabel(c.kind, site) : null,
                 c.protocol ? `protokoll ${c.protocol}` : null,
               ]
-                .filter(Boolean)
+                .filter((part): part is string => !!part)
+                .map((part, i) => (i === 0 ? part : inLine(part)))
                 .join('\u00a0· ')}
             </Text>
             <Text type="supporting" color="secondary">
@@ -815,7 +818,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                       label={<Text>{historyLabel(h.action)}</Text>}
                       description={
                         <Text type="supporting">
-                          {[actorLabel(h.actor), historyWords(h.details)].filter(Boolean).join('\u00a0· ')}
+                          {[actorLabel(h.actor), historyWords(h.action, h.details)].filter(Boolean).join('\u00a0· ')}
                         </Text>
                       }
                       endContent={<Timestamp value={h.at} format="date_time" />}

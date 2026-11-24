@@ -1160,6 +1160,7 @@ export const connectors = (): ConnectorSummary[] => [
     id: 'calendar',
     source: 'Kalendern',
     bundled: true,
+    kind: 'core',
     url: null,
     secretChangedAt: null,
     counts: { capabilities: 7, execute: 2, tools: 4 },
@@ -1296,6 +1297,8 @@ export const checkReport: CheckReport = {
       group: 'capabilities',
       label: 'Dagens möten',
       description: 'Svarar inte för chef. En förmåga som anropar Clew behöver att Clew är igång.',
+      // What the runtime said, in its own English words, for the administrator to pass on (WA-L12).
+      cause: 'fetch failed: connect ECONNREFUSED 10.0.0.5:4010',
       capability: 'hello.dayWithMeetings',
     },
     {

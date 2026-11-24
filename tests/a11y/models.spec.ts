@@ -10,6 +10,7 @@ import {
   open,
   phone,
   reflowProblems,
+  SITE,
   test,
 } from './support';
 import { modelProviders, providerDetail, providerReport } from './data';
@@ -66,7 +67,7 @@ test.describe('model administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/models');
-      await expect(page).toHaveTitle('Modeller · Startsidan');
+      await expect(page).toHaveTitle(`Modeller · ${SITE}`);
       // The section is marked in the administration's own panel (D126).
       await expect(
         page
@@ -173,7 +174,7 @@ test.describe('model administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/models/gpt-oss-20b');
-      await expect(page).toHaveTitle('Snabb (lokal) · Startsidan');
+      await expect(page).toHaveTitle(`Snabb (lokal) · ${SITE}`);
       await page.getByRole('button', { name: 'Gör till standard' }).click();
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Snabb (lokal) är standard'));
       await expect(page.getByRole('button', { name: 'Ta bort som standard' })).toBeVisible();

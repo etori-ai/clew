@@ -4,7 +4,7 @@ import { competenceCatalogue, competenceRequirements, competenceShareTargets, co
 import { competenceTypes, searchHolders, withSkills } from './competence';
 import { ENTITY_UNIT, newsOutput, user } from './data';
 import { menuRows } from './phonebook';
-import { FAILED, desktop, expect, expectNoAxeViolations, open, phone, test, type MockApi } from './support';
+import { FAILED, SITE, desktop, expect, expectNoAxeViolations, open, phone, test, type MockApi } from './support';
 import { Units } from './unit-data';
 
 /*
@@ -32,7 +32,7 @@ const exactly = (path: string) => (url: URL) => url.pathname === path;
 /** A page that cannot name its thing still has its one level-1 heading, saying what could not be read, and the tab too. */
 async function named(page: Page, heading: string) {
   await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText([heading]);
-  await expect(page).toHaveTitle(`${heading} · Startsidan`);
+  await expect(page).toHaveTitle(`${heading} · ${SITE}`);
 }
 /** The page's own alert with the server's sentence, in the page's main content. */
 const alertIn = (scope: Page | Locator) =>

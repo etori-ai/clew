@@ -64,11 +64,44 @@ export function appearanceStoreContract(name: string, make: () => Promise<Appear
 
     test("the installation's name is read back as written, and null takes it away", async () => {
       const { store } = await make();
+      expect(await store.readName()).toBeNull();
       await store.transaction(tx => tx.write(record(1, { name: 'Intranätet för Exempelkommunen' })));
       expect(await store.read()).toEqual(record(1, { name: 'Intranätet för Exempelkommunen' }));
       expect((await store.transaction(tx => tx.read())).name).toBe('Intranätet för Exempelkommunen');
       await store.transaction(tx => tx.write(record(2)));
       expect((await store.read()).name).toBeNull();
+    });
+
+    test('the name alone is read as the record holds it, whatever else the row carries', async () => {
+      const { store } = await make();
+      expect(await store.readName()).toBeNull();
+      await store.transaction(tx => tx.write(record(1, { name: 'Medarbetarwebben' })));
+      expect(await store.readName()).toBe('Medarbetarwebben');
+      // A logo and a theme beside it change nothing in what the name's read answers.
+      await store.transaction(tx =>
+        tx.write(
+          record(2, {
+            name: 'Medarbetarwebben',
+            theme: null,
+            logo: {
+              alt: 'Annan',
+              light: { mediaType: 'image/svg+xml', bytes: svg },
+              dark: { mediaType: 'image/png', bytes: png },
+            },
+          }),
+        ),
+      );
+      expect(await store.readName()).toBe('Medarbetarwebben');
+      // A transaction that throws leaves the name it had.
+      await expect(
+        store.transaction(async tx => {
+          await tx.write(record(3, { name: 'Annat namn' }));
+          throw new Error('refused');
+        }),
+      ).rejects.toThrow('refused');
+      expect(await store.readName()).toBe('Medarbetarwebben');
+      await store.transaction(tx => tx.write(record(3)));
+      expect(await store.readName()).toBeNull();
     });
 
     test('a transaction that throws leaves neither the record nor its audit row', async () => {

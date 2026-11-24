@@ -20,11 +20,12 @@ import type { AppearanceRecord, AppearanceStore, LogoImage } from './ports';
  * by an administrator in the product and stored in Clew's own database, not in the build.
  *
  * `read`, `name` and `logo` are what any browser asks before a person has signed in, so they take no actor and answer
- * nothing but the appearance; `name` is also what the assistant and the shared header call the installation. Every
- * change needs the grant capability `admin.appearance` and the step-up `authorize()`, and writes its audit row in the
- * same transaction (`appearance.name.set`, `appearance.name.cleared`, `appearance.theme.set`,
- * `appearance.theme.cleared`, `appearance.logo.set`, `appearance.logo.cleared`). An audit row names the name, the
- * theme and the image's type and size, never the colours' file or the image.
+ * nothing but the appearance; `name` is also what the shared header calls the installation, and it reads the name
+ * alone, never the logos (`AppearanceStore.readName`). The model is never given the name (D98 item 11). Every change
+ * needs the grant capability `admin.appearance` and the step-up `authorize()`, and writes its audit row in the same
+ * transaction (`appearance.name.set`, `appearance.name.cleared`, `appearance.theme.set`, `appearance.theme.cleared`,
+ * `appearance.logo.set`, `appearance.logo.cleared`). An audit row names the name, the theme and the image's type and
+ * size, never the colours' file or the image.
  */
 export const APPEARANCE_CAPABILITY: Capability = 'admin.appearance';
 export const APPEARANCE_SUBJECT = 'installation:appearance';
@@ -176,7 +177,7 @@ export function appearanceUsecases(deps: { store: AppearanceStore; clock: () => 
     },
     /** Public: what the installation is called, its default until an administrator names it. */
     async name(): Promise<string> {
-      return (await deps.store.read()).name ?? SITE_NAME_DEFAULT;
+      return (await deps.store.readName()) ?? SITE_NAME_DEFAULT;
     },
     /** Public: one image of the logo, or null when the installation has none. */
     async logo(variant: LogoVariant): Promise<(LogoImage & { revision: number }) | null> {

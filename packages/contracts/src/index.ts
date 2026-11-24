@@ -5399,6 +5399,7 @@ export {
   themeFromAccent,
   type InstallationTheme,
   type LogoMediaType,
+  type SiteNameProblem,
   type ThemeColorPair,
   type ThemeColorToken,
   type ThemeColors,

@@ -83,7 +83,7 @@ for (const [layout, viewport] of [
       await expect(erik.getByText('ons 11 nov. kl. 09:00–10:00', { exact: true })).toBeVisible();
       await expect(
         erik.getByText(
-          'Bokat genom en inbjudan från Clew. Flytta eller ställ in mötet i kalendern för att ändra tiden.',
+          `Bokat genom en inbjudan från ${SITE}. Flytta eller ställ in mötet i kalendern för att ändra tiden.`,
         ),
       ).toBeVisible();
       await expect(erik.getByRole('button', { name: 'Markera som hållet' })).toBeVisible();
@@ -94,7 +94,7 @@ for (const [layout, viewport] of [
       await open(page, '/staff?talk=lena');
       const lena = talk(page, 'Lena Berg');
       await expect(lena.getByText('tors 12 nov. kl. 14:30–15:30', { exact: true })).toBeVisible();
-      await expect(lena.getByText('Tiden är angiven här. Ingen inbjudan har skickats från Clew.')).toBeVisible();
+      await expect(lena.getByText(`Tiden är angiven här. Ingen inbjudan har skickats från ${SITE}.`)).toBeVisible();
       await expect(lena.getByRole('button', { name: 'Ändra tid', exact: true })).toBeVisible();
       await expect(lena.getByRole('button', { name: 'Ta bort tiden', exact: true })).toBeVisible();
       await expectNoAxeViolations(page);
@@ -151,7 +151,7 @@ for (const [layout, viewport] of [
       await expect(form).toHaveCount(0);
       await expect(dialog.getByText('Bokat', { exact: true })).toBeVisible();
       await expect(dialog.getByText('fre 20 nov. kl. 13:00–14:00', { exact: true })).toBeVisible();
-      await expect(dialog.getByText('Tiden är angiven här. Ingen inbjudan har skickats från Clew.')).toBeVisible();
+      await expect(dialog.getByText(`Tiden är angiven här. Ingen inbjudan har skickats från ${SITE}.`)).toBeVisible();
       expect(api.talkWrites).toEqual([
         {
           method: 'PUT',
@@ -279,7 +279,7 @@ for (const [layout, viewport] of [
       await page.keyboard.press('Enter');
       await expect(notices(page).getByText('Tiden står kvar, utan inbjudan.')).toBeAttached();
       await expect(dialog.getByRole('button', { name: 'Ändra tid', exact: true })).toBeFocused();
-      await expect(dialog.getByText('Tiden är angiven här. Ingen inbjudan har skickats från Clew.')).toBeVisible();
+      await expect(dialog.getByText(`Tiden är angiven här. Ingen inbjudan har skickats från ${SITE}.`)).toBeVisible();
       await expect(dialog.getByText('Mötet är borta ur kalendern', { exact: true })).toHaveCount(0);
       // Take it off: the talk lacks a time again, and Ange tid has the focus.
       gone();
@@ -708,7 +708,7 @@ test.describe('1.4.10 reflow', () => {
     await page.setViewportSize(narrow);
     await open(page, '/staff?talk=lena');
     const dialog = talk(page, 'Lena Berg');
-    await expect(dialog.getByText('Tiden är angiven här. Ingen inbjudan har skickats från Clew.')).toBeVisible();
+    await expect(dialog.getByText(`Tiden är angiven här. Ingen inbjudan har skickats från ${SITE}.`)).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
     await dialog.getByRole('button', { name: 'Ändra tid', exact: true }).click();
     await expect(dialog.getByRole('form', { name: 'Tid för samtalet' })).toBeVisible();

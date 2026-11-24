@@ -244,7 +244,13 @@ test.describe('administration', () => {
       await expect(table.getByRole('img', { name: 'Färg blågrön, 1:a anslutna systemet' })).toBeVisible();
       await expect(table.getByRole('img', { name: 'Färg lila, 2:a anslutna systemet' })).toBeVisible();
       await expect(table.getByRole('img', { name: 'Vit, Clews egen' })).toBeVisible();
-      await expect(table.getByText('calendar · Clews egen')).toBeVisible();
+      // One wording for whose a source is (labels.ts): the installation's name keeps its capitals mid-line.
+      await expect(table.getByText(`calendar · egen i ${SITE}`, { exact: true })).toBeVisible();
+      await expect(table.getByText(/Clews egen ·|· Clews egen/)).toHaveCount(0);
+      await open(page, '/admin/connectors/calendar');
+      // The page's line says whose it is first, so it keeps its capital; the protocol follows, lowered.
+      await expect(page.getByText(`Egen i ${SITE} · protokoll 1`, { exact: true })).toBeVisible();
+      await expect(page.getByText(`Körs i ${SITE}`, { exact: true })).toBeVisible();
       await open(page, '/admin/connectors/finance');
       await expect(page.getByRole('img', { name: 'Färg lila, 2:a anslutna systemet' })).toBeVisible();
       await expect(
@@ -580,6 +586,9 @@ test.describe('administration', () => {
       await open(page, '/admin/connectors/hello');
       await expect(page).toHaveTitle(`Hello · ${SITE}`);
       await expect(page.getByText(/Hello: svarar inte/)).toBeVisible();
+      // What the system answered, in the runtime's English, is marked so inside the Swedish sentence (3.1.2).
+      await expect(page.getByRole('main').locator('[lang="en"]')).toHaveText('ECONNREFUSED');
+      await expect(page.getByText('Teknisk orsak, på engelska:')).toBeVisible();
       const tablist = page.getByRole('tablist');
       await tablist.getByRole('tab', { name: 'Översikt' }).focus();
       await page.keyboard.press('ArrowRight');
@@ -601,6 +610,13 @@ test.describe('administration', () => {
         'Fel nyckel släpps igenom',
       );
       await expect(page.getByRole('list', { name: 'Funktioner' })).toContainText('hello.dayWithMeetings');
+      // The runtime's own words stand apart from Clew's Swedish, named as the technical cause and marked English (3.1.2).
+      const functions = page.getByRole('list', { name: 'Funktioner' });
+      await expect(functions).toContainText(
+        'Teknisk orsak, på engelska: fetch failed: connect ECONNREFUSED 10.0.0.5:4010',
+      );
+      await expect(functions.locator('[lang="en"]')).toHaveText('fetch failed: connect ECONNREFUSED 10.0.0.5:4010');
+      await expect(functions.locator('[lang="en"]', { hasText: 'Teknisk orsak' })).toHaveCount(0);
       const passed = page.getByRole('button', { name: new RegExp(`I ${SITE}.*1 godkänd`) });
       await expect(passed).toHaveAttribute('aria-expanded', 'false');
       await passed.focus();

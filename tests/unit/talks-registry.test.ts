@@ -148,6 +148,7 @@ function world() {
       new Set(
         (managers.get(managerId)?.units ?? []).flatMap(u => u.people.map(p => p.id)).filter(id => id !== managerId),
       ),
+    siteName: async () => 'Medarbetarwebben',
     clock,
     ids,
   });

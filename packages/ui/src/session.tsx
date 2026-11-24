@@ -259,6 +259,10 @@ export function SessionUnreachable({ site, onRetry }: { site: string; onRetry: (
  * has typed, a toast says so and only the growing wait asks again (`retryDelay`) until Clew answers. The same session
  * with a new authorization version is `onAccessChanged`, once the tab is in view: the caller reads the session again.
  * The session's toasts stand in a toast region of its own, Astryx's `ToastViewport`, which leaves with the session.
+ * Astryx 0.7.16's `ToastViewport` unmounts a closed toast when the row's collapse ends (`transitionend`): a close that
+ * lands while the row's entry transition is still pending starts no collapse, so nothing ends, the collapsed row stays
+ * mounted and the focus is not handed back. A person cannot close a toast that fast; a test under load can, and waits
+ * for the entry to finish (`tests/a11y/session.spec.ts`). Clew does not patch Astryx.
  * `site` is the installation's name, which the notices, the ended page and its tab's title say.
  */
 export function SessionBoundary({

@@ -20,9 +20,12 @@ groups on Administration › Användare.
 **Installationens namn** is what the installation is called where a person reads it: every tab's title, the sign-in
 page's heading, what the browser says when Clew cannot be reached, Clew's own header band when no connector gives
 the header ([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)),
-the sentences that say where something is or is not kept, and what the assistant calls the place it answers in. It
-is one line of at most 60 characters, trimmed; an empty name is refused at the field. **Återställ till Clew** goes
-back to the default. Clew's own name stays where the product, not the installation, is meant: the source label
+the sentences that say where something is or is not kept and who sent a talk's invitation. It is one line of at most
+60 characters, trimmed and in Unicode's composed form, with nothing invisible, nothing that turns the text's
+direction, no character that cannot be drawn, at most two marks on one letter and at least one letter or digit
+(`checkSiteName`); a name that breaks one of these is refused at the field with what is wrong, and the command line
+refuses it the same way. **Återställ till Clew** goes back to the default. The model is never given the name: it
+does not need it, and `admin.appearance` must not reach every assistant's instructions (D98 item 11). Clew's own name stays where the product, not the installation, is meant: the source label
 `Clew` on what Clew itself stores, the protocol pages and the documentation.
 
 ### The theme file
@@ -37,20 +40,20 @@ group is the file's own and may be referenced:
   "$description": "Exempelkommunen",
   "palette": {
     "$type": "color",
-    "blue": { "$value": "#005595" },
-    "pale-blue": { "$value": "#daeff1" }
+    "grey": { "$value": "#1b1b1b" },
+    "pale-grey": { "$value": "#f1f1f1" }
   },
   "light": {
     "color": {
       "$type": "color",
-      "accent": { "$value": "{palette.blue}" },
+      "accent": { "$value": "{palette.grey}" },
       "on-accent": { "$value": "#ffffff" }
     }
   },
   "dark": {
     "color": {
       "$type": "color",
-      "accent": { "$value": "{palette.pale-blue}" },
+      "accent": { "$value": "{palette.pale-grey}" },
       "on-accent": { "$value": "#000000" }
     }
   }
@@ -142,7 +145,7 @@ its appearance before anyone has signed in, and how a developer tries the Sundsv
 |---|---|
 | The file format, the token list, the contrast pairs, the schema, the name's check | `packages/contracts/src/theme-file.ts` |
 | Storage, permission, audit, the logo's rules | `apps/server/src/modules/appearance/` |
-| The public and the administration routes | `apps/server/src/routes/appearance.ts`, `routes/admin.ts` |
+| The public and the administration routes | `apps/server/src/routes/appearance.ts`, `routes/appearance-admin.ts` |
 | From saved colours to an Astryx theme, and the header's band | `packages/ui/src/theme.ts`, `branding.ts` |
 | Reading the appearance in the browser | `apps/web/src/branding.ts` |
 | The page | `apps/web/src/pages/admin/appearance.tsx` |
@@ -153,7 +156,8 @@ its appearance before anyone has signed in, and how a developer tries the Sundsv
 
 `tests/unit/theme-file.test.ts` holds the format, the contrast rules, the base table against Astryx and the
 Sundsvall example; `tests/unit/appearance-admin.test.ts` the use cases and their audit rows;
-`tests/appearance-store-contract.ts` runs on the memory adapter and on Postgres (`bun run test:db`);
+`tests/unit/appearance-admin-routes.test.ts` the administration's routes behind the session guard (capability, CSRF,
+step-up, the body and its Swedish refusals); `tests/appearance-store-contract.ts` runs on the memory adapter and on Postgres (`bun run test:db`);
 `tests/a11y/admin-appearance.spec.ts` the page. The browser suite's theme and logo are answers of its mocked API, so
 one build serves every profile. To run the header and theme checks on another saved appearance:
 

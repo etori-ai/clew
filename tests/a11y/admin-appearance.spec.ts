@@ -199,7 +199,7 @@ test.describe('appearance administration', () => {
       await expect(page.getByRole('button', { name: 'Återställ till Neutral' })).toHaveCount(0);
     });
 
-    test('the installation’s name is written by keyboard, refused at the field when empty, and is at once the tab’s title and the band’s name', async ({
+    test('the installation’s name is written by keyboard, refused at the field when it does not hold, and is at once the tab’s title and the band’s name', async ({
       page,
       api,
     }) => {
@@ -217,6 +217,16 @@ test.describe('appearance administration', () => {
       await expect(field).toBeFocused();
       await expect(field).toHaveAttribute('aria-invalid', 'true');
       await expect(drawn(page, 'Skriv ett namn.')).toBeVisible();
+      expect(api.appearance.name).toBe(SITE);
+      // A character that turns the text's direction is refused the same way, with the server's own words (D98 item 11).
+      await field.fill('Intra‮nätet');
+      await save.focus();
+      await page.keyboard.press('Enter');
+      await expect(field).toBeFocused();
+      await expect(field).toHaveAttribute('aria-invalid', 'true');
+      await expect(
+        drawn(page, 'Namnet får inte ha osynliga tecken eller tecken som vänder textens riktning.'),
+      ).toBeVisible();
       expect(api.appearance.name).toBe(SITE);
 
       await field.fill('Intranätet Norr');

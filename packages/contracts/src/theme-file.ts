@@ -416,16 +416,53 @@ export const LOGO_ALT_MAX = 120;
 
 /**
  * The installation's name (D98 as amended 2026-11-24): what the browser's tab titles, the sign-in page, the session's
- * notices and the assistant call the place a person works in. An installation nobody has named is called Clew.
+ * notices and Clew's own header band call the place a person works in; never the model (D98 item 11). An installation
+ * nobody has named is called Clew.
  */
 export const SITE_NAME_DEFAULT = 'Clew';
 export const SITE_NAME_MAX = 60;
-const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
-/** A name as it is saved: trimmed, on one line, and 1 to `SITE_NAME_MAX` characters; otherwise the problem, in Swedish. */
-export function checkSiteName(value: unknown): { name: string } | { problem: string } {
-  const name = typeof value === 'string' ? value.trim() : '';
-  if (!name) return { problem: 'Skriv ett namn.' };
-  if (CONTROL.test(name)) return { problem: 'Namnet ska stå på en rad.' };
-  if ([...name].length > SITE_NAME_MAX) return { problem: `Namnet får vara högst ${SITE_NAME_MAX} tecken.` };
-  return { name };
+/** Control characters and the line and paragraph separators: a name on more than one line. */
+const LINE_BREAKING = /[\p{Cc}\p{Zl}\p{Zp}]/u;
+/** Format characters: zero-width ones, which draw nothing, and the controls that turn the text's direction. */
+const INVISIBLE = /\p{Cf}/u;
+/** Private-use, unassigned and lone surrogate code points: nothing a page can be sure to draw. */
+const UNDRAWABLE = /[\p{Co}\p{Cn}\p{Cs}]/u;
+/** Three combining marks in a row, which pile up over the letters around them. */
+const STACKED_MARKS = /\p{M}{3,}/u;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+/** Why a name is refused, for a caller that says it in other words than the field's (`scripts/appearance-set.ts`). */
+export type SiteNameProblem = 'empty' | 'lines' | 'invisible' | 'undrawable' | 'marks' | 'letters' | 'length';
+const SITE_NAME_PROBLEMS: Record<SiteNameProblem, string> = {
+  empty: 'Skriv ett namn.',
+  lines: 'Namnet ska stå på en rad.',
+  invisible: 'Namnet får inte ha osynliga tecken eller tecken som vänder textens riktning.',
+  undrawable: 'Namnet har tecken som inte kan visas.',
+  marks: 'Namnet får ha högst två accenter eller andra tecken på samma bokstav.',
+  letters: 'Namnet behöver minst en bokstav eller siffra.',
+  length: `Namnet får vara högst ${SITE_NAME_MAX} tecken.`,
+};
+/**
+ * A name as it is saved: in Unicode's composed form (NFC), trimmed, on one line, with nothing invisible, nothing that
+ * turns the text's direction and nothing a page cannot draw, at most two combining marks in a row, at least one letter
+ * or digit, and 1 to `SITE_NAME_MAX` characters; otherwise why (`code`) and the problem in Swedish, for the field. The
+ * server and the page run this same check, and so does every browser that reads the saved appearance (`readBranding`).
+ */
+export function checkSiteName(value: unknown): { name: string } | { problem: string; code: SiteNameProblem } {
+  const name = typeof value === 'string' ? value.normalize('NFC').trim() : '';
+  const code: SiteNameProblem | null = !name
+    ? 'empty'
+    : LINE_BREAKING.test(name)
+      ? 'lines'
+      : INVISIBLE.test(name)
+        ? 'invisible'
+        : UNDRAWABLE.test(name)
+          ? 'undrawable'
+          : STACKED_MARKS.test(name)
+            ? 'marks'
+            : !LETTER_OR_DIGIT.test(name)
+              ? 'letters'
+              : [...name].length > SITE_NAME_MAX
+                ? 'length'
+                : null;
+  return code ? { problem: SITE_NAME_PROBLEMS[code], code } : { name };
 }

@@ -403,7 +403,7 @@ export function History({ history }: { history: ModelDetail['history'] }) {
           label={<Text>{historyLabel(h.action)}</Text>}
           description={
             <Text type="supporting">
-              {[actorLabel(h.actor), historyWords(h.details)].filter(Boolean).join('\u00a0· ')}
+              {[actorLabel(h.actor), historyWords(h.action, h.details)].filter(Boolean).join('\u00a0· ')}
             </Text>
           }
           endContent={<Timestamp value={h.at} format="date_time" />}

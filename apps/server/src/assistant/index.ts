@@ -735,7 +735,6 @@ export function assistantUsecases(deps: AssistantDeps) {
     const lines = (objects: ResolvedObject[]) =>
       objects.flatMap(o => (objectOpen(o) ? serialiseContext([o], now.toISOString(), people.guards) : [closedLine(o)]));
     const system = systemPrompt({
-      site: await deps.siteName(),
       name: persona.name,
       role: persona.role,
       unitLabel: persona.unitLabel,

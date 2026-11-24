@@ -327,7 +327,7 @@ export const swedish = {
   '@astryx.comments.resolved': { defaultMessage: 'Löst' },
   '@astryx.comments.resolvedBy': { defaultMessage: 'Löst av {name}' },
   '@astryx.comments.errorAnnouncement': { defaultMessage: '{title} {description}' },
-  '@astryx.comments.retryFailed': { defaultMessage: 'Det gick inte att försöka igen.' },
+  '@astryx.comments.retryFailed': { defaultMessage: 'Försöket misslyckades igen.' },
   '@astryx.comments.sendFailed': { defaultMessage: 'Kommentaren kunde inte skickas.' },
   '@astryx.comments.threadLabel': { defaultMessage: 'Tråd av {name}' },
   '@astryx.comments.unread': { defaultMessage: 'Ny' },

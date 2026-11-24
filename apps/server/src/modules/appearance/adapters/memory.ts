@@ -15,6 +15,9 @@ export function memoryAppearanceStore(): MemoryAppearanceStore {
     async read() {
       return structuredClone(record);
     },
+    async readName() {
+      return record.name;
+    },
     transaction(fn) {
       // One at a time, as the row lock gives in Postgres.
       const run = queue.then(async () => {

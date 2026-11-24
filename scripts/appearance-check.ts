@@ -104,6 +104,9 @@ const employee = await client('hassan');
 
 // The appearance to put back: the saved theme as it is, and the logo's bytes from the public addresses.
 const before = (await admin.call('GET', '/api/admin/appearance')).json;
+// The name as it is saved, null for none: the API says Clew both for no name and for a name of "Clew", so the store says it.
+const { postgresAppearanceStore } = await import('../apps/server/src/modules/appearance/adapters/postgres');
+const beforeName = await postgresAppearanceStore().readName();
 const image = async (variant: 'light' | 'dark') => {
   const response = await anonymous.raw(base + '/api/appearance/logo/' + variant);
   if (!response.ok) return undefined;
@@ -119,6 +122,8 @@ const beforeFile = before.theme ? await (await anonymous.raw(base + '/api/appear
 console.log(
   'Before: revision',
   before.revision,
+  '| name:',
+  beforeName ?? 'none (Clew)',
   '| theme:',
   before.theme?.name ?? 'none',
   '| logo:',
@@ -260,7 +265,7 @@ try {
   await admin.call('DELETE', '/api/admin/appearance/theme');
   await admin.call('DELETE', '/api/admin/appearance/logo');
   await admin.call('DELETE', '/api/admin/appearance/name');
-  if (before.name !== 'Clew') await admin.call('PUT', '/api/admin/appearance/name', { name: before.name });
+  if (beforeName !== null) await admin.call('PUT', '/api/admin/appearance/name', { name: beforeName });
   if (beforeFile) await admin.call('PUT', '/api/admin/appearance/theme', { file: beforeFile });
   if (beforeLogo?.light)
     await admin.call('PUT', '/api/admin/appearance/logo', {
