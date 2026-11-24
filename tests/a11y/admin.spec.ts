@@ -12,7 +12,7 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { connectorDetail } from './data';
+import { checkReport, connectorDetail } from './data';
 
 /**
  * Administration (D23): the connectors list, the add dialog, one connector's tabs and the remove confirmation, as an
@@ -442,6 +442,75 @@ test.describe('administration', () => {
       await expect(dialog).toHaveCount(0);
       await expect(page.getByRole('table').getByRole('link', { name: 'Nytt system' })).toBeVisible();
     });
+    for (const activated of [false, true]) {
+      test(`the add dialog retries only its own draft (${activated ? 'activated elsewhere' : 'still a draft'})`, async ({
+        page,
+        api,
+      }) => {
+        api.admin = true;
+        const draft = {
+          ...connectorDetail(api.connectors.find(c => c.id === 'hello')!),
+          state: 'draft' as const,
+          version: 1,
+        };
+        const diff = {
+          added: [],
+          removed: [],
+          changed: [],
+          areasAdded: [],
+          areasRemoved: [],
+          areasChanged: [],
+          usesAdded: [],
+          usesRemoved: [],
+          fields: ['source'],
+          same: false,
+        };
+        const offer = { revision: 'c'.repeat(64), at: '2026-11-04T07:00:00.000Z', diff };
+        const current = {
+          ...draft,
+          state: activated ? 'enabled' : 'draft',
+          version: activated ? 2 : 1,
+          offered: offer,
+        };
+        const approvals: unknown[] = [];
+        await page.route('**/api/admin/connectors', route =>
+          route.request().method() === 'POST'
+            ? route.fulfill({ json: { connector: draft, report: { ok: false, items: [] } } })
+            : route.fallback(),
+        );
+        await page.route('**/api/admin/connectors/hello', route => route.fulfill({ json: current }));
+        await page.route('**/api/admin/connectors/hello/test', route =>
+          route.fulfill({
+            json: {
+              ok: true,
+              items: checkReport.items.filter(i => i.level === 'ok'),
+              health: current.health,
+              offered: true,
+            },
+          }),
+        );
+        await page.route('**/api/admin/connectors/hello/refresh', route => {
+          approvals.push(route.request().postDataJSON());
+          return route.fulfill({ json: { diff, connector: { ...current, offered: null, version: 2 } } });
+        });
+        await open(page, '/admin/connectors');
+        await page.getByRole('button', { name: 'Anslut system' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Anslut system' });
+        await dialog.getByRole('textbox', { name: /^Id/ }).fill('hello');
+        await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://hello:4010');
+        await dialog.getByLabel(/Delad nyckel/).fill('en-tillräckligt-lång-nyckel');
+        await dialog.getByRole('button', { name: 'Kontrollera' }).click();
+        await dialog.getByRole('button', { name: 'Försök igen' }).click();
+        if (activated) {
+          await expect(page).toHaveURL('/admin/connectors/hello');
+          await expect(page.getByRole('button', { name: 'Granska ändringen' })).toBeVisible();
+          expect(approvals).toEqual([]);
+        } else {
+          await expect(dialog.getByText('Anslutningen fungerar.', { exact: true })).toBeVisible();
+          expect(approvals).toEqual([{ apply: true, offered: offer.revision, draftVersion: 1 }]);
+        }
+      });
+    }
     test('on a short screen the add dialog scrolls its step and keeps its buttons on screen', async ({ page, api }) => {
       api.admin = true;
       await page.setViewportSize({ width: 1280, height: 560 });
