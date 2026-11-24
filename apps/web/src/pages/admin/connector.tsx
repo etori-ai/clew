@@ -71,6 +71,7 @@ import {
   statusOf,
 } from './labels';
 import { AdminShell } from './shell';
+import { mobileQuery } from '../../media';
 import { DialogFrame } from '../../components/shell/dialog-frame';
 import { DOT } from '../../dot';
 
@@ -134,7 +135,7 @@ function ToolSwitch({
 export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const mobile = useMediaQuery('(max-width: 720px)');
+  const mobile = useMediaQuery(mobileQuery);
   // The connector and the units from the admin cache (D33); a 400 is the one answer the page turns into "finns inte".
   const client = useQueryClient();
   const detail = useQuery(adminQueries.connector(id));

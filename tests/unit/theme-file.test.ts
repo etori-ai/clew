@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import Ajv2020 from 'ajv/dist/2020';
 import {
   THEME_BASE_COLORS,
@@ -67,6 +67,80 @@ describe('the theme file and the base it is checked against (D98)', () => {
           contrastRatio(THEME_BASE_COLORS[foreground][index], THEME_BASE_COLORS[background][index]),
         ).toBeGreaterThanOrEqual(min);
     expect(checkThemeContrast(THEME_BASE_COLORS)).toEqual([]);
+  });
+
+  test('every pair is enforced: a foreground drawn in its ground’s colour is refused, one that reads passes', () => {
+    const mark = (token: string, index: 0 | 1) => THEME_BASE_COLORS[token as keyof typeof THEME_BASE_COLORS][index];
+    for (const [foreground, background, min] of THEME_CONTRAST_PAIRS) {
+      const ground = [mark(background, 0), mark(background, 1)] as const;
+      const refused = checkThemeContrast({ [foreground]: ground });
+      for (const mode of ['light', 'dark'] as const)
+        expect(
+          refused.some(
+            p =>
+              p.token === foreground &&
+              p.mode === mode &&
+              p.message.startsWith(`${foreground} (`) &&
+              p.message.includes(` mot ${background} (`) &&
+              p.message.endsWith(`Minst ${String(min).replace('.', ',')}:1 krävs.`),
+          ),
+          `${foreground} on ${background} in ${mode}`,
+        ).toBe(true);
+      // Black or white, whichever reads more on the ground, holds the pair and every other one it is in.
+      const reads = (hex: string) =>
+        contrastRatio('#000000', hex) >= contrastRatio('#ffffff', hex) ? '#000000' : '#ffffff';
+      expect(checkThemeContrast({ [foreground]: [reads(ground[0]), reads(ground[1])] }), foreground).toEqual([]);
+    }
+  });
+
+  test('the focus ring, marks, icons and status words are held on a card and on the page, not only on a surface (WA-M1)', () => {
+    // A blue card the review found accepted: the accent (the focus ring), the status words and the grey icons on it.
+    const problems = checkThemeContrast({
+      'background-card': ['#a8c0e8', '#1d2a44'],
+      accent: ['#3b6fd0', '#8fb4ff'],
+      'text-secondary': ['#1f2a3d', '#d6def0'],
+      'text-accent': ['#10244d', '#cfe0ff'],
+    });
+    const failing = problems.map(p => `${p.token} ${p.message.split(' mot ')[1]!.split(' ')[0]} ${p.mode}`);
+    for (const pair of [
+      'accent background-card light',
+      'text-success background-card light',
+      'text-info background-card light',
+      'icon-secondary background-card light',
+      'icon-success background-card light',
+      'icon-info background-card light',
+    ])
+      expect(failing).toContain(pair);
+    expect(failing.every(p => p.includes('background-card'))).toBe(true);
+    // The same accent and status words on a page whose ground is that blue.
+    const page = checkThemeContrast({ 'background-body': ['#a8c0e8', '#1d2a44'], accent: ['#3b6fd0', '#8fb4ff'] });
+    expect(page.map(p => `${p.token} ${p.mode}`)).toEqual(
+      expect.arrayContaining(['accent light', 'text-info light', 'text-success light', 'icon-secondary light']),
+    );
+  });
+
+  test('a status icon a file leaves alone is checked in the status text colour it follows, as Astryx draws it', () => {
+    const pale = checkThemeContrast({ 'text-info': ['#9fc5f0', '#a1caff'] });
+    expect(pale.filter(p => p.token === 'icon-info').map(p => p.message)).toContainEqual(
+      expect.stringMatching(/^icon-info \(#9fc5f0\) mot background-card \(#ffffff\)/),
+    );
+    // Set on its own, the icon is held to its own colour, and the words keep theirs.
+    const icon = checkThemeContrast({ 'icon-success': ['#a5d6a7', '#90ca90'] });
+    expect(new Set(icon.map(p => p.token))).toEqual(new Set(['icon-success']));
+  });
+
+  test('every example in themes/ is a valid theme file that holds every pair', () => {
+    const examples = readdirSync(new URL('../../themes/', import.meta.url), { withFileTypes: true }).filter(d =>
+      d.isDirectory(),
+    );
+    expect(examples.map(d => d.name).sort()).toEqual(['clew', 'startsidan-prototype', 'sundsvall']);
+    for (const { name } of examples) {
+      const parsed = parseThemeFile(
+        JSON.parse(readFileSync(new URL(`../../themes/${name}/theme.tokens.json`, import.meta.url), 'utf8')),
+      );
+      if (!parsed.ok) throw new Error(`${name}: ${parsed.problems.map(p => p.message).join(' ')}`);
+      expect(checkThemeContrast(parsed.theme.colors), name).toEqual([]);
+    }
   });
 
   test('a file is read with hex strings, sRGB objects and references to its own palette', () => {

@@ -63,9 +63,12 @@ the contrast check reads. Once a theme is saved the same button downloads that t
 
 A file is refused whole, with every problem listed, when it names a colour that cannot be set, sets a colour in one
 appearance only, holds a value that is not an opaque sRGB colour, or would make a theme whose text cannot be read.
-In both appearances, text on surfaces, semantic fills and tinted status badges must reach 4.5:1. Blue and green
-badges use `text-blue` on `background-blue` and `text-green` on `background-green`. The accent, focus ring, icons
-and progress bar fill on its track must reach 3:1. The pairs are listed in `THEME_CONTRAST_PAIRS`.
+In both appearances, text on surfaces, semantic fills and tinted status badges must reach 4.5:1, and the success and
+information words do so on the page, a surface, a card and a popover. Blue and green badges use `text-blue` on
+`background-blue` and `text-green` on `background-green`. The accent, which is also the focus ring, the icons and the
+status marks must reach 3:1 on the same four grounds, and a progress bar's fill on its track must too. A status icon
+the file leaves alone is checked in the status text colour Astryx draws it in. The pairs are listed in
+`THEME_CONTRAST_PAIRS`.
 Existing installations keep their saved badge backgrounds. Clew uses readable black or white text wherever a
 previously saved pair fails. A colour the file leaves alone is checked against the base theme. The page checks before it lets you save and shows the
 theme in both appearances; the server checks again. The check covers the listed pairs, not every component state:

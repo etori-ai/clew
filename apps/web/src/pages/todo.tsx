@@ -9,8 +9,16 @@ import {
   type MouseEvent,
 } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
-import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { isSnoozed, sameSubject, streamGroup, type Area, type SessionUser, type Thread } from '@clew/contracts';
+import { QueryClientProvider, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  isSnoozed,
+  sameSubject,
+  streamGroup,
+  type Area,
+  type SessionUser,
+  type Subject,
+  type Thread,
+} from '@clew/contracts';
 import {
   Badge,
   BoardCard,
@@ -52,7 +60,7 @@ import {
   XMarkIcon,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
-import { areasQuery, threadsQuery } from '../queries';
+import { areasQuery, entityDetailQuery, threadsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
@@ -64,7 +72,6 @@ import {
   itemPageHref,
   needsYouOf,
   openDeadline,
-  queuedReminderOf,
   rowFacts,
   sourcesNotice,
   tabOf,
@@ -158,11 +165,34 @@ interface QueueRow extends Record<string, unknown> {
   href: string;
 }
 
-/** The one person or unit the item's rows are about, when there is exactly one: whom the item is about. */
-function aboutOf(thread: Thread): string | null {
-  const named = thread.items.filter(i => i.subject);
-  const first = named[0];
-  return first && named.every(i => sameSubject(i.subject!, first.subject!)) ? first.label : null;
+/** The one person or unit the item's rows are about, when there is exactly one: whom the item is about (D97 item 6). */
+function aboutOf(thread: Thread): Subject | null {
+  const first = thread.items.find(i => i.subject)?.subject;
+  return first && thread.items.every(i => !i.subject || sameSubject(i.subject, first)) ? first : null;
+}
+const subjectId = (s: Subject) => `${s.entity}:${s.key}`;
+
+/**
+ * The name of whom each item is about, read from Clew's own directory by the key Clew holds (D62, D122): never the
+ * label of the row that names them, which says what the row is ("Medarbetare", "Ansökan"), and never a match on a
+ * title (D132). One read per person or unit in the pile, shared with their page's; one the reader may not open, or
+ * that is gone, names nobody, and the line says the rest.
+ */
+function useAboutNames(threads: readonly Thread[]): (thread: Thread) => string | null {
+  const subjects = new Map<string, Subject>();
+  for (const t of threads) {
+    const about = aboutOf(t);
+    if (about) subjects.set(subjectId(about), about);
+  }
+  const reads = useQueries({
+    // A name seldom changes: the pile does not ask again each time it is drawn.
+    queries: [...subjects.values()].map(s => ({ ...entityDetailQuery(s.entity, s.key), staleTime: 5 * 60_000 })),
+  });
+  const names = new Map([...subjects.keys()].map((id, i) => [id, reads[i]?.data?.entity.name ?? null]));
+  return thread => {
+    const about = aboutOf(thread);
+    return about ? (names.get(subjectId(about)) ?? null) : null;
+  };
 }
 
 /**
@@ -240,9 +270,14 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const tab: TodoTab = search.has('tab') ? tabOf(search.get('tab')) : item ? pileOf(item) : 'needs-you';
   const words = filter.trim().toLocaleLowerCase('sv-SE');
   const inArea = (t: Thread) => !area || t.area === area;
+  const nameOf = useAboutNames(piles[tab].filter(inArea));
+  // The filter finds a row by what it says, the name on its line too.
   const matches = (t: Thread) =>
     inArea(t) &&
-    (!words || `${t.title} ${t.trigger.reason} ${t.trigger.source}`.toLocaleLowerCase('sv-SE').includes(words));
+    (!words ||
+      `${t.title} ${t.trigger.reason} ${t.trigger.source} ${nameOf(t) ?? ''}`
+        .toLocaleLowerCase('sv-SE')
+        .includes(words));
   const rows = piles[tab].filter(matches);
 
   const nav = useNav({ current: { surface: 'todo' }, admin, manager: user.role === 'manager' });
@@ -468,18 +503,17 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     };
   });
   /**
-   * Under the name: whom it is about (board Att göra); in the other piles, and where it names nobody, why it is here,
-   * what it waits on or what came of it ("Ledigheten är beviljad"). Where it stands is the Status column's word, the
-   * word its notice says in the pane (D126 item 13), so the line never says it again. A reminder that waits to be
-   * scheduled is said either way (D64 item 2).
+   * Under the name: whom it is about (board Att göra), by the name Clew's directory holds (`useAboutNames`), then why it
+   * is here, what it waits on or what came of it ("Ledigheten är beviljad"), in every pile: a title that names nobody
+   * ("Godkänn en ledighetsansökan") needs both. Where it stands is the Status column's word, the word its notice says in
+   * the pane (D126 item 13), so the line never says it again. A reminder that waits to be scheduled is said with the
+   * reason (D64 item 2).
    */
   const aboutLine = (r: QueueRow, source?: string | null) => {
     const t = r.thread;
     const stale = t.state === 'open' && !!silent.of(t.connector);
-    const about = aboutOf(t);
-    const why = tab !== 'needs-you' || !about ? r.facts.why : queuedReminderOf(t, now);
     // D135: the unit the work item is about, for a person with several.
-    const words = [source, workUnit(user, t), about, why].filter(Boolean).join(DOT);
+    const words = [source, workUnit(user, t), nameOf(t), r.facts.why].filter(Boolean).join(DOT);
     return stale ? (words ? staleWhy(words) : 'Kan vara gammal') : words;
   };
   /** The system a row names: none for an item from Clew itself (`fromClewItself`), which is no system a person goes to. */

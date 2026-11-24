@@ -123,9 +123,11 @@ export const THEME_BASE_COLORS = {
   info: ['#0074e2', '#6d9cfe'],
   'on-info': ['#ffffff', '#111111'],
   'text-info': ['#0067ce', '#a1caff'],
+  'icon-info': ['#0067ce', '#a1caff'],
   success: ['#198100', '#64af4c'],
   'on-success': ['#ffffff', '#111111'],
   'text-success': ['#2f7d33', '#90ca90'],
+  'icon-success': ['#2f7d33', '#90ca90'],
   'background-blue': ['#b9d7ff', '#253c5a'],
   'text-blue': ['#003978', '#a1caff'],
   'background-green': ['#f6fbf8', '#192b19'],
@@ -136,45 +138,62 @@ type PairToken = keyof typeof THEME_BASE_COLORS;
 
 const TEXT = 4.5,
   MARK = 3;
+type ContrastPair = readonly [foreground: PairToken, background: PairToken, min: number];
+/**
+ * The grounds Clew draws on: the page, a surface, a card (Hem's boards, a work item's sections) and what opens over the
+ * page (a dialog, a menu, a popover).
+ */
+const GROUNDS = ['background-body', 'background-surface', 'background-card', 'background-popover'] as const;
+const onEveryGround = (foreground: PairToken, min: number): ContrastPair[] =>
+  GROUNDS.map(ground => [foreground, ground, min] as const);
 /**
  * What must be readable on what (WCAG 2.2 AA: 1.4.3 for text at 4.5:1, 1.4.11 for marks and the focus ring at 3:1),
  * in both appearances. The base theme passes every row; a file is refused when the theme it would make does not.
  */
-export const THEME_CONTRAST_PAIRS: ReadonlyArray<readonly [foreground: PairToken, background: PairToken, min: number]> =
-  [
-    ['text-primary', 'background-body', TEXT],
-    ['text-primary', 'background-surface', TEXT],
-    ['text-primary', 'background-card', TEXT],
-    ['text-primary', 'background-popover', TEXT],
-    ['text-primary', 'background-muted', TEXT],
-    ['text-secondary', 'background-body', TEXT],
-    ['text-secondary', 'background-surface', TEXT],
-    ['text-secondary', 'background-card', TEXT],
-    ['text-accent', 'background-surface', TEXT],
-    ['text-accent', 'background-card', TEXT],
-    ['text-info', 'background-surface', TEXT],
-    ['text-success', 'background-surface', TEXT],
-    ['on-accent', 'accent', TEXT],
-    ['on-info', 'info', TEXT],
-    ['on-success', 'success', TEXT],
-    ['text-blue', 'background-blue', TEXT],
-    ['text-green', 'background-green', TEXT],
-    ['accent', 'background-surface', MARK],
-    ['accent', 'background-body', MARK],
-    ['icon-accent', 'background-surface', MARK],
-    ['icon-primary', 'background-surface', MARK],
-    ['icon-secondary', 'background-surface', MARK],
-    // A progress bar's fill on its track: Clew draws its bars in the text colour on Astryx's track colour (D71 item 5).
-    ['text-primary', 'track', MARK],
-  ];
+export const THEME_CONTRAST_PAIRS: ReadonlyArray<ContrastPair> = [
+  ['text-primary', 'background-body', TEXT],
+  ['text-primary', 'background-surface', TEXT],
+  ['text-primary', 'background-card', TEXT],
+  ['text-primary', 'background-popover', TEXT],
+  ['text-primary', 'background-muted', TEXT],
+  ['text-secondary', 'background-body', TEXT],
+  ['text-secondary', 'background-surface', TEXT],
+  ['text-secondary', 'background-card', TEXT],
+  ['text-accent', 'background-surface', TEXT],
+  ['text-accent', 'background-card', TEXT],
+  // Status words: a receipt's, a notice's, a status mark's (WA-M1).
+  ...onEveryGround('text-info', TEXT),
+  ...onEveryGround('text-success', TEXT),
+  ['on-accent', 'accent', TEXT],
+  ['on-info', 'info', TEXT],
+  ['on-success', 'success', TEXT],
+  ['text-blue', 'background-blue', TEXT],
+  ['text-green', 'background-green', TEXT],
+  // The accent is also the focus ring (`--focus-outline-color`, `theme.ts`) and Astryx's accent StatusDot.
+  ...onEveryGround('accent', MARK),
+  ...onEveryGround('icon-accent', MARK),
+  ...onEveryGround('icon-primary', MARK),
+  // Astryx's StatusDot paints its neutral variant in `icon-secondary` and its success variant in `icon-success`;
+  // `icon-info` is the information icon of a notice. A status icon is its text colour unless a file sets it (`FOLLOWS`).
+  ...onEveryGround('icon-secondary', MARK),
+  ...onEveryGround('icon-info', MARK),
+  ...onEveryGround('icon-success', MARK),
+  // A progress bar's fill on its track: Clew draws its bars in the text colour on Astryx's track colour (D71 item 5).
+  ['text-primary', 'track', MARK],
+];
+
+/** Astryx draws a status icon in its status's text colour (`--color-icon-info: var(--color-text-info)`) until it is set. */
+const FOLLOWS: Partial<Record<PairToken, PairToken>> = { 'icon-info': 'text-info', 'icon-success': 'text-success' };
 
 /** Every pair the theme made of these colours over the base would fail, as problems an administrator can act on. */
 export function checkThemeContrast(colors: ThemeColors): ThemeProblem[] {
   const problems: ThemeProblem[] = [];
-  const at = (token: PairToken, index: 0 | 1) => (colors[token] ?? THEME_BASE_COLORS[token])[index];
+  /** The colour the page will draw: the file's, else the one it follows in the file, else the base theme's. */
+  const set = (token: PairToken) => colors[token] ?? (FOLLOWS[token] ? colors[FOLLOWS[token]] : undefined);
+  const at = (token: PairToken, index: 0 | 1) => (set(token) ?? THEME_BASE_COLORS[token])[index];
   for (const [foreground, background, min] of THEME_CONTRAST_PAIRS) {
     // A pair the file does not touch is the base theme's own and already holds.
-    if (!colors[foreground] && !colors[background]) continue;
+    if (!set(foreground) && !set(background)) continue;
     for (const [index, mode] of [
       [0, 'light'],
       [1, 'dark'],

@@ -38,6 +38,7 @@ import { Findings } from './add-model';
 import { AudienceEditor } from './audience';
 import { actionLabel, actorLabel, audienceLabel, modelStatusOf, providerHealthLabel } from './labels';
 import { AdminShell } from './shell';
+import { mobileQuery } from '../../media';
 import { DOT } from '../../dot';
 
 /** One model (D24): what it is and how it answers, who can pick it in the box, and its history. */
@@ -52,7 +53,7 @@ type Draft = Pick<ModelDetail, 'title' | 'description' | 'model'>;
 export function AdminModelPage({ user }: { user: SessionUser }) {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const mobile = useMediaQuery('(max-width: 720px)');
+  const mobile = useMediaQuery(mobileQuery);
   const client = useQueryClient();
   const detail = useQuery(adminQueries.model(id));
   const units = useQuery(adminQueries.units);

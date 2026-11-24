@@ -400,6 +400,69 @@ test.describe("the calendar's own reads on their page", () => {
     });
 });
 
+/**
+ * A calendar read in the pane beside a conversation (D126 rules 1 and 3): an entry is a link to its own place in
+ * Kalender, as on the read's page. Nothing opens over the conversation, and Back returns to it with the read still beside
+ * it and the focus on the entry that was followed (rule 7).
+ */
+test.describe('a calendar read beside a conversation', () => {
+  test.use({ viewport: WIDE });
+  const beside = `/conversations/fraga?open=calendar.today&open-title=${title('Dagens möten')}`;
+
+  test('an entry is a link to Kalender, nothing opens over the conversation, and Back returns with the focus on the entry', async ({
+    page,
+    api: _,
+  }) => {
+    await page.route(
+      url => url.pathname === '/api/calendar',
+      async route => {
+        const from = new URL(route.request().url()).searchParams.get('from') ?? '2026-11-02';
+        await route.fulfill({ json: { from, events: [...events(from), ...today.events], proposals: [] } });
+      },
+    );
+    await open(page, beside);
+    const pane = page.getByRole('complementary', { name: 'Dagens möten' });
+    const entry = pane.getByRole('link', { name: /Rektorsmöte/ });
+    await expect(entry).toHaveAttribute('href', '/calendar?date=2026-11-04&view=day&entry=e1');
+    await expect(pane.getByRole('button', { name: /Rektorsmöte/ })).toHaveCount(0);
+    await expect(pane.getByText(/Retur på en post öppnar den\./)).toBeAttached();
+    await expectNoAxeViolations(page);
+    // Reached with Tab and followed with Enter: Kalender, its own page, with the meeting in its pane and the focus on
+    // the meeting's heading (2.4.3). No dialog stands over the conversation on the way.
+    await tabTo(page, entry);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/calendar\?date=2026-11-04&view=day&entry=e1$/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(
+      page.getByRole('complementary', { name: 'Rektorsmöte' }).getByRole('heading', { name: 'Rektorsmöte' }),
+    ).toBeFocused();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/conversations\/fraga\?open=calendar\.today&/);
+    await expect(entry).toBeFocused();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('at 320 px the read is one link away under the title, and nothing scrolls sideways', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(narrow);
+    await open(page, beside);
+    await expect(page.getByRole('complementary')).toHaveCount(0);
+    const read = page.getByRole('link', { name: 'Dagens möten', exact: true });
+    await expect(read).toHaveAttribute('href', /^\/tools\/calendar\.today\?/);
+    expect(await reflowProblems(page)).toEqual([]);
+    await read.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/^[^?]*\/tools\/calendar\.today\?/);
+    await expect(page.getByRole('main').getByRole('link', { name: /Rektorsmöte/ })).toHaveAttribute(
+      'href',
+      '/calendar?date=2026-11-04&view=day&entry=e1',
+    );
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+});
+
 test.describe('a calendar drawn where its entries are no controls (WA-M2)', () => {
   test.use({ viewport: desktop });
   test('the week under an answer that points at drawn talks: no entry is a tab stop, and nothing promises Enter', async ({

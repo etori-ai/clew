@@ -6,7 +6,9 @@ import {
   expect,
   expectNoAxeViolations,
   heading,
+  narrow,
   open,
+  reflowProblems,
   test,
 } from './support';
 import { menuRow } from './phonebook';
@@ -338,5 +340,70 @@ test.describe('a card row that names a person', () => {
     await expect(page).toHaveURL(/\/people\/erik\?/);
     await page.goBack();
     await expect(card.getByRole('checkbox', { name: /Erik Sandström/ })).toBeChecked();
+  });
+
+  test('under Behöver dig the line names whom the item is about from the directory, never the row’s label, and keeps the reason; the filter finds the row by that name', async ({
+    page,
+    api,
+  }) => {
+    // The cards as the HR connector draws them (`connectors/hr/connector.mjs`): the title says what and when, the row
+    // names who by Clew's key only, under a label that says what the row is ("Medarbetare", "Ansökan"), and the reason
+    // says why now. A third names a key the directory does not give this reader.
+    const leave = api.threads.find(t => t.id === 'ledighet')!;
+    api.threads = [
+      ...api.threads.map(t =>
+        t.id === 'omtanke'
+          ? {
+              ...t,
+              title: 'Boka ett omtankesamtal med en medarbetare',
+              trigger: { ...t.trigger, reason: 'Rutinens tvåveckorsgräns går ut 13 nov.' },
+            }
+          : t.id === 'ledighet'
+            ? {
+                ...t,
+                title: 'Godkänn en ledighetsansökan, 21 dec. till 22 dec.',
+                trigger: { ...t.trigger, reason: 'Ansökan kom 3 november kl. 14:20' },
+              }
+            : t,
+      ),
+      {
+        ...leave,
+        id: 'ledighet-2',
+        topic: 'ledighet-2',
+        title: 'Godkänn en ledighetsansökan, 2 jan. till 3 jan.',
+        trigger: { ...leave.trigger, reason: 'Ansökan kom 4 november kl. 09:05' },
+        items: leave.items.map(i => ({
+          ...i,
+          ref: 'hr:leave:2',
+          subject: { entity: 'person' as const, key: 'okand' },
+        })),
+      },
+    ];
+    await open(page, '/todo');
+    const line = (id: string) => page.getByRole('main').locator(`#work-${id}`);
+    await expect(line('omtanke')).toContainText('Anna Lindqvist · Rutinens tvåveckorsgräns går ut 13 nov');
+    await expect(line('ledighet')).toContainText('Johan Byström · Ansökan kom 3 november kl. 14:20');
+    // Nobody the directory gives: the reason alone, and the label never stands in for a name.
+    await expect(line('ledighet-2')).toContainText('Ansökan kom 4 november kl. 09:05');
+    await expect(line('omtanke')).not.toContainText('Medarbetare');
+    for (const id of ['ledighet', 'ledighet-2']) await expect(line(id)).not.toContainText('Ansökan ·');
+    // The link is still named by the title alone; the line is read beside it.
+    await expect(line('ledighet').getByRole('link')).toHaveAccessibleName(/^Godkänn en ledighetsansökan, 21 dec/);
+    await expectNoAxeViolations(page);
+    // No title names Johan: the filter finds his row by the name on its line, and says how many are left.
+    await page.getByRole('searchbox', { name: 'Filtrera' }).fill('Byström');
+    const rows = page
+      .getByRole('table', { name: 'Behöver dig' })
+      .getByRole('row')
+      .filter({ has: page.getByRole('link') });
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toHaveId('work-ledighet');
+    await expect.poll(() => announcements(page)).toContainEqual('1 ärenden');
+    // A phone at 320 px: the same line under the row's link, in full, and nothing cut or scrolled sideways (1.4.10).
+    await page.setViewportSize(narrow);
+    await open(page, '/todo');
+    const list = page.getByRole('main').getByRole('list', { name: 'Behöver dig', exact: true });
+    await expect(list.locator('#work-ledighet')).toContainText('Johan Byström · Ansökan kom 3 november kl. 14:20');
+    expect(await reflowProblems(page)).toEqual([]);
   });
 });

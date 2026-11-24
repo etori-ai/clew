@@ -58,6 +58,7 @@ import { RETRY_DELAY_MS, errorMessage, retryPolicy } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { capabilityLabel, instantText, relationDescription, relationLabel, roleOfOne } from './labels';
 import { AdminShell } from './shell';
+import { mobileQuery } from '../../media';
 import {
   IssueProvisionerDialog,
   RevokeProvisionerDialog,
@@ -259,7 +260,7 @@ function filterOf(params: URLSearchParams) {
 }
 
 export function AdminUsersPage({ user }: { user: SessionUser }) {
-  const mobile = useMediaQuery('(max-width: 720px)');
+  const mobile = useMediaQuery(mobileQuery);
   const peopleTable = useMediaQuery(PEOPLE_TABLE_QUERY);
   const mappingsTable = useMediaQuery(MAPPINGS_TABLE_QUERY);
   const client = useQueryClient();

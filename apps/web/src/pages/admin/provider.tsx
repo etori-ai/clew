@@ -36,6 +36,7 @@ import { AddModelDialog, Findings } from './add-model';
 import { History } from './model';
 import { actorLabel, audienceLabel, modelStatusOf, providerHealthLabel, providerStatusOf } from './labels';
 import { AdminShell } from './shell';
+import { mobileQuery } from '../../media';
 import { DOT } from '../../dot';
 
 /**
@@ -45,7 +46,7 @@ import { DOT } from '../../dot';
 export function AdminProviderPage({ user }: { user: SessionUser }) {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const mobile = useMediaQuery('(max-width: 720px)');
+  const mobile = useMediaQuery(mobileQuery);
   const client = useQueryClient();
   const detail = useQuery(adminQueries.provider(id));
   const list = useQuery(adminQueries.models);
