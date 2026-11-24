@@ -1,5 +1,6 @@
 import {
   pgTable,
+  uuid,
   text,
   integer,
   bigint,
@@ -538,6 +539,7 @@ export const connectors = pgTable(
   'connector',
   {
     id: text('id').primaryKey(),
+    registrationId: uuid('registration_id').notNull().defaultRandom(),
     bundled: boolean('bundled').notNull().default(false),
     url: text('url'),
     secret: text('secret'),
