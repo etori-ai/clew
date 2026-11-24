@@ -6,11 +6,13 @@ import {
   expectNoAxeViolations,
   narrow,
   open,
+  pagesNav,
   phone,
   reflowProblems,
+  searchButton,
   test,
 } from './support';
-import { hrAssistant } from './data';
+import { conversation, hrAssistant } from './data';
 
 type Page = import('@playwright/test').Page;
 /**
@@ -120,6 +122,161 @@ test.describe('another system’s assistant beside the conversation', () => {
       side: true,
     });
     await expect(transcript(page).getByText('Du frågade HR-assistenten i sidofältet', { exact: true })).toHaveCount(1);
+  });
+  // WD-L5: the panel's question is a turn like the box's: it can be stopped, and it never pulls the person back.
+  for (const [layout, viewport] of [
+    ['desktop', desktop],
+    ['320 px', narrow],
+  ] as const)
+    test(`at ${layout} a question in the panel can be stopped: Stoppa stands in for send, the question goes back in the panel’s box with the focus, and it is said`, async ({
+      page,
+      api,
+    }) => {
+      await page.setViewportSize(viewport);
+      api.handoverAssistants = [hrAssistant];
+      // At 320 px the exchange takes the column instead of standing beside the transcript.
+      await open(page, '/conversations/new');
+      await page.getByRole('link', { name: 'HR-assistenten', exact: true }).click();
+      await expect(sideBox(page)).toBeFocused();
+      const release = api.holdAnswer();
+      await askBeside(page, QUESTION);
+      const stop = page.getByRole('button', { name: 'Stoppa' });
+      await expect(stop).toBeEnabled();
+      // The box stays open while the assistant answers, and Enter waits for the answer.
+      await expect(sideBox(page)).toBeFocused();
+      await sideBox(page).fill('Och om jag är över 40?');
+      await sideBox(page).press('Enter');
+      await expect(sideBox(page)).toHaveText('Och om jag är över 40?');
+      expect(api.asked).toHaveLength(1);
+      expect(await reflowProblems(page)).toEqual([]);
+      await expectNoAxeViolations(page);
+      await sideBox(page).fill('');
+      await stop.focus();
+      await page.keyboard.press('Enter');
+      await expect(sideBox(page)).toHaveText(QUESTION);
+      await expect(sideBox(page)).toBeFocused();
+      await expect(page.getByRole('button', { name: 'Stoppa' })).toHaveCount(0);
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Frågan avbröts'));
+      // The answer that comes after is not drawn, and the page stays the conversation not asked yet.
+      release();
+      await page.waitForTimeout(500);
+      await expect(page.getByText('25 semesterdagar')).toHaveCount(0);
+      await expect(page).toHaveURL(/\/conversations\/new/);
+    });
+  test('a question in the panel left for another page is let go of: its answer does not pull the person back', async ({
+    page,
+    api,
+  }) => {
+    api.handoverAssistants = [hrAssistant];
+    await openBeside(page);
+    const release = api.holdAnswer();
+    await askBeside(page, QUESTION);
+    await expect(panel(page).getByRole('button', { name: 'Stoppa' })).toBeVisible();
+    await pagesNav(page)
+      .getByRole('link', { name: /^Att göra/ })
+      .click();
+    await expect(page).toHaveURL(/\/todo/);
+    release();
+    await page.waitForTimeout(500);
+    await expect(page).toHaveURL(/\/todo/);
+    await expect(panel(page)).toHaveCount(0);
+  });
+  test('while the panel’s question starts the conversation Clew’s box does not send: it says why, keeps what is typed, and once the answer is in both are one conversation', async ({
+    page,
+    api,
+  }) => {
+    api.handoverAssistants = [hrAssistant];
+    await openBeside(page);
+    const release = api.holdAnswer();
+    await askBeside(page, QUESTION);
+    await expect(panel(page).getByRole('button', { name: 'Stoppa' })).toBeVisible();
+    await composer(page).fill('Vem är på plats?');
+    await composer(page).press('Enter');
+    const why =
+      'Frågan i sidofältet startar samtalet. Skicka din fråga när den har fått svar, så hamnar båda i samma samtal.';
+    // Said under the box; the second of the two is its announcement.
+    await expect(page.getByText(why).first()).toBeVisible();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining(why));
+    await expect(composer(page)).toHaveText('Vem är på plats?');
+    // The box's send button rests too; the panel's is Stoppa.
+    const send = page.getByRole('button', { name: 'Skicka', exact: true });
+    await expect(send).toHaveCount(1);
+    await expect(send).toBeDisabled();
+    expect(api.asked).toHaveLength(1);
+    await expectNoAxeViolations(page);
+    release();
+    await expect(panel(page).getByText('25 semesterdagar')).toBeVisible();
+    await expect(page).toHaveURL(/\/conversations\/overlamnad\?assistant=kunskap%3Ahr$/);
+    await expect(page.getByText(why)).toHaveCount(0);
+    await composer(page).press('Enter');
+    await expect(transcript(page).getByText('Vem är på plats?', { exact: true })).toBeVisible();
+    expect(api.asked.at(-1)).toMatchObject({ text: 'Vem är på plats?', conversationId: 'overlamnad' });
+  });
+  test('a question in the panel is let go of when the panel goes, by Back or for Hem: its answer does not pull the person to it and is not said', async ({
+    page,
+    api,
+  }) => {
+    api.handoverAssistants = [hrAssistant];
+    // The question's request is let go of by the page: aborted, as Stoppa aborts it.
+    let aborted = 0;
+    page.on('requestfailed', r => {
+      if (new URL(r.url()).pathname === '/api/conversation/stream') aborted++;
+    });
+    await openBeside(page);
+    let release = api.holdAnswer();
+    await askBeside(page, QUESTION);
+    await expect(panel(page).getByRole('button', { name: 'Stoppa' })).toBeVisible();
+    // Back: the address no longer names the assistant, though it is still the conversation not asked yet.
+    await page.goBack();
+    await expect(panel(page)).toHaveCount(0);
+    await expect.poll(() => aborted).toBe(1);
+    release();
+    await page.waitForTimeout(500);
+    await expect(page).toHaveURL(/\/conversations\/new$/);
+    // Hem, which shows no panel, though the conversation's column is Hem's too.
+    await page.goForward();
+    await expect(panel(page)).toBeVisible();
+    release = api.holdAnswer();
+    await askBeside(page, QUESTION);
+    await expect(panel(page).getByRole('button', { name: 'Stoppa' })).toBeVisible();
+    await pagesNav(page).getByRole('link', { name: 'Start', exact: true }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect.poll(() => aborted).toBe(2);
+    release();
+    await page.waitForTimeout(500);
+    await expect(page).toHaveURL(/\/$/);
+    expect(await announcements(page)).not.toContainEqual(expect.stringContaining('har svarat i sidofältet'));
+  });
+  test('a question in the panel whose person opened another conversation meanwhile is not drawn or said in that one', async ({
+    page,
+    api,
+  }) => {
+    api.handoverAssistants = [hrAssistant];
+    api.threads = [
+      ...api.threads,
+      { ...conversation([], 'Vem har jour i helgen?', 'samtal-a').thread, title: 'Vem har jour i helgen?' },
+    ];
+    await openBeside(page);
+    await askBeside(page, QUESTION);
+    await expect(panel(page).getByText('25 semesterdagar')).toBeVisible();
+    await expect(page).toHaveURL(/\/conversations\/overlamnad\?assistant=kunskap%3Ahr$/);
+    const release = api.holdAnswer();
+    await askBeside(page, 'Och om jag är över 40?');
+    await expect(panel(page).getByRole('button', { name: 'Stoppa' })).toBeVisible();
+    await searchButton(page).click();
+    await page.getByRole('combobox', { name: 'Sök i samtal och ärenden' }).fill('jour');
+    await page.getByRole('option', { name: /Vem har jour i helgen/ }).click();
+    await expect(page).toHaveURL('/conversations/samtal-a');
+    await expect(transcript(page)).toContainText('Tio personer är på plats i dag.');
+    const before = (await announcements(page)).length;
+    release();
+    await page.waitForTimeout(500);
+    await expect(page).toHaveURL('/conversations/samtal-a');
+    await expect(page.getByText('Det är svar 2 i det här samtalet.')).toHaveCount(0);
+    await expect(panel(page)).toHaveCount(0);
+    expect((await announcements(page)).slice(before)).not.toContainEqual(
+      expect.stringContaining('har svarat i sidofältet'),
+    );
   });
   test('Esc in the panel closes it: the conversation stays, the address lets go of the assistant, and Clew’s box has the focus', async ({
     page,

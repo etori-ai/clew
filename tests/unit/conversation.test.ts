@@ -1,6 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import type { AuthenticatedContext, Thread, TurnEvent } from '../../packages/contracts/src/index';
+import type { AuthenticatedContext, Thread, TurnEvent, WrittenTurn } from '../../packages/contracts/src/index';
 import { createHash } from 'node:crypto';
 import {
   audiencedActorOf,
@@ -15,6 +15,7 @@ import { fixtureConnectors } from '../fixture-connectors';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
+import { draft } from '../store-contract';
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
 import { startedCards } from '../../apps/server/src/threads/usecases/started';
@@ -2570,7 +2571,7 @@ describe('the assistant starts a work item from a propose, the person sends it',
     for (const id of [a.threadId, c.threadId, d.threadId]) expect(audit(w.store, id)).toEqual(['thread.started']);
   });
 
-  test('a turn stopped after its propose became an item writes conversation.stopped on the conversation, naming the item and the model (AM-6)', async () => {
+  test('a turn stopped after its propose became an item is written whole, the item its answer, and its row says it was stopped (WD-L3, AM-6)', async () => {
     const stop = new AbortController();
     let proposing = false;
     const generate: ModelGenerate = async ({ tools, signal }) => {
@@ -2583,29 +2584,125 @@ describe('the assistant starts a work item from a propose, the person sends it',
     const w = world({ generate, extra: [desk([])] });
     const first = await w.assistant.converse(hassan, { text: 'Min dator krånglar' });
     proposing = true;
-    await expect(
-      w.assistant.converse(
-        hassan,
-        { text: 'Felanmäl den', conversationId: first.conversationId },
-        { signal: stop.signal },
-      ),
-    ).rejects.toBeInstanceOf(TurnStopped);
-    const [card] = await deskCards(w);
-    // The item stays the person's, with its own row; the turn's row is about the conversation and names it.
+    const turn = await w.assistant.converse(
+      hassan,
+      { text: 'Felanmäl den', conversationId: first.conversationId, turn: 'stopped-turn-1' },
+      { signal: stop.signal },
+    );
+    const [card, ...more] = await deskCards(w);
+    expect(more).toEqual([]);
+    // The item stays the person's, with its own row, and the conversation says so in Clew's own words: the page that
+    // pressed Stoppa reads the turn back by its key and draws it.
     expect(audit(w.store, card!.id)).toEqual(['thread.started']);
+    expect(turn).toMatchObject({
+      conversationId: first.conversationId,
+      shape: 'forslag',
+      assistant: 'router',
+      answer: {
+        body: 'Jag har förberett "Felanmäl dator" som ett ärende. Fyll i uppgifterna och skicka när du är klar. Inget är skickat.',
+      },
+      draft: { kind: 'action', threadId: card!.id, actionId: 'send', values: said },
+    });
+    expect(turn.thread.messages.map(m => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    expect((await w.assistant.writtenTurn(hassan, 'stopped-turn-1')).written).toMatchObject({
+      conversationId: first.conversationId,
+      answer: { body: turn.answer.body },
+      draft: { threadId: card!.id },
+    });
     expect(w.store.audit.at(-1)).toEqual({
       actor: 'person:hassan',
-      action: 'conversation.stopped',
+      action: 'conversation.replied',
       subject: 'thread:' + first.conversationId,
       at: T0,
       details: {
+        assistant: 'router',
+        shape: 'forslag',
         chips: [],
+        tools: [],
+        drafted: { thread: card!.id, action: 'send', asks: ['problem', 'place'] },
+        cards: [card!.id],
         started: { thread: card!.id, capability: 'desk.reportFault' },
+        stopped: true,
         model: 'open-model',
         modelCall: { providerId: 'llm', durationMs: 0, traceId: '0af7651916cd43dd8448eb211c80319c' },
       },
     });
     expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('Felanmäl den');
+  });
+  test('the page’s read-back at once after Stoppa waits for the turn still writing its item as the answer, and gets the written turn (WD-L3)', async () => {
+    const key = '3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f';
+    const stop = new AbortController();
+    let readBack: Promise<WrittenTurn> | undefined;
+    // The turn's own write comes a little after the stop, as a database's commit does; the read-back is asked before it.
+    let slow = false;
+    const generate: ModelGenerate = async ({ tools, signal }) => {
+      await (tools['desk__reportFault'] as Callable).execute(said, {});
+      slow = true;
+      stop.abort();
+      readBack = w.assistant.writtenTurn(hassan, key);
+      if (signal?.aborted) throw new Error('aborted');
+      return { text: 'Klart.', toolCalls: [] };
+    };
+    const w = world({ generate, extra: [desk([])] });
+    const transaction = w.store.transaction.bind(w.store);
+    w.store.transaction = (async (work: Parameters<typeof transaction>[0]) => {
+      if (slow) await Bun.sleep(30);
+      return transaction(work);
+    }) as typeof w.store.transaction;
+    const turn = await w.assistant.converse(hassan, { text: 'Felanmäl min dator', turn: key }, { signal: stop.signal });
+    const [card] = await deskCards(w);
+    expect((await readBack!).written).toMatchObject({
+      conversationId: turn.conversationId,
+      shape: 'forslag',
+      answer: { body: turn.answer.body },
+      draft: { threadId: card!.id },
+      clewActions: [],
+    });
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { stopped: true } });
+  });
+  test('a model that suggests another system’s assistant after its propose became an item does not offer it: the turn is written whole, the item its answer (WD-L3)', async () => {
+    const guide = { id: 'hr:guide', name: 'HR-guiden', source: 'HR' };
+    const generate: ModelGenerate = async ({ tools }) => {
+      await (tools['desk__reportFault'] as Callable).execute(said, {});
+      await (tools['clew__handOver'] as Callable).execute({ assistant: guide.id }, {});
+      return { text: 'Jag lämnar över frågan.', toolCalls: [] };
+    };
+    const w = world({ generate, extra: [desk([])] });
+    const asked: string[] = [];
+    const assistant = assistantUsecases({
+      ...w.deps,
+      handover: {
+        list: async () => [guide],
+        ask: async function* (_p: AuthenticatedContext, id: string) {
+          asked.push(id);
+          yield { type: 'text' as const, delta: 'Aldrig.' };
+        },
+      },
+    });
+    const turn = await assistant.converse(hassan, { text: 'Felanmäl min dator' }, { offers: true });
+    const [card, ...more] = await deskCards(w);
+    expect(more).toEqual([]);
+    expect(turn).toMatchObject({
+      shape: 'forslag',
+      assistant: 'router',
+      answer: {
+        body: 'Jag har förberett "Felanmäl dator" som ett ärende. Fyll i uppgifterna och skicka när du är klar. Inget är skickat.',
+      },
+      draft: { kind: 'action', threadId: card!.id, actionId: 'send', values: said },
+    });
+    expect(turn.thread.messages.at(-1)!.meta?.cards).toEqual([card!.id]);
+    // Nothing went to the other system, and nothing was offered: the item's row and the turn's, which names it.
+    expect(asked).toEqual([]);
+    expect(w.store.audit.map(r => r.action)).toEqual(['thread.started', 'conversation.asked']);
+    expect(w.store.audit.at(-1)).toMatchObject({
+      subject: 'thread:' + turn.conversationId,
+      details: {
+        assistant: 'router',
+        started: { thread: card!.id, capability: 'desk.reportFault' },
+        fallbackReason: 'suggested an assistant after starting a work item',
+        model: 'open-model',
+      },
+    });
   });
   test('a model that fails after its propose became an item still answers with the item, and starts no second one', async () => {
     const failing: ModelGenerate = async ({ tools }) => {
@@ -2895,5 +2992,199 @@ describe('a person whose page stands open (D136)', () => {
       messages: 0,
     });
     expect(w.store.dump().map(r => r.thread.id)).toEqual(expect.arrayContaining([erik.conversationId]));
+  });
+});
+
+describe('a question sent again under its key (WD-L3)', () => {
+  test('a question sent again under its key is answered with the turn as written: nothing asked, written or recorded twice (WD-L3)', async () => {
+    let calls = 0;
+    const generate: ModelGenerate = async () => {
+      calls++;
+      return { text: 'Tre är på plats.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    const key = 'b0f6a9c2-4d1e-4f7a-9c3b-2e8d5a1f6c70';
+    const first = await w.assistant.converse(hillevi, { text: 'vem är här?', turn: key });
+    // The answer broke on its way, or the person pressed Stoppa as it was written: the question is sent again.
+    const again = await w.assistant.converse(hillevi, { text: 'vem är här?', turn: key });
+    expect(calls).toBe(1);
+    expect(again).toMatchObject({
+      conversationId: first.conversationId,
+      shape: first.shape,
+      assistant: 'model',
+      answer: first.answer,
+      clewActions: [],
+    });
+    expect(again.thread.messages).toEqual(first.thread.messages);
+    expect(first.thread.messages[0]!.meta?.turn).toBe(key);
+    expect(audit(w.store, first.conversationId)).toEqual(['conversation.asked']);
+    expect(w.store.audit).toHaveLength(1);
+    // The page's read after a stop or a broken answer: what the key came to, or nothing.
+    expect((await w.assistant.writtenTurn(hillevi, key)).written).toMatchObject({
+      conversationId: first.conversationId,
+    });
+    expect(await w.assistant.writtenTurn(hillevi, 'a1b2c3d4-0000-4000-8000-000000000000')).toEqual({ written: null });
+    expect(await w.assistant.writtenTurn(hassan, key)).toEqual({ written: null });
+    await expect(w.assistant.writtenTurn(hillevi, 'inte en nyckel')).rejects.toThrow('Ogiltig förfrågan.');
+    // A follow-up is a question of its own, with a key of its own.
+    const next = await w.assistant.converse(hillevi, {
+      text: 'och i morgon?',
+      conversationId: first.conversationId,
+      turn: 'c7d8e9f0-1a2b-4c3d-8e4f-5a6b7c8d9e0f',
+    });
+    expect(next.thread.messages).toHaveLength(4);
+    expect(calls).toBe(2);
+  });
+  test('two sends of one question that race are written once: the later one answers with the first one’s turn (WD-L3)', async () => {
+    let release!: () => void;
+    const held = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    let calls = 0;
+    const generate: ModelGenerate = async () => {
+      calls++;
+      await held;
+      return { text: 'Tre är på plats.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    const key = 'e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b';
+    const both = Promise.all([
+      w.assistant.converse(hillevi, { text: 'vem är här?', turn: key }),
+      w.assistant.converse(hillevi, { text: 'vem är här?', turn: key }),
+    ]);
+    await Bun.sleep(0);
+    release();
+    const [a, b] = await both;
+    expect(calls).toBe(2);
+    expect(b.conversationId).toBe(a.conversationId);
+    const conversations = (await w.store.listThreads('hillevi', T0)).filter(t => t.kind === 'question');
+    expect(conversations.map(t => t.messages.length)).toEqual([2]);
+    // Both model calls are on record (D91): the one written, and the one whose turn could not be written.
+    expect(w.store.audit.map(r => r.action).sort()).toEqual(['conversation.asked', 'conversation.failed']);
+  });
+  test('a key already written is refused before the model is asked, unless it comes back with the same question: another person’s, another conversation’s, other words, another recipient (WD-L3)', async () => {
+    let calls = 0;
+    const generate: ModelGenerate = async () => {
+      calls++;
+      return { text: 'Tre är på plats.', toolCalls: [] };
+    };
+    const w = world({ generate });
+    const key = 'f0e1d2c3-b4a5-4968-8776-655443322110';
+    const first = await w.assistant.converse(hillevi, { text: 'vem är här?', turn: key });
+    const other = await w.assistant.converse(hillevi, {
+      text: 'och i morgon?',
+      turn: '0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d',
+    });
+    expect(calls).toBe(2);
+    const recorded = structuredClone(w.store.audit);
+    expect(recorded.map(r => r.action)).toEqual(['conversation.asked', 'conversation.asked']);
+    const refused = 'Frågan kunde inte ställas. Skriv den igen.';
+    // Another person sends Hillevi's key: the message says nothing of whose it is or what it holds.
+    await expect(w.assistant.converse(hassan, { text: 'vem är här?', turn: key })).rejects.toThrow(refused);
+    // Hillevi's key, sent as a follow-up in another of her conversations.
+    await expect(
+      w.assistant.converse(hillevi, { text: 'vem är här?', conversationId: other.conversationId, turn: key }),
+    ).rejects.toThrow(refused);
+    // Hillevi's key with other words.
+    await expect(w.assistant.converse(hillevi, { text: 'vem är borta?', turn: key })).rejects.toThrow(refused);
+    // Hillevi's key, addressed to another system's assistant.
+    await expect(
+      w.assistant.converse(hillevi, { text: 'vem är här?', turn: key, assistant: 'hr:guide' }),
+    ).rejects.toThrow(refused);
+    // Nothing was asked, written or recorded for any of them.
+    expect(calls).toBe(2);
+    expect(w.store.audit).toEqual(recorded);
+    expect((await w.store.listThreads('hassan', T0)).filter(t => t.kind === 'question')).toEqual([]);
+    expect((await w.store.readThread('hillevi', other.conversationId))?.messages).toHaveLength(2);
+    // The same question again is answered with the turn as written.
+    const again = await w.assistant.converse(hillevi, { text: 'vem är här?', turn: key });
+    expect(again.conversationId).toBe(first.conversationId);
+    expect(again.thread.messages).toEqual(first.thread.messages);
+    expect(calls).toBe(2);
+    expect(w.store.audit).toEqual(recorded);
+  });
+});
+
+describe('Alla samtal (WD-L1)', () => {
+  test('Alla samtal pages through every conversation, the latest activity first, passing over those the person may not see (WD-L1)', async () => {
+    const w = world();
+    const at = (s: number) => new Date(Date.parse(T0) + s * 1000).toISOString();
+    const seen = Array.from({ length: 120 }, (_, i) =>
+      draft('hillevi', {
+        id: `samtal-${String(i).padStart(3, '0')}`,
+        kind: 'question',
+        createdAt: at(i),
+        updatedAt: at(i),
+      }),
+    );
+    // Written under an access Hillevi no longer has: stored, never listed.
+    const unseen = Array.from({ length: 30 }, (_, i) =>
+      draft('hillevi', { id: `dolt-${i}`, kind: 'question', createdAt: at(200 + i), updatedAt: at(200 + i) }),
+    );
+    await w.store.transaction(async tx => {
+      for (const t of [...seen, ...unseen, draft('hillevi'), draft('hassan', { kind: 'question' })])
+        await tx.insertThread(t);
+      for (const t of unseen)
+        await tx.addMessage(t.id, {
+          role: 'assistant',
+          body: 'Svar',
+          at: t.updatedAt,
+          meta: { access: { connectors: [], capabilities: [], authorizationVersion: 'v0' } },
+        });
+      // The first conversation, begun first, is continued last.
+      await tx.addMessage(seen[0]!.id, { role: 'user', body: 'Och nu?', at: at(500) });
+    });
+    const order = [seen[0]!, ...seen.slice(1).reverse()].map(t => t.id);
+    const pages = [];
+    let after: string | undefined;
+    do {
+      const page = await w.threads.listConversationsFor(hillevi, after);
+      pages.push(page.conversations.map(t => t.id));
+      after = page.next ?? undefined;
+    } while (after);
+    expect(pages.map(p => p.length)).toEqual([50, 50, 20]);
+    expect(pages.flat()).toEqual(order);
+    await expect(w.threads.listConversationsFor(hillevi, 'inte en markör')).rejects.toThrow('Ogiltig förfrågan.');
+    // A cursor the database would refuse with an error is refused here first, as the person's mistake: a day that does
+    // not exist, hour 24, year 0, a character no id is made of.
+    for (const crafted of [
+      '2026-13-99T00:00:00Z~x',
+      '2026-02-30T00:00:00Z~x',
+      '2026-01-01T24:00:00Z~x',
+      '0000-01-01T00:00:00Z~x',
+      '2026-11-04T06:00:00Z~a\u0000b',
+      `2026-11-04T06:00:00Z~${'x'.repeat(81)}`,
+    ])
+      await expect(w.threads.listConversationsFor(hillevi, crafted)).rejects.toThrow('Ogiltig förfrågan.');
+    // Reading pages writes nothing.
+    expect(w.store.audit).toEqual([]);
+  });
+  test('a page whose reads run out among conversations the person may not see is short, says more follow, and the next page goes on (WD-L1)', async () => {
+    const w = world();
+    const at = (s: number) => new Date(Date.parse(T0) + s * 1000).toISOString();
+    const question = (id: string, s: number) =>
+      draft('hillevi', { id, kind: 'question', createdAt: at(s), updatedAt: at(s) });
+    // Newest first: three she may see, then 210 written under an access she no longer has (more than the four reads of
+    // one page pass over), then five more she may see.
+    const newest = Array.from({ length: 3 }, (_, i) => question(`ny-${i}`, 1000 + i));
+    const hidden = Array.from({ length: 210 }, (_, i) => question(`dolt-${String(i).padStart(3, '0')}`, 100 + i));
+    const older = Array.from({ length: 5 }, (_, i) => question(`gammal-${i}`, i));
+    await w.store.transaction(async tx => {
+      for (const t of [...newest, ...hidden, ...older]) await tx.insertThread(t);
+      for (const t of hidden)
+        await tx.addMessage(t.id, {
+          role: 'assistant',
+          body: 'Svar',
+          at: t.updatedAt,
+          meta: { access: { connectors: [], capabilities: [], authorizationVersion: 'v0' } },
+        });
+    });
+    const first = await w.threads.listConversationsFor(hillevi);
+    expect(first.conversations.map(t => t.id)).toEqual(newest.map(t => t.id).reverse());
+    expect(first.next).not.toBeNull();
+    const second = await w.threads.listConversationsFor(hillevi, first.next!);
+    expect(second.conversations.map(t => t.id)).toEqual(older.map(t => t.id).reverse());
+    expect(second.next).toBeNull();
+    expect(w.store.audit).toEqual([]);
   });
 });

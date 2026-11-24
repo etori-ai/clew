@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { competenceCatalogue, competenceSources } from './competence';
+import { NOW } from './data';
 import {
   desktop,
   expect,
@@ -214,7 +215,8 @@ test.describe('Administration › Kompetens › Källor', () => {
       await read.click();
       await expect(notices(page).getByText('Lärplattformen läses in.')).toBeAttached();
       await expect(page.getByText('Läses in', { exact: true })).toBeVisible();
-      // The run finishes on the server some time after the page last asked.
+      // The run finishes on the server some time after the page last asked, and the change stream says so (D46): the
+      // page reads the sources again on the notice and polls for nothing (WD-L8).
       const lms = api.competenceSources.find(s => s.connectorId === 'lms')!;
       lms.reading = false;
       lms.lastRead = {
@@ -224,6 +226,7 @@ test.describe('Administration › Kompetens › Källor', () => {
         outcome: 'partial',
         counts: { ...lms.lastRead!.counts, read: 431 },
       };
+      await api.changed();
       await expect(page.getByText('13 november 2026 kl. 10:30')).toBeVisible();
       await expect(page.getByText('Delvis läst', { exact: true })).toBeVisible();
       await expect(page.getByText('431', { exact: true })).toBeVisible();
@@ -231,6 +234,39 @@ test.describe('Administration › Kompetens › Källor', () => {
       await expect(page.getByText('Läses in', { exact: true })).toHaveCount(0);
       await expect(read).toBeEnabled();
       await expectNoAxeViolations(page);
+    });
+
+    test('a read under way is not polled: time passing reads the sources no more, and the notice reads them once (WD-L8)', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      // The page's time moves only as the test moves it, so ten seconds pass at once: five times the interval at which
+      // the page once asked again.
+      await page.clock.install({ time: new Date(NOW) });
+      await open(page, SOURCES);
+      const isSourcesRead = (r: { url(): string; method(): string }) =>
+        new URL(r.url()).pathname === '/api/competence/sources' && r.method() === 'GET';
+      const read = page.getByRole('button', { name: 'Läs in nu: Lärplattformen' });
+      // Asking for a read reads the sources once, for the state it put the source in.
+      const after = page.waitForResponse(r => isSourcesRead(r.request()));
+      await read.click();
+      await after;
+      await expect(page.getByText('Läses in', { exact: true })).toBeVisible();
+      const reads: string[] = [];
+      page.on('request', r => {
+        if (isSourcesRead(r)) reads.push(r.url());
+      });
+      await page.clock.runFor(10_000);
+      expect(reads).toEqual([]);
+      await expect(page.getByText('Läses in', { exact: true })).toBeVisible();
+      const lms = api.competenceSources.find(s => s.connectorId === 'lms')!;
+      lms.reading = false;
+      lms.lastRead = { ...lms.lastRead!, finishedAt: '2026-11-13T09:30:00.000Z' };
+      await api.changed();
+      await expect(notices(page).getByText('Lärplattformen är inläst.')).toBeAttached();
+      await expect(read).toBeEnabled();
+      expect(reads).toHaveLength(1);
     });
 
     test('a read queued and not yet begun is still followed: the source says it is being read until its result shows', async ({
@@ -245,10 +281,15 @@ test.describe('Administration › Kompetens › Källor', () => {
       // The server has queued the read and no run holds the source yet: it does not say it is being read.
       const lms = api.competenceSources.find(s => s.connectorId === 'lms')!;
       lms.reading = false;
-      await page.waitForResponse(r => r.url().endsWith('/competence/sources') && r.request().method() === 'GET');
+      const reread = page.waitForResponse(
+        r => r.url().endsWith('/competence/sources') && r.request().method() === 'GET',
+      );
+      await api.changed();
+      await reread;
       await expect(page.getByText('Läses in', { exact: true })).toBeVisible();
       await expect(read).toBeDisabled();
       lms.lastRead = { ...lms.lastRead!, finishedAt: '2026-11-13T09:30:00.000Z' };
+      await api.changed();
       await expect(notices(page).getByText('Lärplattformen är inläst.')).toBeAttached();
       await expect(read).toBeEnabled();
     });
@@ -266,6 +307,7 @@ test.describe('Administration › Kompetens › Källor', () => {
       await expect(read).toBeDisabled();
       lms.reading = false;
       lms.lastRead = { ...lms.lastRead!, finishedAt: '2026-11-13T09:30:00.000Z' };
+      await api.changed();
       await expect(page.getByText('13 november 2026 kl. 10:30')).toBeVisible();
       await expect(read).toBeEnabled();
       await expect(notices(page).getByText('Lärplattformen är inläst.')).toHaveCount(0);

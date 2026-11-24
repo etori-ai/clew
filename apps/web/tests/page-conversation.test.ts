@@ -641,7 +641,7 @@ describe('the thing goes with a question to Clew, never to another system’s as
       text: 'Hur går det?',
       chips: [],
       beside: 'thread:t1',
-      current: { id: 'c1', title: 'x', messages: [] },
+      current: 'c1',
       handed: { id: 'kunskap:hr', name: 'HR-assistenten', source: 'Kunskapsbanken' },
       page,
       thing,

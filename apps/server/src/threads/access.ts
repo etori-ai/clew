@@ -1,6 +1,6 @@
 import type { Actor, Registry } from '@clew/connectors';
 import type { AuthenticatedContext, Thread } from '@clew/contracts';
-import type { ThreadStore } from './model';
+import type { ConversationCursor, ThreadStore } from './model';
 
 type AccessRegistry = Pick<Registry, 'visible' | 'allowed' | 'connector'>;
 /** Conservative snapshot policy: historical source content requires its original authority today. */
@@ -43,5 +43,31 @@ export function threadAccess(store: ThreadStore, registry: AccessRegistry) {
       const thread = await store.readThread(actor.id, id);
       return thread && visibleThread(registry, actor, thread) ? thread : undefined;
     },
+    /**
+     * Alla samtal (WD-L1): up to `limit` of the person's conversations they may see now, the latest activity first,
+     * from `after` on. One they may no longer see is passed over and the store read on, `CONVERSATION_READS` times at
+     * most, so a page is short only where nothing more is stored or the reads ran out; `next` then still says more
+     * may follow.
+     */
+    async conversations(
+      actor: Actor & Partial<Pick<AuthenticatedContext, 'authorizationVersion'>>,
+      after: ConversationCursor | undefined,
+      limit: number,
+    ): Promise<{ threads: Thread[]; next: ConversationCursor | null }> {
+      const shown: Thread[] = [];
+      let cursor = after;
+      for (let read = 0; read < CONVERSATION_READS && shown.length < limit; read++) {
+        const page = await store.listConversations(actor.id, {
+          ...(cursor ? { after: cursor } : {}),
+          limit: limit - shown.length,
+        });
+        shown.push(...page.threads.filter(thread => visibleThread(registry, actor, thread)));
+        cursor = page.next ?? undefined;
+        if (!page.next) break;
+      }
+      return { threads: shown, next: cursor ?? null };
+    },
   };
 }
+/** How many times one page of Alla samtal reads the store at most, passing over conversations the person may not see. */
+const CONVERSATION_READS = 4;

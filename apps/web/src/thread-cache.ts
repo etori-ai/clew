@@ -35,6 +35,8 @@ export async function applyThread(client: QueryClient, thread: Thread): Promise<
   writeThread(client, thread);
   void client.invalidateQueries({ queryKey: keys.areas });
   void client.invalidateQueries({ queryKey: keys.attention });
+  // Alla samtal is ordered by the latest activity: a conversation that moved is read in its new place (WD-L1).
+  if (thread.kind === 'question') void client.invalidateQueries({ queryKey: keys.conversations });
   if (thread.proposals.length > 0) void client.invalidateQueries({ queryKey: keys.calendarAll });
 }
 
@@ -42,24 +44,37 @@ export async function applyThread(client: QueryClient, thread: Thread): Promise<
  * The person's action drawn before the server has answered (D64): the predicted thread goes into the list and the
  * single entry the way an answer does, but nothing beside them is re-read, since nothing is known yet. The function
  * returned puts the previous state back after a failed request, and only where the preview still stands: an answer
- * that landed meanwhile is newer and stays.
+ * that landed meanwhile is newer and stays. In the list that is decided for this thread's entry alone (WD-L7): another
+ * card's answer, a notice's refetch or another preview may have written the list since, and the refused card still
+ * goes back to what it was wherever its entry is still the prediction. A prediction keeps the thread's `updatedAt`, so
+ * no answer from the server is ever the same object.
  */
 export async function previewThread(client: QueryClient, thread: Thread): Promise<() => void> {
   await settleFetches(client, thread.id);
   const one = keys.thread(thread.id);
-  const before = { list: client.getQueryData<ThreadList>(keys.threads), one: client.getQueryData<Thread>(one) };
-  writeThread(client, thread);
-  const written = {
-    list: client.getQueryState(keys.threads)?.dataUpdatedAt,
-    one: client.getQueryState(one)?.dataUpdatedAt,
+  const before = {
+    entry: client.getQueryData<ThreadList>(keys.threads)?.threads.find(t => t.id === thread.id),
+    one: client.getQueryData<Thread>(one),
   };
+  writeThread(client, thread);
+  const predicted = client.getQueryData<ThreadList>(keys.threads)?.threads.find(t => t.id === thread.id);
+  const written = client.getQueryState(one)?.dataUpdatedAt;
   return () => {
-    if (client.getQueryState(one)?.dataUpdatedAt === written.one) {
+    if (client.getQueryState(one)?.dataUpdatedAt === written) {
       if (before.one) client.setQueryData(one, before.one);
       else client.removeQueries({ queryKey: one, exact: true });
     }
-    if (before.list && client.getQueryState(keys.threads)?.dataUpdatedAt === written.list)
-      client.setQueryData(keys.threads, before.list);
+    if (!predicted) return;
+    client.setQueryData<ThreadList>(keys.threads, current =>
+      current && current.threads.find(t => t.id === thread.id) === predicted
+        ? {
+            ...current,
+            threads: before.entry
+              ? current.threads.map(t => (t.id === thread.id ? before.entry! : t))
+              : current.threads.filter(t => t.id !== thread.id),
+          }
+        : current,
+    );
   };
 }
 

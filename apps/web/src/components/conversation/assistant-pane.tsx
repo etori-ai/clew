@@ -206,8 +206,12 @@ export function AssistantPane({
     // What is typed goes to this assistant unchanged and alone (D125 item 4); one that could not be sent comes back.
     submit: async raw => {
       setValue('');
-      if (!(await talk.askAside(handed, raw))) setValue(v => v || raw);
+      if (!(await talk.askAside(handed, raw))) {
+        setValue(v => v || raw);
+        field.current?.focus();
+      }
     },
+    stop: talk.stopAside,
     focus: () => field.current?.focus(),
     // The two answers to a question Clew held: Clew answers it, or it is sent anyway, as the person's own choice.
     declineOffer: () => {
@@ -255,11 +259,7 @@ export function AssistantPane({
       <StackItem size="fill">
         <VStack height="100%">
           <ConversationContext.Provider value={exchange}>
-            <ChatLayout
-              composer={
-                <Composer place="pane" placeholder={`Skriv till ${who.name} i ${who.source}`} stoppable={false} />
-              }
-            >
+            <ChatLayout composer={<Composer place="pane" placeholder={`Skriv till ${who.name} i ${who.source}`} />}>
               <Transcript room="aside" renderCard={() => null} onOpenView={() => undefined} />
             </ChatLayout>
           </ConversationContext.Provider>

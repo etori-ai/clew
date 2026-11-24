@@ -1,4 +1,4 @@
-import { keepPreviousData, queryOptions } from '@tanstack/react-query';
+import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
 import type {
   AskValues,
   AssistantReachInput,
@@ -24,6 +24,22 @@ import { recordInputJson } from './record-actions';
  */
 export const threadsQuery = queryOptions({ queryKey: keys.threads, queryFn: () => api.threads() });
 export const threadQuery = (id: string) => queryOptions({ queryKey: keys.thread(id), queryFn: () => api.thread(id) });
+/**
+ * Alla samtal (WD-L1): the person's conversations a page at a time, the latest activity first, each page from where
+ * the last one ended. A change notice reads the pages already loaded again, from the first.
+ */
+export const conversationsQuery = infiniteQueryOptions({
+  queryKey: keys.conversations,
+  queryFn: ({ pageParam }) => api.conversations(pageParam),
+  initialPageParam: null as string | null,
+  getNextPageParam: page => page.next,
+});
+/**
+ * A correction's execution (D45) while the review waits for the source (WD-L8). Nothing polls it: the execution's row
+ * moves the person's change revision when its state changes, and the notice reads it again (D33, D46).
+ */
+export const correctionQuery = (id: string) =>
+  queryOptions({ queryKey: keys.correction(id), queryFn: () => api.correctionExecution(id) });
 /** What happened to a work item (D112 item 4); keyed by the item's version, so a change to the item reads it again. */
 export const itemEventsQuery = (id: string, version: string) =>
   queryOptions({ queryKey: keys.itemEvents(id, version), queryFn: () => api.itemEvents(id), retry: false });
