@@ -23,7 +23,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,cjs,css}\"",
     "test:node": "bun run --cwd apps/server test:node",
     "test:a11y": "sh scripts/a11y.sh",
-    "deps": "depcruise --config .dependency-cruiser.cjs apps/server/src packages connectors scripts tests/unit",
+    "deps": "depcruise --config .dependency-cruiser.cjs apps/server/src apps/server/tests apps/web/src apps/web/tests packages connectors scripts tests",
     "protocol:schema": "bun scripts/connector-protocol-schema.ts",
     "db:init": "bun scripts/db-init.ts",
     "db:generate": "drizzle-kit generate",

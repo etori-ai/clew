@@ -19,7 +19,7 @@ File ids (625 to 632), etags and timestamps belong to this instance; a fake shou
 - Nextcloud, applied by `sh scripts/calendar.sh seed`: apps `files_sharing`, `user_oidc` and `approval` enabled; a
   user_oidc provider `keycloak` with client id `nextcloud`, the realm's discovery URL, `check-bearer=1`,
   `mapping-uid=preferred_username`, `unique-uid=0`, `bearer-provisioning=0`; system config
-  `user_oidc.auto_provision=false`. The container must reach `keycloak.orb.local:8090` (`extra_hosts` in
+  `user_oidc.auto_provision=false`. The container must reach `keycloak.orb.local:8090` (the `keycloak` service's alias in
   `.devcontainer/compose.yaml`).
 - Accounts: every Nextcloud account id equals the person's user name in the directory that provisions Clew, case
   aside, since `mapping-uid=preferred_username` finds the account by it, `auto_provision=false` creates none, and the

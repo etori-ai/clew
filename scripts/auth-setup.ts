@@ -1,4 +1,8 @@
-/** Run inside the app container. Admin credentials come from env or piped Docker env JSON; never printed. */
+/**
+ * Run inside the app container, against the development stack's Keycloak (the `keycloak` service of
+ * `.devcontainer/compose.yaml`). Its administrator comes from KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD, which the
+ * compose file sets in the app container; never printed.
+ */
 import { randomBytes } from 'node:crypto';
 import { rename, writeFile } from 'node:fs/promises';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -15,21 +19,15 @@ import { push } from './provisioner/push';
 import { testPasswordKey } from './test-password-key';
 const realm = 'clew',
   issuer = 'http://keycloak.orb.local:8090/realms/' + realm;
-const base = process.env.KEYCLOAK_ADMIN_URL ?? 'http://host.docker.internal:8090';
+// The containers of the stack reach Keycloak under the issuer's own host, the service's alias on their network.
+const base = process.env.KEYCLOAK_ADMIN_URL ?? new URL(issuer).origin;
 const publicUrl = process.env.PUBLIC_URL ?? 'http://localhost:3020';
-let credentials = { ...process.env };
-if (!process.stdin.isTTY && !credentials.KEYCLOAK_ADMIN_PASSWORD) {
-  const values: unknown = JSON.parse(await Bun.stdin.text());
-  if (!Array.isArray(values) || !values.every(v => typeof v === 'string'))
-    throw new Error('Expected environment array');
-  credentials = {
-    ...Object.fromEntries(values.map(v => [v.slice(0, v.indexOf('=')), v.slice(v.indexOf('=') + 1)])),
-    ...credentials,
-  };
-}
-const username = credentials.KC_BOOTSTRAP_ADMIN_USERNAME ?? credentials.KEYCLOAK_ADMIN;
-const password = credentials.KC_BOOTSTRAP_ADMIN_PASSWORD ?? credentials.KEYCLOAK_ADMIN_PASSWORD;
-if (!username || !password) throw new Error('Supply Keycloak administrator credentials securely');
+const username = process.env.KEYCLOAK_ADMIN,
+  password = process.env.KEYCLOAK_ADMIN_PASSWORD;
+if (!username || !password)
+  throw new Error(
+    'Set KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD (.devcontainer/compose.yaml sets them in the app container)',
+  );
 const tokenResponse = await fetch(base + '/realms/master/protocol/openid-connect/token', {
   method: 'POST',
   body: new URLSearchParams({ grant_type: 'password', client_id: 'admin-cli', username, password }),

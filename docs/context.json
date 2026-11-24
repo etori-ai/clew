@@ -1618,7 +1618,7 @@
       "number": 143,
       "path": "docs/decisions/D143-clew-is-licensed-under-the-agpl-as-eneo-is.md",
       "title": "D143 · Clew is licensed under the AGPL, as Eneo is",
-      "status": "accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question)",
+      "status": "accepted (the product owner, 2026-11-23: start with Eneo's licence and revise it later if needed; a choice of licence needs no test outside the repository, D102 item 1; who holds the copyright is an open question; item 3 amended 2026-11-24, finding `BL-15` of the baseline review: the connector protocol's viewer script is served with the notices of every package it bundles, not Scalar's alone)",
       "date": "2026-11-23",
       "area": "platform"
     },
