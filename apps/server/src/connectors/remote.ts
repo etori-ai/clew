@@ -1,8 +1,8 @@
 import type { Actor, Registry } from '@clew/connectors';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import {
-  ManifestError,
   fetchManifest,
+  manifestFailure,
   parseManifest,
   remoteConnector,
   type AssertionBinding,
@@ -54,9 +54,10 @@ export interface LoadOptions {
   rows?: () => Promise<ConnectorSource[]>;
   /**
    * Records a check: the health, and the manifest the service serves, which the store keeps as offered while it differs
-   * from the approved one (D144).
+   * from the approved one (D144). Only on the row still at `url`, the address the service was read at; false when the
+   * row has moved or gone meanwhile, and nothing was recorded.
    */
-  record?: (id: string, seen: { health: ConnectorHealth; served?: unknown; at: Date }) => Promise<void>;
+  record?: (id: string, seen: { url: string; health: ConnectorHealth; served?: unknown; at: Date }) => Promise<boolean>;
   fetch?: FetchLike;
   attempts?: number;
   delayMs?: number;
@@ -107,6 +108,11 @@ export async function loadConnectors(registry: Registry, options: LoadOptions = 
     const at = new Date();
     return { health: { ...h, at: at.toISOString() } as ConnectorHealth, at };
   };
+  /** An administrator moved the row while its old address answered: the watcher applies it as it now is. */
+  const moved = (source: ConnectorSource) =>
+    log(
+      `Connector "${source.id}" moved from ${source.url} while it was read there; nothing of that answer was recorded.`,
+    );
   const rows = await (options.rows ?? (async () => (await enabledConnectors()).map(sourceOf)))();
   const loaded: string[] = [];
   await Promise.all(
@@ -123,7 +129,10 @@ export async function loadConnectors(registry: Registry, options: LoadOptions = 
       for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
           const manifest = await fetchManifest(source.url, source.id, options.fetch);
-          await record(source.id, { ...health({ status: 'ok' }), served: manifest });
+          if (!(await record(source.id, { url: source.url, ...health({ status: 'ok' }), served: manifest }))) {
+            moved(source);
+            return;
+          }
           if (!sameManifest(source.manifest, manifest))
             log(
               `Connector "${source.id}" (${manifest.source}) at ${source.url} serves a changed manifest; it waits for an administrator${stored ? ', and the approved one is served meanwhile' : ''}.`,
@@ -136,13 +145,24 @@ export async function loadConnectors(registry: Registry, options: LoadOptions = 
           return;
         } catch (error) {
           const message = (error as Error).message;
-          if (error instanceof ManifestError && !/answered \d+/.test(message)) {
-            await record(source.id, health({ status: 'manifest-invalid', detail: message }));
-            log(`Connector "${source.id}": ${message}`);
+          if (manifestFailure(error) === 'manifest-invalid') {
+            if (
+              !(await record(source.id, {
+                url: source.url,
+                ...health({ status: 'manifest-invalid', detail: message }),
+              }))
+            )
+              moved(source);
+            else log(`Connector "${source.id}": ${message}`);
             return;
           }
           if (attempt === attempts) {
-            await record(source.id, health({ status: 'unreachable', detail: message }));
+            if (
+              !(await record(source.id, { url: source.url, ...health({ status: 'unreachable', detail: message }) }))
+            ) {
+              moved(source);
+              return;
+            }
             log(
               `Connector "${source.id}": ${source.url} did not answer after ${attempts} attempts${stored ? '; serving the stored manifest' : ''}.`,
             );

@@ -88,12 +88,20 @@ export async function updateConnector(
  * service serves, compared with the approved one in this same statement, so an approval made meanwhile is seen: the
  * approved one clears the offer and any other is the offer. The same offer seen again keeps the instant it was first
  * seen, so a review an administrator has open stays bound to it. jsonb compares by content, whatever the key order.
+ *
+ * Written only on the row as it was checked: still at `url`, the address the service was read at, and, given `secret`,
+ * still with that sealed secret, the one the check signed with. A row moved or rekeyed while the service answered keeps
+ * nothing of an answer from the old address or about the old secret, so an offer from one address is never approved at
+ * another. True when it wrote; false when the row is gone, has changed in either, or nothing was given to record.
  */
-export async function recordCheck(id: string, seen: { health?: ConnectorHealth; served?: unknown; at: Date }) {
+export async function recordCheck(
+  id: string,
+  seen: { url: string; secret?: string; health?: ConnectorHealth; served?: unknown; at: Date },
+) {
   const served = seen.served === undefined ? undefined : JSON.stringify(seen.served);
-  if (!seen.health && served === undefined) return;
+  if (!seen.health && served === undefined) return false;
   const approved = sql`${connectors.manifest} = ${served}::jsonb`;
-  await database()
+  const written = await database()
     .update(connectors)
     .set({
       ...(seen.health ? { health: seen.health } : {}),
@@ -104,7 +112,15 @@ export async function recordCheck(id: string, seen: { health?: ConnectorHealth; 
             offeredAt: sql`case when ${approved} then null when ${connectors.offered} is not distinct from ${served}::jsonb then ${connectors.offeredAt} else ${seen.at.toISOString()}::timestamptz end`,
           }),
     })
-    .where(eq(connectors.id, id));
+    .where(
+      and(
+        eq(connectors.id, id),
+        sql`${connectors.url} is not distinct from ${seen.url}`,
+        ...(seen.secret === undefined ? [] : [sql`${connectors.secret} is not distinct from ${seen.secret}`]),
+      ),
+    )
+    .returning({ id: connectors.id });
+  return written.length > 0;
 }
 /**
  * The offer an administrator reviewed becomes the approved manifest (D144), with the offer cleared and the version

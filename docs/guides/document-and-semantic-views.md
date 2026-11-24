@@ -1,6 +1,6 @@
 # Document and semantic views
 
-Connectors declare data; Clew renders it consistently in conversation results, the side panel, tool pages and review. [D79](../decisions/D79-semantic-views-and-versioned-document-review.md) extends protocol 2 with five view kinds. Existing `table`, `list`, `detail` and `text` views remain valid. Markdown **file** previews are deferred; existing Markdown text views still work.
+Connectors declare data; Clew renders it consistently in conversation results, the side panel, tool pages and review. [D79](../decisions/D79-semantic-views-and-versioned-document-review.md) extends the protocol with five view kinds. Existing `table`, `list`, `detail` and `text` views remain valid. Markdown **file** previews are deferred; existing Markdown text views still work.
 
 | Kind | Declaration | Payload |
 | --- | --- | --- |

@@ -20,7 +20,6 @@ no batch.
 
 | # | Batch | Findings | Decided first |
 |---|---|---|---|
-| 11 | Connector administration and its scripts | `DE-M5`, `CB-9`, `CB-10`, `CB-11`, `CB-12`, `CB-13` | |
 | 12 | The session and the change stream in the browser | `WD-M1`, `WD-M2`, `WD-M3`, `WD-M4`, `WD-L2`, `WD-L4`, `WD-L9` | |
 | 13 | The conversation's state | `WD-L1`, `WD-L3`, `WD-L5`, `WD-L6`, `WD-L7`, `WD-L8` | |
 | 14 | The calendar's time zones, entries and talk meetings | `DE-M8`, `DE-L14`, `DE-L15`, `DE-L16`, `WA-M2`, `WA-L5` | |
@@ -36,16 +35,16 @@ no batch.
 | Area | Review | High | Medium | Low | Total |
 |---|---|---|---|---|---|
 | ID | [Identity, sessions and authorization](../reviews/2026-11-23-review-identity-sessions-and-authorization.md) | 0 | 0 | 1 | 1 |
-| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 5 | 5 |
+| CB | [The connector boundary in the core](../reviews/2026-11-23-review-connector-boundary-in-the-core.md) | 0 | 0 | 0 | 0 |
 | AM | [The assistant and the model boundary](../reviews/2026-11-23-review-assistant-and-model-boundary.md) | 0 | 0 | 2 | 2 |
-| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 4 | 11 | 15 |
+| DE | [Decisions, durable execution, audit and the database](../reviews/2026-11-23-review-decisions-durable-execution-audit-and-database.md) | 0 | 3 | 11 | 14 |
 | BL | [Baseline, build and supply chain](../reviews/2026-11-23-review-baseline-build-and-supply-chain.md) | 0 | 2 | 7 | 9 |
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 0 | 0 | 0 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 0 | 2 | 2 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
 | WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 3 | 11 | 14 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 0 | 7 | 7 |
-| | **Total** | **0** | **13** | **55** | **68** |
+| | **Total** | **0** | **12** | **50** | **62** |
 
 ## High
 
@@ -65,13 +64,7 @@ points, and it carries a section on the earlier SCIM reviews.
 [The review](../reviews/2026-11-23-review-connector-boundary-in-the-core.md); its "Not established" holds six points.
 It carries no tables of its own.
 
-| Id | Severity | Finding | Where |
-|---|---|---|---|
-| CB-9 | Low | Adding or testing a connector whose service does not answer ends in "Något gick fel", and `unreachable` is never recorded. | `apps/server/src/composition/index.ts:403-405` |
-| CB-10 | Low | Several connector administration audit rows and the signing key's rows have no scenario test that asserts them. | `apps/server/src/connectors/usecases/admin.ts:609-618` |
-| CB-11 | Low | The registration script sets a re-registered connector to draft under one `connector.secret` row and writes state and removal rows for changes that did not happen. | `scripts/connector-registry.ts:48-77` |
-| CB-12 | Low | Current documentation still names protocols 2 and 3, though the loader refuses any number but 1. | `docs/reference/connector-protocol.md:183` |
-| CB-13 | Low | Without `--id`, the check script signs request, callback and installation assertions for whatever audience an unregistered service's manifest names. | `scripts/connector-check.ts:81-87` |
+No finding of this area is open.
 
 ## The assistant and the model boundary
 
@@ -92,7 +85,6 @@ ports with no contract under M7.
 | Id | Severity | Finding | Where |
 |---|---|---|---|
 | DE-M4 | Medium | The card projection, the owned domains' timer fences and the follow-up's writes are SQL in the composition root with no memory twin, so the unit suite tests a copy. | `apps/server/src/composition/execution-projection.ts:30-247` |
-| DE-M5 | Medium | Connector administration merges and writes from a row read before its transaction, with no version compared, and nothing keeps `header_holder` to one row. | `apps/server/src/connectors/usecases/admin.ts:331` |
 | DE-M7 | Medium | Ten ports or groups of ports have behaviour that no contract case holds both adapters to. | `tests/` (the store contracts) |
 | DE-M8 | Medium | The CalDAV adapter builds a person's address as `<login>@clew.test` and reads an appointment with no organiser as someone else's. | `packages/calendar/src/nextcloud.ts:68` |
 | DE-L3 | Low | `scanInto`, the first scan implementation, is unreachable in the server, and its tests still stand as evidence. | `apps/server/src/threads/usecases/cards.ts:110-203` |

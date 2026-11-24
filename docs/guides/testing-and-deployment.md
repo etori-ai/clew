@@ -63,6 +63,13 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://appra
 | A registered `--id` checked at another address | `--id <id> is registered at <registered address>, not at <address>; --as checks a connector only at the address it is registered at.` |
 | A user name that names no single person with a grant | `--as <user name>: no person with that user name and a grant in this installation.` |
 
+Every assertion the check signs, a request's, a callback grant and the installation's own, is for the id in the manifest the service serves, with `--id` or without it. Without `--as` the script still signs nothing for an id this installation uses elsewhere, and refuses with exit code 2 after fetching the manifest; an id no connector here is registered under is checked, so a service can be checked before it is registered:
+
+| The served manifest names | Refusal |
+|---|---|
+| One of Clew's own connectors | `The service at <address> names the id <id>, one of Clew's own connectors; the check signs nothing for it.` |
+| A registered connector, at another address | `The service at <address> names the id <id>, which is registered at <registered address>; the check signs for a registered connector only at the address it is registered at.` |
+
 The [shared checker](../../packages/connectors/src/check.ts), also used by Administration → Anslutna system → Testa anslutning, validates the manifest and probes with synthetic `check-manager` and `check-employee` actors. It hands them to Clew's registry in the fullest shape production uses, a whole signed-in context with a provisioned group, so a request body that carried more than the six fields of the published actor would fail the check; the service is posted only the published actor, as in production. It checks callable empty-input reads/proposals, registry role filtering, rejection of a foreign signature, scans, declared views and a declared header, where a `denied` with HTTP 403 for one of its people is the holder's answer that it lists nothing for them, not a failure, and a 401 is a failure. It does not execute writes, prove source-level row access, test every JWT claim, or fully exercise reads that require input. Callback success requires real local grants for those synthetic actors. Delegation requires a user session, which this checker has no way to supply: a delegated call the connector answers `denied` with HTTP 403 is expected, in whatever words, and a 401 fails the check here as anywhere. Read warnings as well as failures.
 
 The CLI prints English diagnostic `findings`, including truncated source answers; use synthetic data and handle its output accordingly. Administration receives Swedish structured `items` grouped by connection, capabilities and surfaces, without successful source-answer payloads. Both use the same probes and verdict. See [the check-result decision](../decisions/D44-the-connector-check-reads-as-a-result-not-a-log.md).
@@ -71,7 +78,7 @@ The CLI prints English diagnostic `findings`, including truncated source answers
 
 An administrator with `admin.connectors` can add the URL, id and transport secret in Administration → Anslutna system, review the check, set an audience and enable the connector. The API and screens exist. Eligible views can be chosen as menu tools there. A read about a person or a unit can be offered as a lens under "Visa", and one field of it chosen as a column on "Alla", under "På Personal och andra listor" on the same page; its section on the opened entity and an action's place in the entity's menu need no choice.
 
-The CLI is an operator/bootstrap alternative. It creates or updates a draft by default:
+The CLI is an operator/bootstrap alternative. A new connector is a draft unless `--enable`; registering an existing one again keeps its state, so moving or rekeying an enabled connector leaves it enabled:
 
 ```sh
 docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts phonebook http://127.0.0.1:4020 --secret local-docs-only-transport-key
@@ -79,6 +86,8 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts --list
 ```
 
 Use the administration UI to narrow the audience before enabling a real integration. `connector-add.ts <id> --enable` enables an existing registration that has an approved manifest; registering with the address and `--secret` approves what the service serves then ([D144](../decisions/D144-a-connectors-manifest-goes-live-only-when-an-administrator-approves-it.md)). The CLI does not run the entire conformance suite. Registration lives in PostgreSQL, with a sealed transport secret and audit; the running server reconciles it without a rebuild or restart. A connector missing governance is not callable.
+
+Each change a run makes is one audit row by `bootstrap:connector`, with the action and details the administration page writes: `connector.added`, `connector.url` (from, to), `connector.secret`, `connector.manifest` (what changed) and `connector.enabled` or `connector.disabled` (from). A run that changes nothing writes nothing and prints `unchanged`; `--enable` or `--disable` on a connector already in that state says `is already …`. `connector-add.ts <id> --remove` removes as the page does: the connector's open cards are closed and `connector.removed` says how many, in one transaction. An id with no row prints `does not exist` and writes nothing, and one of Clew's own connectors is refused, since it can be disabled but not removed.
 
 A connector that follows a fact kind (D55, `follows` on a `propose`) runs nothing until an administrator binds it. Until the administration page has bindings, the CLI is the way: one row per fact kind and follower with its audit row, default deny. The `--fixtures` form binds the development fixture connectors' followers of `hr:absence` with a short payroll window so a watch can be seen expiring in development; `scripts/jobs-check.ts` on the host then runs the scenario end to end as the manager.
 

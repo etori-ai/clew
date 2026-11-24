@@ -81,10 +81,12 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   // Null while the list is being read (the status line below); an empty list once the read failed, with the alert.
   const connectors = list.data?.connectors ?? (list.isError ? EMPTY_CONNECTORS : null);
   const error = list.isError && list.data === undefined ? errorMessage(list.error, 'Listan kunde inte läsas.') : null;
-  // The switch is the one mutation on this page: on or off, applied live, announced through the toast, then every admin read is fresh again (D33).
+  // The switch is the one mutation on this page: on or off, applied live, announced through the toast, then every admin
+  // read is fresh again (D33). It names the version the row shows (DE-M5), so a connector changed since is refused and
+  // shown as it now is.
   const flip = async (c: ConnectorSummary, on: boolean) => {
     try {
-      await api.admin.update(c.id, { state: on ? 'enabled' : 'disabled' });
+      await api.admin.update(c.id, { state: on ? 'enabled' : 'disabled', version: c.version });
       toast({ body: `${c.source} ${on ? 'är på' : 'är avstängd'}.`, uniqueID: 'connector:' + c.id });
     } catch (e) {
       toast({ body: errorMessage(e, 'Något gick fel.'), isAutoHide: false, uniqueID: 'connector:' + c.id });
