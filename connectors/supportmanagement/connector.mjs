@@ -1,10 +1,13 @@
 // The SupportManagement connector's reads and HTTP boundary (D35, D89): the errands a person has, and one errand.
 // manifest.mjs owns the contract and views; errands.mjs and supportmanagement.mjs own source access and mapping.
-// It acts as the person: Clew sends an identity provider token for SupportManagement beside its assertion, every
-// source call carries that token and nothing else, and SupportManagement decides what the person may see. Nothing is
-// stored or cached per person here, and no group, namespace or access rule is interpreted.
+// For a handler it acts as the person: Clew sends an identity provider token for SupportManagement beside its
+// assertion, every source call carries that token and nothing else, and SupportManagement decides what the person may
+// see. For an errand's owner (`owner`, requests.mjs) it cannot: SupportManagement does not decide access today, so the
+// connector checks the token itself and holds the owner's rule (owner.mjs).
 import { createVerifier } from './verification.mjs';
 import { SourceDenied, SourceNotFound, SourceUnavailable, createFixtureErrands } from './errands.mjs';
+import { createTokenVerifier } from './identity.mjs';
+import { OwnerError, createOwnerSide } from './requests.mjs';
 import { CONNECTOR, DEFAULT_AUDIENCE, DEFAULT_SOURCE, createManifest, errandRefParts } from './manifest.mjs';
 
 export { createManifest };
@@ -63,8 +66,12 @@ const DESCRIPTION_LIMIT = 4000;
 class Invalid extends Error {}
 class NotFound extends Error {}
 
+// Nothing the connector answers is kept on the way: an errand's messages can be about anyone.
 function jsonResponse(body, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+  });
 }
 function errorResponse(code, message, status) {
   return jsonResponse({ error: { code, message } }, status);
@@ -75,7 +82,10 @@ const clip = (text, limit) => (text.length <= limit ? text : text.slice(0, limit
  * source: the errand port (the fixture by default). municipalityId: the installation's, part of every ref.
  * audience and sourceLabel: see createManifest. statusKinds: additions to defaultStatusKinds. links: namespace -> an
  * address with `{errandNumber}` in it, for the link out to the errand in its own system. Identity comes from the
- * verified assertion and the delegated token, never from the request body.
+ * verified assertion and the delegated token, never from the request body. owner: switches on what an errand's owner
+ * sees and answers: `identity` (the provider the token must come from: `issuer`, and `jwksUrl` or, in tests, `jwks`),
+ * `accountClaim`, `replyAddresses` (namespace -> the address its e-mail reader reads) and `stateSeconds`. log: one line
+ * per owner's list, opened errand, answer and scan, never a message.
  */
 export function createConnector({
   jwks,
@@ -86,11 +96,14 @@ export function createConnector({
   sourceLabel = DEFAULT_SOURCE,
   statusKinds = {},
   links = {},
+  owner,
   now = () => Date.now(),
+  log = line => console.log(JSON.stringify(line)),
 } = {}) {
-  const manifest = createManifest({ audience, source: sourceLabel });
+  const manifest = createManifest({ audience, source: sourceLabel, owner: !!owner });
   const verify = createVerifier({ secret, jwks, clewUrl: process.env.CLEW_URL ?? '' }, CONNECTOR);
   const kinds = { ...defaultStatusKinds, ...statusKinds };
+  const kindOf = status => (Object.hasOwn(kinds, status) ? kinds[status] : 'open');
 
   const suspended = errand => !!errand.suspendedTo && Date.parse(errand.suspendedTo) > now();
 
@@ -126,6 +139,22 @@ export function createConnector({
       return undefined;
     }
   }
+
+  const ownerSide = owner
+    ? createOwnerSide({
+        source,
+        verifyToken: createTokenVerifier({ ...owner.identity, audience, now }),
+        accountClaim: owner.accountClaim,
+        municipalityId,
+        sourceLabel,
+        kindOf,
+        linkOf,
+        replyAddresses: owner.replyAddresses,
+        stateSeconds: owner.stateSeconds,
+        now,
+        say: line => log({ at: new Date(now()).toISOString(), connector: CONNECTOR, ...line }),
+      })
+    : undefined;
 
   /** The row every list shows. The label is the errand number and its type: never the title, never a name. */
   function row(errand) {
@@ -198,7 +227,10 @@ export function createConnector({
       return errorResponse('invalid', 'Ogiltig förfrågan.', 400);
     }
 
-    if (url.pathname === '/clew/scan') return jsonResponse({ drafts: [] });
+    if (url.pathname === '/clew/scan')
+      return jsonResponse(
+        ownerSide ? await ownerSide.scan(actor, request.headers.get('x-clew-delegated-token')) : { drafts: [] },
+      );
     if (url.pathname === '/clew/figure') return jsonResponse({ figure: null });
 
     let name;
@@ -207,6 +239,8 @@ export function createConnector({
     } catch {
       return errorResponse('not-found', 'Okänd förmåga.', 404);
     }
+    const input = body && typeof body.input === 'object' && body.input ? body.input : {};
+    if (ownerSide?.names.includes(name)) return ownerAnswer(name, input, actor, request);
     const capability = Object.hasOwn(capabilities, name) ? capabilities[name] : undefined;
     if (!capability) return errorResponse('not-found', 'Okänd förmåga.', 404);
 
@@ -217,7 +251,6 @@ export function createConnector({
       return errorResponse('denied', 'Din inloggning kan inte styrkas mot ärendesystemet i den här sessionen.', 403);
 
     try {
-      const input = body && typeof body.input === 'object' && body.input ? body.input : {};
       return jsonResponse({ output: await capability(input, token) });
     } catch (error) {
       if (error instanceof Invalid) return errorResponse('invalid', error.message, 400);
@@ -232,5 +265,26 @@ export function createConnector({
     }
   }
 
-  return { manifest, handle };
+  /** The owner's side: it proves the person itself, and its errors carry their own Swedish. */
+  async function ownerAnswer(name, input, actor, request) {
+    try {
+      const output = await ownerSide.run(name, input, {
+        actor,
+        token: request.headers.get('x-clew-delegated-token'),
+        operationId: request.headers.get('x-clew-operation-id') ?? undefined,
+      });
+      return jsonResponse({ output });
+    } catch (error) {
+      if (error instanceof OwnerError) return errorResponse(error.code, error.message, error.status);
+      if (error instanceof SourceNotFound)
+        return errorResponse('not-found', 'Ärendet finns inte, eller så har du inte tillgång till det.', 404);
+      // A namespace that has switched SupportManagement's own access control on refuses the owner it did not before.
+      if (error instanceof SourceDenied)
+        return errorResponse('denied', `${sourceLabel} svarar inte på din fråga just nu.`, 403);
+      if (!(error instanceof SourceUnavailable)) console.error('sm connector: unexpected', error?.name);
+      return errorResponse('unavailable', `${sourceLabel} svarar inte just nu.`, 503);
+    }
+  }
+
+  return { manifest, handle, forget: () => ownerSide?.forget() };
 }
