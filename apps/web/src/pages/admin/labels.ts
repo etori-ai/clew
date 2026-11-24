@@ -55,11 +55,9 @@ export const relationDescription: Record<RelationGrant, string> = {
   registrar:
     'Söka vem i hela organisationen som har en kompetens, och läsa en persons kompetenser. Varje läsning loggas.',
 };
-export const kindLabel = {
-  core: 'Startsidans egen',
-  passthrough: 'Direkt från källan',
-  derived: 'Räknas fram',
-} as const;
+/** What kind of source a connector is; one of the installation's own is said with its name (`site`). */
+export const kindLabel = (kind: 'core' | 'passthrough' | 'derived', site: string): string =>
+  kind === 'core' ? `Egen i ${site}` : kind === 'passthrough' ? 'Direkt från källan' : 'Räknas fram';
 export type Tone = 'success' | 'neutral' | 'warning' | 'error';
 /** The status word and its colour: the state first (off is off whatever the health says), then the health of a live connector. */
 export function statusOf(c: Pick<ConnectorSummary, 'state' | 'health' | 'bundled'>): { label: string; tone: Tone } {
@@ -153,6 +151,9 @@ export const actionLabel: Record<string, string> = {
   'connector.url': 'Adress ändrad',
   'connector.secret': 'Nyckel bytt',
   'connector.manifest': 'Uppdaterat från systemet',
+  'connector.lens': 'Visas på listan ändrat',
+  'connector.column': 'Kolumn på Alla ändrad',
+  'connector.figure': 'Nyckeltal ändrat',
   'connector.removed': 'Borttagen',
   'provider.added': 'Tillagd',
   'provider.title': 'Namn ändrat',
@@ -205,4 +206,37 @@ export const actorLabel = (actor: string) =>
         ? 'Uppgraderingen av Clew'
         : actor.startsWith('bootstrap:')
           ? 'Kommandoraden'
-          : actor;
+          : actor.startsWith('system:')
+            ? 'Systemet'
+            : actor;
+/** An audit row's action in words; one this page has no word for is still said in Swedish, never as its id (WA-L12). */
+export const historyLabel = (action: string) => actionLabel[action] ?? 'Ändrad';
+const stateWord: Record<string, string> = { enabled: 'påslagen', disabled: 'avstängd', draft: 'utkast' };
+/** One value of an audit row as a word: a state, a switch, a number, a name or an address; a list or an object is not. */
+function valueWord(value: unknown): string | null {
+  if (value === null) return 'ingen';
+  if (typeof value === 'boolean') return value ? 'på' : 'av';
+  if (typeof value === 'number') return value.toLocaleString('sv-SE');
+  if (typeof value === 'string') return stateWord[value] ?? (value.trim() || null);
+  return null;
+}
+/**
+ * What an audit row's details say, in Swedish words (WA-L12): the name of what changed, from what and to what where
+ * those are a state, a switch, a number, a name or an address, a key taken away with a moved address, and how many cards
+ * a removal closed. A list or an object (an audience, a set of tools, a manifest's differences) is left to the action's
+ * own words: the audit log keeps every detail, and the page never shows its JSON.
+ */
+export function historyWords(details: Record<string, unknown>): string {
+  const name = [details.title, details.label].find((v): v is string => typeof v === 'string' && v.trim() !== '');
+  const from = 'from' in details ? valueWord(details.from) : null;
+  const to = 'to' in details ? valueWord(details.to) : null;
+  return [
+    name ?? null,
+    from && to ? `från ${from} till ${to}` : from ? `var ${from}` : to ? `nu ${to}` : null,
+    details.keyRemoved === true ? 'nyckeln togs bort' : null,
+    typeof details.takenBy === 'string' ? `övertaget av ${details.takenBy}` : null,
+    typeof details.closedCards === 'number' ? `${details.closedCards.toLocaleString('sv-SE')} kort stängda` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+}

@@ -34,6 +34,7 @@ import { AddConnectorDialog } from './add';
 import { audienceLabel, kindLabel, statusOf } from './labels';
 import { AdminShell } from './shell';
 import { DOT } from '../../dot';
+import { useBranding } from '../../branding';
 
 /**
  * "Anslutna system" (D23): every connector, bundled and remote, with its status, its audience and an on/off switch, in
@@ -70,6 +71,7 @@ const EMPTY_CONNECTORS: ConnectorSummary[] = [];
 
 export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery('(max-width: 720px)');
+  const site = useBranding().name;
   const client = useQueryClient();
   const list = useQuery(adminQueries.connectors);
   const units = useQuery(adminQueries.units);
@@ -116,7 +118,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
         <Text weight="semibold">{c.source}</Text>
         <Text type="supporting">
           {idLine(c)}
-          {c.kind ? `\u00a0· ${kindLabel[c.kind].toLowerCase()}` : ''}
+          {c.kind ? `\u00a0· ${kindLabel(c.kind, site).toLowerCase()}` : ''}
         </Text>
       </VStack>
     </HStack>

@@ -26,7 +26,7 @@ const errandArea: Area = {
   id: 'arenden',
   title: 'Ärenden',
   connector: 'clew',
-  source: 'Startsidan',
+  source: 'Clew',
   icon: 'document',
   figure: null,
   needsYou: 0,
@@ -71,7 +71,7 @@ test.describe('Mina ärenden as a tool', () => {
   }) => {
     api.areas.push(errandArea);
     await page.route('**/api/cap/clew.errands**', route =>
-      route.fulfill({ json: { output: seven, source: 'Startsidan', view: errandsSpec } }),
+      route.fulfill({ json: { output: seven, source: 'Clew', view: errandsSpec } }),
     );
     await open(page, '/');
     await expect(page.getByRole('region', { name: 'Mina ärenden' })).toHaveCount(0);
@@ -115,7 +115,7 @@ test.describe('Mina ärenden as a tool', () => {
     await page.route('**/api/cap/clew.errands**', route =>
       down
         ? route.fulfill({ status: 400, json: { error: 'Inget av ärendesystemen svarar just nu.' } })
-        : route.fulfill({ json: { output: errandsOutput, source: 'Startsidan', view: errandsSpec } }),
+        : route.fulfill({ json: { output: errandsOutput, source: 'Clew', view: errandsSpec } }),
     );
     await open(page, PAGE);
     const main = page.getByRole('main');

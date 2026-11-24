@@ -13,7 +13,7 @@ export const errandsSpec = {
   ...declared.view!,
   capability: 'clew.errands',
   connector: 'clew',
-  source: 'Startsidan',
+  source: 'Clew',
   chip: false,
   rowViews: true,
 } as PanelViewSpec;

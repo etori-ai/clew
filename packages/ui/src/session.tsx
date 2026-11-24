@@ -45,7 +45,8 @@ export async function signOut() {
     headers: { 'x-csrf-token': csrf },
     cache: 'no-store',
   });
-  if (!response.ok && response.status !== 401) throw new Error('Utloggningen kunde inte bekräftas. Försök igen.');
+  // The page says it in its own words (`errorMessage`): neither this nor a network error's message is shown.
+  if (!response.ok && response.status !== 401) throw new Error('The sign-out was not confirmed.');
   if (response.ok) url = (await response.json()).url;
   window.dispatchEvent(new Event('clew-session-ended'));
   window.location.replace(url);
@@ -149,12 +150,15 @@ export function sessionStanding(
   return answer.session.policyVersion === known.policyVersion ? 'same' : 'access-changed';
 }
 
-/** Said while Clew is out of reach (D46). The page and whatever the person has typed on it stay. */
-export const UNREACHABLE_WORDS = 'Startsidan går inte att nå just nu. Försöker igen om en stund.';
+/**
+ * Said while Clew is out of reach (D46), by the installation's name (D98, the appearance's `name`). The page and
+ * whatever the person has typed on it stay.
+ */
+export const unreachableWords = (site: string) => `${site} går inte att nå just nu. Försöker igen om en stund.`;
 /** Said when Clew answers again after being out of reach. */
-const REACHED_WORDS = 'Startsidan går att nå igen.';
+const reachedWords = (site: string) => `${site} går att nå igen.`;
 /** The tab's title once the session has ended: the last page's name, which could name a person, does not stay (2.4.2). */
-const ENDED_TITLE = tabTitle('Inloggningen har avslutats');
+const endedTitle = (site: string) => tabTitle('Inloggningen har avslutats', site);
 /** What the card in the page's place says once the session has ended; said aloud as it appears (4.1.3). */
 const ENDED_WORDS = 'Din inloggning har avslutats. Logga in igen för att fortsätta.';
 
@@ -186,11 +190,22 @@ function SessionToasts({ into }: { into: RefObject<ShowToastFn | null> }) {
 export const signInAgainHref = (location: { pathname: string; search: string }) =>
   signInHref(location.pathname + location.search);
 /**
- * The page in place of Clew's when there is no session to show it in: a heading, what is the matter and one move. A
- * region mounted with its words is not read out, so whoever draws it says them through the announcer. `focused` takes
- * the focus to the heading as it appears, for a page that took the place of the one the person was working on.
+ * The page in place of Clew's when there is no session to show it in: the installation's name as its heading, what is
+ * the matter and one move. A region mounted with its words is not read out, so whoever draws it says them through the
+ * announcer. `focused` takes the focus to the heading as it appears, for a page that took the place of the one the
+ * person was working on.
  */
-function SessionNotice({ words, action, focused = false }: { words: string; action: ReactNode; focused?: boolean }) {
+function SessionNotice({
+  site,
+  words,
+  action,
+  focused = false,
+}: {
+  site: string;
+  words: string;
+  action: ReactNode;
+  focused?: boolean;
+}) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (focused) heading.current?.focus();
@@ -200,7 +215,7 @@ function SessionNotice({ words, action, focused = false }: { words: string; acti
       <Card padding={8}>
         <VStack gap={4}>
           <Heading level={1} ref={heading} tabIndex={-1}>
-            Startsidan
+            {site}
           </Heading>
           <Text>{words}</Text>
           {action}
@@ -216,17 +231,19 @@ function SessionNotice({ words, action, focused = false }: { words: string; acti
  * again by itself with `retryDelay`; "Försök igen" asks at once, and `onRetry` says whether Clew answered. It is said on
  * arrival, and again when a press finds Clew still out of reach.
  */
-export function SessionUnreachable({ onRetry }: { onRetry: () => Promise<boolean> }) {
+export function SessionUnreachable({ site, onRetry }: { site: string; onRetry: () => Promise<boolean> }) {
   const announce = useAnnounce();
-  useEffect(() => announce(UNREACHABLE_WORDS), [announce]);
+  const words = unreachableWords(site);
+  useEffect(() => announce(words), [announce, words]);
   return (
     <SessionNotice
-      words={UNREACHABLE_WORDS}
+      site={site}
+      words={words}
       action={
         <Button
           label="Försök igen"
           clickAction={async () => {
-            if (!(await onRetry())) announce(UNREACHABLE_WORDS);
+            if (!(await onRetry())) announce(words);
           }}
         />
       }
@@ -242,13 +259,16 @@ export function SessionUnreachable({ onRetry }: { onRetry: () => Promise<boolean
  * has typed, a toast says so and only the growing wait asks again (`retryDelay`) until Clew answers. The same session
  * with a new authorization version is `onAccessChanged`, once the tab is in view: the caller reads the session again.
  * The session's toasts stand in a toast region of its own, Astryx's `ToastViewport`, which leaves with the session.
+ * `site` is the installation's name, which the notices, the ended page and its tab's title say.
  */
 export function SessionBoundary({
+  site,
   session,
   children,
   onEnded,
   onAccessChanged,
 }: {
+  site: string;
   session: BrowserSession;
   children: ReactNode;
   onEnded?: () => void;
@@ -270,6 +290,9 @@ export function SessionBoundary({
   ended.current = onEnded;
   const accessChanged = useRef(onAccessChanged);
   accessChanged.current = onAccessChanged;
+  // The name as it is when something is said: an administrator's save reaches an open page without a new session.
+  const named = useRef(site);
+  named.current = site;
   useEffect(() => {
     if (state === 'ended') ended.current?.();
   }, [state]);
@@ -302,7 +325,7 @@ export function SessionBoundary({
       window.clearTimeout(retry);
       // No toast after this one: the session's own region leaves with the children, every toast in it.
       toastsOpen = false;
-      document.title = ENDED_TITLE;
+      document.title = endedTitle(named.current);
       said.current(ENDED_WORDS);
       setState('ended');
       reveal();
@@ -312,7 +335,7 @@ export function SessionBoundary({
     // toast says so once, and the session is asked about again after a wait that grows. Nothing else asks meanwhile.
     const unreachable = () => {
       reveal();
-      if (!notice) notice = toasts.current?.({ body: UNREACHABLE_WORDS, isAutoHide: false }) ?? null;
+      if (!notice) notice = toasts.current?.({ body: unreachableWords(named.current), isAutoHide: false }) ?? null;
       window.clearTimeout(retry);
       retry = window.setTimeout(() => void check(), retryDelay(failures++));
     };
@@ -322,7 +345,7 @@ export function SessionBoundary({
       failures = 0;
       notice?.();
       notice = null;
-      said.current(REACHED_WORDS);
+      said.current(reachedWords(named.current));
     };
     async function check() {
       if (ended || checking) return;
@@ -435,6 +458,7 @@ export function SessionBoundary({
   if (state === 'ended')
     return (
       <SessionNotice
+        site={site}
         words={ENDED_WORDS}
         focused
         action={<Button label="Logga in igen" href={signInAgainHref(window.location)} />}

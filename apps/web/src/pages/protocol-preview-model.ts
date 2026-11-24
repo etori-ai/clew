@@ -188,12 +188,29 @@ export const START_WORDS: Record<PathStart, { where: string; draws: string }> = 
   'work-item': { where: 'On a work item', draws: "A button in the item's header, and the dialog when it asks" },
   entity: {
     where: 'On a person or a unit',
-    draws: "A button in your section of their page, and the row's menu on Personal",
+    draws: "A button in your section of their page, and the row's menu on “Personal”",
   },
   'question-box': { where: 'Typing in the question box', draws: 'A suggestion under “Menar du”' },
   conversation: { where: 'In a conversation', draws: 'The assistant drafts a work item; the person decides on it' },
   fact: { where: 'After something happened elsewhere', draws: 'A step of a job, decided on its work item' },
 };
+/**
+ * An English sentence of these pages split where it quotes a word of Clew's Swedish interface (“Menar du”,
+ * “Uppgifter”): the quoted words are Swedish and the page marks them so (3.1.2, WA-L13); the quotation marks stay
+ * with the English around them.
+ */
+export function swedishQuotes(text: string): Array<{ text: string; swedish: boolean }> {
+  const parts: Array<{ text: string; swedish: boolean }> = [];
+  let rest = text;
+  for (let open = rest.indexOf('“'); open >= 0; open = rest.indexOf('“')) {
+    const close = rest.indexOf('”', open + 1);
+    if (close < 0) break;
+    parts.push({ text: rest.slice(0, open + 1), swedish: false }, { text: rest.slice(open + 1, close), swedish: true });
+    rest = rest.slice(close);
+  }
+  if (rest) parts.push({ text: rest, swedish: false });
+  return parts.filter(p => p.text);
+}
 /** "What the person passes through": each step of the one path, what it is, and how Clew draws it. */
 export const STEP_WORDS: Record<PathStep, { name: string; what: string; drawn: string }> = {
   'fill-in': {
@@ -219,7 +236,7 @@ export const STEP_WORDS: Record<PathStep, { name: string; what: string; drawn: s
   receipt: {
     name: 'Receipt and undo',
     what: 'One outcome per row, read back from your system; undo while you allow it.',
-    drawn: 'A banner on the work item, and an entry under Händelser',
+    drawn: 'A banner on the work item, and an entry under “Händelser”',
   },
 };
 /** A state as the tables say it, and the badge's tone: what the declaration does, may do, or never does here. */

@@ -32,6 +32,7 @@ import { DeclaredView } from './view';
 import { useMarks } from '../../marks';
 import { entityHref } from '../../person-address';
 import { isWebAddress } from '../../web-address';
+import { useBranding } from '../../branding';
 
 type BodyProps = {
   output: unknown;
@@ -98,6 +99,7 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
   const talk = useConversation();
   const marks = useMarks();
   const { pathname, search } = useLocation();
+  const site = useBranding().name;
   const missed = result.sources.filter(s => s.status !== 'ok');
   return (
     <VStack gap={3}>
@@ -120,7 +122,7 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
             const meta = [merged ? '' : r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
               .filter(Boolean)
               .join('\u00a0· ');
-            // A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the
+            // A hit whose source declares its view (D38) opens here, drawn by Clew; the link still leads to the
             // source, in a new tab and marked as leaving Clew with Astryx's external link (D111 rule 8). A hit about an
             // entity leads to the entity instead. "Lägg till i samtalet" only where the page has a box (D111 rule 6); a
             // hit with none of the three has no line of buttons.
@@ -191,7 +193,7 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
           {missed.map(s => s.source).join(', ')} svarade inte. Träffarna ovan är från de källor som svarade.
         </Text>
       )}
-      <Text type="supporting">Hämtat som du, ur det du får se. Inget av texten sparas på Startsidan.</Text>
+      <Text type="supporting">Hämtat som du, ur det du får se. Inget av texten sparas på {site}.</Text>
     </VStack>
   );
 }
@@ -225,6 +227,7 @@ export function PanelBody({
         ? agendaItems(week.events, [])
         : [];
   const navigate = useNavigate();
+  const site = useBranding().name;
   const links = useMemo(() => {
     if (!entryHref) return undefined;
     const follow = (href: string) => void navigate(href);
@@ -327,7 +330,9 @@ export function PanelBody({
       {!declared && !calendar && !search && !rows && !pairs.length && <Text type="supporting">Inget att visa.</Text>}
       {/* A declared view and the search name where they read from themselves; a plain read says it here. */}
       {source && (rows || pairs.length > 0) && (
-        <Text type="supporting">Hämtat ur {source}. Inget av det sparas på Startsidan.</Text>
+        <Text type="supporting">
+          Hämtat ur {source}. Inget av det sparas på {site}.
+        </Text>
       )}
     </VStack>
   );

@@ -22,7 +22,7 @@ export const requestsSpec = {
   ...declared.view!,
   capability: 'clew.requests',
   connector: 'clew',
-  source: 'Startsidan',
+  source: 'Clew',
   chip: false,
   rowViews: true,
 } as PanelViewSpec;

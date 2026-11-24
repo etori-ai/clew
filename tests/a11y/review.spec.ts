@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import type { MockApi } from './support';
 import {
+  SITE,
   announcements,
   composer,
   desktop,
@@ -58,7 +59,7 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
     // A page in the shell, not a dialog: its title is the h1 and the tab's, the way back names Att göra.
     await expect(page).toHaveURL(FROM_TODO);
     await expect(title(page, 'Granska 3 rader')).toBeVisible();
-    await expect(page).toHaveTitle('Granska 3 rader · Startsidan');
+    await expect(page).toHaveTitle(`Granska 3 rader · ${SITE}`);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('main')).toContainText(
       'Attestera 3 fakturor, 48 200 kr · inget skrivs förrän du skickar',
@@ -382,7 +383,7 @@ test.describe('the review is a page with its own address (D70, D73 amended 2026-
     await expectNoAxeViolations(page);
     await open(page, '/items/okand/review');
     await expect(title(page, 'Ärendet finns inte')).toBeVisible();
-    await expect(page).toHaveTitle('Ärendet finns inte · Startsidan');
+    await expect(page).toHaveTitle(`Ärendet finns inte · ${SITE}`);
   });
 
   test('a card without a review has nothing to review', async ({ page, api }) => {

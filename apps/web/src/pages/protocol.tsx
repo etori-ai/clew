@@ -5,6 +5,7 @@ import {
   Banner,
   Button,
   CodeBlock,
+  EnglishWords,
   Divider,
   Heading,
   Layout,
@@ -363,9 +364,12 @@ function Page() {
 
 export function ManifestReferencePage() {
   const [client] = useState(createQueryClient);
+  // The page is English, Astryx's own words with it: "Copy code", not "Kopiera kod" (3.1.2, WA-L13).
   return (
     <QueryClientProvider client={client}>
-      <Page />
+      <EnglishWords>
+        <Page />
+      </EnglishWords>
     </QueryClientProvider>
   );
 }

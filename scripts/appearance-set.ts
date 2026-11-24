@@ -1,15 +1,16 @@
 /**
- * Set the installation's theme and logo (D98) from the command line, as an alternative to Administration › Utseende.
+ * Set the installation's name, theme and logo (D98) from the command line, as an alternative to Administration › Utseende.
  * Runs inside the app container with the server's local settings (DATABASE_URL). The work is the appearance use cases'
- * `operator` side: the same checks of the theme file and the images as an upload meets, the same audit rows, with
+ * `operator` side: the same checks of the name, the theme file and the images as the page meets, the same audit rows, with
  * `bootstrap:appearance` as the actor. Every browser reads the change on its next visit; nothing is restarted.
  *
- *   bun scripts/appearance-set.ts themes/sundsvall     the theme and logo an example folder names
- *   bun scripts/appearance-set.ts --reset              back to Astryx Neutral, with no logo
+ *   bun scripts/appearance-set.ts themes/sundsvall     the name, theme and logo an example folder names
+ *   bun scripts/appearance-set.ts --reset              back to Clew in Astryx Neutral, with no logo
  *   bun scripts/appearance-set.ts --show               what is saved now
  *
- * An example folder holds `appearance.json`: `theme` names a theme file, `logo` an `alt` and the `light` and optional
- * `dark` image, each path relative to the folder. Either part may be left out, and then that part is left as it is.
+ * An example folder holds `appearance.json`: `name` is the installation's name, `theme` names a theme file, `logo` an
+ * `alt` and the `light` and optional `dark` image, each path relative to the folder. Any part may be left out, and then
+ * that part is left as it is.
  */
 import { readFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
@@ -25,6 +26,7 @@ const { appearance } = await import('../apps/server/src/composition/appearance')
 const { ThemeFileError } = await import('../apps/server/src/modules/appearance/usecases');
 
 interface Manifest {
+  name?: string;
   theme?: string;
   logo?: { alt: string; light: string; dark?: string };
 }
@@ -32,7 +34,7 @@ const usage =
   'Usage: bun scripts/appearance-set.ts <folder with appearance.json> | --reset | --show   (examples: themes/)';
 const show = (view: AppearanceAdminView) =>
   console.log(
-    `Theme: ${view.theme ? `${view.theme.name ?? 'unnamed'}, ${Object.keys(view.theme.colors).length} colours` : 'Astryx Neutral'}. ` +
+    `Name: ${view.name}. Theme: ${view.theme ? `${view.theme.name ?? 'unnamed'}, ${Object.keys(view.theme.colors).length} colours` : 'Astryx Neutral'}. ` +
       `Logo: ${view.logo ? `${view.logo.alt}${view.logo.darkSrc ? ', with a dark variant' : ''}` : 'none'}. Revision ${view.revision}.`,
   );
 const mediaTypes: Record<string, LogoMediaType> = { '.png': 'image/png', '.svg': 'image/svg+xml' };
@@ -50,6 +52,7 @@ try {
     const now = await appearance.read();
     show({ ...now, updatedAt: null, updatedBy: null });
   } else if (args.includes('--reset')) {
+    await appearance.operator.clearName();
     await appearance.operator.clearTheme();
     show(await appearance.operator.clearLogo());
   } else if (!folder) {
@@ -58,7 +61,8 @@ try {
   } else {
     const root = resolve(folder);
     const manifest = JSON.parse(await readFile(resolve(root, 'appearance.json'), 'utf8')) as Manifest;
-    if (!manifest.theme && !manifest.logo) throw new Error('appearance.json names neither a theme nor a logo.');
+    if (manifest.name === undefined && !manifest.theme && !manifest.logo)
+      throw new Error('appearance.json names no name, theme or logo.');
     // Everything is read before anything is saved, so a missing image does not leave half an appearance behind.
     const file = manifest.theme ? JSON.parse(await readFile(resolve(root, manifest.theme), 'utf8')) : undefined;
     const logo = manifest.logo && {
@@ -67,6 +71,7 @@ try {
       dark: manifest.logo.dark ? await image(resolve(root, manifest.logo.dark)) : null,
     };
     let view: AppearanceAdminView | undefined;
+    if (manifest.name !== undefined) view = await appearance.operator.setName(manifest.name);
     if (file !== undefined) view = await appearance.operator.setTheme(file);
     if (logo) view = await appearance.operator.setLogo(logo);
     show(view!);
@@ -74,7 +79,7 @@ try {
 } catch (error) {
   failed = true;
   if (error instanceof ThemeFileError) {
-    // The problems are written for the administration page, so they are in Swedish.
+    // The problems are written for the administration page, so they are in Swedish, as is a refused name below.
     console.error('The theme file was refused:');
     for (const problem of error.problems) console.error('- ' + problem.message);
   } else console.error(error instanceof Error ? error.message : String(error));

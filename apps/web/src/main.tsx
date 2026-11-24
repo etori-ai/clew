@@ -138,6 +138,8 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   const askNow = useRef<() => Promise<boolean>>(async () => false);
   // Stops the change stream: the session's end leaves nobody to tell.
   const stopStream = useRef<() => void>(() => undefined);
+  // The installation's name (D98), which the pages in Clew's place say.
+  const site = useBranding().name;
   const location = useLocation();
   useEffect(() => {
     let cancelled = false;
@@ -280,7 +282,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
     }
   }, [shell]);
   // Clew did not answer the session's read: said in the page's place, and asked again (D46), never a sign-out.
-  if (shell === 'unreachable') return <SessionUnreachable onRetry={() => askNow.current()} />;
+  if (shell === 'unreachable') return <SessionUnreachable site={site} onRetry={() => askNow.current()} />;
   // Until the header has answered nothing is drawn, so the shell does not change shape when it does; then the shell's
   // shape stands until the session is known.
   if (shell === 'loading')
@@ -296,6 +298,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   if (reviewPage) return <Navigate to={reviewPage} replace />;
   return (
     <SessionBoundary
+      site={site}
       session={shell.session}
       onAccessChanged={readAgain}
       onEnded={() => {

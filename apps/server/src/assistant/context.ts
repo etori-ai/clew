@@ -86,8 +86,7 @@ function cardState(t: Thread, now: string): string {
       .map(x => `${said(`${x.label} · ${x.detail}`, ROW_MAX)} (${outcome[x.outcome]})`)
       .join('; ')}.`;
     const undoOpen = !!r.undoCapability && !!r.undoUntil && Date.parse(r.undoUntil) > Date.parse(now);
-    if (!undoOpen)
-      return done + ` Det går inte längre att ångra i Startsidan; en ändring görs i ${source}.` + buttons([]);
+    if (!undoOpen) return done + ` Det går inte längre att ångra här; en ändring görs i ${source}.` + buttons([]);
     const own = [primary, ...secondary].filter(a => !!a && a.kind !== 'read').map(a => said(a!.label));
     return (
       done +

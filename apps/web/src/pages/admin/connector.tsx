@@ -55,9 +55,11 @@ import { useAdminAction } from '../../mutations';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { AudienceEditor, AudiencePreview } from './audience';
-import { CheckResult } from './check-result';
+import { CheckResult, TechnicalCause } from './check-result';
+import { useBranding } from '../../branding';
 import {
-  actionLabel,
+  historyLabel,
+  historyWords,
   actorLabel,
   areaFieldLabel,
   audienceLabel,
@@ -134,6 +136,7 @@ function ToolSwitch({
 export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const site = useBranding().name;
   const mobile = useMediaQuery('(max-width: 720px)');
   // The connector and the units from the admin cache (D33); a 400 is the one answer the page turns into "finns inte".
   const client = useQueryClient();
@@ -336,14 +339,14 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
             <Text type="supporting" color="secondary">
               {[
                 swatchWords(c.ordinal),
-                c.kind ? kindLabel[c.kind].toLowerCase() : null,
+                c.kind ? kindLabel(c.kind, site).toLowerCase() : null,
                 c.protocol ? `protokoll ${c.protocol}` : null,
               ]
                 .filter(Boolean)
                 .join('\u00a0· ')}
             </Text>
             <Text type="supporting" color="secondary">
-              {c.bundled ? 'Körs i Startsidan' : c.url}
+              {c.bundled ? `Körs i ${site}` : c.url}
             </Text>
           </>
         ),
@@ -357,7 +360,17 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           container="section"
           collapsible={false}
           title={`${c.source}: ${healthLabel[c.health.status].toLowerCase()}${c.health.at ? ' sedan ' : ''}`}
-          description={`Ärenden och figurer visas från senast kända läge.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}.` : ''}`}
+          description={
+            <>
+              Ärenden och figurer visas från senast kända läge.
+              {c.health.detail && (
+                <>
+                  {' '}
+                  <TechnicalCause detail={c.health.detail} />
+                </>
+              )}
+            </>
+          }
           endContent={<Timestamp value={c.health.at} format="date_time" />}
         />
       )}
@@ -440,7 +453,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   <MetadataList columns={mobile ? 'single' : 'multi'}>
                     <MetadataListItem label="Id">{c.id}</MetadataListItem>
                     <MetadataListItem label="Typ">
-                      {c.kind ? kindLabel[c.kind] : '–'}
+                      {c.kind ? kindLabel(c.kind, site) : '–'}
                       {c.bundled ? '\u00a0· inbyggd' : ''}
                     </MetadataListItem>
                     <MetadataListItem label="Hälsa">
@@ -794,11 +807,10 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   {[...c.history].reverse().map((h, i) => (
                     <ListItem
                       key={i}
-                      label={<Text>{actionLabel[h.action] ?? h.action}</Text>}
+                      label={<Text>{historyLabel(h.action)}</Text>}
                       description={
                         <Text type="supporting">
-                          {actorLabel(h.actor)}
-                          {Object.keys(h.details).length ? '\u00a0· ' + JSON.stringify(h.details) : ''}
+                          {[actorLabel(h.actor), historyWords(h.details)].filter(Boolean).join('\u00a0· ')}
                         </Text>
                       }
                       endContent={<Timestamp value={h.at} format="date_time" />}

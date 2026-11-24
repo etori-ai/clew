@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -59,7 +60,7 @@ test.describe('Personal', () => {
       await open(page, '/');
       await page.getByRole('link', { name: 'Personal', exact: true }).click();
       await expect(page).toHaveURL(/\/staff$/);
-      await expect(page).toHaveTitle('Personal · Startsidan');
+      await expect(page).toHaveTitle(`Personal · ${SITE}`);
       await expect(page.getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute('aria-current', 'page');
       await expect(page.getByText('Bergsåkers skola · 5 medarbetare', { exact: true })).toBeVisible();
       // The views of the same people as tabs, each a link; Medarbetare is the current one.
@@ -108,7 +109,7 @@ test.describe('Personal', () => {
       await expect(lens.locator('.astryx-badge')).toBeVisible();
       await lens.click();
       await expect(page).toHaveURL(LENS);
-      await expect(page).toHaveTitle('Utvecklingssamtal · Personal · Startsidan');
+      await expect(page).toHaveTitle(`Utvecklingssamtal · Personal · ${SITE}`);
       await expect(lens).toHaveAttribute('aria-current', 'true');
       await expect(lens).toBeFocused();
       // The person whose talk is missing comes first.

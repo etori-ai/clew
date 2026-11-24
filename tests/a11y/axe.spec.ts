@@ -1,4 +1,15 @@
-import { answer, composer, desktop, expect, expectNoAxeViolations, open, phone, snoozeFirst, test } from './support';
+import {
+  SITE,
+  answer,
+  composer,
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  open,
+  phone,
+  snoozeFirst,
+  test,
+} from './support';
 
 /** axe over every route and over the states a route can reach, at both layouts. */
 const routes = [
@@ -26,7 +37,7 @@ for (const [layout, viewport] of [
     test('the sign-in page has no axe violations', async ({ page, api }) => {
       api.signedIn = false;
       await page.goto('/');
-      await expect(page.getByRole('heading', { name: 'Startsidan' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: SITE })).toBeVisible();
       await expectNoAxeViolations(page);
     });
 

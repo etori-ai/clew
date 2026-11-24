@@ -1,5 +1,5 @@
 import { Type } from 'typebox';
-import { CapabilityError, SEARCH_CONNECTOR, type Connector } from '@clew/connectors';
+import { CLEW_SOURCE, CapabilityError, SEARCH_CONNECTOR, type Connector } from '@clew/connectors';
 import { SearchHitSchema, SearchKind, SearchResultSchema, SourceLinkSchema } from '@clew/contracts';
 import { FetchInputSchema, SearchInputSchema, type FetchInput, type SearchInput } from './contracts';
 import type { SearchUsecases } from './usecases';
@@ -33,7 +33,7 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
   return {
     id: SEARCH_CONNECTOR,
     kind: 'core',
-    source: 'Startsidan',
+    source: CLEW_SOURCE,
     areas: [{ id: 'fragor', title: 'Dina frågor', roles: ['manager', 'employee'], standing: [], schedules: [] }],
     capabilities: [
       {

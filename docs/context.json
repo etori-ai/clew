@@ -1168,7 +1168,7 @@
       "number": 98,
       "path": "docs/decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
       "title": "D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
-      "status": "accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing)",
+      "status": "accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing); the installation's name added and item 9 amended 2026-11-24 (`WA-L6`, `AM-12`, `BL-9`: the name is part of the appearance, one line of at most 60 characters, `Clew` until an administrator names it, audited as `appearance.name.set` and `appearance.name.cleared`, and it is what the tab titles, the sign-in page, the session's words, the sentences that say where something is kept, Clew's own header and the assistant's prompt call the installation; the dragon moved to `themes/sundsvall/` and the web image carries no logo)",
       "date": "2026-11-10",
       "area": "ui"
     },
@@ -3368,7 +3368,7 @@
       "title": "Installation branding",
       "category": "maintainer-guide",
       "headings": [
-        "Theme and logo",
+        "Name, theme and logo",
         "Where it lives",
         "Tests"
       ]

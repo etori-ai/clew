@@ -1,7 +1,17 @@
 import type { Page } from '@playwright/test';
 import { user } from './data';
 import { ANNA, BoardingMock, MARIA, PLAN } from './boarding';
-import { expect, expectNoAxeViolations, hiddenFocusStops, narrow, open, phone, reflowProblems, test } from './support';
+import {
+  SITE,
+  expect,
+  expectNoAxeViolations,
+  hiddenFocusStops,
+  narrow,
+  open,
+  phone,
+  reflowProblems,
+  test,
+} from './support';
 
 /**
  * Introduktion och avslut (D124 item 12) as Personal's tab of that name (D126 rule 8); a person's own plan is a tab of
@@ -36,7 +46,7 @@ test.describe('Personal’s tab', () => {
     await expect(tab).toHaveAttribute('href', LIST);
     await tab.click();
     await expect(page).toHaveURL(LIST);
-    await expect(page).toHaveTitle(`${TITLE} · Personal · Startsidan`);
+    await expect(page).toHaveTitle(`${TITLE} · Personal · ${SITE}`);
     await expect(tab).toHaveAttribute('aria-current', 'true');
     await expect(tab).toBeFocused();
     await expect(rail(page).getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
@@ -167,7 +177,7 @@ test.describe('the list', () => {
       page.getByRole('heading', { level: 2, name: 'Ingen introduktion eller något avslut för dig' }),
     ).toBeVisible();
     // The page's links: where it stands, the one way on, and the floating way to the assistant.
-    await expect(page.getByRole('main').getByRole('link')).toHaveText(['Startsidan', 'Till startsidan', 'Fråga AI']);
+    await expect(page.getByRole('main').getByRole('link')).toHaveText([SITE, 'Till startsidan', 'Fråga AI']);
     await expectNoAxeViolations(page);
   });
 });
@@ -206,6 +216,25 @@ test.describe('a realistic size, and small screens', () => {
     await expect(anna).toContainText('1 försenad');
     await expect(anna).toContainText('Introduktion · Första dagen mån 16 nov. · 1 av 6 klara');
     expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+});
+
+test.describe('Astryx’s own words in Swedish (WA-L11)', () => {
+  test('at 320 px the start dialog’s date field speaks Swedish: its hint, and a date that does not exist', async ({
+    page,
+    api,
+  }) => {
+    api.boarding = new BoardingMock();
+    await page.setViewportSize(narrow);
+    await open(page, `/boarding/${MARIA}?start=introduction&from=%2Fboarding`);
+    const dialog = page.getByRole('dialog', { name: 'Förbered introduktionen' });
+    await expect(dialog).toBeVisible();
+    const day = dialog.getByLabel('Första dagen', { exact: true });
+    await day.fill('2026-11-31');
+    await day.press('Tab');
+    await expect(dialog.getByText('Skriv ett datum som finns', { exact: true })).toBeVisible();
+    await expect(dialog).not.toContainText(/Enter a|e\.g\.,|Content/);
     await expectNoAxeViolations(page);
   });
 });

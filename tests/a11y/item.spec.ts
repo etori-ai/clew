@@ -1,5 +1,16 @@
 import type { Locator, Page } from '@playwright/test';
-import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, short, test } from './support';
+import {
+  SITE,
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  narrow,
+  open,
+  phone,
+  reflowProblems,
+  short,
+  test,
+} from './support';
 import { NOTICE_REASON, NOTICE_TEXT, NOW, asNotice } from './data';
 
 /**
@@ -39,7 +50,7 @@ test.describe('the work item as a page', () => {
     await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor');
     const title = page.getByRole('heading', { level: 1, name: INVOICES });
     await expect(title).toBeFocused();
-    await expect(page).toHaveTitle(`${INVOICES} · Startsidan`);
+    await expect(page).toHaveTitle(`${INVOICES} · ${SITE}`);
     // The rail says where the page belongs: Att göra.
     const rail = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('aria-current', 'page');
@@ -236,7 +247,7 @@ test.describe('the work item as a page', () => {
   test('an item that is not the person’s says so as the page', async ({ page, api: _ }) => {
     await open(page, '/items/okand');
     await expect(page.getByRole('heading', { level: 1, name: 'Ärendet finns inte' })).toBeVisible();
-    await expect(page).toHaveTitle('Ärendet finns inte · Startsidan');
+    await expect(page).toHaveTitle(`Ärendet finns inte · ${SITE}`);
     await expectNoAxeViolations(page);
   });
 

@@ -26,7 +26,7 @@ const { values } = parseArgs({
     base: { type: 'string' },
     root: { type: 'string' },
     depth: { type: 'string', default: '2' },
-    'site-name': { type: 'string', default: 'Startsidan' },
+    'site-name': { type: 'string', default: 'Clew' },
     'site-href': { type: 'string', default: '/portal/' },
     'start-href': { type: 'string' },
     'start-label': { type: 'string', default: 'Start' },

@@ -2,17 +2,28 @@
 
 For the administrator of an installation. Connector authors declare semantic views and do not control the theme.
 
-## Theme and logo
+## Name, theme and logo
 
-An installation's colours and its header logo are saved in Clew, on **Administration › Utseende**, by a person with
+An installation's name, its colours and its header logo are saved in Clew, on **Administration › Utseende**, by a person with
 the grant capability `admin.appearance` ([D98](../decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)).
 A save applies at once, to every page and every person, the sign-in page included. Nothing is configured in the
-build or the environment, and nothing needs a restart. An installation nobody has configured is Astryx Neutral
-with no logo ([D46](../decisions/D46-astryx-neutral-is-the-default-theme.md)).
+build or the environment, and nothing needs a restart. An installation nobody has configured is called Clew and is
+Astryx Neutral with no logo ([D46](../decisions/D46-astryx-neutral-is-the-default-theme.md)). The web image carries
+no logo and no name of any organisation.
 
 Give the capability the way every capability is given ([D85](../decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md)):
 a provisioned group with the external id `capability:admin.appearance`, or a mapping from one of the catalogue's own
 groups on Administration › Användare.
+
+### The name
+
+**Installationens namn** is what the installation is called where a person reads it: every tab's title, the sign-in
+page's heading, what the browser says when Clew cannot be reached, Clew's own header band when no connector gives
+the header ([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)),
+the sentences that say where something is or is not kept, and what the assistant calls the place it answers in. It
+is one line of at most 60 characters, trimmed; an empty name is refused at the field. **Återställ till Clew** goes
+back to the default. Clew's own name stays where the product, not the installation, is meant: the source label
+`Clew` on what Clew itself stores, the protocol pages and the documentation.
 
 ### The theme file
 
@@ -89,7 +100,7 @@ that escapes a character or imports another. A drawing tool's own metadata, such
 the logo from its own origin.
 
 The header shows the active header connector's logo when it supplies one. The connector supplies its mark for dark
-ground, such as Sundsvall's white dragon. A pale band gives that mark a dark plate. The installation's own logo
+ground. A pale band gives that mark a dark plate. The installation's own logo
 appears when the connector has none, and always on the sign-in page.
 ([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md))
 
@@ -103,35 +114,37 @@ Where the database is reachable (inside the app container), the same changes wit
 
 ```sh
 bun scripts/appearance-set.ts themes/clew        # the theme and logo an example folder names (or themes/sundsvall)
-bun scripts/appearance-set.ts --reset            # Astryx Neutral, no logo
+bun scripts/appearance-set.ts --reset            # called Clew, Astryx Neutral, no logo
 bun scripts/appearance-set.ts --show             # what is saved now
 ```
 
-A folder holds an `appearance.json` that names a theme file and a logo ([`themes/README.md`](../../themes/README.md)).
+A folder holds an `appearance.json` that names the installation, a theme file and a logo ([`themes/README.md`](../../themes/README.md)).
 The file and the images meet the same checks as an upload, a refused theme file is listed with its problems, and each
 change writes its audit row with `bootstrap:appearance` as the actor. This is how a new installation can be given
 its appearance before anyone has signed in, and how a developer tries the Sundsvall example in one step.
 
 ### Over HTTP
 
-`GET /api/appearance` is public and answers the saved theme and the logo's address. The changes are
+`GET /api/appearance` is public and answers the name, the saved theme and the logo's address. The changes are
+`PUT /api/admin/appearance/name` with `{ "name" }`, `DELETE /api/admin/appearance/name`,
 `PUT /api/admin/appearance/theme` with `{ "file": <the theme file> }`, `DELETE /api/admin/appearance/theme`,
 `PUT /api/admin/appearance/logo` with `{ "alt", "light": { "mediaType", "data" }, "dark" }` (images in base64) and
 `DELETE /api/admin/appearance/logo`, each as a signed-in administrator. Every change writes an audit row
-(`appearance.theme.set`, `appearance.theme.cleared`, `appearance.logo.set`, `appearance.logo.cleared`).
+(`appearance.name.set`, `appearance.name.cleared`, `appearance.theme.set`, `appearance.theme.cleared`,
+`appearance.logo.set`, `appearance.logo.cleared`).
 
 ## Where it lives
 
 | What | Where |
 |---|---|
-| The file format, the token list, the contrast pairs, the schema | `packages/contracts/src/theme-file.ts` |
+| The file format, the token list, the contrast pairs, the schema, the name's check | `packages/contracts/src/theme-file.ts` |
 | Storage, permission, audit, the logo's rules | `apps/server/src/modules/appearance/` |
 | The public and the administration routes | `apps/server/src/routes/appearance.ts`, `routes/admin.ts` |
 | From saved colours to an Astryx theme, and the header's band | `packages/ui/src/theme.ts`, `branding.ts` |
 | Reading the appearance in the browser | `apps/web/src/branding.ts` |
 | The page | `apps/web/src/pages/admin/appearance.tsx` |
 | The command line | `scripts/appearance-set.ts` |
-| Example appearances | `themes/` |
+| Example appearances, and the example logos that are not Clew's to license | `themes/` |
 
 ## Tests
 
@@ -145,13 +158,13 @@ one build serves every profile. To run the header and theme checks on another sa
 CLEW_A11Y_BRAND_PROFILE=custom sh scripts/a11y.sh branding.spec.ts
 ```
 
-The fixture names are `sundsvall` (the example theme file and the dragon), `neutral` and `custom`
+The fixture names are `sundsvall` (the example theme file and the dragon from `themes/sundsvall/`), `neutral` and `custom`
 (`tests/a11y/branding-fixtures.ts`). Reports are kept in `playwright-report/<profile>` and artifacts in
 `test-results/<profile>`.
 
 Against a running development stack, `scripts/appearance-check.ts` signs in through Keycloak as the synthetic
 administrator and as an employee and runs the routes end to end on real sessions: the public read, the refusals (no
-session, no CSRF token, no `admin.appearance`), a theme file and a logo saved, read back and refused, and the audit
+session, no CSRF token, no `admin.appearance`), a name, a theme file and a logo saved, read back and refused, and the audit
 rows. It puts the earlier appearance back when it ends:
 
 ```sh

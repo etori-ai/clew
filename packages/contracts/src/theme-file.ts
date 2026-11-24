@@ -196,7 +196,7 @@ export function checkThemeContrast(colors: ThemeColors): ThemeProblem[] {
 function colorOf(value: unknown): string | { problem: string } {
   if (typeof value === 'string') {
     const hex = value.trim().toLowerCase();
-    return HEX.test(hex) ? hex : { problem: 'Färgen ska vara sex hexadecimala siffror, till exempel #005595.' };
+    return HEX.test(hex) ? hex : { problem: 'Färgen ska vara sex hexadecimala siffror, till exempel #1b1b1b.' };
   }
   if (!isObject(value)) return { problem: 'Färgen saknar värde.' };
   if (value.colorSpace !== 'srgb') return { problem: 'Bara färgrymden srgb stöds.' };
@@ -394,3 +394,19 @@ export const LOGO_MEDIA_TYPES = ['image/png', 'image/svg+xml'] as const;
 export type LogoMediaType = (typeof LOGO_MEDIA_TYPES)[number];
 export const LOGO_MAX_BYTES = 256_000;
 export const LOGO_ALT_MAX = 120;
+
+/**
+ * The installation's name (D98 as amended 2026-11-24): what the browser's tab titles, the sign-in page, the session's
+ * notices and the assistant call the place a person works in. An installation nobody has named is called Clew.
+ */
+export const SITE_NAME_DEFAULT = 'Clew';
+export const SITE_NAME_MAX = 60;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+/** A name as it is saved: trimmed, on one line, and 1 to `SITE_NAME_MAX` characters; otherwise the problem, in Swedish. */
+export function checkSiteName(value: unknown): { name: string } | { problem: string } {
+  const name = typeof value === 'string' ? value.trim() : '';
+  if (!name) return { problem: 'Skriv ett namn.' };
+  if (CONTROL.test(name)) return { problem: 'Namnet ska stå på en rad.' };
+  if ([...name].length > SITE_NAME_MAX) return { problem: `Namnet får vara högst ${SITE_NAME_MAX} tecken.` };
+  return { name };
+}

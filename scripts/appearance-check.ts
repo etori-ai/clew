@@ -2,7 +2,7 @@
  * Runs inside the devcontainer against the dev stack: a real Keycloak login for the synthetic administrator, then
  * Administration › Utseende (D98) end to end through the API on that session: the public read, the guards (no session,
  * no CSRF token, a person without `admin.appearance`), a theme file saved and refused, a logo saved and refused, the
- * audit rows, and the removal. The appearance the installation had before the run is put back, also when a step fails.
+ * installation's name saved and refused, the audit rows, and the removal. The appearance the installation had before the run is put back, also when a step fails.
  * Passwords are read from the ignored .auth-test.env and never printed.
  *
  *   docker exec -e BFF_URL=http://127.0.0.1:3000 -w /workspace clew-app-1 bun scripts/appearance-check.ts
@@ -218,7 +218,20 @@ try {
     expect('and its address is gone', (await anonymous.raw(base + '/api/appearance/logo/dark')).status === 404);
   }
 
-  // 4. Removal, and what the audit log holds.
+  // 4. The installation's name: one line, read by every browser, and Clew again once it is taken away.
+  const twoLines = await admin.call('PUT', '/api/admin/appearance/name', { name: 'Två\nrader' });
+  expect('a name on two lines is refused', twoLines.status === 400, twoLines.json);
+  const named = await admin.call('PUT', '/api/admin/appearance/name', { name: ' Provwebben ' });
+  expect('a name is saved trimmed', named.status === 200 && named.json.name === 'Provwebben', named.json);
+  expect('every browser reads the name', (await anonymous.call('GET', '/api/appearance')).json?.name === 'Provwebben');
+  const unnamed = await admin.call('DELETE', '/api/admin/appearance/name');
+  expect(
+    'without a name the installation is Clew',
+    unnamed.status === 200 && unnamed.json.name === 'Clew',
+    unnamed.json,
+  );
+
+  // 5. Removal, and what the audit log holds.
   const cleared = await admin.call('DELETE', '/api/admin/appearance/theme');
   const bare = await admin.call('DELETE', '/api/admin/appearance/logo');
   expect(
@@ -237,13 +250,17 @@ try {
       count('appearance.logo.set') === 2 &&
       count('appearance.theme.cleared') === 1 &&
       count('appearance.logo.cleared') === 1 &&
-      rows.length === 6,
+      count('appearance.name.set') === 1 &&
+      count('appearance.name.cleared') === 1 &&
+      rows.length === 8,
     rows.map(row => row.action),
   );
 } finally {
   // Put back what the installation had.
   await admin.call('DELETE', '/api/admin/appearance/theme');
   await admin.call('DELETE', '/api/admin/appearance/logo');
+  await admin.call('DELETE', '/api/admin/appearance/name');
+  if (before.name !== 'Clew') await admin.call('PUT', '/api/admin/appearance/name', { name: before.name });
   if (beforeFile) await admin.call('PUT', '/api/admin/appearance/theme', { file: beforeFile });
   if (beforeLogo?.light)
     await admin.call('PUT', '/api/admin/appearance/logo', {
@@ -252,7 +269,14 @@ try {
       ...(beforeLogo.dark ? { dark: beforeLogo.dark } : {}),
     });
   const after = (await anonymous.call('GET', '/api/appearance')).json;
-  console.log('After: theme:', after.theme?.name ?? 'none', '| logo:', after.logo?.alt ?? 'none');
+  console.log(
+    'After: name:',
+    after.name,
+    '| theme:',
+    after.theme?.name ?? 'none',
+    '| logo:',
+    after.logo?.alt ?? 'none',
+  );
 }
 if (problems.length) {
   console.error('FAIL\n- ' + problems.join('\n- '));

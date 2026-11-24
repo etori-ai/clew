@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LOGO_ALT_MAX,
   LOGO_MAX_BYTES,
   LOGO_MEDIA_TYPES,
+  SITE_NAME_DEFAULT,
+  SITE_NAME_MAX,
   THEME_FILE_MAX_BYTES,
+  checkSiteName,
   checkThemeContrast,
   isThemeHex,
   parseThemeFile,
@@ -51,7 +54,8 @@ import { setBranding } from '../../branding';
 import { AdminShell } from './shell';
 
 /**
- * "Utseende" (D98): the installation's theme and the logo in the header, chosen here and stored in Clew's database.
+ * "Utseende" (D98): the installation's name, its theme and the logo in the header, chosen here and stored in Clew's
+ * database. The name is what the installation calls itself in every tab's title, on the sign-in page and in sentences.
  * A theme is a file of colours in the Design Tokens format, or two colours this page makes the same kind of theme from;
  * either is read and checked in the browser with the code the server refuses a file with (`parseThemeFile`), shown in
  * both appearances, and saved only when it holds. A save redraws the whole app at once. Only Astryx: the preview is a
@@ -81,7 +85,7 @@ const one = (value: File | File[] | null) => (Array.isArray(value) ? (value[0] ?
  * of the card the previews stand in.
  */
 function Preview({ theme, mode, label }: { theme: InstallationTheme; mode: 'light' | 'dark'; label: string }) {
-  const branding = { revision: 0, theme, logo: null };
+  const branding = { revision: 0, name: SITE_NAME_DEFAULT, theme, logo: null };
   return (
     <Theme theme={createClewTheme(branding)} mode={mode}>
       <VStack gap={2}>
@@ -105,6 +109,88 @@ function Preview({ theme, mode, label }: { theme: InstallationTheme; mode: 'ligh
         </Card>
       </VStack>
     </Theme>
+  );
+}
+
+/**
+ * The installation's name (D98 as amended 2026-11-24): one line, checked here with the server's own `checkSiteName`
+ * once a save is tried, so a person typing is not told off for an empty field before they have written anything.
+ */
+function NameCard({ data, onSaved }: { data: AppearanceAdminView; onSaved: (view: AppearanceAdminView) => void }) {
+  const [name, setName] = useState(data.name);
+  const [tried, setTried] = useState(false);
+  const field = useRef<HTMLInputElement>(null);
+  const action = useAdminAction({ invalidate: [keys.admin.appearance], toastId: 'appearance:name' });
+  const checked = checkSiteName(name);
+  const problem = 'problem' in checked ? checked.problem : null;
+  const unchanged = 'name' in checked && checked.name === data.name;
+  const save = () => {
+    setTried(true);
+    // A refused name is said at the field, and the focus goes there so it is read with its message.
+    if (problem) return field.current?.focus();
+    if (unchanged) return;
+    return action.run(async () => {
+      const view = await api.admin.setName(name);
+      onSaved(view);
+      setName(view.name);
+      setTried(false);
+      return `Namnet är sparat. Installationen heter nu ${view.name}.`;
+    });
+  };
+  const reset = () =>
+    action.run(async () => {
+      const view = await api.admin.clearName();
+      onSaved(view);
+      setName(view.name);
+      setTried(false);
+      // The button goes with the name it took back; the focus goes to the field, which now holds the default.
+      field.current?.focus();
+      return `Namnet är återställt till ${view.name}.`;
+    });
+  return (
+    <Card padding={0}>
+      <Toolbar
+        label="Namn"
+        size="sm"
+        dividers={['bottom']}
+        startContent={
+          <VStack gap={0}>
+            <Text weight="semibold">Namn</Text>
+            <Text type="supporting">
+              Det installationen heter för den som använder den: i flikens titel, på inloggningssidan och där Clew
+              nämner sig själv. Ger ett anslutet system sidhuvudet ett eget namn visas det i sidhuvudet i stället.
+            </Text>
+          </VStack>
+        }
+      />
+      <Section variant="transparent" padding={4}>
+        <VStack gap={4}>
+          <TextInput
+            ref={field}
+            label="Installationens namn"
+            value={name}
+            onChange={setName}
+            description={`Ett namn på en rad, högst ${SITE_NAME_MAX} tecken, till exempel Medarbetarwebben. Utan ett eget namn heter installationen ${SITE_NAME_DEFAULT}.`}
+            isRequired
+            autoComplete="off"
+            status={tried && problem ? { type: 'error', message: problem } : undefined}
+          />
+          {action.error && <Banner status="error" container="card" collapsible={false} title={action.error} />}
+          <HStack gap={2} wrap="wrap">
+            <Button
+              label="Spara namnet"
+              onClick={() => void save()}
+              isDisabled={unchanged}
+              tooltip={unchanged ? 'Skriv ett annat namn först.' : undefined}
+              isLoading={action.busy}
+            />
+            {data.name !== SITE_NAME_DEFAULT && (
+              <Button variant="secondary" label={`Återställ till ${SITE_NAME_DEFAULT}`} onClick={() => void reset()} />
+            )}
+          </HStack>
+        </VStack>
+      </Section>
+    </Card>
   );
 }
 
@@ -144,7 +230,7 @@ function ThemeCard({ data, onSaved }: { data: AppearanceAdminView; onSaved: (vie
   };
   const hexStatus = (value: string) =>
     value.trim() && !isThemeHex(value)
-      ? ({ type: 'error', message: 'Skriv färgen som sex hexadecimala siffror, till exempel #005595.' } as const)
+      ? ({ type: 'error', message: 'Skriv färgen som sex hexadecimala siffror, till exempel #1b1b1b.' } as const)
       : undefined;
   const ready = candidate && 'theme' in candidate ? candidate.theme : null;
   // The field says what became of the file it holds: a chosen file is never left as a bare name.
@@ -224,8 +310,8 @@ function ThemeCard({ data, onSaved }: { data: AppearanceAdminView; onSaved: (vie
                   label="Stark färg"
                   value={accent}
                   onChange={setAccent}
-                  description="Kommunens huvudfärg, till exempel #005595. Vit text ska gå att läsa på den."
-                  placeholder="#005595"
+                  description="Kommunens huvudfärg, till exempel #1b1b1b. Vit text ska gå att läsa på den."
+                  placeholder="#1b1b1b"
                   autoComplete="off"
                   hasAutoCorrect={false}
                   autoCapitalize="none"
@@ -235,8 +321,8 @@ function ThemeCard({ data, onSaved }: { data: AppearanceAdminView; onSaved: (vie
                   label="Ljus färg"
                   value={muted}
                   onChange={setMuted}
-                  description="En ljus ton av samma färg, till exempel #daeff1. Den bär accenten i mörkt läge."
-                  placeholder="#daeff1"
+                  description="En ljus ton av samma färg, till exempel #f1f1f1. Den bär accenten i mörkt läge."
+                  placeholder="#f1f1f1"
                   autoComplete="off"
                   hasAutoCorrect={false}
                   autoCapitalize="none"
@@ -439,7 +525,7 @@ export function AdminAppearancePage({ user }: { user: SessionUser }) {
       title="Utseende"
       meta={
         <Text type="supporting" color="secondary">
-          Temat och logotypen gäller hela installationen och ändras direkt, utan omstart.
+          Namnet, temat och logotypen gäller hela installationen och ändras direkt, utan omstart.
           {data?.updatedAt && data.updatedBy ? (
             <>
               {' '}
@@ -455,6 +541,7 @@ export function AdminAppearancePage({ user }: { user: SessionUser }) {
           {error}
         </Text>
       )}
+      {data && <NameCard data={data} onSaved={onSaved} />}
       {data && <ThemeCard data={data} onSaved={onSaved} />}
       {data && <LogoCard key={data.logo?.alt ?? ''} data={data} onSaved={onSaved} />}
     </AdminShell>

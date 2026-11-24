@@ -188,6 +188,7 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
       },
       health,
     },
+    siteName: async () => 'Intranätet',
     clock,
     ids,
     trace: () => '0af7651916cd43dd8448eb211c80319c',
@@ -313,7 +314,7 @@ describe('a question without the model', () => {
     expect(r).toMatchObject({
       assistant: 'router',
       shape: 'vy',
-      answer: { source: 'Startsidan' },
+      answer: { source: 'Clew' },
       view: {
         capability: 'clew.search',
         input: { query: 'brukaren har ramlat men verkar oskadd, vad gör jag?' },
@@ -340,7 +341,7 @@ describe('a question without the model', () => {
     expect(samtal.forslag?.threadId).toBeDefined();
     expect((await w.proposals.readThreadById(samtal.forslag!.threadId))!.thread.proposals).toHaveLength(2);
     const why = await w.assistant.converse(hillevi, { text: 'varför ser jag detta?' });
-    expect(why.answer.source).toBe('Startsidan');
+    expect(why.answer.source).toBe('Clew');
     const budget = await w.assistant.converse(hillevi, { text: 'hur ligger budgeten?' });
     // The router reads the areas' figures (D54): the one the question names.
     expect(budget.answer.body).toBe('Förbrukat av ramen: 98 %, av periodens ram.');
@@ -981,7 +982,7 @@ describe('a question answered from documents, with the model (D26)', () => {
     expect(r).toMatchObject({
       assistant: 'model',
       shape: 'steg',
-      answer: { source: 'Startsidan' },
+      answer: { source: 'Clew' },
       followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'],
       view: { capability: 'clew.search', title: 'Källor' },
     });
@@ -1768,7 +1769,7 @@ describe('the assistant switch keeps a connector from the model, not only its to
     w.health.mark('llm', true, T0);
     await w.assistant.converse(hillevi, { text: 'Och i morgon?', conversationId: day.conversationId });
     const earlier = JSON.parse(heard[0]!).find((m: { role: string }) => m.role === 'assistant');
-    expect(earlier.content).toStartWith('(Startsidans eget svar, skrivet utan dig, med text ur andra system:) ');
+    expect(earlier.content).toStartWith('(Ett fast svar, skrivet utan dig, med text ur andra system:) ');
     expect(earlier.content).toContain('APT');
     expect(earlier.content).not.toContain('\n');
   });

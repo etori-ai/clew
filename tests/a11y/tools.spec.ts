@@ -1,4 +1,5 @@
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -43,7 +44,7 @@ test.describe('a tool as a page', () => {
     await open(page, directory);
     const title = page.locator('h1:not([aria-level]), [aria-level="1"]');
     await expect(title).toHaveText('Telefonbok');
-    await expect(page).toHaveTitle('Telefonbok · Startsidan');
+    await expect(page).toHaveTitle(`Telefonbok · ${SITE}`);
     // The title's line: the name and the system's badge (board Tool). Under it the filter bar: the search field, the
     // view's own choice and the count of the rows at its end.
     const main = page.getByRole('main');
@@ -74,7 +75,7 @@ test.describe('a tool as a page', () => {
     api.menu = [...menuRows, roomsMenuRow];
     await open(page, '/tools/calendar.rooms');
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Mötesrum');
-    await expect(page).toHaveTitle('Mötesrum · Startsidan');
+    await expect(page).toHaveTitle(`Mötesrum · ${SITE}`);
     await expect(page.getByRole('columnheader')).toHaveText(['Rum', 'Platser', 'Utrustning']);
     await expect(page.getByRole('row')).toHaveCount(8);
     await expect(page.getByText('7 rader · Kalendern')).toBeVisible();
@@ -183,7 +184,7 @@ test.describe('a tool as a page', () => {
     await open(page, directory);
     const title = page.locator('h1:not([aria-level]), [aria-level="1"]');
     await expect(title).toHaveText('Sök i telefonboken');
-    await expect(page).toHaveTitle('Sök i telefonboken · Startsidan');
+    await expect(page).toHaveTitle(`Sök i telefonboken · ${SITE}`);
     await expect(page.getByRole('row')).toHaveCount(15);
     // Opened from nowhere it names no way back, and neither a page nor a tool is said to be open.
     await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveCount(0);
@@ -215,7 +216,7 @@ test.describe('a tool as a page', () => {
       await open(page, path);
       const title = page.locator('h1:not([aria-level]), [aria-level="1"]');
       await expect(title).toHaveText('Verktyget finns inte');
-      await expect(page).toHaveTitle('Verktyget finns inte · Startsidan');
+      await expect(page).toHaveTitle(`Verktyget finns inte · ${SITE}`);
       await expect(page.getByRole('table')).toHaveCount(0);
       await expect(page.getByRole('link', { name: 'Till startsidan' })).toHaveAttribute('href', '/');
       return page.getByRole('main').innerText();
@@ -332,7 +333,7 @@ test.describe('Alla verktyg', () => {
     await expect(all).toHaveAttribute('href', '/tools');
     await all.click();
     await expect(page).toHaveURL('/tools');
-    await expect(page).toHaveTitle('Alla verktyg · Startsidan');
+    await expect(page).toHaveTitle(`Alla verktyg · ${SITE}`);
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Alla verktyg');
     await expect(named(page, 'Alla verktyg')).toBeVisible();
     await expect(catalogue(page).getByText('3 verktyg', { exact: true })).toBeVisible();

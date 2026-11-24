@@ -1,4 +1,5 @@
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -53,11 +54,11 @@ test.describe('the three views', () => {
     const group = page.getByRole('radiogroup', { name: 'Vy' });
     await expect(group.getByRole('radio', { name: 'Vecka' })).toBeChecked();
     await group.getByRole('radio', { name: 'Dag' }).click();
-    await expect(page).toHaveTitle('Onsdag 4 november · Kalender · Startsidan');
+    await expect(page).toHaveTitle(`Onsdag 4 november · Kalender · ${SITE}`);
     await expect(page).toHaveURL(/view=day/);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Dagvy'));
     await group.getByRole('radio', { name: 'Månad' }).click();
-    await expect(page).toHaveTitle('November 2026 · Kalender · Startsidan');
+    await expect(page).toHaveTitle(`November 2026 · Kalender · ${SITE}`);
     await expect(heading(page, 1, 'November 2026')).toBeVisible();
   });
   test('the steps stand still while the title changes length (D74, amended 2026-11-20)', async ({ page, api: _ }) => {
@@ -592,7 +593,7 @@ test.describe('Kalender when the calendar does not answer, and for a person with
       await expect(page.getByRole('button', { name: 'Försök igen' })).toHaveCount(0);
       expect(await silentSaidIn(page)).toEqual([]);
       expect(await said(page, 'svarar inte')).toBe(0);
-      await expect(page).toHaveTitle('Kalender · Startsidan');
+      await expect(page).toHaveTitle(`Kalender · ${SITE}`);
       await expect(rail(page).getByRole('link', { name: 'Kalender', exact: true })).toHaveCount(inRail ? 1 : 0);
       await expectNoAxeViolations(page);
     });

@@ -1,4 +1,5 @@
 import {
+  SITE,
   answer,
   composer,
   desktop,
@@ -21,13 +22,13 @@ test.use({ viewport: desktop });
 
 test.describe('2.4.2 page titled', () => {
   const titles = [
-    ['/', 'Hem · Startsidan'],
-    ['/todo', 'Att göra · Startsidan'],
-    ['/todo?tab=done', 'Att göra · Startsidan'],
-    ['/calendar', 'Vecka 45 · Kalender · Startsidan'],
-    ['/?open=hr.whoIsOn&open-title=Bemanning', 'Bemanning · Startsidan'],
+    ['/', `Hem · ${SITE}`],
+    ['/todo', `Att göra · ${SITE}`],
+    ['/todo?tab=done', `Att göra · ${SITE}`],
+    ['/calendar', `Vecka 45 · Kalender · ${SITE}`],
+    ['/?open=hr.whoIsOn&open-title=Bemanning', `Bemanning · ${SITE}`],
     // A list's own page (D116), placed in the rail or not.
-    ['/tools/incidents.deviations?title=Avvikelser&from=%2F', 'Avvikelser · Startsidan'],
+    ['/tools/incidents.deviations?title=Avvikelser&from=%2F', `Avvikelser · ${SITE}`],
   ] as const;
   for (const [path, title] of titles)
     test(`${path} has its own title`, async ({ page, api: _ }) => {
@@ -37,7 +38,7 @@ test.describe('2.4.2 page titled', () => {
   test('the title follows the week', async ({ page, api: _ }) => {
     await open(page, '/calendar');
     await page.getByRole('button', { name: 'Nästa vecka' }).click();
-    await expect(page).toHaveTitle('Vecka 46 · Kalender · Startsidan');
+    await expect(page).toHaveTitle(`Vecka 46 · Kalender · ${SITE}`);
   });
 });
 
@@ -46,10 +47,10 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
   // pages, "Mina sidor". A page of its own says where it stands ("Du är här"), and Att göra adds its piles. The header's
   // landmarks with a connector are header.spec.ts's.
   for (const [path, navigations] of [
-    ['/', ['Startsidan', 'Mina sidor']],
-    ['/todo', ['Startsidan', 'Mina sidor', 'Du är här', 'Urval']],
-    ['/todo?tab=done', ['Startsidan', 'Mina sidor', 'Du är här', 'Urval']],
-    ['/calendar', ['Startsidan', 'Mina sidor', 'Du är här']],
+    ['/', [SITE, 'Mina sidor']],
+    ['/todo', [SITE, 'Mina sidor', 'Du är här', 'Urval']],
+    ['/todo?tab=done', [SITE, 'Mina sidor', 'Du är här', 'Urval']],
+    ['/calendar', [SITE, 'Mina sidor', 'Du är här']],
   ] as const)
     test(`${path} has one h1, one main, one banner, and every navigation landmark named`, async ({ page, api: _ }) => {
       await open(page, path);
@@ -61,7 +62,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
         await page.getByRole('navigation').evaluateAll(list => list.map(nav => nav.getAttribute('aria-label'))),
       ).toEqual(navigations);
       await expect(pagesNav(page)).toHaveCount(1);
-      await expect(banner.getByRole('link', { name: 'Startsidan' })).toHaveAttribute('href', '/');
+      await expect(banner.getByRole('link', { name: SITE })).toHaveAttribute('href', '/');
     });
 
   test('Clew’s pages are one navigation landmark of places (D50, D130), in the drawer on a phone', async ({

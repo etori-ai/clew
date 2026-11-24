@@ -15,6 +15,7 @@ function recordOf(row: typeof table.$inferSelect | undefined): AppearanceRecord 
   const light = image(row.logoLightType, row.logoLight);
   return {
     revision: row.revision,
+    name: row.name,
     theme: row.theme,
     logo: light && row.logoAlt ? { alt: row.logoAlt, light, dark: image(row.logoDarkType, row.logoDark) } : null,
     updatedAt: row.updatedAt.toISOString(),
@@ -36,6 +37,7 @@ export function postgresAppearanceStore(row = INSTALLATION_ROW): AppearanceStore
           async write(record) {
             const values = {
               revision: record.revision,
+              name: record.name,
               theme: record.theme,
               logoAlt: record.logo?.alt ?? null,
               logoLightType: record.logo?.light.mediaType ?? null,

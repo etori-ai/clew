@@ -1,6 +1,6 @@
 # D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file
 
-**Status:** accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing) · **Date:** 2026-11-10 · **Area:** ui
+**Status:** accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet; item 5's check of an SVG amended by [D145](D145-the-web-app-is-served-under-a-content-security-policy-and-keeps-its-cookies-to-its-own-host.md) (2026-11-23: the file is read as XML, held to what a drawing needs and to UTF-8, so a namespace prefix, a character reference, a CSS escape or another encoding hides nothing); the installation's name added and item 9 amended 2026-11-24 (`WA-L6`, `AM-12`, `BL-9`: the name is part of the appearance, one line of at most 60 characters, `Clew` until an administrator names it, audited as `appearance.name.set` and `appearance.name.cleared`, and it is what the tab titles, the sign-in page, the session's words, the sentences that say where something is kept, Clew's own header and the assistant's prompt call the installation; the dragon moved to `themes/sundsvall/` and the web image carries no logo) · **Date:** 2026-11-10 · **Area:** ui
 
 **Decision.** An installation's colours and its header logo are data in Clew's own PostgreSQL, changed on
 Administration › Utseende by a person with the grant capability `admin.appearance`, and read by every browser from
@@ -35,7 +35,7 @@ the `sundsvall` and `custom` profiles as code. An installation nobody has config
    when a connector gives one (D88).
 6. **Module and audit.** `apps/server/src/modules/appearance/` is a core module with a port and two adapters (D20,
    D25). Every change needs `admin.appearance` and the step-up `authorize()` and writes its audit row in the same
-   transaction: `appearance.theme.set`, `appearance.theme.cleared`, `appearance.logo.set`, `appearance.logo.cleared`,
+   transaction: `appearance.name.set`, `appearance.name.cleared` (as amended), `appearance.theme.set`, `appearance.theme.cleared`, `appearance.logo.set`, `appearance.logo.cleared`,
    subject `installation:appearance`. An audit row names the theme and an image's type and size, never the file or
    the image. One row, `installation_appearance`; its `revision` rises with every save.
 7. **The browser.** `apps/web/src/branding.ts` reads the appearance before the first render, keeps a copy in
@@ -47,10 +47,16 @@ the `sundsvall` and `custom` profiles as code. An installation nobody has config
    `logo-alt` remain for a page that names its own logo.
 9. **Sundsvall is an example folder.** `themes/sundsvall/theme.tokens.json` carries the published palette and D38's
    mapping, as an ordinary theme file with its palette as references, and `themes/sundsvall/appearance.json` names it
-   together with the logo. The dragon stays in `apps/web/public/branding/` for the development intranet fixture, and
-   the example points there; an installation uploads its own originals.
-10. **The command line makes the same changes.** `bun scripts/appearance-set.ts <folder>` saves the theme and logo an
-    example folder names, `--reset` goes back to Neutral and `--show` reads. It runs where the database is, as
+   together with the logo. The dragon is in that folder beside its provenance and is not part of the web app or its
+   image (as amended 2026-11-24); an installation uploads its own originals.
+11. **The installation's name (added 2026-11-24).** The appearance carries a name, set on Utseende, checked by
+    `checkSiteName` in `theme-file.ts` on the page and the server (one line, trimmed, at most 60 characters) and
+    `Clew` until an administrator names it. It is every tab's title, the sign-in page's heading, the name in what the
+    browser says of the session, the band's name in Clew's own header (D88: a header connector's site name still
+    wins) and what the assistant's prompt calls the installation. Clew's own name stays where the product is meant:
+    the source label on what Clew stores and the protocol pages.
+10. **The command line makes the same changes.** `bun scripts/appearance-set.ts <folder>` saves the name, theme and
+    logo an example folder names, `--reset` goes back to Neutral and `--show` reads. It runs where the database is, as
     `scripts/connector-add.ts` does (D23), through the use cases' `operator` side: the same checks of the file and the
     images, the same audit rows, `bootstrap:appearance` as the actor, and no route that reaches it.
 

@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { TALKS_FAIL_ERROR, TALK_LENS, coManagersPoint, entityDetail, entityList, formerManagersPoint } from './data';
 import { People } from './person-data';
 import {
+  SITE,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -66,7 +67,7 @@ for (const [layout, viewport] of [
         await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
         await expect(dialog.getByText(state, { exact: true })).toBeVisible();
         await expect(dialog.getByRole('heading', { name: 'Åtgärdspunkter' })).toBeVisible();
-        await expect(page).toHaveTitle(`Utvecklingssamtal · ${name} · Startsidan`);
+        await expect(page).toHaveTitle(`Utvecklingssamtal · ${name} · ${SITE}`);
         await expectNoAxeViolations(page);
         const { unmarked, hidden } = await hiddenFocusStops(page);
         expect(unmarked).toEqual([]);
@@ -547,7 +548,7 @@ for (const [layout, viewport] of [
       // The talk is the person's tab: Back leads to the list as it was, with the focus on the control that opened it.
       await page.goBack();
       await expect(page).toHaveURL('/staff');
-      await expect(page).toHaveTitle('Personal · Startsidan');
+      await expect(page).toHaveTitle(`Personal · ${SITE}`);
     });
 
     test('a failing write shows the server sentence as an alert and keeps what was typed', async ({ page, api }) => {
@@ -603,7 +604,7 @@ for (const [layout, viewport] of [
       const section = talk(page, 'Karin Lindqvist');
       await expect(section.getByText('Saknas', { exact: true })).toBeVisible();
       await expect(section.getByRole('link', { name: 'Öppna samtalet' })).toHaveCount(0);
-      await expect(page).toHaveTitle('Utvecklingssamtal · Karin Lindqvist · Startsidan');
+      await expect(page).toHaveTitle(`Utvecklingssamtal · Karin Lindqvist · ${SITE}`);
       await expect(page.getByRole('dialog')).toHaveCount(0);
       await expectNoAxeViolations(page);
       // An address that laid the talk over the page leads to the tab, in its place in the history.

@@ -254,7 +254,7 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
         {
           id: SEARCH_CONNECTOR,
           kind: 'core',
-          source: 'Startsidan',
+          source: 'Clew',
           areas: [],
           // As composition binds it: the systems the model may have, asked of the registry on every call.
           ...workCapabilities({
@@ -287,6 +287,7 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
       }),
       health: { available: () => true, mark: () => undefined },
     },
+    siteName: async () => 'Clew',
     clock: () => new Date(T),
     ids: () => 'c-' + ++ids,
     log: (...args) => {

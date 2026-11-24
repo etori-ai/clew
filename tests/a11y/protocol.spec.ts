@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -30,7 +31,7 @@ test.describe('the manifest reference', () => {
     await page.setViewportSize(desktop);
     await open(page, page_);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Clew manifest reference');
-    await expect(page).toHaveTitle('Clew manifest reference · Startsidan');
+    await expect(page).toHaveTitle(`Clew manifest reference · ${SITE}`);
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
     const outline = page.getByRole('navigation', { name: 'On this page' });
     await expect(outline).toBeVisible();
@@ -113,7 +114,7 @@ test.describe('the manifest preview', () => {
     await page.setViewportSize(desktop);
     await open(page, preview);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Manifest preview');
-    await expect(page).toHaveTitle('Clew manifest preview · Startsidan');
+    await expect(page).toHaveTitle(`Clew manifest preview · ${SITE}`);
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
     await expect(page.getByRole('link', { name: 'the manifest reference' })).toHaveAttribute(
       'href',

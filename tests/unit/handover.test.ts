@@ -89,6 +89,7 @@ function world(
       },
       health: { available: () => true, mark: () => undefined },
     },
+    siteName: async () => 'Clew',
     clock: () => new Date(T0),
     ids: () => `id-${++n}`,
     log: () => undefined,

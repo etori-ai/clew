@@ -961,8 +961,8 @@ describe('connector-check holds a scan to the card-action rule (D35)', () => {
       level: 'fail',
       group: 'surfaces',
       label: 'Ärenden',
-      description:
-        'Ärendet hello:open-items avvisades: action done names finance.approve, which is not a capability of hello',
+      description: 'Ärendet hello:open-items avvisades.',
+      cause: 'action done names finance.approve, which is not a capability of hello',
     });
   });
 });

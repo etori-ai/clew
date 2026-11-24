@@ -22,6 +22,7 @@ import {
 } from '@clew/contracts';
 import { HISTORY_LIMIT, historySubjects, itemEvents, reminderStart, rhythmFor } from '../domain';
 import {
+  CLEW_SOURCE,
   audiencedActorOf,
   givenBy,
   pathOf,
@@ -597,7 +598,7 @@ export function threadUsecases(deps: ThreadDeps) {
         deadline: null,
         trigger: {
           reason: `Du frågade ${now.toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })} och gjorde svaret till ett ärende`,
-          source: 'Startsidan',
+          source: CLEW_SOURCE,
           at,
         },
         createdAt: at,

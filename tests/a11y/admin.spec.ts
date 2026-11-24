@@ -1,4 +1,5 @@
 import {
+  SITE,
   announcements,
   desktop,
   expect,
@@ -372,7 +373,7 @@ test.describe('administration', () => {
     test('the list names each connector, its status in words and its audience', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/connectors');
-      await expect(page).toHaveTitle('Anslutna system · Startsidan');
+      await expect(page).toHaveTitle(`Anslutna system · ${SITE}`);
       const table = page.getByRole('table');
       await expect(table.getByRole('link', { name: 'Ekonomisystemet' })).toBeVisible();
       await expect(table.getByText('Svarar inte')).toBeVisible();
@@ -577,7 +578,7 @@ test.describe('administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/connectors/hello');
-      await expect(page).toHaveTitle('Hello · Startsidan');
+      await expect(page).toHaveTitle(`Hello · ${SITE}`);
       await expect(page.getByText(/Hello: svarar inte/)).toBeVisible();
       const tablist = page.getByRole('tablist');
       await tablist.getByRole('tab', { name: 'Översikt' }).focus();
@@ -600,11 +601,11 @@ test.describe('administration', () => {
         'Fel nyckel släpps igenom',
       );
       await expect(page.getByRole('list', { name: 'Funktioner' })).toContainText('hello.dayWithMeetings');
-      const passed = page.getByRole('button', { name: /I Startsidan.*1 godkänd/ });
+      const passed = page.getByRole('button', { name: new RegExp(`I ${SITE}.*1 godkänd`) });
       await expect(passed).toHaveAttribute('aria-expanded', 'false');
       await passed.focus();
       await page.keyboard.press('Enter');
-      await expect(page.getByRole('list', { name: 'I Startsidan' })).toBeVisible();
+      await expect(page.getByRole('list', { name: `I ${SITE}` })).toBeVisible();
       await expectNoAxeViolations(page);
     });
     test('removing asks first, then returns to the list with focus on its heading and a spoken result', async ({

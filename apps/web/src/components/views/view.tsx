@@ -60,6 +60,7 @@ import { entityHref, recordSubject } from '../../person-address';
 import { withCard } from '../../panel-address';
 import { ASSISTANT_PARAM } from '../../conversation-about';
 import { isWebAddress } from '../../web-address';
+import { useBranding } from '../../branding';
 
 /**
  * A declared view (D38): the connector says what the output holds (a table, a list, one record, a text, and which
@@ -813,6 +814,7 @@ export function DeclaredView({
   const sectionId = useId();
   const wide = useMediaQuery(tableQuery);
   const { pathname, search } = useLocation();
+  const site = useBranding().name;
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
   const announce = useAnnounce({ hasReplace: true });
   const all = view.kind === 'table' || view.kind === 'list' ? (viewRows(view, output) ?? []) : null;
@@ -951,7 +953,11 @@ export function DeclaredView({
           {view.kind === 'record' && view.metrics && <MetricView metrics={record[view.metrics] as Metric[]} />}
           {view.kind === 'record' && view.series && <SeriesView series={record[view.series] as Series} />}
           {view.kind === 'record' && view.activity && <ActivityView activity={record[view.activity] as Activity} />}
-          {view.external && <Text type="supporting">Hämtat ur {view.source}. Inget av det sparas på Startsidan.</Text>}
+          {view.external && (
+            <Text type="supporting">
+              Hämtat ur {view.source}. Inget av det sparas på {site}.
+            </Text>
+          )}
         </VStack>
       );
     if (part === 'facts')
@@ -1052,7 +1058,11 @@ export function DeclaredView({
           </>
         )}
         {/* What lives in a system outside Clew is not stored here (`external`); Clew's own register is, so it says nothing. */}
-        {view.external && <Text type="supporting">Hämtat ur {view.source}. Inget av det sparas på Startsidan.</Text>}
+        {view.external && (
+          <Text type="supporting">
+            Hämtat ur {view.source}. Inget av det sparas på {site}.
+          </Text>
+        )}
       </VStack>
     );
   }
@@ -1103,7 +1113,7 @@ export function DeclaredView({
             all!.length > rows.length
               ? `${rows.length} av ${all!.length} rader.`
               : `${counted(rows.length)}${DOT}${view.source}.`,
-            view.external ? 'Inget av det sparas på Startsidan.' : '',
+            view.external ? `Inget av det sparas på ${site}.` : '',
           ]
             .filter(Boolean)
             .join(' ')}

@@ -4,6 +4,8 @@ import addFormats from 'ajv-formats';
 import {
   AppearanceLogoInput,
   type AppearanceLogoInputType,
+  AppearanceNameInput,
+  type AppearanceNameInputType,
   AppearanceThemeInput,
   type AppearanceThemeInputType,
   type ThemeRefusal,
@@ -67,6 +69,7 @@ const validators = {
   usersQuery: ajv.compile(UsersAdminQuery),
   appearanceTheme: ajv.compile(AppearanceThemeInput),
   appearanceLogo: ajv.compile(AppearanceLogoInput),
+  appearanceName: ajv.compile(AppearanceNameInput),
 };
 async function body<T>(request: Request, validate: (value: unknown) => boolean, limit = 16000): Promise<T> {
   const text = await textOfAtMost(request, limit);
@@ -145,8 +148,17 @@ adminRoutes.get('/organisation', async c => c.json(await organisation.overview(c
 adminRoutes.get('/organisation/units/:id', async c =>
   c.json(await organisation.unit(c.get('session').context, c.req.param('id'))),
 );
-// Utseende (D98): the installation's theme file and logo, behind `admin.appearance`.
+// Utseende (D98): the installation's name, theme file and logo, behind `admin.appearance`.
 adminRoutes.get('/appearance', async c => c.json(await appearance.adminRead(c.get('session').context)));
+adminRoutes.put('/appearance/name', async c =>
+  c.json(
+    await appearance.setName(
+      c.get('session').context,
+      (await body<AppearanceNameInputType>(c.req.raw, validators.appearanceName)).name,
+    ),
+  ),
+);
+adminRoutes.delete('/appearance/name', async c => c.json(await appearance.clearName(c.get('session').context)));
 adminRoutes.put('/appearance/theme', async c => {
   const input = await body<AppearanceThemeInputType>(
     c.req.raw,

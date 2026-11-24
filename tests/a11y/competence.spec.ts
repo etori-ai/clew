@@ -10,6 +10,7 @@ import {
   withSkills,
 } from './competence';
 import {
+  SITE,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -157,7 +158,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       switchedOn(api);
       await open(page, OWN);
       await expect(page).toHaveURL(OWN_PAGE);
-      await expect(page).toHaveTitle(`Kompetens · ${user.name} · Startsidan`);
+      await expect(page).toHaveTitle(`Kompetens · ${user.name} · ${SITE}`);
       await expect(page.getByRole('heading', { level: 1, name: user.name })).toBeVisible();
       const own = page.getByRole('navigation', { name: `Om ${user.name}` });
       await expect(own.getByRole('link', { name: 'Kompetens' })).toHaveAttribute('aria-current', 'true');
@@ -167,7 +168,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(main.getByRole('listitem').filter({ hasText: 'Fallskydd' })).toContainText('Saknas');
       await expect(main.getByRole('listitem').filter({ hasText: 'Heta arbeten' })).toContainText('Utgånget');
       await expect(main.getByRole('listitem').filter({ hasText: 'HLR' })).toContainText('Giltigt till: 10 jan. 2027');
-      await expect(main.getByText(/Inget av det sparas på Startsidan/)).toHaveCount(0);
+      await expect(main.getByText(`Inget av det sparas på ${SITE}`)).toHaveCount(0);
       // The manager's views are Personal's Kompetens tab, not this page's (D126 rule 8).
       await expect(tabs(page)).toHaveCount(0);
       await expectNoAxeViolations(page);
@@ -241,7 +242,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(main.getByText('41 krav som inte uppfylls', { exact: true })).toBeVisible();
       await expect(main.getByText('Visar de första 4. 37 till visas inte.')).toBeVisible();
       // Clew's own register: nothing says it is not stored here.
-      await expect(main.getByText(/Inget av det sparas på Startsidan/)).toHaveCount(0);
+      await expect(main.getByText(`Inget av det sparas på ${SITE}`)).toHaveCount(0);
       await expectNoAxeViolations(page);
     });
 

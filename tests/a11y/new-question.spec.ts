@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import {
+  SITE,
   announcements,
   composer,
   desktop,
@@ -37,7 +38,7 @@ test.describe('Ny fråga is a page of its own', () => {
     await open(page, '/todo');
     await page.getByRole('link', { name: 'Fråga AI', exact: true }).click();
     await expect(page).toHaveURL('/conversations/new');
-    await expect(page).toHaveTitle('Ny fråga · Startsidan');
+    await expect(page).toHaveTitle(`Ny fråga · ${SITE}`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(greeting);
     await expect(page.getByText('Vad vill du ha hjälp med?', { exact: true })).toBeVisible();
     await expect(composer(page)).toBeFocused();

@@ -34,6 +34,7 @@ import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { AddModelDialog, Findings } from './add-model';
 import { History } from './model';
+import { TechnicalCause } from './check-result';
 import { actorLabel, audienceLabel, modelStatusOf, providerHealthLabel, providerStatusOf } from './labels';
 import { AdminShell } from './shell';
 import { DOT } from '../../dot';
@@ -156,7 +157,19 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
           container="section"
           collapsible={false}
           title={p.health.status === 'unreachable' ? `${p.title} svarar inte.` : `${p.title} avvisar nyckeln.`}
-          description={`${p.health.detail ?? ''} ${p.health.status === 'key-rejected' ? 'Byt nyckel här, eller kontrollera den hos leverantören.' : 'Rutan hittar bara exakta saker tills den svarar igen.'}`.trim()}
+          description={
+            <>
+              {p.health.status === 'key-rejected'
+                ? 'Byt nyckel här, eller kontrollera den hos leverantören.'
+                : 'Rutan hittar bara exakta saker tills den svarar igen.'}
+              {p.health.detail && (
+                <>
+                  {' '}
+                  <TechnicalCause detail={p.health.detail} />
+                </>
+              )}
+            </>
+          }
           endContent={<Timestamp value={p.health.at} format="date_time" />}
         />
       )}

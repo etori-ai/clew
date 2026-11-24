@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/test';
 import { NEXT_WEEK } from './data';
-import { composer, desktop, expect, expectNoAxeViolations, open, phone, test } from './support';
+import { SITE, composer, desktop, expect, expectNoAxeViolations, open, phone, test } from './support';
 
 /** What a person cannot read because it is cut off with an ellipsis. */
 const cutOff = (root: Locator) =>
@@ -365,7 +365,7 @@ test.describe('one thing is its own page (D126 rule 1)', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const main = page.getByRole('main');
     await expect(main).toContainText('4 november 2026');
-    await expect(main).toContainText('Hämtat ur Personalsystemet. Inget av det sparas på Startsidan.');
+    await expect(main).toContainText(`Hämtat ur Personalsystemet. Inget av det sparas på ${SITE}.`);
   });
 });
 

@@ -22,6 +22,7 @@ const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1
 const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>');
 const record = (revision: number, overrides: Partial<AppearanceRecord> = {}): AppearanceRecord => ({
   revision,
+  name: null,
   theme: themeFromAccent('#005595', '#daeff1', 'Exempelkommunen'),
   logo: { alt: 'Exempelkommunen', light: { mediaType: 'image/png', bytes: png }, dark: null },
   updatedAt: T,
@@ -59,6 +60,15 @@ export function appearanceStoreContract(name: string, make: () => Promise<Appear
       expect((await audit()).map(a => [a.actor, a.action, a.details])).toEqual([
         ['person:mikael', 'appearance.theme.set', { revision: 1 }],
       ]);
+    });
+
+    test("the installation's name is read back as written, and null takes it away", async () => {
+      const { store } = await make();
+      await store.transaction(tx => tx.write(record(1, { name: 'Intranätet för Exempelkommunen' })));
+      expect(await store.read()).toEqual(record(1, { name: 'Intranätet för Exempelkommunen' }));
+      expect((await store.transaction(tx => tx.read())).name).toBe('Intranätet för Exempelkommunen');
+      await store.transaction(tx => tx.write(record(2)));
+      expect((await store.read()).name).toBeNull();
     });
 
     test('a transaction that throws leaves neither the record nor its audit row', async () => {

@@ -13,6 +13,7 @@ import {
   boardingSource,
 } from './boarding';
 import {
+  SITE,
   announcements,
   expect,
   expectNoAxeViolations,
@@ -64,7 +65,7 @@ test.describe('the plan for its manager', () => {
   }) => {
     api.boarding = new BoardingMock();
     await open(page, PAGE);
-    await expect(page).toHaveTitle('Introduktion för Anna Lindqvist · Startsidan');
+    await expect(page).toHaveTitle(`Introduktion för Anna Lindqvist · ${SITE}`);
     await expect(heading(page, 'Introduktion för Anna Lindqvist')).toBeVisible();
     const main = page.getByRole('main');
     await expect(main.getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute('href', '/staff');
@@ -316,7 +317,7 @@ test.describe('no plan, and no page', () => {
       arrange(api);
       await open(page, path);
       await expect(heading(page, 'Planen finns inte')).toBeVisible();
-      await expect(page).toHaveTitle('Planen finns inte · Startsidan');
+      await expect(page).toHaveTitle(`Planen finns inte · ${SITE}`);
       await expect(page.getByRole('main').getByRole('button', { name: /^Starta/ })).toHaveCount(0);
       await expectNoAxeViolations(page);
     });

@@ -174,7 +174,7 @@ function world() {
   registry.register({
     id: SEARCH_CONNECTOR,
     kind: 'core',
-    source: 'Startsidan',
+    source: 'Clew',
     areas: [],
     ...talkSeamCapabilities(seam, actor => !!registry.talkSource(actor)),
   });

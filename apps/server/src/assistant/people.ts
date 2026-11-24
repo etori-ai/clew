@@ -1,4 +1,5 @@
 import type { AuthenticatedContext, Subject, Thread } from '@clew/contracts';
+import { CLEW_SOURCE } from '@clew/connectors';
 import { namedAmong, namedSubjects } from '../threads/domain';
 import { subjectCards } from '../threads/usecases/subjects';
 import { threadAccess } from '../threads/access';
@@ -393,7 +394,7 @@ export function personAnswer(turn: PeopleInTurn): { body: string; source: string
   if (several?.found.match === 'several')
     return {
       body: `Flera av dina medarbetare heter ${several.written}: ${swedishList(several.found.people.map(p => p.name))}. Vem menar du?`,
-      source: 'Startsidan',
+      source: CLEW_SOURCE,
     };
   return undefined;
 }

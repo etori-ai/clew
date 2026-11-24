@@ -1,21 +1,31 @@
 import type { Page, Route } from '@playwright/test';
 import { NOW } from './data';
-import { announcements, expect, expectNoAxeViolations, hemLine, narrow, open, reflowProblems, test } from './support';
+import {
+  SITE,
+  announcements,
+  expect,
+  expectNoAxeViolations,
+  hemLine,
+  narrow,
+  open,
+  reflowProblems,
+  test,
+} from './support';
 
 /**
  * The session in the browser (D46; the web review of 2026-11-23, M1 to M3, L2, L4 and L9, and the review of its fixes,
- * batch 12). Only the server's explicit denial ends a session: Startsidan out of reach (a 5xx while it restarts, a
+ * batch 12). Only the server's explicit denial ends a session: Clew out of reach (a 5xx while it restarts, a
  * network error, no answer within ten seconds) is said, and asked again after a wait that grows, while the page and what
  * the person has typed stay. A change of the person's access reads the session again and never ends it. Every end takes
  * one way: the ended card, its words said, the focus on its heading, its tab title, and nothing of the session's work
  * left on screen. A link followed signed out keeps its whole address through sign-in. Waits run on the page's clock.
  */
-const UNREACHABLE = 'Startsidan går inte att nå just nu. Försöker igen om en stund.';
-const REACHED = 'Startsidan går att nå igen.';
+const UNREACHABLE = `${SITE} går inte att nå just nu. Försöker igen om en stund.`;
+const REACHED = `${SITE} går att nå igen.`;
 const ENDED = 'Din inloggning har avslutats. Logga in igen för att fortsätta.';
 /** How long a question about the session may take (`ASKING` in `packages/ui/src/session.tsx`). */
 const ASKING = 10_000;
-/** The longest first wait before Startsidan is asked again: two seconds, a quarter either way (`retryDelay`). */
+/** The longest first wait before Clew is asked again: two seconds, a quarter either way (`retryDelay`). */
 const FIRST_WAIT = 2_500;
 type Fail = (route: Route) => Promise<void>;
 const outages: Record<string, { fail: Fail; asking: number }> = {
@@ -32,7 +42,7 @@ async function outage(page: Page, fail: Fail) {
 }
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
 /** The ended card's heading, which takes the focus as the card takes the page's place. */
-const endedHeading = (page: Page) => page.getByRole('main').getByRole('heading', { level: 1, name: 'Startsidan' });
+const endedHeading = (page: Page) => page.getByRole('main').getByRole('heading', { level: 1, name: SITE });
 /** A message on the page's open change stream, as the server sends one. */
 const onStream = (page: Page, data: object) =>
   page.evaluate(data => {
@@ -43,7 +53,7 @@ const onStream = (page: Page, data: object) =>
 const pause = async (page: Page) => page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
 
 for (const [name, { fail, asking }] of Object.entries(outages))
-  test(`${name} to the session's check keeps the page and what is typed, says so, and says when Startsidan answers again`, async ({
+  test(`${name} to the session's check keeps the page and what is typed, says so, and says when Clew answers again`, async ({
     page,
     api: _,
   }) => {
@@ -69,7 +79,7 @@ for (const [name, { fail, asking }] of Object.entries(outages))
     await expect(page.getByRole('link', { name: 'Logga in igen' })).toHaveCount(0);
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page)).toEqual([]);
-    // Asked again by itself after the first wait: once Startsidan answers, the notice goes and that is said.
+    // Asked again by itself after the first wait: once Clew answers, the notice goes and that is said.
     clew.down = false;
     await page.clock.runFor(FIRST_WAIT);
     await expect(notices(page).getByText(UNREACHABLE)).toHaveCount(0);
@@ -77,7 +87,7 @@ for (const [name, { fail, asking }] of Object.entries(outages))
     await expect(hemLine(page)).toHaveValue('Vilka är på plats?');
   });
 
-test('the notice of Startsidan out of reach is reached with F6 and closed by keyboard, and the focus goes back where it was', async ({
+test('the notice of Clew out of reach is reached with F6 and closed by keyboard, and the focus goes back where it was', async ({
   page,
   api: _,
 }) => {
@@ -92,12 +102,13 @@ test('the notice of Startsidan out of reach is reached with F6 and closed by key
   const close = page.getByRole('button', { name: 'Stäng avisering' });
   await expect(close).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.getByText(UNREACHABLE)).toHaveCount(0);
+  // The notice is gone; its words may still stand a moment in the live region that said them.
+  await expect(notices(page).getByText(UNREACHABLE)).toHaveCount(0);
   await expect(hemLine(page)).toBeFocused();
   await expect(hemLine(page)).toHaveValue('Vilka är på plats?');
 });
 
-test('while Startsidan is out of reach only the growing wait asks again, two seconds doubling to half a minute; the poll and a return to the window stand still', async ({
+test('while Clew is out of reach only the growing wait asks again, two seconds doubling to half a minute; the poll and a return to the window stand still', async ({
   page,
   api: _,
 }) => {
@@ -139,7 +150,7 @@ test('while Startsidan is out of reach only the growing wait asks again, two sec
   }
 });
 
-test('a first load that finds Startsidan out of reach says so in the page’s place, asks again by keyboard, and never shows the sign-in', async ({
+test('a first load that finds Clew out of reach says so in the page’s place, asks again by keyboard, and never shows the sign-in', async ({
   page,
   api: _,
 }) => {
@@ -153,7 +164,7 @@ test('a first load that finds Startsidan out of reach says so in the page’s pl
   await expectNoAxeViolations(page);
   await page.setViewportSize(narrow);
   expect(await reflowProblems(page)).toEqual([]);
-  // The one move is the first stop of the keyboard; pressed while Startsidan is still away, the page stays as it is.
+  // The one move is the first stop of the keyboard; pressed while Clew is still away, the page stays as it is.
   const retry = main.getByRole('button', { name: 'Försök igen' });
   await page.keyboard.press('Tab');
   await expect(retry).toBeFocused();
@@ -175,7 +186,7 @@ test('a read of the session that answers after a newer one has drawn the page sa
   const held: Route[] = [];
   await page.route('**/api/auth/session', route => {
     asks++;
-    // The first load finds Startsidan out of reach; the wait's own question is held; the button's is answered.
+    // The first load finds Clew out of reach; the wait's own question is held; the button's is answered.
     if (asks === 1) return route.fulfill({ status: 503, body: '' });
     if (asks === 2) return void held.push(route);
     return route.fallback();
@@ -252,7 +263,7 @@ for (const [name, end] of Object.entries(ends))
     await expect
       .poll(() => announcements(page))
       .toContainEqual(expect.stringContaining('Din inloggning har avslutats'));
-    await expect(page).toHaveTitle('Inloggningen har avslutats · Startsidan');
+    await expect(page).toHaveTitle(`Inloggningen har avslutats · ${SITE}`);
     await expect(hemLine(page)).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Logga in igen' })).toBeVisible();
   });
@@ -273,7 +284,7 @@ test('the end of a session takes its title and what its conversations showed, gi
   await page.evaluate(() => window.dispatchEvent(new Event('clew-session-ended')));
   await expect(endedHeading(page)).toBeFocused();
   await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Din inloggning har avslutats'));
-  await expect(page).toHaveTitle('Inloggningen har avslutats · Startsidan');
+  await expect(page).toHaveTitle(`Inloggningen har avslutats · ${SITE}`);
   expect(
     await page.evaluate(() => [
       sessionStorage.getItem('clew:conversation-shown:c1'),

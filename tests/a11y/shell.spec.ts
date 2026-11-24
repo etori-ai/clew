@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import {
+  SITE,
   announcements,
   bell,
   desktop,
@@ -32,7 +33,7 @@ for (const viewport of [desktop, narrow])
     await page.setViewportSize(viewport);
     await open(page, '/');
     const banner = page.getByRole('banner');
-    const home = banner.getByRole('link', { name: /Startsidan/ });
+    const home = banner.getByRole('link', { name: SITE });
     await expect(home).toBeVisible();
     await expect(home).toHaveAttribute('href', '/');
     await expect(home.locator('button')).toHaveCount(0);
@@ -210,7 +211,7 @@ test('the phone bar holds the name, the search, the bell and the person, and "Me
   await page.setViewportSize(narrow);
   await open(page, '/');
   const banner = page.getByRole('banner');
-  await expect(banner.getByRole('link', { name: /Startsidan/ })).toBeVisible();
+  await expect(banner.getByRole('link', { name: SITE })).toBeVisible();
   await expect(searchButton(page)).toBeVisible();
   await expect(bell(page)).toBeVisible();
   await expect(personButton(page)).toBeVisible();
@@ -221,7 +222,7 @@ test('the phone bar holds the name, the search, the bell and the person, and "Me
   expect(await reflowProblems(page, banner)).toEqual([]);
   // One row at 320 px: the name and the four marks stand on one line, no mark under the name.
   const row = await Promise.all(
-    [banner.getByRole('link', { name: /Startsidan/ }), searchButton(page), bell(page), personButton(page), toggle].map(
+    [banner.getByRole('link', { name: SITE }), searchButton(page), bell(page), personButton(page), toggle].map(
       async control => (await control.boundingBox())!,
     ),
   );
@@ -233,7 +234,7 @@ test('the phone bar holds the name, the search, the bell and the person, and "Me
   expect(Math.max(...row.map(box => box.x + box.width))).toBeLessThanOrEqual(narrow.width);
   await toggle.focus();
   await page.keyboard.press('Enter');
-  const drawer = page.getByRole('dialog', { name: 'Startsidan', exact: true });
+  const drawer = page.getByRole('dialog', { name: SITE, exact: true });
   await expect(drawer).toBeVisible();
   // Every page of Clew's, in the row's order, the one that is the page marked; a manager has Personal and Läget.
   const pages = drawer.getByRole('group', { name: 'Mina sidor' }).getByRole('link');
