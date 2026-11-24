@@ -23,7 +23,7 @@ import {
 } from './composition';
 import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/reconcile';
 import { connectorRoutes } from './routes/connectors';
-import { protocolRoutes } from './routes/protocol';
+import { mountProtocol } from './routes/protocol';
 import { registry } from './connectors/registry';
 import { loadConnectors } from './connectors/remote';
 import { startAssistantProbe } from './composition';
@@ -100,7 +100,7 @@ app.route('/api/auth', authRoutes);
 // The installation's theme and logo (D98): public and needed by the sign-in page, so it waits for nothing but the database.
 app.route('/api/appearance', appearanceRoutes(appearance));
 // The protocol is a contract, not data: public, and generated from code, so it needs nothing to have started (D60).
-app.route('/api/protocol', protocolRoutes);
+mountProtocol(app, { log: logPort('protocol', 'error') });
 // What a connector reaches of Clew needs no session: the key set is public and the callback carries Clew's own grant,
 // so both are mounted before the session guard. A connector reads them in the protocol's shape, Clew starting included,
 // so they answer that themselves, ahead of the startup gate below, as SCIM answers it in its own shape.
