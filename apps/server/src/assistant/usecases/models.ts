@@ -18,7 +18,7 @@ import type {
 } from '@clew/contracts';
 import { audiencedActorOf } from '@clew/connectors';
 import { ForbiddenError, InputError } from '../../context';
-import { choicesFor, pickModel, slugFor } from '../domain';
+import { choicesFor, pickModel, sameOrigin, slugFor } from '../domain';
 import {
   WireError,
   type Endpoint,
@@ -27,6 +27,7 @@ import {
   type ModelRecord,
   type ModelStore,
   type ModelWire,
+  type ProviderPatch,
   type ProviderRecord,
   type ResolvedModel,
 } from '../ports';
@@ -225,7 +226,12 @@ export function modelUsecases(deps: ModelDeps) {
     if (report.health.status !== 'untested') health.mark(input.id, report.health.status === 'ok', at);
     return { provider: await providerDetail((await store.readProvider(input.id))!), report };
   }
-  /** Name and address; a changed field is one audit row. */
+  /**
+   * Name and address; a changed field is one audit row. A key is for the host it was given for: an address on another
+   * host (scheme, name or port) removes the sealed key in the same transaction, and the `provider.url` row says so, so
+   * the key is never sent to a host nobody gave it to. The administrator gives the new host its key with "Byt nyckel".
+   * A new path on the same host (`/v1` to `/v2`) keeps it.
+   */
   async function updateProvider(
     persona: AuthenticatedContext,
     id: string,
@@ -234,7 +240,7 @@ export function modelUsecases(deps: ModelDeps) {
     const { by, at } = await mutating(persona);
     const row = await mustProvider(id);
     const changes: Array<{ action: string; details: Record<string, unknown> }> = [];
-    const next: { title?: string; baseUrl?: string } = {};
+    const next: ProviderPatch = {};
     if (patch.title !== undefined && patch.title.trim() !== row.title) {
       next.title = patch.title.trim();
       changes.push({ action: 'provider.title', details: { from: row.title, to: next.title } });
@@ -243,7 +249,12 @@ export function modelUsecases(deps: ModelDeps) {
       const url = patch.baseUrl.replace(/\/+$/, '');
       if (url !== row.baseUrl) {
         next.baseUrl = url;
-        changes.push({ action: 'provider.url', details: { from: row.baseUrl, to: url } });
+        const keyRemoved = row.apiKey !== null && !sameOrigin(row.baseUrl, url);
+        if (keyRemoved) Object.assign(next, { apiKey: null, keyChangedAt: at });
+        changes.push({
+          action: 'provider.url',
+          details: { from: row.baseUrl, to: url, ...(keyRemoved ? { keyRemoved } : {}) },
+        });
       }
     }
     if (!changes.length) return providerDetail(row);

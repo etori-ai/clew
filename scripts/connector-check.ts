@@ -15,6 +15,11 @@
  * the installation (D119) is read as Clew reads it, its first two pages at most, and a person's assertion on its route
  * must be refused.
  *
+ * Every assertion is signed for the id the served manifest names (with `--id`, that id). When this installation has a
+ * connector registered under it, the address checked must be the one it is registered at, and one of Clew's own is
+ * never signed for: the script refuses with exit code 2 before it signs anything, so a service cannot have the check
+ * sign for a registered connector by naming its id (`audienceProblem` in `scripts/connector-check-as.ts`).
+ *
  * `--as <user name>` signs the batch, and the unknown key asked after it, as that person of this installation, someone
  * who may see the keys: Clew's installation key signs their identity as Clew signs it (id, name, unit, role and user name
  * from their current grant), valid for two minutes, on every read about an entity the check makes, and, when the
@@ -41,7 +46,7 @@ import { systemContext } from '../apps/server/src/system-context';
 import { relations } from '../apps/server/src/composition/relations';
 import type { Actor } from '../packages/connectors/src/index';
 import { checkConnector } from '../packages/connectors/src/check';
-import { asProblem, checkAs, type CheckAsDeps } from './connector-check-as';
+import { asProblem, audienceProblem, checkAs, type CheckAsDeps } from './connector-check-as';
 
 const args = process.argv.slice(2);
 try {
@@ -130,6 +135,14 @@ try {
     : undefined;
 } catch (error) {
   console.error((error as Error).message);
+  await closeDatabase();
+  process.exit(2);
+}
+// Whatever the service names itself, nothing is signed for a connector registered here at another address, or for one
+// of Clew's own (CB-13); `--as` has refused both already.
+const refused = await audienceProblem({ id: audience, url }, liveCheckAs.registration);
+if (refused) {
+  console.error(refused);
   await closeDatabase();
   process.exit(2);
 }

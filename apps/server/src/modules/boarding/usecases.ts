@@ -88,6 +88,12 @@ const TOO_MANY_ITEMS = `En plan kan ha högst ${PLAN_ITEMS_MAX} uppgifter.`;
 const TIMER_ACTOR = 'system:scheduler';
 /** The version of the export document; a breaking change is a new version. */
 export const BOARDING_EXPORT_FORMAT = 'clew.boarding/1';
+/**
+ * What erasing one person from the domain did, counts only, or why it erased nothing: an id the people table does not
+ * hold, or a person the source has not deactivated (D123 item 3).
+ */
+export type BoardingErasure =
+  { refused: 'unknown' | 'active' } | { plans: number; items: number; cleared: number; cards: number };
 
 /** Where one person asked about stands (`boarding.person`), keyed as asked: their open plan, or a plan that is missing. */
 export interface PersonStanding {
@@ -206,6 +212,14 @@ export function boardingUsecases(deps: BoardingDeps) {
     if (person && !person.enabled && holdsAfterLeaving(plan, persona.id)) return 'manager';
     if (items.some(i => i.ownerId === persona.id)) return 'owner';
     return undefined;
+  }
+  /**
+   * The deactivated people among the owners of `items`, read in `tx`: their items fall to the plan's manager while they
+   * stay deactivated (D124 item 7, `fallsToManager`), and are theirs again if the source activates them again.
+   */
+  async function inactiveOwners(tx: BoardingTx, items: readonly ItemRecord[]): Promise<ReadonlySet<string>> {
+    const owners = [...new Set(items.flatMap(i => (i.ownerId ? [i.ownerId] : [])))];
+    return new Set((await tx.persons(owners)).filter(p => !p.enabled).map(p => p.id));
   }
   /** The plan and what the persona may do with it, read in `tx`; a plan the persona may not see is no plan. */
   async function planFor(
@@ -606,7 +620,7 @@ export function boardingUsecases(deps: BoardingDeps) {
      * One plan (`boarding.plan`, the plan's page): for its manager and the person it is about, every item; for the
      * owner of some of its items, those items only, and the counts and the note over those alone. The manager is
      * whoever the person reports to now, or whoever holds the plan once the person is deactivated (`accessOf`). An item
-     * whose owner is gone is the manager's. Reads, so no audit row.
+     * whose owner is gone or deactivated is the manager's. Reads, so no audit row.
      */
     async plan(persona: AuthenticatedContext, planId: string): Promise<BoardingPlanOutput> {
       const { reports } = await staffing(persona);
@@ -625,6 +639,9 @@ export function boardingUsecases(deps: BoardingDeps) {
             ])
           ).map(p => [p.id, p]),
         );
+        const inactive = new Set(
+          shown.flatMap(i => (i.ownerId && named.get(i.ownerId)?.enabled === false ? [i.ownerId] : [])),
+        );
         const open = plan.closedAt === null;
         const rows = orderItems(shown).map(i =>
           itemRow(i, plan, {
@@ -633,6 +650,7 @@ export function boardingUsecases(deps: BoardingDeps) {
             owner: i.ownerId ? named.get(i.ownerId) : undefined,
             canTick: open && (access === 'manager' || i.ownerId === persona.id),
             managerReads: access === 'manager',
+            inactive,
           }),
         );
         // An owner who is neither the manager nor the person is told how far their own items have come, nothing more.
@@ -683,6 +701,7 @@ export function boardingUsecases(deps: BoardingDeps) {
         const persons = new Map(
           (await tx.persons([...new Set([...plans, ...own].map(p => p.personId))])).map(p => [p.id, p]),
         );
+        const inactive = await inactiveOwners(tx, items);
         const summary = (p: PlanRecord, person: Pick<PersonRef, 'name' | 'userName'>, managerReads: boolean) =>
           planSummary(
             p,
@@ -691,6 +710,7 @@ export function boardingUsecases(deps: BoardingDeps) {
             persona.id,
             day,
             managerReads,
+            inactive,
           );
         return {
           rows: orderPlans(
@@ -725,6 +745,7 @@ export function boardingUsecases(deps: BoardingDeps) {
         const plans = personId === persona.id || report ? all : held;
         if (!plans.length && personId !== persona.id && !report) throw new ForbiddenError(NOT_YOURS);
         const items = await tx.items(plans.map(p => p.id));
+        const inactive = await inactiveOwners(tx, items);
         const start = report ? upcomingStart(report, day) : undefined;
         return {
           person: { id: person.id, name: person.name, userName: person.userName, enabled: person.enabled },
@@ -738,6 +759,7 @@ export function boardingUsecases(deps: BoardingDeps) {
                 persona.id,
                 day,
                 !!report || held.includes(p),
+                inactive,
               ),
             ),
           ),
@@ -786,6 +808,7 @@ export function boardingUsecases(deps: BoardingDeps) {
         const plans = await tx.plansAbout([...asked.values()].map(r => r.id));
         const open = plans.filter(p => p.closedAt === null);
         const items = await tx.items(open.map(p => p.id));
+        const inactive = await inactiveOwners(tx, items);
         return [...asked].flatMap(([key, report]): PersonStanding[] => {
           const plan = open
             .filter(p => p.personId === report.id)
@@ -803,7 +826,7 @@ export function boardingUsecases(deps: BoardingDeps) {
                   anchorOn: plan.anchorOn,
                   done,
                   total,
-                  waiting: own.filter(i => i.doneAt === null && waitsFor(i, persona.id, true)).length,
+                  waiting: own.filter(i => i.doneAt === null && waitsFor(i, persona.id, true, inactive)).length,
                   state: planState(plan, own, day),
                 },
               },
@@ -947,14 +970,16 @@ export function boardingUsecases(deps: BoardingDeps) {
 
     /**
      * Erase one person from the domain: every plan about them with its items and the cards of those, the cards of the
-     * items they owned in other plans, and their id on other people's plans. `actor` is the operator's.
+     * items they owned in other plans, and their id on other people's plans. `actor` is the operator's. An id the
+     * people table does not hold (a user name, a typo) and a person who is still active erase nothing and write no
+     * audit row: only a person the source has deactivated is erased (D123 item 3).
      */
-    async erasePerson(
-      actor: string,
-      personId: string,
-    ): Promise<{ plans: number; items: number; cleared: number; cards: number }> {
+    async erasePerson(actor: string, personId: string): Promise<BoardingErasure> {
       const at = now().toISOString();
-      return deps.store.transaction(async tx => {
+      return deps.store.transaction(async (tx): Promise<BoardingErasure> => {
+        const enabled = await tx.lockPersonForErasure(personId);
+        if (enabled === undefined) return { refused: 'unknown' };
+        if (enabled) return { refused: 'active' };
         const erased = await tx.erasePerson(personId);
         if (erased.threadIds.length) await tx.workItems.remove(erased.threadIds);
         const counts = {

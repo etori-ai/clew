@@ -4,12 +4,12 @@ import { SignJWT } from 'jose';
 import { assertionFor, testJwks } from '../connector-authority';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { audiencedActorOf, type Actor, type Connector } from '../../packages/connectors/src/index';
-import { checkConnector } from '../../packages/connectors/src/check';
-import { fetchManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
+import { remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import type { ConnectorManifest } from '../../packages/connectors/src/protocol';
 import { createConnector } from '../../connectors/hello/connector.mjs';
 import { memoryConnectorStore } from '../../apps/server/src/connectors/adapters/memory';
-import { connectorUsecases, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
+import { serviceTransport } from '../../apps/server/src/connectors/adapters/transport';
+import { CHANGED_SINCE, connectorUsecases, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
 import { describeBundled } from '../../apps/server/src/connectors/describe';
 import {
   applyAllRows,
@@ -129,8 +129,11 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     clewUrl: 'http://clew',
     fetch: async () => Response.json({ output: { events: [] } }),
   });
+  /** Whether the hello service answers, and what it serves in place of its own manifest when a test says so. */
+  const service = { up: options.helloUp !== false, manifest: undefined as unknown };
   const helloFetch: FetchLike = async (input, init) => {
-    if (options.helloUp === false) throw new Error('ECONNREFUSED');
+    if (!service.up) throw new TypeError('fetch failed: ECONNREFUSED');
+    if (service.manifest !== undefined && input.endsWith('/clew/manifest')) return Response.json(service.manifest);
     return hello.handle(new Request(input, init));
   };
   const live = {
@@ -159,18 +162,12 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     units: { list: async () => [{ id: 'unit-skola', label: 'Bergsåkers skola' }] },
     groups: { list: async () => [{ id: 'S-1-5-21-it-staff', label: 'IT staff' }] },
     secrets: { seal: (v, id) => `sealed(${id}):${v}`, open: (s, id) => s.replace(`sealed(${id}):`, '') },
-    transport: {
-      fetchManifest: (url, id) => fetchManifest(url, id, helloFetch),
-      check: ({ url, id, secret }) =>
-        checkConnector({
-          url,
-          id,
-          key: secret,
-          assert: sign(SECRET, id),
-          assertForeign: sign('another-secret-another', id),
-          fetch: helloFetch,
-        }),
-    },
+    // The server's own transport (CB-9), with test keys and the in-process service.
+    transport: serviceTransport({
+      assert: id => sign(SECRET, id),
+      assertForeign: id => sign('another-secret-another', id),
+      fetch: helloFetch,
+    }),
   };
   const admin = connectorUsecases(deps);
   const reconcile: ReconcileDeps = {
@@ -189,6 +186,7 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     admin,
     clock,
     live,
+    service,
     transport: deps.transport,
     reconcile,
     advance: (ms: number) => {
@@ -305,6 +303,74 @@ describe('adding and governing a remote connector', () => {
     // Enabling approves no manifest (D144): a draft with none is read in and approved first.
     await expect(admin.update(mikael, 'hello', { state: 'enabled' })).rejects.toThrow('ingen godkänd beskrivning');
   });
+  test('testing a service that stopped answering records unreachable, and one serving a manifest Clew does not load records manifest-invalid (CB-9)', async () => {
+    const { admin, store, service } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    service.up = false;
+    const down = await admin.test(mikael, 'hello');
+    expect(down.ok).toBe(false);
+    expect(down.health).toMatchObject({
+      status: 'unreachable',
+      at: T0,
+      detail: expect.stringContaining('ECONNREFUSED'),
+    });
+    expect((await store.read('hello'))!.health.status).toBe('unreachable');
+    service.up = true;
+    service.manifest = { protocol: 1, id: 'hello' };
+    const invalid = await admin.test(mikael, 'hello');
+    expect(invalid.ok).toBe(false);
+    expect(invalid.health).toMatchObject({
+      status: 'manifest-invalid',
+      detail: expect.stringContaining('Invalid connector manifest'),
+    });
+    expect((await store.read('hello'))!.health.status).toBe('manifest-invalid');
+    // The approved manifest stays as it was, and so does the connector's state.
+    expect((await store.read('hello'))!.manifest).toMatchObject({ id: 'hello', source: 'Hello' });
+    service.manifest = undefined;
+    expect((await admin.test(mikael, 'hello')).health.status).toBe('ok');
+  });
+  test('adding a service that serves a manifest Clew does not load stores its draft, recorded as manifest-invalid (CB-9)', async () => {
+    const { admin, store, service } = world();
+    service.manifest = { protocol: 1, id: 'hello' };
+    const { connector, report } = await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    expect(report.ok).toBe(false);
+    expect(connector).toMatchObject({ state: 'draft', health: { status: 'manifest-invalid' } });
+    expect(store.audit).toEqual([
+      expect.objectContaining({
+        action: 'connector.added',
+        details: expect.objectContaining({ capabilities: 0, health: 'manifest-invalid' }),
+      }),
+    ]);
+  });
+  test('each switch, the address and a step back to draft is its own audit row with what changed (CB-10)', async () => {
+    const { admin, store, registry } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    await admin.update(mikael, 'hello', { state: 'enabled' });
+    const n = store.audit.length;
+    await admin.update(mikael, 'hello', {
+      scanEnabled: false,
+      toolsEnabled: false,
+      capabilities: { 'hello.greeting': { model: false } },
+    });
+    await admin.update(mikael, 'hello', { url: 'http://hello-2/' });
+    const back = await admin.update(mikael, 'hello', { state: 'draft' });
+    expect(back).toMatchObject({ state: 'draft', registered: false, url: 'http://hello-2' });
+    expect(registry.connector('hello')).toBeUndefined();
+    const row = (action: string, details: Record<string, unknown>) => ({
+      actor: 'person:mikael',
+      action,
+      subject: 'connector:hello',
+      at: T0,
+      details,
+    });
+    expect(store.audit.slice(n)).toEqual([
+      row('connector.scan', { to: false }),
+      row('connector.tools', { to: false }),
+      row('connector.capability', { to: { 'hello.greeting': { model: false } } }),
+      row('connector.url', { from: 'http://hello', to: 'http://hello-2' }),
+      row('connector.draft', { from: 'enabled' }),
+    ]);
+  });
   test('enabling registers the connector live; the audience hides it from Hassan while Hillevi sees it; disabling hides it from both', async () => {
     const { admin, store, registry, live } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
@@ -413,6 +479,43 @@ describe('adding and governing a remote connector', () => {
     await approveServed(admin, 'hello');
     expect(live.registered.length).toBe(before + 1);
     expect(registry.governance('hello').state).toBe('enabled');
+  });
+});
+
+describe('a change is made on the connector as the administrator saw it (DE-M5)', () => {
+  test('a change sent with a version saved over since is refused and writes nothing; sent with the current one it goes through', async () => {
+    const { admin, store } = world();
+    const { connector } = await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    expect(connector.version).toBe(1);
+    // Another administrator enables it after this page was read.
+    expect((await admin.update(mikael, 'hello', { state: 'enabled', version: 1 })).version).toBe(2);
+    const before = await store.read('hello'),
+      audited = store.audit.length;
+    await expect(admin.update(mikael, 'hello', { scanEnabled: false, version: 1 })).rejects.toThrow(CHANGED_SINCE);
+    expect(await store.read('hello')).toEqual(before);
+    expect(store.audit).toHaveLength(audited);
+    expect(await admin.update(mikael, 'hello', { scanEnabled: false, version: 2 })).toMatchObject({
+      state: 'enabled',
+      scanEnabled: false,
+      version: 3,
+    });
+  });
+  test('a change saved between the read and the write is refused, not merged with it', async () => {
+    const { admin, store } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    // Another administrator's change lands after this one has read the row and before its transaction begins.
+    const transaction = store.transaction;
+    let raced = false;
+    store.transaction = (async fn => {
+      if (!raced) {
+        raced = true;
+        await transaction(tx => tx.update('hello', { toolsEnabled: false }, 'person:other', T0));
+      }
+      return transaction(fn);
+    }) as typeof store.transaction;
+    await expect(admin.update(mikael, 'hello', { scanEnabled: false })).rejects.toThrow(CHANGED_SINCE);
+    expect(await store.read('hello')).toMatchObject({ toolsEnabled: false, scanEnabled: true, version: 2 });
+    expect(actions(store, 'hello')).toEqual(['connector.added']);
   });
 });
 
@@ -896,30 +999,54 @@ const headerConnector = (id: string, name: string): Connector => ({
   ],
   uses: [],
 });
+/** A world with two connectors that can give the shared header, neither chosen yet. */
+async function headerWorld() {
+  const w = world();
+  await syncBundledRows(w.reconcile);
+  for (const [id, name] of [
+    ['intranet', 'Intranätet'],
+    ['sharepoint', 'SharePoint'],
+  ] as const) {
+    w.registry.register(headerConnector(id, name));
+    w.registry.govern(id, { ...w.registry.governance('finance'), state: 'enabled', audience: { mode: 'all' } });
+    await w.store.transaction(tx =>
+      tx.insert({
+        id,
+        bundled: true,
+        url: null,
+        secret: null,
+        state: 'enabled',
+        manifest: null,
+        health: { status: 'ok', at: T0 },
+        createdBy: 'system:boot',
+        at: T0,
+      }),
+    );
+  }
+  return w;
+}
 describe('the shared header is given by one chosen connector (D88)', () => {
+  test('two administrators choosing different holders at once leave one holder, and the audit says who took it from whom (DE-M5)', async () => {
+    const { admin, registry, store } = await headerWorld();
+    // Both are saved: the one decided second takes the header from the one decided first.
+    await Promise.all([
+      admin.update(mikael, 'intranet', { header: true }),
+      admin.update(mikael, 'sharepoint', { header: true }),
+    ]);
+    const holders = (await admin.list(mikael)).filter(c => c.header).map(c => c.id);
+    expect(holders).toHaveLength(1);
+    const won = holders[0]!,
+      lost = won === 'intranet' ? 'sharepoint' : 'intranet';
+    expect(store.audit.filter(a => a.action === 'connector.header').map(a => [a.subject, a.details])).toEqual([
+      ['connector:' + lost, { to: true }],
+      ['connector:' + won, { to: true, from: lost }],
+      ['connector:' + lost, { to: false, takenBy: won }],
+    ]);
+    expect(registry.governance(won).header).toBe(true);
+    expect(registry.governance(lost).header).toBeUndefined();
+  });
   test('an administrator chooses the holder on its page; choosing another takes it over with an audit row on both, and a connector without the capability is refused', async () => {
-    const { admin, registry, store, reconcile } = world();
-    await syncBundledRows(reconcile);
-    for (const [id, name] of [
-      ['intranet', 'Intranätet'],
-      ['sharepoint', 'SharePoint'],
-    ] as const) {
-      registry.register(headerConnector(id, name));
-      registry.govern(id, { ...registry.governance('finance'), state: 'enabled', audience: { mode: 'all' } });
-      await store.transaction(tx =>
-        tx.insert({
-          id,
-          bundled: true,
-          url: null,
-          secret: null,
-          state: 'enabled',
-          manifest: null,
-          health: { status: 'ok', at: T0 },
-          createdBy: 'system:boot',
-          at: T0,
-        }),
-      );
-    }
+    const { admin, registry, store } = await headerWorld();
     // A candidate gives nothing until it is chosen.
     expect((await admin.read(mikael, 'intranet')).headerCapability).toBe('intranet.header');
     expect((await admin.read(mikael, 'intranet')).header).toBe(false);

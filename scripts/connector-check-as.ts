@@ -6,8 +6,9 @@
  * for: one of Clew's own connectors is refused, since its callback reach is unbounded and no service is registered
  * under its id, and so is a registered id at another address. It writes one audit row before the first signed request:
  * `connector.checked_as`, actor `operator:cli`, about `person:<their id>`, with the connector's id and counts only, never
- * the user name or the keys asked. The database side is the script's (`liveCheckAs` there); this file stays free of it
- * so the unit suite can run it.
+ * the user name or the keys asked. Without `--as` the check still signs nothing for a registered connector at another
+ * address or for one of Clew's own (`audienceProblem`). The database side is the script's (`liveCheckAs` there); this
+ * file stays free of it so the unit suite can run it.
  */
 import type { AuthenticatedContext } from '@clew/contracts';
 
@@ -48,6 +49,26 @@ const address = (url: string) => {
     return url.replace(/\/+$/, '');
   }
 };
+
+/**
+ * Why the check may not sign for the audience a service names, or undefined (CB-13). Every assertion the check signs, a
+ * request's, a callback grant and the installation's own, is for the id in the manifest the service serves, `--id` or
+ * not. A connector registered in this installation under that id accepts them, so the check signs for that id only at
+ * the address it is registered at; one of Clew's own connectors has no service and is never signed for. An id this
+ * installation has not registered is no connector's here, so a service can be checked before it is registered.
+ */
+export async function audienceProblem(
+  input: { id: string; url: string },
+  registration: CheckAsDeps['registration'],
+): Promise<string | undefined> {
+  const registered = await registration(input.id);
+  if (!registered) return undefined;
+  if (registered.bundled || !registered.url)
+    return `The service at ${input.url} names the id ${input.id}, one of Clew's own connectors; the check signs nothing for it.`;
+  if (address(registered.url) !== address(input.url))
+    return `The service at ${input.url} names the id ${input.id}, which is registered at ${registered.url}; the check signs for a registered connector only at the address it is registered at.`;
+  return undefined;
+}
 
 /**
  * The person `--as` names, handed back only after the audit row is written, so that no request is signed as them

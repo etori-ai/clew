@@ -214,6 +214,8 @@ export interface BoardingTx {
   /** These people as the domain names them; an unknown id is absent. */
   persons(ids: readonly string[]): Promise<PersonRef[]>;
   // Erasure and export.
+  /** Hold the person's current active state until the erasure commits. An unknown id has no state. */
+  lockPersonForErasure(personId: string): Promise<boolean | undefined>;
   /**
    * Remove every plan about the person with its items, and remove them from the rest (null `buddyId`, `startedBy`,
    * `ownerId` with the card pointer, `doneBy`, and no longer a holder). Every plan it touches is locked first, in id

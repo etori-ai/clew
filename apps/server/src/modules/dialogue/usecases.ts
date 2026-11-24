@@ -351,7 +351,7 @@ export function dialogueUsecases(deps: DialogueDeps) {
         const a = await activityFor(tx, persona, units, id);
         if (a.doneAt === null) throw new DialogueError(NOT_DONE);
         await tx.deleteActivity(id);
-        if (a.threadId) await tx.workItems.remove([a.threadId]);
+        if (a.threadId) await tx.workItems.remove([a.threadId], 'activity-removed');
         await tx.audit({
           actor: persona.principal.id,
           action: 'dialogue.activity_removed',
@@ -514,7 +514,7 @@ export function dialogueUsecases(deps: DialogueDeps) {
         if (enabled === undefined) return { refused: 'unknown' };
         if (enabled) return { refused: 'active' };
         const erased = await tx.erasePerson(personId);
-        await tx.workItems.remove(erased.threadIds);
+        await tx.workItems.remove(erased.threadIds, 'erasure');
         await tx.audit({
           actor,
           action: 'dialogue.person_erased',

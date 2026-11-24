@@ -148,4 +148,19 @@ describe("a work item's Händelser (D112 item 4)", () => {
       ['you', 'undo-decided'],
     ]);
   });
+
+  test('an item the assistant started at the person’s request was created by Clew; one the person started, by them', () => {
+    const started = (details: Record<string, unknown>) => ({
+      actor: 'person:hillevi',
+      action: 'thread.started',
+      subject: 'thread:x',
+      at: T0,
+      details: { connector: 'desk', capability: 'desk.reportFault', kind: 'propose', ...details },
+    });
+    const by = (details: Record<string, unknown>) =>
+      itemEvents([started(details)], { actions: [] }, 'person:hillevi').map(e => [e.by, e.kind]);
+    expect(by({ by: 'assistant', model: 'open-model' })).toEqual([['clew', 'created']]);
+    expect(by({ by: 'assistant' })).toEqual([['clew', 'created']]);
+    expect(by({})).toEqual([['you', 'created']]);
+  });
 });

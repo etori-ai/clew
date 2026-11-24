@@ -124,13 +124,20 @@ export function modelStoreContract(name: string, make: () => Promise<ModelStoreH
       });
       expect(
         await store.transaction(tx =>
-          tx.updateProvider(p, { apiKey: null, keyChangedAt: T1, title: 'Ny titel' }, 'person:mikael', T1),
+          tx.updateProvider(
+            p,
+            // An address on another host takes the key with it, in the one patch (`updateProvider`, D24).
+            { apiKey: null, keyChangedAt: T1, title: 'Ny titel', baseUrl: 'https://annan.example/v1' },
+            'person:mikael',
+            T1,
+          ),
         ),
       ).toBe(true);
       expect(await store.readProvider(p)).toMatchObject({
         apiKey: null,
         keyChangedAt: T1,
         title: 'Ny titel',
+        baseUrl: 'https://annan.example/v1',
         version: 2,
       });
       expect(await store.transaction(tx => tx.updateModel('nope-' + m, { title: 'x' }, 'x', T1))).toBe(false);

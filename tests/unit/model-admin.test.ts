@@ -262,6 +262,46 @@ describe('providers', () => {
       'provider.key',
     ]);
   });
+  test('a new address on the same host keeps the key; an address on another host removes it in the same audited change, so the key never travels there', async () => {
+    const w = world();
+    await installed(w);
+    await w.models.updateProvider(w.mikael, 'kommunen', { baseUrl: 'http://llm.test/v2/' });
+    expect(await w.models.readProvider(w.mikael, 'kommunen')).toMatchObject({
+      baseUrl: 'http://llm.test/v2',
+      hasKey: true,
+    });
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'person:mikael',
+      action: 'provider.url',
+      subject: 'provider:kommunen',
+      at: T0,
+      details: { from: 'http://llm.test/v1', to: 'http://llm.test/v2' },
+    });
+    w.advance(60_000);
+    const moved = await w.models.updateProvider(w.mikael, 'kommunen', { baseUrl: 'https://annan.example/v1' });
+    expect(moved).toMatchObject({
+      baseUrl: 'https://annan.example/v1',
+      hasKey: false,
+      keyChangedAt: '2026-11-05T07:01:00.000Z',
+    });
+    expect((await w.store.readProvider('kommunen'))!.apiKey).toBeNull();
+    expect(w.store.audit.at(-1)).toEqual({
+      actor: 'person:mikael',
+      action: 'provider.url',
+      subject: 'provider:kommunen',
+      at: '2026-11-05T07:01:00.000Z',
+      details: { from: 'http://llm.test/v2', to: 'https://annan.example/v1', keyRemoved: true },
+    });
+    expect(JSON.stringify(w.store.audit)).not.toContain(KEY);
+    // A test of the new address sends no key.
+    await w.models.testProvider(w.mikael, 'kommunen');
+    expect(w.wire.calls.at(-1)).toMatchObject({ baseUrl: 'https://annan.example/v1' });
+    expect(w.wire.calls.at(-1)).not.toHaveProperty('apiKey');
+    // Another port is another host too.
+    await w.models.rotateKey(w.mikael, 'kommunen', { apiKey: KEY });
+    await w.models.updateProvider(w.mikael, 'kommunen', { baseUrl: 'https://annan.example:8443/v1' });
+    expect(await w.models.readProvider(w.mikael, 'kommunen')).toMatchObject({ hasKey: false });
+  });
   test('adding a model settles its reasoning: off only when the provider refuses tools with it, audited, and back when it stops', async () => {
     const w = world();
     await w.models.addProvider(w.mikael, { id: 'tanke', title: 'Tanke', baseUrl: 'http://resonerar.test/v1' });

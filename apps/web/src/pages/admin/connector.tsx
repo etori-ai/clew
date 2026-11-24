@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ENTITY_COLUMNS_MAX } from '@clew/contracts';
-import type { CheckReport, ConnectorAudience, ConnectorDetail, ManifestDiff, SessionUser } from '@clew/contracts';
+import type {
+  CheckReport,
+  ConnectorAudience,
+  ConnectorDetail,
+  ConnectorPatchInput,
+  ManifestDiff,
+  SessionUser,
+} from '@clew/contracts';
 import {
   AlertDialog,
   AreaChip,
@@ -193,9 +200,19 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const tools = c.capabilities.flatMap(x => (x.menu ? [{ ...x, menu: x.menu }] : []));
   // The reads about an entity that can be a lens or give a column on "Alla" (D97 items 3 and 4), as the server says.
   const lists = c.capabilities.filter(x => x.about && (x.lens || x.column));
+  // Every change names the version of the connector this page shows (DE-M5). One saved since, by another administrator
+  // or in another tab, is refused; the page reads the connector again, so the alert stands over what it now is.
+  const save = async (patch: Omit<ConnectorPatchInput, 'version'>) => {
+    try {
+      return await api.admin.update(id, { ...patch, version: c.version });
+    } catch (error) {
+      void client.invalidateQueries({ queryKey: keys.admin.all });
+      throw error;
+    }
+  };
   const setCap = (name: string, patch: { enabled?: false; model?: false }) =>
     run(async () => {
-      await api.admin.update(id, { capabilities: { [name]: patch } });
+      await save({ capabilities: { [name]: patch } });
     });
   // Off is the only value an override can hold (narrowing only, D23); on clears it.
   const capPatch = (on: boolean, key: 'enabled' | 'model'): { enabled?: false; model?: false } =>
@@ -266,7 +283,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         disabledMessage="Anslutningen har ingen godkänd beskrivning: läs in den från systemet och godkänn den först."
         changeAction={on =>
           run(async () => {
-            await api.admin.update(id, { state: on ? 'enabled' : 'disabled' });
+            await save({ state: on ? 'enabled' : 'disabled' });
             return `${c.source} ${on ? 'är på' : 'är avstängd'}.`;
           })
         }
@@ -474,7 +491,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                       isDisabled={busy}
                       changeAction={on =>
                         run(async () => {
-                          await api.admin.update(id, { toolsEnabled: on });
+                          await save({ toolsEnabled: on });
                         })
                       }
                     />
@@ -487,7 +504,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                         isDisabled={busy}
                         clickAction={() =>
                           run(async () => {
-                            await api.admin.update(id, {
+                            await save({
                               capabilities: Object.fromEntries(
                                 c.capabilities
                                   .filter(x => x.kind === 'execute')
@@ -544,7 +561,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   disabledMessage="Anslutningen skickar inga ärenden."
                   changeAction={on =>
                     run(async () => {
-                      await api.admin.update(id, { scanEnabled: on });
+                      await save({ scanEnabled: on });
                     })
                   }
                 />
@@ -557,7 +574,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   disabledMessage="Anslutningens beskrivning pekar inte ut någon förmåga för sidhuvudet."
                   changeAction={on =>
                     run(async () => {
-                      await api.admin.update(id, { header: on });
+                      await save({ header: on });
                       return on
                         ? 'Anslutningen ger sidhuvudet nu.'
                         : 'Anslutningen ger inte längre sidhuvudet; Clews eget visas.';
@@ -602,7 +619,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                             disabledMessage="Funktionen är avstängd under Funktioner."
                             changeAction={on =>
                               run(async () => {
-                                await api.admin.update(id, { menu: { [t.name]: on } });
+                                await save({ menu: { [t.name]: on } });
                                 return on
                                   ? `${t.menu.label} visas i menyn under Verktyg.`
                                   : `${t.menu.label} visas inte längre i menyn.`;
@@ -655,7 +672,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                                   onChange={value =>
                                     void run(async () => {
                                       const field = value === NO_COLUMN ? null : value;
-                                      await api.admin.update(id, { column: { [l.name]: field } });
+                                      await save({ column: { [l.name]: field } });
                                       const label = l.column!.fields.find(f => f.key === field)?.label;
                                       return label
                                         ? `${label} ur ${l.title} visas som kolumn under Alla.`
@@ -678,7 +695,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                               disabledMessage="Funktionen är avstängd under Funktioner."
                               changeAction={on =>
                                 run(async () => {
-                                  await api.admin.update(id, { lens: { [l.name]: on } });
+                                  await save({ lens: { [l.name]: on } });
                                   return on
                                     ? `${l.title} går att välja under Visa.`
                                     : `${l.title} går inte längre att välja under Visa.`;
@@ -725,7 +742,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                               isDisabled={busy}
                               changeAction={on =>
                                 run(async () => {
-                                  await api.admin.update(id, { figures: { [a.id]: on } });
+                                  await save({ figures: { [a.id]: on } });
                                   return on
                                     ? `Nyckeltalet för ${a.title} visas på Hem.`
                                     : `Nyckeltalet för ${a.title} visas inte längre på Hem.`;
@@ -752,7 +769,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                     isDisabled={busy || JSON.stringify(audience) === JSON.stringify(c.audience)}
                     clickAction={() =>
                       run(async () => {
-                        await api.admin.update(id, { audience });
+                        await save({ audience });
                         return 'Sparat: ' + audienceLabel(audience) + '.';
                       })
                     }

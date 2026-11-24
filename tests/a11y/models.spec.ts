@@ -213,6 +213,22 @@ test.describe('model administration', () => {
           .getByRole('checkbox'),
       ).toHaveCount(3);
     });
+    test('an address on another host is saved without its key, and the page says so in words', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/models/providers/kommunen');
+      const address = page.getByRole('textbox', { name: /^Adress/ });
+      await expect(address).toHaveAccessibleDescription(/Byts servern tas nyckeln bort/);
+      await address.fill('https://annan.example/v1');
+      await page.getByRole('button', { name: 'Spara', exact: true }).click();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Nyckeln togs bort eftersom adressen är på en annan server'));
+      await expect(page.getByRole('button', { name: 'Byt nyckel' })).toBeEnabled();
+      await expectNoAxeViolations(page);
+    });
     test('"Lägg till modell" asks the endpoint for its list and offers only what is not added yet, or an id by hand', async ({
       page,
       api,

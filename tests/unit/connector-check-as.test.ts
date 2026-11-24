@@ -6,6 +6,7 @@ import {
   CHECKED_AS,
   OPERATOR,
   asProblem,
+  audienceProblem,
   checkAs,
   type CheckAsDeps,
   type Registration,
@@ -129,6 +130,22 @@ describe('before the first signed request', () => {
     };
     await expect(checkAs({ id: 'hr', url: HR, userName: 'anna', keys: 1, reads: 1 }, m.deps)).rejects.toThrow(
       'database unavailable',
+    );
+  });
+});
+
+describe('the audience a service names, without --as (CB-13)', () => {
+  const registration = memory(installation, {}).deps.registration;
+  test('an id this installation has not registered, or a registered one at its own address, may be signed for', async () => {
+    expect(await audienceProblem({ id: 'new-service', url: 'http://new:4000' }, registration)).toBeUndefined();
+    expect(await audienceProblem({ id: 'hr', url: HR + '/' }, registration)).toBeUndefined();
+  });
+  test("a registered id at another address, or one of Clew's own, is refused", async () => {
+    expect(await audienceProblem({ id: 'hr', url: 'http://hr-impostor:4040' }, registration)).toBe(
+      'The service at http://hr-impostor:4040 names the id hr, which is registered at http://hr:4040; the check signs for a registered connector only at the address it is registered at.',
+    );
+    expect(await audienceProblem({ id: 'calendar', url: 'http://calendar-impostor:4099' }, registration)).toBe(
+      "The service at http://calendar-impostor:4099 names the id calendar, one of Clew's own connectors; the check signs nothing for it.",
     );
   });
 });

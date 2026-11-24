@@ -271,7 +271,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
                 type="url"
                 value={draft.baseUrl}
                 onChange={baseUrl => setDraft({ ...draft, baseUrl })}
-                description="Basadressen, oftast slutar den på /v1."
+                description="Basadressen, oftast slutar den på /v1. Byts servern tas nyckeln bort och läggs in på nytt."
                 isRequired
                 autoComplete="off"
               />
@@ -284,8 +284,10 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
               isDisabled={busy || !changed || !draft.title.trim() || !/^https?:\/\/\S+$/.test(draft.baseUrl)}
               clickAction={() =>
                 run(async () => {
-                  await api.admin.updateProvider(id, draft);
-                  return 'Sparat.';
+                  const saved = await api.admin.updateProvider(id, draft);
+                  return p.hasKey && !saved.hasKey
+                    ? 'Sparat. Nyckeln togs bort eftersom adressen är på en annan server. Lägg in nyckeln för den nya adressen med Byt nyckel.'
+                    : 'Sparat.';
                 })
               }
             />

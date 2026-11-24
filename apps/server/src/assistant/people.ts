@@ -20,6 +20,25 @@ export type { ManagedPerson };
  * waiting on someone else, or handled.
  */
 
+/**
+ * The people port as the server binds it (D115, D122): Personal's list for the asker, every unit they manage, each
+ * person by Clew's key (their id, which the cards about them and the index from entity to cards name them by) and by
+ * the user name a read about them takes (`userNameOf`: the entities module's `personKey`, undefined for someone who
+ * cannot be asked about, D97, who is left out). Composition and the tests bind the port with this one function, so a
+ * test cannot hand the model another key than the running server does.
+ */
+export function managedPeople<P extends { id: string; name: string }>(
+  managed: ReadonlyArray<{ unitLabel: string; people: readonly P[] }>,
+  userNameOf: (person: P) => string | undefined,
+): ManagedPerson[] {
+  return managed.flatMap(unit =>
+    unit.people.flatMap(p => {
+      const userName = userNameOf(p);
+      return userName ? [{ key: p.id, userName, name: p.name, unit: unit.unitLabel }] : [];
+    }),
+  );
+}
+
 /** How one name as the asker wrote it resolves: one person, several, or nobody. */
 export type NameMatch =
   { match: 'one'; person: ManagedPerson } | { match: 'several'; people: ManagedPerson[] } | { match: 'none' };
@@ -269,8 +288,9 @@ const swedishList = (items: string[]) =>
 
 /**
  * The prompt's lines about the people the question names (Swedish, as the prompt is): who each name is, with the user
- * name a read about one person takes (D122: the registry resolves it as the asker's report, or refuses it), or that it
- * may be several, and the asker's open work about each one by title, source, last day and buttons.
+ * name a read about one person takes (D122: the registry resolves it as the asker's report, or refuses it; never Clew's
+ * id, which no read takes and no answer may carry), or that it may be several, and the asker's open work about each
+ * one by title, source, last day and buttons.
  */
 export function peopleLines(turn: PeopleInTurn, now: string): string[] {
   return turn.named.map(n => {
@@ -279,7 +299,7 @@ export function peopleLines(turn: PeopleInTurn, now: string): string[] {
     const person = n.found.person;
     const work = turn.work(person);
     return (
-      `"${n.written}" är ${person.name} på ${person.unit}, användarnamn ${person.key}. ` +
+      `"${n.written}" är ${person.name} på ${person.unit}, användarnamn ${person.userName}. ` +
       (work.length
         ? `Öppna ärenden om medarbetaren under Behöver dig: ${work.map(t => workItemLine(t, now)).join(' ')}`
         : 'Inga öppna ärenden om medarbetaren under Behöver dig.')
@@ -336,7 +356,7 @@ export function personTool(turn: PeopleInTurn, now: string, found: (person: Mana
         found: 'one',
         name: match.person.name,
         unit: match.person.unit,
-        userName: match.person.key,
+        userName: match.person.userName,
         workItems: turn.work(match.person).map(t => workItemLine(t, now)),
         note: 'Ärendena visas för personen i samtalet. Uppgifter om medarbetarens hälsa och frånvaro lämnas inte till dig.',
       };

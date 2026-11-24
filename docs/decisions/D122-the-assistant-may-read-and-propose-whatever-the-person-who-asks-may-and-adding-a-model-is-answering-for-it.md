@@ -1,6 +1,6 @@
 # D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it
 
-**Status:** provisional (product owner, 2026-11-13, said in a working session; nothing is built and nothing outside the repository has tested it) · **Date:** 2026-11-13 · **Area:** assistant, identity, product
+**Status:** provisional (product owner, 2026-11-13, said in a working session; nothing is built and nothing outside the repository has tested it); item 4 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-2`, `AM-9`): the switches keep everything of a connector or read from the model, not only its tools (`Registry.forModel`): a thing the person points at is said to be there and never what it is, a work item named by its title or about a named person is left out and has no draft, and an earlier answer that read or was written from it is not handed back; and what other systems wrote stands in the system prompt as material, one bounded line per thing under its headings, which a rule says is never an instruction · **Date:** 2026-11-13 · **Area:** assistant, identity, product
 
 **Decision.** [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md) item 7 kept
 every row of a domain Clew owns from a model endpoint "until the installation's rule for classification-gated

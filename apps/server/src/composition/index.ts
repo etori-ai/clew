@@ -17,13 +17,12 @@ import {
   unregisterConnector,
 } from '../connectors/remote';
 import { postgresConnectorStore, postgresUnits, postgresGroups } from '../connectors/adapters/postgres';
+import { serviceTransport } from '../connectors/adapters/transport';
 import { connectorUsecases } from '../connectors/usecases/admin';
 import type { LiveRegistration, Secrets } from '../connectors/model';
 import type { ReconcileDeps as ConnectorReconcileDeps } from '../connectors/reconcile';
 import { applyAllRows } from '../connectors/reconcile';
 import { openSecret, sealSecret } from '../auth-crypto';
-import { fetchManifest } from '@clew/connectors/remote';
-import { checkConnector } from '@clew/connectors/check';
 import { SignJWT } from 'jose';
 import { openAICompatibleWire } from '../assistant/adapters/openai-compatible';
 import { postgresModelStore } from '../assistant/adapters/postgres';
@@ -31,6 +30,7 @@ import { memoryModelHealth } from '../assistant/adapters/memory';
 import { modelUsecases } from '../assistant/usecases/models';
 import type { KeySealer } from '../assistant/ports';
 import { assistantUsecases } from '../assistant';
+import { managedPeople } from '../assistant/people';
 import { personKey } from '../modules/entities/domain';
 import { staff } from './people';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
@@ -356,12 +356,9 @@ export const assistant = assistantUsecases({
         ...(signal ? { signal } : {}),
       }),
   },
-  // The people the asker manages (D115): Personal's list, read on every turn; only people who can be asked about (D97).
-  people: async persona =>
-    (await staff.reach(persona)).managed.flatMap(unit =>
-      // By Clew's key, the person's id (D122), as the cards about them name them; only someone who can be asked about.
-      unit.people.flatMap(p => (personKey(p) ? [{ key: p.id, name: p.name, unit: unit.unitLabel }] : [])),
-    ),
+  // The people the asker manages (D115): Personal's list, read on every turn, by Clew's key (D122) and the user name a
+  // read takes (D117); only people who can be asked about (D97).
+  people: async persona => managedPeople((await staff.reach(persona)).managed, personKey),
   start: (persona, capability, input, context) => threads.startCard(persona, capability, input, context),
 });
 /** The models' health probe (D8), started by main.ts beside the server: once at boot, then every minute. */
@@ -399,23 +396,14 @@ export const connectorAdmin = connectorUsecases({
   units: postgresUnits(),
   groups: postgresGroups(),
   clock,
-  transport: {
-    fetchManifest: (url, id) => fetchManifest(url, id),
-    check: async ({ url, id, secret }) => {
-      const manifest = await fetchManifest(url, id);
-      return checkConnector({
-        url,
-        id,
-        key: secret,
-        assert: assertionFor(id, manifest.uses),
-        assertForeign: sign('wrong-secret-wrong-secret-' + id, id),
-        // The reads the manifest declares for the installation (D119) are read as Clew reads them; the administrator's
-        // report counts what came back and shows none of it (D23).
-        assertInstallation: installationAssertionFor(id),
-        acceptsEmptyInput,
-      });
-    },
-  },
+  transport: serviceTransport({
+    assert: (id, uses) => assertionFor(id, uses),
+    assertForeign: id => sign('wrong-secret-wrong-secret-' + id, id),
+    // The reads the manifest declares for the installation (D119) are read as Clew reads them; the administrator's
+    // report counts what came back and shows none of it (D23).
+    assertInstallation: id => installationAssertionFor(id),
+    acceptsEmptyInput,
+  }),
 });
 export const connectorReconcile: ConnectorReconcileDeps = {
   registry,

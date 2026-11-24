@@ -176,7 +176,8 @@ export async function runCapability<O = unknown>(
       ...(options.caller ? { caller: options.caller } : {}),
     });
   } catch (error) {
-    if (error instanceof CapabilityError) throw new InputError(error.message);
+    // The refusal keeps its protocol code as the cause, so the assistant tells its model the kind and not the words.
+    if (error instanceof CapabilityError) throw new InputError(error.message, { cause: error });
     throw error;
   }
 }

@@ -430,7 +430,7 @@
       "number": 24,
       "path": "docs/decisions/D24-model-endpoints-are-administered-in-the-product.md",
       "title": "D24 · Model providers and models are administered in the product, and the chat can choose between them",
-      "status": "accepted, built 2026-11-05; the check script of As built amended 2026-11-12 in the fixes of the review of users and the organisation (R4): `models-check` is for the development stack, switches its model on for its own unit only and deletes only its own audit rows",
+      "status": "accepted, built 2026-11-05; the check script of As built amended 2026-11-12 in the fixes of the review of users and the organisation (R4): `models-check` is for the development stack, switches its model on for its own unit only and deletes only its own audit rows; amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-5`, `AM-10`): only a turn whose endpoint did not answer (no connection, a 5xx) or refused the key (401, 403) marks the provider down, while a turn that ran out of its 60 seconds, a request the endpoint refused and an empty answer mark nothing; and an address on another host (scheme, name or port) removes the provider's sealed key in the same change, its `provider.url` row saying `keyRemoved`, so the key never travels to a host nobody gave it to",
       "date": "2026-11-04",
       "area": "product"
     },
@@ -538,7 +538,7 @@
       "number": 36,
       "path": "docs/decisions/D36-an-answer-is-drawn-as-it-is-written.md",
       "title": "D36 · An answer is drawn as it is written; the box never moves under the cursor",
-      "status": "accepted, built 2026-11-05",
+      "status": "accepted, built 2026-11-05; item 2 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-6`): a stopped turn still saves no conversation, but one that called a model, read anything or started a work item writes its audit row, `conversation.stopped`, with the model, what the call cost, the reads and the item, never a word of the question ([D91](D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md))",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -1024,7 +1024,7 @@
       "number": 84,
       "path": "docs/decisions/D84-a-models-reasoning-is-its-own-setting.md",
       "title": "D84 · A model's reasoning is its own setting, and the model test settles it",
-      "status": "accepted, built 2026-11-09",
+      "status": "accepted, built 2026-11-09; the last sentence of the record amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-5`): only a turn whose endpoint did not answer or refused the key marks the provider down ([D24](D24-model-endpoints-are-administered-in-the-product.md))",
       "date": "2026-11-07, revised 2026-11-09",
       "area": "product"
     },
@@ -1096,7 +1096,7 @@
       "number": 91,
       "path": "docs/decisions/D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md",
       "title": "D91 · One logger, OpenTelemetry export, and the model turn in the audit trail",
-      "status": "accepted, built 2026-11-09 on `main`",
+      "status": "accepted, built 2026-11-09 on `main`; amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-6`, `AM-8`): every turn sent to a model records the model and `modelCall` on its message and audit row, also when the router answers in its place; a turn stopped or offered to another system's assistant writes `conversation.stopped` or `conversation.offered` with them; a work item a model's propose started says so on its `thread.started` row (`by: 'assistant'`, `model`) and the turn's row names it (`started`); and a failed read is told to the model in Clew's words by its kind, never in the error's own",
       "date": "2026-11-09",
       "area": "platform"
     },
@@ -1348,7 +1348,7 @@
       "number": 115,
       "path": "docs/decisions/D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md",
       "title": "D115 · The assistant resolves a person the asker names among their own people, and hands the model the work about them, never a source's health rows",
-      "status": "provisional (product owner, 2026-11-12: make a question like \"Anna har varit sjuk i två veckor, vad gör jag?\" work with an ordinary model first; the freeze on new surface lifted on his word for what it needs), built 2026-11-12; accepted when a manager outside the repository has asked about one of their people with an open-weight model configured and found the answer useful; item 8, a model marked as safe for health data, is the intended next step and is not built",
+      "status": "provisional (product owner, 2026-11-12: make a question like \"Anna har varit sjuk i två veckor, vad gör jag?\" work with an ordinary model first; the freeze on new surface lifted on his word for what it needs), built 2026-11-12; accepted when a manager outside the repository has asked about one of their people with an open-weight model configured and found the answer useful; item 8, a model marked as safe for health data, is the intended next step and is not built; amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-3`, `AM-7`): the prompt and the lookup give the model the user name a read about the person takes, never Clew's key, and the guard holds for the conversation as well as the turn: an earlier answer written from a work item's own text (`MessageMeta.basis`), by the router or by the model, is not handed to the model once the conversation names someone that item is about",
       "date": "2026-11-12",
       "area": "product"
     },
@@ -1384,7 +1384,7 @@
       "number": 117,
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
       "title": "D117 · The core decides who a source may be asked about, on every call, and signs the relation",
-      "status": "provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule \"a user can view and edit their own data and nothing else; a manager their employees'\", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation; item 10's protocol 3 is protocol 1 and its window for 2 is closed since [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md), 2026-11-18)",
+      "status": "provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule \"a user can view and edit their own data and nothing else; a manager their employees'\", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation; item 10's protocol 3 is protocol 1 and its window for 2 is closed since [D129](D129-the-connector-protocol-is-1-and-changes-in-place-until-the-first-release.md), 2026-11-18); amended 2026-11-24 in the fixes of the review of 2026-11-23 (`BD-L3`): with `person.ids`, the caller themself and a report are named by Clew's id whether or not they have a user name, and the source is given their user name, or the id for a person who has none; `talks.person` and `boarding.person` take ids",
       "date": "2026-11-12",
       "area": "integrations, identity"
     },
@@ -1474,7 +1474,7 @@
       "number": 122,
       "path": "docs/decisions/D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md",
       "title": "D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it",
-      "status": "provisional (product owner, 2026-11-13, said in a working session; nothing is built and nothing outside the repository has tested it)",
+      "status": "provisional (product owner, 2026-11-13, said in a working session; nothing is built and nothing outside the repository has tested it); item 4 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`AM-2`, `AM-9`): the switches keep everything of a connector or read from the model, not only its tools (`Registry.forModel`): a thing the person points at is said to be there and never what it is, a work item named by its title or about a named person is left out and has no draft, and an earlier answer that read or was written from it is not handed back; and what other systems wrote stands in the system prompt as material, one bounded line per thing under its headings, which a rule says is never an instruction",
       "date": "2026-11-13",
       "area": "assistant, identity, product"
     },
@@ -1483,7 +1483,7 @@
       "number": 123,
       "path": "docs/decisions/D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md",
       "title": "D123 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision",
-      "status": "provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q7, L3, P4 and R3, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), the nightly clean-up built 2026-11-12 and `scripts/person-erase.ts` 2026-11-13; accepted once the clean-up has run in an installation outside the development stack and an organisation has erased a leaver's record with the scripts under its own retention rules",
+      "status": "provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q7, L3, P4 and R3, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), the nightly clean-up built 2026-11-12 and `scripts/person-erase.ts` 2026-11-13; accepted once the clean-up has run in an installation outside the development stack and an organisation has erased a leaver's record with the scripts under its own retention rules; amended 2026-11-24 in the fixes of the review of 2026-11-23 (`BD-M1`, `BD-M2`, `DE-M6`): introduction and leaving is erased with the others, by `scripts/boarding-erase.ts`, which refuses an id the people table does not hold and a person who is still active as its siblings do, and `person-erase` also clears the name and the address that calendar proposals invited the person with, keeping each proposal and its `participant_id`",
       "date": "2026-11-12",
       "area": "identity, platform"
     },
@@ -1510,7 +1510,7 @@
       "number": 124,
       "path": "docs/decisions/D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md",
       "title": "D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item",
-      "status": "provisional (two statements by the product owner on 2026-11-13, paraphrased below, and their request the same day for a row in the rail, item 12; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data, and amended the same day after an independent review; nothing outside the repository has tested it)",
+      "status": "provisional (two statements by the product owner on 2026-11-13, paraphrased below, and their request the same day for a row in the rail, item 12; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data, and amended the same day after an independent review; nothing outside the repository has tested it); amended 2026-11-24 in the fixes of the review of 2026-11-23 (`BD-L1`, `BD-M2`, `BD-L3`): an item whose owner the directory has deactivated is the plan's manager's, as one whose owner is gone, until the owner is active again; the erasure refuses an id the people table does not hold and a person who is still active, and its script runs on an instance that cancels nothing; and the card's action names the person by Clew's id",
       "date": "2026-11-13",
       "area": "product, people"
     },
@@ -3627,7 +3627,7 @@
         "A leaver's record and its erasure",
         "Organisation tree",
         "User delegation",
-        "Protocol 2 authority"
+        "Connector signing authority"
       ]
     },
     {

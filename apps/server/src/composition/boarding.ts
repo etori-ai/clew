@@ -73,12 +73,23 @@ export const boardingStaff: Staff = staffOver(persona => staffUsecases.reach(per
  * until then it says off, and a timer that fires changes nothing.
  */
 export const boardingSwitch: { on: () => Promise<boolean> } = { on: async () => false };
-export const boarding = boardingUsecases({
-  store: boardingStore,
+const boardingDeps = {
   staff: boardingStaff,
   clock,
   ids,
   log: logPort('boarding', 'warn'),
   directory,
   switchedOn: () => boardingSwitch.on(),
+};
+export const boarding = boardingUsecases({ store: boardingStore, ...boardingDeps });
+/**
+ * The boarding module as the operator's erasure runs it (`scripts/boarding-erase.ts`): the same use cases and tables
+ * over a store that cancels no workflow. A script never launches the durable engine, so a cancel there could only fail
+ * after the commit, and print an error before the script's own answer. The `due` timers of the removed cards go with
+ * them, and a workflow still waiting on one wakes at its time, finds no timer and ends without a write: the generation
+ * fence covers a cancel that never arrives (D86).
+ */
+export const boardingForScripts = boardingUsecases({
+  store: boardingStoreWithCards({ durable: ledger }, { clock }),
+  ...boardingDeps,
 });

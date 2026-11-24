@@ -321,12 +321,24 @@ export const planNote = (plan: Pick<PlanRecord, 'event' | 'anchorOn' | 'closedAt
   (plan.closedAt !== null ? ' · avslutad' : '');
 
 /**
- * Whether an item is the reader's to do: they own it, or its owner is gone (erased, or their row deleted) and the reader
- * is the plan's manager, whose role it falls to (D124 item 7). Nothing opens a card for it: the erasure removed the old
- * one, and the manager finds it on the plan.
+ * Whether an item has fallen to the plan's manager role (D124 item 7): its owner is gone (erased, or their row deleted)
+ * or the source has deactivated them, so they can no longer sign in to do it. `inactive` is the ids of the deactivated
+ * people among the item owners, which the use case reads with the items.
  */
-export const waitsFor = (item: Pick<ItemRecord, 'ownerId'>, readerId: string, managerReads: boolean) =>
-  item.ownerId === null ? managerReads : item.ownerId === readerId;
+export const fallsToManager = (item: Pick<ItemRecord, 'ownerId'>, inactive: ReadonlySet<string>) =>
+  item.ownerId === null || inactive.has(item.ownerId);
+/**
+ * Whether an item is the reader's to do: they own it, or it has fallen to the manager role (`fallsToManager`) and the
+ * reader is the plan's manager now (D124 item 7). Nothing opens a card for the manager: an erasure removed the old one,
+ * a deactivated owner's stays in their stream until an operator erases them, and the manager finds the item on the plan
+ * and among what waits for them.
+ */
+export const waitsFor = (
+  item: Pick<ItemRecord, 'ownerId'>,
+  readerId: string,
+  managerReads: boolean,
+  inactive: ReadonlySet<string>,
+) => (fallsToManager(item, inactive) ? managerReads : item.ownerId === readerId);
 /**
  * Who holds a plan once its person is deactivated (D124 item 7): the managers recorded when the directory deactivated
  * them; when nothing was recorded (the leavers call is best effort, D113), the manager who started it.
@@ -346,11 +358,19 @@ export function dueTimerAt(dueOn: string, at: string): string | undefined {
 export function itemRow(
   item: ItemRecord,
   plan: Pick<PlanRecord, 'event' | 'anchorOn'>,
-  context: { readerId: string; today: string; owner: PersonRef | undefined; canTick: boolean; managerReads: boolean },
+  context: {
+    readerId: string;
+    today: string;
+    owner: PersonRef | undefined;
+    canTick: boolean;
+    managerReads: boolean;
+    inactive: ReadonlySet<string>;
+  },
 ): BoardingItemRow {
   const phase = itemPhase(plan, item.dueOn);
-  // An item whose owner is gone (erased, or their row deleted) is the plan's manager's (D124 item 7).
-  const role = item.ownerId === null ? 'manager' : item.ownerRole;
+  // An item whose owner is gone or deactivated is the plan's manager's (D124 item 7), and names no former owner.
+  const fallen = fallsToManager(item, context.inactive);
+  const role = fallen ? 'manager' : item.ownerRole;
   return {
     id: item.id,
     title: item.title,
@@ -358,8 +378,8 @@ export function itemRow(
     kindLabel: BOARDING_KIND_WORDS[item.kind],
     ownerRole: role,
     ownerLabel: BOARDING_OWNER_WORDS[role],
-    ...(context.owner ? { owner: context.owner.name, ownerId: context.owner.id } : {}),
-    mine: waitsFor(item, context.readerId, context.managerReads),
+    ...(context.owner && !fallen ? { owner: context.owner.name, ownerId: context.owner.id } : {}),
+    mine: waitsFor(item, context.readerId, context.managerReads, context.inactive),
     dueOn: item.dueOn,
     phase,
     phaseLabel: BOARDING_PHASE_WORDS[phase],
@@ -383,7 +403,10 @@ export function byPhase(event: BoardingEvent, rows: readonly BoardingItemRow[]) 
     return items.length ? [{ phase, label: BOARDING_PHASE_WORDS[phase], items }] : [];
   });
 }
-/** One plan in a list, counted for the reader: done of all, how many wait for the reader, how many are overdue. */
+/**
+ * One plan in a list, counted for the reader: done of all, how many wait for the reader (an item of a deactivated owner,
+ * one of `inactive`, waits for the manager), how many are overdue.
+ */
 export function planSummary(
   plan: PlanRecord,
   person: Pick<PersonRef, 'name' | 'userName'>,
@@ -391,6 +414,7 @@ export function planSummary(
   readerId: string,
   today: string,
   managerReads: boolean,
+  inactive: ReadonlySet<string>,
 ): BoardingPlanSummary {
   const { done, total } = progress(items);
   return {
@@ -404,7 +428,7 @@ export function planSummary(
     closedAt: plan.closedAt,
     done,
     total,
-    waiting: items.filter(i => i.doneAt === null && waitsFor(i, readerId, managerReads)).length,
+    waiting: items.filter(i => i.doneAt === null && waitsFor(i, readerId, managerReads, inactive)).length,
     overdue: items.filter(i => isOverdue(i, today)).length,
     state: planState(plan, items, today),
   };

@@ -114,7 +114,6 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
               state: 'enabled',
               audience: { mode: 'selected', roles: ['manager'] },
               capabilities: { 'hello.x': { enabled: false }, 'hello.list': { model: false, menu: true } },
-              header: true,
             },
             'person:mikael',
             T1,
@@ -125,12 +124,71 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
         state: 'enabled',
         audience: { mode: 'selected', roles: ['manager'] },
         capabilities: { 'hello.x': { enabled: false }, 'hello.list': { model: false, menu: true } },
-        header: true,
         updatedBy: 'person:mikael',
         updatedAt: T1,
         version: 2,
       });
       expect(await store.transaction(tx => tx.update('nope-' + id, { state: 'enabled' }, 'x', T1))).toBe(false);
+    });
+    test('an update given the version it was made on writes only while that is still the stored version (DE-M5)', async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      expect(await store.transaction(tx => tx.update(id, { scanEnabled: false }, 'person:mikael', T1, 1))).toBe(true);
+      // Made on version 1, which another change has since raised to 2: nothing of it is written.
+      expect(await store.transaction(tx => tx.update(id, { toolsEnabled: false }, 'person:anna', T2, 1))).toBe(false);
+      expect(await store.read(id)).toMatchObject({
+        scanEnabled: false,
+        toolsEnabled: true,
+        updatedBy: 'person:mikael',
+        updatedAt: T1,
+        version: 2,
+      });
+      expect(await store.transaction(tx => tx.update(id, { toolsEnabled: false }, 'person:anna', T2, 2))).toBe(true);
+      expect(await store.read(id)).toMatchObject({ toolsEnabled: false, updatedBy: 'person:anna', version: 3 });
+      expect(await store.transaction(tx => tx.update('nope-' + id, { state: 'enabled' }, 'x', T1, 1))).toBe(false);
+    });
+    test('at most one row holds the shared header: the store refuses a second holder, and the attempt leaves nothing (D88)', async () => {
+      const { store, fresh } = await make();
+      const [a, b] = [fresh(), fresh()];
+      await store.transaction(async tx => {
+        await tx.insert(remoteRow(a));
+        await tx.insert(remoteRow(b));
+      });
+      const holders = async () => (await store.list()).filter(r => r.header).map(r => r.id);
+      const before = await holders();
+      let took: boolean | undefined, held: string[] | undefined;
+      const attempt = store.transaction(async tx => {
+        // Whoever holds it gives it up first, as the use case does, so this row may take it.
+        for (const r of await tx.lockedRows())
+          if (r.header) await tx.update(r.id, { header: false }, 'person:mikael', T1);
+        took = await tx.update(a, { header: true }, 'person:mikael', T1);
+        held = (await tx.lockedRows()).filter(r => r.header).map(r => r.id);
+        // A second holder while the first still holds it.
+        await tx.update(b, { header: true }, 'person:mikael', T1);
+      });
+      await expect(attempt).rejects.toThrow();
+      expect(took).toBe(true);
+      expect(held).toEqual([a]);
+      expect(await holders()).toEqual(before);
+      expect(await store.read(a)).toMatchObject({ header: false, version: 1 });
+    });
+    test('lockedRows waits for another transaction that took the lock, and then reads what it committed (DE-M5)', async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      let held!: () => void;
+      const holding = new Promise<void>(resolve => (held = resolve));
+      const first = store.transaction(async tx => {
+        await tx.lockedRows();
+        held();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        await tx.update(id, { scanEnabled: false }, 'person:mikael', T1);
+      });
+      await holding;
+      const second = store.transaction(async tx => (await tx.lockedRows()).find(r => r.id === id)!.scanEnabled);
+      const [, seen] = await Promise.all([first, second]);
+      expect(seen).toBe(false);
     });
     test("an area's figure switch is stored per area, read back, and kept by an update of something else (D54)", async () => {
       const { store, fresh } = await make();

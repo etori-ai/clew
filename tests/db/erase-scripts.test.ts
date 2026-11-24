@@ -11,8 +11,8 @@ import { talkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 
 /**
- * The operator's erasures of a leaver's cards, talks, competence and follow-up dialogue (D122 item 7, D123 item 3), each run as a script as
- * the runbook runs it, against the database the test is given. Each refuses an id the people table does not hold and a
+ * The operator's erasures of a leaver's cards, talks, competence, follow-up dialogue and introduction and leaving (D122
+ * item 7, D123 item 3), each run as a script as the runbook runs it, against the database the test is given. Each refuses an id the people table does not hold and a
  * person who is still active, with exit code 1, writing nothing and no audit row. A deactivated person is erased with
  * the script's own answer alone on standard output, also when a removed card has a timer still waiting: the timer goes
  * with its card, and the script sends no cancel to the durable engine, which a script never starts, so no "durable
@@ -151,7 +151,7 @@ afterAll(async () => {
 });
 
 describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
-  test('setup: a leaver still active, with an action point and a competence card that each have a timer waiting', async () => {
+  test('setup: a leaver still active, with an action point and a competence card that each have a timer waiting, and plans', async () => {
     const db = database();
     await db.insert(schema.people).values([
       { id: manager, organisationId: ORG, name: 'Synthetic Chef' },
@@ -168,6 +168,28 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       authorId: leaver,
       at,
     });
+    // Their leaving plan, which the manager started, and a colleague's introduction plan with the leaver as buddy.
+    await db.insert(schema.boardingPlans).values([
+      {
+        id: ORG + '-leaving',
+        organisationId: ORG,
+        personId: leaver,
+        event: 'leaving',
+        anchorOn: '2026-12-31',
+        startedBy: manager,
+        startedAt: at,
+      },
+      {
+        id: ORG + '-introduction',
+        organisationId: ORG,
+        personId: active,
+        event: 'introduction',
+        anchorOn: '2026-12-01',
+        buddyId: leaver,
+        startedBy: manager,
+        startedAt: at,
+      },
+    ]);
     await talks.openRound('operator:cli', {
       organisationId: ORG,
       label: 'Omgång',
@@ -247,7 +269,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       out: '',
       err: unknown(leaverName),
     });
-    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts'])
+    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts', 'boarding-erase.ts'])
       expect([script, run(script, '--person', leaverName, '--confirm')]).toEqual([
         script,
         { code: 1, out: '', err: unknown(leaverName) },
@@ -260,7 +282,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       out: '',
       err: stillActive(leaver),
     });
-    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts'])
+    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts', 'boarding-erase.ts'])
       expect([script, run(script, '--person', leaver, '--confirm')]).toEqual([
         script,
         { code: 1, out: '', err: stillActive(leaver) },
@@ -285,6 +307,16 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
         .from(schema.competenceHoldings)
         .where(eq(schema.competenceHoldings.personId, leaver)),
     ).toEqual([{ id: `${ORG}-holding` }]);
+    expect(
+      await db
+        .select({ id: schema.boardingPlans.id, buddyId: schema.boardingPlans.buddyId })
+        .from(schema.boardingPlans)
+        .where(eq(schema.boardingPlans.organisationId, ORG))
+        .orderBy(schema.boardingPlans.id),
+    ).toEqual([
+      { id: ORG + '-introduction', buddyId: leaver },
+      { id: ORG + '-leaving', buddyId: null },
+    ]);
   }, 60_000);
 
   test("a query that fails is answered by each with the database's own message and that nothing was written", () => {
@@ -297,6 +329,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       ['talks-erase.ts', ['--person', leaver, '--confirm']],
       ['competence-erase.ts', ['--person', leaver, '--confirm']],
       ['dialogue-erase.ts', ['--person', leaver, '--confirm']],
+      ['boarding-erase.ts', ['--person', leaver, '--confirm']],
       ['person-erase.ts', ['--person', leaver, '--confirm']],
     ];
     expect(calls.map(([script, args]) => [script, runOn(elsewhere.href, script, ...args)])).toEqual(
@@ -340,6 +373,18 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       .from(schema.dialogueAssessments)
       .where(eq(schema.dialogueAssessments.id, ORG + '-assessment'));
     expect(assessment?.authorId).toBeNull();
+    expect(run('boarding-erase.ts', '--person', leaver, '--confirm')).toEqual({
+      code: 0,
+      out: `Erased person "${leaver}" from introduction and leaving: 1 plans and 0 items removed, 1 other records cleared, 0 cards removed. Audited as person:${leaver}.`,
+      err: '',
+    });
+    // Their plan is gone; the colleague's stays, with no buddy.
+    expect(
+      await db
+        .select({ id: schema.boardingPlans.id, buddyId: schema.boardingPlans.buddyId })
+        .from(schema.boardingPlans)
+        .where(eq(schema.boardingPlans.organisationId, ORG)),
+    ).toEqual([{ id: ORG + '-introduction', buddyId: null }]);
     // The cards went with their timers; the action point's workflow is left queued, and the fence covers it.
     const [leaversCard, activesCard] = threadIds;
     expect(await db.select().from(schema.threads).where(eq(schema.threads.personId, leaver))).toEqual([]);
@@ -355,6 +400,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
       ['operator:cli', 'talks.person_erased'],
       ['operator:cli', 'competence.person_erased'],
       ['operator:cli', 'dialogue.person_erased'],
+      ['operator:cli', 'boarding.person_erased'],
     ]);
     // The colleague who is still active keeps their action point, its card and its timer.
     expect(

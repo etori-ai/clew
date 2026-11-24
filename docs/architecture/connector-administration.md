@@ -37,6 +37,10 @@ Unchanged manifests and transport settings reuse compiled descriptors. Address, 
 
 The UI supports testing, manifest refresh, transport-key replacement, audience/capability changes and removal of remote connectors. Administrative mutations reauthorize the person and commit state with an audit row. Secrets are sealed at rest and are not returned to the browser.
 
+A service that does not answer, or answers with an error status, is recorded as `unreachable`; one that serves a manifest Clew does not load is recorded as `manifest-invalid`, with the reason as the health's detail. Adding such a service still stores its draft, and "Testa anslutning" records the health; neither ends in an error.
+
+A change on a connector's page is made on the connector as the page showed it: the page sends the row's `version`, and the server writes only while the row is still that version, compared in the write itself. A change saved in between, by another administrator, another tab or a script, refuses it with "Anslutningen har ändrats sedan du öppnade den. Se över den och gör ändringen igen."; the page says so in an alert and shows the connector as it now is, and nothing is merged unseen. What spans connectors is decided on rows read under one lock in the same transaction: the shared header, which one connector at most holds (taking it releases the previous holder, with an audit row on both, and a unique index refuses a second holder), and the number of columns under Alla.
+
 The checker uses synthetic actors, skips required-input reads and cannot supply delegated user tokens. A green manifest or probe result is not proof of source identity mapping or safe writes. [Testing and deployment](../guides/testing-and-deployment.md) explains these limits.
 
 Cross-system follower bindings currently use [job-bind.ts](../../scripts/job-bind.ts); they have no administration UI yet.
@@ -57,7 +61,9 @@ The screens stay in the same application shell and navigation. Browser visibilit
 
 ## Model providers and models
 
-Administration → Modeller manages provider endpoints/keys and the models available from them. Clew uses an OpenAI-compatible protocol and can run against a self-hosted model. Provider keys stay on the server, sealed under the installation master key.
+Administration → Modeller manages provider endpoints/keys and the models available from them. Clew uses an OpenAI-compatible protocol and can run against a self-hosted model. Provider keys stay on the server, sealed under the installation master key. A key is for the host it was given for: saving an address on another host (scheme, name or port) removes the key in the same change, its `provider.url` audit row says `keyRemoved`, and the page tells the administrator to give the new address its key with "Byt nyckel"; a new path on the same host keeps it.
+
+A provider is down while its endpoint does not answer or refuses the key: a turn that got no answer (no connection, a 5xx) or a 401 or 403 marks it down for everyone, the router answers ([D8](../decisions/D08-every-action-works-without-the-model.md)), and the minute probe or Testa brings it back. A turn that failed for reasons of its own marks nothing: it ran out of its 60 seconds, the endpoint refused that one request (another 4xx, such as a prompt too long for the model), or the model wrote no answer. A turn gives the model four steps in which it may call tools and a fifth in which it answers with the tools withheld, and hands it at most 4 000 characters of each earlier message and 16 000 of the conversation, the newest first.
 
 Models have an enabled state, audience, display name, tool setting and optional installation default. Adding a model tests it at once, and Testa repeats the test; the test sends a call shaped like a turn and settles the model's reasoning: nothing is sent about it unless the provider refuses tools while the model reasons, and then Clew asks the model not to reason ([D84](../decisions/D84-a-models-reasoning-is-its-own-setting.md)). The server resolves the person's permitted choice for each turn. If no model is available, deterministic navigation, reads and decisions remain available.
 

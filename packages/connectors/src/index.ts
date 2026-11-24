@@ -171,8 +171,9 @@ export interface Related {
 /**
  * The core rule of who may be asked about (D97 item 8, D117), as the registry asks it: how `actor` stands to each of
  * these keys of `entity`, for the relations in `admits` only. A key the directory does not know, or that names someone
- * outside `admits`, is absent. With `ids`, a person without a user name may be named by Clew's own id (a core
- * capability of Clew's own domains only). Throws when the directory cannot be read: never an empty answer for an error.
+ * outside `admits`, is absent. With `ids` (a core capability of Clew's own domains only), the actor themself or a report
+ * may be named by Clew's own id, answered by their user name in `key` where they have one. Throws when the directory
+ * cannot be read: never an empty answer for an error.
  * Composition binds it to the entities module over the people directory.
  */
 export type RelationResolver = (
@@ -304,8 +305,10 @@ export interface Capability<I = unknown, O = unknown> {
   /**
    * Who may be asked about through it (D117): the relations a caller may have to a person its input names, and on a
    * capability not about a person the input property that takes the key. The registry enforces it on every path. Only
-   * Clew's own connectors may add `ids`: a person without a user name may then be named by Clew's own id, as the talks
-   * domain names them; a manifest cannot carry it, since Clew's id is never sent to a connector. Only they may admit
+   * Clew's own connectors may add `ids`: the caller themself or a report may then be named by Clew's own id, as the
+   * talks domain names a person without a user name and Clew's own cards name anyone (D122), and the capability is
+   * given the user name where the person has one; a manifest cannot carry it, since Clew's id is never sent to a
+   * connector. Only they may admit
    * `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a manifest cannot carry it either,
    * and a connector is never told it.
    */
@@ -1875,6 +1878,16 @@ export class Registry implements HoldingsReader {
       }));
   }
   /**
+   * Whether the administrator lets the model have what a connector holds (D122 item 4): its assistant switch on
+   * Administration › Anslutna system, and, with a read named, that read's own switch. `tools` asks it of every read, and
+   * the assistant asks it of everything else it would hand the model from the connector: a work item pointed at or named,
+   * a meeting, a passage, an earlier answer written from it. A connector the registry does not govern is closed.
+   */
+  forModel(connectorId: string, capability?: string): boolean {
+    const g = this.governance(connectorId);
+    return g.toolsEnabled && (capability === undefined || g.capabilities[capability]?.model !== false);
+  }
+  /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
    * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4), the
@@ -1896,10 +1909,7 @@ export class Registry implements HoldingsReader {
     );
     return this.capabilitiesFor(actor)
       .filter(c => !effects.has(c.capability.name))
-      .filter(c => {
-        const g = this.governance(c.connector.id);
-        return c.capability.model && g.toolsEnabled && g.capabilities[c.capability.name]?.model !== false;
-      })
+      .filter(c => c.capability.model && this.forModel(c.connector.id, c.capability.name))
       .filter(c => !(composite && isSearchSource(c.capability, c.connector.id)))
       .filter(c => !(errands && isErrandSource(c.capability, c.connector.id)))
       .filter(c => !(requests && isRequestSource(c.capability, c.connector.id)))
