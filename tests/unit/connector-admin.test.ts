@@ -792,6 +792,21 @@ describe('a manifest goes live only when an administrator approves it (D144)', (
       },
     });
   });
+  test('a refresh refuses to pair a replaced preview with the next offer’s revision', async () => {
+    const { admin, store, transport } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    serving(transport, widened);
+    const approved = (await store.read('hello'))!.manifest as ConnectorManifest;
+    const record = store.recordCheck;
+    store.recordCheck = async (id, observation) => {
+      const saved = await record(id, observation);
+      await record(id, { ...observation, served: { ...approved, source: 'Replacement' } });
+      return saved;
+    };
+    await expect(admin.refreshManifest(mikael, 'hello', {})).rejects.toThrow('ändrats igen');
+    expect((await admin.read(mikael, 'hello')).offered?.diff.fields).toContain('source');
+    expect(actions(store, 'hello')).toEqual(['connector.added']);
+  });
   test.each([0, 60_000])('a replacement offer is refused even when the clock advances by %i ms', async delay => {
     const { admin, store, transport, advance } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
