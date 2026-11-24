@@ -233,7 +233,9 @@ test.describe('Astryx’s own words in Swedish (WA-L11)', () => {
     const day = dialog.getByLabel('Första dagen', { exact: true });
     await day.fill('2026-11-31');
     await day.press('Tab');
-    await expect(dialog.getByText('Skriv ett datum som finns', { exact: true })).toBeVisible();
+    // Said on the field, and by the dialog's own live region as well, so the words stand twice in the dialog.
+    await expect(day).toHaveAccessibleDescription(/Skriv ett datum som finns/);
+    await expect(dialog.getByText('Skriv ett datum som finns', { exact: true }).first()).toBeVisible();
     await expect(dialog).not.toContainText(/Enter a|e\.g\.,|Content/);
     await expectNoAxeViolations(page);
   });
