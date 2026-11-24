@@ -46,9 +46,9 @@ test.describe("a card shows the person's own action at once (D64)", () => {
     await expect(omtanke).toHaveCount(0, { timeout: 700 });
     await expect(omtanke).toBeVisible();
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
-    await expect(toasts.getByText('Källan svarade inte.')).toBeVisible();
+    await expect(toasts.getByText('Något gick fel. Försök igen.')).toBeVisible();
     // The reason is announced at once, as an error should be (4.1.3).
-    await expect(page.getByRole('alert').filter({ hasText: 'Källan svarade inte.' }).first()).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Något gick fel. Försök igen.' }).first()).toBeVisible();
     await expect(toasts.getByRole('button', { name: 'Ångra' })).toHaveCount(0);
   });
 });

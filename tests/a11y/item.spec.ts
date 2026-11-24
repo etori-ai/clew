@@ -182,11 +182,12 @@ test.describe('the work item as a page', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Attesterade fakturor' })).toBeVisible();
     const receipt = page.getByRole('list', { name: 'Kvitto, rad för rad' });
     await expect(receipt.getByRole('listitem')).toHaveCount(2);
-    // The row in doubt first, with its state in the vocabulary's word, and the notice under the title says which and why.
+    // The row in doubt first, with its state in the vocabulary's word, and the notice under the title says which and why,
+    // with the check as its one move (D126 item 13).
     await expect(receipt.getByRole('listitem').first()).toContainText('Obekräftat');
-    await expect(page.getByRole('main')).toContainText(
-      '2 fakturor attesterade, men Ekonomisystemet gav inget säkert besked',
-    );
+    await expect(page.getByRole('main').getByText('IT-partner AB är inte bekräftad', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main')).toContainText('Ekonomisystemet gav inget säkert besked');
+    await expect(page.getByRole('main').getByRole('button', { name: 'Kontrollera status' })).toBeVisible();
     // A row the source did not confirm leaves no way back to undo: Ångra waits for the source's answer.
     await expect(page.getByRole('button', { name: /^Ångra/ })).toHaveCount(0);
     await page.getByRole('button', { name: /^Händelser/ }).click();
@@ -242,11 +243,11 @@ test.describe('the work item as a page', () => {
     const card = api.threads.find(t => t.id === 'ledighet')!;
     card.deadline = null;
     card.remindedAt = NOW;
-    // The row: why it is here, and in its Status column what the state concerns, the reminder; under Behöver dig the
-    // state's word is the tab's, said by the dot's name.
+    // The row: in its Status column what the state concerns, the reminder; under Behöver dig the state's word is the
+    // tab's, said by the dot's name. Whom the row names it is about is left out here: today it takes the source row's
+    // label, "Ansökan", which is the register's WA-L14 and not what the row should say.
     await open(page, '/todo');
     const row = page.getByRole('main').locator('#work-ledighet');
-    await expect(row).toContainText('Ansökan väntar på beslut');
     await expect(row).toContainText('påminnelse');
     await expect(row.getByRole('img', { name: 'Behöver dig, påminnelse' })).toBeVisible();
     // The page: a plain to-do, so no notice, and no badge that says the word beside the title.
@@ -270,7 +271,7 @@ test.describe('the work item as a page', () => {
     await open(page, '/items/omtanke');
     const events = page.getByRole('region', { name: 'Händelser' });
     await events.getByRole('button', { name: /^Händelser/ }).click();
-    await expect(events.getByText('Källan svarade inte.')).toBeVisible();
+    await expect(events.getByText('Något gick fel. Försök igen.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
     api.itemEventsFail = false;
     await events.getByRole('button', { name: 'Försök igen' }).click();

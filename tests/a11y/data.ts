@@ -190,6 +190,8 @@ export const threads = (): Thread[] => [
         kind: 'read',
         role: 'secondary',
         target: 'link',
+        // As the finance connector sends it: the first invoice's ref, the read's required input.
+        input: { ref: 'finance:inv:1' },
       },
     ],
   }),
@@ -202,6 +204,18 @@ export const threads = (): Thread[] => [
     deadline: '2026-11-13',
     trigger: { reason: 'Tre sjukperioder på sex månader', source: 'Personalsystemet', at: NOW },
     summary: 'Tre korta sjukperioder sedan juni. Samtalet bör bokas före den 13 november.',
+    // As the HR connector draws it: the row names the employee by key (D97), and the actions act on that row, so the
+    // decision's input carries its ref and the read is asked for it (`connectors/hr/connector.mjs`).
+    items: [
+      {
+        ref: 'hr:emp:1',
+        label: 'Medarbetare',
+        detail: '3 korta perioder sedan 12 juni',
+        selectable: false,
+        selected: true,
+        subject: { entity: 'person', key: 'anna' },
+      },
+    ],
     actions: [
       {
         id: 'book',
@@ -209,6 +223,7 @@ export const threads = (): Thread[] => [
         capability: 'hr.bookTalk',
         kind: 'execute',
         role: 'primary',
+        usesItems: true,
         path: BOOK_TALK_PATH,
       },
       {
@@ -218,6 +233,7 @@ export const threads = (): Thread[] => [
         kind: 'read',
         role: 'secondary',
         target: 'panel',
+        input: { ref: 'hr:emp:1' },
       },
     ],
   }),
@@ -230,6 +246,16 @@ export const threads = (): Thread[] => [
     deadline: '2026-11-20',
     trigger: { reason: 'Ansökan väntar på beslut', source: 'Personalsystemet', at: NOW },
     summary: 'Två dagar före jul. Ingen krock i schemat.',
+    items: [
+      {
+        ref: 'hr:leave:1',
+        label: 'Ansökan',
+        detail: '21 dec–22 dec · 2 dagar semester',
+        selectable: false,
+        selected: true,
+        subject: { entity: 'person', key: 'johan' },
+      },
+    ],
     actions: [
       {
         id: 'decide',
@@ -237,6 +263,7 @@ export const threads = (): Thread[] => [
         capability: 'hr.decideLeave',
         kind: 'execute',
         role: 'primary',
+        usesItems: true,
         input: { decision: 'approve' },
         path: DECIDE_LEAVE_PATH,
       },
@@ -304,6 +331,33 @@ export const threads = (): Thread[] => [
         remindedAt: NOW,
       },
     ],
+    // The invitations went out two days ago and the calendar read them back, so the decision is settled and its way
+    // back has closed; the card waits on the invitees (`execution-projection.ts`).
+    execution: {
+      id: 'execution:samtal-svar',
+      decisionId: 'calendar:samtal-svar:2026-11-02T08:00:00.000Z',
+      operation: 'calendar.confirmProposals',
+      state: 'succeeded',
+      reason: null,
+      compensates: null,
+    },
+    receipt: {
+      at: '2026-11-02T08:00:00.000Z',
+      headline: '2 av 2 kalenderändringar är bekräftade.',
+      undoUntil: '2026-11-02T08:10:00.000Z',
+      undoCapability: 'calendar.undoProposals',
+      undoInput: {
+        threadId: 'samtal-svar',
+        items: [
+          { id: 'p3', proposalId: 'p3', label: 'Maria Källström', action: 'cancel' },
+          { id: 'p4', proposalId: 'p4', label: 'Johan Byström', action: 'cancel' },
+        ],
+      },
+      rows: [
+        { ref: 'p3', label: 'Maria Källström', outcome: 'done', detail: 'Kontrollerat i kalendern.' },
+        { ref: 'p4', label: 'Johan Byström', outcome: 'done', detail: 'Kontrollerat i kalendern.' },
+      ],
+    },
   }),
   thread({
     id: 'introduktion',
@@ -323,8 +377,24 @@ export const threads = (): Thread[] => [
     area: 'viktigt-nu',
     trigger: { reason: 'Nytt meddelande från förvaltningen', source: 'Kommunikation', at: NOW },
     summary: 'Gäller från den 1 december.',
+    items: [
+      {
+        ref: 'communication:notice:rutin',
+        label: 'Ny rutin för läkemedelshantering',
+        detail: '',
+        selectable: false,
+        selected: true,
+      },
+    ],
     actions: [
-      { id: 'ack', label: 'Jag har läst', capability: 'communication.acknowledge', kind: 'execute', role: 'primary' },
+      {
+        id: 'ack',
+        label: 'Jag har läst',
+        capability: 'communication.acknowledge',
+        kind: 'execute',
+        role: 'primary',
+        usesItems: true,
+      },
     ],
   }),
   thread({
@@ -349,12 +419,20 @@ export const threads = (): Thread[] => [
     trigger: { reason: 'Protokollet ska vara inlämnat', source: 'Kommunikation', at: NOW },
     summary: 'Lagd åt sidan till i morgon.',
   }),
+  // A decision whose source gave no certain answer for one of its rows: the server keeps the item open with the
+  // execution `unknown` (`execution-projection.ts`), so it waits on the person's check, never under Klart.
   thread({
     id: 'attest',
     title: 'Attesterade fakturor',
     topic: 'attest',
-    state: 'handled',
-    handledAt: NOW,
+    execution: {
+      id: 'execution:attest',
+      decisionId: 'card:attest:approve',
+      operation: 'finance.approve',
+      state: 'unknown',
+      reason: null,
+      compensates: null,
+    },
     receipt: {
       at: NOW,
       headline: '2 fakturor attesterade',

@@ -61,6 +61,16 @@ describe('the moment a receipt arrives (D70)', () => {
     expect(canUndoReceipt(pending, Date.parse(NOW))).toBe(false);
     expect(canUndoReceipt(done, Date.parse(NOW))).toBe(true);
     expect(canUndoReceipt(done, Date.parse(receipt.undoUntil!))).toBe(false);
+    // A receipt with no decision behind it is refused by the server (`undoReceipt`), so it offers no Ångra.
+    expect(canUndoReceipt({ ...done, execution: null }, Date.parse(NOW))).toBe(false);
+    expect(canUndoReceipt({ ...done, execution: undefined }, Date.parse(NOW))).toBe(false);
+    // Nor does an undo in progress, whose own answer is still to come.
+    expect(
+      canUndoReceipt(
+        { ...done, execution: { ...done.execution, compensates: 'e', state: 'pending' } },
+        Date.parse(NOW),
+      ),
+    ).toBe(false);
     expect(receiptArrivals(new Map([['a', pending]]), [done])).toEqual([done]);
     expect(receiptArrivals(new Map([['a', done]]), [done])).toEqual([]);
     expect(receiptArrivals(new Map(), [done])).toEqual([]);

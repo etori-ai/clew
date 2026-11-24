@@ -14,6 +14,7 @@ import {
   reflowProblems,
   searchButton,
   test,
+  FAILED,
 } from './support';
 import { NOW, user } from './data';
 
@@ -239,7 +240,7 @@ test('the phone bar holds the name, the search, the bell and the person, and "Me
   await expect(pages).toHaveText([/^Start$/, /^Att göra/, /^Kalender$/, /^Personal$/, /^Läget$/, /^Samtal$/]);
   await expect(drawer.getByRole('link', { name: 'Start', exact: true })).toHaveAttribute('aria-current', 'page');
   // How much needs the person is said with the page's name.
-  await expect(drawer.getByRole('link', { name: /^Att göra/ })).toHaveAccessibleName(/^Att göra\s*6\s*behöver dig$/);
+  await expect(drawer.getByRole('link', { name: /^Att göra/ })).toHaveAccessibleName(/^Att göra\s*7\s*behöver dig$/);
   // No header connector, no places of the header's in the drawer.
   await expect(drawer.getByRole('group', { name: 'Huvudmeny' })).toHaveCount(0);
   await expectNoAxeViolations(page);
@@ -407,11 +408,11 @@ test.describe('on a touch phone', () => {
 });
 
 test('a failed reminder read is explicit and can be retried', async ({ page, api: _ }) => {
-  await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: 'Tillfälligt fel' } }));
+  await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: FAILED } }));
   await page.goto('/calendar');
   await page.getByRole('button', { name: 'Påminnelser – kunde inte uppdateras', exact: true }).click();
   const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
-  await expect(list.getByText('Tillfälligt fel', { exact: true })).toBeVisible();
+  await expect(list.getByText(FAILED, { exact: true })).toBeVisible();
   await page.unroute('**/api/threads');
   await list.getByRole('button', { name: 'Försök igen', exact: true }).click();
   await expect(list.getByText('Inga aktuella påminnelser')).toBeVisible();
@@ -422,7 +423,7 @@ test('a failed refresh keeps the visible reminder count in the bell’s accessib
   await open(page, '/calendar');
   const reminders = bell(page);
   await expect(reminders).toHaveAccessibleName('Påminnelser: 2');
-  await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: 'Tillfälligt fel' } }));
+  await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: FAILED } }));
   // Opening the queue after the cached read is stale refreshes it in the same session.
   await page.clock.setFixedTime(new Date(Date.parse(NOW) + 60_000));
   await pagesNav(page)
@@ -432,7 +433,7 @@ test('a failed refresh keeps the visible reminder count in the bell’s accessib
   await expect(reminders).toContainText('2');
   await reminders.click();
   const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
-  await expect(list.getByText('Tillfälligt fel')).toBeVisible();
+  await expect(list.getByText(FAILED)).toBeVisible();
   await expect(list.getByRole('list', { name: 'Aktuella påminnelser' }).getByRole('link')).toHaveCount(2);
 });
 
@@ -523,7 +524,7 @@ test.describe('the pages under the band', () => {
     for (const row of rows) await expect(row).toBeVisible();
     await expect(rows[0]!).toHaveAttribute('aria-current', 'page');
     // The count is a badge, and what it counts is said with the page's name.
-    await expect(rows[1]!).toHaveAccessibleName(/^Att göra\s*6\s*behöver dig$/);
+    await expect(rows[1]!).toHaveAccessibleName(/^Att göra\s*7\s*behöver dig$/);
     // The keyboard goes from one page to the next, in the row's order.
     await rows[0]!.focus();
     for (const row of rows.slice(1)) {

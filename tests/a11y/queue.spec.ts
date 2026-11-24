@@ -11,6 +11,7 @@ import {
   reflowProblems,
   silentSaidIn,
   test,
+  FAILED,
 } from './support';
 import { ASKED_MANAGER, CERTIFICATE_TITLE, NOTICE_REASON, NOTICE_TEXT, asNotice, expiredCertificate } from './data';
 
@@ -87,7 +88,7 @@ test.describe('Att göra: the piles', () => {
   });
 
   test('a failed first read cannot report zero work', async ({ page, api: _ }) => {
-    await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: 'Tillfälligt fel' } }));
+    await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: FAILED } }));
     await open(page, '/todo');
     await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
     await expect(page.getByRole('link', { name: /^Försenade:/ })).toHaveCount(0);
@@ -106,10 +107,10 @@ test.describe('Att göra: the piles', () => {
     await expect(page).toHaveTitle(/^Att göra/);
     const rail = page.getByRole('navigation', { name: 'Mina sidor', exact: true });
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('aria-current', 'page');
-    await expect(rail.getByRole('link', { name: /^Att göra/ })).toContainText('6');
+    await expect(rail.getByRole('link', { name: /^Att göra/ })).toContainText('7');
     // The tabs are the navigation pattern (no tablist): links, the current one marked, with how many as a badge.
     const tabs = page.getByRole('navigation', { name: 'Urval' });
-    await expect(tabs.getByRole('link', { name: /^Behöver dig\s*6 ärenden$/ })).toHaveAttribute('aria-current', 'true');
+    await expect(tabs.getByRole('link', { name: /^Behöver dig\s*7 ärenden$/ })).toHaveAttribute('aria-current', 'true');
     await expect(tabs.getByRole('link', { name: /^Väntar på andra\s*3 ärenden$/ })).toBeVisible();
     await expect(tabs.getByRole('link', { name: 'Klart', exact: true })).toBeVisible();
     // The tabs carry the counts: no line under the title says them a second time, and no trail repeats the row
@@ -118,7 +119,7 @@ test.describe('Att göra: the piles', () => {
     await expect(page.getByRole('navigation', { name: 'Du är här' })).toHaveCount(0);
     // Behöver dig in Hem's order: what is due, what comes later, the proposal, the notice.
     const all = rows(page);
-    await expect(all).toHaveCount(6);
+    await expect(all).toHaveCount(7);
     await expect(all.first()).toContainText('Attestera 3 fakturor, 48 200 kr');
     await expect(all.first()).toContainText('Ekonomisystemet');
     // An item about nobody in particular says why it is here, and its state in the Status column (1.4.1, D126 item 13).
@@ -155,8 +156,9 @@ test.describe('Att göra: the piles', () => {
     await expect(snoozed).toContainText('Väntar\u00a0· inte nu');
     await tabs.getByRole('link', { name: 'Klart', exact: true }).click();
     await expect(page).toHaveURL(/\/todo\?tab=done$/);
-    await expect(rows(page, 'Klart')).toHaveCount(2);
-    await expect(row(page, 'Attesterade fakturor')).toBeVisible();
+    // A decision with a row in doubt waits on the person's check under Behöver dig, so Klart holds the dismissal.
+    await expect(rows(page, 'Klart')).toHaveCount(1);
+    await expect(row(page, 'Påminnelse om brandskyddsrond')).toBeVisible();
     await expectNoAxeViolations(page);
     // Back is the pile before: the address is the state.
     await page.goBack();
@@ -171,12 +173,12 @@ test.describe('Att göra: the piles', () => {
     const filter = page.getByRole('searchbox', { name: 'Filtrera' });
     await filter.fill('fakt');
     await expect(page).toHaveURL(/\/todo\?filter=fakt$/);
-    await expect(rows(page)).toHaveCount(1);
+    await expect(rows(page)).toHaveCount(2);
     const card = page.locator('section[aria-labelledby="todo-pile"]');
-    await expect(card.getByText(/^· 1\b/)).toBeVisible();
-    await expect.poll(() => announcements(page)).toContainEqual('1 ärenden');
+    await expect(card.getByText(/^· 2\b/)).toBeVisible();
+    await expect.poll(() => announcements(page)).toContainEqual('2 ärenden');
     await filter.fill('');
-    await expect(rows(page)).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(7);
     await page.getByRole('button', { name: 'Alla system' }).click();
     await page.getByRole('menuitemradio', { name: 'Personal' }).click();
     await expect(page).toHaveURL(/\/todo\?area=personal$/);
@@ -275,7 +277,7 @@ test.describe('Att göra: the reading pane', () => {
     expect(await y(pane.getByRole('button', { name: 'Attestera 2 valda' }))).toBeLessThan(
       await y(pane.getByRole('heading', { name: 'Uppgifter' })),
     );
-    await expect(rows(page)).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(7);
     await expectNoAxeViolations(page);
     await row(page, 'Omtankesamtal med Anna Lindqvist').click();
     await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
@@ -377,7 +379,7 @@ test.describe('Att göra where the pane does not fit', () => {
     await expectNoAxeViolations(page);
     await page.getByRole('main').getByRole('link', { name: 'Att göra', exact: true }).click();
     await expect(page).toHaveURL(/\/todo$/);
-    await expect(rows(page)).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(7);
     await expect(row(page, 'Ledighetsansökan från Johan Byström')).toBeFocused();
     // An item in the address where the pane does not fit is its page, in that address's place.
     await open(page, '/todo?item=omtanke');
@@ -406,7 +408,7 @@ test.describe('Att göra where the pane does not fit', () => {
     expect(await reflowProblems(page)).toEqual([]);
     await expectNoAxeViolations(page);
     await page.goBack();
-    await expect(phoneRows(page)).toHaveCount(6);
+    await expect(phoneRows(page)).toHaveCount(7);
   });
 
   for (const [path, title] of [
@@ -429,7 +431,7 @@ test.describe('the addresses of Hem’s old tabs', () => {
   for (const [from, to] of [
     ['/?tab=waiting', /\/todo\?tab=waiting$/],
     ['/?tab=snoozed', /\/todo\?tab=waiting$/],
-    ['/?tab=done&card=attest', /\/todo\?tab=done&item=attest$/],
+    ['/?tab=done&card=avfardad', /\/todo\?tab=done&item=avfardad$/],
     ['/?area=personal', /\/todo\?area=personal$/],
   ] as const)
     test(`${from} leads to Att göra`, async ({ page, api: _ }) => {
@@ -459,7 +461,7 @@ test.describe('Hem leads to Att göra', () => {
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/todo$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
-    await expect(rows(page)).toHaveCount(6);
+    await expect(rows(page)).toHaveCount(7);
   });
 });
 
@@ -484,7 +486,7 @@ test.describe('Att göra on a phone: the queue is a list', () => {
     await open(page, '/todo');
     await expect(page.getByRole('table')).toHaveCount(0);
     const all = phoneRows(page);
-    await expect(all).toHaveCount(6);
+    await expect(all).toHaveCount(7);
     // The title, then the system and why the item is here on one line, which is not cut.
     const fakturor = page.locator('#work-fakturor');
     await expect(fakturor).toContainText('Attestera 3 fakturor, 48 200 kr');
@@ -502,7 +504,7 @@ test.describe('Att göra on a phone: the queue is a list', () => {
     await expect(heading).toHaveCount(1);
     expect(await isDrawn(heading)).toBe(false);
     const card = page.getByRole('region', { name: 'Behöver dig' });
-    await expect(card).toContainText('· 6 ärenden');
+    await expect(card).toContainText('· 7 ärenden');
     await expect(card.getByRole('list', { name: 'Behöver dig', exact: true })).toBeVisible();
     await expect(
       page.getByRole('navigation', { name: 'Urval' }).getByRole('link', { name: /^Behöver dig/ }),
@@ -522,8 +524,9 @@ test.describe('Att göra on a phone: the queue is a list', () => {
     await expect(page.locator('#work-brandskydd')).toContainText('Väntar\u00a0· inte nu');
     await expectNoAxeViolations(page);
     await page.getByRole('navigation', { name: 'Urval' }).getByRole('link', { name: 'Klart', exact: true }).click();
-    await expect(phoneRows(page, 'Klart')).toHaveCount(2);
-    await expect(page.locator('#work-attest')).toContainText('Obekräftat\u00a0· 1 av 2');
+    // A decision with a row in doubt waits on the person's check under Behöver dig, so Klart holds the dismissal.
+    await expect(phoneRows(page, 'Klart')).toHaveCount(1);
+    await expect(page.locator('#work-attest')).toHaveCount(0);
     await expect(page.locator('#work-avfardad')).toContainText('Klart\u00a0· avfärdat');
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page)).toEqual([]);
@@ -592,12 +595,12 @@ test.describe('Att göra on a phone: the queue is a list', () => {
     ).toBe(true);
     await filter.fill('fakt');
     await expect(page).toHaveURL(/\/todo\?filter=fakt$/);
-    await expect(phoneRows(page)).toHaveCount(1);
-    await expect.poll(() => announcements(page)).toContainEqual('1 ärenden');
+    await expect(phoneRows(page)).toHaveCount(2);
+    await expect.poll(() => announcements(page)).toContainEqual('2 ärenden');
     // The count the filter left stays with the pile's name for a screen reader.
-    await expect(page.getByRole('region', { name: 'Behöver dig' })).toContainText('· 1 ärenden');
+    await expect(page.getByRole('region', { name: 'Behöver dig' })).toContainText('· 2 ärenden');
     await filter.fill('');
-    await expect(phoneRows(page)).toHaveCount(6);
+    await expect(phoneRows(page)).toHaveCount(7);
     await system.click();
     await page.getByRole('menuitemradio', { name: 'Personal' }).click();
     await expect(page).toHaveURL(/\/todo\?area=personal$/);
@@ -626,7 +629,7 @@ test.describe('Att göra on a phone: the queue is a list', () => {
     const field = await box(page.getByRole('searchbox', { name: 'Filtrera' }));
     const button = await box(page.getByRole('button', { name: 'Alla system' }));
     expect(button.y).toBeGreaterThanOrEqual(field.y + field.height);
-    await expect(phoneRows(page)).toHaveCount(6);
+    await expect(phoneRows(page)).toHaveCount(7);
     // Neither the title nor the line under it is cut: each takes the lines it needs.
     expect(await cutRows(phoneRows(page))).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(narrow.width);

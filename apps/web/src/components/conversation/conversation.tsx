@@ -1370,9 +1370,7 @@ export function Transcript({
           }
         >
           <AssistantAnswer handover={aside ? { ...other, link: undefined } : other}>
-            <UntrustedMarkdown headingLevelStart={headingStart}>
-              {keepLines(m.body)}
-            </UntrustedMarkdown>
+            <UntrustedMarkdown headingLevelStart={headingStart}>{keepLines(m.body)}</UntrustedMarkdown>
           </AssistantAnswer>
           {asideHref && (
             <HStack gap={3} vAlign="center" wrap="wrap">
