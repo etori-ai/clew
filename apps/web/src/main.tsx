@@ -1,4 +1,14 @@
-import { StrictMode, Suspense, forwardRef, lazy, useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
+import {
+  StrictMode,
+  Suspense,
+  forwardRef,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type AnchorHTMLAttributes,
+} from 'react';
 import { keys } from './query-keys';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Routes, Route, useLocation, useParams, useSearchParams } from 'react-router';
@@ -16,6 +26,7 @@ import {
   retryDelay,
   type BrowserSession,
   type SessionAnswer,
+  type SessionShape,
 } from '@clew/ui';
 import type { Capability, RelationGrant, SessionUser, SiteHeaderView } from '@clew/contracts';
 import { HeldCapabilities, HeldRelations, capabilitiesOf, relationsOf } from './capabilities';
@@ -71,10 +82,15 @@ type Shell = {
   /** D121: the relations to people held by grant: whether Kompetens offers its search. Never an admin flag. */
   relations: RelationGrant[];
 };
-/** `GET /api/auth/session` as the server answers it. */
-type SessionData = BrowserSession & { user: SessionUser; admin?: unknown; capabilities?: unknown; relations?: unknown };
+/** `GET /api/auth/session` as the server answers it; `readSession` has checked the session's own part. */
+type SessionData = SessionShape & { user: SessionUser; admin?: unknown; capabilities?: unknown; relations?: unknown };
 const shellOf = (data: SessionData): Shell => ({
-  session: { csrfToken: data.csrfToken, sessionKey: data.sessionKey, expiresAt: data.expiresAt },
+  session: {
+    csrfToken: data.csrfToken,
+    sessionKey: data.sessionKey,
+    policyVersion: data.policyVersion,
+    expiresAt: data.expiresAt,
+  },
   user: data.user,
   admin: data.admin === true,
   capabilities: capabilitiesOf(data.capabilities),
@@ -111,10 +127,10 @@ const Devtools =
  * query cache (D33) is one client per confirmed session, in memory, emptied once the boundary has shown the ended card.
  */
 function Protected({ children }: { children: (shell: Shell) => React.ReactNode }) {
-  const [shell, setShell] = useState<Shell | 'loading' | 'anonymous'>('loading');
+  // `unreachable` is a stage of its own, never a flag beside `loading`: once the shell is drawn nothing an older read
+  // said can make the next read of the session show Clew out of reach (L13 of the review of batch 12).
+  const [shell, setShell] = useState<Shell | 'loading' | 'unreachable' | 'anonymous'>('loading');
   const [header, setHeader] = useState<SiteHeaderView | null | undefined>(undefined);
-  // Clew did not answer the session's read: said in the page's place, and asked again (D46), never a sign-out.
-  const [unreachable, setUnreachable] = useState(false);
   const [client] = useState(createQueryClient);
   const policy = useRef<string | undefined>(undefined);
   const headerRead = useRef<Promise<SiteHeaderView | null> | null>(null);
@@ -137,36 +153,47 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       cancelled = true;
     };
   }, [client]);
+  // The person's access changed: the change stream's new policy, or the session's own check that found the same session
+  // with a new authorization version. The protected tree goes, since chips, generated text and panel state can hold
+  // what a source showed under the access before, and the session is read again as on the first load. Never an end.
+  const readAgain = useCallback(() => {
+    stopStream.current();
+    void client.cancelQueries();
+    client.clear();
+    setShell('loading');
+  }, [client]);
   // The session, on the first load and again after a change to the person's access. Only an explicit denial is the
   // sign-in page; Clew out of reach is said, and asked again with a wait that grows (`retryDelay`).
-  const loading = shell === 'loading';
+  const reading = shell === 'loading' || shell === 'unreachable';
   useEffect(() => {
-    if (!loading) return;
+    if (!reading) return;
     let cancelled = false,
       timer: number | undefined,
-      failures = 0;
-    const ask = (answer: Promise<SessionAnswer<SessionData>>): Promise<boolean> =>
-      answer.then(async result => {
-        if (cancelled) return false;
+      failures = 0,
+      latest = 0;
+    const ask = (answer: Promise<SessionAnswer<SessionData>>): Promise<boolean> => {
+      // Each read is numbered: an older one that answers after a newer has left says nothing.
+      const attempt = ++latest;
+      return answer.then(async result => {
+        if (cancelled || attempt !== latest) return false;
         firstSession = null;
         if (result.state === 'unreachable') {
-          setUnreachable(true);
+          setShell(current => (current === 'loading' || current === 'unreachable' ? 'unreachable' : current));
           window.clearTimeout(timer);
           timer = window.setTimeout(() => void ask(readSession<SessionData>()), retryDelay(failures++));
           return false;
         }
         window.clearTimeout(timer);
         if (result.state === 'signed-out') {
-          setUnreachable(false);
           setShell('anonymous');
           return true;
         }
         await headerRead.current;
-        if (cancelled) return false;
-        setUnreachable(false);
+        if (cancelled || attempt !== latest) return false;
         setShell(shellOf(result.session));
         return true;
       });
+    };
     askNow.current = () => {
       window.clearTimeout(timer);
       failures = 0;
@@ -177,9 +204,9 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [loading]);
+  }, [reading]);
   useEffect(() => {
-    if (shell === 'loading' || shell === 'anonymous') return;
+    if (typeof shell !== 'object') return;
     let source: EventSource | undefined,
       stopped = false,
       retry: number | undefined,
@@ -211,23 +238,17 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
           return;
         }
         if (change.ended) {
+          // The server ended the session: every end takes the boundary's one way (its words said, the tab named, the
+          // other tabs told, `onEnded`), never straight to the sign-in page.
           stop();
-          void client.cancelQueries();
-          client.clear();
-          setShell('anonymous');
+          window.dispatchEvent(new Event('clew-session-ended'));
           return;
         }
         if (typeof change.policy !== 'string' || typeof change.revision !== 'string') return;
         const revoked = policy.current !== undefined && policy.current !== change.policy;
         policy.current = change.policy;
-        if (revoked) {
-          // Reset the protected tree too: chips, generated text and panel state can contain retained source snapshots.
-          // The session is read again as on the first load.
-          stop();
-          void client.cancelQueries();
-          client.clear();
-          setShell('loading');
-        } else notices.arrived(change.revision);
+        if (revoked) readAgain();
+        else notices.arrived(change.revision);
       };
     };
     const reconnect = () => {
@@ -249,7 +270,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       document.removeEventListener('visibilitychange', reconnect);
       window.removeEventListener('online', reconnect);
     };
-  }, [client, shell]);
+  }, [client, shell, readAgain]);
   // Nobody is signed in: nothing of a session before stays in this tab's storage, no review's draft
   // (`review-session.ts`) and nothing a conversation showed (`conversation-shown.ts`).
   useEffect(() => {
@@ -258,12 +279,12 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       forgetShown();
     }
   }, [shell]);
+  // Clew did not answer the session's read: said in the page's place, and asked again (D46), never a sign-out.
+  if (shell === 'unreachable') return <SessionUnreachable onRetry={() => askNow.current()} />;
   // Until the header has answered nothing is drawn, so the shell does not change shape when it does; then the shell's
   // shape stands until the session is known.
   if (shell === 'loading')
-    return unreachable ? (
-      <SessionUnreachable onRetry={() => askNow.current()} />
-    ) : header === undefined ? (
+    return header === undefined ? (
       <VisuallyHidden role="status">Hämtar sidan …</VisuallyHidden>
     ) : (
       <FirstLoad header={header} />
@@ -276,6 +297,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   return (
     <SessionBoundary
       session={shell.session}
+      onAccessChanged={readAgain}
       onEnded={() => {
         stopStream.current();
         client.clear();

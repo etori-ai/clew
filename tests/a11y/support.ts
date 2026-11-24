@@ -324,6 +324,8 @@ export class MockApi {
   timesReads: string[] = [];
   sessionDelay = 0;
   signedIn = true;
+  /** The session's authorization version (`policyVersion`): a spec moves it as a change of the person's access does. */
+  policyVersion = 'test';
   /** The development sign-in (D6): the personas the sign-in page lists, or undefined for the server's 404 when it is off. */
   devAccounts: { userName: string; name: string }[] | undefined = undefined;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
@@ -759,6 +761,12 @@ export class MockApi {
     // What a read is read with: its body, never its address (WD-M4: the address is in every access log on the way).
     const input = <T = Record<string, unknown>>() => (request.postDataJSON() ?? {}) as T;
     const id = path.split('/')[2] ?? '';
+    // A read and `@`'s search are POSTs with their input as the body (WD-M4): any other method is no route, as the
+    // server answers it, and a test that asks one fails.
+    if ((path.startsWith('/cap/') || path === '/objects') && !post) {
+      this.unmocked.push(`${request.method()} ${path}`);
+      return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
+    }
     if (path === '/protocol/manifest-reference.json') return json(reference);
     // The manifest dry run (D60, D97) as the server runs it: the real preview over the posted document.
     if (path === '/protocol/manifest' && post) {
@@ -806,6 +814,7 @@ export class MockApi {
       return this.signedIn
         ? json({
             ...session,
+            policyVersion: this.policyVersion,
             ...(this.employee || this.assignments
               ? {
                   user: {

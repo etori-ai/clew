@@ -440,7 +440,10 @@ export async function authenticate(raw: string | undefined) {
     },
     delegate: audience => delegation.token(digest, audience),
   };
-  return { context, csrfToken: row.csrf, sessionKey: digest.slice(0, 24) + version.slice(0, 16), row };
+  // The browser tells the session itself from the access it holds: `sessionKey` names the session and stays while it
+  // stands, `policyVersion` changes with the person's access (a unit, a role or a capability the provisioner moved). A
+  // tab that sees a new version reads the session again; only a new key, or an explicit denial, ends it.
+  return { context, csrfToken: row.csrf, sessionKey: digest.slice(0, 24), policyVersion: version.slice(0, 16), row };
 }
 /** A mutation must come from the public origin or a listed front end (auth-origin.ts) and carry the session's CSRF token. */
 export function verifyMutation(request: Request, csrf: string) {

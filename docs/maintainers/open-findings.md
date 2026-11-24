@@ -162,7 +162,7 @@ fixtures the server cannot produce).
 | WA-M5 | Medium | Most pages' read failures, several empty states and loading surfaces have no spec, and twelve drawn states run no axe check. | `tests/a11y/` (the coverage map) |
 | WA-L4 | Low | An entry in the pane beside a conversation opens a dialog over the conversation page, against D126 rule 3. | `apps/web/src/pages/conversation.tsx:173` |
 | WA-L5 | Low | `agendaItems` recognises a talk's meeting by its title, which D133 forbids. | `packages/ui/src/agenda-items.ts:26` |
-| WA-L6 | Low | "Startsidan" is hard-coded in tab titles, the sign-in and error pages and several sentences, where the installation's site name belongs. | `apps/web/src/page-title.ts:7` |
+| WA-L6 | Low | "Startsidan" is hard-coded in tab titles, the sign-in and error pages and several sentences, where the installation's site name belongs. | `packages/ui/src/tab-title.ts` (every tab's title: `apps/web/src/page-title.ts` and the ended session's `ENDED_TITLE`), `packages/ui/src/session.tsx` (`UNREACHABLE_WORDS`, `REACHED_WORDS` and the heading of `SessionNotice`) |
 | WA-L7 | Low | Sundsvall's colours are the examples on Administration › Utseende and in the theme parser's message. | `apps/web/src/pages/admin/appearance.tsx:147` |
 | WA-L8 | Low | The calendar theme sizes and offsets several things in pixels where D27 asks for tokens. | `packages/ui/src/calendar-theme.css:155` |
 | WA-L9 | Low | Six admin pages decide a phone at 720 px while the rest of the app uses 767 px. | `apps/web/src/pages/admin/models.tsx:49` |
