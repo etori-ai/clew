@@ -163,7 +163,11 @@ const sameWords = (a: string, b: string) =>
  * person or unit, and it has no detail. Such a row only repeats the heading, so "Rader" is not drawn; any row with a fact
  * of its own (a detail, a subject, a choice) is drawn, and so are two rows or more.
  */
-export function rowsSaySomething(thread: Pick<Thread, 'title' | 'items'>): boolean {
+export function rowsSaySomething(thread: Pick<Thread, 'title' | 'items' | 'receipt' | 'actions'>): boolean {
+  // After a decision the source's rows are the receipt, even when the original work item had no rows. A notice's one
+  // receipt row is the person's read receipt, which the receipt's own notice already says, so it is no section of its own.
+  const receipt = thread.receipt?.rows.length ?? 0;
+  if (receipt > 1 || (receipt === 1 && !receiptAction(thread))) return true;
   if (thread.items.length !== 1) return thread.items.length > 1;
   const [only] = thread.items;
   return !(sameWords(only!.label, thread.title) && !only!.selectable && !only!.subject && !only!.detail.trim());

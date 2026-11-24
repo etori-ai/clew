@@ -21,9 +21,9 @@ weakness seen from several areas, and how far to trust them.
 | CO | [The competence domain](../reviews/2026-11-23-review-competence.md) | 0 | 1 | 1 | 2 |
 | BD | [Introduction and leaving, the follow-up dialogue and talks](../reviews/2026-11-23-review-boarding-dialogue-and-talks.md) | 0 | 2 | 6 | 8 |
 | WD | [The web app's data, state and errors](../reviews/2026-11-23-review-web-data-state-and-errors.md) | 0 | 4 | 9 | 13 |
-| WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 5 | 13 | 18 |
+| WA | [The web app against the Astryx rule, the interface spaces and WCAG 2.2 AA](../reviews/2026-11-23-review-web-astryx-interface-spaces-and-accessibility.md) | 0 | 4 | 13 | 17 |
 | CS | [The connector services](../reviews/2026-11-23-review-connector-services.md) | 0 | 2 | 8 | 10 |
-| | **Total** | **3** | **39** | **80** | **122** |
+| | **Total** | **3** | **38** | **80** | **121** |
 
 ## High
 
@@ -205,7 +205,6 @@ fixtures the server cannot produce).
 |---|---|---|---|
 | WA-M1 | Medium | The theme check does not test the focus ring, marks, icons or success and information text against the card's ground. | `packages/contracts/src/theme-file.ts:143-169` |
 | WA-M2 | Medium | A calendar entry is a button wherever it is drawn, and in four places pressing it does nothing, while the spoken summary says Enter opens it. | `packages/ui/src/calendar.tsx:168` |
-| WA-M3 | Medium | A receipt's single row, with the detail the source read back, is shown nowhere when the work item has no rows of its own. | `apps/web/src/components/work/work-item.tsx:138` |
 | WA-M4 | Medium | The suite's mock answers a decision final at once, so the pending state and the receipt's later arrival are never drawn, and two fixtures show unreachable states. | `tests/a11y/support.ts:1787-1834` |
 | WA-M5 | Medium | Most pages' read failures, several empty states and loading surfaces have no spec, and twelve drawn states run no axe check. | `tests/a11y/` (the coverage map) |
 | WA-L1 | Low | Three work items in the fixtures could not be decided on the server, and a catch-all answers any unknown read. | `tests/a11y/data.ts:196-244` |
