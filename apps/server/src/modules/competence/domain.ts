@@ -1610,6 +1610,12 @@ export const SOURCE_ID_MAX = 200;
 /** The longest key the copy matches, the profile's bound: a user name in Clew is at most as long. */
 export const SOURCE_KEY_MAX = 512;
 /**
+ * A user name as the directory compares it (DE-L8): composed (NFC), then lower case, as the index
+ * `auth_person_user_name_nfc` folds it. A source's key written decomposed or in another case finds its person, and the
+ * person found is matched back to the key the same way.
+ */
+export const foldedUserName = (name: string) => name.normalize('NFC').toLowerCase();
+/**
  * The error kind a page's failure carries (`SourceReadError`), read from its `code` as the installation's read throws
  * it (D119); undefined for anything else, which the copy treats as `unknown`.
  */

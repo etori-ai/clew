@@ -8,6 +8,8 @@ import { database, type Database } from '../../packages/db/src/index';
 /** A migrated database of a test's own, and the way to remove it: `drop` closes its connections and drops it. */
 export interface CLocaleDatabase {
   db: Database;
+  /** Where it is, for a connection of a test's own. */
+  url: string;
   drop(): Promise<void>;
 }
 /**
@@ -39,5 +41,5 @@ export async function cLocaleDatabase(): Promise<CLocaleDatabase> {
     await drop();
     throw error;
   }
-  return { db, drop };
+  return { db, url: url.toString(), drop };
 }

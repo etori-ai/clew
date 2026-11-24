@@ -1,9 +1,9 @@
-import { afterAll } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { eq, inArray, like } from 'drizzle-orm';
+import { eq, inArray, like, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '../../packages/db/src/index';
-import { postgresTalkStore } from '../../apps/server/src/modules/talks/adapters/postgres';
-import type { WorkItemTx } from '../../apps/server/src/modules/talks/model';
+import { postgresTalkStore, talkTx } from '../../apps/server/src/modules/talks/adapters/postgres';
+import type { RoundHold, WorkItemTx } from '../../apps/server/src/modules/talks/model';
 import { openSecret, sealSecret } from '../../apps/server/src/auth-crypto';
 import { talkStoreContract } from '../talk-store-contract';
 
@@ -88,4 +88,65 @@ talkStoreContract('postgres', async () => {
       return row!.text;
     },
   };
+});
+
+/**
+ * BD-L4: reading the open round takes no lock, so every talks page and every manager's scan reads it beside a write that
+ * holds it, and beside one that closes it. A write in the round holds it only against closing: two writes go on beside
+ * each other, and closing waits for them. Each try below gives up after half a second (`lock_timeout`), so a wait for a
+ * lock fails it with 55P03.
+ */
+test('the open round is read without a lock; a write holds it only against closing, and closing holds off writes', async () => {
+  const p = 'test-talk-' + randomUUID().slice(0, 8);
+  prefixes.push(p);
+  const org = p + '-org',
+    round = p + '-round',
+    sealer = { seal: sealSecret, open: openSecret };
+  await database().insert(schema.talkRounds).values({
+    id: round,
+    organisationId: org,
+    kind: 'development',
+    label: 'Utvecklingssamtal',
+    opensOn: '2026-11-01',
+    dueOn: '2026-12-15',
+    createdBy: 'operator:test',
+  });
+  const read = (tx: Transaction, hold?: RoundHold) =>
+    talkTx(tx, { sealer, workItems: cards(tx) }).currentRound(org, 'development', hold);
+  const promptly = (hold?: RoundHold) =>
+    database()
+      .transaction(async tx => {
+        await tx.execute(sql`set local lock_timeout = '500ms'`);
+        return (await read(tx, hold))?.id;
+      })
+      .catch((error: { code?: string; cause?: { code?: string } }) => error.code ?? error.cause?.code);
+  /** Hold the round as `hold` in a transaction of its own while `meanwhile` runs, then end it. */
+  async function holding<T>(hold: RoundHold, meanwhile: () => Promise<T>) {
+    let release!: () => void, held!: () => void;
+    const ended = new Promise<void>(resolve => (release = resolve)),
+      holds = new Promise<void>(resolve => (held = resolve));
+    const holder = database().transaction(async tx => {
+      expect((await read(tx, hold))?.id).toBe(round);
+      held();
+      await ended;
+    });
+    await holds;
+    try {
+      return await meanwhile();
+    } finally {
+      release();
+      await holder;
+    }
+  }
+  expect(
+    await holding('write', async () => ({
+      read: await promptly(),
+      write: await promptly('write'),
+      close: await promptly('close'),
+    })),
+  ).toEqual({ read: round, write: round, close: '55P03' });
+  expect(await holding('close', async () => ({ read: await promptly(), write: await promptly('write') }))).toEqual({
+    read: round,
+    write: '55P03',
+  });
 });

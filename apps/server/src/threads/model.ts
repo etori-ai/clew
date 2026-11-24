@@ -146,7 +146,22 @@ export interface ThreadTx {
    * when a thread already has the id; the existing thread is left as it was.
    */
   insertThread(thread: NewThread): Promise<boolean>;
+  /**
+   * The patch, as it is. A patch that opens a pushed thread again while another open pushed thread of the person holds
+   * its topic is refused, as a second insert is (one open card a topic, the unique index `thread_open_topic`): a
+   * reopen goes through `reopenThread`, which says so instead of throwing.
+   */
   updateThread(id: string, patch: ThreadPatch): Promise<void>;
+  /**
+   * Open the thread again with the patch (an undo of Avfärda, a reminder that brings it back); false, and nothing
+   * written, when another open pushed thread of the person holds its topic, as an insert is refused (DE-L9).
+   */
+  reopenThread(id: string, patch: Omit<ThreadPatch, 'state' | 'items'>): Promise<boolean>;
+  /**
+   * The id of the other open pushed thread of this thread's person on its topic, which a reopen of it is refused for
+   * (DE-L9); undefined when none holds it.
+   */
+  topicHolder(id: string): Promise<string | undefined>;
   addMessage(threadId: string, message: NewMessage): Promise<void>;
   /**
    * Mark an assistant's draft about a record as sent (D137): the message's `recordDraft` gets `sent: { threadId }` and

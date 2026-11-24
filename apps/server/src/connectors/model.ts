@@ -88,6 +88,12 @@ export interface AuditEntry {
   at: string;
   details?: Record<string, unknown>;
 }
+/** What the competence register held from a connector when it was removed (D108 item 9): whether it was a source, and counts. */
+export interface CopiedFrom {
+  source: boolean;
+  holdings: number;
+  mappings: number;
+}
 /** Writes inside one transaction: the audit row commits or rolls back with the rest. */
 export interface ConnectorTx {
   /** False when the id is taken. */
@@ -115,7 +121,12 @@ export interface ConnectorTx {
     by: string,
     at: string,
   ): Promise<boolean>;
-  remove(id: string): Promise<void>;
+  /**
+   * Delete the row, and with it what the competence register copied from the connector (D108 item 9): its record as a
+   * source, the holdings copied from it and its type mappings. Returns what went with it, counts only, so the removal's
+   * audit can say so (DE-L4).
+   */
+  remove(id: string): Promise<CopiedFrom>;
   /** Dismiss every open card this connector pushed, at this instant; returns how many. */
   dismissOpenThreadsOf(connectorId: string, at: string): Promise<number>;
   writeAudit(entry: AuditEntry): Promise<void>;

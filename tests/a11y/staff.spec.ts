@@ -268,11 +268,15 @@ test.describe('Personal', () => {
       await expect(page).toHaveURL('/items/entity-hr-registerAbsence-karin?from=%2Fstaff');
     });
 
-    test('a source that refuses an action says why in the dialog, aloud, and nothing opens', async ({ page, api }) => {
+    test('a source that refuses an action says why in the dialog, once and aloud, the list nowhere, and nothing opens', async ({
+      page,
+      api,
+    }) => {
       const refusal = 'Personalsystemet hittar ingen anställning för Karin Lindqvist.';
       api.entityRefusals['hr.registerAbsence'] = refusal;
       await open(page, '/staff');
-      await page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' }).click();
+      const menu = page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' });
+      await menu.click();
       await page.getByRole('menuitem', { name: 'Registrera frånvaro' }).click();
       const dialog = page.getByRole('dialog', { name: 'Registrera frånvaro' });
       await dialog.getByRole('button', { name: 'Registrera frånvaro' }).click();
@@ -280,6 +284,13 @@ test.describe('Personal', () => {
       await expect.poll(async () => (await announcements(page)).filter(a => a.includes(refusal))).toHaveLength(1);
       await expect(page).toHaveURL('/staff');
       await expectNoAxeViolations(page);
+      // Said once while the dialog is open, and by nothing on the list once it is closed.
+      await expect(page.getByText(refusal).filter({ visible: true })).toHaveCount(1);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(menu).toBeFocused();
+      await expect(page.getByText(refusal).filter({ visible: true })).toHaveCount(0);
+      expect((await announcements(page)).filter(a => a.includes(refusal))).toHaveLength(1);
     });
 
     test('a source that does not answer is said once, its column stays empty, and Försök igen asks again', async ({

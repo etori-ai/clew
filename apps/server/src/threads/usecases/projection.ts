@@ -70,9 +70,23 @@ export async function projectOntoCard(tx: ProjectionTx, e: Execution, stage: Pro
   if (stage === 'approval' && command?.threadId && e.operation === 'calendar.confirmProposals')
     await approveInvitations(tx, e, thread.id, command);
   if (stage === 'approval' && command?.threadId && e.compensates) {
-    // An approved undo ends the follow-up the confirmation started.
+    // An approved undo ends the follow-up the confirmation started, with a row of its own (DE-L4).
     const policy = await tx.proposals.policy(thread.id);
-    if (policy) await tx.proposals.savePolicy({ ...policy, state: 'cancelled', reason: 'compensation-approved' });
+    if (policy) {
+      await tx.proposals.savePolicy({ ...policy, state: 'cancelled', reason: 'compensation-approved' });
+      await cards.writeAudit({
+        actor: e.principal,
+        action: 'obligation.policy_cancelled',
+        subject: `thread:${thread.id}`,
+        at: e.createdAt,
+        details: {
+          executionId: e.id,
+          compensates: e.compensates,
+          reason: 'compensation-approved',
+          was: policy.state,
+        },
+      });
+    }
     await cards.cancelTimer(`obligation:${thread.id}`, e.createdAt);
   }
   if (command?.threadId && result && e.state !== 'running')
@@ -98,15 +112,42 @@ export async function projectOntoCard(tx: ProjectionTx, e: Execution, stage: Pro
       ? { state: 'open' as const, handledAt: null, waitingOn: 'svar från medarbetarna' }
       : {}),
   };
-  await cards.updateThread(thread.id, patch);
-  if (!e.compensates && projectedReceipt?.undoUntil && e.state !== 'running')
-    for (const kind of ['receipt-final', ...(command?.threadId ? ['undo-expiry'] : [])])
-      await tx.insertJob({
-        id: `${kind}:${e.id}`,
-        kind,
-        runAt: projectedReceipt.undoUntil,
-        payload: { threadId: thread.id },
+  const { state, ...rest } = patch;
+  if (state === 'open' && thread.state !== 'open') {
+    // A card opened again goes through the port that says when another open card holds its topic (DE-L9): a refresh
+    // makes a new card on the topic of a handled one whose work the source still lists. That card is where the person
+    // finds the work, so this one stays handled, without the receipt of an effect that no longer stands, and the
+    // execution is recorded as usual.
+    if (!(await cards.reopenThread(thread.id, rest))) {
+      await cards.updateThread(thread.id, { ...rest, handledAt: thread.handledAt });
+      await cards.writeAudit({
+        actor: EXECUTION_ACTOR,
+        action: 'thread.reopen_skipped',
+        subject: 'thread:' + thread.id,
+        at: e.updatedAt,
+        details: {
+          executionId: e.id,
+          compensates: e.compensates,
+          reason: 'topic-open',
+          heldBy: (await cards.topicHolder(thread.id)) ?? null,
+        },
       });
+    }
+  } else await cards.updateThread(thread.id, patch);
+  if (!e.compensates && projectedReceipt?.undoUntil && e.state !== 'running')
+    for (const kind of ['receipt-final', ...(command?.threadId ? ['undo-expiry'] : [])]) {
+      const id = `${kind}:${e.id}`,
+        runAt = projectedReceipt.undoUntil;
+      // Its `job.scheduled` row, as every other job has (DE-L4), once: a check that reads the result again inserts none.
+      if (await tx.insertJob({ id, kind, runAt, payload: { threadId: thread.id } }))
+        await cards.writeAudit({
+          actor: 'system:scheduler',
+          action: 'job.scheduled',
+          subject: `job:${id}`,
+          at: e.updatedAt,
+          details: { kind, runAt },
+        });
+    }
   if (stage === 'approval' || terminal || e.state === 'unknown')
     await cards.writeAudit({
       actor: stage === 'approval' ? e.principal : EXECUTION_ACTOR,

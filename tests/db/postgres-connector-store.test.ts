@@ -24,6 +24,9 @@ afterAll(async () => {
     await database().delete(schema.threads).where(inArray(schema.threads.connector, ids));
     await database().delete(schema.connectors).where(inArray(schema.connectors.id, ids));
   }
+  await database()
+    .delete(schema.competenceTypes)
+    .where(like(schema.competenceTypes.id, `test-${run}-%`));
   if (created) await database().delete(schema.people).where(eq(schema.people.id, person));
   await database()
     .delete(schema.connectors)
@@ -66,6 +69,41 @@ connectorStoreContract('postgres', async () => {
         .from(schema.threads)
         .where(eq(schema.threads.id, threadId));
       return row?.state;
+    },
+    async copiedFrom(connectorId) {
+      const db = database(),
+        type = connectorId + '-type';
+      await db.insert(schema.competenceTypes).values({
+        id: type,
+        organisationId: 'test',
+        name: 'Typ ' + connectorId,
+        area: 'Område',
+        kind: 'course',
+        createdBy: 'operator:test',
+      });
+      await db.insert(schema.competenceSources).values({ connectorId, source: 'Lärplattformen' });
+      await db.insert(schema.competenceHoldings).values(
+        ['s1', 's2'].map(sourceId => ({
+          id: connectorId + '-' + sourceId,
+          personId: person,
+          typeId: type,
+          issuedOn: '2026-01-01',
+          evidence: 'system' as const,
+          state: 'valid' as const,
+          connectorId,
+          sourceId,
+          sourceType: 'course:1',
+          sourceLabel: 'Kurs',
+          readAt: new Date(),
+        })),
+      );
+      await db.insert(schema.competenceSourceMappings).values({
+        connectorId,
+        organisationId: 'test',
+        sourceType: 'course:1',
+        typeId: type,
+        mappedBy: 'operator:test',
+      });
     },
   };
 });

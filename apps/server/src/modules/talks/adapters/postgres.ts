@@ -76,12 +76,14 @@ export function talkRecordsTx(
   tx: Transaction,
 ): Pick<TalkTx, 'currentRound' | 'talks' | 'talk' | 'talkByInvitation' | 'saveTalk' | 'persons' | 'audit'> {
   return {
-    async currentRound(organisationId, kind = 'development') {
-      const [r] = await tx
+    async currentRound(organisationId, kind = 'development', hold) {
+      // A read locks nothing (BD-L4). A write in the round takes a share lock, which other writes share and closing the
+      // round waits for; closing takes the row's update lock, which waits for them and holds off every later one.
+      const open = tx
         .select()
         .from(rounds)
-        .where(and(eq(rounds.organisationId, organisationId), eq(rounds.kind, kind), isNull(rounds.closedAt)))
-        .for('update');
+        .where(and(eq(rounds.organisationId, organisationId), eq(rounds.kind, kind), isNull(rounds.closedAt)));
+      const [r] = await (hold === 'close' ? open.for('update') : hold === 'write' ? open.for('share') : open);
       return r ? roundOf(r) : undefined;
     },
     async talks(roundId, employeeIds) {
