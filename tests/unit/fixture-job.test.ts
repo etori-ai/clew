@@ -98,7 +98,7 @@ function world() {
   const jobs = jobUsecases({
     bindings,
     followers: (a, k) => registry.followers(a, k),
-    visible: (a, id) => registry.visible(a, id),
+    inConnectorAudience: (a, id) => registry.inAudienceOf(a, id),
     offered: k => registry.offered(k),
     refresh: () => registry.refreshGovernance(),
     digest: JSON.stringify,

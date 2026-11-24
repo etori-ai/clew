@@ -381,6 +381,14 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
     expect(followedUnits({ ...reach, units: [{ unitId: 'd', unitLabel: 'D', role: 'manager' }], managed: [] })).toEqual(
       [{ unitId: 'd', unitLabel: 'D' }],
     );
+    // Placed on C as an employee as well, Anna still follows it up below A: being placed on a unit takes nothing away.
+    const onC = { ...reach, units: [...reach.units, { unitId: 'c', unitLabel: 'C', role: 'employee' as const }] };
+    expect(followedUnits(onC)).toEqual([
+      { unitId: 'a', unitLabel: 'A' },
+      { unitId: 'c', unitLabel: 'C' },
+    ]);
+    // The list is unchanged by it: C is one of her units, listed once there.
+    expect(listedKeys('unit', onC).map(u => u.key)).toEqual(['a', 'b', 'c']);
   });
   /** A reader who manages nobody else's line: no units, nobody above, no co-manager reporting to them. */
   const NO_LINE = { units: [], managed: [], above: [], lineReports: [] };

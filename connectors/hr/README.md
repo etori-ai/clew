@@ -45,9 +45,10 @@ Every `execute` is deduplicated by Clew's operation id (`X-Clew-Operation-Id`): 
 result, a different input under the same id is refused with 409, and `hr.lookup` finds the result afterwards (D45). The
 writes are the leave decision and its undo, the rehab talk and its undo, the sick report and its withdrawal, the
 delegation renewal. Each undo answers for the manager's own unit as the write it takes back does: a ref outside it is a
-failed row and nothing is removed, and a sick report of someone else's answers as one that does not exist. `hr.proposeAbsence` follows the fact `hr:absence` (D55): one `hr.reportAbsence` step when the report
-does not exist yet, none when it does. A follower cannot also be an action about a person (D97), and `hr.reportAbsence`
-takes the HR system's own employee ref (`hr:emp:N`), so the person's menu gets its own propose.
+failed row and nothing is removed, and a sick report of someone else's answers as one that does not exist.
+`hr.proposeAbsence` follows the fact `hr:absence` (D55): one `hr.reportAbsence` step when the report does not exist yet,
+none when it does. A follower cannot also be an action about a person (D97), and `hr.reportAbsence` takes the HR
+system's own employee ref (`hr:emp:N`), so the person's menu gets its own propose.
 
 `hr.prepareAbsence` is "Registrera frånvaro" in a manager's menu on a person (D97): `about: { entity: 'person', param:
 'person' }` with `person: { admits: ['managed'] }` (D117: Clew offers and starts it only on the manager's reports), and

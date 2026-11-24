@@ -287,11 +287,11 @@ describe('a person’s cards close, stay and come back (D108 item 12, D47)', () 
     const hlr = await competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course', validityMonths: 24 });
     await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-01-10' }); // ends 2027-01-10
     await scan(anna);
-    await competence.updateType(admin, hlr, { validityMonths: 23 }); // ends 2026-12-10
+    await competence.updateType(admin, hlr, { validityMonths: 12 }); // ended 2026-01-10
     await scan(anna);
     expect(states('anna')).toEqual([
       ['HLR går ut 10 januari', 'handled'],
-      ['HLR går ut 10 december', 'open'],
+      ['HLR gick ut 10 januari', 'open'],
     ]);
   });
 });

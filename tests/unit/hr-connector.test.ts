@@ -284,7 +284,9 @@ describe('the HR fixture connector', () => {
     );
     await registry.run(hillevi, 'hr.bookTalk', { refs: ['hr:emp:1005'] }, { operationId: 'b' });
     const absence = { person: 'hr:emp:1005', from: '2026-11-04', extent: 100 };
-    await registry.run(hillevi, 'hr.reportAbsence', absence, { operationId: 'c' });
+    // Without an operation id the report is kept under the person and the day, the key a stranger's report of the same
+    // person and day would find.
+    await registry.run(hillevi, 'hr.reportAbsence', absence);
     // Karin manages a unit with no staff here: each undo of Hillevi's records is a failed row, and nothing is removed.
     const talk = await registry.run<Result>(
       stranger,
@@ -328,8 +330,15 @@ describe('the HR fixture connector', () => {
     expect(Object.values(state.get<Record<string, { ref: string }>>('reported-absences')).map(r => r.ref)).toEqual([
       ref,
     ]);
-    // A stranger's report for Hillevi's employee is refused before any earlier receipt is answered.
-    await expect(registry.run(stranger, 'hr.reportAbsence', absence)).rejects.toThrow(/inte i din enhet/);
+    // A stranger's report of Hillevi's employee on the same day is refused before the earlier receipt is answered: no
+    // receipt comes back, so whether the person is reported is not told, and nothing is written.
+    const before = JSON.stringify(state.get('reported-absences'));
+    let receipt: unknown;
+    await expect(registry.run<Result>(stranger, 'hr.reportAbsence', absence).then(r => (receipt = r))).rejects.toThrow(
+      /inte i din enhet/,
+    );
+    expect(receipt).toBeUndefined();
+    expect(JSON.stringify(state.get('reported-absences'))).toBe(before);
     // Hillevi's own undos take them back.
     for (const [name, refs, id] of [
       ['hr.unbookTalk', ['hr:emp:1005'], 'h1'],
