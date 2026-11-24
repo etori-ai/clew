@@ -10,5 +10,7 @@ storeContract('memory', async () => {
     hasJob: async id => store.jobs.some(j => j.id === id),
     enqueued: async prefix => store.enqueued.filter(s => s.id.startsWith(prefix)),
     cancelled: async () => [...store.cancelled],
+    admitted: async personId => store.admitted(personId),
+    day: async (personId, at) => store.day(personId, at),
   };
 });

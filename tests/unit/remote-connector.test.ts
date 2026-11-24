@@ -725,7 +725,8 @@ describe('a user-delegated connector (D26)', () => {
       async (input, init) => {
         if (String(input).endsWith('/clew/manifest')) return Response.json(manifest);
         const h = new Headers(init?.headers);
-        return (await verify((h.get('authorization') ?? '').slice('Bearer '.length), h.get('x-clew-connector-key')))
+        const token = (h.get('authorization') ?? '').slice('Bearer '.length);
+        return (await verify(token, h.get('x-clew-connector-key'), new Request(String(input), init)))
           ? Response.json({ error: { code: 'denied', message } }, { status })
           : Response.json({ error: { code: 'denied', message: 'Ogiltigt behörighetsbevis.' } }, { status: 401 });
       };

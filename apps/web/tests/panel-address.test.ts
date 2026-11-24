@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  calendarEntryHref,
   cardOverPage,
   pageOnly,
   panelRedirect,
@@ -83,6 +84,23 @@ describe('a view opened from a page is its own page (D126 rule 1)', () => {
   test("a view's part of the conversation page's address: the view beside the transcript", () => {
     expect(viewSearch({ capability: 'calendar.week', title: 'Vecka 45', input: { from: '2026-11-02' } })).toBe(
       '?open=calendar.week&open-title=Vecka+45&open-input=%7B%22from%22%3A%222026-11-02%22%7D',
+    );
+  });
+});
+
+describe('a calendar entry drawn on another page leads to its own place on Kalender (D112 item 9)', () => {
+  test('the day is the entry’s day in Clew’s zone, never the day of its instant in UTC', () => {
+    // 23:30 UTC on Tuesday 24 November is half past midnight on Wednesday in Stockholm.
+    expect(calendarEntryHref({ id: 'e1', start: '2026-11-24T23:30:00.000Z' }, 'day')).toBe(
+      '/calendar?date=2026-11-25&view=day&entry=e1',
+    );
+    expect(calendarEntryHref({ id: 'e1', start: '2026-11-24T22:30:00.000Z' }, 'week')).toBe(
+      '/calendar?date=2026-11-24&view=week&entry=e1',
+    );
+  });
+  test('an all-day entry is at its own date, which no zone moves', () => {
+    expect(calendarEntryHref({ id: 'memory:ledig', start: '2026-11-24' }, 'week')).toBe(
+      '/calendar?date=2026-11-24&view=week&entry=memory%3Aledig',
     );
   });
 });

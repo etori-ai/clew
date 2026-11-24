@@ -1,6 +1,6 @@
 # D46 · Browser updates use committed revisions
 
-**Status:** accepted, browser invalidation implemented; durable attention pending · **Date:** 2026-11-05 · **Area:** platform
+**Status:** accepted, browser invalidation implemented; durable attention pending; amended 2026-11-24 in batch 13 of the fixes of the review of 2026-11-23 (`WD-L8`): the content revision a person's stream says also folds in an installation counter for each kind of shared content the person may see (`content_change`, moved by a deferred trigger at commit; first the competence sources, for `admin.competence`), so an administration page shared by many is followed by the notice and nothing in the browser polls · **Date:** 2026-11-05 · **Area:** platform
 
 **Implementation follow-up, 2026-11-05:** [D47](D47-occurrences-timers-and-attention-have-durable-identities.md) adds timer generations and persisted attention admission/delivery. The pending wording below retains the original checkpoint. A production delivery deadline is still unproven; see the [acceptance matrix](../reference/reliability-acceptance.md).
 

@@ -37,6 +37,7 @@ import { History } from './model';
 import { TechnicalCause } from './check-result';
 import { actorLabel, audienceLabel, modelStatusOf, providerHealthLabel, providerStatusOf } from './labels';
 import { AdminShell } from './shell';
+import { mobileQuery } from '../../media';
 import { DOT } from '../../dot';
 
 /**
@@ -46,7 +47,7 @@ import { DOT } from '../../dot';
 export function AdminProviderPage({ user }: { user: SessionUser }) {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const mobile = useMediaQuery('(max-width: 720px)');
+  const mobile = useMediaQuery(mobileQuery);
   const client = useQueryClient();
   const detail = useQuery(adminQueries.provider(id));
   const list = useQuery(adminQueries.models);
@@ -65,7 +66,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
   useEffect(() => {
     if (p) setDraft({ title: p.title, baseUrl: p.baseUrl });
   }, [p?.id, p?.updatedAt]);
-  usePageTitle(p ? p.title : null);
+  usePageTitle(p ? p.title : readError ? 'Leverantören kunde inte läsas' : null);
   const { run, busy, error: actionError, reset: resetAction } = useAdminAction({ toastId: 'provider:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.models], toastId: 'provider:' + id });
   const error = actionError ?? removal.error ?? readError;
@@ -84,9 +85,13 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
     return (
       <AdminShell pending={!error} user={user} section="modeller" title={null} thing={{}}>
         {error ? (
-          <Text as="p" role="alert" color="accent">
-            {error}
-          </Text>
+          <>
+            {/* The page keeps its one level-1 heading when the provider cannot be read: what is missing, the alert why. */}
+            <Heading level={1}>Leverantören kunde inte läsas</Heading>
+            <Text as="p" role="alert" color="accent">
+              {error}
+            </Text>
+          </>
         ) : (
           <Text type="supporting" role="status">
             Läser leverantören …

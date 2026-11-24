@@ -4,6 +4,7 @@ import { BOOK_TALK_PATH, PRESENCE_LENS } from './data';
 import {
   announcements,
   desktop,
+  entryStops,
   expect,
   expectNoAxeViolations,
   narrow,
@@ -87,6 +88,10 @@ test.describe('the action dialog on a work item', () => {
       'Du har Planeringstid 09:00–11:00 och APT 15:00–16:30. Den valda tiden 13:15–14:00 är ledig.',
     );
     await expect(day).toContainText('Vald tid');
+    // The day is a picture of the person's day beside the choice: its entries are no controls, so a Tab never stops on
+    // them and nothing promises that Enter opens one (WA-M2).
+    expect(await entryStops(day)).toBe(0);
+    await expect(day).not.toContainText('Retur på en post öppnar den.');
     await expectNoAxeViolations(page);
     await dialog.getByRole('textbox', { name: 'Plats' }).fill('Bergsåkers skola, rum 12');
     await dialog.getByRole('button', { name: 'Nästa' }).click();

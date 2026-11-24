@@ -322,7 +322,7 @@ export function calendarDecisions({
  * invitation is checked once more right before it is sent (M1, Q12): a person another of their current managers booked
  * inside the round the confirmation was approved in (`CalendarCommand.round`), after it was approved, is not invited a
  * second time, and the row says so. The round is not read again for it. With the approval of one manager's invitation
- * refused while another's to the same person may still be sent (`composition/execution-projection.ts`), two managers
+ * refused while another's to the same person may still be sent (`threads/usecases/projection.ts`), two managers
  * can never both send one.
  */
 export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewhere: BookedElsewhere) {
@@ -507,7 +507,7 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewh
         label: item.label,
         outcome,
         ...(found && outcome === 'done'
-          ? { source: { ref: found.ref, revision: found.revision, uid: found.uid } }
+          ? { source: { ref: found.ref, revision: found.revision, uid: found.uid, icalUid: found.icalUid } }
           : {}),
         // The receipt is the read-back (D45), so it says what the calendar holds about the room too: an answer that is
         // still to come leaves the booking without an undo (D69), and a no means the meeting has no room.

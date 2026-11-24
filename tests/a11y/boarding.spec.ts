@@ -138,6 +138,7 @@ test.describe('the plan for its manager', () => {
     await expect(box).toBeFocused();
     await expect.poll(() => said(page, 'Planen är avslutad och kan inte ändras.')).toBe(true);
     await expect(page.getByRole('main').getByText('Planen är avslutad och kan inte ändras.')).toBeVisible();
+    await expectNoAxeViolations(page);
   });
 
   test('Lägg till punkt: what is missing is said on its field, the item is added and the focus returns to the button', async ({

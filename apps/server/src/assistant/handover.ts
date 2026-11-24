@@ -267,7 +267,12 @@ export function handoverPath(deps: AssistantDeps) {
         // What is said at the side does not become the conversation's summary: that stays the transcript's.
         await tx.updateThread(conversationId, { ...(side ? {} : { summary: body }), updatedAt: at, handover: state });
       }
-      await tx.addMessage(conversationId, { role: 'user', body: input.text, at, meta: { handed: asked } });
+      await tx.addMessage(conversationId, {
+        role: 'user',
+        body: input.text,
+        at,
+        meta: { handed: asked, ...(input.turn ? { turn: input.turn } : {}) },
+      });
       await tx.addMessage(conversationId, { role: 'assistant', body, at, meta: answerMeta });
       await tx.writeAudit({
         actor: persona.principal.id,

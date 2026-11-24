@@ -54,7 +54,7 @@ export interface CheckOptions {
    * The installation's own assertion (D119), for the reads the manifest declares under `installation`: the check reads
    * their first pages as Clew would. Absent, they are not read; a person's assertion on their route is probed either way.
    */
-  assertInstallation?: (binding: AssertionBinding & { capability: string }) => Promise<string>;
+  assertInstallation?: (binding: AssertionBinding) => Promise<string>;
   fetch?: FetchLike;
   /** Validates `{}` against a capability's input schema with a real validator. Absent, a schema that lists `required` properties is taken to need input. */
   acceptsEmptyInput?: (schema: object) => boolean;
@@ -708,18 +708,20 @@ export async function checkConnector(options: CheckOptions): Promise<
         fail(`${head}: the read failed (${code})`);
         row.note('fail', `Läsningen som installationen gav fel: ${installationReadText(code, manifest.source)}`);
       }
-    // The connector itself must refuse a person on this route: a valid assertion, bound to this very request, of the
-    // check's manager. Clew never sends one there; a connector that answers it would answer anyone it is handed.
+    // The connector itself must refuse a person on this route: a valid assertion, bound to this very request (its
+    // route and body), of the check's manager. Clew never sends one there; a connector that answers it would answer
+    // anyone it is handed.
     try {
       const text = JSON.stringify({ input: {} });
-      const r = await fetchImpl(url + INSTALLATION_ROUTE + encodeURIComponent(read.name), {
+      const path = INSTALLATION_ROUTE + encodeURIComponent(read.name);
+      const r = await fetchImpl(url + path, {
         method: 'POST',
         // As Clew calls it (CB-4): the registered address only, and the transport's time limit.
         redirect: 'error',
         signal: AbortSignal.timeout(10_000),
         headers: {
           'content-type': 'application/json',
-          authorization: 'Bearer ' + (await options.assert(CHECK_MANAGER, [], { body: text, capability: read.name })),
+          authorization: 'Bearer ' + (await options.assert(CHECK_MANAGER, [], { path, body: text })),
           ...(options.key ? { 'x-clew-connector-key': options.key } : {}),
         },
         body: text,

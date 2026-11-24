@@ -17,6 +17,7 @@ import type {
   Verb,
   View,
   ViewRef,
+  WrittenTurn,
 } from '@clew/contracts';
 import { viewRows } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
@@ -66,7 +67,7 @@ import {
 import { WireError, type AssistantDeps, type ResolvedModel } from './ports';
 import { draftSelection, parseVerb, verbsFor } from './verbs';
 import { threadAccess } from '../threads/access';
-import { HandoverOffered, TurnStopped } from './domain';
+import { HandoverHeld, HandoverOffered, TurnStopped } from './domain';
 import { assistantLine, HANDOVER_TOOL, handoverPath, handoverTool, ROUTABLE_MAX } from './handover';
 
 export { HandoverHeld, HandoverOffered, TurnStopped } from './domain';
@@ -112,6 +113,8 @@ type ModelUnavailableOutcome = { unavailable: string };
 /** The model suggests an assistant of another system for the question (D125 item 11): which one. */
 type HandedOutcome = { handTo: string };
 const SEARCH_TOOL = SEARCH_CONNECTOR + '.search';
+/** A question's turn key as the page makes it (`TurnKey`). */
+const TURN_KEY = /^[A-Za-z0-9-]{8,64}$/;
 /** What a caller hears while a turn runs (D36): the capabilities it reads and the model's text so far; `signal` is the person pressing Stoppa. */
 export interface TurnObserver {
   emit?: (event: TurnEvent) => void;
@@ -939,20 +942,80 @@ export function assistantUsecases(deps: AssistantDeps) {
   /**
    * One turn of the conversation. A listener hears its steps and the model's text while it runs (D36); the turn, its two
    * messages and its audit row are still written together once the answer is known, and a turn stopped before that
-   * writes nothing of the conversation. A work item a propose became before the stop is not the turn's: it was
-   * committed with its own audit row when it started, and stays as the person's open item. A turn that ends without an
-   * answer after it called a model, read anything or started a work item (stopped, offered to another system's
-   * assistant, or failed on the way) still writes its audit row (`unanswered`): which model was sent what is never lost
-   * (D91, D122 item 8).
+   * writes nothing of the conversation. A turn stopped after a propose had become a work item is written whole, with
+   * the item as its answer (WD-L3): the item was committed with its own audit row when it started, and the
+   * conversation says so. A turn that ends without an answer after it called a model, read anything or started a work
+   * item (stopped, offered to another system's assistant, or failed on the way) still writes its audit row (`unanswered`): which
+   * model was sent what is never lost (D91, D122 item 8). A question sent with a key (`ConversationInput.turn`) that is
+   * already written is answered with that turn and asks nothing.
    */
   async function converse(
     persona: AuthenticatedContext,
     input: ConversationInput,
     observer: TurnObserver = {},
   ): Promise<ConversationResponse> {
-    // Handed to an assistant of another system: the person's words go there unchanged and Clew's own model is not
-    // asked. Its answer stands as its own; Clew never answers in its place unasked.
-    if (input.assistant) return handOver(persona, input, observer);
+    // The same question sent again under its key (WD-L3), after a stop or an answer that broke on its way: the turn as
+    // it was written, and nothing asked or written again.
+    if (input.turn) {
+      const done = await written(persona, input.turn);
+      if (done) return done;
+    }
+    try {
+      // Handed to an assistant of another system: the person's words go there unchanged and Clew's own model is not
+      // asked. Its answer stands as its own; Clew never answers in its place unasked.
+      return await (input.assistant ? handOver(persona, input, observer) : clewTurn(persona, input, observer));
+    } catch (e) {
+      // Two sends of one question raced and the other wrote first (the key is written once): its turn is the answer.
+      const expected =
+        e instanceof TurnStopped ||
+        e instanceof HandoverOffered ||
+        e instanceof HandoverHeld ||
+        e instanceof InputError;
+      const done = input.turn && !expected ? await written(persona, input.turn).catch(() => undefined) : undefined;
+      if (done) return done;
+      throw e;
+    }
+  }
+  /**
+   * The turn a question sent with this key was written as (WD-L3), answered as a turn is: the conversation as it stands
+   * and the answer that followed the question. Undefined when no question of the person's carries the key, or the
+   * conversation is no longer theirs to see. What an answer offered for the moment (Clew's actions, the verbs) is not
+   * offered again; the draft is drawn again only while its item can be read.
+   */
+  async function written(persona: AuthenticatedContext, key: string): Promise<ConversationResponse | undefined> {
+    const id = await store.turnWritten(persona.id, key);
+    const conversation = id ? await access.read(persona, id) : undefined;
+    if (!conversation) return undefined;
+    const asked = conversation.messages.findIndex(m => m.role === 'user' && m.meta?.turn === key);
+    const answer = asked < 0 ? undefined : conversation.messages.slice(asked + 1).find(m => m.role === 'assistant');
+    if (!answer) return undefined;
+    const meta = answer.meta ?? {};
+    const drafted = meta.draft ? await access.read(persona, meta.draft.threadId) : undefined;
+    return {
+      conversationId: conversation.id,
+      thread: conversation,
+      shape: meta.shape ?? 'svar',
+      assistant: meta.assistant ?? 'router',
+      answer: { body: answer.body, source: meta.source ?? '', at: answer.createdAt },
+      ...(meta.view ? { view: meta.view } : {}),
+      ...(meta.draft && drafted ? { draft: { ...meta.draft, thread: drafted } } : {}),
+      clewActions: [],
+      followUps: meta.followUps ?? [],
+      ...(meta.sources?.length ? { sources: meta.sources } : {}),
+      ...(meta.model ? { model: meta.model } : {}),
+    };
+  }
+  /** What a question sent with a turn key came to (WD-L3): the page reads it after a stop or a broken answer. A read. */
+  async function writtenTurn(persona: AuthenticatedContext, key: string): Promise<WrittenTurn> {
+    if (!TURN_KEY.test(key)) throw new InputError('Ogiltig förfrågan.');
+    return { written: (await written(persona, key)) ?? null };
+  }
+  /** One turn to Clew's own assistant, and its record when it ends without an answer. */
+  async function clewTurn(
+    persona: AuthenticatedContext,
+    input: ConversationInput,
+    observer: TurnObserver,
+  ): Promise<ConversationResponse> {
     const turn = turnFor(persona, observer);
     try {
       return await answerTurn(persona, input, observer, turn);
@@ -1068,23 +1131,34 @@ export function assistantUsecases(deps: AssistantDeps) {
         !people.named.length
           ? (await deps.handover.list(persona).catch(() => [])).slice(0, ROUTABLE_MAX)
           : [];
-      const outcome = await modelPath(persona, input.text, history, context, model, turn, people, routable);
+      let outcome: Awaited<ReturnType<typeof modelPath>> | undefined;
+      try {
+        outcome = await modelPath(persona, input.text, history, context, model, turn, people, routable);
+      } catch (e) {
+        // Stopped after its propose had become a work item (WD-L3): the turn is written with the item as its answer
+        // below, so the conversation never leaves an item unsaid. Stopped before that, nothing is written.
+        if (!(e instanceof TurnStopped && turn.started)) throw e;
+      }
       // The model suggests an assistant of another system: the person is asked before anything leaves Clew, and the
       // turn ends here with no conversation saved, as a stopped one does; its audit row is `unanswered`'s.
-      if ('handTo' in outcome) {
+      if (outcome && 'handTo' in outcome) {
         const suggested = routable.find(a => a.id === outcome.handTo);
         if (suggested) throw new HandoverOffered(suggested);
       }
-      if ('handTo' in outcome) fallbackReason = 'suggested an assistant that is not listed';
-      else if ('unavailable' in outcome) fallbackReason = outcome.unavailable;
-      else produced = outcome;
+      if (outcome && 'handTo' in outcome) fallbackReason = 'suggested an assistant that is not listed';
+      else if (outcome && 'unavailable' in outcome) fallbackReason = outcome.unavailable;
+      else if (outcome) produced = outcome;
     }
-    // The model failed after its propose had become a work item: the item is the answer, and nothing is routed or
-    // started a second time.
-    if (!produced && turn.started) produced = await startedAnswer(persona, turn.started, fallback, history);
+    // A stop that came after a propose had become a work item stops nothing more: the item stays, and the turn is
+    // written with it as the answer, so what the turn wrote is always whole (WD-L3).
+    const stopped = !!observer.signal?.aborted && !!turn.started;
+    // The model failed or was stopped after its propose had become a work item: the item is the answer, and nothing is
+    // routed or started a second time. A stopped turn's answer is Clew's own words, not a model's that failed.
+    if (!produced && turn.started)
+      produced = await startedAnswer(persona, turn.started, stopped ? 'router' : fallback, history);
     if (!produced && named.length) produced = cardPath(named, fallback);
     if (!produced) produced = await routerPath(persona, input.text, fallback, turn, people);
-    if (observer.signal?.aborted) throw new TurnStopped();
+    if (observer.signal?.aborted && !turn.started) throw new TurnStopped();
     // Drawn in the turn: the chipped or named cards, then the asker's work about the people the question names or the
     // model looked up (D115), each once, three at most. Under a model's answer, work about a named person is drawn
     // only when the answer speaks of it: the model is told of that work and points at it when the question is about
@@ -1151,6 +1225,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     };
     const askedMeta: MessageMeta = {
       ...(chips.length ? { chips, refs } : {}),
+      ...(input.turn ? { turn: input.turn } : {}),
     };
     await store.transaction(async tx => {
       if (!existing) {
@@ -1214,6 +1289,8 @@ export function assistantUsecases(deps: AssistantDeps) {
           ...(cards.length ? { cards } : {}),
           // A work item a propose became in the turn (its own audit row says so too).
           ...(turn.started ? { started: { thread: turn.started.threadId, capability: turn.started.capability } } : {}),
+          // The person pressed Stoppa after that item was started: the turn is written with the item as its answer.
+          ...(stopped ? { stopped: true } : {}),
           // The model the turn was sent to, whether it answered or the router did (D91), and what the call cost and
           // where its trace is; the text stays in the message, never here.
           ...(turn.called ? { model: turn.called.model.id, modelCall: turn.called.call } : {}),
@@ -1280,6 +1357,7 @@ export function assistantUsecases(deps: AssistantDeps) {
   }
   return {
     converse,
+    writtenTurn,
     ask,
     reply,
     listObjects: (persona: AuthenticatedContext, q: string, near: string[] = []) => listObjects(deps, persona, q, near),

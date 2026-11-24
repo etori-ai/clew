@@ -3,6 +3,7 @@ import type {
   Execution,
   ExecutionStore,
   Job,
+  WatchCard,
   WatchIntent,
   WorkflowStart,
 } from '../apps/server/src/modules/executions/model';
@@ -87,7 +88,7 @@ export const watchIntentRecord = (job: Job): WatchIntent => ({
 /**
  * The ledger's store contract (D45, D86): one suite over the memory adapter and Postgres. `enqueued` reads the workflow
  * starts a commit made under ids with a prefix (the engine's queue rows in Postgres); `watches` the watch intent rows of
- * a job.
+ * a job; `cards` what an ended watch left for the person.
  */
 export interface ExecutionStoreHarness {
   store: ExecutionStore;
@@ -95,6 +96,8 @@ export interface ExecutionStoreHarness {
   auditCount(action?: string): Promise<number>;
   enqueued(prefix: string): Promise<WorkflowStart[]>;
   watches(jobId: string): Promise<WatchIntent[]>;
+  /** The cards `pushCard` left for a person, as stored: in memory the card, in Postgres the thread `watchCardSink` writes. */
+  cards(personId: string): Promise<Array<Omit<WatchCard, 'jobId' | 'stepId'>>>;
 }
 export function executionStoreContract(name: string, create: () => Promise<ExecutionStoreHarness>) {
   describe(name + ' execution store', () => {
@@ -327,6 +330,60 @@ export function executionStoreContract(name: string, create: () => Promise<Execu
       });
       expect((await w.enqueued('execution:' + e.id)).map(s => s.id)).toEqual(['execution:' + e.id]);
       expect(await w.enqueued('reconcile:' + e.id)).toEqual([executionStart('reconcile:' + e.id + ':1', e.id)]);
+    });
+    test('a work item a decision was made on is read back whole: through read, the lock and an update (DE-M7)', async () => {
+      const w = await create(),
+        e: Execution = {
+          ...executionRecord(w.personId, w.personId + '-presented'),
+          decisionId: 'decision:' + w.personId + ':presented',
+          presentation: {
+            threadId: 'card-presented',
+            version: '2099-11-05T10:00:00.000Z',
+            actionId: 'rename',
+            newTitle: 'Nytt namn',
+          },
+        };
+      await w.store.transaction(async tx => {
+        expect((await tx.insert(e)).execution).toEqual(e);
+      });
+      expect(await w.store.read(e.id)).toEqual(e);
+      expect(await w.store.readDecision(w.personId, e.decisionId)).toEqual(e);
+      await w.store.transaction(async tx => {
+        const row = (await tx.lock(e.id))!;
+        expect(row.presentation).toEqual(e.presentation);
+        await tx.update({ ...row, state: 'running', dispatchedAt: '2099-11-05T10:01:00.000Z' });
+      });
+      expect(await w.store.read(e.id)).toEqual({ ...e, state: 'running', dispatchedAt: '2099-11-05T10:01:00.000Z' });
+    });
+    test('the card an ended watch leaves is pushed once by its id and rolls back with its transaction (DE-M7)', async () => {
+      const w = await create(),
+        card: WatchCard = {
+          sourceAuthorization: 'v1',
+          id: 'watch-card:' + w.personId,
+          personId: w.personId,
+          jobId: 'job:' + w.personId,
+          stepId: 'watch-1',
+          connector: 'payroll',
+          topic: 'watch:' + w.personId,
+          title: 'Frånvaron syns inte i lönesystemet',
+          summary: 'Bevakningen tog slut utan att lönesystemet visade frånvaron.',
+          reason: 'Bevakningen tog slut',
+          at: '2099-11-06T10:00:00.000Z',
+        };
+      await expect(
+        w.store.transaction(async tx => {
+          await tx.pushCard(card);
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect(await w.cards(w.personId)).toEqual([]);
+      await w.store.transaction(tx => tx.pushCard(card));
+      // A repeat, a retried settlement say, finds the card there and changes nothing.
+      await w.store.transaction(tx =>
+        tx.pushCard({ ...card, title: 'Ett annat namn', at: '2099-11-06T11:00:00.000Z' }),
+      );
+      const { jobId: _, stepId: __, ...stored } = card;
+      expect(await w.cards(w.personId)).toEqual([stored]);
     });
   });
 }

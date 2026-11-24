@@ -1,6 +1,6 @@
 {
   "id": "98703cd9-d220-4648-bfc6-78da0db0d5b2",
-  "prevId": "06dff247-1156-4121-85e6-2e9077920ddc",
+  "prevId": "20c67e0f-db92-4022-8c6a-765493ebc5eb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2685,6 +2685,32 @@
       },
       "isRLSEnabled": false
     },
+    "public.content_change": {
+      "name": "content_change",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.attention_delivery": {
       "name": "attention_delivery",
       "schema": "",
@@ -5353,6 +5379,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "event_ical_uid": {
+          "name": "event_ical_uid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "confirmed_at": {
           "name": "confirmed_at",
           "type": "timestamp with time zone",
@@ -6464,6 +6496,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "thread_message_turn": {
+          "name": "thread_message_turn",
+          "columns": [
+            {
+              "expression": "(\"meta\"->>'turn')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"thread_message\".\"role\" = 'user' AND (\"thread_message\".\"meta\"->>'turn') IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -6789,6 +6837,34 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "thread_conversation_recent": {
+          "name": "thread_conversation_recent",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"thread\".\"kind\" = 'question'",
           "concurrently": false,
           "method": "btree",
           "with": {}

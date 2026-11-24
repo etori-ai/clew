@@ -22,6 +22,7 @@
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@clew/notices": "workspace:*",
     "@vitejs/plugin-react": "6.3.0",
     "vite": "8.3.8"
   }

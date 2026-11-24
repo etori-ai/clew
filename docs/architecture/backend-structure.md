@@ -102,7 +102,7 @@ The [dependency rules](../../.dependency-cruiser.cjs) enforce these boundaries. 
 
 ## Existing special cases
 
-The architecture is a boundary to preserve, not a claim that every historical path is already identical. Calendar has dedicated API/UI paths and is wired directly into parts of the thread and assistant composition. Its source writes nevertheless converge on the execution ledger. The live thread composition replaces the older synchronous `ensureThreads` path with `refresh.request`; some unit scenarios still exercise the older helper.
+The architecture is a boundary to preserve, not a claim that every historical path is already identical. Calendar has dedicated API/UI paths and is wired directly into parts of the thread and assistant composition. Its source writes nevertheless converge on the execution ledger. A person's scan is `refresh.request` alone, in the server and in the unit suites (`tests/refresh-scan.ts` runs it over the memory stores).
 
 Authentication and connector loading are platform code with direct database access. Workflow steps call composed use cases. A changed workflow body is a new application version; pending workflows of an older version are moved by an operator (D85). These are different concerns from permitting a new vendor integration inside the monolith.
 

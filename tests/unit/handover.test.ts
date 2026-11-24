@@ -13,6 +13,7 @@ import {
   TurnStopped,
 } from '../../apps/server/src/assistant';
 import type { AssistantDeps, ManagedPerson } from '../../apps/server/src/assistant/ports';
+import { assistantFunctions } from '../../apps/server/src/assistant/functions';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
 import { assertionFor, testAuthority, testJwks } from '../connector-authority';
 import { decodeJwt } from 'jose';
@@ -75,8 +76,9 @@ function world(
   const deps = {
     store,
     registry,
-    run: <O>(p: AuthenticatedContext, name: string, input: unknown) =>
-      registry.run<O>(audiencedActorOf(p), name, input),
+    // `run` and `handover` as composition binds them (AM-13): through the registry as the person, with their live
+    // authority.
+    ...assistantFunctions({ registry }),
     // A handed-over turn reaches neither the calendar nor a model: a turn that did would fail on these.
     calendar: {} as AssistantDeps['calendar'],
     models: {
@@ -96,20 +98,6 @@ function world(
     ...(options.people
       ? { people: async (p: AuthenticatedContext) => (p.role === 'manager' ? options.people! : []) }
       : {}),
-    handover: {
-      list: (p: AuthenticatedContext) =>
-        registry.assistantsFor(audiencedActorOf(p), { authorize: () => p.authorize() }),
-      ask: (
-        p: AuthenticatedContext,
-        assistant: string,
-        ask: { question: string; session?: string },
-        signal?: AbortSignal,
-      ) =>
-        registry.ask(audiencedActorOf(p), assistant, ask, {
-          authorize: () => p.authorize(),
-          ...(signal ? { signal } : {}),
-        }),
-    },
   } satisfies AssistantDeps;
   return { registry, store, sent, assistant: assistantUsecases(deps) };
 }
@@ -785,6 +773,40 @@ describe('an assistant beside the conversation, and a source that still hands ba
       action: 'conversation.handed',
       details: { assistant: HR, side: true },
     });
+  });
+  test('a question to another system’s assistant sent again under its key goes there once: the answer is the turn as written (WD-L3)', async () => {
+    const w = world({
+      extra: [
+        scripted([
+          [
+            { type: 'text', delta: 'Ja, även på deltid.' },
+            { type: 'done', session: 's-1' },
+          ],
+        ]),
+      ],
+    });
+    const key = '0d9c8b7a-6f5e-4d3c-8b2a-1f0e9d8c7b6a';
+    const first = await w.assistant.converse(hillevi, {
+      text: 'Gäller det på deltid?',
+      assistant: HR,
+      side: true,
+      turn: key,
+    });
+    expect(first.thread.messages[0]!.meta).toMatchObject({ turn: key, handed: { assistant: HR, side: true } });
+    // The script holds one answer: a second ask of the source would find none and fail.
+    const again = await w.assistant.converse(hillevi, {
+      text: 'Gäller det på deltid?',
+      assistant: HR,
+      side: true,
+      turn: key,
+    });
+    expect(again).toMatchObject({
+      conversationId: first.conversationId,
+      assistant: 'handover',
+      answer: { body: 'Ja, även på deltid.' },
+    });
+    expect(again.thread.messages).toHaveLength(2);
+    expect(w.store.audit.map(r => r.action)).toEqual(['conversation.handed']);
   });
   test('a conversation keeps one exchange with each assistant asked in it, and a question to one asked before continues its own', async () => {
     const w = world({

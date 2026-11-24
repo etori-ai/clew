@@ -73,6 +73,7 @@ import {
   statusOf,
 } from './labels';
 import { AdminShell } from './shell';
+import { mobileQuery } from '../../media';
 import { DialogFrame } from '../../components/shell/dialog-frame';
 import { DOT } from '../../dot';
 
@@ -137,7 +138,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const site = useBranding().name;
-  const mobile = useMediaQuery('(max-width: 720px)');
+  const mobile = useMediaQuery(mobileQuery);
   // The connector and the units from the admin cache (D33); a 400 is the one answer the page turns into "finns inte".
   const client = useQueryClient();
   const detail = useQuery(adminQueries.connector(id));
@@ -161,7 +162,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   useEffect(() => {
     if (c) setAudience(c.audience);
   }, [c?.id, c?.updatedAt]);
-  usePageTitle(c ? c.source : null);
+  usePageTitle(c ? c.source : readError ? 'Anslutningen kunde inte läsas' : null);
   // Every action re-reads the admin queries and then says what it did; removing re-reads the list alone and drops this page's own read before leaving.
   const {
     run,
@@ -185,9 +186,13 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     return (
       <AdminShell pending={!error} user={user} section="anslutningar" title={null} thing={{}}>
         {error ? (
-          <Text as="p" role="alert" color="accent">
-            {error}
-          </Text>
+          <>
+            {/* The page keeps its one level-1 heading when the connector cannot be read: what is missing, the alert why. */}
+            <Heading level={1}>Anslutningen kunde inte läsas</Heading>
+            <Text as="p" role="alert" color="accent">
+              {error}
+            </Text>
+          </>
         ) : (
           <Text type="supporting" role="status">
             Läser anslutningen …

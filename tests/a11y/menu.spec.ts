@@ -224,6 +224,79 @@ test.describe('Samtal among the pages and the register', () => {
     await expect(all).toHaveAttribute('aria-current', 'page');
   });
 
+  // WD-L1: the register reads the conversations alone, the latest activity first, a page at a time by the server's cursor.
+  const fifth = (base: Thread): Thread => ({
+    ...base,
+    id: 'samtal-5',
+    title: 'Femte frågan',
+    topic: 'samtal-5',
+    updatedAt: '2026-10-31T07:00:00.000Z',
+  });
+  test('the register steps through its conversations a page at a time: the pager keeps the focus, the page is in the address, and how many is said once every page is read', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(desktop);
+    const base = api.threads.find(t => t.kind === 'question')!;
+    api.threads = [...api.threads.filter(t => t.kind !== 'question'), ...conversations(base), fifth(base)];
+    api.conversationPage = 2;
+    await open(page, '/conversations');
+    const main = page.getByRole('main');
+    const pager = main.getByRole('navigation', { name: 'Sidor med samtal' });
+    await expect(main.getByRole('row')).toHaveCount(3);
+    await expect(main.getByRole('link', { name: 'Första frågan', exact: true })).toBeVisible();
+    // The total is not known until the last page is read: the pager has a way on and no numbers.
+    await expect(main.getByText('5 samtal', { exact: true })).toHaveCount(0);
+    await expect(pager.getByRole('button', { name: 'Gå till sida 1' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    const next = pager.getByRole('button', { name: 'Gå till nästa sida' });
+    await next.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/conversations?page=2');
+    await expect(main.getByRole('link', { name: 'Tredje frågan', exact: true })).toBeVisible();
+    await expect(main.getByRole('link', { name: 'Första frågan', exact: true })).toHaveCount(0);
+    // The step is taken at the foot of the list and read from its head: the head is in view, the focus where it was.
+    await expect(page.getByRole('heading', { level: 1, name: 'Samtal' })).toBeInViewport();
+    await expect(next).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/conversations?page=3');
+    await expect(main.getByRole('link', { name: 'Femte frågan', exact: true })).toBeVisible();
+    await expect(pager.getByRole('button', { name: 'Gå till sida 3' })).toHaveAttribute('aria-current', 'page');
+    await expect(next).toBeFocused();
+    await expect(main.getByText('5 samtal', { exact: true }).first()).toBeVisible();
+    // Each page was read once, from where the last one ended.
+    expect(api.conversationReads).toEqual([
+      null,
+      '2026-11-03T07:00:00.000Z~samtal-2',
+      '2026-11-01T07:00:00.000Z~samtal-4',
+    ]);
+    await expectNoAxeViolations(page);
+    // Back is a step back; a link to a page reads the pages before it in turn.
+    await page.goBack();
+    await expect(page).toHaveURL('/conversations?page=2');
+    await expect(main.getByRole('link', { name: 'Tredje frågan', exact: true })).toBeVisible();
+    await open(page, '/conversations?page=2');
+    await expect(main.getByRole('link', { name: 'Fjärde frågan', exact: true })).toBeVisible();
+    await expect(main.getByRole('row')).toHaveCount(3);
+  });
+  test('at 320 px the register’s pages are a list of links with the pager under it, and nothing reflows past the edge', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(narrow);
+    const base = api.threads.find(t => t.kind === 'question')!;
+    api.threads = [...api.threads.filter(t => t.kind !== 'question'), ...conversations(base), fifth(base)];
+    api.conversationPage = 2;
+    await open(page, '/conversations');
+    const list = page.getByRole('main').getByRole('list', { name: 'Samtal' });
+    await expect(list.getByRole('listitem')).toHaveCount(2);
+    const pager = page.getByRole('main').getByRole('navigation', { name: 'Sidor med samtal' });
+    await pager.getByRole('button', { name: 'Gå till nästa sida' }).click();
+    await expect(list.getByRole('link', { name: 'Tredje frågan' })).toBeVisible();
+    await expect(list.getByRole('listitem')).toHaveCount(2);
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
   test('at 320 px the register is a list of links and nothing reflows past the edge', async ({ page, api }) => {
     await page.setViewportSize(narrow);
     const base = api.threads.find(t => t.kind === 'question')!;

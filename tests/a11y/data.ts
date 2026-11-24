@@ -717,11 +717,33 @@ export const today: TodayView = {
   ],
   gaps: [{ start: '2026-11-04T09:30:00.000Z', end: '2026-11-04T11:00:00.000Z' }],
 };
-/** A meeting every weekday: a filled week is what pushes the columns past the screen. */
-export const events = (from: string): CalendarEvent[] =>
-  [0, 1, 2, 3, 4].map(offset => {
-    const day = new Date(Date.parse(from) + offset * 86_400_000).toISOString().slice(0, 10);
-    return {
+/**
+ * The meeting of a talk Clew booked (D133): marked by the server from the ids it stored (`talk`), drawn and heard as a
+ * booked talk whatever its title. Thursday 5 November, the week of `WEEK`.
+ */
+export const talkMeeting: CalendarEvent = {
+  id: 'talk-anna',
+  title: 'Utvecklingssamtal · Anna Lindqvist',
+  start: '2026-11-05T12:00:00.000Z',
+  end: '2026-11-05T13:00:00.000Z',
+  allDay: false,
+  mine: true,
+  room: '',
+  participants: ['Anna Lindqvist'],
+  ref: 'memory:talk-anna',
+  revision: 'r1',
+  canCancel: true,
+  recurring: false,
+  organizer: 'Testa Testsson',
+  talk: true,
+};
+/** A meeting every weekday: a filled week is what pushes the columns past the screen. The talk's meeting when it falls in it. */
+export const events = (from: string): CalendarEvent[] => {
+  const days = [0, 1, 2, 3, 4].map(offset =>
+    new Date(Date.parse(from) + offset * 86_400_000).toISOString().slice(0, 10),
+  );
+  return [
+    ...days.map((day, offset) => ({
       id: `v${offset}`,
       title: 'Morgonmöte ledningsgrupp',
       start: `${day}T07:15:00.000Z`,
@@ -735,8 +757,10 @@ export const events = (from: string): CalendarEvent[] =>
       canCancel: true,
       recurring: false,
       organizer: 'Testa Testsson',
-    };
-  });
+    })),
+    ...(days.includes(talkMeeting.start.slice(0, 10)) ? [talkMeeting] : []),
+  ];
+};
 
 /** The composite search's output (D26): two passages of one routine, a stale lathund, and one source that did not answer. */
 export const searchOutput: SearchResult = {
@@ -983,6 +1007,38 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
   }
   // The assistant fills in an action of the work item the conversation is about (D112 item 8): a draft kept in the
   // conversation, never sent. The time is the first free time on Friday the person's calendar answers (`meetingSlots`).
+  // The assistant points at the talks it drew (D26 forslag): the week is drawn under the answer, its entries no controls.
+  if (/^vilka samtal/i.test(text)) {
+    const body = 'Jag har ritat in två samtal nästa vecka. Bekräfta dem i ärendet.';
+    const reply = thread({
+      id: conversationId,
+      title: text.slice(0, 80),
+      kind: 'question',
+      connector: 'clew',
+      area: 'fragor',
+      messages: [
+        ...previous,
+        { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW },
+        {
+          id: `a${previous.length}`,
+          role: 'assistant',
+          body,
+          createdAt: NOW,
+          meta: { source: 'Kalendern', shape: 'forslag', assistant: 'router' },
+        },
+      ],
+    });
+    return {
+      conversationId,
+      thread: reply,
+      shape: 'forslag',
+      assistant: 'router',
+      answer: { body, source: 'Kalendern', at: NOW },
+      forslag: { threadId: 'samtal' },
+      clewActions: [],
+      followUps: [],
+    };
+  }
   if (/^boka det/i.test(text)) {
     const body = 'Ni är båda lediga fredag 09:00. Jag har fyllt i bokningen; inget är skickat.';
     const draft = {

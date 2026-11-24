@@ -226,6 +226,7 @@ async function seedThread(w: Awaited<ReturnType<typeof world>>) {
         eventRef: null,
         eventUid: null,
         eventRevision: null,
+        eventIcalUid: null,
         confirmedAt: null,
         undoUntil: null,
         reminders: 0,
@@ -241,7 +242,10 @@ test('partial confirmation persists per-item evidence and policy; reconciliation
   const create = w.provider.create.bind(w.provider);
   w.provider.create = async (uid, input) => {
     if (uid.endsWith(':p2')) throw new Error('offline');
-    return create(uid, input);
+    // As on Microsoft 365, where every copy of the meeting carries an id of the calendar's own beside Clew's uid.
+    const event = await create(uid, input);
+    event.icalUid = 'ical:' + uid;
+    return event;
   };
   const selected = [1, 2].map(n => threadId + ':p' + n);
   const [a, b] = await Promise.all([
@@ -258,6 +262,13 @@ test('partial confirmation persists per-item evidence and policy; reconciliation
   expect(result.thread.execution?.state).toBe('unknown');
   expect(result.proposals.map(p => p.status)).toEqual(['confirmed', 'proposed']);
   expect(result.thread.receipt?.rows.map(r => r.outcome)).toEqual(['done', 'unknown']);
+  // The read-back's evidence is stored with the invitation, the id every copy carries among it (WA-L5).
+  const [sent] = w.provider.events;
+  expect(result.proposals[0]).toMatchObject({
+    eventUid: sent!.uid,
+    eventRef: sent!.ref,
+    eventIcalUid: 'ical:' + sent!.uid,
+  });
   await w.uc.progress(a.execution!.id);
   expect(w.provider.events).toHaveLength(1);
 });
@@ -348,6 +359,7 @@ async function cardFor(w: Awaited<ReturnType<typeof world>>, member: UnitMember,
         eventRef: null,
         eventUid: null,
         eventRevision: null,
+        eventIcalUid: null,
         confirmedAt: null,
         undoUntil: null,
         reminders: 0,

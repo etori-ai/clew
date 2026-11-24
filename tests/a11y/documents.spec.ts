@@ -301,6 +301,8 @@ test.describe('the shared document and semantic catalogue', () => {
     await expect(review.getByText('Underlaget har ändrats sedan ärendet skapades. Läs in ärendet igen.')).toBeVisible();
     await expect(approve).toBeDisabled();
     await expect(review.locator('canvas')).toHaveCount(0);
+    // The refusal as drawn, after it was answered: the check above ran on the page before it.
+    await expectNoAxeViolations(page);
   });
   test('a record opens original PDF, DOCX and XLSX with page, sheet and attachment controls', async ({ page, api }) => {
     await originals(page, api);
@@ -399,6 +401,52 @@ test.describe('the shared document and semantic catalogue', () => {
       await expectNoAxeViolations(page);
     }
   });
+  test('a document view is a thing’s page: the original with its pages, under the read’s heading', async ({
+    page,
+    api,
+  }) => {
+    await originals(page, api);
+    await open(page, viewHref('finance.documents', 'finance:inv:55120'));
+    const panel = page.getByRole('main');
+    await expect(panel.getByRole('heading', { level: 1 })).toHaveCount(1);
+    await expect(panel.getByRole('status', { name: 'Sida 1 av 2', exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: 'Visa sidans text' }).click();
+    await expect(panel.getByText(/Faktura 55120\s+Skolgrossisten/)).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+  test('a text view is a thing’s page: its Markdown a level under the page’s heading', async ({ page, api }) => {
+    // No fixture connector declares `text`: a read stands for one, answered as the capability route answers a read
+    // that declares its view (`{ output, source, view }`, the view as the registry passes it).
+    const capability = 'communication.guide';
+    api.views = [...api.views, { capability, title: 'Riktlinje för distansarbete', kind: 'text' }];
+    await page.route(
+      url => url.pathname === `/api/cap/${capability}`,
+      route =>
+        route.fulfill({
+          json: {
+            output: {
+              body: '# Vem kan arbeta på distans\n\nDu kommer överens med din chef.\n\n- Arbetstiden är som vanligt\n- Uppkopplingen är säker',
+            },
+            source: 'Kommunikation',
+            view: {
+              kind: 'text',
+              body: 'body',
+              capability,
+              connector: 'communication',
+              source: 'Kommunikation',
+              chip: false,
+              external: true,
+            } satisfies PanelViewSpec,
+          },
+        }),
+    );
+    await open(page, `/tools/${capability}`);
+    const panel = page.getByRole('main');
+    await expect(panel.getByRole('heading', { level: 1, name: 'Riktlinje för distansarbete' })).toBeVisible();
+    await expect(panel.getByRole('heading', { level: 2, name: 'Vem kan arbeta på distans' })).toBeVisible();
+    await expect(panel.getByText('Uppkopplingen är säker')).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
   test('failed required documents prevent approval and a successful retry sends the reviewed versions', async ({
     page,
     api,
@@ -410,6 +458,7 @@ test.describe('the shared document and semantic catalogue', () => {
     await expect(review.getByText('Underlaget kan inte längre läsas.')).toBeVisible();
     await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toBeDisabled();
     await expect(review.getByRole('link', { name: 'Hämta originalet' })).toBeVisible();
+    await expectNoAxeViolations(page);
     fixture.outage(false);
     await review.getByRole('button', { name: 'Försök igen', exact: true }).click();
     const approve = review.getByRole('button', { name: 'Attestera', exact: true });

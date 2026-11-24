@@ -19,6 +19,34 @@ export interface CallbackGrant {
 }
 /** What a connector's verifier recomputes from the body it received (D117): SHA-256 of the exact bytes, base64url. */
 export const bodyDigest = (body: string) => createHash('sha256').update(body, 'utf8').digest('base64url');
+/** The two routes that name a capability, as a connector's verifier reads them (D117, D119): the name, nothing after. */
+const NAMED_ROUTE = /^\/clew\/(capabilities|installation)\/([^/]+)$/;
+/**
+ * The claims that bind an assertion to its request (D117): `path`, the route it is posted to; `body`, the digest of the
+ * exact body; on `/clew/capabilities/{name}` and `/clew/installation/{name}` the name as `capability`, read from the
+ * path so the two never disagree; and an approved write's `operationId`. Refused for a path that is not absolute (an
+ * address with its host, say) or a name that does not decode: neither is what a connector's verifier reads.
+ */
+function boundClaims(binding: AssertionBinding) {
+  if (typeof binding?.path !== 'string' || !binding.path.startsWith('/') || typeof binding.body !== 'string')
+    throw new AssertionError('An assertion is bound to the route and the body of its request.');
+  const named = NAMED_ROUTE.exec(binding.path);
+  let capability: string | undefined;
+  try {
+    capability = named ? decodeURIComponent(named[2]!) : undefined;
+  } catch {
+    throw new AssertionError('An assertion is bound to a route Clew posts to.');
+  }
+  return {
+    route: named?.[1],
+    claims: {
+      path: binding.path,
+      body: bodyDigest(binding.body),
+      ...(capability ? { capability } : {}),
+      ...(binding.operationId ? { operationId: binding.operationId } : {}),
+    },
+  };
+}
 /** Only Clew holds the private key. Connectors verify requests with public keys and cannot mint callback grants. */
 export async function connectorAuthority(pem: string, kid: string, previous: JSONWebKeySet['keys'] = []) {
   const privateKey = await importPKCS8(pem, 'RS256');
@@ -60,12 +88,13 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
   return {
     jwks,
     /**
-     * The request assertion for one call, bound to it (D117): `body` is the SHA-256 of the exact request body, base64url,
-     * `capability` the capability's name on its route, and `operationId` the `X-Clew-Operation-Id` an approved write is
-     * sent with, so the same assertion cannot carry the write again as another operation. The body carries the input and,
-     * when it names people or units, how the actor stands to each (`about`), so the binding covers both and the bearer
-     * stays the same size however many keys a call names. The callback grant is never bound and never carries `about`;
-     * `callback: false` leaves it out.
+     * The request assertion for one call, bound to it (D117): `path` is the route it is posted to, `body` the SHA-256
+     * of the exact request body, base64url, `capability` the capability's name on its route, and `operationId` the
+     * `X-Clew-Operation-Id` an approved write is sent with, so the same assertion cannot be sent to another route or
+     * carry the write again as another operation. The body carries the input and, when it names people or units, how
+     * the actor stands to each (`about`), so the binding covers both and the bearer stays the same size however many
+     * keys a call names. Without a binding the assertion verifies nowhere. The callback grant is never bound and never
+     * carries `about`; `callback: false` leaves it out.
      */
     async assert(
       connectorId: string,
@@ -82,28 +111,21 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
       return sign(
         connectorId,
         actor,
-        {
-          ...(callback ? { callback } : {}),
-          ...(binding ? { body: bodyDigest(binding.body) } : {}),
-          ...(binding?.capability ? { capability: binding.capability } : {}),
-          ...(binding?.operationId ? { operationId: binding.operationId } : {}),
-        },
+        { ...(callback ? { callback } : {}), ...(binding ? boundClaims(binding).claims : {}) },
         true,
       );
     },
     /**
      * The installation's own assertion, for a read Clew makes with no person behind it (D119): subject
      * `clew:installation`, `caller: "installation"`, no `actor` and no `callback`, so it verifies as nobody's person
-     * and grants no callback. Bound to its one request as every assertion is (D117): the binding is required.
+     * and grants no callback. Bound to its one request as every assertion is (D117): the binding is required, and its
+     * path is `/clew/installation/{name}`.
      */
-    async installation(connectorId: string, binding: AssertionBinding & { capability: string }) {
-      if (typeof binding?.body !== 'string' || typeof binding.capability !== 'string' || !binding.capability)
-        throw new AssertionError('An installation assertion is bound to its request.');
-      return new SignJWT({
-        caller: INSTALLATION_CALLER,
-        body: bodyDigest(binding.body),
-        capability: binding.capability,
-      })
+    async installation(connectorId: string, binding: AssertionBinding) {
+      const bound = binding ? boundClaims(binding) : undefined;
+      if (bound?.route !== 'installation' || binding.operationId)
+        throw new AssertionError('An installation assertion is bound to its request on the installation route.');
+      return new SignJWT({ caller: INSTALLATION_CALLER, ...bound.claims })
         .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid })
         .setIssuer('clew')
         .setAudience(connectorId)

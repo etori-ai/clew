@@ -32,6 +32,7 @@ export type ThreadPatch = Partial<
     | 'remindedAt'
     | 'snoozedUntil'
     | 'handover'
+    | 'execution'
   >
 >;
 export interface NewMessage {
@@ -164,9 +165,33 @@ export interface NamingThread {
   thread: Thread;
   subjects: Subject[];
 }
+/**
+ * Where a page of conversations ends (WD-L1): the last one's latest activity, as precise as the store keeps it, and its
+ * id. The adapter's own; the caller hands it back unchanged.
+ */
+export interface ConversationCursor {
+  at: string;
+  id: string;
+}
 export interface ThreadStore {
-  /** Every unresolved pushed thread, plus at most 50 conversations/recently handled threads, newest first. */
+  /**
+   * Every unresolved pushed thread, plus at most 50 conversations and threads handled in the last seven days, those with
+   * the latest activity (`updatedAt`); the whole list newest first by `createdAt`.
+   */
   listThreads(personId: string, now: string): Promise<Thread[]>;
+  /**
+   * Alla samtal (WD-L1): the person's conversations, the latest activity first (`updatedAt`, then the id, both
+   * descending), at most `limit` of them after `after`, and the cursor of the last one when more follow.
+   */
+  listConversations(
+    personId: string,
+    page: { after?: ConversationCursor; limit: number },
+  ): Promise<{ threads: Thread[]; next: ConversationCursor | null }>;
+  /**
+   * The conversation a question sent with this turn key (`ConversationInput.turn`) was written in (WD-L3), among the
+   * person's own; undefined when no question of theirs carries it. A key is written once (the store refuses it again).
+   */
+  turnWritten(personId: string, turn: string): Promise<string | undefined>;
   /** One of the person's threads; undefined when it does not exist or is not theirs. */
   readThread(personId: string, id: string): Promise<Thread | undefined>;
   /** For timers that know only the thread. */

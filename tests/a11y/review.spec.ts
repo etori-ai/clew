@@ -447,6 +447,13 @@ test.describe('confirmed review completion', () => {
     await page.getByRole('button', { name: 'Attestera 1', exact: true }).click();
     await expect(page).toHaveURL('/todo?item=fakturor');
     expect(completionShown).toBe(false);
+    // The item says the result is in doubt where the person lands, and that state is checked as drawn.
+    await expect(
+      pane(page)
+        .getByText(/^Väntar på svar från/)
+        .first(),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
   });
   test('a refusal from the source keeps the decisions and says why', async ({ page, api }) => {
     reviewed(api);
@@ -460,6 +467,7 @@ test.describe('confirmed review completion', () => {
     await expect(page.getByText('Kunde inte skicka', { exact: true })).toBeVisible();
     await expect(page.getByRole('main')).toContainText('2 av 3 skickas, 1 lämnas kvar');
     expect(await draftOf(page)).not.toBeNull();
+    await expectNoAxeViolations(page);
   });
 });
 

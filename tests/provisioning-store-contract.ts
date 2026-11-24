@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { GroupCapabilityRule, GroupRelationRule } from '../apps/server/src/modules/people/domain';
-import type { ProvisionStore } from '../apps/server/src/modules/people/ports';
+import type { GroupCapabilityRule } from '../apps/server/src/modules/people/domain';
+import type { ProvisionStore, ProvisionTx } from '../apps/server/src/modules/people/ports';
 import { provisioningUsecases } from '../apps/server/src/modules/people/usecases';
 
 /**
@@ -28,8 +28,6 @@ export interface ProvisioningHarness {
   seed(seed: Seed): Promise<void>;
   setMembers(members: Array<{ group: string; person: string }>): Promise<void>;
   setGroupCapabilities(rows: GroupCapabilityRule[]): Promise<void>;
-  /** D121: the organisation's group-relation rows, as the users page writes them. */
-  setGroupRelations(rows: GroupRelationRule[]): Promise<void>;
   /** D121: the relations the person's grant carries, empty without a grant or a relation. */
   relations(personId: string): Promise<string[]>;
   grant(
@@ -257,11 +255,32 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       await usecases.derivePerson('system:test', a);
       expect(await h.relations(a)).toEqual([]);
       const audited = (await h.audit(a)).length;
+      // The row is the organisation's, written through the port as the users page writes it: true only when it changed.
       // A name outside the closed list gives nothing; the relation is no capability and gives none.
-      await h.setGroupRelations([
-        { groupExternalId: group, relation: 'registrar' },
-        { groupExternalId: group, relation: 'nonsense' },
-      ]);
+      const set = (organisationId: string, relation: string, present: boolean) =>
+        h.store.transaction(tx => tx.setGroupRelation(organisationId, group, relation, present));
+      const rows = (organisationId: string) =>
+        h.store.transaction(async tx =>
+          (await tx.groupRelations(organisationId))
+            .filter(row => row.groupExternalId === group)
+            .map(row => row.relation)
+            .sort(),
+        );
+      expect(await set('org', 'registrar', true)).toBe(true);
+      expect(await set('org', 'registrar', true)).toBe(false);
+      expect(await set('org', 'nonsense', true)).toBe(true);
+      expect(await rows('org')).toEqual(['nonsense', 'registrar']);
+      // Another organisation's rows are its own: it holds none of these, and taking one away there changes nothing here.
+      expect(await rows(p + '-other')).toEqual([]);
+      expect(await set(p + '-other', 'registrar', false)).toBe(false);
+      // A row written in a transaction that rolls back is not there.
+      await expect(
+        h.store.transaction(async tx => {
+          await tx.setGroupRelation('org', group, 'unwritten', true);
+          throw new Error('source said no');
+        }),
+      ).rejects.toThrow('source said no');
+      expect(await rows('org')).toEqual(['nonsense', 'registrar']);
       expect(await usecases.deriveGroup('person:mikael', group)).toEqual([a]);
       expect(await h.relations(a)).toEqual(['registrar']);
       expect((await h.grant(a))!.capabilities).toEqual([]);
@@ -274,10 +293,48 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       await usecases.derivePerson('system:test', a);
       expect(await h.audit(a)).toHaveLength(audited + 1);
       // Taken back, the loss is on the row too.
-      await h.setGroupRelations([]);
+      expect(await set('org', 'registrar', false)).toBe(true);
+      expect(await set('org', 'registrar', false)).toBe(false);
+      expect(await set('org', 'nonsense', false)).toBe(true);
+      expect(await rows('org')).toEqual([]);
       await usecases.deriveGroup('person:mikael', group);
       expect(await h.relations(a)).toEqual([]);
       expect((await h.audit(a)).at(-1)).toMatchObject({ action: 'grant.derived', details: { relations: [] } });
+    });
+    test('a snapshot reads the store as one moment: a change that commits while it is open is not in it, and the next transaction reads it (DE-M7)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        a = p + '-a',
+        b = p + '-b',
+        group = p + ':ogonblick';
+      await h.seed({
+        people: [
+          { id: a, organisationId: 'org' },
+          { id: b, organisationId: 'org' },
+        ],
+        groups: [{ externalId: group, label: 'Ögonblick' }],
+        members: [{ group, person: a }],
+      });
+      const read = async (tx: ProvisionTx) => ({
+        relations: (await tx.groupRelations('org')).filter(row => row.groupExternalId === group).map(r => r.relation),
+        members: (await tx.members(group)).sort(),
+      });
+      const seen = await h.store.transaction(
+        async tx => {
+          const first = await read(tx);
+          // Both commit on their own while the snapshot is open.
+          await h.store.transaction(other => other.setGroupRelation('org', group, 'registrar', true));
+          await h.setMembers([
+            { group, person: a },
+            { group, person: b },
+          ]);
+          return { first, then: await read(tx) };
+        },
+        { snapshot: true },
+      );
+      expect(seen.first).toEqual({ relations: [], members: [a] });
+      expect(seen.then).toEqual(seen.first);
+      expect(await h.store.transaction(read)).toEqual({ relations: ['registrar'], members: [a, b].sort() });
     });
     test('a manager of a unit nobody has pushed a unit: group for gets the unit row at once, labelled by its id until the group names it', async () => {
       const h = await make(),

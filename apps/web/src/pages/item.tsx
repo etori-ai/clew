@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { isSnoozed, type SessionUser, type Thread } from '@clew/contracts';
-import { Button, EmptyState, HStack, Text, VStack, useMediaQuery } from '@clew/ui';
+import { Button, EmptyState, HStack, Heading, Text, VStack, useMediaQuery } from '@clew/ui';
 import { ApiError } from '../api';
 import { areasQuery, threadQuery, threadsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
@@ -18,6 +18,9 @@ import { cardBody } from '../components/work/card-panel';
 import { itemSubject } from '../components/views/view-read';
 import { AskClew } from '../components/conversation/thing-panel';
 import { PageFrame } from '../components/shell/page-frame';
+
+/** The page's heading when the item cannot be read, in the browser's tab too. */
+const FAILED_TITLE = 'Ärendet kunde inte hämtas';
 
 /**
  * A work item as a page (D126 rule 1, board Ärende, `/items/<threadId>`): the item's own address, reached by its name
@@ -62,7 +65,7 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
           ? { surface: 'start' }
           : { surface: 'todo' };
   const nav = useNav({ current, admin, manager: user.role === 'manager' });
-  usePageTitle(thread ? thread.title : missing ? 'Ärendet finns inte' : null);
+  usePageTitle(thread ? thread.title : missing ? 'Ärendet finns inte' : failed ? FAILED_TITLE : null);
   // Sent away by its own button, the item has nothing more to show here: back to where the person came from.
   const leaving = useRef(back.href);
   leaving.current = back.href;
@@ -99,6 +102,8 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
           />
         ) : failed ? (
           <VStack gap={3}>
+            {/* The page keeps its one level-1 heading when the item cannot be read: what is missing, the alert why. */}
+            <Heading level={1}>{FAILED_TITLE}</Heading>
             <Text as="p" role="alert">
               {errorMessage(oneQ.error ?? listQ.error, 'Ärendet kunde inte hämtas just nu.')}
             </Text>

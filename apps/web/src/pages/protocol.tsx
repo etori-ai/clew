@@ -30,6 +30,7 @@ import { createQueryClient } from '../query-client';
 import { manifestReferenceQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
+import { mobileQuery } from '../media';
 
 /**
  * The connector manifest field by field (D60, item 5), for the integrator who builds against this instance. Public,
@@ -41,7 +42,6 @@ import { usePageTitle } from '../page-title';
  * line, and a rule is a sentence or two. A filter above the outline narrows it to the headings whose path or name holds
  * the typed text, each then named by its full path; the count is spoken as it changes.
  */
-const mobileQuery = '(max-width: 768px)';
 /** The template's own panel style: the outline stays put while the article scrolls, and scrolls itself when it is taller than the window. */
 const outlinePanel: CSSProperties = {
   position: 'sticky',
@@ -342,16 +342,20 @@ function Page() {
           <VStack gap={4}>
             <Heading level={1}>Clew manifest reference</Heading>
             {query.isError ? (
-              <Banner status="error" title={errorMessage(query.error, 'The reference could not be read.')}>
-                <Button
-                  label="Try again"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    void query.refetch();
-                  }}
-                />
-              </Banner>
+              <Banner
+                status="error"
+                title={errorMessage(query.error, 'The reference could not be read.')}
+                endContent={
+                  <Button
+                    label="Try again"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void query.refetch();
+                    }}
+                  />
+                }
+              />
             ) : (
               <Skeleton height={320} width="100%" />
             )}

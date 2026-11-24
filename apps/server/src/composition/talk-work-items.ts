@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import { dayRhythm, shiftDate, stockholmInstant, type ThreadAction } from '@clew/contracts';
+import { dueTimerFires, morningAfterDue, type ThreadAction } from '@clew/contracts';
 import { TALKS_CONNECTOR } from '@clew/connectors';
 import { schema, type Transaction } from '@clew/db';
 import type { ThreadTx } from '../threads/model';
@@ -51,11 +51,6 @@ export const swedishDay = (date: string) =>
   new Intl.DateTimeFormat('sv-SE', { timeZone: 'UTC', day: 'numeric', month: 'long' }).format(
     new Date(date + 'T12:00:00Z'),
   );
-/** The morning after the due date, at the day's review (06:00 Europe/Stockholm, daylight saving included); never before `at`. */
-export function dueAtFor(dueOn: string, at: string) {
-  const morning = stockholmInstant(shiftDate(dueOn, 1), dayRhythm.review);
-  return Date.parse(morning) > Date.parse(at) ? morning : at;
-}
 const summaryFor = (dueOn: string) => `En åtgärdspunkt ska vara klar senast ${swedishDay(dueOn)}.`;
 
 export function talkWorkItems(tx: Transaction, thread: ThreadTx, options: TalkWorkItemOptions): WorkItemTx {
@@ -78,7 +73,7 @@ export function talkWorkItems(tx: Transaction, thread: ThreadTx, options: TalkWo
       threadId,
       kind: 'due',
       ...(await authority(personId)),
-      dueAt: dueAtFor(dueOn, at),
+      dueAt: morningAfterDue(dueOn, at),
       requestedAt: at,
     });
     await thread.enqueue(reminderStart(timer));
@@ -179,14 +174,7 @@ export function talkWorkItems(tx: Transaction, thread: ThreadTx, options: TalkWo
       const card = await lock(threadId);
       if (!card) return false;
       const timer = await thread.readTimer(dueTimerId(threadId));
-      if (
-        !timer ||
-        timer.kind !== 'due' ||
-        timer.generation !== generation ||
-        timer.state !== 'active' ||
-        Date.parse(timer.dueAt) > Date.parse(at)
-      )
-        return false;
+      if (!dueTimerFires(timer, 'due', generation, at)) return false;
       await thread.updateTimer({ ...timer, state: 'fired', reason: null, leaseUntil: null });
       if (card.snoozedUntil) await thread.cancelTimer(`snooze:${threadId}`, at);
       const day = card.deadline ? swedishDay(card.deadline) : undefined;

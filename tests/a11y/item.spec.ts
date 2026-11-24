@@ -232,12 +232,14 @@ test.describe('the work item as a page', () => {
     card.deadline = null;
     card.remindedAt = NOW;
     // The row: in its Status column what the state concerns, the reminder; under Behöver dig the state's word is the
-    // tab's, said by the dot's name. Whom the row names it is about is left out here: today it takes the source row's
-    // label, "Ansökan", which is the register's WA-L14 and not what the row should say.
+    // tab's, said by the dot's name. Under the title, whom it is about by the directory's name, never the source row's
+    // label ("Ansökan"), and the reason with it.
     await open(page, '/todo');
     const row = page.getByRole('main').locator('#work-ledighet');
     await expect(row).toContainText('påminnelse');
     await expect(row.getByRole('img', { name: 'Behöver dig, påminnelse' })).toBeVisible();
+    await expect(row).toContainText('Johan Byström · Ansökan väntar på beslut');
+    await expect(row).not.toContainText(/Ansökan ·|· Ansökan$/);
     // The page: a plain to-do, so no notice, and no badge that says the word beside the title.
     await open(page, '/items/ledighet');
     await expect(page.getByRole('heading', { level: 1, name: card.title })).toBeVisible();
@@ -261,6 +263,7 @@ test.describe('the work item as a page', () => {
     await events.getByRole('button', { name: /^Händelser/ }).click();
     await expect(events.getByText('Något gick fel. Försök igen.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
+    await expectNoAxeViolations(page);
     api.itemEventsFail = false;
     await events.getByRole('button', { name: 'Försök igen' }).click();
     await expect(events.getByRole('list', { name: 'Händelser, de senaste först' })).toContainText('skapade ärendet');

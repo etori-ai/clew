@@ -998,6 +998,7 @@ test.describe('users administration', () => {
       await expect(page.getByRole('heading', { name: 'Behörigheter från grupper' })).toHaveCount(0);
       await expect(page.getByText(/^Ingen grupp ger någon behörighet ännu/)).toHaveCount(0);
       await expect(page.getByRole('list', { name: 'Kataloger' })).toHaveCount(0);
+      await expectNoAxeViolations(page);
     });
     test('an overview that cannot be read says so once, and nothing about groups, catalogues or units it has not read (W3)', async ({
       page,

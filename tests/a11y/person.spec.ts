@@ -190,6 +190,7 @@ test.describe('the person as a page', () => {
     // The dialog places the refusal; the page does not say it a second time.
     await expect(dialog.getByText(refusal)).toBeVisible();
     await expect(page).toHaveURL(here);
+    await expectNoAxeViolations(page);
   });
 
   test('the talk is the person’s talk tab, and an address that laid it over the page leads there (D126 rule 3)', async ({

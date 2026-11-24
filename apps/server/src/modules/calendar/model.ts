@@ -29,6 +29,11 @@ export interface ProposalRecord {
   eventUid: string | null;
   eventRef: string | null;
   eventRevision: string | null;
+  /**
+   * The id every copy of the invitation's meeting carries (`EventOccurrence.icalUid`), read back from the organiser's
+   * copy when it was sent: how the invitee's copy is known where Clew's uid is on the organiser's copy alone (WA-L5).
+   */
+  eventIcalUid: string | null;
   confirmedAt: string | null;
   undoUntil: string | null;
   /** Follow-ups to the invitee (D30). */
@@ -44,6 +49,7 @@ export type ProposalPatch = Partial<
     | 'eventUid'
     | 'eventRef'
     | 'eventRevision'
+    | 'eventIcalUid'
     | 'confirmedAt'
     | 'undoUntil'
     | 'reminders'

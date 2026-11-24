@@ -56,6 +56,7 @@ import { changesFor } from '../composition/changes';
 import { personKeys } from '../composition/person-keys';
 import { capabilityRoutes } from './capabilities';
 import { objectsRoutes } from './objects';
+import { calendarRoutes } from './calendar';
 import { executionRoutes } from './executions';
 import { authenticate, AuthError } from '../auth';
 import { readDocument, reviewDocuments } from '../composition/documents';
@@ -69,6 +70,7 @@ const {
   effect,
   ensureThreads,
   listAreas,
+  listConversationsFor,
   listThreadsFor,
   preview,
   reopenThread,
@@ -79,7 +81,7 @@ const {
 } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
-const { ask, converse, listAssistants, listObjects, reply } = assistant;
+const { ask, converse, listAssistants, listObjects, reply, writtenTurn } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 // A job (D55): the fact Clew fans out, and the proposal the person approves once, echoed back as it was assembled; the ledger re-authorizes every step.
 const JobApprovalInput = Type.Object(
@@ -190,7 +192,7 @@ api.get('/changes', c =>
     while (!stopped) {
       try {
         const session = await authenticate(cookie);
-        const change = await changesFor(session.context.id);
+        const change = await changesFor(session.context);
         const value = JSON.stringify(change);
         if (value !== previous) {
           await stream.writeSSE({ data: value, id: change.policy + ':' + change.revision, retry: 5000 });
@@ -250,6 +252,10 @@ api.get('/threads', async c => {
   ]);
   return c.json({ threads, sources, deliveries });
 });
+/** Alla samtal (WD-L1): one page of the person's conversations, the latest activity first; `after` is the last page's `next`. */
+api.get('/conversations', async c =>
+  c.json(await listConversationsFor(c.get('session').context, c.req.query('after'))),
+);
 api.post('/deliveries/:id/claim', async c =>
   c.json({ claimed: await attention.claim(c.get('session').context, c.req.param('id')) }),
 );
@@ -501,6 +507,13 @@ api.post('/conversation/stream', async c => {
     }
   });
 });
+/**
+ * What a question sent with a turn key came to (WD-L3), read by the page after a stop or a broken answer: the turn as it
+ * was written, or `written: null`. A read; nothing is asked or written.
+ */
+api.get('/conversation/turns/:turn', async c =>
+  c.json(await writtenTurn(c.get('session').context, c.req.param('turn'))),
+);
 /** What `@` can point at (`POST /api/objects`), with what is typed in the body, never in the address (`objects.ts`). */
 api.route('/objects', objectsRoutes({ list: listObjects }));
 api.get('/threads/:id/verbs', async c => {
@@ -526,7 +539,7 @@ api.post('/threads/:id/remind-invitees', async c =>
   c.json(await calendar.remindInvitees(c.req.param('id'), c.get('session').context)),
 );
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
-api.get('/calendar', async c => c.json(await weekOverview(c.get('session').context, c.req.query('from'))));
+api.route('/calendar', calendarRoutes({ weekOverview }));
 /** A person's own bookings (D28): members and rooms for the form, a free-busy check, create, move and cancel; a proposal moved by drag or keyboard. */
 api.get('/calendar/members', async c => c.json({ members: await events.listMembers(c.get('session').context) }));
 api.get('/calendar/rooms', async c => c.json({ rooms: await events.listRooms(c.get('session').context) }));

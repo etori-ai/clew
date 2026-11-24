@@ -704,16 +704,17 @@ describe('the renderings', () => {
     expect(markdown).toContain('```ts\nimport { Type } from');
   });
   test('the instance serves it as data beside the OpenAPI page, and sends the old address to the page', async () => {
-    const data = await protocolRoutes.request('http://clew.local/manifest-reference.json');
+    const routes = protocolRoutes({ log: () => undefined });
+    const data = await routes.request('http://clew.local/manifest-reference.json');
     expect(data.status).toBe(200);
     expect(data.headers.get('access-control-allow-origin')).toBe('*');
     const body = await data.json();
     expect(body.fields.map((f: { path: string }) => f.path)).toEqual(paths);
     expect(body.sections.length).toBe(9);
-    const redirect = await protocolRoutes.request('http://clew.local/manifest-reference', { redirect: 'manual' });
+    const redirect = await routes.request('http://clew.local/manifest-reference', { redirect: 'manual' });
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get('location')).toBe('/protocol/manifest');
-    const openapi = await (await protocolRoutes.request('http://clew.local/openapi.json')).json();
+    const openapi = await (await routes.request('http://clew.local/openapi.json')).json();
     expect(openapi.paths['/api/protocol/manifest-reference.json'].get.operationId).toBe('getManifestReference');
   });
 });

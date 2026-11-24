@@ -152,8 +152,9 @@ the fixture fails a spec on any violation of the content security policy that th
 
 ## Rules the tools enforce
 
-- `dependency-cruiser` (`bun run deps`, over the server's and the web app's source and tests, `packages`, `connectors`,
-  `scripts` and `tests`): `usecases-reach-stores-through-ports` (a use case never imports `@clew/db`,
+- `dependency-cruiser` (`bun run deps`, over the whole of `apps`, `packages`, `connectors`, `scripts` and `tests`, an
+  app's or a package's built `dist` aside, so a configuration beside an app's source or a new folder under an app is
+  judged too): `usecases-reach-stores-through-ports` (a use case never imports `@clew/db`,
   Drizzle, Postgres, the durable engine, an adapter or the composition root; an error for every `usecases` folder),
   `unit-tests-stay-fast` (`tests/unit` never imports a live adapter, the composition root,
   `@clew/db` or the durable engine; a type needed from the schema comes from `packages/db/src/schema.ts`, because TypeScript 7
@@ -208,9 +209,9 @@ Business use cases are built over ports (D25), with live and memory adapters wir
 
 | Folder | Factory | Ports (`model.ts` or `ports.ts`) | Scenario tests |
 |---|---|---|---|
-| `threads/usecases/` | `threadUsecases`, `reminderUsecases` (timer delivery and legacy `surface`) | `ThreadStore`, `ThreadTx` (with `lockThread`), `ReminderTimers` | `tests/unit/threads.test.ts` |
+| `threads/usecases/` | `threadUsecases`, `reminderUsecases` (timer delivery and legacy `surface`), `refreshUsecases`, `projectOntoCard` | `ThreadStore`, `ThreadTx` (with `lockThread`), `ReminderTimers`, `RefreshStore`, `ProjectionTx` | `tests/unit/threads.test.ts`, `tests/unit/refresh.test.ts`, `tests/unit/projection.test.ts` |
 | `modules/calendar/usecases/` | `calendarUsecases` | `ProposalStore`, `CalendarBinder`, `CalendarProvider` (D11) | `tests/unit/samtal.test.ts` |
-| `scheduler/` | `createScheduler` (with `startNightly`, what every process schedules and takes over at start), `scheduledJobRunner` (a job's workflow step, which renews its claim while the run lasts) | `JobQueue`, `JobExecutions` (live adapter `durableJobs`), `People` (a page at a time), `SignInData` (live binding `signInData`) | `tests/unit/scheduler.test.ts`; on PostgreSQL `tests/db/sign-in-cleanup.test.ts`, `tests/db/job-lease.test.ts`, `tests/db/scheduler-people.test.ts` and `tests/db/postgres-refresh-attention.test.ts` |
+| `scheduler/` | `createScheduler` (with `startNightly`, what every process schedules and takes over at start), `scheduledJobRunner` (a job's workflow step, which renews its claim while the run lasts) | `JobQueue`, `JobExecutions` (live adapters `postgresJobQueue` and `durableJobs`, memory `memoryJobTable`, held together by `tests/job-store-contract.ts` apart from scheduling and take-over, which are the engine's), `People` (a page at a time), `SignInData` (live binding `signInData`) | `tests/unit/scheduler.test.ts`, the job table's contract in `tests/unit/job-store.test.ts`; on PostgreSQL `tests/db/postgres-job-store.test.ts`, `tests/db/sign-in-cleanup.test.ts`, `tests/db/job-lease.test.ts`, `tests/db/scheduler-people.test.ts` and `tests/db/postgres-refresh-attention.test.ts` |
 | `assistant/` | `assistantUsecases` | `ThreadStore`, `ModelProvider` | `tests/unit/conversation.test.ts` |
 
 `dbos/activities.ts` binds the use cases from the composition root to the steps in `dbos/workflows.ts`, each wrapped by `valuelessFailures`, so a failed statement reaches the engine without its values (D91). A runtime test binds its own activities, or binds the live ones with `bindLiveActivities()` as `main.ts` does: `apps/server/tests/failed-step-runtime.test.ts` does that to show what the engine logs when a live step's statement fails. Durable timer generations, execution progress, bounded follow-up and scheduled job ownership are tested separately from recovery: `apps/server/tests/fixtures/durable-child.ts` is a second instance killed while a reminder waits, whose workflow the timer runtime test claims and adopts. `today()` and `isPast()` in `@clew/calendar/dates` are for the browser;
@@ -232,7 +233,7 @@ suite green: the one in `composition/index.ts` that hands the scheduler `signInD
 `tests/unit/scheduler.test.ts`. A test of the lines themselves would need the composition to take a clock and a ledger
 of the test's own, since the nights it schedules carry the real date and would land in the development server's queue.
 
-The shared follow-up contract (`tests/followup-contract.ts`) runs on memory and PostgreSQL. Calendar execution projection, refresh/attention and ownership have PostgreSQL scenarios in addition to pure/use-case tests. Runtime tests are required for boundaries memory cannot prove: real transactions, process/protocol response loss and recovery of a pending workflow after process death. Keep these in the separate reliability lane, not the fast suite.
+The shared follow-up contract (`tests/followup-contract.ts`) runs on memory and PostgreSQL, down to what a return leaves on the manager's card and what a reminder puts in the invitee's stream. The card projection of the execution ledger (`threads/usecases/projection.ts`: whether an approval may land on its card, the talks' invitee hold, the follow-up plan an approval starts, the receipt and undo jobs; D45) is one function over a port with a memory and a PostgreSQL adapter, held to both by `tests/projection-contract.ts` (`tests/unit/projection.test.ts`, `tests/db/postgres-projection.test.ts`); `tests/unit/approval-loop.test.ts` runs the same projection behind the memory ledger. A person's scan in a unit suite is the refresh path the server runs (`tests/refresh-scan.ts`). Calendar execution projection, refresh/attention and ownership have PostgreSQL scenarios in addition to pure/use-case tests. Runtime tests are required for boundaries memory cannot prove: real transactions, process/protocol response loss and recovery of a pending workflow after process death. Keep these in the separate reliability lane, not the fast suite.
 
 A test removes what it left in the durable engine's tables. `forget()` on `testEngine` (`apps/server/tests/durable.ts`)
 removes a runtime test's workflows and its queue, and `forgetTestWorkflows()` (`tests/db/durable.ts`) the workflows a

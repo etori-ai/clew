@@ -93,6 +93,7 @@ test.describe('Att göra: the piles', () => {
     await open(page, '/todo');
     await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
     await expect(page.getByRole('link', { name: /^Försenade:/ })).toHaveCount(0);
+    await expectNoAxeViolations(page);
     await expect(page.getByText('0 behöver dig · 0 väntar på andra', { exact: true })).toHaveCount(0);
   });
 

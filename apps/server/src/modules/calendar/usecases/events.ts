@@ -17,7 +17,7 @@ import { collides, freeSlots, type Interval } from '@clew/calendar/proposals';
 import { CalendarError, type EventOccurrence } from '@clew/calendar/model';
 import { InputError } from '../../../context';
 import type { CalendarBinder, ProposalRecord, ProposalStore, Team } from '../model';
-import { talkMeetings, toEvent } from './reads';
+import { talkIds, toEvent } from './reads';
 
 /**
  * Calendar reads and local proposal edits (D28). Source writes are approved decisions in decisions.ts (D45/D47).
@@ -80,14 +80,15 @@ export function eventUsecases({ store, bind, team, clock, ids }: EventDeps) {
     // A date that has the shape and does not exist (2026-02-30) is the person's mistake, never the server's (DE-L16).
     if (!isCalendarDate(date)) throw new InputError('Ogiltigt datum.');
     const binding = await bind(persona);
-    const [events, members, talks] = await Promise.all([
+    // The person's proposals are read once: the day's own and the talks' meetings among the events both come from them.
+    const [events, members, own, invited] = await Promise.all([
       binding.provider.list(dayStart(date), dayStart(addDays(date, 1))),
       team(persona),
-      talkMeetings(store, persona.id),
+      store.activeProposals(persona.id),
+      store.bookedProposals([persona.id]),
     ]);
-    const proposals = (await store.activeProposals(persona.id))
-      .filter(p => displayDate(p.start) === date)
-      .map(toProposal);
+    const talks = talkIds(own, invited);
+    const proposals = own.filter(p => displayDate(p.start) === date).map(toProposal);
     return { from: date, events: events.map(e => toEvent(e, binding, persona.name, members, talks)), proposals };
   }
   /**

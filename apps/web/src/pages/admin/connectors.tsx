@@ -33,6 +33,7 @@ import { usePageTitle } from '../../page-title';
 import { AddConnectorDialog } from './add';
 import { audienceLabel, kindLabel, statusOf } from './labels';
 import { AdminShell } from './shell';
+import { mobileQuery } from '../../media';
 import { DOT } from '../../dot';
 import { useBranding } from '../../branding';
 
@@ -70,7 +71,7 @@ const idLine = (c: ConnectorSummary) => `${c.id}${c.ordinal === null ? '\u00a0·
 const EMPTY_CONNECTORS: ConnectorSummary[] = [];
 
 export function AdminConnectorsPage({ user }: { user: SessionUser }) {
-  const mobile = useMediaQuery('(max-width: 720px)');
+  const mobile = useMediaQuery(mobileQuery);
   const site = useBranding().name;
   const client = useQueryClient();
   const list = useQuery(adminQueries.connectors);
