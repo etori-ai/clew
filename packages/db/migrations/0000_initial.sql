@@ -487,7 +487,7 @@ END)),
     CONSTRAINT competence_holding_own CHECK (((state <> ALL (ARRAY['pending'::text, 'rejected'::text])) OR (evidence = 'self'::text))),
     CONSTRAINT competence_holding_period CHECK (((expires_on IS NULL) OR (expires_on >= issued_on))),
     CONSTRAINT competence_holding_rated CHECK (((level IS NULL) = (rated_at IS NULL))),
-    CONSTRAINT competence_holding_skill CHECK (((level IS NULL) OR (((level >= 1) AND (level <= 3)) AND (expires_on IS NULL) AND (connector_id IS NULL) AND (evidence <> 'system'::text) AND (thread_id IS NULL) AND (state = ANY (ARRAY['valid'::text, 'revoked'::text]))))),
+    CONSTRAINT competence_holding_skill CHECK (level IS NULL OR (level BETWEEN 1 AND 3 AND expires_on IS NULL AND connector_id IS NULL AND evidence <> 'system' AND thread_id IS NULL AND state IN ('valid', 'revoked'))),
     CONSTRAINT competence_holding_state CHECK ((state = ANY (ARRAY['pending'::text, 'valid'::text, 'rejected'::text, 'revoked'::text]))),
     CONSTRAINT competence_holding_typed CHECK (((type_id IS NOT NULL) OR (connector_id IS NOT NULL))),
     CONSTRAINT competence_holding_validated CHECK ((((validated_by IS NULL) OR (validated_at IS NOT NULL)) AND ((validated_at IS NULL) OR (level IS NOT NULL)) AND ((NOT interest) OR (level IS NOT NULL))))
@@ -515,7 +515,7 @@ CREATE TABLE public.competence_read_log (
     CONSTRAINT competence_read_log_level CHECK (((min_level IS NULL) OR ((min_level >= 1) AND (min_level <= 3)))),
     CONSTRAINT competence_read_log_relation CHECK ((relation = ANY (ARRAY['self'::text, 'managed'::text, 'registrar'::text]))),
     CONSTRAINT competence_read_log_rows CHECK ((rows >= 0)),
-    CONSTRAINT competence_read_log_status CHECK (((((((((status = '{}'::text[]) OR (status = '{valid}'::text[])) OR (status = '{expiring}'::text[])) OR (status = '{expired}'::text[])) OR (status = '{valid,expiring}'::text[])) OR (status = '{valid,expired}'::text[])) OR (status = '{expiring,expired}'::text[])) OR (status = '{valid,expiring,expired}'::text[]))),
+    CONSTRAINT competence_read_log_status CHECK (status IN ('{}'::text[], '{valid}'::text[], '{expiring}'::text[], '{expired}'::text[], '{valid,expiring}'::text[], '{valid,expired}'::text[], '{expiring,expired}'::text[], '{valid,expiring,expired}'::text[])),
     CONSTRAINT competence_read_log_subject CHECK (
 CASE
     WHEN (kind = 'person'::text) THEN ((person_id IS NOT NULL) AND (type_id IS NULL) AND (min_level IS NULL) AND (unit_id IS NULL))
@@ -854,7 +854,7 @@ CREATE TABLE public.followup_policy (
     expires_at timestamp with time zone NOT NULL,
     state text NOT NULL,
     reason text,
-    CONSTRAINT followup_bounds CHECK ((((max_reminders >= 1) AND (max_reminders <= 2)) AND (after_workdays >= 2)))
+    CONSTRAINT followup_bounds CHECK (max_reminders BETWEEN 1 AND 2 AND after_workdays >= 2)
 );
 --> statement-breakpoint
 CREATE TABLE public.handover_turn (
@@ -1636,7 +1636,14 @@ CREATE TRIGGER temporal_job_owner BEFORE INSERT ON public.job FOR EACH ROW EXECU
 --> statement-breakpoint
 CREATE CONSTRAINT TRIGGER thread_content_changed AFTER INSERT OR DELETE OR UPDATE ON public.thread DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.clew_content_changed();
 --> statement-breakpoint
-CREATE TRIGGER thread_decision_revision BEFORE UPDATE OF title, summary, actions, items, subjects, deadline, waiting_on, state ON public.thread FOR EACH ROW WHEN (((((((((old.title IS DISTINCT FROM new.title) OR (old.summary IS DISTINCT FROM new.summary)) OR (old.actions IS DISTINCT FROM new.actions)) OR (old.items IS DISTINCT FROM new.items)) OR (old.subjects IS DISTINCT FROM new.subjects)) OR (old.deadline IS DISTINCT FROM new.deadline)) OR (old.waiting_on IS DISTINCT FROM new.waiting_on)) OR (old.state IS DISTINCT FROM new.state))) EXECUTE FUNCTION public.clew_revise_card_decision();
+CREATE TRIGGER thread_decision_revision
+BEFORE UPDATE OF title, summary, actions, items, subjects, deadline, waiting_on, state ON public.thread
+FOR EACH ROW WHEN (
+  (OLD.title, OLD.summary, OLD.actions, OLD.items, OLD.subjects, OLD.deadline, OLD.waiting_on, OLD.state)
+  IS DISTINCT FROM
+  (NEW.title, NEW.summary, NEW.actions, NEW.items, NEW.subjects, NEW.deadline, NEW.waiting_on, NEW.state)
+)
+EXECUTE FUNCTION public.clew_revise_card_decision();
 --> statement-breakpoint
 CREATE TRIGGER thread_occurrence_disposition AFTER UPDATE OF state ON public.thread FOR EACH ROW EXECUTE FUNCTION public.clew_occurrence_disposition();
 --> statement-breakpoint
