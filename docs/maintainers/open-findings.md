@@ -130,8 +130,7 @@ and it carries the baseline table of every suite, the failing-test table under f
 [The review](../reviews/2026-11-23-review-competence.md); its "Not established" holds five points, and it carries a
 table of verdicts per question and a table of what erasure and export reach per competence table.
 
-| Id | Severity | Finding | Where |
-|---|---|---|---|
+No finding of this area is open.
 
 ## Introduction and leaving, the follow-up dialogue and talks
 
