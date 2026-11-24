@@ -42,7 +42,7 @@ import { useLocation } from 'react-router';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../../api';
 import { confirmParts } from '../../confirm-parts';
-import { snoozePresetsQuery } from '../../queries';
+import { snoozePresetsQuery, threadQuery } from '../../queries';
 import { useDecisionSend, useSettling, useThreadAction, type RunAction } from '../../mutations';
 import { opensDialog, type ActionStep } from '../../action-path';
 import { takeActionRequest, useActionRequest } from '../../action-requests';
@@ -356,6 +356,7 @@ export function useCardAction({
 }: Pick<ActionProps, 'thread'> & Partial<Omit<ActionProps, 'thread'>>) {
   const { run, apply, busy: running, error } = useThreadAction({ onChange });
   const decision = useDecisionSend({ onChange });
+  const client = useQueryClient();
   const busy = running || decision.busy;
   // The person's own action is on its way (D64): the card keeps the look it had, with the pressed button loading, and the
   // status is read out once the card has come to rest or the window has ended, not for every committed step in between.
@@ -386,19 +387,15 @@ export function useCardAction({
   // The action dialog (D112 item 10): the action it is open for, the rows chosen when it opened, the step it opens at,
   // and whether the focus goes back to the action's own button on a close (it was opened from elsewhere: an execute
   // started on a person, an assistant's draft). It stays mounted once opened, so its close gives the focus back.
-  // `shown` is the item's version the decision is on (AM-4): the one it had when the dialog opened, so an item that
-  // changes while the person reads the dialog is refused rather than sent unseen. After a refusal the dialog draws the
-  // item as it is now, so the next send is on that version (`shownNow`): the person has been told to look again.
+  // The dialog draws and submits the same snapshot (AM-4). A refusal replaces it only after the item has been read again.
   const [dialog, setDialog] = useState<{
     action: CardAction;
     refs?: string[];
     startAt?: ActionStep;
     open: boolean;
     refocus: boolean;
-    shown: string;
+    shown: Thread;
   } | null>(null);
-  const shownNow = useRef(thread.updatedAt);
-  shownNow.current = thread.updatedAt;
   // What the person typed, per action, kept while the work item is open and dropped with it or once sent.
   const [drafts, setDrafts] = useState<Record<string, AskValues>>({});
   const openDialog = (
@@ -413,7 +410,7 @@ export function useCardAction({
       ...(options.startAt ? { startAt: options.startAt } : {}),
       open: true,
       refocus: !!options.refocus,
-      shown: thread.updatedAt,
+      shown: thread,
     });
   };
   const closeDialog = () => {
@@ -429,7 +426,7 @@ export function useCardAction({
     if (!dialog) return null;
     const { action, refs, shown } = dialog;
     const result = await decision.send(async () => {
-      const answer = await api.act({ id: thread.id, updatedAt: shown }, action.id, refs, undefined, values);
+      const answer = await api.act(shown, action.id, refs, undefined, values);
       if (answer.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
       // Sent: the dialog closes first and the focus is back on the pressed button, which loads until the item has come
       // to rest, before the item shows the source's answer, as for a one-press action (D64).
@@ -440,16 +437,28 @@ export function useCardAction({
       return answer.thread;
     });
     if (result && 'error' in result) {
-      setDialog(d => (d ? { ...d, shown: shownNow.current } : d));
+      const refreshed = await client.query({ ...threadQuery(shown.id), staleTime: 0 }).catch(() => null);
+      if (refreshed) {
+        const currentAction = refreshed.actions.find(a => a.id === action.id);
+        setDialog(d => {
+          if (d !== dialog) return d;
+          return currentAction && refreshed.state === 'open'
+            ? { ...d, action: currentAction, shown: refreshed }
+            : { ...d, open: false };
+        });
+      }
       return result.error;
     }
     return null;
   };
-  // The action as the item has it now: its path is resolved from the registered manifest on every read.
-  const dialogAction = dialog ? (thread.actions.find(a => a.id === dialog.action.id) ?? dialog.action) : null;
   const actionDialog = dialog ? (
     <ActionDialog
-      target={{ kind: 'item', thread, action: dialogAction!, ...(dialog.refs ? { refs: dialog.refs } : {}) }}
+      target={{
+        kind: 'item',
+        thread: dialog.shown,
+        action: dialog.action,
+        ...(dialog.refs ? { refs: dialog.refs } : {}),
+      }}
       isOpen={dialog.open}
       onOpenChange={open => {
         if (!open) closeDialog();
