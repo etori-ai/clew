@@ -513,8 +513,11 @@ test.describe('what an item is done with', () => {
     await order.focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Beställ från IT-servicedesken' });
+    await expect(dialog.getByRole('radio', { name: 'Passerkort' })).toBeChecked();
     await dialog.getByRole('button', { name: 'Nästa' }).focus();
     await page.keyboard.press('Enter');
+    // The next step gives its heading the focus; only then is the button focused, or the Enter lands on the heading.
+    await expect(dialog.getByRole('heading', { name: 'När du trycker Beställ från IT-servicedesken' })).toBeFocused();
     await dialog.getByRole('button', { name: 'Beställ från IT-servicedesken' }).focus();
     await page.keyboard.press('Enter');
     // The refusal stays in the dialog, which stays open on it; nothing is made.
