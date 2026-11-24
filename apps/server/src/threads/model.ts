@@ -191,10 +191,12 @@ export interface ThreadStore {
     page: { after?: ConversationCursor; limit: number },
   ): Promise<{ threads: Thread[]; next: ConversationCursor | null }>;
   /**
-   * The conversation a question sent with this turn key (`ConversationInput.turn`) was written in (WD-L3), among the
-   * person's own; undefined when no question of theirs carries it. A key is written once (the store refuses it again).
+   * Where a question sent with this turn key (`ConversationInput.turn`) was written (WD-L3): whose conversation it is
+   * in and which. A key is written once in the whole installation (the store refuses it again, whoever sends it), so it
+   * is looked up across it; the caller holds what it finds to the person and the request. Undefined when no question
+   * carries it.
    */
-  turnWritten(personId: string, turn: string): Promise<string | undefined>;
+  turnWritten(turn: string): Promise<{ personId: string; threadId: string } | undefined>;
   /** One of the person's threads; undefined when it does not exist or is not theirs. */
   readThread(personId: string, id: string): Promise<Thread | undefined>;
   /** For timers that know only the thread. */

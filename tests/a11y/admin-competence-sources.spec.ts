@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { competenceCatalogue, competenceSources } from './competence';
+import { NOW } from './data';
 import {
   desktop,
   expect,
@@ -233,6 +234,39 @@ test.describe('Administration › Kompetens › Källor', () => {
       await expect(page.getByText('Läses in', { exact: true })).toHaveCount(0);
       await expect(read).toBeEnabled();
       await expectNoAxeViolations(page);
+    });
+
+    test('a read under way is not polled: time passing reads the sources no more, and the notice reads them once (WD-L8)', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      // The page's time moves only as the test moves it, so ten seconds pass at once: five times the interval at which
+      // the page once asked again.
+      await page.clock.install({ time: new Date(NOW) });
+      await open(page, SOURCES);
+      const isSourcesRead = (r: { url(): string; method(): string }) =>
+        new URL(r.url()).pathname === '/api/competence/sources' && r.method() === 'GET';
+      const read = page.getByRole('button', { name: 'Läs in nu: Lärplattformen' });
+      // Asking for a read reads the sources once, for the state it put the source in.
+      const after = page.waitForResponse(r => isSourcesRead(r.request()));
+      await read.click();
+      await after;
+      await expect(page.getByText('Läses in', { exact: true })).toBeVisible();
+      const reads: string[] = [];
+      page.on('request', r => {
+        if (isSourcesRead(r)) reads.push(r.url());
+      });
+      await page.clock.runFor(10_000);
+      expect(reads).toEqual([]);
+      await expect(page.getByText('Läses in', { exact: true })).toBeVisible();
+      const lms = api.competenceSources.find(s => s.connectorId === 'lms')!;
+      lms.reading = false;
+      lms.lastRead = { ...lms.lastRead!, finishedAt: '2026-11-13T09:30:00.000Z' };
+      await api.changed();
+      await expect(notices(page).getByText('Lärplattformen är inläst.')).toBeAttached();
+      await expect(read).toBeEnabled();
+      expect(reads).toHaveLength(1);
     });
 
     test('a read queued and not yet begun is still followed: the source says it is being read until its result shows', async ({
