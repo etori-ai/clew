@@ -166,6 +166,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
   const ledger: ExecutionStore = {
     readDecision: memoryLedger.readDecision,
     read: memoryLedger.read,
+    readCard: memoryLedger.readCard,
     readJob: memoryLedger.readJob,
     transaction: fn =>
       memoryLedger.transaction(tx =>
@@ -226,6 +227,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
     run,
     approve: executions.approve,
     clock,
+    done: executions.doneOn,
   });
   const cards = threadUsecases({
     store: threads,

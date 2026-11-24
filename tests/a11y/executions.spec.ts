@@ -143,11 +143,11 @@ for (const [layout, viewport] of [
       await expect(dialog).toContainText('Gör det bara om du har sett i Ekonomisystemet att det inte gick igenom.');
       await expect(dialog).toContainText('Gick det ändå igenom gör ett nytt beslut samma sak en gång till.');
       await expectNoAxeViolations(page);
-      // Avbryt lets nothing go.
+      // Avbryt lets nothing go, and the focus is back on ⋯.
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
+      await expect(more).toBeFocused();
       expect(api.released).toEqual([]);
-      await more.focus();
       await more.press('Enter');
       await page.getByRole('menuitem', { name: 'Markera som inte genomfört' }).press('Enter');
       await dialog.getByRole('button', { name: 'Markera som inte genomfört' }).press('Enter');
@@ -158,7 +158,8 @@ for (const [layout, viewport] of [
         .poll(() => announcements(page))
         .toContainEqual(expect.stringContaining('Markerat som inte genomfört'));
       await expect(item.getByRole('button', { name: 'Kontrollera status' })).toHaveCount(0);
-      await expect(page.locator('body')).not.toBeFocused();
+      // The dialog gives the focus back to ⋯, which still holds the item's other moves: it is not lost to the page.
+      await expect(more).toBeFocused();
       await expectNoAxeViolations(page);
       expect(await reflowProblems(page)).toEqual([]);
       const decide = item.getByRole('button', { name: /^Attestera/ });
@@ -167,6 +168,58 @@ for (const [layout, viewport] of [
       await decide.press('Enter');
       // A new decision, on the item as it was drawn after it was let go.
       await expect.poll(() => api.acted.map(a => [a.threadId, a.body.version])).toEqual([['fakturor', shown]]);
+    });
+    test('a decision the source confirmed in part is let go for the rest, and the rows it got done are not chosen again (DE-M1, DE-M2)', async ({
+      page,
+      api,
+    }) => {
+      const card = api.threads.find(t => t.id === 'fakturor')!;
+      card.execution = {
+        id: 'execution-fixture',
+        decisionId: 'decision-fixture',
+        operation: 'finance.approve',
+        state: 'unknown',
+        reason: null,
+        compensates: null,
+      };
+      // The first invoice was confirmed, the second never answered for.
+      card.receipt = {
+        at: '2026-11-04T08:00:00.000Z',
+        headline: 'En attesterad, en obekräftad.',
+        undoUntil: null,
+        undoCapability: null,
+        rows: [
+          { ref: 'finance:inv:1', label: card.items[0]!.label, outcome: 'done', detail: 'Attesterad.' },
+          { ref: 'finance:inv:2', label: card.items[1]!.label, outcome: 'unknown', detail: 'Inget besked.' },
+        ],
+      };
+      api.threads = [card];
+      await open(page, '/todo?item=fakturor');
+      const item =
+        layout === 'desktop' ? page.getByRole('complementary', { name: 'Valt ärende' }) : page.getByRole('main');
+      const more = item.getByRole('button', { name: 'Fler åtgärder' });
+      await more.focus();
+      await more.press('Enter');
+      await page.getByRole('menuitem', { name: 'Markera som inte genomfört' }).press('Enter');
+      await page
+        .getByRole('alertdialog', { name: 'Markera beslutet som inte genomfört?' })
+        .getByRole('button', { name: 'Markera som inte genomfört' })
+        .press('Enter');
+      await expect.poll(() => api.released).toEqual(['fakturor']);
+      // The confirmed row stays done: the notice is about the rows the source did not confirm, aloud too.
+      const said =
+        'Clew väntar inte längre på besked från Ekonomisystemet om de rader som inte bekräftades. Fatta beslutet igen för dem om det behövs.';
+      await expect(item.getByText(said, { exact: true })).toBeVisible();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Markerat som inte genomfört'));
+      await expectNoAxeViolations(page);
+      expect(await reflowProblems(page)).toEqual([]);
+      const decide = item.getByRole('button', { name: /^Attestera/ });
+      await decide.focus();
+      await decide.press('Enter');
+      // The decision again is on the second invoice alone: the first is not sent twice.
+      await expect.poll(() => api.acted.map(a => a.body.refs)).toEqual([['finance:inv:2']]);
     });
   });
 
@@ -310,40 +363,53 @@ test('a policy update removes retained source content without a page reload', as
  * let it go beside it. Let go, the card sends its times again (DE-M1), and the focus is on the card, since the button
  * that had it is gone with the doubt.
  */
-test('a planning card whose invitations are in doubt is let go and sends its times again (DE-M1, DE-M2)', async ({
-  page,
-  api,
-}) => {
-  await page.setViewportSize(desktop);
-  const samtal = api.threads.find(t => t.id === 'samtal')!;
-  samtal.execution = {
-    id: 'execution-samtal',
-    decisionId: 'calendar:samtal:1',
-    operation: 'calendar.confirmProposals',
-    state: 'unknown',
-    reason: null,
-    compensates: null,
-  };
-  await open(page, '/todo?item=samtal');
-  const card = page.getByRole('complementary', { name: 'Valt ärende' }).locator('#card-samtal');
-  await expect(card.getByRole('status').filter({ hasText: 'Källans besked saknas.' })).toBeVisible();
-  await expect(card.getByRole('button', { name: /^Skicka/ })).toHaveCount(0);
-  const letGo = card.getByRole('button', { name: 'Markera som inte genomfört' });
-  await letGo.focus();
-  await letGo.press('Enter');
-  const dialog = page.getByRole('alertdialog', { name: 'Markera beslutet som inte genomfört?' });
-  await expect(dialog).toBeVisible();
-  await expectNoAxeViolations(page);
-  await dialog.getByRole('button', { name: 'Avbryt' }).press('Enter');
-  await expect(dialog).toBeHidden();
-  await expect(letGo).toBeFocused();
-  expect(api.released).toEqual([]);
-  await letGo.press('Enter');
-  await dialog.getByRole('button', { name: 'Markera som inte genomfört' }).press('Enter');
-  await expect.poll(() => api.released).toEqual(['samtal']);
-  await expect(card.getByRole('status').filter({ hasText: 'Beslutet är markerat som inte genomfört.' })).toBeVisible();
-  await expect(card.getByRole('button', { name: 'Kontrollera status' })).toHaveCount(0);
-  await expect(card.getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
-  await expect(card).toBeFocused();
-  await expectNoAxeViolations(page);
-});
+for (const [layout, viewport] of [
+  ['desktop', desktop],
+  ['narrow', narrow],
+] as const)
+  test(`a planning card whose invitations are in doubt is let go and sends its times again (DE-M1, DE-M2, ${layout})`, async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(viewport);
+    const samtal = api.threads.find(t => t.id === 'samtal')!;
+    samtal.execution = {
+      id: 'execution-samtal',
+      decisionId: 'calendar:samtal:1',
+      operation: 'calendar.confirmProposals',
+      state: 'unknown',
+      reason: null,
+      compensates: null,
+    };
+    await open(page, '/todo?item=samtal');
+    // Beside the queue on a desktop, the page's own at 320 px.
+    const card = (
+      layout === 'desktop' ? page.getByRole('complementary', { name: 'Valt ärende' }) : page.getByRole('main')
+    ).locator('#card-samtal, #thread-samtal');
+    await expect(card.getByRole('status').filter({ hasText: 'Källans besked saknas.' })).toBeVisible();
+    await expect(card.getByRole('button', { name: /^Skicka/ })).toHaveCount(0);
+    const letGo = card.getByRole('button', { name: 'Markera som inte genomfört' });
+    await letGo.focus();
+    await letGo.press('Enter');
+    const dialog = page.getByRole('alertdialog', { name: 'Markera beslutet som inte genomfört?' });
+    await expect(dialog).toBeVisible();
+    await expectNoAxeViolations(page);
+    await dialog.getByRole('button', { name: 'Avbryt' }).press('Enter');
+    await expect(dialog).toBeHidden();
+    await expect(letGo).toBeFocused();
+    expect(api.released).toEqual([]);
+    await letGo.press('Enter');
+    await dialog.getByRole('button', { name: 'Markera som inte genomfört' }).press('Enter');
+    await expect.poll(() => api.released).toEqual(['samtal']);
+    await expect(
+      card.getByRole('status').filter({ hasText: 'Beslutet är markerat som inte genomfört.' }),
+    ).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Kontrollera status' })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
+    await expect(card).toBeFocused();
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Beslutet är markerat som inte genomfört.'));
+    await expectNoAxeViolations(page);
+    expect(await reflowProblems(page)).toEqual([]);
+  });

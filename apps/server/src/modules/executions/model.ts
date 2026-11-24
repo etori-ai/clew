@@ -50,7 +50,7 @@ export interface ExecutionAudit {
 }
 /**
  * A durable workflow start committed with the intent it serves (D86): the registered workflow's name, its stable id
- * (`execution:<id>`, `reconcile:<id>:<attempt>`, `<watch intent id>:<generation>`) and one JSON input. The Postgres
+ * (`execution:<id>`, `reconcile:<id>:<attempt>:<instant>`, `<watch intent id>:<generation>`) and one JSON input. The Postgres
  * adapter enqueues it on the transaction's own connection; the memory adapter records it for the unit tests.
  */
 export interface WorkflowStart {
@@ -181,6 +181,11 @@ export interface ExecutionTx {
 export interface ExecutionStore {
   readDecision(personId: string, decisionId: string): Promise<Execution | undefined>;
   read(id: string): Promise<Execution | undefined>;
+  /**
+   * The person's decisions on one work item, its undos among them (`presentation.threadId`), oldest first: what the
+   * ledger says was done on the item across every decision, not only the item's latest receipt (DE-M1).
+   */
+  readCard(personId: string, threadId: string): Promise<Execution[]>;
   readJob(id: string): Promise<Job | undefined>;
   transaction<T>(fn: (tx: ExecutionTx) => Promise<T>): Promise<T>;
 }
