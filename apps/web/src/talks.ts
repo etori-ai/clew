@@ -66,15 +66,16 @@ export function talkSpanText(talk: Pick<TalkEntry, 'at' | 'until'>): string | nu
   return `${dayText(talk.at)} kl. ${timeRange(talk.at, talk.until)}`;
 }
 /**
- * How a booked talk came to be booked, as the page says it under the time (D132): an invitation Clew sent, which the
- * time follows, or a time a manager set here. Null for a row that does not say.
+ * How a booked talk came to be booked, as the page says it under the time (D132): an invitation the installation sent,
+ * which the time follows, or a time a manager set here. Who sent it is the installation by its name (`site`, D98): the
+ * words are only shown, never stored or matched on. Null for a row that does not say.
  */
-export const bookingNote = (talk: Pick<TalkEntry, 'state' | 'invited'>): string | null =>
+export const bookingNote = (talk: Pick<TalkEntry, 'state' | 'invited'>, site: string): string | null =>
   talk.state !== 'booked' || talk.invited === undefined
     ? null
     : talk.invited
-      ? 'Bokat genom en inbjudan från Clew. Flytta eller ställ in mötet i kalendern för att ändra tiden.'
-      : 'Tiden är angiven här. Ingen inbjudan har skickats från Clew.';
+      ? `Bokat genom en inbjudan från ${site}. Flytta eller ställ in mötet i kalendern för att ändra tiden.`
+      : `Tiden är angiven här. Ingen inbjudan har skickats från ${site}.`;
 /**
  * What the calendar holds against a booked talk when it is not what the talk says (D133), in the three words the page
  * keeps apart: the talk in Clew (samtalet), which holds, and the meeting in the calendar (mötet), which is a copy.

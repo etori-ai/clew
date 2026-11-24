@@ -56,7 +56,6 @@ import { talks } from './talks';
 import { boarding, boardingSwitch } from './boarding';
 import { holdingsPort } from './competence';
 import { dialogue } from './dialogue';
-import { appearance } from './appearance';
 import { TALKS_CAPABILITY } from '../modules/talk-seam/capabilities';
 import type { AuthenticatedContext, DayView, TalksResult } from '@clew/contracts';
 import { systemContext } from '../system-context';
@@ -334,7 +333,6 @@ export const assistant = assistantUsecases({
   registry,
   calendar,
   models: { resolve: models.resolve, health: modelHealth },
-  siteName: appearance.name,
   clock,
   ids,
   log: logPort('assistant', 'error'),

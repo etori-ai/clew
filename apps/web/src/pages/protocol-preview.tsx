@@ -255,7 +255,6 @@ const PlaceLabel = ({ children }: { children: string }) => (
   </Text>
 );
 
-/** One read about an entity, drawn with its samples: the row mark and the section, one sample row at a time. */
 /** An English sentence with the words of Clew's Swedish interface it quotes marked as Swedish (`swedishQuotes`). */
 function Quoted({ text }: { text: string }) {
   return (
@@ -283,6 +282,7 @@ function SampleTitle({ label }: { label: string }) {
   );
 }
 
+/** One read about an entity, drawn with its samples: the row mark and the section, one sample row at a time. */
 function DrawnRead({
   manifest,
   c,
@@ -588,7 +588,18 @@ function WritePath({ c, path, mobile }: { c: PreviewCapability; path: PreviewPat
               },
               { key: 'schema', header: 'Schema', weight: 3, minWidth: 150, cell: r => <Text>{schemaText(r)}</Text> },
               { key: 'by', header: 'Filled by', weight: 3, minWidth: 160, cell: r => <Text>{fillerText(r)}</Text> },
-              { key: 'drawn', header: 'Drawn as', weight: 4, minWidth: 200, cell: r => <Text>{drawnText(r)}</Text> },
+              {
+                key: 'drawn',
+                header: 'Drawn as',
+                weight: 4,
+                minWidth: 200,
+                // The field's label is the dialog's Swedish, quoted in the English sentence and marked so (3.1.2).
+                cell: r => (
+                  <Text>
+                    <Quoted text={drawnText(r)} />
+                  </Text>
+                ),
+              },
             ]}
           />
         </VStack>

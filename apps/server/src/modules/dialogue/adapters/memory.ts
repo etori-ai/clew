@@ -48,7 +48,8 @@ export interface MemoryDialogueState {
   assessments: Map<string, AssessmentRecord>;
   activities: Map<string, ActivityRecord>;
   notes: Map<string, NoteRecord>;
-  persons: Map<string, { name: string; enabled: boolean }>;
+  /** The directory's people by Clew's id, with the user name the directory gives them, which is never their key. */
+  persons: Map<string, { name: string; enabled: boolean; userName: string | null }>;
   units: Map<string, string>;
   audit: DialogueAudit[];
   cards: Map<string, MemoryDialogueCard>;
@@ -72,7 +73,9 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
     assessments: new Map(),
     activities: new Map(),
     notes: new Map(),
-    persons: new Map(Object.entries(seed.persons ?? {}).map(([id, name]) => [id, { name, enabled: true }])),
+    persons: new Map(
+      Object.entries(seed.persons ?? {}).map(([id, name]) => [id, { name, enabled: true, userName: null }]),
+    ),
     units: new Map(Object.entries(seed.units ?? {})),
     audit: [],
     cards: new Map(),
@@ -342,8 +345,8 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
     get state() {
       return state;
     },
-    addPerson(id: string, name: string, enabled = true) {
-      state.persons.set(id, { name, enabled });
+    addPerson(id: string, name: string, enabled = true, userName: string | null = null) {
+      state.persons.set(id, { name, enabled, userName });
     },
     addUnit(id: string, label: string) {
       state.units.set(id, label);

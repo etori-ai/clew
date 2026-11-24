@@ -285,7 +285,6 @@ async function world(script: Script = [], options: { brandskydd?: boolean; work?
       }),
       health: { available: () => true, mark: () => undefined },
     },
-    siteName: async () => 'Clew',
     clock: () => new Date(T),
     ids: () => 'c-' + ++ids,
     log: (...args) => {

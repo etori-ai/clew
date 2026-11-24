@@ -1,4 +1,4 @@
-import type { Page, Route } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
 import { NOW } from './data';
 import {
   SITE,
@@ -27,20 +27,52 @@ const ENDED = 'Din inloggning har avslutats. Logga in igen för att fortsätta.'
 const ASKING = 10_000;
 /** The longest first wait before Clew is asked again: two seconds, a quarter either way (`retryDelay`). */
 const FIRST_WAIT = 2_500;
-type Fail = (route: Route) => Promise<void>;
+/** How a question fails while Clew is away; `hold` keeps one unanswered until Clew is back. */
+type Fail = (route: Route, hold: (route: Route) => void) => Promise<void>;
 const outages: Record<string, { fail: Fail; asking: number }> = {
   'a 503': { fail: route => route.fulfill({ status: 503, body: '' }), asking: 0 },
   'a network error': { fail: route => route.abort('failed'), asking: 0 },
-  // The request is never answered: the page gives up on it after ten seconds.
-  'no answer within ten seconds': { fail: async () => undefined, asking: ASKING },
+  // The request is not answered while Clew is away: the page gives up on it after ten seconds.
+  'no answer within ten seconds': { fail: async (route, hold) => hold(route), asking: ASKING },
 };
-/** The session's read fails as `fail` does while `down` holds, and is the mock's own answer again after. */
+/**
+ * The session's read fails as `fail` does until `back()`, and is the mock's own answer again after. A question held
+ * unanswered is answered when Clew is back, as a server that comes back answers what it was still being asked: the
+ * page's clock runs on while the slow checks of a test take seconds under load, so the page may have asked again just
+ * before, and that question would otherwise hold the next for ten seconds. One the page gave up on is gone already.
+ */
 async function outage(page: Page, fail: Fail) {
-  const clew = { down: true };
-  await page.route('**/api/auth/session', route => (clew.down ? fail(route) : route.fallback()));
+  const held: Route[] = [];
+  const clew = {
+    down: true,
+    async back() {
+      clew.down = false;
+      for (const route of held.splice(0)) await route.fallback().catch(() => undefined);
+    },
+  };
+  await page.route('**/api/auth/session', route =>
+    clew.down ? fail(route, unanswered => void held.push(unanswered)) : route.fallback(),
+  );
   return clew;
 }
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
+/**
+ * Until a toast's row has finished opening. Astryx 0.7.16's `ToastViewport` takes a closed toast away when the row's
+ * collapse ends (`transitionend`); a close that lands while the row's entry transition (from `@starting-style`) is
+ * still pending starts no collapse, so nothing ends and the row stays, collapsed, with the focus not handed back. A
+ * person is never that fast; a test whose frames are starved by the workers beside it is. Two frames make sure the
+ * entry has been created, then its transitions are waited out; a transition cancelled is done too.
+ */
+const opened = (row: Locator) =>
+  row.evaluate(async element => {
+    for (let frame = 0; frame < 2; frame++) await new Promise(requestAnimationFrame);
+    await Promise.all(
+      element
+        .getAnimations({ subtree: true })
+        .filter(animation => animation instanceof CSSTransition)
+        .map(animation => animation.finished.catch(() => undefined)),
+    );
+  });
 /** The ended card's heading, which takes the focus as the card takes the page's place. */
 const endedHeading = (page: Page) => page.getByRole('main').getByRole('heading', { level: 1, name: SITE });
 /** A message on the page's open change stream, as the server sends one. */
@@ -80,7 +112,7 @@ for (const [name, { fail, asking }] of Object.entries(outages))
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page)).toEqual([]);
     // Asked again by itself after the first wait: once Clew answers, the notice goes and that is said.
-    clew.down = false;
+    await clew.back();
     await page.clock.runFor(FIRST_WAIT);
     await expect(notices(page).getByText(UNREACHABLE)).toHaveCount(0);
     await expect.poll(() => announcements(page)).toContainEqual(REACHED);
@@ -97,6 +129,7 @@ test('the notice of Clew out of reach is reached with F6 and closed by keyboard,
   await outage(page, outages['a 503']!.fail);
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(notices(page).getByText(UNREACHABLE)).toBeVisible();
+  await opened(notices(page).locator('[data-toast-id]').filter({ hasText: UNREACHABLE }));
   // F6 is Astryx's way to the toasts from anywhere on the page.
   await page.keyboard.press('F6');
   const close = page.getByRole('button', { name: 'Stäng avisering' });
@@ -171,7 +204,7 @@ test('a first load that finds Clew out of reach says so in the page’s place, a
   await page.keyboard.press('Enter');
   await expect(main.getByText(UNREACHABLE)).toBeVisible();
   await expect(retry).toBeFocused();
-  clew.down = false;
+  await clew.back();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
   await expect(page).toHaveURL('/todo?tab=waiting');

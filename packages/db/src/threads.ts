@@ -168,21 +168,18 @@ export async function listConversations(
     next: rows.length > limit && last ? { at: last.at, id: last.thread.id } : null,
   };
 }
-/** The person's conversation a question with this turn key was written in (WD-L3), by `thread_message_turn`. */
-export async function turnWritten(personId: string, turn: string): Promise<string | undefined> {
+/**
+ * Where a question with this turn key was written (WD-L3), whoever wrote it: the key is unique across the
+ * installation (`thread_message_turn`), so it is looked up across it, and the caller holds it to the person.
+ */
+export async function turnWritten(turn: string): Promise<{ personId: string; threadId: string } | undefined> {
   const [row] = await database()
-    .select({ id: threads.id })
+    .select({ personId: threads.personId, threadId: threads.id })
     .from(threadMessages)
     .innerJoin(threads, eq(threads.id, threadMessages.threadId))
-    .where(
-      and(
-        eq(threadMessages.role, 'user'),
-        sql`(${threadMessages.meta}->>'turn') = ${turn}`,
-        eq(threads.personId, personId),
-      ),
-    )
+    .where(and(eq(threadMessages.role, 'user'), sql`(${threadMessages.meta}->>'turn') = ${turn}`))
     .limit(1);
-  return row?.id;
+  return row;
 }
 export async function readThread(personId: string, id: string, tx?: Transaction) {
   const db = tx ?? database();

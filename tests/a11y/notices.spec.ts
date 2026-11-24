@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 import { NEXT_WEEK, assistantStatus } from './data';
 import { appraisals } from './protocol-preview-data';
-import { FAILED, desktop, expect, expectNoAxeViolations, open, test } from './support';
+import { FAILED, SITE, desktop, expect, expectNoAxeViolations, open, test } from './support';
 
 /*
  * The notices a page draws when something it asked for was refused or is not there (WA-M5): the sign-in page's
@@ -26,7 +26,7 @@ test.describe('a notice says what happened where it happened', () => {
 
   for (const [reason, text] of [
     ['expired', 'Din inloggning har gått ut.'],
-    ['denied', 'Kontot saknar behörighet till Startsidan.'],
+    ['denied', `Kontot saknar behörighet till ${SITE}.`],
     ['unavailable', 'Inloggningstjänsten går inte att nå just nu.'],
     ['invalid', 'Inloggningen kunde inte slutföras. Försök igen.'],
   ] as const)

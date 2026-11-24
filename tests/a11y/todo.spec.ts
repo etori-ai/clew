@@ -13,6 +13,8 @@ import {
   test,
 } from './support';
 import { menuRow } from './phonebook';
+import { ENTITY_UNIT } from './data';
+import { Units } from './unit-data';
 /** The rule the absence pattern's detail view states (`hr.absencePattern`, as the HR connector answers it). */
 const RULE = 'Rutin 4.2: samtal inom två veckor efter tredje korta frånvaron på sex månader.';
 
@@ -349,7 +351,7 @@ test.describe('a card row that names a person', () => {
   }) => {
     // The cards as the HR connector draws them (`connectors/hr/connector.mjs`): the title says what and when, the row
     // names who by Clew's key only, under a label that says what the row is ("Medarbetare", "Ansökan"), and the reason
-    // says why now. A third names a key the directory does not give this reader.
+    // says why now. A third names a key the directory does not give this reader, and a fourth is about a unit.
     const leave = api.threads.find(t => t.id === 'ledighet')!;
     api.threads = [
       ...api.threads.map(t =>
@@ -379,27 +381,73 @@ test.describe('a card row that names a person', () => {
           subject: { entity: 'person' as const, key: 'okand' },
         })),
       },
+      {
+        ...leave,
+        id: 'enhet',
+        topic: 'enhet',
+        title: 'Se över sjukfrånvaron i oktober',
+        trigger: { ...leave.trigger, reason: 'Över målet två månader i rad' },
+        items: leave.items.map(i => ({
+          ...i,
+          ref: 'qlik:unit:1',
+          label: 'Enhet',
+          subject: { entity: 'unit' as const, key: ENTITY_UNIT.id },
+        })),
+      },
     ];
-    await open(page, '/todo');
+    // The unit's read as the server answers it: the reader belongs to the school.
+    await new Units().route(page, api);
+    // The names are held back: the lines and the filter while they are still read.
+    let release!: () => void;
+    api.entityNamesHold = new Promise<void>(resolve => (release = resolve));
+    // Not `open`, which waits for the network to rest: the held read keeps it busy.
+    await page.goto('/todo');
     const line = (id: string) => page.getByRole('main').locator(`#work-${id}`);
-    await expect(line('omtanke')).toContainText('Anna Lindqvist · Rutinens tvåveckorsgräns går ut 13 nov');
-    await expect(line('ledighet')).toContainText('Johan Byström · Ansökan kom 3 november kl. 14:20');
-    // Nobody the directory gives: the reason alone, and the label never stands in for a name.
-    await expect(line('ledighet-2')).toContainText('Ansökan kom 4 november kl. 09:05');
-    await expect(line('omtanke')).not.toContainText('Medarbetare');
+    await expect(line('ledighet')).toContainText('Ansökan kom 3 november kl. 14:20');
+    await expect(line('ledighet')).not.toContainText('Johan Byström');
+    await expect(line('enhet')).toContainText('Över målet två månader i rad');
     for (const id of ['ledighet', 'ledighet-2']) await expect(line(id)).not.toContainText('Ansökan ·');
-    // The link is still named by the title alone; the line is read beside it.
-    await expect(line('ledighet').getByRole('link')).toHaveAccessibleName(/^Godkänn en ledighetsansökan, 21 dec/);
-    await expectNoAxeViolations(page);
-    // No title names Johan: the filter finds his row by the name on its line, and says how many are left.
-    await page.getByRole('searchbox', { name: 'Filtrera' }).fill('Byström');
+    await expect(line('enhet')).not.toContainText('Enhet ·');
+    await expect(line('omtanke')).not.toContainText('Medarbetare');
+    // The filter cannot find a row by a name not yet read, and says nothing of how many until the names are there.
+    const filter = page.getByRole('searchbox', { name: 'Filtrera' });
+    await filter.fill('Byström');
+    await expect(line('ledighet')).toHaveCount(0);
+    await page.waitForTimeout(900);
+    expect(await announcements(page)).not.toContainEqual('0 ärenden');
+    release();
+    await expect(line('ledighet')).toHaveCount(1);
+    // One row: said in the singular, and the count is said only once the names are read.
+    await expect.poll(() => announcements(page)).toContainEqual('1 ärende');
+    expect(await announcements(page)).not.toContainEqual('0 ärenden');
     const rows = page
       .getByRole('table', { name: 'Behöver dig' })
       .getByRole('row')
       .filter({ has: page.getByRole('link') });
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toHaveId('work-ledighet');
-    await expect.poll(() => announcements(page)).toContainEqual('1 ärenden');
+    // Two rows: in the plural.
+    await filter.fill('ledighetsansökan');
+    await expect(rows).toHaveCount(2);
+    await expect.poll(() => announcements(page)).toContainEqual('2 ärenden');
+    await filter.fill('');
+    await expect(line('omtanke')).toContainText('Anna Lindqvist · Rutinens tvåveckorsgräns går ut 13 nov');
+    await expect(line('ledighet')).toContainText('Johan Byström · Ansökan kom 3 november kl. 14:20');
+    await expect(line('enhet')).toContainText(`${ENTITY_UNIT.label} · Över målet två månader i rad`);
+    // Nobody the directory gives: the reason alone, and the label never stands in for a name.
+    await expect(line('ledighet-2')).toContainText('Ansökan kom 4 november kl. 09:05');
+    await expect(line('omtanke')).not.toContainText('Medarbetare');
+    for (const id of ['ledighet', 'ledighet-2']) await expect(line(id)).not.toContainText('Ansökan ·');
+    await expect(line('enhet')).not.toContainText('Enhet ·');
+    // The pile's names are one read, with each subject once, and no person's or unit's page is read for them.
+    expect(api.entityNamesAsked).toHaveLength(1);
+    const asked = api.entityNamesAsked[0]!.map(s => `${s.entity}:${s.key}`);
+    expect(asked).toEqual([...new Set(asked)].sort());
+    expect(asked).toEqual(expect.arrayContaining(['person:johan', 'person:okand', `unit:${ENTITY_UNIT.id}`]));
+    expect(api.entityReads.filter(r => /^\/entities\/(person|unit)\/[^/?]+$/.test(r))).toEqual([]);
+    // The link is still named by the title alone; the line is read beside it.
+    await expect(line('ledighet').getByRole('link')).toHaveAccessibleName(/^Godkänn en ledighetsansökan, 21 dec/);
+    await expectNoAxeViolations(page);
     // A phone at 320 px: the same line under the row's link, in full, and nothing cut or scrolled sideways (1.4.10).
     await page.setViewportSize(narrow);
     await open(page, '/todo');

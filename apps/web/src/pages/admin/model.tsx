@@ -63,7 +63,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
   const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
   const readError =
     detail.isError && !missing && detail.data === undefined
-      ? errorMessage(detail.error, 'Modellen kunde inte läsas.')
+      ? errorMessage(detail.error, 'Tjänsten kunde inte nås. Försök igen.')
       : null;
   const [tab, setTab] = useState<TabId>('oversikt');
   const [report, setReport] = useState<ProviderTestReport | null>(null);
@@ -94,14 +94,24 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
     );
   if (!m || !draft)
     return (
-      <AdminShell pending={!error} user={user} section="modeller" title={null} thing={{}}>
+      <AdminShell pending={!error} name="Modell" user={user} section="modeller" title={null} thing={{}}>
         {error ? (
           <>
             {/* The page keeps its one level-1 heading when the model cannot be read: what is missing, the alert why. */}
             <Heading level={1}>Modellen kunde inte läsas</Heading>
+            {/* The heading names the page, the alert what happened and what to do, and the button does it. */}
             <Text as="p" role="alert" color="accent">
               {error}
             </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                isLoading={detail.isFetching}
+                onClick={() => void detail.refetch()}
+              />
+            </HStack>
           </>
         ) : (
           <Text type="supporting" role="status">
@@ -403,7 +413,7 @@ export function History({ history }: { history: ModelDetail['history'] }) {
           label={<Text>{historyLabel(h.action)}</Text>}
           description={
             <Text type="supporting">
-              {[actorLabel(h.actor), historyWords(h.details)].filter(Boolean).join('\u00a0· ')}
+              {[actorLabel(h.actor), historyWords(h.action, h.details)].filter(Boolean).join('\u00a0· ')}
             </Text>
           }
           endContent={<Timestamp value={h.at} format="date_time" />}

@@ -76,7 +76,7 @@ Both are fields of a capability ([D112](../decisions/D112-the-interface-is-rebui
 
 A write without `asks` and without `effect` stays one press. Nothing is sent before the dialog's last button, whose label is the action's own, and the work item the write belongs to shows the receipt, row by row, with Ångra while your answer allows it, and the decision under Händelser.
 
-What the person meets, from every place the button is drawn (a work item in Att göra's pane, beside a conversation, as a page and on a phone's pinned bar; a person's or a unit's page; the row menu on Personal):
+What the person meets, from every place the button is drawn (a work item in Att göra's pane, beside a conversation and as a page; a person's or a unit's page; the row menu on Personal):
 
 - **The dialog** is Astryx's `form-wizard-dialog` over the page, fullscreen on a phone with its buttons pinned at the foot. ✕, Esc and Avbryt send nothing and give the focus back to the button; what the person typed stays while the work item is open.
 - **Uppgifter** has one field per ask, labelled with your Swedish `label`, a required one marked as Astryx marks it. A `meeting` ask offers up to three free times from the person's own calendar (each with its day, its time and that the person is free), then "Annan tid" with a date and a clock; under them the person's own day for the chosen date, drawn by the calendar family and said in words for a screen reader. Without a calendar only the date and the clock are asked. `text` is a text field, `long-text` a text area, `date` a date field and `choice` a radio list (a selector above five options).

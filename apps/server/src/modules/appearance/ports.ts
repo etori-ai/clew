@@ -37,6 +37,8 @@ export interface AppearanceTx {
 }
 export interface AppearanceStore {
   read(): Promise<AppearanceRecord>;
+  /** The saved name alone, or null for none: what the header asks on every read, without the logos' bytes. */
+  readName(): Promise<string | null>;
   transaction<T>(fn: (tx: AppearanceTx) => Promise<T>): Promise<T>;
 }
 export const EMPTY_APPEARANCE: AppearanceRecord = {

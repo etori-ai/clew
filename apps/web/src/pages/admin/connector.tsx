@@ -67,6 +67,7 @@ import {
   capabilityKindLabel,
   fieldList,
   healthLabel,
+  inLine,
   manifestFieldLabel,
   kindLabel,
   roleLabel,
@@ -148,7 +149,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
   const readError =
     detail.isError && !missing && detail.data === undefined
-      ? errorMessage(detail.error, 'Anslutningen kunde inte läsas.')
+      ? errorMessage(detail.error, 'Tjänsten kunde inte nås. Försök igen.')
       : null;
   const [tab, setTab] = useState<TabId>('oversikt');
   const [report, setReport] = useState<CheckReport | null>(null);
@@ -184,14 +185,24 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     );
   if (!c)
     return (
-      <AdminShell pending={!error} user={user} section="anslutningar" title={null} thing={{}}>
+      <AdminShell pending={!error} name="Anslutning" user={user} section="anslutningar" title={null} thing={{}}>
         {error ? (
           <>
             {/* The page keeps its one level-1 heading when the connector cannot be read: what is missing, the alert why. */}
             <Heading level={1}>Anslutningen kunde inte läsas</Heading>
+            {/* The heading names the page, the alert what happened and what to do, and the button does it. */}
             <Text as="p" role="alert" color="accent">
               {error}
             </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Försök igen"
+                isLoading={detail.isFetching}
+                onClick={() => void detail.refetch()}
+              />
+            </HStack>
           </>
         ) : (
           <Text type="supporting" role="status">
@@ -342,12 +353,14 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         place: (
           <>
             <Text type="supporting" color="secondary">
+              {/* Whose a source of Clew's own is, is said once, in labels.ts's words ("Egen i …"), not also "Clews egen". */}
               {[
-                swatchWords(c.ordinal),
-                c.kind ? kindLabel(c.kind, site).toLowerCase() : null,
+                c.ordinal === null && c.kind ? null : swatchWords(c.ordinal),
+                c.kind ? kindLabel(c.kind, site) : null,
                 c.protocol ? `protokoll ${c.protocol}` : null,
               ]
-                .filter(Boolean)
+                .filter((part): part is string => !!part)
+                .map((part, i) => (i === 0 ? part : inLine(part)))
                 .join('\u00a0· ')}
             </Text>
             <Text type="supporting" color="secondary">
@@ -815,7 +828,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                       label={<Text>{historyLabel(h.action)}</Text>}
                       description={
                         <Text type="supporting">
-                          {[actorLabel(h.actor), historyWords(h.details)].filter(Boolean).join('\u00a0· ')}
+                          {[actorLabel(h.actor), historyWords(h.action, h.details)].filter(Boolean).join('\u00a0· ')}
                         </Text>
                       }
                       endContent={<Timestamp value={h.at} format="date_time" />}

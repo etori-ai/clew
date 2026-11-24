@@ -28,6 +28,9 @@ const read = async (db: Database | Transaction, row: string) =>
 export function postgresAppearanceStore(row = INSTALLATION_ROW): AppearanceStore {
   return {
     read: () => read(database(), row),
+    // The name's column only: the logos are base64 text in the same row, and the header reads the name on every read.
+    readName: async () =>
+      (await database().select({ name: table.name }).from(table).where(eq(table.id, row)))[0]?.name ?? null,
     transaction: fn =>
       database().transaction(async tx => {
         // The row may not exist yet, so the lock is on the installation's name, not on the row: two first saves still run in turn.

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { BoardingMock, ANNA } from './boarding';
 import { competenceCatalogue, competenceTypes } from './competence';
-import { newsOutput } from './data';
+import { entityList, newsOutput } from './data';
 import { desktop, expect, expectNoAxeViolations, open, phone, test } from './support';
 
 /*
@@ -69,6 +69,22 @@ test.describe('an empty page says so in its place', () => {
     await expect(
       main(page).getByRole('heading', { level: 2, name: 'Inget mer att visa om Johan Byström' }),
     ).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
+  test('Personal with a unit no one but the manager belongs to: "Ingen medarbetare på enheten"', async ({
+    page,
+    api,
+  }) => {
+    const list = entityList();
+    api.entityList = {
+      ...list,
+      groups: [...list.groups, { id: 'unit-fritids', label: 'Fritidshemmet', entities: [] }],
+    };
+    await open(page, '/staff');
+    await expect(main(page).getByRole('heading', { name: 'Ingen medarbetare på enheten' })).toBeVisible();
+    await expect(main(page).getByRole('heading', { name: 'Fritidshemmet' })).toBeVisible();
+    await expect(h1(page)).toHaveCount(1);
     await expectNoAxeViolations(page);
   });
 

@@ -58,6 +58,14 @@ export const relationDescription: Record<RelationGrant, string> = {
 /** What kind of source a connector is; one of the installation's own is said with its name (`site`). */
 export const kindLabel = (kind: 'core' | 'passthrough' | 'derived', site: string): string =>
   kind === 'core' ? `Egen i ${site}` : kind === 'passthrough' ? 'Direkt från källan' : 'Räknas fram';
+/**
+ * Words that start a label, said after a "·" on a line: the first letter in lower case and nothing else, so a name
+ * inside them keeps its capitals ("egen i Medarbetarwebben", never "egen i medarbetarwebben").
+ */
+export const inLine = (words: string): string => {
+  const [first = '', ...rest] = [...words];
+  return first.toLocaleLowerCase('sv-SE') + rest.join('');
+};
 export type Tone = 'success' | 'neutral' | 'warning' | 'error';
 /** The status word and its colour: the state first (off is off whatever the health says), then the health of a live connector. */
 export function statusOf(c: Pick<ConnectorSummary, 'state' | 'health' | 'bundled'>): { label: string; tone: Tone } {
@@ -121,9 +129,15 @@ export const areaFieldLabel: Record<string, string> = {
   figure: 'nyckeltal',
   icon: 'ikon',
 };
+/**
+ * A word from one of these tables, or undefined: only the table's own keys, so a value such as "constructor" or
+ * "toString" reads nothing from the object's prototype.
+ */
+const wordFor = (table: Record<string, string>, key: string): string | undefined =>
+  Object.hasOwn(table, key) ? table[key] : undefined;
 /** "vem som får använda den och svar": the changed fields of one capability or area, in words. */
 export function fieldList(fields: readonly string[], labels: Record<string, string>): string {
-  const words = fields.map(f => labels[f] ?? f);
+  const words = fields.map(f => wordFor(labels, f) ?? f);
   return words.length > 1 ? `${words.slice(0, -1).join(', ')} och ${words.at(-1)}` : (words[0] ?? '');
 }
 /** One line for the audience: "Alla", "Chefer", "Chefer · 2 enheter", "Ingen". */
@@ -210,26 +224,44 @@ export const actorLabel = (actor: string) =>
             ? 'Systemet'
             : actor;
 /** An audit row's action in words; one this page has no word for is still said in Swedish, never as its id (WA-L12). */
-export const historyLabel = (action: string) => actionLabel[action] ?? 'Ändrad';
+export const historyLabel = (action: string) => wordFor(actionLabel, action) ?? 'Ändrad';
+/** A connector's or a model's state, as a row switched on, off or to a draft names the state it left. */
 const stateWord: Record<string, string> = { enabled: 'påslagen', disabled: 'avstängd', draft: 'utkast' };
-/** One value of an audit row as a word: a state, a switch, a number, a name or an address; a list or an object is not. */
-function valueWord(value: unknown): string | null {
+/** What a model's calls say about reasoning (D84, `ModelReasoning`), as "Testa" changed it. */
+const reasoningWord: Record<string, string> = {
+  'provider-default': 'leverantörens standard',
+  none: 'utan resonemang',
+};
+/**
+ * The words for the values an action's `from` and `to` hold where they are one of a closed list: a state change names
+ * a state, a reasoning change a setting. Any other action's text is a name or an address, said as it was written, so a
+ * model renamed "none" is not read as a setting.
+ */
+const valueWords = (action: string): Record<string, string> | undefined =>
+  action === 'model.reasoning'
+    ? reasoningWord
+    : /^(connector|model)\.(enabled|disabled|draft)$/.test(action)
+      ? stateWord
+      : undefined;
+/** One value of an audit row as a word: a state, a setting, a switch, a number, a name or an address; a list or an object is not. */
+function valueWord(value: unknown, words: Record<string, string> | undefined): string | null {
   if (value === null) return 'ingen';
   if (typeof value === 'boolean') return value ? 'på' : 'av';
   if (typeof value === 'number') return value.toLocaleString('sv-SE');
-  if (typeof value === 'string') return stateWord[value] ?? (value.trim() || null);
+  if (typeof value === 'string') return (words && wordFor(words, value)) ?? (value.trim() || null);
   return null;
 }
 /**
  * What an audit row's details say, in Swedish words (WA-L12): the name of what changed, from what and to what where
- * those are a state, a switch, a number, a name or an address, a key taken away with a moved address, and how many cards
- * a removal closed. A list or an object (an audience, a set of tools, a manifest's differences) is left to the action's
- * own words: the audit log keeps every detail, and the page never shows its JSON.
+ * those are a state, a setting, a switch, a number, a name or an address, a key taken away with a moved address, and
+ * how many cards a removal closed. A list or an object (an audience, a set of tools, a manifest's differences) is left
+ * to the action's own words: the audit log keeps every detail, and the page never shows its JSON.
  */
-export function historyWords(details: Record<string, unknown>): string {
+export function historyWords(action: string, details: Record<string, unknown>): string {
+  const words = valueWords(action);
   const name = [details.title, details.label].find((v): v is string => typeof v === 'string' && v.trim() !== '');
-  const from = 'from' in details ? valueWord(details.from) : null;
-  const to = 'to' in details ? valueWord(details.to) : null;
+  const from = 'from' in details ? valueWord(details.from, words) : null;
+  const to = 'to' in details ? valueWord(details.to, words) : null;
   return [
     name ?? null,
     from && to ? `från ${from} till ${to}` : from ? `var ${from}` : to ? `nu ${to}` : null,

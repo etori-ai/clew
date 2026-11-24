@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import type { ExecutionSummary, Subject, Thread } from '../packages/contracts/src/index';
-import type { AuditEntry, NewThread, ThreadStore, TimerIntent, WorkflowStart } from '../apps/server/src/threads/model';
-import { reminderStart, reminderWorkflowId } from '../apps/server/src/threads/domain';
+import type {
+  AuditEntry,
+  ConversationCursor,
+  NewThread,
+  ThreadStore,
+  TimerIntent,
+  WorkflowStart,
+} from '../apps/server/src/threads/model';
+import { cursorOf, reminderStart, reminderWorkflowId } from '../apps/server/src/threads/domain';
 
 /**
  * The store contract (D25): one suite, two adapters. `tests/unit/memory-store.test.ts` runs it against the memory
@@ -346,6 +353,22 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await store.transaction(tx => tx.reopenThread(first.id, { updatedAt: plus(T0, 5000) }))).toBe(true);
       expect((await store.openThread(a, first.topic))?.id).toBe(first.id);
     });
+    test('a thread whose id is taken is no new thread: the insert answers false and the first stays as it was', async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const first = draft(a);
+      expect(await store.transaction(tx => tx.insertThread(first))).toBe(true);
+      // Another person, another topic and a closed state: only the id is the same.
+      expect(
+        await store.transaction(tx =>
+          tx.insertThread(draft(b, { id: first.id, title: 'Någon annans', state: 'handled' })),
+        ),
+      ).toBe(false);
+      expect(await store.readThread(a, first.id)).toMatchObject({ title: first.title, state: 'open' });
+      expect(await store.readThread(b, first.id)).toBeUndefined();
+    });
     test('messages keep their order and move updatedAt; a patch changes only what it names', async () => {
       const {
         store,
@@ -487,44 +510,131 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       });
       await store.transaction(tx => tx.addMessage(mine[6]!.id, { role: 'user', body: 'Igen', at: plus(T0, 60_000) }));
       const expected = [6, 5, 4, 3, 2, 1, 0].map(i => mine[i]!.id);
-      const first = await store.listConversations(a, { limit: 3 });
-      expect(first.threads.map(t => t.id)).toEqual(expected.slice(0, 3));
+      // Four to a page puts the two of the same instant on either side of the cursor: the next page goes on from the id,
+      // neither repeating the one before the cursor nor passing over the one after it.
+      const first = await store.listConversations(a, { limit: 4 });
+      expect(first.threads.map(t => t.id)).toEqual(expected.slice(0, 4));
       expect(first.threads[0]!.messages.map(m => m.body)).toEqual(['Igen']);
-      const second = await store.listConversations(a, { after: first.next!, limit: 3 });
-      expect(second.threads.map(t => t.id)).toEqual(expected.slice(3, 6));
-      const last = await store.listConversations(a, { after: second.next!, limit: 3 });
-      expect(last.threads.map(t => t.id)).toEqual(expected.slice(6));
+      expect(first.next?.id).toBe(mine[3]!.id);
+      const last = await store.listConversations(a, { after: first.next!, limit: 4 });
+      expect(last.threads.map(t => t.id)).toEqual(expected.slice(4));
       expect(last.next).toBeNull();
+      // Three to a page reaches every one too, the tie inside a page.
+      const pages: string[][] = [];
+      let after: ConversationCursor | undefined;
+      do {
+        const page = await store.listConversations(a, { ...(after ? { after } : {}), limit: 3 });
+        pages.push(page.threads.map(t => t.id));
+        after = page.next ?? undefined;
+      } while (after);
+      expect(pages).toEqual([expected.slice(0, 3), expected.slice(3, 6), expected.slice(6)]);
       // Exactly a page: nothing follows it.
       expect((await store.listConversations(a, { limit: 7 })).next).toBeNull();
       expect((await store.listConversations(b, { limit: 10 })).threads.map(t => t.id)).toEqual([theirs.id]);
     });
-    test('a question’s turn key is written once and found by its owner only (WD-L3)', async () => {
+    test('every cursor the server accepts is one the store can read, at the edges of time and id; the rest are refused before it (WD-L1)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const run = unique();
+      const conversation = draft(a, { id: `c-${run}`, kind: 'question', createdAt: T0, updatedAt: T0 });
+      await store.transaction(tx => tx.insertThread(conversation));
+      // The edges an `after` may carry: the first year, a microsecond after the conversation's own time with the longest
+      // id, the end of a leap day, the last instant there is. Nothing comes before year 1; the conversation comes after
+      // each of the others.
+      for (const [text, found] of [
+        ['0001-01-01T00:00:00Z~a', []],
+        ['2026-11-04T06:00:00.000001Z~' + 'z'.repeat(80), [conversation.id]],
+        ['2028-02-29T23:59:59.999999Z~Z-9', [conversation.id]],
+        [`9999-12-31T23:59:59Z~c-${run}`, [conversation.id]],
+      ] as const) {
+        const cursor = cursorOf(text);
+        expect(cursor).toBeDefined();
+        const page = await store.listConversations(a, { after: cursor!, limit: 5 });
+        expect(page.threads.map(t => t.id)).toEqual([...found]);
+      }
+      // What the database would refuse with an error never reaches it: a day that does not exist, hour 24, year 0, a
+      // NUL or any other character no id is made of, an id longer than an id may be.
+      for (const text of [
+        '2026-02-30T00:00:00Z~x',
+        '2026-04-31T12:00:00Z~x',
+        '2026-01-01T24:00:00Z~x',
+        '0000-01-01T00:00:00Z~x',
+        '2026-11-04T06:00:00Z~a\u0000b',
+        '2026-11-04T06:00:00Z~a b',
+        '2026-11-04T06:00:00Z~' + 'z'.repeat(81),
+        '2026-11-04T06:00:00Z~',
+        '2026-11-04T06:00:00.1234567Z~x',
+        '2026-11-04T06:00:00+01:00~x',
+      ])
+        expect(cursorOf(text)).toBeUndefined();
+    });
+    test('a question’s turn key is written once in the installation and found with whose it is, whoever asks (WD-L3)', async () => {
       const {
         store,
         people: [a, b],
       } = await make();
       const key = `turn-${unique()}-${unique()}`;
       const conversation = draft(a, { kind: 'question' }),
-        other = draft(a, { kind: 'question' });
+        other = draft(a, { kind: 'question' }),
+        theirs = draft(b, { kind: 'question' });
       await store.transaction(async tx => {
         await tx.insertThread(conversation);
         await tx.insertThread(other);
+        await tx.insertThread(theirs);
         await tx.addMessage(conversation.id, { role: 'user', body: 'Hur många?', at: T0, meta: { turn: key } });
         // An answer may say anything; only a question carries the key.
         await tx.addMessage(conversation.id, { role: 'assistant', body: 'Tre.', at: T0, meta: { turn: key } });
       });
-      expect(await store.turnWritten(a, key)).toBe(conversation.id);
-      expect(await store.turnWritten(b, key)).toBeUndefined();
-      expect(await store.turnWritten(a, `turn-${unique()}-${unique()}`)).toBeUndefined();
-      // The same key on a second question is refused, and the transaction writes nothing.
-      await expect(
-        store.transaction(async tx => {
-          await tx.addMessage(other.id, { role: 'user', body: 'Hur många?', at: plus(T0, 1000), meta: { turn: key } });
-        }),
-      ).rejects.toThrow();
+      const held = { personId: a, threadId: conversation.id };
+      expect(await store.turnWritten(key)).toEqual(held);
+      expect(await store.turnWritten(`turn-${unique()}-${unique()}`)).toBeUndefined();
+      // The same key on a second question is refused, the owner's or anyone else's, and the transaction writes nothing.
+      for (const [person, thread] of [
+        [a, other],
+        [b, theirs],
+      ] as const)
+        await expect(
+          store.transaction(async tx => {
+            await tx.addMessage(thread.id, {
+              role: 'user',
+              body: 'Hur många?',
+              at: plus(T0, 1000),
+              meta: { turn: key },
+            });
+          }),
+        ).rejects.toThrow();
       expect((await store.readThread(a, other.id))?.messages).toEqual([]);
-      expect(await store.turnWritten(a, key)).toBe(conversation.id);
+      expect((await store.readThread(b, theirs.id))?.messages).toEqual([]);
+      expect(await store.turnWritten(key)).toEqual(held);
+    });
+    test('the stream’s history of equal times is the greatest ids, as on every adapter (WD-L1)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const run = unique();
+      // Fifty-two conversations continued at the same instant, begun one after the other and stored in that order: the
+      // two with the least ids fall outside, not the two stored last.
+      const same = Array.from({ length: 52 }, (_, i) =>
+        draft(a, {
+          id: `h-${run}-${String(i).padStart(2, '0')}`,
+          kind: 'question',
+          createdAt: plus(T0, i),
+          updatedAt: plus(T0, 60_000),
+        }),
+      );
+      await store.transaction(async tx => {
+        for (const t of same) await tx.insertThread(t);
+      });
+      const listed = (await store.listThreads(a, plus(T0, 60_000))).filter(t => t.kind === 'question');
+      expect(listed.map(t => t.id).sort()).toEqual(
+        same
+          .slice(2)
+          .map(t => t.id)
+          .sort(),
+      );
     });
     test('a thread can be locked inside a transaction by its owner only, and reads the same as outside', async () => {
       const {

@@ -21,8 +21,15 @@ const EXECUTION_ACTOR = 'system:execution';
 export async function projectOntoCard(tx: ProjectionTx, e: Execution, stage: ProjectionStage) {
   if (!e.presentation) return;
   const { cards } = tx;
-  if (stage === 'approval' && e.presentation.newTitle && e.connector === 'calendar' && !e.compensates)
-    await cards.insertThread({
+  // A calendar decision's own card is new with its approval. Its id names the person and the decision, so a card
+  // already under it is a fault: the approval is refused rather than landing on whatever card holds the id, since the
+  // version check below does not run for a new card.
+  if (
+    stage === 'approval' &&
+    e.presentation.newTitle &&
+    e.connector === 'calendar' &&
+    !e.compensates &&
+    !(await cards.insertThread({
       id: e.presentation.threadId,
       personId: e.personId,
       sourceAuthorization: e.authorizationVersion,
@@ -41,7 +48,9 @@ export async function projectOntoCard(tx: ProjectionTx, e: Execution, stage: Pro
       trigger: { reason: 'Du godkände en kalenderändring', source: 'Kalendern', at: e.createdAt },
       createdAt: e.createdAt,
       updatedAt: e.createdAt,
-    });
+    }))
+  )
+    throw new Error(`The calendar decision card ${e.presentation.threadId} already exists.`);
   const thread = await cards.lockThread(e.personId, e.presentation.threadId);
   if (!thread) throw new ExecutionError('Ärendet finns inte.');
   const previous = thread.execution;

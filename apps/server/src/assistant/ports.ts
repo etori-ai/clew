@@ -210,8 +210,6 @@ export interface AssistantDeps {
   ) => Promise<O>;
   calendar: Pick<CalendarUsecases, 'listWeek' | 'readToday' | 'samtalStatus' | 'ensureProposalThread' | 'replan'>;
   models: ModelResolver;
-  /** What the installation is called now (the appearance's `name`, D98): the system prompt names it, read per turn. */
-  siteName: () => Promise<string>;
   clock: () => Date;
   ids: () => string;
   log: (message: string, ...details: unknown[]) => void;

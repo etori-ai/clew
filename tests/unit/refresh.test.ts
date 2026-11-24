@@ -1,5 +1,6 @@
 import { Registry, openGovernance } from '../../packages/connectors/src';
 import { threadAccess } from '../../apps/server/src/threads/access';
+import { itemEvents } from '../../apps/server/src/threads/domain';
 import { draft as storedDraft } from '../store-contract';
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
@@ -396,8 +397,32 @@ test('a source that changes the work of a snoozed card brings it back: the snooz
   expect(w.store.threads.audit.filter(a => a.action === 'thread.refreshed').map(a => a.details)).toEqual([
     { materialChange: true, connector: 'source' },
   ]);
+  // The snooze ended because the source changed the work, in the scan's own transaction, after what it read in.
+  const rows = w.store.threads.audit.filter(a => a.subject === `thread:${id}`);
+  expect(rows.map(a => [a.actor, a.action])).toEqual([
+    ['assistant:scan', 'thread.pushed'],
+    ['assistant:scan', 'thread.refreshed'],
+    ['assistant:scan', 'thread.woken'],
+  ]);
+  expect(rows.at(-1)!.details).toEqual({ reason: 'changed', snoozedUntil: until });
+  // So the card's history can say it: "tog upp ärendet igen när … ändrade det".
+  expect(itemEvents(rows, { actions: [] }, 'person:a')[0]).toMatchObject({
+    by: 'clew',
+    kind: 'woken',
+    reason: 'changed',
+  });
   // One word when it was pushed and one now it is back.
   expect(w.store.threads.deliveries).toHaveLength(2);
+});
+test('a change the source makes to a card that is not snoozed says nothing of waking', async () => {
+  const w = world();
+  w.set([draft()]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  w.advance();
+  w.set([draft('2')]);
+  await w.uc.tick();
+  expect(w.store.threads.audit.map(a => a.action)).not.toContain('thread.woken');
 });
 test('only an exhausted complete snapshot or an explicit tombstone resolves missing work', async () => {
   const w = world();

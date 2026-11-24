@@ -270,6 +270,8 @@ export interface TalkDeps {
   store: TalkStore;
   staff: Staff;
   reports: Reports;
+  /** What the installation is called (D98): the refusal of a time an invitation carries names who sent it. */
+  siteName: () => Promise<string>;
   clock: () => Date;
   ids: () => string;
 }

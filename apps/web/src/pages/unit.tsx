@@ -64,7 +64,7 @@ import { KeyFigureTiles } from '../components/people/unit-figures';
 import { PageFrame } from '../components/shell/page-frame';
 
 /** The page's heading when the unit cannot be read, in the browser's tab too. */
-const FAILED_TITLE = 'Enheten kunde inte hämtas';
+const FAILED_TITLE = 'Enheten kunde inte läsas';
 
 /**
  * Whether the reader manages the unit and how many people it has: the people the reader may ask about come in one group
@@ -351,6 +351,9 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   const read = useQuery(entityDetailQuery('unit', id));
   const detail: EntityDetail | undefined = read.data;
   const missing = read.isError && read.error instanceof ApiError && read.error.status === 404;
+  // The tab and the heading say the same: the page fails on a read it has nothing drawn from. A drawn page whose
+  // refetch fails keeps its content, as the administration's pages do.
+  const failed = read.isError && !missing && !detail;
   // Every source's answer for the unit, each its own read, a silent one said aloud once, as on the opened person.
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? [], 'unit');
   const staff = useStaffCount(user, id);
@@ -408,13 +411,13 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   const tab = tabs.some(t => t.value === section) || pendingTab ? section : OVERVIEW;
   const tabName = tabs.find(t => t.value === tab)?.label;
   usePageTitle(
-    detail
-      ? tab === OVERVIEW || !tabName
-        ? detail.entity.name
-        : `${tabName} · ${detail.entity.name}`
-      : missing
-        ? 'Enheten finns inte'
-        : read.isError
+    missing
+      ? 'Enheten finns inte'
+      : detail
+        ? tab === OVERVIEW || !tabName
+          ? detail.entity.name
+          : `${tabName} · ${detail.entity.name}`
+        : failed
           ? FAILED_TITLE
           : null,
   );
@@ -422,7 +425,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   const here = tabHref(OVERVIEW);
 
   let body: ReactNode;
-  if (missing || read.isError || !detail)
+  if (missing || !detail)
     body = (
       <PageFrame>
         {missing ? (
@@ -432,12 +435,12 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
             description="Det finns ingen sådan enhet, eller så hör du inte till den. Adressen kan också ha ändrats."
             actions={<Button label="Till startsidan" href="/" />}
           />
-        ) : read.isError ? (
+        ) : failed ? (
           <VStack gap={3}>
             {/* The page keeps its one level-1 heading when the unit cannot be read: what is missing, the alert why. */}
             <Heading level={1}>{FAILED_TITLE}</Heading>
             <Text as="p" role="alert">
-              {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
+              {errorMessage(read.error, 'Tjänsten kunde inte nås. Försök igen.')}
             </Text>
             <HStack>
               <Button
@@ -450,7 +453,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
             </HStack>
           </VStack>
         ) : (
-          <ContentSkeleton />
+          <ContentSkeleton name="Enhet" />
         )}
       </PageFrame>
     );

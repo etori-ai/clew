@@ -47,7 +47,7 @@ import { newsItemOutput, newsItemSpec, newsSpec } from './data';
 import { SITE } from './branding-fixtures';
 export { SITE } from './branding-fixtures';
 import type { NewsResult } from '@clew/contracts';
-import { providerAddressProblem } from '@clew/contracts';
+import { ENTITY_NAMES_MAX, providerAddressProblem } from '@clew/contracts';
 import {
   assistantStatus,
   modelDetail,
@@ -117,9 +117,11 @@ import type {
   CommitmentsInput,
   EntityDetail,
   EntityList,
+  EntityNames,
   EntityRows,
   EntitySection,
   ModelSummary,
+  Subject,
   ProviderSummary,
   TalkBookingBody,
   TalkCalendarBody,
@@ -130,7 +132,7 @@ import type {
 } from '@clew/contracts';
 import {
   SITE_NAME_DEFAULT,
-  THEME_BASE_COLORS,
+  THEME_TEMPLATE,
   checkSiteName,
   parseThemeFile,
   themeFileOf,
@@ -180,6 +182,17 @@ const SOURCES: Record<string, string> = {
 const CATALOGUED = new Set(fixtureViews().map(v => v.capability));
 /** The routes' answer to a failure that is nobody's input (`apps/server/src/context.ts`). */
 export const FAILED = 'Något gick fel. Försök igen.';
+/** A cursor's parts as the server's `cursorOf` takes them (WD-L1): the time in UTC to the microsecond, an id's characters. */
+const CURSOR_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+const CURSOR_ID = /^[A-Za-z0-9-]{1,80}$/;
+/**
+ * A turn as the server reads it back under its key (`written`, WD-L3): what the answer offered for the moment (Clew's
+ * actions, the verbs, a proposal's choice) is not offered again.
+ */
+const asWritten = (turn: unknown) => {
+  const { forslag: _offered, verbs: _verbs, ...rest } = turn as Record<string, unknown>;
+  return { ...rest, clewActions: [] };
+};
 /** The end of a decision's ten-minute way back, from the suite's now. */
 const UNDO_UNTIL = '2026-11-04T08:10:00.000Z';
 import type { ConnectorSummary } from '@clew/contracts';
@@ -298,6 +311,11 @@ export class MockApi {
   conversationPage = 50;
   /** Every read of Alla samtal, as the cursor it was read after (null for the first page). */
   conversationReads: (string | null)[] = [];
+  /** A read of a later page of Alla samtal waits for this (`holdConversations`), and fails while `conversationsFail`. */
+  private conversationsHeld?: Promise<void>;
+  conversationsFail = false;
+  /** How long one thread's read takes, by its id: a conversation asked for first can be read last (WD-L6). */
+  threadDelay: Record<string, number> = {};
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   /** How long the areas take, so a test can see Läget's tiles in their shape (D54). */
@@ -445,6 +463,10 @@ export class MockApi {
   entityRowsDelay: Record<string, number> = {};
   /** Every entities read that reached the mock, as path and query, in order. */
   entityReads: string[] = [];
+  /** Every names read (`POST /api/entities/names`), as the subjects it asked, in order. */
+  entityNamesAsked: Subject[][] = [];
+  /** While set, a names read waits for it, so a spec sees a list before its names arrive. */
+  entityNamesHold?: Promise<unknown>;
   /**
    * Every propose started from an entity's action dialog (D97, D126 item 7), as the entity's key, the capability and the
    * answers, in order. An execute is never started: its last button decides (`entityDecides`).
@@ -627,6 +649,14 @@ export class MockApi {
   /** Händelser cannot be read. */
   itemEventsFail = false;
   unmocked: string[] = [];
+  /** Keeps every read of a later page of Alla samtal pending until the returned function is called. */
+  holdConversations() {
+    let release = () => {};
+    this.conversationsHeld = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    return release;
+  }
   /** Keeps every turn pending until the returned function is called, for a test that works while the answer is on its way: `answerDelay` can run out first on a slow machine. */
   holdAnswer() {
     let release = () => {};
@@ -867,10 +897,7 @@ export class MockApi {
       const { revision, name, theme, logo } = this.appearance;
       return json({ revision, name, theme, logo });
     }
-    if (path === '/appearance/theme-file')
-      return json(
-        themeFileOf(this.appearance.theme ?? { name: 'Mall: Clews standardfärger', colors: THEME_BASE_COLORS }),
-      );
+    if (path === '/appearance/theme-file') return json(themeFileOf(this.appearance.theme ?? THEME_TEMPLATE));
     if (path.startsWith('/appearance/logo/')) {
       const image = this.logos[path.endsWith('/dark') ? 'dark' : 'light'];
       return image
@@ -881,6 +908,7 @@ export class MockApi {
     if (path === '/header') return json(this.header);
     // Entities (D97): the people the reader may ask about, one source over them, the opened person and one source's
     // answer for them. A key the reader may not ask about answers 404 as if it did not exist.
+    if (path === '/entities/names' && post) return this.entityNames(route);
     if (path.startsWith('/entities/') && !post) return this.entities(route, path, url);
     if (path.startsWith('/entities/') && post) return this.entityStart(route, path);
     // Personal (D94): the manager's units and their people, or the server's refusal.
@@ -2032,25 +2060,37 @@ export class MockApi {
       this.unmocked.push(`${request.method()} ${path}`);
       return route.fulfill({ status: 404, json: { error: 'Okänd förmåga.' } });
     }
-    // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
-    // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     // Alla samtal (WD-L1) as the server reads it: the conversations alone, the latest activity first, a page at a time
-    // from where the last one ended.
+    // from where the last one ended. A cursor the server did not write is refused, as `cursorOf` refuses it; one it
+    // could have written is read from, whether a conversation still ends there or not.
     if (path === '/conversations' && !post) {
       const after = url.searchParams.get('after');
       this.conversationReads.push(after);
+      const at = after?.split('~')[0] ?? '',
+        last = after?.slice(at.length + 1) ?? '';
+      if (after !== null && (!CURSOR_AT.test(at) || Number.isNaN(Date.parse(at)) || !CURSOR_ID.test(last)))
+        return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
+      if (after !== null) {
+        await this.conversationsHeld;
+        if (this.conversationsFail) return route.fulfill({ status: 503, json: { error: FAILED } });
+      }
       const all = this.threads
         .filter(t => t.kind === 'question')
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
       const cursor = (t: Thread) => `${t.updatedAt}~${t.id}`;
-      const from = after ? all.findIndex(t => cursor(t) === after) + 1 : 0;
-      const page = all.slice(from, from + this.conversationPage);
-      const more = from + this.conversationPage < all.length;
+      const rest = after === null ? all : all.filter(t => t.updatedAt < at || (t.updatedAt === at && t.id < last));
+      const page = rest.slice(0, this.conversationPage);
+      const more = rest.length > this.conversationPage;
       return json({ conversations: page, next: more ? cursor(page.at(-1)!) : null });
     }
-    // What was written under a question's key (WD-L3): the page reads it back after a turn it stopped or lost.
-    if (path.startsWith('/conversation/turns/') && !post)
-      return json({ written: this.written.get(decodeURIComponent(path.slice('/conversation/turns/'.length))) ?? null });
+    // What was written under a question's key (WD-L3): the page reads it back after a turn it stopped or lost, as the
+    // server's `written` answers it.
+    if (path.startsWith('/conversation/turns/') && !post) {
+      const turn = this.written.get(decodeURIComponent(path.slice('/conversation/turns/'.length)));
+      return json({ written: turn ? asWritten(turn) : null });
+    }
+    // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
+    // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
       const { turn, ...body } = request.postDataJSON() as {
         text: string;
@@ -2071,7 +2111,7 @@ export class MockApi {
         return route.fulfill({
           status: 200,
           contentType: 'text/event-stream',
-          body: `data: ${JSON.stringify({ type: 'done', response: answered })}\n\n`,
+          body: `data: ${JSON.stringify({ type: 'done', response: asWritten(answered) })}\n\n`,
         });
       await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
@@ -2441,6 +2481,8 @@ export class MockApi {
       return json({ events: this.itemEvents[id] ?? eventsOf(t) });
     }
     if (path.startsWith('/threads/') && !post) {
+      const delay = this.threadDelay[id];
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
       const t = this.threads.find(t => t.id === id);
       return t ? json(t) : route.fulfill({ status: 404, json: { error: 'Ärendet finns inte.' } });
     }
@@ -2603,6 +2645,29 @@ export class MockApi {
       });
     return route.fulfill({ json: { threadId: id } });
   }
+  /**
+   * The names of a list's subjects (`POST /api/entities/names`), answered as the entities module does: each subject that
+   * the opened person's or unit's read would answer, by the same lookup, with its name; the rest absent, and more than
+   * `ENTITY_NAMES_MAX` the route's 400.
+   */
+  private async entityNames(route: Route) {
+    const subjects = (route.request().postDataJSON() as { subjects?: Subject[] } | null)?.subjects;
+    if (!Array.isArray(subjects) || subjects.length > ENTITY_NAMES_MAX)
+      return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
+    this.entityNamesAsked.push(subjects);
+    await this.entityNamesHold;
+    const list: EntityList = this.entitiesEmpty || this.employee ? { ...this.entityList, groups: [] } : this.entityList;
+    const names = [...new Map(subjects.map(s => [`${s.entity}:${s.key}`, s])).values()].flatMap(s => {
+      const detail =
+        s.entity === 'person'
+          ? (this.entityDetailOf?.(s.key) ?? entityDetail(list, s.key))
+          : s.entity === 'unit'
+            ? this.unitDetailOf?.(s.key)
+            : undefined;
+      return detail ? [{ entity: s.entity, key: s.key, name: detail.entity.name }] : [];
+    });
+    return route.fulfill({ json: { names } satisfies EntityNames });
+  }
   private async entities(route: Route, path: string, url: URL) {
     const json = (body: unknown) => route.fulfill({ json: body });
     const missing = () => route.fulfill({ status: 404, json: { error: 'Personen finns inte.', code: 'not_found' } });
@@ -2752,7 +2817,7 @@ export class MockApi {
       // As the talks module refuses it (D132 item 4): never a talk marked held, nor a booking an invitation carries.
       if (row.state === 'held') return fail(400, 'Samtalet är redan markerat som hållet.');
       if (row.state === 'booked' && row.invited !== false)
-        return fail(400, 'Samtalet är bokat genom en inbjudan från Clew, så tiden kan inte ändras här.');
+        return fail(400, `Samtalet är bokat genom en inbjudan från ${SITE}, så tiden kan inte ändras här.`);
       const { at: _at, until: _until, invited: _invited, own: _own, ...bare } = row;
       if (method === 'PUT') {
         const { start, end } = body as TalkBookingBody;

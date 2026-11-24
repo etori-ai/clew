@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
-import { LOGO_MAX_BYTES, themeFileOf, themeFromAccent, type AuthenticatedContext } from '@clew/contracts';
+import {
+  LOGO_MAX_BYTES,
+  THEME_TEMPLATE,
+  themeFileOf,
+  themeFromAccent,
+  type AuthenticatedContext,
+} from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../apps/server/src/context';
 import { memoryAppearanceStore } from '../../apps/server/src/modules/appearance/adapters/memory';
 import { logoImageOf } from '../../apps/server/src/modules/appearance/domain';
@@ -177,8 +183,11 @@ describe('Utseende', () => {
       subject: APPEARANCE_SUBJECT,
       details: { name: 'Exempelkommunen', revision: 2 },
     });
-    // With no theme saved the file is the template: Clew's own base colours, itself a valid theme file.
+    // With no theme saved the file is the template: Clew's own base colours, itself a valid theme file, with no status
+    // icon pinned, so they follow the words a file started from it sets.
     expect((await usecases.themeFile()).$description).toBe('Mall: Clews standardfärger');
+    expect(await usecases.themeFile()).toEqual(themeFileOf(THEME_TEMPLATE));
+    expect(JSON.stringify(await usecases.themeFile())).not.toMatch(/icon-info|icon-success/);
   });
 
   test('a logo is stored as its bytes and served from an address that changes with every save', async () => {

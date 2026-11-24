@@ -287,16 +287,20 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
       const [p1, p2] = [drawn(1), drawn(2)];
       await h.seedProposal(p1);
       await h.seedProposal(p2);
-      const create = (p: ProposalRecord, input: Partial<{ start: string; email: string }> = {}): CalendarItem => ({
+      /** The confirmation of `p` as the page draws it; `input` is what changed since it was drawn. */
+      const create = (
+        p: ProposalRecord,
+        input: Partial<{ start: string; end: string; email: string; personId: string }> = {},
+      ): CalendarItem => ({
         id: 'create:' + p.id,
         proposalId: p.id,
-        personId: p.participant.personId,
+        personId: input.personId ?? p.participant.personId,
         label: p.participant.name,
         action: 'create',
         input: {
           title: 'Utvecklingssamtal',
           start: input.start ?? p.start,
-          end: p.end,
+          end: input.end ?? p.end,
           participants: [input.email ?? p.participant.email.toUpperCase()],
         },
       });
@@ -349,6 +353,63 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
       await approve(h, e);
       expect((await h.proposal(p1.id))?.executionId).toBe(e.id);
       expect((await h.proposal(p2.id))?.executionId).toBe(e.id);
+    });
+
+    test('each confirmed proposal must still be proposed, on this card, at the approved start and end and for the approved invitee; each refusal writes nothing', async () => {
+      const h = await make();
+      const { card, p1, create, confirm } = await planning(h);
+      // Already booked, or given way to a replacement, since the page drew it.
+      for (const status of ['confirmed', 'superseded'] as const) {
+        const settled = { ...p1, id: `${h.prefix}-${status}`, status };
+        await h.seedProposal(settled);
+        await expect(approve(h, confirm([create(settled)]))).rejects.toThrow('Förslaget har ändrats. Läs om sidan.');
+      }
+      // Another invitee than the one it was drawn for, the same address.
+      await expect(approve(h, confirm([create(p1, { personId: `${h.prefix}-guest9` })]))).rejects.toThrow(
+        'Förslaget har ändrats. Läs om sidan.',
+      );
+      // Its time moved since the page drew it: the start, and the end alone.
+      await expect(approve(h, confirm([create(p1, { start: '2099-11-11T08:30:00.000Z' })]))).rejects.toThrow(
+        'Förslaget har ändrats. Läs om sidan.',
+      );
+      await expect(approve(h, confirm([create(p1, { end: '2099-11-11T10:30:00.000Z' })]))).rejects.toThrow(
+        'Förslaget har ändrats. Läs om sidan.',
+      );
+      // The manager's own proposal, drawn on another of their cards.
+      const elsewhere = `${h.prefix}-plan-2`;
+      await h.seedCard({ id: elsewhere, personId: h.personId, connector: 'calendar' });
+      const theirs = { ...p1, id: `${h.prefix}-elsewhere`, threadId: elsewhere };
+      await h.seedProposal(theirs);
+      await expect(approve(h, confirm([create(theirs)]))).rejects.toThrow('Förslaget har ändrats. Läs om sidan.');
+      expect((await h.card(card))?.execution ?? null).toBeNull();
+      for (const id of [p1.id, `${h.prefix}-confirmed`, `${h.prefix}-superseded`, theirs.id])
+        expect((await h.proposal(id))?.executionId).toBeNull();
+      expect(await h.policy(card)).toBeUndefined();
+      expect(await h.timer('obligation:' + card)).toBeUndefined();
+      expect(await h.audit('thread:' + card)).toEqual([]);
+      // As drawn, the same confirmation lands.
+      await approve(h, confirm([create(p1)]));
+      expect((await h.card(card))?.execution?.state).toBe('pending');
+    });
+
+    test('a result read again settles each invitation once: the proposal stays as booked and the talks domain is told once', async () => {
+      const h = await make();
+      const { p1, create, confirm } = await planning(h);
+      const e = confirm([create(p1)]);
+      await approve(h, e);
+      const result = done('create:' + p1.id, { ref: 'event-1', revision: 'r1', uid: 'uid-1' });
+      await settle(h, e, { state: 'succeeded', dispatchedAt: dispatched, result });
+      const booked = await h.proposal(p1.id);
+      expect(booked).toMatchObject({ status: 'confirmed', eventRef: 'event-1', confirmedAt: dispatched });
+      // A check of the same execution reads the same answer later.
+      await settle(h, e, {
+        state: 'succeeded',
+        dispatchedAt: '2099-11-05T10:02:00.000Z',
+        updatedAt: '2099-11-05T10:07:00.000Z',
+        result,
+      });
+      expect(await h.proposal(p1.id)).toEqual(booked);
+      expect((await h.told()).map(t => [t.kind, t.notice.invitationId])).toEqual([['established', p1.id]]);
     });
 
     test('an approved confirmation starts the fixed follow-up with its obligation timer; its result books the invitations, and an approved undo ends the follow-up and makes them proposed times again', async () => {
@@ -589,6 +650,23 @@ export function projectionContract(name: string, make: () => Promise<ProjectionH
         ['moved', `${h.prefix}-booked`],
         ['ended', `${h.prefix}-booked`],
       ]);
+    });
+
+    test('a calendar decision whose card id is taken already is refused, and nothing is written on the card there', async () => {
+      const h = await make();
+      const taken = `${h.prefix}-decision`;
+      await h.seedCard({ id: taken, personId: h.personId, connector: 'calendar' });
+      const e = on(h, taken, {
+        connector: 'calendar',
+        operation: 'calendar.cancelEvent',
+        newTitle: 'Ställ in mötet',
+        payload: { items: [{ id: 'cancel:1', label: 'Möte', action: 'cancel', ref: 'event-1', revision: 'r1' }] },
+      });
+      await expect(approve(h, e)).rejects.toThrow(`The calendar decision card ${taken} already exists.`);
+      expect(await h.store.read(e.id)).toBeUndefined();
+      expect(await h.card(taken)).toMatchObject({ title: 'Synthetic card', state: 'open', waitingOn: null });
+      expect((await h.card(taken))?.execution ?? null).toBeNull();
+      expect(await h.audit('thread:' + taken)).toEqual([]);
     });
 
     test('a throw after the projection in the ledger’s transaction rolls the card, the policy, the timer and the audit rows back with the execution', async () => {

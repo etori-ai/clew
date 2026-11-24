@@ -8,8 +8,10 @@ import {
   hiddenFocusStops,
   narrow,
   open,
+  pagesNav,
   phone,
   reflowProblems,
+  SITE,
   test,
 } from './support';
 import { modelProviders, providerDetail, providerReport } from './data';
@@ -66,7 +68,7 @@ test.describe('model administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/models');
-      await expect(page).toHaveTitle('Modeller · Startsidan');
+      await expect(page).toHaveTitle(`Modeller · ${SITE}`);
       // The section is marked in the administration's own panel (D126).
       await expect(
         page
@@ -173,7 +175,7 @@ test.describe('model administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/models/gpt-oss-20b');
-      await expect(page).toHaveTitle('Snabb (lokal) · Startsidan');
+      await expect(page).toHaveTitle(`Snabb (lokal) · ${SITE}`);
       await page.getByRole('button', { name: 'Gör till standard' }).click();
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Snabb (lokal) är standard'));
       await expect(page.getByRole('button', { name: 'Ta bort som standard' })).toBeVisible();
@@ -360,6 +362,22 @@ test.describe('model administration', () => {
       await expect(add).toBeInViewport();
       await add.click();
       await expect(dialog).toHaveCount(0);
+    });
+  });
+
+  test.describe('between the old 720 px line and the app’s 768 px (WA-L9)', () => {
+    test('at 740 px the frame and the models list are both in their phone layout', async ({ page, api }) => {
+      api.admin = true;
+      await page.setViewportSize({ width: 740, height: 900 });
+      await open(page, '/admin/models');
+      // The frame: the header's "Meny" in place of the pages' row.
+      await expect(page.getByRole('banner').getByRole('button', { name: 'Meny', exact: true })).toBeVisible();
+      await expect(pagesNav(page)).toHaveCount(0);
+      // The page: a provider's models as rows of a list, not a table, by the same line.
+      const main = page.getByRole('main');
+      await expect(main.getByRole('list', { name: 'Modeller hos Kommunens modeller' })).toBeVisible();
+      await expect(main.getByRole('table')).toHaveCount(0);
+      expect(await reflowProblems(page)).toEqual([]);
     });
   });
 

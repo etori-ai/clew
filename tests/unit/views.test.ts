@@ -451,7 +451,6 @@ describe('the model and a view it may not read', () => {
     });
     expect(
       systemPrompt({
-        site: 'Clew',
         name: 'x',
         role: 'employee',
         unitLabel: 'y',

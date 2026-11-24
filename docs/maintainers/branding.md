@@ -20,9 +20,12 @@ groups on Administration › Användare.
 **Installationens namn** is what the installation is called where a person reads it: every tab's title, the sign-in
 page's heading, what the browser says when Clew cannot be reached, Clew's own header band when no connector gives
 the header ([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)),
-the sentences that say where something is or is not kept, and what the assistant calls the place it answers in. It
-is one line of at most 60 characters, trimmed; an empty name is refused at the field. **Återställ till Clew** goes
-back to the default. Clew's own name stays where the product, not the installation, is meant: the source label
+the sentences that say where something is or is not kept and who sent a talk's invitation. It is one line of at most
+60 characters, trimmed and in Unicode's composed form, with nothing invisible, nothing that turns the text's
+direction, no character that cannot be drawn, at most two marks on one letter and at least one letter or digit
+(`checkSiteName`); a name that breaks one of these is refused at the field with what is wrong, and the command line
+refuses it the same way. **Återställ till Clew** goes back to the default. The model is never given the name: it
+does not need it, and `admin.appearance` must not reach every assistant's instructions (D98 item 11). Clew's own name stays where the product, not the installation, is meant: the source label
 `Clew` on what Clew itself stores, the protocol pages and the documentation.
 
 ### The theme file
@@ -37,20 +40,20 @@ group is the file's own and may be referenced:
   "$description": "Exempelkommunen",
   "palette": {
     "$type": "color",
-    "blue": { "$value": "#005595" },
-    "pale-blue": { "$value": "#daeff1" }
+    "grey": { "$value": "#1b1b1b" },
+    "pale-grey": { "$value": "#f1f1f1" }
   },
   "light": {
     "color": {
       "$type": "color",
-      "accent": { "$value": "{palette.blue}" },
+      "accent": { "$value": "{palette.grey}" },
       "on-accent": { "$value": "#ffffff" }
     }
   },
   "dark": {
     "color": {
       "$type": "color",
-      "accent": { "$value": "{palette.pale-blue}" },
+      "accent": { "$value": "{palette.pale-grey}" },
       "on-accent": { "$value": "#000000" }
     }
   }
@@ -67,21 +70,29 @@ group is the file's own and may be referenced:
 - The file is at most 64 kB.
 
 **Hämta mall för temafil** on the page downloads a valid file to start from: Clew's own base colours for the roles
-the contrast check reads. Once a theme is saved the same button downloads that theme.
+the contrast check reads, less the two status icons, which then follow the text colours the file sets, and less
+Neutral's translucent dark tints, which a file cannot carry (`THEME_TEMPLATE`). Once a theme is saved the same button
+downloads that theme.
 [`themes/sundsvall/theme.tokens.json`](../../themes/sundsvall/theme.tokens.json) is a complete example with a palette, and [`themes/clew/`](../../themes/clew/) is Clew's own look, chosen on the canvas of [D126](../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md) item 11: ink indigo as the accent on a cool paper ground, with the ball of thread as its logo. An installation nobody has configured stays Astryx Neutral (D46); Clew's look is applied like any other example.
 
 ### What is refused
 
 A file is refused whole, with every problem listed, when it names a colour that cannot be set, sets a colour in one
 appearance only, holds a value that is not an opaque sRGB colour, or would make a theme whose text cannot be read.
-In both appearances, text on surfaces, semantic fills and tinted status badges must reach 4.5:1, and the success and
-information words do so on the page, a surface, a card and a popover. Blue and green badges use `text-blue` on
-`background-blue` and `text-green` on `background-green`. The accent, which is also the focus ring, the icons and the
-status marks must reach 3:1 on the same four grounds, and a progress bar's fill on its track must too. A status icon
-the file leaves alone is checked in the status text colour Astryx draws it in. The pairs are listed in
-`THEME_CONTRAST_PAIRS`.
+In both appearances, text must reach 4.5:1, and the accent, which is also the focus ring, the icons, the status marks
+and a progress bar's fill on its track must reach 3:1, on every ground they are drawn on. The primary and secondary
+words, a link (`text-accent`), the secondary icon and the accent are held on the page, a surface, a card, a popover
+(the ground of the composer and the menus) and the muted ground (a muted card, a striped row, and in Kalender the week
+numbers, the lanes outside office hours under the now line, and a full day's "+N"); the success and information words
+and the other icons on the first four. A fill or a tint carries its own words: `on-accent` on `accent`, `on-info` on
+`info`, `on-success` on `success`, `text-blue` on `background-blue`, `text-green` on `background-green`,
+`on-info-muted` on `info-muted` (a notice, a proposal in Kalender), `on-success-muted` on `success-muted`, and
+`text-primary` on `accent-muted` (a selected item's label). Neutral's dark tints are translucent, so the base's is laid
+over the surface before it is measured. The pairs are listed in `THEME_CONTRAST_PAIRS`.
 Existing installations keep their saved badge backgrounds. Clew uses readable black or white text wherever a
-previously saved pair fails. A colour the file leaves alone is checked against the base theme. The page checks before it lets you save and shows the
+previously saved pair fails. A colour the file leaves alone is the base theme's, except a status icon (`icon-info`,
+`icon-success`): Astryx draws it in its status's text colour until it is set, so a file that sets `text-info` is
+checked for the information icon too, and a refusal names the text colour once, not the icon the file never set. The page checks before it lets you save and shows the
 theme in both appearances; the server checks again. The check covers the listed pairs, not every component state:
 look at the pages, in both appearances, after a new theme is saved.
 
@@ -142,7 +153,7 @@ its appearance before anyone has signed in, and how a developer tries the Sundsv
 |---|---|
 | The file format, the token list, the contrast pairs, the schema, the name's check | `packages/contracts/src/theme-file.ts` |
 | Storage, permission, audit, the logo's rules | `apps/server/src/modules/appearance/` |
-| The public and the administration routes | `apps/server/src/routes/appearance.ts`, `routes/admin.ts` |
+| The public and the administration routes | `apps/server/src/routes/appearance.ts`, `routes/appearance-admin.ts` |
 | From saved colours to an Astryx theme, and the header's band | `packages/ui/src/theme.ts`, `branding.ts` |
 | Reading the appearance in the browser | `apps/web/src/branding.ts` |
 | The page | `apps/web/src/pages/admin/appearance.tsx` |
@@ -153,7 +164,8 @@ its appearance before anyone has signed in, and how a developer tries the Sundsv
 
 `tests/unit/theme-file.test.ts` holds the format, the contrast rules, the base table against Astryx and the
 Sundsvall example; `tests/unit/appearance-admin.test.ts` the use cases and their audit rows;
-`tests/appearance-store-contract.ts` runs on the memory adapter and on Postgres (`bun run test:db`);
+`tests/unit/appearance-admin-routes.test.ts` the administration's routes behind the session guard (capability, CSRF,
+step-up, the body and its Swedish refusals); `tests/appearance-store-contract.ts` runs on the memory adapter and on Postgres (`bun run test:db`);
 `tests/a11y/admin-appearance.spec.ts` the page. The browser suite's theme and logo are answers of its mocked API, so
 one build serves every profile. To run the header and theme checks on another saved appearance:
 

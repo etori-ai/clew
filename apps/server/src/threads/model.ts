@@ -121,7 +121,10 @@ export interface ThreadTx {
   /** The person's thread, held against concurrent writers until the transaction ends (a row lock in Postgres). */
   lockThreadById(id: string): Promise<Thread | undefined>;
   lockThread(personId: string, id: string): Promise<Thread | undefined>;
-  /** False when an open pushed thread with the same topic already exists for the person: the scan is idempotent. */
+  /**
+   * False when an open pushed thread with the same topic already exists for the person (the scan is idempotent), or
+   * when a thread already has the id; the existing thread is left as it was.
+   */
   insertThread(thread: NewThread): Promise<boolean>;
   /**
    * The patch, as it is. A patch that opens a pushed thread again while another open pushed thread of the person holds
@@ -203,10 +206,12 @@ export interface ThreadStore {
     page: { after?: ConversationCursor; limit: number },
   ): Promise<{ threads: Thread[]; next: ConversationCursor | null }>;
   /**
-   * The conversation a question sent with this turn key (`ConversationInput.turn`) was written in (WD-L3), among the
-   * person's own; undefined when no question of theirs carries it. A key is written once (the store refuses it again).
+   * Where a question sent with this turn key (`ConversationInput.turn`) was written (WD-L3): whose conversation it is
+   * in and which. A key is written once in the whole installation (the store refuses it again, whoever sends it), so it
+   * is looked up across it; the caller holds what it finds to the person and the request. Undefined when no question
+   * carries it.
    */
-  turnWritten(personId: string, turn: string): Promise<string | undefined>;
+  turnWritten(turn: string): Promise<{ personId: string; threadId: string } | undefined>;
   /** One of the person's threads; undefined when it does not exist or is not theirs. */
   readThread(personId: string, id: string): Promise<Thread | undefined>;
   /** For timers that know only the thread. */

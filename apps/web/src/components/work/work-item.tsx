@@ -38,6 +38,7 @@ import { shortQuery } from '../../media';
 import { readOf, withoutRead } from '../../panel-address';
 import { documentHref, reviewHref } from '../../review-address';
 import { entityHref } from '../../person-address';
+import { useSubjectNames } from '../../subject-names';
 import { outcomeStatus, receiptRowsInOrder, type ItemStatus } from '../../status-of';
 import { dueOf, fromClewItself, itemPageHref, noticeOf, rowsSaySomething } from '../../work-items';
 import { readPageHref } from '../../view-address';
@@ -445,6 +446,7 @@ function Facts({ thread, item, columns }: { thread: Thread; item: ItemState; col
   const subjects = thread.items.filter(
     (i, n, all) => i.subject && all.findIndex(j => j.subject && sameSubject(j.subject, i.subject!)) === n,
   );
+  const { nameOf } = useSubjectNames(subjects.map(i => i.subject!));
   const due = decided(thread) ? null : dueOf(thread, day);
   const deadline = thread.deadline?.slice(0, 10);
   const days = deadline ? daysUntil(deadline, day) : null;
@@ -454,16 +456,17 @@ function Facts({ thread, item, columns }: { thread: Thread; item: ItemState; col
         <MetadataListItem label="Berör">
           <VStack gap={1} hAlign="start">
             {subjects.map(i => {
-              const href = entityHref(i.subject!, item.from);
-              return (
-                // The row's own words: a source names the person or unit by key alone, so no face or name is guessed.
-                href ? (
-                  <Link key={i.ref} href={href}>
-                    {i.label}
-                  </Link>
-                ) : (
-                  <Text key={i.ref}>{i.label}</Text>
-                )
+              // The name Clew's directory holds is the link to the person's or unit's page (2.4.4). Until it is read, and
+              // for one the reader may not open, the row's own words stand without a link: they say what the row is
+              // ("Ansökan"), never whom it names, and the page would not open.
+              const name = nameOf(i.subject!);
+              const href = name ? entityHref(i.subject!, item.from) : null;
+              return href ? (
+                <Link key={i.ref} href={href}>
+                  {name}
+                </Link>
+              ) : (
+                <Text key={i.ref}>{name ?? i.label}</Text>
               );
             })}
           </VStack>

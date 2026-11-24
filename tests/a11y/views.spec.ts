@@ -443,6 +443,61 @@ test.describe('a calendar read beside a conversation', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
+  test('a proposal moved in Kalender is in its new place beside the conversation on the way back', async ({
+    page,
+    api,
+  }) => {
+    // The day of the first proposal, read as the calendar answers it: the proposals the samtal item holds now.
+    const date = '2026-11-10';
+    await page.route(
+      url => url.pathname === '/api/cap/calendar.day',
+      route =>
+        route.fulfill({
+          json: {
+            output: {
+              from: date,
+              events: [],
+              proposals: api.threads.find(t => t.id === 'samtal')!.proposals.filter(p => p.start.startsWith(date)),
+            },
+          },
+        }),
+    );
+    // The move as the dialog sends it, to 13:00 in Stockholm: the time fields are `calendar.spec.ts`'s.
+    await page.route(
+      url => /\/api\/threads\/samtal\/proposals\/p1\/move$/.test(url.pathname),
+      route =>
+        route.fallback({
+          postData: JSON.stringify({
+            ...(route.request().postDataJSON() as object),
+            start: `${date}T12:00:00.000Z`,
+            end: `${date}T12:45:00.000Z`,
+          }),
+        }),
+    );
+    await open(
+      page,
+      `/conversations/fraga?open=calendar.day&open-title=${title('Dagen')}&open-input=${encodeURIComponent(JSON.stringify({ date }))}`,
+    );
+    const pane = page.getByRole('complementary', { name: 'Dagen' });
+    const entry = pane.getByRole('link', { name: /Anna Lindqvist/ });
+    await expect(entry).toHaveAccessibleName(/10:00/);
+    await entry.click();
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?date=${date}&view=day&entry=p1$`));
+    await page
+      .getByRole('complementary', { name: 'Utvecklingssamtal' })
+      .getByRole('button', { name: 'Flytta …' })
+      .click();
+    const dialog = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
+    await dialog.getByRole('button', { name: 'Spara' }).click();
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Förslaget ligger nu'));
+    // Back at once, well inside the time a read is kept: the day beside the conversation is read again.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/conversations\/fraga\?open=calendar\.day&/);
+    await expect(entry).toHaveAccessibleName(/13:00/);
+    await expect(entry).toBeFocused();
+  });
+
   test('at 320 px the read is one link away under the title, and nothing scrolls sideways', async ({
     page,
     api: _,

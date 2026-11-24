@@ -10,13 +10,11 @@ import { Units } from './unit-data';
  * status where the page has one (4.1.3), and passes axe while it stands; once the read answers, the status goes and the
  * content comes. Every answer is released by the test, never by a timeout.
  *
- * A thing's page (a work item, its review, a conversation) has no name to give its level-1 heading until the thing is
- * read: axe's `page-has-heading-one` is left out while it is held, and the heading is checked in its place as the
- * answer arrives.
+ * A page has its level-1 heading in every state: a thing's page (a work item, its review, a conversation) whose thing
+ * is not yet read is named by the kind of thing it shows, and by the thing's own name once it is.
  */
 
 type Where = (url: URL) => boolean;
-const NO_NAME_YET = { without: ['page-has-heading-one'] };
 
 /** Holds every request `where` matches until the returned function is called; then each goes on to the mock. */
 async function hold(page: Page, where: Where, method?: string) {
@@ -45,8 +43,9 @@ test.describe('a page held on its first read stands as placeholders and says wha
   test.use({ viewport: desktop });
 
   test('Alla samtal', async ({ page, api: _ }) => {
-    const release = await hold(page, exactly('/api/threads'));
-    await openHeld(page, '/conversations', exactly('/api/threads'));
+    // Alla samtal reads its own paged list (WD-L1), not the stream.
+    const release = await hold(page, exactly('/api/conversations'));
+    await openHeld(page, '/conversations', exactly('/api/conversations'));
     await expect(status(page, 'Hämtar dina samtal …')).toBeAttached();
     await expect(skeleton(page)).toBeVisible();
     await expect(h1(page)).toHaveCount(1);
@@ -66,23 +65,29 @@ test.describe('a page held on its first read stands as placeholders and says wha
     await expect(status(page, 'Hämtar verktygen …')).toHaveCount(0);
   });
 
-  for (const path of ['/items/fakturor', '/items/fakturor/review'])
+  for (const [path, kind] of [
+    ['/items/fakturor', 'Ärende'],
+    ['/items/fakturor/review', 'Granskning'],
+  ] as const)
     test(`a work item’s page: ${path}`, async ({ page, api: _ }) => {
       const release = await hold(page, under('/api/threads'));
       await openHeld(page, path, under('/api/threads'));
       await expect(status(page, 'Hämtar innehåll …')).toBeAttached();
       await expect(skeleton(page)).toBeVisible();
-      await expectNoAxeViolations(page, NO_NAME_YET);
+      await expect(h1(page)).toHaveText([kind]);
+      await expectNoAxeViolations(page);
       release();
       await expect(status(page, 'Hämtar innehåll …')).toHaveCount(0);
       await expect(h1(page)).toHaveCount(1);
+      await expect(h1(page)).not.toHaveText([kind]);
     });
 
   test('a conversation', async ({ page, api: _ }) => {
     const release = await hold(page, under('/api/threads'));
     await openHeld(page, '/conversations/fraga', under('/api/threads'));
     await expect(status(page, 'Hämtar samtalet …')).toBeAttached();
-    await expectNoAxeViolations(page, NO_NAME_YET);
+    await expect(h1(page)).toHaveText(['Samtal']);
+    await expectNoAxeViolations(page);
     release();
     await expect(status(page, 'Hämtar samtalet …')).toHaveCount(0);
     await expect(page.getByRole('log')).toBeVisible();

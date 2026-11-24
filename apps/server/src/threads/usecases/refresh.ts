@@ -315,6 +315,16 @@ export function refreshUsecases({
               at,
               details: { materialChange: changed, connector: job.connector },
             });
+            // A snoozed card the source changed comes back early (D28 §3, D29 §4, D49 §3): the snooze breaks on the
+            // change, and its history says why, beside what was read in.
+            if (changed && thread.snoozedUntil)
+              await tx.writeAudit({
+                actor: 'assistant:scan',
+                action: 'thread.woken',
+                subject: `thread:${thread.id}`,
+                at,
+                details: { reason: 'changed', snoozedUntil: thread.snoozedUntil },
+              });
           }
         }
         touched.add(thread.id);
