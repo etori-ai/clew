@@ -27,7 +27,7 @@ import {
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { parseManifest } from '@clew/connectors/remote';
 import { ForbiddenError, InputError } from '../../context';
-import { diffDetails, isManifest, manifestDiff, pendingOffer } from '../manifests';
+import { diffDetails, isManifest, manifestDiff, pendingOffer, sameManifest } from '../manifests';
 import { describeBundled } from '../describe';
 import type {
   ConnectorPatch,
@@ -637,6 +637,7 @@ export function connectorUsecases(deps: AdminDeps) {
   ): Promise<{ diff: ManifestDiff; connector: ConnectorDetail }> {
     // Both paths require an administrator before the first lookup; applying also rechecks the session (`mutating`).
     requireAdmin(persona);
+    const changedAgain = 'Systemet har ändrats igen sedan du granskade det. Läs in det igen och granska ändringen.';
     if (!input.apply) {
       const row = await must(id);
       const { url } = remote(row);
@@ -644,8 +645,11 @@ export function connectorUsecases(deps: AdminDeps) {
       // An offer only on the row still at the address it was read from: one moved meanwhile is read in again there.
       if (!(await store.recordCheck(id, { url, served: fetched, at: clock().toISOString() })))
         throw new InputError(MOVED_WHILE_READ);
-      const seen = (await store.read(id))!;
-      return { diff: manifestDiff(manifestOf(seen), fetched), connector: await detail(seen) };
+      const seen = await must(id);
+      if (seen.url !== url) throw new InputError(MOVED_WHILE_READ);
+      if (!sameManifest(pendingOffer(seen)?.manifest ?? seen.manifest, fetched)) throw new InputError(changedAgain);
+      const connector = await detail(seen);
+      return { diff: connector.offered?.diff ?? manifestDiff(manifestOf(seen), fetched), connector };
     }
     const { by, at } = await mutating(persona);
     const row = await must(id);
@@ -654,7 +658,6 @@ export function connectorUsecases(deps: AdminDeps) {
     if (draftOnly && (row.state !== 'draft' || row.version !== input.draftVersion)) throw new InputError(CHANGED_SINCE);
     const offer = pendingOffer(row);
     if (!offer) throw new InputError('Systemet erbjuder ingen ändring att godkänna. Läs in det igen.');
-    const changedAgain = 'Systemet har ändrats igen sedan du granskade det. Läs in det igen och granska ändringen.';
     if (input.offered !== offer.revision) throw new InputError(changedAgain);
     // The offer is loaded as the loader would load it, so a manifest this Clew cannot register is never approved.
     let offered: ConnectorManifest;
