@@ -771,7 +771,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   return (
     <Shell user={user} nav={nav}>
       {/* The column scrolls in Astryx's ScrollableArea, which takes a tab stop while it scrolls: a loading week, or a
-          week with nothing in it, holds nothing focusable (axe: scrollable-region-focusable, WCAG 2.1.1). */}
+          week with nothing in it, holds nothing focusable (axe: scrollable-region-focusable, WCAG 2.1.1). It is named
+          for the page, since the calendar inside it is a group named for the week: one name said twice is noise. */}
       <PageFrame
         title={head.title}
         titleId={TITLE_ID}
@@ -779,7 +780,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         actions={head.actions}
         below={head.below}
         end={pane}
-        label={capital(title)}
+        label="Kalender"
         scrollTabStop
       >
         <VStack gap={4}>
