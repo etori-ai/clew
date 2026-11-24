@@ -946,6 +946,115 @@ describe('the opened person or unit', () => {
   });
 });
 
+describe('the names of the people and units a list is about', () => {
+  /** What one request reads of the directory: where the reader stands, each person, and the most people read at once. */
+  function counted(people: ReturnType<typeof directory>) {
+    const staff = people.staff;
+    const read = { reach: 0, person: 0, peak: 0 };
+    let inFlight = 0;
+    const reach = staff.reach.bind(staff),
+      person = staff.person.bind(staff);
+    staff.reach = async persona => {
+      read.reach++;
+      return reach(persona);
+    };
+    staff.person = async (persona, id, includeProfile) => {
+      read.person++;
+      read.peak = Math.max(read.peak, ++inFlight);
+      try {
+        await new Promise(r => setTimeout(r, 1));
+        return await person(persona, id, includeProfile);
+      } finally {
+        inFlight--;
+      }
+    };
+    return read;
+  }
+
+  test('each subject the reader may open, by the rule of the opened entity; the rest is absent and never told apart', async () => {
+    const { entities, people, cardsAsked } = standard({ hr: { calls: [] } });
+    const read = counted(people);
+    const hillevi = people.persona('hillevi');
+    const asked: Subject[] = [
+      // Her report, a colleague elsewhere, herself, and the unit she manages.
+      { entity: 'person', key: 'anna' },
+      { entity: 'person', key: 'hassan' },
+      { entity: 'person', key: 'hillevi' },
+      { entity: 'unit', key: 'unit-skola' },
+      // The same subject twice is read once and answered once.
+      { entity: 'person', key: 'anna' },
+      // Nobody, a deactivated person, one without a user name, another organisation, a user name in place of the id,
+      // a key with a NUL, a unit she has no relation to and one of another organisation.
+      { entity: 'person', key: 'nobody' },
+      { entity: 'person', key: 'bo' },
+      { entity: 'person', key: 'nameless' },
+      { entity: 'person', key: 'stranger' },
+      { entity: 'person', key: 'Erik.S' },
+      { entity: 'person', key: 'anna\u0000' },
+      { entity: 'unit', key: 'unit-omsorg' },
+      { entity: 'unit', key: 'unit-annan' },
+    ];
+    expect(await entities.names(hillevi, asked)).toEqual([
+      { entity: 'person', key: 'anna', name: 'Anna Lindqvist' },
+      { entity: 'person', key: 'hassan', name: 'Hassan Ali' },
+      { entity: 'person', key: 'hillevi', name: 'Hillevi Berg' },
+      { entity: 'unit', key: 'unit-skola', name: 'Bergsåkers skola' },
+    ]);
+    // Where she stands is read once for the request and each person once (a key with a NUL never); no source or card is
+    // asked.
+    expect([read.reach, read.person]).toEqual([1, 8]);
+    expect(cardsAsked).toEqual([]);
+    // The same rule as the entity's page: every name answered opens there, and every key left out does not.
+    for (const s of asked) {
+      const named = (await entities.names(hillevi, [s])).length === 1;
+      expect([s.key, named]).toEqual([s.key, !!(await entities.detail(hillevi, s.entity, s.key))]);
+    }
+    // An employee of the school reaches her own unit, and a colleague elsewhere does not.
+    expect(await entities.names(people.persona('anna'), [{ entity: 'unit', key: 'unit-skola' }])).toEqual([
+      { entity: 'unit', key: 'unit-skola', name: 'Bergsåkers skola' },
+    ]);
+    expect(await entities.names(people.persona('hassan'), [{ entity: 'unit', key: 'unit-skola' }])).toEqual([]);
+    // A deactivated person is gone from the answer from the next read on, and a rename shows at once.
+    people.state.users.get('anna')!.enabled = false;
+    people.state.users.get('hassan')!.name = 'Hassan Ali Nur';
+    expect(await entities.names(hillevi, asked.slice(0, 4))).toEqual([
+      { entity: 'person', key: 'hassan', name: 'Hassan Ali Nur' },
+      { entity: 'person', key: 'hillevi', name: 'Hillevi Berg' },
+      { entity: 'unit', key: 'unit-skola', name: 'Bergsåkers skola' },
+    ]);
+  });
+
+  test('a large list is read a few at a time, with one read of where the reader stands', async () => {
+    const people = directory({
+      onSkola: Array.from({ length: 150 }, (_, i) => ({ id: 'p' + i, name: 'Person ' + i, userName: 'p' + i })),
+    });
+    const { entities } = world([], { directory: people, budget: { concurrency: 3 } });
+    const read = counted(people);
+    const subjects: Subject[] = [
+      ...Array.from({ length: 150 }, (_, i): Subject => ({ entity: 'person', key: 'p' + i })),
+      ...Array.from({ length: 50 }, (_, i): Subject => ({ entity: 'person', key: 'gone' + i })),
+    ];
+    const names = await entities.names(people.persona('hillevi'), subjects);
+    expect(names.map(n => n.key)).toEqual(subjects.slice(0, 150).map(s => s.key));
+    expect(names[42]).toEqual({ entity: 'person', key: 'p42', name: 'Person 42' });
+    expect([read.reach, read.person, read.peak]).toEqual([1, 200, 3]);
+  });
+
+  test('at most 200 subjects a request: more is refused before anything is read', async () => {
+    const { entities, people } = standard();
+    const read = counted(people);
+    const hillevi = people.persona('hillevi');
+    const many = (n: number) => Array.from({ length: n }, (): Subject => ({ entity: 'person', key: 'anna' }));
+    expect(await entities.names(hillevi, many(200))).toEqual([
+      { entity: 'person', key: 'anna', name: 'Anna Lindqvist' },
+    ]);
+    expect([read.reach, read.person]).toEqual([1, 1]);
+    await expect(entities.names(hillevi, many(201))).rejects.toThrow('Ogiltig förfrågan.');
+    expect([read.reach, read.person]).toEqual([1, 1]);
+    expect(await entities.names(hillevi, [])).toEqual([]);
+  });
+});
+
 describe("one source's section on the opened entity", () => {
   test('any read about the kind the reader may call answers for the one key, whatever was placed', async () => {
     const calls: string[][] = [];

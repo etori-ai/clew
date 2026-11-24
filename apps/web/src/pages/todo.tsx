@@ -10,7 +10,15 @@ import {
 } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { isSnoozed, sameSubject, streamGroup, type Area, type SessionUser, type Thread } from '@clew/contracts';
+import {
+  isSnoozed,
+  sameSubject,
+  streamGroup,
+  type Area,
+  type SessionUser,
+  type Subject,
+  type Thread,
+} from '@clew/contracts';
 import {
   Badge,
   BoardCard,
@@ -55,6 +63,7 @@ import {
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { areasQuery, threadsQuery } from '../queries';
+import { useSubjectNames } from '../subject-names';
 import { errorMessage } from '../query-policy';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
@@ -66,7 +75,6 @@ import {
   itemPageHref,
   needsYouOf,
   isOverdue,
-  queuedReminderOf,
   rowFacts,
   sourcesNotice,
   tabOf,
@@ -103,6 +111,9 @@ import { workUnit } from '../user-units';
 
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
+/** The word for work items after a count: "1 ärende", "3 ärenden". */
+const itemWord = (n: number) => (n === 1 ? 'ärende' : 'ärenden');
+const itemCount = (n: number) => `${n} ${itemWord(n)}`;
 const ALL_SYSTEMS = 'all';
 /** A field the person is typing in keeps the focus when the pane changes (the filter). */
 const TYPING = 'input, textarea, [contenteditable="true"]';
@@ -174,11 +185,26 @@ interface QueueRow extends Record<string, unknown> {
   href: string;
 }
 
-/** The one person or unit the item's rows are about, when there is exactly one: whom the item is about. */
-function aboutOf(thread: Thread): string | null {
-  const named = thread.items.filter(i => i.subject);
-  const first = named[0];
-  return first && named.every(i => sameSubject(i.subject!, first.subject!)) ? first.label : null;
+/** The one person or unit the item's rows are about, when there is exactly one: whom the item is about (D97 item 6). */
+function aboutOf(thread: Thread): Subject | null {
+  const first = thread.items.find(i => i.subject)?.subject;
+  return first && thread.items.every(i => !i.subject || sameSubject(i.subject, first)) ? first : null;
+}
+
+/**
+ * The name of whom each item is about, read from Clew's own directory by the key Clew holds (`useSubjectNames`): the
+ * pile's subjects in one read, never one read per person. One the reader may not open, or that is gone, names nobody,
+ * and the line says the rest; so does every line while the names are still read (`pending`).
+ */
+function useAboutNames(threads: readonly Thread[]): { nameOf: (thread: Thread) => string | null; pending: boolean } {
+  const names = useSubjectNames(threads.flatMap(t => aboutOf(t) ?? []));
+  return {
+    nameOf: thread => {
+      const about = aboutOf(thread);
+      return about ? names.nameOf(about) : null;
+    },
+    pending: names.pending,
+  };
 }
 
 /**
@@ -258,9 +284,14 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const tab: TodoTab = search.has('tab') ? tabOf(search.get('tab')) : item ? pileOf(item) : 'needs-you';
   const words = filter.trim().toLocaleLowerCase('sv-SE');
   const inArea = (t: Thread) => !area || t.area === area;
+  const { nameOf, pending: namesPending } = useAboutNames(piles[tab].filter(inArea));
+  // The filter finds a row by what it says, the name on its line too.
   const matches = (t: Thread) =>
     inArea(t) &&
-    (!words || `${t.title} ${t.trigger.reason} ${t.trigger.source}`.toLocaleLowerCase('sv-SE').includes(words));
+    (!words ||
+      `${t.title} ${t.trigger.reason} ${t.trigger.source} ${nameOf(t) ?? ''}`
+        .toLocaleLowerCase('sv-SE')
+        .includes(words));
   const rows = piles[tab].filter(matches);
 
   const nav = useNav({ current: { surface: 'todo' }, admin, manager: user.role === 'manager' });
@@ -373,24 +404,23 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   }, [itemId, !!item, !!threadsQ.data]);
 
   // The rows change in place under the filter and the system: what is shown is said aloud (4.1.3), once typing rests.
+  // Words typed while the names are still read wait for them, since the filter also finds a row by its name.
   const said = useRef({ area, filter });
   useEffect(() => {
     if (said.current.area === area && said.current.filter === filter) return;
+    if (said.current.area === area && words && namesPending) return;
     const areaChanged = said.current.area !== area;
     said.current = { area, filter };
+    const count = itemCount(rows.length);
     const timer = setTimeout(
       () =>
         announce(
-          areaChanged
-            ? area
-              ? `Visar ${marks.areaTitle(area)}: ${rows.length} ärenden`
-              : `Visar alla system: ${rows.length} ärenden`
-            : `${rows.length} ärenden`,
+          areaChanged ? (area ? `Visar ${marks.areaTitle(area)}: ${count}` : `Visar alla system: ${count}`) : count,
         ),
       areaChanged ? 0 : 600,
     );
     return () => clearTimeout(timer);
-  }, [area, filter, rows.length]);
+  }, [area, filter, rows.length, namesPending]);
 
   const failed = threadsQ.isError && threadsQ.data === undefined;
   // A source not read yet is said over the rows, and an empty pile is then never said to be nothing (D8). One that does
@@ -418,7 +448,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
         label={
           <>
             {n}
-            <VisuallyHidden> ärenden</VisuallyHidden>
+            <VisuallyHidden> {itemWord(n)}</VisuallyHidden>
           </>
         }
       />
@@ -501,18 +531,17 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     };
   });
   /**
-   * Under the name: whom it is about (board Att göra); in the other piles, and where it names nobody, why it is here,
-   * what it waits on or what came of it ("Ledigheten är beviljad"). Where it stands is the Status column's word, the
-   * word its notice says in the pane (D126 item 13), so the line never says it again. A reminder that waits to be
-   * scheduled is said either way (D64 item 2).
+   * Under the name: whom it is about (board Att göra), by the name Clew's directory holds (`useAboutNames`), then why it
+   * is here, what it waits on or what came of it ("Ledigheten är beviljad"), in every pile: a title that names nobody
+   * ("Godkänn en ledighetsansökan") needs both. Where it stands is the Status column's word, the word its notice says in
+   * the pane (D126 item 13), so the line never says it again. A reminder that waits to be scheduled is said with the
+   * reason (D64 item 2).
    */
   const aboutLine = (r: QueueRow, source?: string | null) => {
     const t = r.thread;
     const stale = t.state === 'open' && !!silent.of(t.connector);
-    const about = aboutOf(t);
-    const why = tab !== 'needs-you' || !about ? r.facts.why : queuedReminderOf(t, now);
     // D135: the unit the work item is about, for a person with several.
-    const words = [source, workUnit(user, t), about, why].filter(Boolean).join(DOT);
+    const words = [source, workUnit(user, t), nameOf(t), r.facts.why].filter(Boolean).join(DOT);
     return stale ? (words ? staleWhy(words) : 'Kan vara gammal') : words;
   };
   /** The system a row names: none for an item from Clew itself (`fromClewItself`), which is no system a person goes to. */
@@ -627,27 +656,27 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           label="Behöver dig"
           value={String(count('needs-you'))}
           href={href({ tab: 'needs-you', item: null })}
-          name={`Behöver dig: ${count('needs-you')} ärenden`}
+          name={`Behöver dig: ${itemCount(count('needs-you'))}`}
         />
         <KeyFigure
           label="Försenade"
           value={String(overdue)}
           tone={overdue ? 'error' : undefined}
           href={href({ tab: 'needs-you', item: null })}
-          name={`Försenade: ${overdue} ärenden`}
+          name={`Försenade: ${itemCount(overdue)}`}
         />
         <KeyFigure
           label="Väntar på andra"
           value={String(count('waiting'))}
           href={href({ tab: 'waiting', item: null })}
-          name={`Väntar på andra: ${count('waiting')} ärenden`}
+          name={`Väntar på andra: ${itemCount(count('waiting'))}`}
         />
         <KeyFigure
           label="Klart"
           value={String(count('done'))}
           tone={count('done') ? 'success' : undefined}
           href={href({ tab: 'done', item: null })}
-          name={`Klart: ${count('done')} ärenden`}
+          name={`Klart: ${itemCount(count('done'))}`}
         />
       </FigureRow>
     );
@@ -662,7 +691,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
       id="todo-pile"
       title={tabTitle[tab]}
       count={rows.length}
-      countLabel="ärenden"
+      countLabel={itemWord(rows.length)}
       tools={filters}
       list={mobile}
       isHeadingHidden={mobile}

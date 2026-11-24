@@ -305,9 +305,9 @@ export function whyOf(thread: Thread, now: string): string {
 
 /**
  * "påminnelsen väntar på schemaläggning" while a reminder waits to be scheduled and none is stopped, outside the settle
- * window of the person's own action (D64 item 2); else nothing. A line that leaves the reason out still says it.
+ * window of the person's own action (D64 item 2); else nothing. Only the why line says it (`whyOf`), after its reason.
  */
-export function queuedReminderOf(thread: Thread, now: string): string | null {
+function queuedReminderOf(thread: Thread, now: string): string | null {
   const queued =
     !thread.timers?.some(t => t.state === 'blocked') &&
     !!thread.timers?.some(t => t.state === 'queued') &&

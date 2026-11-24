@@ -1,6 +1,6 @@
 # D32 · One calendar family, and a person's own bookings as use cases
 
-**Status:** accepted · **Date:** 2026-11-04 · **Area:** ui
+**Status:** accepted; item 2 amended 2026-11-24 in the fixes of the review of 2026-11-23 (`WA-L4`, batch 16 and its review): the `DayStrip` of a calendar read beside a conversation opens no event dialog, each entry is a link to its place in Kalender, as on the read's own page ([D126](D126-one-page-per-thing-one-astryx-template-per-page-type.md) rules 1 and 3) · **Date:** 2026-11-04 · **Area:** ui
 
 **Decision.** The calendar is one family of three members, and every calendar write is a use case with an audit
 row, never a tool.

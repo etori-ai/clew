@@ -146,6 +146,14 @@ test.describe('the levels and the mark (D71, artboard 6)', () => {
       await expect(page.locator('h1, [aria-level="1"]')).toHaveCount(1);
       await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
     });
+  test('now is a thin line with a dot of 10 px on the axis, drawn in Astryx sizes', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const dot = page.locator('.clew-cal-now-dot').first();
+    await expect(dot).toBeVisible();
+    const box = await dot.boundingBox();
+    expect([Math.round(box!.width), Math.round(box!.height)]).toEqual([10, 10]);
+  });
   test('a meeting in the grid is named by its title and its time, and said to be booked', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
     await open(page, '/calendar');

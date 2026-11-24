@@ -45,7 +45,7 @@ import {
   siteHeader,
 } from './data';
 import { newsItemOutput, newsItemSpec, newsSpec } from './data';
-import { providerAddressProblem } from '@clew/contracts';
+import { ENTITY_NAMES_MAX, providerAddressProblem } from '@clew/contracts';
 import type { AssistantReach, NewsResult, RecordAction } from '@clew/contracts';
 import {
   assistantStatus,
@@ -116,9 +116,11 @@ import type {
   CommitmentsInput,
   EntityDetail,
   EntityList,
+  EntityNames,
   EntityRows,
   EntitySection,
   ModelSummary,
+  Subject,
   ProviderSummary,
   TalkBookingBody,
   TalkCalendarBody,
@@ -127,7 +129,7 @@ import type {
   RelationGrant,
   UsersAdminQueryType,
 } from '@clew/contracts';
-import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
+import { THEME_TEMPLATE, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
 import { fixtureViews, manifestView } from './view-catalogue';
@@ -466,6 +468,10 @@ export class MockApi {
   entityRowsDelay: Record<string, number> = {};
   /** Every entities read that reached the mock, as path and query, in order. */
   entityReads: string[] = [];
+  /** Every names read (`POST /api/entities/names`), as the subjects it asked, in order. */
+  entityNamesAsked: Subject[][] = [];
+  /** While set, a names read waits for it, so a spec sees a list before its names arrive. */
+  entityNamesHold?: Promise<unknown>;
   /**
    * Every propose started from an entity's action dialog (D97, D126 item 7), as the entity's key, the capability and the
    * answers, in order. An execute is never started: its last button decides (`entityDecides`).
@@ -910,10 +916,7 @@ export class MockApi {
       const { revision, theme, logo } = this.appearance;
       return json({ revision, theme, logo });
     }
-    if (path === '/appearance/theme-file')
-      return json(
-        themeFileOf(this.appearance.theme ?? { name: 'Mall: Clews standardfärger', colors: THEME_BASE_COLORS }),
-      );
+    if (path === '/appearance/theme-file') return json(themeFileOf(this.appearance.theme ?? THEME_TEMPLATE));
     if (path.startsWith('/appearance/logo/')) {
       const image = this.logos[path.endsWith('/dark') ? 'dark' : 'light'];
       return image
@@ -924,6 +927,7 @@ export class MockApi {
     if (path === '/header') return json(this.header);
     // Entities (D97): the people the reader may ask about, one source over them, the opened person and one source's
     // answer for them. A key the reader may not ask about answers 404 as if it did not exist.
+    if (path === '/entities/names' && post) return this.entityNames(route);
     if (path.startsWith('/entities/') && !post) return this.entities(route, path, url);
     if (path.startsWith('/entities/') && post) return this.entityStart(route, path);
     // Personal (D94): the manager's units and their people, or the server's refusal.
@@ -2814,6 +2818,29 @@ export class MockApi {
         deadline: null,
       });
     return route.fulfill({ json: { threadId: id } });
+  }
+  /**
+   * The names of a list's subjects (`POST /api/entities/names`), answered as the entities module does: each subject that
+   * the opened person's or unit's read would answer, by the same lookup, with its name; the rest absent, and more than
+   * `ENTITY_NAMES_MAX` the route's 400.
+   */
+  private async entityNames(route: Route) {
+    const subjects = (route.request().postDataJSON() as { subjects?: Subject[] } | null)?.subjects;
+    if (!Array.isArray(subjects) || subjects.length > ENTITY_NAMES_MAX)
+      return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
+    this.entityNamesAsked.push(subjects);
+    await this.entityNamesHold;
+    const list: EntityList = this.entitiesEmpty || this.employee ? { ...this.entityList, groups: [] } : this.entityList;
+    const names = [...new Map(subjects.map(s => [`${s.entity}:${s.key}`, s])).values()].flatMap(s => {
+      const detail =
+        s.entity === 'person'
+          ? (this.entityDetailOf?.(s.key) ?? entityDetail(list, s.key))
+          : s.entity === 'unit'
+            ? this.unitDetailOf?.(s.key)
+            : undefined;
+      return detail ? [{ entity: s.entity, key: s.key, name: detail.entity.name }] : [];
+    });
+    return route.fulfill({ json: { names } satisfies EntityNames });
   }
   private async entities(route: Route, path: string, url: URL) {
     const json = (body: unknown) => route.fulfill({ json: body });

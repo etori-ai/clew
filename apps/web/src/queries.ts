@@ -9,6 +9,7 @@ import type {
   Role,
   DocumentRequest,
   EntityKind,
+  Subject,
   UsersAdminQueryType,
 } from '@clew/contracts';
 import { api } from './api';
@@ -91,6 +92,14 @@ export const entitySectionQuery = (kind: EntityKind, key: string, capability: st
   queryOptions({
     queryKey: keys.entities.section(kind, key, capability),
     queryFn: () => api.entities.section(kind, key, capability),
+    retry: false,
+  });
+/** The names of a list's subjects, one read for at most `ENTITY_NAMES_MAX` (`useSubjectNames`); kept five minutes. */
+export const entityNamesQuery = (subjects: readonly Subject[]) =>
+  queryOptions({
+    queryKey: keys.entities.names(subjects.map(s => `${s.entity}:${s.key}`)),
+    queryFn: () => api.entities.names(subjects),
+    staleTime: 5 * 60_000,
     retry: false,
   });
 /**

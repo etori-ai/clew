@@ -56,18 +56,29 @@ group is the file's own and may be referenced:
 - The file is at most 64 kB.
 
 **Hämta mall för temafil** on the page downloads a valid file to start from: Clew's own base colours for the roles
-the contrast check reads. Once a theme is saved the same button downloads that theme.
+the contrast check reads, less the two status icons, which then follow the text colours the file sets, and less
+Neutral's translucent dark tints, which a file cannot carry (`THEME_TEMPLATE`). Once a theme is saved the same button
+downloads that theme.
 [`themes/sundsvall/theme.tokens.json`](../../themes/sundsvall/theme.tokens.json) is a complete example with a palette, and [`themes/clew/`](../../themes/clew/) is Clew's own look, chosen on the canvas of [D126](../decisions/D126-one-page-per-thing-one-astryx-template-per-page-type.md) item 11: ink indigo as the accent on a cool paper ground, with the ball of thread as its logo. An installation nobody has configured stays Astryx Neutral (D46); Clew's look is applied like any other example.
 
 ### What is refused
 
 A file is refused whole, with every problem listed, when it names a colour that cannot be set, sets a colour in one
 appearance only, holds a value that is not an opaque sRGB colour, or would make a theme whose text cannot be read.
-In both appearances, text on surfaces, semantic fills and tinted status badges must reach 4.5:1. Blue and green
-badges use `text-blue` on `background-blue` and `text-green` on `background-green`. The accent, focus ring, icons
-and progress bar fill on its track must reach 3:1. The pairs are listed in `THEME_CONTRAST_PAIRS`.
+In both appearances, text must reach 4.5:1, and the accent, which is also the focus ring, the icons, the status marks
+and a progress bar's fill on its track must reach 3:1, on every ground they are drawn on. The primary and secondary
+words, a link (`text-accent`), the secondary icon and the accent are held on the page, a surface, a card, a popover
+(the ground of the composer and the menus) and the muted ground (a muted card, a striped row, and in Kalender the week
+numbers, the lanes outside office hours under the now line, and a full day's "+N"); the success and information words
+and the other icons on the first four. A fill or a tint carries its own words: `on-accent` on `accent`, `on-info` on
+`info`, `on-success` on `success`, `text-blue` on `background-blue`, `text-green` on `background-green`,
+`on-info-muted` on `info-muted` (a notice, a proposal in Kalender), `on-success-muted` on `success-muted`, and
+`text-primary` on `accent-muted` (a selected item's label). Neutral's dark tints are translucent, so the base's is laid
+over the surface before it is measured. The pairs are listed in `THEME_CONTRAST_PAIRS`.
 Existing installations keep their saved badge backgrounds. Clew uses readable black or white text wherever a
-previously saved pair fails. A colour the file leaves alone is checked against the base theme. The page checks before it lets you save and shows the
+previously saved pair fails. A colour the file leaves alone is the base theme's, except a status icon (`icon-info`,
+`icon-success`): Astryx draws it in its status's text colour until it is set, so a file that sets `text-info` is
+checked for the information icon too, and a refusal names the text colour once, not the icon the file never set. The page checks before it lets you save and shows the
 theme in both appearances; the server checks again. The check covers the listed pairs, not every component state:
 look at the pages, in both appearances, after a new theme is saved.
 
