@@ -448,6 +448,9 @@ export const proposals = pgTable(
     eventUid: text('event_uid'),
     eventRef: text('event_ref'),
     eventRevision: text('event_revision'),
+    // The id every copy of the invitation's meeting carries (iCalendar's UID, Graph's iCalUId), read back from the
+    // organiser's copy when it was sent: where Clew's uid is on that copy alone, the invitee's copy is known by it.
+    eventIcalUid: text('event_ical_uid'),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     undoUntil: timestamp('undo_until', { withTimezone: true }),
     // The approved decision that last took this proposal (M1): while that execution may still send the invitation (being

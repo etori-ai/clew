@@ -57,6 +57,7 @@ const proposal = (
   eventUid: null,
   eventRef: null,
   eventRevision: null,
+  eventIcalUid: null,
   confirmedAt: null,
   undoUntil: null,
   reminders: 0,
@@ -226,6 +227,7 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
           eventUid: 'clew-samtal-' + p3.id,
           eventRef: 'memory:x',
           eventRevision: 'r1',
+          eventIcalUid: 'ical-' + p3.id,
           confirmedAt: plus(T0, 1000),
           undoUntil: plus(T0, 600_000),
         }),
@@ -236,6 +238,8 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
         eventUid: 'clew-samtal-' + p3.id,
         eventRef: 'memory:x',
         eventRevision: 'r1',
+        // The id every copy of the meeting carries, which an invitee's copy is known by (WA-L5).
+        eventIcalUid: 'ical-' + p3.id,
         confirmedAt: plus(T0, 1000),
         undoUntil: plus(T0, 600_000),
       });
@@ -245,6 +249,7 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
           eventUid: null,
           eventRef: null,
           eventRevision: null,
+          eventIcalUid: null,
           confirmedAt: null,
           undoUntil: null,
         }),
@@ -252,6 +257,7 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
       expect((await store.readThread(a, t.id))!.proposals.find(p => p.id === p3.id)).toMatchObject({
         eventUid: null,
         eventRef: null,
+        eventIcalUid: null,
         confirmedAt: null,
         undoUntil: null,
       });

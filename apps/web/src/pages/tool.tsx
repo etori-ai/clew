@@ -11,6 +11,7 @@ import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
 import { opensAsPage, viewOpenHref } from '../view-address';
+import { calendarEntryHref } from '../panel-address';
 import { useShownForTheWayBack } from '../way-back';
 import { Shell, shortQuery } from '../components/shell/shell';
 import { placeOfRead, useNav, type NavCurrent } from '../components/shell/nav';
@@ -333,13 +334,15 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                       hrefFor={hrefFor}
                     />
                   ) : (
-                    /* A read that declares no view (D38) is drawn as the panel draws one: its hits, its rows or its facts. */
+                    /* A read that declares no view (D38) is drawn as the panel draws one: its hits, its rows or its facts. A
+                       calendar read's entries lead to their own place in Kalender (D126 rule 1, WA-M2). */
                     <PanelBody
                       output={tool.output}
                       source={tool.source}
                       input={tool.input}
                       hrefFor={hrefFor}
                       dayHeadingLevel={2}
+                      {...(placeOfRead(capability)?.surface === 'calendar' ? { entryHref: calendarEntryHref } : {})}
                     />
                   )}
                 </ContentArrival>

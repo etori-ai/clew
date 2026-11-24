@@ -1,4 +1,5 @@
 import type { ViewRef } from '@clew/contracts';
+import { displayDate } from '@clew/calendar/dates';
 import { REVIEW_KEYS } from './review-address';
 import { TALK_PARAM } from './talk-address';
 import { DIALOGUE_PARAM } from './dialogue-address';
@@ -83,6 +84,15 @@ const viewAt = (
   return address(`/tools/${encodeURIComponent(view.capability)}`, q);
 };
 
+/**
+ * A calendar entry's own place (D112 item 9, D126 rule 1): Kalender at the entry's day, in the day or the week, with the
+ * entry in the page's pane. Where an entry drawn on another page leads.
+ */
+export function calendarEntryHref(entry: { id: string; start: string }, view: 'day' | 'week'): string {
+  const q = new URLSearchParams({ date: displayDate(entry.start), view });
+  q.set(ENTRY_PARAM, entry.id);
+  return address('/calendar', q);
+}
 /** The same page with one of its own calendar entries in the panel (D112 item 9), in the place of anything open there. */
 export function withEntry(pathname: string, search: URLSearchParams | string, id: string): string {
   const q = without(search, PANEL_KEYS);

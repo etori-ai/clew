@@ -61,6 +61,7 @@ import { changesFor } from '../composition/changes';
 import { personKeys } from '../composition/person-keys';
 import { capabilityRoutes } from './capabilities';
 import { objectsRoutes } from './objects';
+import { calendarRoutes } from './calendar';
 import { executionRoutes } from './executions';
 import { authenticate, AuthError } from '../auth';
 import { readDocument, reviewDocuments } from '../composition/documents';
@@ -559,7 +560,7 @@ api.post('/threads/:id/remind-invitees', async c =>
   c.json(await calendar.remindInvitees(c.req.param('id'), c.get('session').context)),
 );
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
-api.get('/calendar', async c => c.json(await weekOverview(c.get('session').context, c.req.query('from'))));
+api.route('/calendar', calendarRoutes({ weekOverview }));
 /** A person's own bookings (D28): members and rooms for the form, a free-busy check, create, move and cancel; a proposal moved by drag or keyboard. */
 api.get('/calendar/members', async c => c.json({ members: await events.listMembers(c.get('session').context) }));
 api.get('/calendar/rooms', async c => c.json({ rooms: await events.listRooms(c.get('session').context) }));

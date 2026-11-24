@@ -88,6 +88,8 @@ export const fieldLabels: Record<string, string> = {
   remindedAt: 'Senast påmind',
   reminders: 'Påminnelser',
   room: 'Rum',
+  // The meeting of Clew's invitation to a talk (D133).
+  talk: 'Utvecklingssamtal',
   email: 'E-post',
   // The news profile (D112): a news row and one item's read.
   sender: 'Avsändare',

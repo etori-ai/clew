@@ -58,7 +58,7 @@ export function dueLabel(date: string) {
   return `${day} ${MONTHS[(month ?? 1) - 1]}`;
 }
 
-/** Slices of at most `size`, in order; a provider's free-busy answers at most eight targets per request. */
+/** Slices of at most `size`, in order: a provider's free-busy answers at most `FREE_BUSY_TARGETS` targets per request. */
 export function chunks<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));

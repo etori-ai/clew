@@ -27,6 +27,11 @@ export const userReadNames = (actors: [Actor, Actor]): Record<string, string | n
   [actors[0].id]: actors[0].id + '.login',
   [actors[1].id]: null,
 });
+/** The addresses the contract expects: the first actor's directory entry has one, the second's none. */
+export const userReadAddresses = (actors: [Actor, Actor]): Record<string, string | null> => ({
+  [actors[0].id]: actors[0].id + '@example.test',
+  [actors[1].id]: null,
+});
 /** A person the people table holds beside the actors, with no grant. */
 export interface UserReadPerson {
   id: string;
@@ -111,6 +116,13 @@ export function userReadsContract(
     expect(await reads.userName(actors[1].id)).toBeNull();
     expect(await reads.userName('missing-' + actors[0].id)).toBeNull();
     expect(await reads.userName(actors[0].id + '\u0000')).toBeNull();
+  });
+  test(label + ": a person's address as the directory holds it, null when they have none or are unknown", async () => {
+    const { reads, actors } = await prepare();
+    expect(await reads.email(actors[0].id)).toBe(actors[0].id + '@example.test');
+    expect(await reads.email(actors[1].id)).toBeNull();
+    expect(await reads.email('missing-' + actors[0].id)).toBeNull();
+    expect(await reads.email(actors[0].id + '\u0000')).toBeNull();
   });
   test(
     label +
